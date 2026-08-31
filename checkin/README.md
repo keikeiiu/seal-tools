@@ -40,10 +40,10 @@ login_url: "https://security.sponline.com.tw/login/login.php"
 checkin_url: "https://security.sponline.com.tw/event/20260806/"
 
 accounts:
-  - username: "account4"
-    password: "REDACTED"
-  - username: "account3"
-    password: "REDACTED"
+  - username: "your_account_1"
+    password: "your_password_1"
+  - username: "your_account_2"
+    password: "your_password_2"
   # ... one entry per account
 ```
 
