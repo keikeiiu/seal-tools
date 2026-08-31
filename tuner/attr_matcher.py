@@ -6,7 +6,7 @@ Also handles special attributes with two values:
   每 X 等級增加 Stat +1  →  name: "每級+1力量",  extra: X (levels)
 
 Usage:
-  from attr_matcher import match_attributes, check_filter
+  from tuner.attr_matcher import match_attributes, check_filter
   result = match_attributes(ocr_attributes)
   passed = check_filter(result, filter_rules)
 """

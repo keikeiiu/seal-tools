@@ -32,5 +32,7 @@ build/
 dist/
 *.spec
 
+# ── Reference material (local screenshots/notes — not tracked) ──
+reference/
+
 # ── Misc cruft ─────────────────────────────────────────
-seal2u div

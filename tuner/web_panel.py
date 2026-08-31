@@ -246,7 +246,7 @@ def api_control():
 
 @app.route("/api/attr_names")
 def api_attr_names():
-    from attr_matcher import ATTRIBUTES
+    from tuner.attr_matcher import ATTRIBUTES
     grade = request.args.get("grade", "DG")
 
     # Attributes available per grade

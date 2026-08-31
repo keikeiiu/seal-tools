@@ -27,6 +27,9 @@ from datetime import datetime
 import serial
 import serial.tools.list_ports
 
+# Ensure repo root is importable when run directly (e.g. `python macro_recorder/macro_recorder.py`)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 SCRIPT_DIR = Path(__file__).parent
@@ -101,7 +104,7 @@ def record_macro(ser, name, auto_ref=True):
     print(f"\n[REC] Recording: {name}")
 
     # Auto-calibrate: use game window top-left as reference
-    from ocr_engine import find_game_window
+    from tuner.ocr_engine import find_game_window
     win = find_game_window()
     if win and auto_ref:
         ref_x, ref_y = win[0], win[1]

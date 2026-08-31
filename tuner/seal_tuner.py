@@ -14,9 +14,12 @@ from pathlib import Path
 from datetime import datetime
 import serial
 import serial.tools.list_ports
-from ocr_engine import TuningOCR
-from attr_matcher import match_attributes, check_filter
-from web_panel import start_panel
+# Ensure repo root is importable when run directly (e.g. `python tuner/seal_tuner.py`)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tuner.ocr_engine import TuningOCR
+from tuner.attr_matcher import match_attributes, check_filter
+from tuner.web_panel import start_panel
 import webbrowser
 import yaml
 

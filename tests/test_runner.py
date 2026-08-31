@@ -14,13 +14,17 @@ from pathlib import Path
 from datetime import datetime
 import serial
 import serial.tools.list_ports
-from ocr_engine import TuningOCR
-from attr_matcher import match_attributes, check_filter
+# Ensure repo root is importable when run directly (e.g. `python tests/test_runner.py`)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tuner.ocr_engine import TuningOCR
+from tuner.attr_matcher import match_attributes, check_filter
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 SCRIPT_DIR = Path(__file__).parent
-CONFIG_PATH = SCRIPT_DIR / "config.yaml"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+CONFIG_PATH = ROOT_DIR / "tuner" / "config.yaml"
 LOG_DIR = SCRIPT_DIR / "test_results"
 LOG_DIR.mkdir(exist_ok=True)
 user32 = ctypes.windll.user32

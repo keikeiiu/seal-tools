@@ -24,26 +24,26 @@ app = Flask(__name__)
 TOOLS = {
     "tuner": {
         "name": "Magic Tuner",
-        "script": "seal_tuner.py",
-        "state_file": "state.json",
-        "control_file": "control.txt",
+        "script": "tuner/seal_tuner.py",
+        "state_file": "tuner/state.json",
+        "control_file": "tuner/control.txt",
         "port": 5000,
         "icon": "🎯",
         "flags": ["--no-browser"],
     },
     "gem": {
         "name": "Gem Composer",
-        "script": "gem_composer.py",
-        "state_file": "gem_state.json",
-        "control_file": "gem_control.txt",
+        "script": "gem_composer/gem_composer.py",
+        "state_file": "gem_composer/gem_state.json",
+        "control_file": "gem_composer/gem_control.txt",
         "port": None,
         "icon": "💎",
     },
     "spammer": {
         "name": "Skill Spammer",
-        "script": "skill_spammer.py",
-        "state_file": "spammer_state.json",
-        "control_file": "spammer_control.txt",
+        "script": "skill_spammer/skill_spammer.py",
+        "state_file": "skill_spammer/spammer_state.json",
+        "control_file": "skill_spammer/spammer_control.txt",
         "port": 5001,
         "icon": "⚔️",
         "flags": ["--no-panel"],
@@ -150,7 +150,7 @@ def api_tools():
         # stale grade left in the state file from a previous run.
         if tid == "gem" and not process_alive:
             try:
-                with open(SCRIPT_DIR / "gem_composer_config.yaml", "r", encoding="utf-8") as f:
+                with open(SCRIPT_DIR / "gem_composer/gem_composer_config.yaml", "r", encoding="utf-8") as f:
                     gem_cfg = yaml.safe_load(f.read()) or {}
                 extra["grade"] = gem_cfg.get("start_grade", "N")
                 extra["cycle"] = 0
@@ -212,7 +212,7 @@ def api_control(tool_id, action):
 
 
 # ── Spammer Config ──
-SPAMMER_CONFIG = SCRIPT_DIR / "skill_spammer_config.yaml"
+SPAMMER_CONFIG = SCRIPT_DIR / "skill_spammer/skill_spammer_config.yaml"
 
 def load_spammer_config():
     if SPAMMER_CONFIG.exists():
@@ -237,7 +237,7 @@ def spammer_config():
 
 
 # ── Tuner Config ──
-TUNER_CONFIG = SCRIPT_DIR / "config.yaml"
+TUNER_CONFIG = SCRIPT_DIR / "tuner/config.yaml"
 
 @app.route("/api/tuner_config", methods=["GET", "POST"])
 def tuner_config_route():
@@ -280,13 +280,13 @@ def tuner_config_route():
 
 @app.route("/api/attr_names")
 def api_attr_names():
-    from attr_matcher import ATTRIBUTES
+    from tuner.attr_matcher import ATTRIBUTES
     all_names = [n for n, _, _ in ATTRIBUTES]
     return jsonify(all_names)
 
 
 # ── Gem Config ──
-GEM_CONFIG = SCRIPT_DIR / "gem_composer_config.yaml"
+GEM_CONFIG = SCRIPT_DIR / "gem_composer/gem_composer_config.yaml"
 
 @app.route("/api/gem_config", methods=["GET", "POST"])
 def gem_config_route():

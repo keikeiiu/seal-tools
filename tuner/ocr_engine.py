@@ -6,7 +6,7 @@ Captures the 發條 (magic tuning) window and reads:
   2. 3 Chinese attribute lines below the grade
 
 Usage:
-  from ocr_engine import TuningOCR
+  from tuner.ocr_engine import TuningOCR
   ocr = TuningOCR()
   result = ocr.scan()  # returns dict with grade + attributes
 
