@@ -66,6 +66,58 @@ seal-tools/
    ```
 5. Open **http://127.0.0.1:5002** and control all three tools from one panel.
 
+## Setup for friends (dumb-proof)
+
+Hand this section to a friend who has never touched Python or an Arduino. Do every step in order.
+
+### What they need
+- A **Windows 10/11** PC.
+- An **Arduino Pro Micro (ATmega32U4)** — this exact board. Uno / Nano will **not** work.
+- A **USB cable that carries data** (a charge-only cable won't work).
+- Internet access.
+
+### 1. Install Python
+1. Go to <https://www.python.org/downloads/> and download **Python 3.10 or newer** for Windows.
+2. Run the installer. **Tick "Add Python to PATH"**, then click **Install Now**.
+3. Check it worked: open Command Prompt and type `python --version` — you should see a version number.
+
+### 2. Get the tools
+1. Download this repo (green **Code → Download ZIP** button on GitHub).
+2. Unzip it to a simple path, e.g. `C:\seal-tools`.
+
+### 3. Install the dependencies
+1. Double-click **`setup.bat`** inside the folder. It installs everything and reports whether the Arduino is detected.
+   - (Manual alternative: open a terminal in the folder and run `pip install -r requirements.txt`.)
+
+### 4. Put the firmware on the Arduino
+1. Install the **Arduino IDE** from <https://www.arduino.cc/en/software>.
+2. Plug the Pro Micro into the PC.
+3. Follow the **"Arduino IDE — step-by-step"** section above: pick **Leonardo / Micro** (or **SparkFun Pro Micro**), choose the COM port, open `arduino/seal_mouse/seal_mouse.ino`, and click **Upload**.
+
+### 5. Start the launcher
+1. In the folder, open a terminal and run:
+   ```bash
+   python launcher.py
+   ```
+2. Open **http://127.0.0.1:5002** in a browser. You'll see three cards: **Magic Tuner**, **Gem Composer**, **Skill Spammer**.
+
+### 6. Use a tool (the important part)
+- **Only one tool runs at a time** — they share the same Arduino.
+- Each card has **Load → Start → Stop → Quit**.
+- **Position the mouse where you want it to act *before* you press Start.** Once the game is focused, its anti-cheat (GameGuard) blocks the software from moving the cursor — so you must hover the mouse yourself first.
+
+| Tool | Get ready | Hotkeys |
+|------|-----------|---------|
+| **Magic Tuner** | Open the 發條 (tuning) window and hover the mouse over the confirm button | **F12** start/stop · **F11** quit |
+| **Gem Composer** | Open the gem-combine window | **F12** start/stop · **F9** next grade · **F11** quit |
+| **Skill Spammer** | Set the keys in `skill_spammer/skill_spammer_config.yaml` | **F12** start/stop · **F11** quit |
+
+### If it doesn't work
+- **"Arduino not found"** → the USB cable is probably charge-only, or the board isn't a **Pro Micro (ATmega32U4)**.
+- **Tool crashes right after Load** → another tool is still holding the COM port. Click **Quit** on the other card and retry. See `tool_error.log` for details.
+- **Nothing clicks in-game** → the game window must be focused, and the mouse must be positioned before you press Start.
+- **OCR reads garbage** → adjust the capture region in `tuner/ocr_engine.py` for your screen resolution.
+
 ---
 
 ## 1. Set Up the Arduino Pro Micro
