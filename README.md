@@ -109,8 +109,10 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 | Tool | Get ready | Hotkeys |
 |------|-----------|---------|
 | **Magic Tuner** | Open the 發條 (tuning) window and hover the mouse over the confirm button | **F12** start/stop · **F11** quit |
-| **Gem Composer** | Open the gem-combine window | **F12** start/stop · **F9** next grade · **F11** quit |
+| **Gem Composer** | Open the gem-combine window — **needs custom calibration (see note)** | **F12** start/stop · **F9** next grade · **F11** quit |
 | **Skill Spammer** | Set the keys in `skill_spammer/skill_spammer_config.yaml` | **F12** start/stop · **F11** quit |
+
+> ⚠️ **Gem Composer will likely not work on a fresh machine.** It uses hardcoded screen coordinates, so it depends on the exact **monitor resolution, display scale/ratio, and game window size**. You must re-measure the coordinates in `gem_composer/gem_composer_config.yaml` for the specific setup (see the Configuration section) — otherwise the clicks land in the wrong place.
 
 ### If it doesn't work
 - **"Arduino not found"** → the USB cable is probably charge-only, or the board isn't a **Pro Micro (ATmega32U4)**.
@@ -263,7 +265,7 @@ movements:                    # relative mouse deltas (Arduino D commands)
   combine_register: [30, -80]
 ```
 
-> These coordinates are **resolution/DPI-specific**. If the game window size differs from the original calibration, re-measure them.
+> ⚠️ **Gem Composer will likely not work as-is on a different machine.** `grade_positions` and `movements` are hardcoded for a specific **monitor resolution, display scale/ratio, and game window size**. Re-measure them for your setup before using the tool — otherwise the clicks will land in the wrong place.
 
 ### `skill_spammer_config.yaml` — Skill Spammer
 
@@ -300,6 +302,8 @@ Auto-clicks the 發條 confirm button + Enter, OCR-scans the grade and 3 attribu
 
 ### Gem Composer (`gem_composer/gem_composer.py`)
 Auto-combines gems using calibrated `D` movements. `cycle` counter climbs live in the panel.
+
+> ⚠️ Requires custom calibration — the coordinates in `gem_composer/gem_composer_config.yaml` are specific to a particular monitor resolution, display ratio, and game window size. Likely won't work on a different machine without re-measuring.
 
 - **F12** — start / stop
 - **F9** — advance grade (N → G → DG)
