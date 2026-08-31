@@ -1,0 +1,12 @@
+# Seal Online 每日簽到 config — TEMPLATE
+# Copy this to `checkin_config.yaml` and fill in your own accounts.
+# `checkin_config.yaml` is gitignored (contains passwords) — never commit it.
+
+login_url: "https://security.sponline.com.tw/login/login.php"
+checkin_url: "https://security.sponline.com.tw/event/20260806/"   # update per event
+
+accounts:
+  - username: "your_account_1"
+    password: "your_password_1"
+  - username: "your_account_2"
+    password: "your_password_2"

@@ -1,0 +1,36 @@
+# ── Secrets — NEVER commit ─────────────────────────────
+# Check-in account credentials + saved login sessions
+checkin/checkin_config.yaml
+checkin/sessions/
+
+# ── Runtime state files ────────────────────────────────
+state.json
+gem_state.json
+spammer_state.json
+
+# ── Control files ──────────────────────────────────────
+control.txt
+gem_control.txt
+spammer_control.txt
+force_check.txt
+
+# ── Logs & captures ────────────────────────────────────
+tool_error.log
+logs/
+captures/
+slot_captures/
+*.png
+*.jpg
+*.jpeg
+
+# ── Build artifacts ────────────────────────────────────
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.spec
+
+# ── Misc cruft ─────────────────────────────────────────
+seal2u div

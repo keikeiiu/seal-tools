@@ -1,0 +1,429 @@
+[
+  {
+    "test": "01_攻擊力",
+    "status": "PASS",
+    "attempts": 3,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "攻擊力",
+        "found": "攻擊力",
+        "value": 46
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150309_957.png",
+    "attrs": [
+      "經驗值獲得量增加",
+      "減少道具等級限制",
+      "攻擊力"
+    ],
+    "timestamp": "2026-07-25T15:03:12.288156"
+  },
+  {
+    "test": "02_魔法力",
+    "status": "PASS",
+    "attempts": 2,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "魔法力",
+        "found": "魔法力",
+        "value": 71
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150318_240.png",
+    "attrs": [
+      "迴避率",
+      "魔法力",
+      "命中率"
+    ],
+    "timestamp": "2026-07-25T15:03:20.044893"
+  },
+  {
+    "test": "03_防禦力",
+    "status": "PASS",
+    "attempts": 1,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "防禦力",
+        "found": "防禦力",
+        "value": 62
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150322_073.png",
+    "attrs": [
+      "迴避率",
+      "防禦力",
+      "減少道具等級限制"
+    ],
+    "timestamp": "2026-07-25T15:03:24.197901"
+  },
+  {
+    "test": "04_攻擊速度",
+    "status": "PASS",
+    "attempts": 1,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "攻擊速度",
+        "found": "攻擊速度",
+        "value": 6
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150326_223.png",
+    "attrs": [
+      "魔法力",
+      "迴避率",
+      "攻擊速度"
+    ],
+    "timestamp": "2026-07-25T15:03:28.065640"
+  },
+  {
+    "test": "05_必殺技",
+    "status": "PASS",
+    "attempts": 1,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "必殺技",
+        "found": "必殺技",
+        "value": 6
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150330_091.png",
+    "attrs": [
+      "必殺技",
+      "必殺技",
+      "攻擊力"
+    ],
+    "timestamp": "2026-07-25T15:03:31.905085"
+  },
+  {
+    "test": "06_命中率",
+    "status": "PASS",
+    "attempts": 2,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "命中率",
+        "found": "命中率",
+        "value": 10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150338_074.png",
+    "attrs": [
+      "每級+1力量",
+      "命中率",
+      "每級+1幸運"
+    ],
+    "timestamp": "2026-07-25T15:03:40.304305"
+  },
+  {
+    "test": "07_迴避率",
+    "status": "PASS",
+    "attempts": 7,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "迴避率",
+        "found": "迴避率",
+        "value": 9
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150405_391.png",
+    "attrs": [
+      "迴避率",
+      "每級+1精神",
+      "必殺技"
+    ],
+    "timestamp": "2026-07-25T15:04:07.475655"
+  },
+  {
+    "test": "08_移動速度",
+    "status": "PASS",
+    "attempts": 4,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "移動速度",
+        "found": "移動速度",
+        "value": 10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150420_944.png",
+    "attrs": [
+      "移動速度",
+      "每級+1精神",
+      "經驗值獲得量增加"
+    ],
+    "timestamp": "2026-07-25T15:04:23.034464"
+  },
+  {
+    "test": "09_HP值",
+    "status": "PASS",
+    "attempts": 2,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "HP(值)",
+        "found": "HP(值)",
+        "value": 403
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_150428_761.png",
+    "attrs": [
+      "HP(值)",
+      "攻擊力",
+      "副本傷害增加"
+    ],
+    "timestamp": "2026-07-25T15:04:30.650147"
+  },
+  {
+    "test": "10_AP值",
+    "status": "TIMEOUT",
+    "attempts": 200
+  },
+  {
+    "test": "11_HP%",
+    "status": "PASS",
+    "attempts": 4,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "HP(%)",
+        "found": "HP(%)",
+        "value": 12
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151741_914.png",
+    "attrs": [
+      "每級+1智力",
+      "HP(%)",
+      "每級+1智力"
+    ],
+    "timestamp": "2026-07-25T15:17:44.233069"
+  },
+  {
+    "test": "12_AP%",
+    "status": "PASS",
+    "attempts": 2,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "AP(%)",
+        "found": "AP(%)",
+        "value": 1
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151750_232.png",
+    "attrs": [
+      "經驗值獲得量增加",
+      "AP(%)"
+    ],
+    "timestamp": "2026-07-25T15:17:52.181252"
+  },
+  {
+    "test": "13_力量",
+    "status": "PASS",
+    "attempts": 3,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1力量",
+        "found": "每級+1力量",
+        "value": 10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151801_966.png",
+    "attrs": [
+      "移動速度",
+      "每級+1力量"
+    ],
+    "timestamp": "2026-07-25T15:18:04.075788"
+  },
+  {
+    "test": "14_敏捷",
+    "status": "PASS",
+    "attempts": 13,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1敏捷",
+        "found": "每級+1敏捷",
+        "value": 8
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151852_816.png",
+    "attrs": [
+      "每級+1敏捷",
+      "防禦力",
+      "移動速度"
+    ],
+    "timestamp": "2026-07-25T15:18:54.751890"
+  },
+  {
+    "test": "15_智力",
+    "status": "PASS",
+    "attempts": 10,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1智力",
+        "found": "每級+1智力",
+        "value": 10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151931_886.png",
+    "attrs": [
+      "每級+1智力",
+      "減少道具等級限制",
+      "經驗值獲得量增加"
+    ],
+    "timestamp": "2026-07-25T15:19:34.184029"
+  },
+  {
+    "test": "16_幸運",
+    "status": "PASS",
+    "attempts": 4,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1幸運",
+        "found": "每級+1幸運",
+        "value": 10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_151947_788.png",
+    "attrs": [
+      "魔法力",
+      "必殺技",
+      "每級+1幸運"
+    ],
+    "timestamp": "2026-07-25T15:19:50.138388"
+  },
+  {
+    "test": "17_體力",
+    "status": "PASS",
+    "attempts": 8,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1體力",
+        "found": "每級+1體力",
+        "value": 40
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_152018_340.png",
+    "attrs": [
+      "必殺技",
+      "AP(%)",
+      "每級+1體力"
+    ],
+    "timestamp": "2026-07-25T15:20:20.224175"
+  },
+  {
+    "test": "18_精神",
+    "status": "PASS",
+    "attempts": 11,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "每級+1精神",
+        "found": "每級+1精神",
+        "value": 40
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_152101_576.png",
+    "attrs": [
+      "每級+1精神",
+      "魔法力",
+      "每級+1精神"
+    ],
+    "timestamp": "2026-07-25T15:21:03.746157"
+  },
+  {
+    "test": "19_減少限制",
+    "status": "PASS",
+    "attempts": 8,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "減少道具等級限制",
+        "found": "減少道具等級限制",
+        "value": -10
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_152132_194.png",
+    "attrs": [
+      "每級+1力量",
+      "攻擊力",
+      "減少道具等級限制"
+    ],
+    "timestamp": "2026-07-25T15:21:34.641338"
+  },
+  {
+    "test": "20_經驗值",
+    "status": "PASS",
+    "attempts": 1,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "經驗值獲得量增加",
+        "found": "經驗值獲得量增加",
+        "value": 1
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_152136_662.png",
+    "attrs": [
+      "移動速度",
+      "經驗值獲得量增加"
+    ],
+    "timestamp": "2026-07-25T15:21:38.605580"
+  },
+  {
+    "test": "21_副本傷害",
+    "status": "PASS",
+    "attempts": 10,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "副本傷害增加",
+        "found": "副本傷害增加",
+        "value": 1
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_152215_530.png",
+    "attrs": [
+      "每級+1敏捷",
+      "副本傷害增加",
+      "減少道具等級限制"
+    ],
+    "timestamp": "2026-07-25T15:22:17.763391"
+  },
+  {
+    "test": "22_增加傷害",
+    "status": "TIMEOUT",
+    "attempts": 200
+  },
+  {
+    "test": "23_減少傷害",
+    "status": "PASS",
+    "attempts": 191,
+    "grade": "DG",
+    "matched": [
+      {
+        "rule": "減少傷害",
+        "found": "減少傷害",
+        "value": 1
+      }
+    ],
+    "capture": "C:\\Git_repo\\media-stack-docker-compose\\SEALONLINE SCRIPTS\\logs\\captures\\capture_20260725_154740_777.png",
+    "attrs": [
+      "攻擊力",
+      "攻擊力",
+      "減少傷害"
+    ],
+    "timestamp": "2026-07-25T15:47:42.716210"
+  }
+]

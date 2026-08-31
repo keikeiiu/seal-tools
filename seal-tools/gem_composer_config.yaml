@@ -1,0 +1,49 @@
+grade_positions:
+  Combine:
+  - 785
+  - 871
+  DG:
+  - 827
+  - 696
+  G:
+  - 777
+  - 696
+  N:
+  - 727
+  - 696
+  Register:
+  - 835
+  - 724
+movements:
+  combine_register:
+  - 30
+  - -80
+  grade_next:
+  - 33
+  - 0
+  grade_prev:
+  - -33
+  - 0
+  radio_to_register:
+    DG:
+    - 10
+    - 20
+    G:
+    - 35
+    - 20
+    N:
+    - 65
+    - 20
+  register_combine:
+  - -30
+  - 80
+  register_slot1:
+  - -45
+  - -100
+  slot1_slot2:
+  - 36
+  - 0
+  slot2_dg:
+  - 8
+  - 87
+start_grade: DG
