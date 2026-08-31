@@ -70,6 +70,18 @@ seal-tools/
 
 ## 1. Set Up the Arduino Pro Micro
 
+### Arduino IDE — step-by-step
+
+1. **Install the Arduino IDE** — download from <https://www.arduino.cc/en/software> (2.x is fine).
+2. **Add board support** (the Pro Micro is not in the default board list):
+   - *Easiest, no extra install:* select **Arduino Leonardo** or **Arduino Micro** — same ATmega32U4 chip.
+   - *Or add SparkFun:* **File → Preferences → "Additional Boards Manager URLs"** → paste the SparkFun JSON URL, then **Tools → Board → Boards Manager** → search **"SparkFun AVR Boards"** → **Install**.
+3. **Select the board** — **Tools → Board** → **Arduino Leonardo / Micro**, or **SparkFun Pro Micro** (processor **ATmega32U4 (5V, 16 MHz)**).
+4. **Select the port** — **Tools → Port** → choose the COM port (e.g. `COM5`).
+5. **Open the firmware** — **File → Open** → `arduino/seal_mouse/seal_mouse.ino`.
+6. **Upload** — click the **→ Upload** arrow (or **Sketch → Upload**). If it fails, see the bootloader-reset note below.
+7. **Verify** — open **Tools → Serial Monitor** at **115200**, type `C`, press Enter → a left-click fires.
+
 ### Which board to get
 
 - **Arduino Pro Micro (ATmega32U4), 5V / 16 MHz** — this is the one you want.
