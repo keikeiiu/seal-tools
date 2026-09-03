@@ -1,7 +1,7 @@
 """
 Skill Spammer — Auto-press skill keys via Arduino
 ==================================================
-Cycles through configured keys at fixed interval.
+Presses configured keys independently, each on its own cooldown.
 
 Controls: F12 = start/stop, F11 = quit
 Web panel: http://127.0.0.1:5001
@@ -46,8 +46,29 @@ def find_arduino():
             return p.device
     return None
 
+
+def parse_keys(cfg):
+    """Return {key: cooldown_seconds} from config.
+
+    New format:  keys: { F1: 0.2, '1': 5.0 }   (per-key cooldown)
+    Old format:  keys: [F1, '1', '2']  +  interval: 1.0   (legacy)
+    """
+    keys = cfg.get("keys", [])
+    if isinstance(keys, dict):
+        out = {}
+        for k, v in keys.items():
+            try:
+                out[str(k)] = float(v)
+            except (ValueError, TypeError):
+                out[str(k)] = 1.0
+        return out
+    if isinstance(keys, list) and keys:
+        interval = float(cfg.get("interval", 1.0))
+        return {str(k): interval for k in keys}
+    return {}
+
 # ── Shared state for web panel ──
-_shared = {"running": False, "keys": [], "interval": 1.0, "current": "", "count": 0}
+_shared = {"running": False, "keys": [], "cooldowns": {}, "current": "", "count": 0}
 
 class SpammerHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -136,18 +157,17 @@ def main():
     else:
         cfg = {}
 
-    keys = cfg.get("keys", ["F2", "5", "6"])
-    if not keys:
+    cooldowns = parse_keys(cfg)
+    if not cooldowns:
+        cooldowns = {"F2": 1.0, "5": 1.0, "6": 1.0}
         print("[!] No keys configured — using defaults")
-        keys = ["F2", "5", "6"]
-    interval = cfg.get("interval", 1.0)
 
     if not CONFIG_PATH.exists():
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            yaml.dump({"keys": keys, "interval": interval}, f, allow_unicode=True)
+            yaml.dump({"keys": cooldowns}, f, allow_unicode=True)
 
-    _shared["keys"] = keys
-    _shared["interval"] = interval
+    _shared["keys"] = [f"{k} ({cd:g}s)" for k, cd in cooldowns.items()]
+    _shared["cooldowns"] = cooldowns
 
     def write_state():
         try:
@@ -178,15 +198,16 @@ def main():
 
     running = False
     f12_was = key(0x7B)
-    idx = 0
     count = 0
+    last = {k: 0.0 for k in cooldowns}
 
     print("\nSkill Spammer")
-    print(f"Keys: {' -> '.join(keys)}  |  Interval: {interval}s")
+    for k, cd in cooldowns.items():
+        print(f"  {k}: 每 {cd:g}s")
     print("[F12] start/stop  [F11] quit  [Web] http://127.0.0.1:5001\n")
 
     while True:
-        sleep_check(0.05)
+        sleep_check(0.02)
         if key(0x7A) or _F11_PRESSED:
             print("[QUIT]")
             break
@@ -199,7 +220,7 @@ def main():
                     running = True
                     _shared["running"] = True
                     _F11_PRESSED = False
-                    idx = 0
+                    last = {k: 0.0 for k in cooldowns}
                     count = 0
                     write_state()
                     print("[Panel] START")
@@ -222,7 +243,7 @@ def main():
         if _shared["running"] and not running:
             running = True
             _F11_PRESSED = False
-            idx = 0
+            last = {k: 0.0 for k in cooldowns}
             count = 0
             write_state()
             print("[Panel] START")
@@ -240,9 +261,9 @@ def main():
             write_state()
             if running:
                 _F11_PRESSED = False
-                idx = 0
+                last = {k: 0.0 for k in cooldowns}
                 count = 0
-                print(f"[GO] {keys}")
+                print(f"[GO] {', '.join(cooldowns)}")
                 winsound.Beep(523, 100)
             else:
                 print("[STOP]")
@@ -252,54 +273,21 @@ def main():
         if not running:
             continue
 
-        count += 1
-        _shared["count"] = count
-
-        # Press current key
-        k = keys[idx]
-        _shared["current"] = k
-        try:
-            if k.startswith("F"):
-                n = int(k[1:])
-                ser.write(f"F {n}\n".encode())
-            else:
-                ser.write(f"K {k}\n".encode())
-        except (ValueError, serial.SerialException):
-            print(f"[!] Invalid key '{k}' or serial error — skipping")
-
-        idx = (idx + 1) % len(keys)
-
-        # Wait for interval, checking keys and panel
-        elapsed = 0
-        interval_done = False
-        while elapsed < interval and not interval_done:
-            chunk = min(0.05, interval - elapsed)
-            sleep_check(chunk)
-            if _F11_PRESSED or key(0x7A):
-                running = False
-                _shared["running"] = False
-                write_state()
-                print("[QUIT]")
-                ser.close()
-                if server:
-                    server.shutdown()
-                return
-            if key(0x7B):
-                f12_was = True
-                running = False
-                _shared["running"] = False
-                write_state()
-                print("[STOP]")
-                winsound.Beep(1000, 150)
-                interval_done = True
-            elif not _shared["running"] and running:
-                running = False
-                write_state()
-                print("[Panel] STOP")
-                winsound.Beep(1000, 150)
-                interval_done = True
-            else:
-                elapsed += chunk
+        # Cooldown scheduler — press each key once its own cooldown has elapsed
+        now = time.time()
+        for k, cd in cooldowns.items():
+            if now - last[k] >= cd:
+                _shared["current"] = k
+                try:
+                    if k.startswith("F"):
+                        ser.write(f"F {int(k[1:])}\n".encode())
+                    else:
+                        ser.write(f"K {k}\n".encode())
+                except (ValueError, serial.SerialException):
+                    print(f"[!] Invalid key '{k}' or serial error — skipping")
+                last[k] = now
+                count += 1
+                _shared["count"] = count
 
     _shared["running"] = False
     write_state()
