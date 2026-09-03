@@ -1,5 +1,13 @@
 #include <Mouse.h>
 #include <Keyboard.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// ── Key hold durations (ms) ──────────────────
+// Uppercase K/F = human-like hold (30-80ms), lowercase k/f = fast hold.
+#define HOLD_NORMAL_MIN  30
+#define HOLD_NORMAL_MAX  80
+#define HOLD_FAST        10
 
 // ── Bezier human-like mouse movement ─────────
 float cubicBezier(float p0, float p1, float p2, float p3, float t) {
@@ -55,12 +63,13 @@ void setup() {
 
 // ── Loop ─────────────────────────────────────
 void loop() {
+    static char buf[32];  // fixed buffer — no heap allocation (avoids String fragmentation)
     if (Serial.available() > 0) {
-        String cmd = Serial.readStringUntil('\n');
-        cmd.trim();
-        if (cmd.length() == 0) return;
+        size_t n = Serial.readBytesUntil('\n', buf, sizeof(buf) - 1);
+        buf[n] = '\0';
+        if (n == 0) return;
 
-        char type = cmd[0];
+        char type = buf[0];
 
         // Mouse click
         if (type == 'C') {
@@ -75,10 +84,8 @@ void loop() {
         }
         // Direct move: "D dx dy" — no curves, straight line
         else if (type == 'D') {
-            int sp1 = cmd.indexOf(' ', 2);
-            if (sp1 > 0) {
-                int dx = cmd.substring(2, sp1).toInt();
-                int dy = cmd.substring(sp1 + 1).toInt();
+            int dx = 0, dy = 0;
+            if (sscanf(buf, "D %d %d", &dx, &dy) == 2) {
                 int sx = (dx > 0) ? 1 : -1;
                 int sy = (dy > 0) ? 1 : -1;
                 int ax = abs(dx), ay = abs(dy);
@@ -94,47 +101,46 @@ void loop() {
         }
         // Human-like move: "H dx dy duration"
         else if (type == 'H') {
-            int sp1 = cmd.indexOf(' ', 2);
-            int sp2 = cmd.indexOf(' ', sp1 + 1);
-            if (sp1 > 0 && sp2 > 0) {
-                int dx = cmd.substring(2, sp1).toInt();
-                int dy = cmd.substring(sp1 + 1, sp2).toInt();
-                int dur = cmd.substring(sp2 + 1).toInt();
+            int dx = 0, dy = 0, dur = 0;
+            if (sscanf(buf, "H %d %d %d", &dx, &dy, &dur) == 3) {
                 if (dur < 20) dur = 20;
                 if (dur > 5000) dur = 5000;
                 humanMove(dx, dy, dur);
             }
         }
-        // Keyboard
+        // Keyboard — normal (human-like) hold
         else if (type == 'E') {
             Keyboard.press(KEY_RETURN);
-            delay(random(30, 80));
+            delay(random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX));
             Keyboard.release(KEY_RETURN);
         }
         else if (type == 'T') {
             Keyboard.press(KEY_TAB);
-            delay(random(30, 80));
+            delay(random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX));
             Keyboard.release(KEY_TAB);
         }
         else if (type == 'S') {
             Keyboard.press(' ');
-            delay(random(30, 80));
+            delay(random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX));
             Keyboard.release(' ');
         }
-        else if (type == 'K') {
-            int n = cmd.substring(1).toInt();
+        // K/F = normal hold, k/f = fast hold
+        else if (type == 'K' || type == 'k') {
+            int n = atoi(&buf[1]);
             char key = '0' + (n % 10);
+            int hold = (type == 'k') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
             Keyboard.press(key);
-            delay(random(30, 80));
+            delay(hold);
             Keyboard.release(key);
         }
-        else if (type == 'F') {
-            int n = cmd.substring(1).toInt();
+        else if (type == 'F' || type == 'f') {
+            int n = atoi(&buf[1]);
             uint8_t fkeys[] = {0, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5,
                                KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10};
             if (n >= 1 && n <= 10) {
+                int hold = (type == 'f') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
                 Keyboard.press(fkeys[n]);
-                delay(random(30, 80));
+                delay(hold);
                 Keyboard.release(fkeys[n]);
             }
         }
@@ -147,7 +153,7 @@ void loop() {
         }
         // Wait
         else if (type == 'W') {
-            int ms = cmd.substring(2).toInt();
+            int ms = atoi(&buf[1]);
             if (ms > 0 && ms < 10000) delay(ms);
         }
     }

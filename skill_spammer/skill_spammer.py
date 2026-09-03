@@ -67,6 +67,18 @@ def parse_keys(cfg):
         return {str(k): interval for k in keys}
     return {}
 
+
+def send_key(ser, key):
+    """Send a key press to the Arduino. A leading '*' means fast (minimal hold)."""
+    fast = key.startswith("*")
+    if fast:
+        key = key[1:]
+    if key.startswith("F"):
+        cmd = f"{'f' if fast else 'F'} {int(key[1:])}\n"
+    else:
+        cmd = f"{'k' if fast else 'K'} {key}\n"
+    ser.write(cmd.encode())
+
 # ── Shared state for web panel ──
 _shared = {"running": False, "keys": [], "cooldowns": {}, "current": "", "count": 0}
 
@@ -279,10 +291,7 @@ def main():
             if now - last[k] >= cd:
                 _shared["current"] = k
                 try:
-                    if k.startswith("F"):
-                        ser.write(f"F {int(k[1:])}\n".encode())
-                    else:
-                        ser.write(f"K {k}\n".encode())
+                    send_key(ser, k)
                 except (ValueError, serial.SerialException):
                     print(f"[!] Invalid key '{k}' or serial error — skipping")
                 last[k] = now
