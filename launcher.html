@@ -130,11 +130,8 @@
   <div class="section">
     <div class="head" onclick="toggle(this)"><span>⚔️</span><h3>Skill Spammer Config</h3><span class="arrow">▶</span></div>
     <div class="body">
-      <label>Keys (F1-F10 or 0-9)</label>
-      <input type="text" id="s-keys" value="F2,5,6">
-      <div class="row">
-        <div><label>Interval (s)</label><input type="number" id="s-int" value="1" step="0.1" min="0.1"></div>
-      </div>
+      <label>Per-key cooldowns (key:seconds, one per line)</label>
+      <textarea id="s-keys" rows="6" spellcheck="false" placeholder="F1:0.2&#10;1:5&#10;2:3"></textarea>
       <button class="btn-save" onclick="saveSpammer()">Save</button>
       <span class="saved" id="ss">Saved!</span>
     </div>
@@ -275,14 +272,19 @@ async function loadGem(){try{
 
 // ── Spammer ──
 async function saveSpammer(){
-  let k=document.getElementById('s-keys').value.split(',').map(k=>k.trim()).filter(Boolean);
+  let lines=document.getElementById('s-keys').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  let keys={};
+  for(let l of lines){
+    let m=l.match(/^(.+?)[:：]\s*([0-9.]+)\s*$/);
+    if(m) keys[m[1].trim()]=parseFloat(m[2]);
+  }
   await fetch('/api/spammer_config',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({keys:k,interval:parseFloat(document.getElementById('s-int').value)||1})});
+    body:JSON.stringify({keys})});
   flash('ss')
 }
 async function loadSpammer(){try{
   let r=await fetch('/api/spammer_config'),c=await r.json();
-  document.getElementById('s-keys').value=c.keys.join(',');document.getElementById('s-int').value=c.interval
+  document.getElementById('s-keys').value=Object.entries(c.keys||{}).map(([k,v])=>`${k}:${v}`).join('\n')
 }catch(e){}}
 
 // ── Live poll ──

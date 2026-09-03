@@ -217,22 +217,42 @@ SPAMMER_CONFIG = SCRIPT_DIR / "skill_spammer/skill_spammer_config.yaml"
 def load_spammer_config():
     if SPAMMER_CONFIG.exists():
         with open(SPAMMER_CONFIG, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f.read()) or {}
-    return {"keys": ["F2", "5", "6"], "interval": 1.0}
+            cfg = yaml.safe_load(f.read()) or {}
+        keys = cfg.get("keys", {})
+        if isinstance(keys, list):  # legacy list + interval format
+            interval = float(cfg.get("interval", 1.0))
+            keys = {str(k): interval for k in keys}
+        elif not isinstance(keys, dict):
+            keys = {}
+        out = {}
+        for k, v in keys.items():
+            try:
+                out[str(k)] = float(v)
+            except (ValueError, TypeError):
+                out[str(k)] = 1.0
+        return {"keys": out}
+    return {"keys": {"F2": 1.0, "5": 1.0, "6": 1.0}}
 
-def save_spammer_config(cfg):
+def save_spammer_config(keys):
     with open(SPAMMER_CONFIG, "w", encoding="utf-8") as f:
-        yaml.dump(cfg, f, allow_unicode=True)
+        yaml.dump({"keys": keys}, f, allow_unicode=True)
 
 @app.route("/api/spammer_config", methods=["GET", "POST"])
 def spammer_config():
     if request.method == "POST":
-        data = request.get_json()
-        if data:
-            cfg = {"keys": data.get("keys", ["F2", "5", "6"]),
-                   "interval": float(data.get("interval", 1.0))}
-            save_spammer_config(cfg)
-            return jsonify({"ok": True, "config": cfg})
+        data = request.get_json(silent=True) or {}
+        raw = data.get("keys", {})
+        if isinstance(raw, dict):
+            keys = {}
+            for k, v in raw.items():
+                try:
+                    keys[str(k)] = float(v)
+                except (ValueError, TypeError):
+                    pass
+            if keys:
+                save_spammer_config(keys)
+                return jsonify({"ok": True, "keys": keys})
+        return jsonify({"ok": False, "error": "invalid keys"}), 400
     return jsonify(load_spammer_config())
 
 
