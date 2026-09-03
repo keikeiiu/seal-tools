@@ -43,12 +43,15 @@ def get_day_numbers(page):
 
 
 def is_logged_in(page, checkin_url):
-    """Navigate to check-in page; True if session valid (get(N) links present)."""
+    """Navigate to check-in page; True if still logged in (not redirected to login).
+
+    Only the login redirect is checked. A valid session can still show no claimable
+    days (event ended / already claimed today), which is handled separately in
+    do_checkin() — treating that as "session expired" here was a false alarm.
+    """
     page.goto(checkin_url, wait_until="domcontentloaded")
     page.wait_for_timeout(2000)
-    if "login" in page.url:
-        return False
-    return len(get_day_numbers(page)) > 0
+    return "login" not in page.url
 
 
 def do_login(page, username, password, login_url):
@@ -91,7 +94,7 @@ def do_checkin(page, checkin_url):
 
     days = get_day_numbers(page)
     if not days:
-        return False, "找不到可點擊日期"
+        return False, "找不到可點擊日期（活動可能已結束）"
 
     day_n = days[0]
     print(f"  → 簽到第 {day_n} 天...")
@@ -121,11 +124,58 @@ def do_checkin(page, checkin_url):
         return False, "無回應"
 
 
-def process_account(p, acc, login_url, checkin_url):
-    """Process one account. Returns (ok, message)."""
+def do_lottery_join(page, lottery_url):
+    """Navigate to the lottery page and submit the daily join (POST lottery_entry.php).
+
+    Uses the same POST the 會員登入 button fires, so it works regardless of the
+    button's visibility state (e.g. already-joined accounts).
+    """
+    page.goto(lottery_url, wait_until="domcontentloaded")
+    page.wait_for_timeout(2000)
+
+    try:
+        data = page.evaluate(
+            """
+            async () => {
+                const r = await fetch('lottery_entry.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: 'ref='
+                });
+                return await r.json();
+            }
+            """
+        )
+    except Exception as e:
+        return False, f"請求失敗: {e}"
+
+    ret = str(data.get("RetVal", "")) if isinstance(data, dict) else ""
+
+    if ret == "Y":
+        return True, "登錄成功"
+    elif ret == "-3":
+        return True, "您已經登錄過了"
+    elif ret == "-1":
+        return False, "需要登入（session 過期）"
+    elif ret == "-5":
+        return False, "活動期間外"
+    elif ret == "-14":
+        return False, "請稍後再領取"
+    else:
+        return False, f"未知回應: {data}"
+
+
+def process_account(p, acc, login_url, checkin_url, lottery_url=None):
+    """Process one account: daily check-in + optional lottery join. Returns (ok, message)."""
     username = acc["username"]
     password = acc["password"]
     sp = session_path(username)
+
+    page = None
+    context = None
 
     # ── Try headless with saved session first ──
     if sp.exists():
@@ -134,29 +184,34 @@ def process_account(p, acc, login_url, checkin_url):
         page.on("dialog", lambda d: d.accept())
         if is_logged_in(page, checkin_url):
             print(f"[{username}] 使用已存 session")
-            ok, msg = do_checkin(page, checkin_url)
+        else:
             context.close()
-            return ok, msg
-        context.close()
-        print(f"[{username}] session 過期，需重新登入")
+            page = None
+            print(f"[{username}] session 過期，需重新登入")
 
-    # ── Visible browser for login (manual captcha) ──
-    context = p.chromium.launch(headless=False).new_context()
-    page = context.new_page()
-    page.on("dialog", lambda d: d.accept())
+    # ── Visible browser for login (manual captcha) if still needed ──
+    if page is None:
+        context = p.chromium.launch(headless=False).new_context()
+        page = context.new_page()
+        page.on("dialog", lambda d: d.accept())
 
-    do_login(page, username, password, login_url)
+        do_login(page, username, password, login_url)
 
-    # Verify login succeeded
-    if not is_logged_in(page, checkin_url):
-        context.close()
-        return False, "登入失敗（檢查帳號密碼或 captcha）"
+        if not is_logged_in(page, checkin_url):
+            context.close()
+            return False, "登入失敗（檢查帳號密碼或 captcha）"
 
-    # Save session for next time
-    context.storage_state(path=str(sp))
-    print(f"[{username}] session 已儲存")
+        context.storage_state(path=str(sp))
+        print(f"[{username}] session 已儲存")
 
+    # ── Daily actions ──
     ok, msg = do_checkin(page, checkin_url)
+    if lottery_url:
+        lok, lmsg = do_lottery_join(page, lottery_url)
+        msg = f"{msg}；抽獎：{lmsg}"
+        if not lok:
+            ok = False
+
     context.close()
     return ok, msg
 
@@ -170,6 +225,7 @@ def main():
 
     login_url = cfg.get("login_url", "https://security.sponline.com.tw/login/login.php")
     checkin_url = cfg.get("checkin_url", "https://security.sponline.com.tw/event/20260806/")
+    lottery_url = cfg.get("lottery_url")  # optional — daily lottery join
 
     print(f"共 {len(accounts)} 個帳號\n")
 
@@ -179,7 +235,7 @@ def main():
             username = acc.get("username", "?")
             print(f"\n=== {username} ===")
             try:
-                ok, msg = process_account(p, acc, login_url, checkin_url)
+                ok, msg = process_account(p, acc, login_url, checkin_url, lottery_url)
             except Exception as e:
                 ok, msg = False, f"錯誤: {e}"
             results.append((username, ok, msg))

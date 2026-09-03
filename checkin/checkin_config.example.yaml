@@ -3,7 +3,8 @@
 # `checkin_config.yaml` is gitignored (contains passwords) — never commit it.
 
 login_url: "https://security.sponline.com.tw/login/login.php"
-checkin_url: "https://security.sponline.com.tw/event/20260806/"   # update per event
+checkin_url: "https://security.sponline.com.tw/event/20260903_3/index.php"   # update per event
+lottery_url: "https://www.sponline.com.tw/intro/20260903/"   # optional — daily lottery join (update per event)
 
 accounts:
   - username: "your_account_1"
