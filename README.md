@@ -21,6 +21,7 @@ A bundle of **GameGuard-safe** automation tools for Seal Online (希望戀曲 / 
 | `gem_composer/gem_composer_config.yaml` | Gem composer config (grade positions, movement deltas) |
 | `skill_spammer/skill_spammer_config.yaml` | Spammer config (keys, interval) |
 | `docs/ATTRIBUTE_REFERENCE.md` | Full attribute list + probabilities per grade |
+| `docs/CALIBRATION.md` | **How to re-tune screen coords on another PC** (OCR region + gem composer) |
 | `arduino/seal_mouse/seal_mouse.ino` | Arduino firmware (upload this) |
 | `requirements.txt` | Python dependencies |
 | `setup.bat` | One-click Windows setup |
@@ -131,7 +132,7 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 | **Gem Composer** | Open the gem-combine window — **needs custom calibration (see note)** | **F12** start/stop · **F9** next grade · **F11** quit |
 | **Skill Spammer** | Set the keys in `skill_spammer/skill_spammer_config.yaml` | **F12** start/stop · **F11** quit |
 
-> ⚠️ **Gem Composer will likely not work on a fresh machine.** It uses hardcoded screen coordinates, so it depends on the exact **monitor resolution, display scale/ratio, and game window size**. You must re-measure the coordinates in `gem_composer/gem_composer_config.yaml` for the specific setup (see the Configuration section) — otherwise the clicks land in the wrong place.
+> ⚠️ **Gem Composer will likely not work on a fresh machine.** It uses hardcoded screen coordinates, so it depends on the exact **monitor resolution, display scale/ratio, and game window size**. You must re-measure the coordinates in `gem_composer/gem_composer_config.yaml` for the specific setup (see the Configuration section) — otherwise the clicks land in the wrong place. **The same applies to the Tuner's OCR capture region.** Full steps to re-tune both on a new PC: **`docs/CALIBRATION.md`**.
 
 ### If it doesn't work
 - **"Arduino not found"** → the USB cable is probably charge-only, or the board isn't a **Pro Micro (ATmega32U4)**.
