@@ -410,12 +410,44 @@ class TuningOCR:
         return "\n".join(lines)
 
 
-# ── Standalone test ────────────────────────────────────────
+# ── Standalone test / calibration ─────────────────────────
+def save_grid_overlay(img, path, step=50, title=""):
+    """Draw grid + pixel labels on an image so the region can be re-measured."""
+    out = img.copy()
+    H, W = out.shape[:2]
+    over = out.copy()
+    for x in range(0, W, step):
+        cv2.line(over, (x, 0), (x, H), (0, 255, 255), 1)
+        cv2.putText(over, str(x), (x + 2, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+    for y in range(0, H, step):
+        cv2.line(over, (0, y), (W, y), (0, 255, 255), 1)
+        cv2.putText(over, str(y), (2, y + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+    cv2.addWeighted(over, 0.35, out, 0.65, 0, out)
+    if title:
+        cv2.rectangle(out, (0, 0), (W - 1, H - 1), (0, 255, 255), 2)
+    cv2.imwrite(str(path), out)
+    return out
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding='utf-8')
 
     print("Seal Online 發條 OCR Engine")
     print("=" * 40)
+
+    import ctypes
+    user32 = ctypes.windll.user32
+    sw = user32.GetSystemMetrics(0)
+    sh = user32.GetSystemMetrics(1)
+    print(f"Screen: {sw} x {sh}")
+    win = find_game_window()
+    print(f"Game window (TW_LIVE): {win}")
+    print(f"TUNING_REGION: {TUNING_REGION}")
+    if win:
+        L, T, W, H = win
+        rg = TUNING_REGION
+        print(f"-> capture on-screen ({L + rg['left']}, {T + rg['top']}), size {rg['width']}x{rg['height']}")
+    print("-" * 40)
 
     ocr = TuningOCR()
     print("Scanning...")
@@ -423,6 +455,7 @@ if __name__ == "__main__":
 
     if result is None:
         print("ERROR: TW_LIVE window not found! Is the game running?")
+        print("Check the game window title (GAME_WINDOW) is 'TW_LIVE'.")
     else:
         print(f"\nGrade: {result['grade']}")
         print(f"Color scores: {result['grade_color_scores']}")
@@ -430,4 +463,15 @@ if __name__ == "__main__":
         for i, attr in enumerate(result['attributes'], 1):
             print(f"Attr {i}: {attr}")
         print(f"\nCapture saved: {result['capture']}")
+
+        # Also save a grid version for easy calibration
+        try:
+            cap = cv2.imread(result["capture"])
+            if cap is not None and result["window"]:
+                gpath = LOG_DIR / "captures" / "grid_last.png"
+                # Draw the GRADE_AREA + a 50px grid so coordinates are readable
+                save_grid_overlay(cap, gpath)
+                print(f"Grid calibration image: {gpath}")
+        except Exception as e:
+            print(f"(grid save skipped: {e})")
         print(f"Log: {LOG_DIR / 'ocr_log.jsonl'}")
