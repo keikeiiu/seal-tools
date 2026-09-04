@@ -1,4 +1,4 @@
-# Seal Online Automation Tools — Python dependencies
+# Seal Online Automation Tools - Python dependencies
 # Tested on Windows + Python 3.12
 mss>=9.0.0
 opencv-python>=4.8.0
