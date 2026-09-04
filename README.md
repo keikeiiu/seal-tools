@@ -48,7 +48,7 @@ seal-tools/
 - **Arduino Pro Micro (ATmega32U4)** — the only board that works (must support native USB HID). *A plain Arduino Uno/Nano will **not** work* (no HID support).
 - A USB cable to connect it to the PC.
 - **Windows 10/11** (the tools use `ctypes.windll`, `winsound`, `taskkill` — Windows-only).
-- **Python 3.10+**.
+- **Python 3.12 (64-bit)** — newer 3.13+ isn't supported by the OCR dependency (`onnxruntime`) yet. 3.10–3.12 should work.
 
 ### Software dependencies (`requirements.txt`)
 
@@ -92,7 +92,7 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 - Internet access.
 
 ### 1. Install Python
-1. Go to <https://www.python.org/downloads/> and download **Python 3.10 or newer** for Windows.
+1. Go to <https://www.python.org/downloads/> and download **Python 3.12 (64-bit)** for Windows.
 2. Run the installer. **Tick "Add Python to PATH"**, then click **Install Now**.
 3. Check it worked: open Command Prompt and type `python --version` — you should see a version number.
 

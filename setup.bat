@@ -7,8 +7,9 @@ echo.
 
 where python >nul 2>nul
 if errorlevel 1 (
-    echo [!] Python not found. Install Python 3.10+ from https://python.org
+    echo [!] Python not found. Install Python 3.12 64-bit from https://python.org
     echo     and tick "Add Python to PATH" during install.
+    echo     NOTE: use 3.12 64-bit - newer 3.13+ is not supported by the OCR dependency.
     pause
     exit /b 1
 )
