@@ -50,6 +50,21 @@ seal-tools/
 - **Windows 10/11** (the tools use `ctypes.windll`, `winsound`, `taskkill` — Windows-only).
 - **Python 3.10+**.
 
+### Software dependencies (`requirements.txt`)
+
+Installed automatically by `setup.bat` (or `pip install -r requirements.txt`):
+
+| Package | What it's for |
+|---------|---------------|
+| `flask` | Launcher web panel (:5002) + tuner panel (:5000) |
+| `pyyaml` | Reads/writes all the YAML config files |
+| `pyserial` | Talks to the Arduino over the COM port |
+| `mss`, `opencv-python`, `numpy`, `Pillow` | Tuner screen capture + OCR image processing |
+| `rapidocr-onnxruntime` | The OCR engine (reads Chinese game text) |
+| `playwright` | Check-in browser automation |
+
+> `playwright` also needs its browser downloaded once: `python -m playwright install chromium` (`setup.bat` does this for you).
+
 ---
 
 ## Quick Start

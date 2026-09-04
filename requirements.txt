@@ -8,3 +8,4 @@ numpy>=1.24.0
 pyserial>=3.5
 rapidocr-onnxruntime>=1.4.0
 flask>=2.3.0
+playwright>=1.40.0
