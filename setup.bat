@@ -49,12 +49,26 @@ rem ---- Step 3: verify the OCR engine can actually load (needs VC++ runtime) --
 echo [3/5] Verifying OCR engine...
 %PY% -c "import onnxruntime, rapidocr_onnxruntime; print('   OCR OK')" >nul 2>nul
 if errorlevel 1 (
-    echo [!] The OCR engine failed to load. The most common cause on a fresh PC is a
-    echo     missing Microsoft Visual C++ Redistributable.
-    echo     Install it:  https://aka.ms/vs/17/release/vc_redist.x64.exe   (run it, then re-run this setup)
-    echo     Then retry:   %PY% -m pip install --force-reinstall rapidocr-onnxruntime
-    pause
-    exit /b 1
+    echo [!] OCR engine failed to load - most likely the Microsoft Visual C++ Redistributable
+    echo     is missing on a fresh PC. Installing it automatically...
+    where curl >nul 2>nul
+    if not errorlevel 1 (
+        curl -L -o "%TEMP%\vc_redist.x64.exe" https://aka.ms/vs/17/release/vc_redist.x64.exe
+    ) else (
+        powershell -Command "Invoke-WebRequest -OutFile \"%TEMP%\vc_redist.x64.exe\" https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    )
+    "%TEMP%\vc_redist.x64.exe" /install /quiet /norestart
+    echo     Re-checking OCR...
+    %PY% -c "import onnxruntime, rapidocr_onnxruntime; print('   OCR OK')" >nul 2>nul
+    if errorlevel 1 (
+        echo.
+        echo [!] Still failing. Install the Redistributable manually (it needs Administrator):
+        echo     https://aka.ms/vs/17/release/vc_redist.x64.exe
+        echo     Then retry:  %PY% -m pip install --force-reinstall rapidocr-onnxruntime
+        pause
+        exit /b 1
+    )
+    echo     OCR OK after installing VC++ runtime.
 )
 
 rem ---- Step 4: browser for check-in ----
