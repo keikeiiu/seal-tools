@@ -25,13 +25,19 @@ Everything else (install, config format) is not machine-specific.
 
 ## 1. Magic Tuner — OCR capture region
 
-The tuner captures a fixed box and runs OCR on it. The box is defined in [`tuner/ocr_engine.py`](../tuner/ocr_engine.py):
+The tuner captures a fixed box and runs OCR on it. The box is defined in [`tuner/config.yaml`](../tuner/config.yaml) under the **`ocr:`** key (no code edits needed):
 
-```python
-TUNING_REGION = {"left": 1140, "top": 840, "width": 300, "height": 320}
+```yaml
+ocr:
+  region: {left: 1140, top: 840, width: 300, height: 320}   # box, offset from game window top-left
+  grade_area: {x1: 149, y1: 1, x2: 232, y2: 44}             # grade letter (OCR + color)
+  grade_y: [1, 44]                                          # grade-line Y band
+  attr_y: [42, 140]                                         # attribute Y band
+  remaining_y: [190, 235]                                   # spring-count Y band
+  row_height: 25                                            # pixels per attribute row
 ```
 
-`left`/`top` are **pixel offsets from the game window's top-left**. `width`/`height` is the box size. If this box isn't over the 發條 tuning window, OCR reads empty or garbage.
+`region.left`/`region.top` are **pixel offsets from the game window's top-left**. `region.width`/`region.height` is the box size. If this box isn't over the 發條 tuning window, OCR reads empty or garbage.
 
 ### 1.1 Run the diagnostic (game open, 發條 window open)
 
@@ -61,34 +67,24 @@ It also saves a grid overlay to **`tuner\logs\captures\grid_last.png`**.
 
 ### 1.3 Read the grid overlay
 
-`grid_last.png` is the **current capture box**, with a 50px grid and pixel labels drawn on top. Look at it:
+`grid_last.png` is the **current capture box**, with a 50px grid and pixel labels drawn on top, and the grade-letter area outlined in red. Look at it:
 
 - **Box is right** on the 發條 window (grade letter + 3 attribute lines visible) → done.
 - **Box is empty/black or over the wrong part of the screen** → it's misaligned. The grid labels give you the **offset within the box** where the grade + attributes currently appear, which tells you how far to shift `left`/`top`.
 
-### 1.4 Adjust `TUNING_REGION`
+### 1.4 Adjust the config
 
-Edit `tuner/ocr_engine.py`:
+Edit `tuner/config.yaml` → `ocr:`:
 
-```python
-TUNING_REGION = {"left": <L>, "top": <T>, "width": 300, "height": 320}
-```
+- If the box is too far **right**, decrease `region.left`. Too far **left**, increase `region.left`. Same for `region.top` (up/down).
+- Keep `region.width`/`region.height` enough to cover the grade + the 3 attribute lines (300×320 worked on the source machine; adjust if your font/window size is different).
+- `grade_y` / `attr_y` / `remaining_y` are the Y bands for the grade line, the attributes, and the spring count. If OCR picks up the wrong text (or misses the attributes), narrow/widen these.
+- `grade_area` is the grade letter sub-box (used by both OCR and the pixel-color fallback). If the color-based grade is wrong, nudge it so it only covers the letter. (N=white, G=blue, DG=yellow, XG=red, SG=purple.)
+- `row_height` is the vertical distance between attribute rows.
 
-- If the box is too far **right**, decrease `left`. Too far **left**, increase `left`. Same for `top` (up/down).
-- Keep `width`/`height` enough to cover the grade + the 3 attribute lines (300×320 worked on the source machine; adjust if your font/window size is different).
-- After each change, re-run `py -m tuner.ocr_engine` to re-check.
+After each change, re-run `py -m tuner.ocr_engine` to re-check.
 
 **Tip:** keep `save_captures: true` in `tuner/config.yaml` so every scan writes a PNG you can inspect.
-
-### 1.5 If grade is still wrong (color detection)
-
-The tuner also guesses the grade by **pixel color** of the grade letter in a fixed sub-area:
-
-```python
-GRADE_AREA = {"x1": 149, "y1": 1, "x2": 232, "y2": 44}   # capture-relative coords
-```
-
-If OCR is fine but the color-based grade is wrong, nudge this box so it only covers the grade letter. (N=white, G=blue, DG=yellow, XG=red, SG=purple.)
 
 ---
 
@@ -134,8 +130,8 @@ Start Gem Composer at grade **N**, watch where the mouse goes. If each click is 
 
 | What | File | What to change | Machine-specific because |
 |------|------|----------------|--------------------------|
-| Tuner OCR box | `tuner/ocr_engine.py` | `TUNING_REGION` | Resolution, display scale, game window size |
-| Tuner grade color area | `tuner/ocr_engine.py` | `GRADE_AREA` | Same |
+| Tuner OCR box | `tuner/config.yaml` → `ocr:` | `region`, `grade_y`, `attr_y`, `remaining_y`, `row_height` | Resolution, display scale, game window size |
+| Tuner grade color area | `tuner/config.yaml` → `ocr:` | `grade_area` | Same |
 | Tuner captures | `tuner/config.yaml` | `save_captures` | enable for debugging |
 | Gem Composer clicks | `gem_composer/gem_composer_config.yaml` | `grade_positions`, `movements` | Resolution, display scale, window size |
 

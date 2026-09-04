@@ -236,6 +236,13 @@ All config is **YAML**, reloaded live by the tools (so you can edit while runnin
 
 ```yaml
 arduino_port: COM5
+ocr:                          # OCR capture box (pixel coords - measure per PC, see docs/CALIBRATION.md)
+  region: {left: 1140, top: 840, width: 300, height: 320}
+  grade_area: {x1: 149, y1: 1, x2: 232, y2: 44}
+  grade_y: [1, 44]
+  attr_y: [42, 140]
+  remaining_y: [190, 235]
+  row_height: 25
 target_grade: DG              # stop when this grade is reached (N/G/DG/XG/SG)
 max_retries: 999999           # safety cap on rolls
 save_captures: true
@@ -263,6 +270,7 @@ filter:
 - `rules` = the goal you're rolling for. `count` = how many of the 3 slots must match that attribute.
 - `override_rules` = alternative rolls worth keeping immediately.
 - Attribute names must match those in `ATTRIBUTE_REFERENCE.md`.
+- **`ocr:` (the first block) is the machine-specific part — re-measure it on any new PC.** Full steps: [`docs/CALIBRATION.md`](docs/CALIBRATION.md).
 
 ### `gem_composer_config.yaml` — Gem Composer
 

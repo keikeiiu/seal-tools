@@ -1,4 +1,11 @@
 arduino_port: COM5
+ocr:                                   # pixel coords for the OCR capture box (measure per PC)
+  region: {left: 1140, top: 840, width: 300, height: 320}
+  grade_area: {x1: 149, y1: 1, x2: 232, y2: 44}
+  grade_y: [1, 44]
+  attr_y: [42, 140]
+  remaining_y: [190, 235]
+  row_height: 25
 filter:
   enabled: true
   match_mode: per_attr

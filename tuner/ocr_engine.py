@@ -29,8 +29,18 @@ LOG_DIR.mkdir(exist_ok=True)
 # Game window name
 GAME_WINDOW = "TW_LIVE"
 
-# Tuning window capture region (relative to game window top-left)
-TUNING_REGION = {"left": 1140, "top": 840, "width": 300, "height": 320}
+# ── Default capture geometry ─────────────────────────────────
+# All coords below are overridden by tuner/config.yaml -> "ocr:" (see CALIBRATION.md).
+# Region is an offset from the game window's top-left.
+DEFAULT_REGION = {"left": 1140, "top": 840, "width": 300, "height": 320}
+# Grade-letter sub-area (capture-relative) used for OCR + pixel-color detection.
+DEFAULT_GRADE_AREA = {"x1": 149, "y1": 1, "x2": 232, "y2": 44}
+# Capture-relative Y windows (inclusive) for the grade line, the attributes, and the spring count.
+DEFAULT_GRADE_Y = (1, 44)
+DEFAULT_ATTR_Y = (42, 140)
+DEFAULT_REMAINING_Y = (190, 235)
+# Height in pixels that each attribute row occupies.
+DEFAULT_ROW_HEIGHT = 25
 
 # ── OCR text cleanup ────────────────────────────────────────
 import re
@@ -85,18 +95,7 @@ def clean_text(text):
 
 
 # ── Grade detection: pixel color thresholds ─────────────────
-# GRADE label ends around x≈100, grade letter at x≈170-220
-# Capture now at (1140,840), so these are capture-relative
-GRADE_AREA = {"x1": 149, "y1": 1, "x2": 232, "y2": 44}
-
-# ── Text line Y ranges (capture coords, origin at 1140,840) ─
-# Note: TEXT_LINES kept for reference, actual line detection uses Y-filtering on full OCR
-_TEXT_LINES = [
-    {"name": "grade",   "y1": 5,  "y2": 28,  "x1": 0, "x2": 300},
-    {"name": "attr1",   "y1": 45, "y2": 65,  "x1": 0, "x2": 300},
-    {"name": "attr2",   "y1": 72, "y2": 92,  "x1": 0, "x2": 300},
-    {"name": "attr3",   "y1": 98, "y2": 118, "x1": 0, "x2": 300},
-]
+# (grade letter is localised by self.grade_area, see DEFAULT_GRADE_AREA)
 
 
 def find_game_window():
@@ -124,11 +123,73 @@ def find_game_window():
 
 
 class TuningOCR:
-    """Reads the 發條 window: grade + 3 Chinese attribute lines."""
+    """Reads the 發條 window: grade + 3 Chinese attribute lines.
 
-    def __init__(self):
+    Capture geometry is read from tuner/config.yaml -> "ocr:" if present,
+    otherwise the module defaults above are used.
+    """
+
+    def __init__(self, config=None):
         self.window = None
         self.engine = None
+        # Geometry (defaults, then override from config['ocr'])
+        self.region = dict(DEFAULT_REGION)
+        self.grade_area = dict(DEFAULT_GRADE_AREA)
+        self.grade_y = tuple(DEFAULT_GRADE_Y)
+        self.attr_y = tuple(DEFAULT_ATTR_Y)
+        self.remaining_y = tuple(DEFAULT_REMAINING_Y)
+        self.row_height = int(DEFAULT_ROW_HEIGHT)
+        if config is None:
+            config = self._read_config_yaml()
+        if config:
+            self._apply_config(config)
+
+    def _read_config_yaml(self):
+        p = SCRIPT_DIR / "config.yaml"
+        if not p.exists():
+            return None
+        try:
+            import yaml
+            return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return None
+
+    def _apply_config(self, config):
+        """Take the 'ocr' block and override geometry from it (missing keys keep defaults)."""
+        ocr = config.get("ocr") or {}
+        if not isinstance(ocr, dict):
+            return
+        r = ocr.get("region")
+        if isinstance(r, dict):
+            for k in ("left", "top", "width", "height"):
+                if k in r:
+                    try:
+                        self.region[k] = int(r[k])
+                    except (TypeError, ValueError):
+                        pass
+        ga = ocr.get("grade_area")
+        if isinstance(ga, dict):
+            for k in ("x1", "y1", "x2", "y2"):
+                if k in ga:
+                    try:
+                        self.grade_area[k] = int(ga[k])
+                    except (TypeError, ValueError):
+                        pass
+        for key, attr in (("grade_y", "grade_y"),
+                          ("attr_y", "attr_y"),
+                          ("remaining_y", "remaining_y")):
+            v = ocr.get(key)
+            if isinstance(v, (list, tuple)) and len(v) == 2:
+                try:
+                    setattr(self, attr, (int(v[0]), int(v[1])))
+                except (TypeError, ValueError):
+                    pass
+        rh = ocr.get("row_height")
+        if rh:
+            try:
+                self.row_height = int(rh)
+            except (TypeError, ValueError):
+                pass
 
     def _init_ocr(self):
         """Lazy-load OCR models."""
@@ -151,10 +212,10 @@ class TuningOCR:
         """Capture the tuning window. Returns BGR numpy array."""
         L, T, W, H = self.window
         region = {
-            "left": L + TUNING_REGION["left"],
-            "top": T + TUNING_REGION["top"],
-            "width": TUNING_REGION["width"],
-            "height": TUNING_REGION["height"],
+            "left": L + self.region["left"],
+            "top": T + self.region["top"],
+            "width": self.region["width"],
+            "height": self.region["height"],
         }
         with mss.mss() as sct:
             img = sct.grab(region)
@@ -164,7 +225,7 @@ class TuningOCR:
         """Detect grade letter by pixel color.
         N = white text (black border), G = blue, DG = yellow, XG = red, SG = purple.
         """
-        a = GRADE_AREA
+        a = self.grade_area
         crop = img[a["y1"]:a["y2"], a["x1"]:a["x2"]]
         B = crop[:, :, 0].astype(int)
         G_ch = crop[:, :, 1].astype(int)
@@ -262,7 +323,9 @@ class TuningOCR:
             cv2.imwrite(str(capture_path), img)
 
         # 1. Grade: try OCR first (more reliable for DG/G), fall back to color
-        grade_area = img[1:44, 149:232]  # exact grade letter area
+        gy1, gy2 = self.grade_y
+        ga = self.grade_area
+        grade_area = img[gy1:gy2, ga["x1"]:ga["x2"]]  # grade letter area
         grade_ocr = self._ocr(grade_area)
         grade = None
         for bbox, text, conf in grade_ocr:
@@ -287,24 +350,26 @@ class TuningOCR:
         H, W = img.shape[:2]
         all_results = self._ocr(img)  # Single OCR pass for everything
 
-        # Grade line: y=1-44 in capture (game y=840-880)
+        # Grade line: y within grade_y in capture
         grade_line = []
         for bbox, text, conf in all_results:
             y = int(min(p[1] for p in bbox))
-            if 1 <= y <= 44 and conf > 0.1 and len(text.strip()) > 1:
+            if gy1 <= y <= gy2 and conf > 0.1 and len(text.strip()) > 1:
                 t = clean_text(text.strip())
                 if t and t != '300':
                     grade_line.append(t)
 
         # Attributes: full-image OCR + Y-filter (simpler & works with RapidOCR)
+        gy1, gy2 = self.grade_y
+        at1, at2 = self.attr_y
         rows = {}
         for bbox, text, conf in all_results:
             y = int(min(p[1] for p in bbox))
             t = clean_text(text.strip())
-            # Only capture attribute zone (y=45-135), skip grade/header/count/buttons
-            if conf < 0.3 or len(t) < 2 or y < 42 or y > 140:
+            # Only capture attribute zone, skip grade/header/count/buttons
+            if conf < 0.3 or len(t) < 2 or y < at1 or y > at2:
                 continue
-            row_key = y // 25
+            row_key = y // self.row_height
             if row_key not in rows:
                 rows[row_key] = []
             if t not in rows[row_key]:
@@ -325,7 +390,7 @@ class TuningOCR:
                 elif has_sign or (is_num and len(t) <= 3): values.append(t)
                 else: labels.append(t)
 
-            y_approx = rk * 25  # capture-relative
+            y_approx = rk * self.row_height  # capture-relative
             attr_lines.append({
                 "y": y_approx,
                 "labels": labels,
@@ -356,12 +421,13 @@ class TuningOCR:
 
         grade_line = list(dict.fromkeys(grade_line))
 
-        # 3. Remaining spring count (game y=1040, capture y=200)
+        # 3. Remaining spring count
+        ry1, ry2 = self.remaining_y
         remaining = None
         for bbox, text, conf in all_results:
             y = int(min(p[1] for p in bbox))
             t = text.strip()
-            if 190 <= y <= 235 and conf > 0.4 and len(t) <= 6:
+            if ry1 <= y <= ry2 and conf > 0.4 and len(t) <= 6:
                 parts = t.split()
                 for p in reversed(parts):
                     if p.isdigit() and 1 <= int(p) <= 99999:
@@ -435,6 +501,7 @@ if __name__ == "__main__":
     print("Seal Online 發條 OCR Engine")
     print("=" * 40)
 
+    ocr = TuningOCR()
     import ctypes
     user32 = ctypes.windll.user32
     sw = user32.GetSystemMetrics(0)
@@ -442,14 +509,15 @@ if __name__ == "__main__":
     print(f"Screen: {sw} x {sh}")
     win = find_game_window()
     print(f"Game window (TW_LIVE): {win}")
-    print(f"TUNING_REGION: {TUNING_REGION}")
+    print(f"region:     {ocr.region}")
+    print(f"grade_area: {ocr.grade_area}")
+    print(f"y-windows:  grade{ocr.grade_y} attr{ocr.attr_y} remaining{ocr.remaining_y} row{ocr.row_height}")
     if win:
         L, T, W, H = win
-        rg = TUNING_REGION
+        rg = ocr.region
         print(f"-> capture on-screen ({L + rg['left']}, {T + rg['top']}), size {rg['width']}x{rg['height']}")
     print("-" * 40)
 
-    ocr = TuningOCR()
     print("Scanning...")
     result = ocr.scan()
 
@@ -469,9 +537,12 @@ if __name__ == "__main__":
             cap = cv2.imread(result["capture"])
             if cap is not None and result["window"]:
                 gpath = LOG_DIR / "captures" / "grid_last.png"
-                # Draw the GRADE_AREA + a 50px grid so coordinates are readable
                 save_grid_overlay(cap, gpath)
-                print(f"Grid calibration image: {gpath}")
+                # Outline the grade-letter area on the grid image
+                ga = ocr.grade_area
+                cv2.rectangle(cap, (ga["x1"], ga["y1"]), (ga["x2"], ga["y2"]), (0, 0, 255), 1)
+                cv2.imwrite(str(gpath), cap)
+                print(f"Grid calibration image: {gpath} (grade box outlined)")
         except Exception as e:
             print(f"(grid save skipped: {e})")
         print(f"Log: {LOG_DIR / 'ocr_log.jsonl'}")
