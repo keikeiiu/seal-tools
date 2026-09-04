@@ -26,12 +26,12 @@ if errorlevel 1 (
 echo [i] Using Python command: %PY%
 
 rem ---- Step 1: upgrade pip (wrapped so a failure here doesn't abort the whole setup) ----
-echo [1/4] Upgrading pip...
+echo [1/5] Upgrading pip...
 %PY% -m pip install --upgrade pip
 if errorlevel 1 echo     [warn] pip upgrade failed - continuing with current pip.
 
 rem ---- Step 2: install dependencies ----
-echo [2/4] Installing Python dependencies...
+echo [2/5] Installing Python dependencies...
 %PY% -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
@@ -45,16 +45,28 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem ---- Step 3: browser for check-in ----
-echo [3/4] Installing browser for check-in (one-time download)...
+rem ---- Step 3: verify the OCR engine can actually load (needs VC++ runtime) ----
+echo [3/5] Verifying OCR engine...
+%PY% -c "import onnxruntime, rapidocr_onnxruntime; print('   OCR OK')" >nul 2>nul
+if errorlevel 1 (
+    echo [!] The OCR engine failed to load. The most common cause on a fresh PC is a
+    echo     missing Microsoft Visual C++ Redistributable.
+    echo     Install it:  https://aka.ms/vs/17/release/vc_redist.x64.exe   (run it, then re-run this setup)
+    echo     Then retry:   %PY% -m pip install --force-reinstall rapidocr-onnxruntime
+    pause
+    exit /b 1
+)
+
+rem ---- Step 4: browser for check-in ----
+echo [4/5] Installing browser for check-in (one-time download)...
 %PY% -m playwright install chromium
 if errorlevel 1 (
     echo     [warn] Browser download failed - check-in won't run, but other tools will.
     echo     Fix later with:  %PY% -m playwright install chromium
 )
 
-rem ---- Step 4: check Arduino ----
-echo [4/4] Checking Arduino...
+rem ---- Step 5: check Arduino ----
+echo [5/5] Checking Arduino...
 %PY% -c "import serial.tools.list_ports as p; ports=[x.device for x in p.comports() if x.vid==0x2341]; print('   Arduino:', ports[0] if ports else 'NOT FOUND (plug in the Pro Micro)')"
 
 echo.

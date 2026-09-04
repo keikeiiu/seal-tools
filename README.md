@@ -63,6 +63,8 @@ Installed automatically by `setup.bat` (or `pip install -r requirements.txt`):
 | `rapidocr-onnxruntime` | The OCR engine (reads Chinese game text) |
 | `playwright` | Check-in browser automation |
 
+> ⚠️ **On a fresh Windows PC**, the OCR engine (`rapidocr-onnxruntime` → `onnxruntime`) may fail to load with `ImportError: DLL load failed while importing onnxruntime_pybind11_state`. That's a **missing Microsoft Visual C++ Redistributable**, not a Python problem. Install it once: <https://aka.ms/vs/17/release/vc_redist.x64.exe>, then re-run `setup.bat` (which now detects this and tells you).
+
 > `playwright` also needs its browser downloaded once: `python -m playwright install chromium` (`setup.bat` does this for you).
 
 ---
@@ -343,6 +345,7 @@ Presses the configured keys in a loop.
 | Tool "ends immediately" after Load | A stale `control.txt` left a `quit` command. The launcher clears it automatically; you can also delete `control.txt` / `gem_control.txt` / `spammer_control.txt`. |
 | Zombie process / COM port busy | Quit (not just Stop) to kill the full process tree, or run `taskkill /F /IM python.exe` in a worst case. |
 | OCR reads garbage / wrong grade | Adjust the capture region in `tuner/ocr_engine.py` for your resolution/DPI. |
+| Tool crashes on Load with `DLL load failed ... onnxruntime_pybind11_state` | Missing Microsoft **Visual C++ Redistributable**. Install <https://aka.ms/vs/17/release/vc_redist.x64.exe>, then reinstall: `py -m pip install --force-reinstall rapidocr-onnxruntime`. |
 | Nothing clicks in-game | Game window must be focused; the Arduino must be the active HID device. |
 
 ---
