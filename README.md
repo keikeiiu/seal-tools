@@ -348,6 +348,37 @@ Presses the configured keys in a loop.
 | Tool crashes on Load with `DLL load failed ... onnxruntime_pybind11_state` | Missing Microsoft **Visual C++ Redistributable**. Install <https://aka.ms/vs/17/release/vc_redist.x64.exe>, then reinstall: `py -m pip install --force-reinstall rapidocr-onnxruntime`. |
 | Nothing clicks in-game | Game window must be focused; the Arduino must be the active HID device. |
 
+### Manual fix: `onnxruntime` "DLL load failed" (missing Visual C++ runtime)
+
+On a brand-new Windows PC the OCR engine may crash as soon as a tool loads, with an error in `tool_error.log` ending in:
+
+```
+ImportError: DLL load failed while importing onnxruntime_pybind11_state: 找不到指定的模組
+```
+
+(`找不到指定的模組` means "The specified module could not be found".) This is **not** a Python-version problem — it's a missing **Microsoft Visual C++ Redistributable**, which `onnxruntime`'s native library needs. The package is installed; the runtime DLL (`vcruntime140.dll`, `msvcp140.dll`) is not.
+
+`setup.bat` fixes this automatically (step `[3/5]`). If you need to do it by hand:
+
+1. **Download** the 64-bit redistributable:
+   ```
+   https://aka.ms/vs/17/release/vc_redist.x64.exe
+   ```
+2. **Run it** and click **Install**. (If it won't install, right-click → **Run as administrator**.) No reboot needed.
+3. **Verify** it worked:
+   ```
+   py -c "import onnxruntime; print(onnxruntime.__version__)"
+   ```
+   A version number (e.g. `1.28.0`) means it's fixed. The same DLL error means it isn't — see step 4.
+4. **If it still fails**, `onnxruntime` may be a half-installed leftover from an interrupted `pip install`. Reinstall it cleanly:
+   ```
+   py -m pip uninstall -y onnxruntime rapidocr-onnxruntime
+   py -m pip install --force-reinstall rapidocr-onnxruntime
+   ```
+5. **Reload** the tool — it should now start.
+
+> Note: use `py` in the above if `python` doesn't work on your machine (see the note in the setup section).
+
 ---
 
 ## 6. Disclaimer
