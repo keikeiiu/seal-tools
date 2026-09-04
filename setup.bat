@@ -6,22 +6,23 @@ echo   Seal Online Automation Tools - Setup
 echo ==============================================
 echo.
 
-rem ---- Pick the Python command: prefer "python", fall back to "py" ----
-set PY=python
-where python >nul 2>nul
-if errorlevel 1 (
-    set PY=py
-    where py >nul 2>nul
-    if errorlevel 1 (
-        echo [!] Neither "python" nor "py" found.
-        echo     Install Python 3.12 64-bit from https://python.org
-        echo     and tick "Add Python to PATH" during install.
-        echo     NOTE: use 3.12 64-bit - newer 3.13+ is not supported by the OCR dependency.
-        echo     Hint: if "python" does nothing but "py" works, just use "py" for everything.
-        pause
-        exit /b 1
-    )
-    echo [i] "python" not on PATH - using the "py" launcher instead.
+rem ---- Pick the Python command: try "python" (actually run it - the MS Store
+rem      stub passes "where python" but fails to run), then fall back to "py" ----
+set PY=
+python -c "print('')" >nul 2>nul
+if not errorlevel 1 set PY=python
+if not defined PY (
+    py -c "print('')" >nul 2>nul
+    if not errorlevel 1 set PY=py
+)
+if not defined PY (
+    echo [!] No working Python found. Install Python 3.12 64-bit:
+    echo     https://www.python.org/downloads/   then tick "Add Python to PATH".
+    echo     NOTE: 3.12 is required - 3.13+ / 3.14 are not supported by the OCR dependency.
+    echo     Hint: if "python" opens the Microsoft Store, disable that alias in
+    echo       Settings ^> Manage App Execution Aliases -^> turn OFF "python.exe" / "python3.exe".
+    pause
+    exit /b 1
 )
 echo [i] Using Python command: %PY%
 
