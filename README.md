@@ -72,12 +72,12 @@ Installed automatically by `setup.bat` (or `pip install -r requirements.txt`):
 1. **Upload the firmware** (see below).
 2. **Install dependencies** — double-click `setup.bat`, or:
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt   # or: py -m pip install -r requirements.txt
    ```
 3. **Configure** each tool (see Configuration).
 4. **Run the launcher**:
    ```bash
-   python launcher.py
+   python launcher.py        # or: py launcher.py
    ```
 5. Open **http://127.0.0.1:5002** and control all three tools from one panel.
 
@@ -95,6 +95,7 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 1. Go to <https://www.python.org/downloads/> and download **Python 3.12 (64-bit)** for Windows.
 2. Run the installer. **Tick "Add Python to PATH"**, then click **Install Now**.
 3. Check it worked: open Command Prompt and type `python --version` — you should see a version number.
+   - **If `python` does nothing (or opens the Microsoft Store) but `py` works — that's normal for some installs.** Just use `py` everywhere instead of `python` in the steps below. `setup.bat` handles this automatically.
 
 ### 2. Get the tools
 1. Download this repo (green **Code → Download ZIP** button on GitHub).
@@ -102,7 +103,7 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 
 ### 3. Install the dependencies
 1. Double-click **`setup.bat`** inside the folder. It installs everything and reports whether the Arduino is detected.
-   - (Manual alternative: open a terminal in the folder and run `pip install -r requirements.txt`.)
+   - (Manual alternative: open a terminal in the folder and run `py -m pip install -r requirements.txt`.)
 
 ### 4. Put the firmware on the Arduino
 1. Install the **Arduino IDE** from <https://www.arduino.cc/en/software>.
@@ -112,8 +113,9 @@ Hand this section to a friend who has never touched Python or an Arduino. Do eve
 ### 5. Start the launcher
 1. In the folder, open a terminal and run:
    ```bash
-   python launcher.py
+   py launcher.py         # or: python launcher.py
    ```
+   (If `python` doesn't work for you, use `py` — see the note above.)
 2. Open **http://127.0.0.1:5002** in a browser. You'll see three cards: **Magic Tuner**, **Gem Composer**, **Skill Spammer**.
 
 ### 6. Use a tool (the important part)
