@@ -2,16 +2,19 @@ using System;
 using System.IO;
 using System.Windows;
 using SealTools.Core;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 
 namespace SealTools.Launcher;
 
-/// <summary>Application entry point. Enables DPI awareness and logs any unhandled startup exception.</summary>
+/// <summary>Application entry point. Enables DPI awareness, applies the WPF-UI dark theme, and logs unhandled exceptions.</summary>
 public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         WindowFinder.EnablePerMonitorDpiAwareness();
+        ApplicationThemeManager.Apply(ApplicationTheme.Dark, WindowBackdropType.Mica, true);
         DispatcherUnhandledException += (_, args) => { LogError(args.Exception); args.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, args) => LogError(args.ExceptionObject as Exception);
     }

@@ -21,6 +21,7 @@ public sealed class LauncherService : IDisposable
     private CancellationTokenSource? _cts;
     private ToolState? _state;
     private string? _currentId;
+    private OcrEngine? _diagnosticOcr;
 
     public LauncherService(string rootDir)
     {
@@ -96,6 +97,13 @@ public sealed class LauncherService : IDisposable
     /// <summary>Loads the machine-specific overlay, or null when local.yaml is absent.</summary>
     public ConfigLoader.LocalOverrides? LoadLocal() => _loader.LoadLocal();
 
+    /// <summary>Runs the OCR engine against the given geometry (used by the calibrator's "Check OCR" preview).</summary>
+    public ScanResult? CheckOcr(OcrGeometry ocr)
+    {
+        _diagnosticOcr ??= new OcrEngine(Config, Attributes, _rootDir);
+        return _diagnosticOcr.Scan(ocr);
+    }
+
     /// <summary>Scales the machine-specific coords to the current window size (auto-anchor first guess).</summary>
     public void AutoAnchor()
     {
@@ -122,5 +130,9 @@ public sealed class LauncherService : IDisposable
         _ => 1,
     };
 
-    public void Dispose() => StopTool();
+    public void Dispose()
+    {
+        _diagnosticOcr?.Dispose();
+        StopTool();
+    }
 }

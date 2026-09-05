@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -13,6 +14,9 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 using Ellipse = System.Windows.Shapes.Ellipse;
 using SealTools.Core;
 using SealTools.Core.Config;
+using FluentWindow = Wpf.Ui.Controls.FluentWindow;
+using ControlAppearance = Wpf.Ui.Controls.ControlAppearance;
+using UiButton = Wpf.Ui.Controls.Button;
 using Mat = OpenCvSharp.Mat;
 
 namespace SealTools.Launcher;
@@ -21,7 +25,7 @@ namespace SealTools.Launcher;
 /// Main window: tool cards (start/stop + live status) and a tabbed config editor,
 /// all driven by <see cref="LauncherService"/>.
 /// </summary>
-public partial class MainWindow : Window, IDisposable
+public partial class MainWindow : FluentWindow, IDisposable
 {
     private static readonly (string Id, string Name)[] Tools =
     {
@@ -108,10 +112,10 @@ public partial class MainWindow : Window, IDisposable
             };
             _statusBlocks[id] = statusText;
 
-            var startButton = MakeButton("Start", (Brush)FindResource("AccentBrush"), Brushes.Black);
+            var startButton = MakeButton("Start", ControlAppearance.Primary);
             startButton.Click += (_, _) => _service.StartTool(id);
 
-            var stopButton = MakeButton("Stop", (Brush)FindResource("BadBrush"), Brushes.White);
+            var stopButton = MakeButton("Stop", ControlAppearance.Danger);
             stopButton.Click += (_, _) => _service.StopTool();
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
@@ -170,15 +174,15 @@ public partial class MainWindow : Window, IDisposable
 
     private static string FormatStatus(ToolState state)
     {
-        var parts = new List<string> { state.Running ? "RUNNING" : "paused" };
-        if (!string.IsNullOrEmpty(state.Grade)) parts.Add($"Grade {state.Grade}");
-        if (state.Remaining.HasValue) parts.Add($"Remaining {state.Remaining}");
-        if (state.Attempt > 0) parts.Add($"#{state.Attempt}");
-        if (state.Cycle > 0) parts.Add($"Cycle {state.Cycle}");
-        if (!string.IsNullOrEmpty(state.Current)) parts.Add(state.Current);
-        if (state.Attributes.Count > 0) parts.Add(string.Join(" · ", state.Attributes));
-        if (!string.IsNullOrEmpty(state.FilterStatus)) parts.Add($"Filter: {state.FilterStatus}");
-        return string.Join("  |  ", parts);
+        var lines = new List<string> { state.Running ? "● RUNNING" : "● paused" };
+        if (!string.IsNullOrEmpty(state.Grade)) lines.Add($"Grade: {state.Grade}");
+        if (state.Remaining.HasValue) lines.Add($"Remaining: {state.Remaining}");
+        if (state.Attempt > 0) lines.Add($"Attempt: {state.Attempt}");
+        if (state.Cycle > 0) lines.Add($"Cycle: {state.Cycle}");
+        if (!string.IsNullOrEmpty(state.Current)) lines.Add($"Current: {state.Current}");
+        if (state.Attributes.Count > 0) lines.AddRange(state.Attributes.Select(a => "· " + a));
+        if (!string.IsNullOrEmpty(state.FilterStatus)) lines.Add($"Filter: {state.FilterStatus}");
+        return string.Join(Environment.NewLine, lines);
     }
 
     // ── Config tabs ─────────────────────────────────────────────────────────
@@ -241,7 +245,7 @@ public partial class MainWindow : Window, IDisposable
         };
         panel.Children.Add(LabeledField("Override rules", overrideRules));
 
-        var save = MakeButton("Save Tuner Config", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var save = MakeButton("Save Tuner Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             var cfg = _service.Config;
@@ -269,7 +273,7 @@ public partial class MainWindow : Window, IDisposable
         var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
         panel.Children.Add(LabeledField("Start grade", startGrade));
 
-        var save = MakeButton("Save Gem Config", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var save = MakeButton("Save Gem Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             _service.Config.Gem.StartGrade = startGrade.SelectedItem?.ToString() ?? "N";
@@ -294,7 +298,7 @@ public partial class MainWindow : Window, IDisposable
         };
         panel.Children.Add(LabeledField("Keys (key:seconds)", keys));
 
-        var save = MakeButton("Save Spammer Config", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             _service.Config.Spammer.Keys = ParseKeys(keys.Text);
@@ -341,10 +345,10 @@ public partial class MainWindow : Window, IDisposable
         grid.Children.Add(image);
         grid.Children.Add(canvas);
 
-        var capture = MakeButton("Capture 發條 window", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var capture = MakeButton("Capture 發條 window", ControlAppearance.Primary);
         capture.Click += (_, _) => TunerCapture();
 
-        var auto = MakeButton("Auto-anchor", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var auto = MakeButton("Auto-anchor", ControlAppearance.Primary);
         auto.Click += (_, _) =>
         {
             try
@@ -358,12 +362,16 @@ public partial class MainWindow : Window, IDisposable
             }
         };
 
-        var save = MakeButton("Save Tuner", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var save = MakeButton("Save Tuner", ControlAppearance.Primary);
         save.Click += (_, _) => TunerSave();
+
+        var check = MakeButton("Check OCR", ControlAppearance.Secondary);
+        check.Click += (_, _) => CheckTunerOcr();
 
         var top = new StackPanel { Orientation = Orientation.Horizontal };
         top.Children.Add(capture);
         top.Children.Add(auto);
+        top.Children.Add(check);
 
         var panel = new StackPanel();
         panel.Children.Add(hint);
@@ -396,10 +404,10 @@ public partial class MainWindow : Window, IDisposable
         grid.Children.Add(image);
         grid.Children.Add(canvas);
 
-        var capture = MakeButton("Capture gem window", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
 
-        var save = MakeButton("Save Gem Composer", (Brush)FindResource("AccentBrush"), Brushes.Black);
+        var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
 
         var panel = new StackPanel();
@@ -465,6 +473,37 @@ public partial class MainWindow : Window, IDisposable
         _tunerHint!.Text = "OCR box selected — click Save Tuner.";
     }
 
+    private void CheckTunerOcr()
+    {
+        if (_tunerOcrBox == null)
+        {
+            _tunerHint!.Text = "Drag the OCR box first.";
+            return;
+        }
+
+        var ocr = BuildOcrGeometry(_tunerOcrBox.Value);
+        if (ocr.Region.Width < 20 || ocr.Region.Height < 20)
+        {
+            _tunerHint!.Text = "The OCR box is too small — drag a real rectangle.";
+            return;
+        }
+
+        _tunerHint!.Text = "Running OCR…";
+        var result = _service.CheckOcr(ocr);
+        if (result == null)
+        {
+            _tunerHint!.Text = "OCR failed — game window not found?";
+            return;
+        }
+
+        var lines = new List<string> { $"Grade: {result.Grade ?? "?"}" };
+        for (var i = 0; i < result.Attributes.Count; i++)
+        {
+            lines.Add($"Attr {i + 1}: {string.Join(" ", result.Attributes[i])}");
+        }
+        _tunerHint!.Text = string.Join(Environment.NewLine, lines);
+    }
+
     private void TunerSave()
     {
         if (_tunerOcrBox == null)
@@ -473,19 +512,28 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var box = _tunerOcrBox.Value;
-        var w = box.Width;
-        var h = box.Height;
-        if (w < 20 || h < 20)
+        var ocr = BuildOcrGeometry(_tunerOcrBox.Value);
+        if (ocr.Region.Width < 20 || ocr.Region.Height < 20)
         {
             _tunerHint!.Text = "The OCR box is too small — drag a real rectangle.";
             return;
         }
 
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
+        _service.SaveLocal(local);
+        _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
+        MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private static OcrGeometry BuildOcrGeometry(Rect box)
+    {
+        var w = box.Width;
+        var h = box.Height;
         double R(double v) => Math.Round(v / 320.0 * h);
         double Cx(double v) => Math.Round(v / 300.0 * w);
 
-        var ocr = new OcrGeometry
+        return new OcrGeometry
         {
             Region = new RegionConfig { Left = (int)box.Left, Top = (int)box.Top, Width = (int)w, Height = (int)h },
             GradeArea = new BoxConfig { X1 = (int)Cx(149), Y1 = (int)R(1), X2 = (int)Cx(232), Y2 = (int)R(44) },
@@ -494,12 +542,6 @@ public partial class MainWindow : Window, IDisposable
             RemainingY = new List<int> { (int)R(190), (int)R(235) },
             RowHeight = Math.Max(1, (int)R(25)),
         };
-
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
-        _service.SaveLocal(local);
-        _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
-        MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     // ── Gem calibrator (click buttons) ─────────────────────────────────────
@@ -648,14 +690,11 @@ public partial class MainWindow : Window, IDisposable
         return combo;
     }
 
-    private static Button MakeButton(string text, Brush background, Brush foreground) =>
+    private static UiButton MakeButton(string text, ControlAppearance appearance) =>
         new()
         {
             Content = text,
-            Background = background,
-            Foreground = foreground,
-            FontWeight = FontWeights.Bold,
-            Padding = new Thickness(16, 6, 16, 6),
+            Appearance = appearance,
             Margin = new Thickness(0, 10, 0, 0),
         };
 
