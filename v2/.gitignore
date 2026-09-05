@@ -1,0 +1,17 @@
+# Machine-specific calibration — never commit
+config/local.yaml
+
+# Runtime state/control files
+run/
+
+# OCR capture logs
+logs/
+
+# Bundled OCR models (large binaries, copied from rapidocr-onnxruntime at setup)
+models/
+
+# Build output
+bin/
+obj/
+*.user
+*.suo

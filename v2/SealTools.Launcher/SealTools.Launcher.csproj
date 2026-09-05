@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SealTools.Core\SealTools.Core.csproj" />
+    <ProjectReference Include="..\SealTools.Tuner\SealTools.Tuner.csproj" />
+    <ProjectReference Include="..\SealTools.GemComposer\SealTools.GemComposer.csproj" />
+    <ProjectReference Include="..\SealTools.Spammer\SealTools.Spammer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

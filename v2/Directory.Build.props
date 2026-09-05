@@ -1,0 +1,10 @@
+<Project>
+  <!-- Seal Tools v2 is Windows-only (Win32 interop, Arduino serial, System.Drawing). -->
+  <PropertyGroup>
+    <SupportedOSPlatform>windows</SupportedOSPlatform>
+    <NoWarn>$(NoWarn);CA1416;CS9057</NoWarn>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

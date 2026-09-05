@@ -1,0 +1,15 @@
+<Application x:Class="SealTools.Launcher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="BgBrush" Color="#1A1A2E"/>
+        <SolidColorBrush x:Key="CardBrush" Color="#16213E"/>
+        <SolidColorBrush x:Key="FgBrush" Color="#EEEEEE"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#AAAAAA"/>
+        <SolidColorBrush x:Key="GoodBrush" Color="#00E676"/>
+        <SolidColorBrush x:Key="BadBrush" Color="#FF5252"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#00C853"/>
+        <SolidColorBrush x:Key="HighlightBrush" Color="#FFD54F"/>
+    </Application.Resources>
+</Application>

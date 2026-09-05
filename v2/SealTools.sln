@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Core", "SealTools.Core\SealTools.Core.csproj", "{E22B4776-7682-4772-B578-3D5733932D0C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Tuner", "SealTools.Tuner\SealTools.Tuner.csproj", "{A49FEF30-99C0-40B1-8BE5-110E209F6671}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.GemComposer", "SealTools.GemComposer\SealTools.GemComposer.csproj", "{D14A70A5-3685-4DA0-84F1-DD45B5A9E6AC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Spammer", "SealTools.Spammer\SealTools.Spammer.csproj", "{23170032-BBF3-4793-9371-FCE436D38FBF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Launcher", "SealTools.Launcher\SealTools.Launcher.csproj", "{5C33B697-2441-4A6E-BE28-6A1083E6F5A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Tests", "SealTools.Tests\SealTools.Tests.csproj", "{C173F354-140C-4CF4-A0F8-97145F1A7088}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E22B4776-7682-4772-B578-3D5733932D0C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E22B4776-7682-4772-B578-3D5733932D0C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E22B4776-7682-4772-B578-3D5733932D0C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E22B4776-7682-4772-B578-3D5733932D0C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A49FEF30-99C0-40B1-8BE5-110E209F6671}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A49FEF30-99C0-40B1-8BE5-110E209F6671}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A49FEF30-99C0-40B1-8BE5-110E209F6671}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A49FEF30-99C0-40B1-8BE5-110E209F6671}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D14A70A5-3685-4DA0-84F1-DD45B5A9E6AC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D14A70A5-3685-4DA0-84F1-DD45B5A9E6AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D14A70A5-3685-4DA0-84F1-DD45B5A9E6AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D14A70A5-3685-4DA0-84F1-DD45B5A9E6AC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23170032-BBF3-4793-9371-FCE436D38FBF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23170032-BBF3-4793-9371-FCE436D38FBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23170032-BBF3-4793-9371-FCE436D38FBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23170032-BBF3-4793-9371-FCE436D38FBF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C33B697-2441-4A6E-BE28-6A1083E6F5A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C33B697-2441-4A6E-BE28-6A1083E6F5A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C33B697-2441-4A6E-BE28-6A1083E6F5A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C33B697-2441-4A6E-BE28-6A1083E6F5A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C173F354-140C-4CF4-A0F8-97145F1A7088}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C173F354-140C-4CF4-A0F8-97145F1A7088}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C173F354-140C-4CF4-A0F8-97145F1A7088}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C173F354-140C-4CF4-A0F8-97145F1A7088}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

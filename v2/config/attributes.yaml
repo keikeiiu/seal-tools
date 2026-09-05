@@ -1,0 +1,140 @@
+# Seal Tools v2 — OCR attribute dictionary ("wordings"), committed.
+# Ported from tuner/attr_matcher.py ATTRIBUTES and tuner/ocr_engine.py clean_text().
+# Adding or correcting an OCR variant is a config edit, not a code change.
+
+# Standard attribute definitions. Each: {name, category, variants[]}.
+# `name` is what filter rules match on; `variants` are the OCR-garbled forms.
+# For per-level (plv*) attributes the LAST variant is the stat name the matcher keys on.
+attributes:
+  - name: "攻擊力"
+    category: "atk"
+    variants: ["攻擊力", "攻擎力", "攻孽力"]
+  - name: "魔法力"
+    category: "matk"
+    variants: ["魔法力", "魔法才", "庵法力"]
+  - name: "防禦力"
+    category: "def"
+    variants: ["防禦力", "防票力"]
+  - name: "攻擊速度"
+    category: "aspd"
+    variants: ["攻擊速度", "攻擎速度", "攻速度"]
+  - name: "必殺技"
+    category: "crit"
+    variants: ["必殺技"]
+  - name: "命中率"
+    category: "hit"
+    variants: ["命中率", "命中"]
+  - name: "迴避率"
+    category: "eva"
+    variants: ["迴避率", "迴避", "迴避室", "避率"]
+  - name: "移動速度"
+    category: "move"
+    variants: ["移動速度", "移動遠度", "瑯動速度", "移動"]
+  - name: "HP(值)"
+    category: "hp"
+    variants: ["HP(值)", "HP"]
+  - name: "AP(值)"
+    category: "ap"
+    variants: ["AP(值)", "AP"]
+  - name: "HP(%)"
+    category: "hp%"
+    variants: ["HP(%)", "HP%"]
+  - name: "AP(%)"
+    category: "ap%"
+    variants: ["AP(%)", "AP%"]
+  - name: "減少道具等級限制"
+    category: "lvlimit"
+    variants: ["減少道具等級限制", "減少道具配戴限制等級", "減少道具配域限制等級", "減少道具酗域限制等級", "減少限制等級"]
+  - name: "經驗值獲得量增加"
+    category: "exp"
+    variants: ["經驗值獲得量增加", "經驗值增加"]
+  - name: "副本傷害增加"
+    category: "dgn_dmg"
+    variants: ["副本傷害增加"]
+  - name: "增加傷害"
+    category: "dmg+"
+    variants: ["增加傷害"]
+  - name: "減少傷害"
+    category: "dmg-"
+    variants: ["減少傷害", "減少害力"]
+  - name: "每級+1力量"
+    category: "plv_str"
+    variants: ["每", "等級", "力量"]
+  - name: "每級+1敏捷"
+    category: "plv_agi"
+    variants: ["每", "等級", "敏捷"]
+  - name: "每級+1智力"
+    category: "plv_int"
+    variants: ["每", "等級", "智力"]
+  - name: "每級+1幸運"
+    category: "plv_luk"
+    variants: ["每", "等級", "幸運"]
+  - name: "每級+1體力"
+    category: "plv_vit"
+    variants: ["每", "等級", "體力"]
+  - name: "每級+1精神"
+    category: "plv_spi"
+    variants: ["每", "等級", "精神"]
+  - name: "每級+2力量"
+    category: "plv2_str"
+    variants: ["每", "等級", "力量"]
+  - name: "每級+2敏捷"
+    category: "plv2_agi"
+    variants: ["每", "等級", "敏捷"]
+  - name: "每級+2智力"
+    category: "plv2_int"
+    variants: ["每", "等級", "智力"]
+  - name: "每級+2幸運"
+    category: "plv2_luk"
+    variants: ["每", "等級", "幸運"]
+
+# Stat names recognised by the per-level attribute parser (was hardcoded in _extract_perlevel).
+per_level_stats: ["力量", "敏捷", "智力", "幸運", "體力", "精神"]
+
+# Attribute labels that always carry a negative value (applied in OcrEngine sign-fixing).
+negative_attr_markers: ["減少", "限制等級", "配戴限制"]
+
+# OCR text cleanup — applied in order before attribute matching (ported from clean_text()).
+text_fixes:
+  whole:        # if the entire string equals `from`, replace and stop
+    - {from: "GRADB 8", to: "GRADE :"}
+    - {from: "GRADB", to: "GRADE :"}
+    - {from: "GGRADE 8", to: "GRADE :"}
+    - {from: "GADB 8", to: "GRADE :"}
+    - {from: "GADB", to: "GRADE :"}
+  substring:    # substring replace, applied in order
+    - {from: "GRADB", to: "GRADE"}
+    - {from: "RADE", to: "GRADE"}
+    - {from: "CRA", to: "GRADE"}
+    - {from: "4&", to: "46"}
+    - {from: "3&", to: "36"}
+    - {from: "攻孽力", to: "攻擊力"}
+    - {from: "攻孽遠度", to: "攻擊速度"}
+    - {from: "攻孽", to: "攻擊"}
+    - {from: "力星", to: "力量"}
+    - {from: "防票力", to: "防禦力"}
+    - {from: "攻速度", to: "攻擊速度"}
+    - {from: "攻擎速度", to: "攻擊速度"}
+    - {from: "攻擎力", to: "攻擊力"}
+    - {from: "避率", to: "迴避率"}
+    - {from: "經值", to: "經驗值"}
+    - {from: "減少害力", to: "減少傷害力"}
+    - {from: "艘力", to: "體力"}
+  simplified_traditional:   # RapidOCR defaults to simplified Chinese; convert to traditional
+    - {from: "减少", to: "減少"}
+    - {from: "装备", to: "裝備"}
+    - {from: "伤害", to: "傷害"}
+    - {from: "限制等级", to: "限制等級"}
+    - {from: "配戴限制等级", to: "配戴限制等級"}
+    - {from: "等级", to: "等級"}
+    - {from: "级", to: "級"}
+    - {from: "闭", to: "閉"}
+    - {from: "关", to: "關"}
+  final:        # applied after simplified->traditional
+    - {from: "傷窖", to: "傷害"}
+    - {from: "惕窖", to: "傷害"}
+    - {from: "愕窖", to: "傷害"}
+    - {from: "副本傷窖增加", to: "副本傷害增加"}
+    - {from: "副本惕窖增加", to: "副本傷害增加"}
+    - {from: "副本愕窖增加", to: "副本傷害增加"}
+    - {from: "配域", to: "配戴"}

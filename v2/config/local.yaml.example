@@ -1,0 +1,38 @@
+# Seal Tools v2 — machine-specific calibration (copy to local.yaml, then adjust).
+# local.yaml is gitignored. Values here are the v1 measured values as a starting point;
+# they are window/client-area-relative and should be re-verified with the calibrator.
+
+tuner:
+  ocr:
+    region: {left: 1140, top: 840, width: 300, height: 320}
+    grade_area: {x1: 149, y1: 1, x2: 232, y2: 44}
+    grade_y: [1, 44]
+    attr_y: [42, 140]
+    remaining_y: [190, 235]
+    row_height: 25
+
+gem:
+  grade_positions:
+    N: [727, 696]
+    G: [777, 696]
+    DG: [827, 696]
+    Register: [835, 724]
+    Combine: [785, 871]
+  movements:
+    radio_to_register:
+      N: [65, 20]
+      G: [35, 20]
+      DG: [10, 20]
+    register_combine: [-30, 80]
+    combine_register: [30, -80]
+    grade_next: [33, 0]
+    grade_prev: [-33, 0]
+    register_slot1: [-45, -100]
+    slot1_slot2: [36, 0]
+    slot2_dg: [8, 87]
+
+arduino:
+  port: ""   # optional override; empty = auto-detect
+
+display:
+  dpi_scale: null   # optional manual DPI scale override; null = auto-detect via GetDpiForWindow

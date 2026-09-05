@@ -1,0 +1,70 @@
+# Seal Tools v2 — portable defaults (committed).
+# Machine-specific values (coordinates, port) live in local.yaml and override these.
+# No hardcoded defaults exist in code: anything missing here fails validation loudly.
+
+window:
+  title: "TW_LIVE"          # game window title substring used to locate the client
+
+reference_window:           # window size the local.yaml coords were measured on (auto-anchor reference)
+  width: 1926
+  height: 1232
+
+arduino:
+  vid: 0x2341               # Arduino vendor id
+  pid: [0x8036, 0x8037]     # accepted product ids
+  baud: 115200
+  port: ""                  # optional override; empty = auto-detect
+
+hotkeys:                    # Windows virtual-key codes
+  start: 0x7B               # F12
+  quit: 0x7A                # F11
+  advance_grade: 0x78       # F9
+
+tuner:
+  grade_order: ["N", "G", "DG", "XG", "SG"]
+  target_grade: "DG"
+  max_retries: 999999
+  save_captures: true
+  models:                   # PP-OCRv4 ONNX model paths (relative to the v2 root)
+    detector: "models/ch_PP-OCRv4_det_infer.onnx"
+    recognizer: "models/ch_PP-OCRv4_rec_infer.onnx"
+    classifier: "models/ch_ppocr_mobile_v2.0_cls_infer.onnx"
+  timing:
+    click_enter_delay: 0.4
+    ocr_delay: 0.8
+  grade_colors:             # per-channel pixel-mask thresholds (see OcrEngine.GradeFromColor)
+    yellow:  {rg_gap: 20, gb_gap: 20, r_min: 120, g_min: 120}
+    blue:    {bg_gap: 25, br_gap: 25, b_min: 80}
+    red:     {rg_gap: 40, rb_gap: 40, r_min: 150}
+    purple:  {rb_gap: 30, bg_gap: 30, r_min: 80, b_min: 80}
+    white:   {r_min: 180, g_min: 180, b_min: 180}
+    decision:
+      total_min: 10
+      dg_yellow: 80
+      dg_white_ratio: 0.3
+      g_blue: 60
+      g_white_ratio: 0.5
+      xg_red: 60
+      sg_purple: 60
+      n_white: 100
+      n_yellow_max: 60
+      n_blue_max: 60
+  filter:
+    enabled: true
+    match_mode: "per_attr"   # any | all | per_attr
+    require_grade: "DG"
+    rules:
+      - {name: "減少傷害", count: 2, min: 1, max: 1}
+    override_rules:
+      - {name: "減少傷害", count: 2, min: 1, max: 1}
+      - {name: "增加傷害", count: 3, min: 1, max: 1}
+
+gem:
+  grades: ["N", "G", "DG"]
+  start_grade: "N"
+
+spammer:
+  keys:
+    "F2": 1.0
+    "5": 1.0
+    "6": 1.0
