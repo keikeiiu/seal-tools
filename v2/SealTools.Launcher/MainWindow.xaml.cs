@@ -47,12 +47,18 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
     private bool _disposed;
 
-    // Tuner calibrator (drag an OCR box) state.
+    // Tuner calibrator (drag three boxes: grade / attributes / remaining) state.
     private Image? _tunerImage;
     private Canvas? _tunerCanvas;
     private TextBlock? _tunerHint;
     private BitmapSource? _tunerScreenshot;
-    private Rect? _tunerOcrBox;
+    private int _tunerStep;
+    private Rect? _tunerGradeBox;
+    private Rect? _tunerAttrBox;
+    private Rect? _tunerRemainingBox;
+    // Measured attribute line pitch from the last "Check OCR", used by BuildOcrGeometry
+    // to persist an accurate row_height instead of the loose attr.Height/3 guess.
+    private int? _tunerAttrPitch;
     private Point? _tunerDragStart;
     private Rectangle? _tunerMarquee;
 
@@ -240,30 +246,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         panel.Children.Add(saveCaptures);
 
-        var rules = new TextBox
-        {
-            Text = SerializeRules(_service.Config.Tuner.Filter.Rules),
-            AcceptsReturn = true,
-            Height = 70,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
-        panel.Children.Add(LabeledField("Rules (name,count,min,max)", rules));
+        var ruleRows = new List<RuleRow>();
+        panel.Children.Add(new TextBlock { Text = "Rules (main goal)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
+        var rulesEditor = BuildRulesEditor(_service.Config.Tuner.Filter.Rules, ruleRows, "+ Add Rule");
+        panel.Children.Add(rulesEditor);
 
-        var overrideRules = new TextBox
-        {
-            Text = SerializeRules(_service.Config.Tuner.Filter.OverrideRules),
-            AcceptsReturn = true,
-            Height = 70,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
-        panel.Children.Add(LabeledField("Override rules", overrideRules));
+        var overrideRows = new List<RuleRow>();
+        panel.Children.Add(new TextBlock { Text = "Override rules (stop immediately if matched)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
+        var overrideEditor = BuildRulesEditor(_service.Config.Tuner.Filter.OverrideRules, overrideRows, "+ Add Override");
+        panel.Children.Add(overrideEditor);
 
         void SetFilterFieldsEnabled(bool on)
         {
             matchMode.IsEnabled = on;
             requireGrade.IsEnabled = on;
-            rules.IsEnabled = on;
-            overrideRules.IsEnabled = on;
+            rulesEditor.IsEnabled = on;
+            overrideEditor.IsEnabled = on;
         }
         filterEnabled.Checked += (_, _) => SetFilterFieldsEnabled(true);
         filterEnabled.Unchecked += (_, _) => SetFilterFieldsEnabled(false);
@@ -281,8 +279,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             var rg = requireGrade.SelectedItem?.ToString();
             cfg.Tuner.Filter.RequireGrade = (rg == null || rg == "None") ? null : rg;
             cfg.Tuner.Filter.Enabled = filterEnabled.IsChecked ?? false;
-            cfg.Tuner.Filter.Rules = ParseRules(rules.Text);
-            cfg.Tuner.Filter.OverrideRules = ParseRules(overrideRules.Text);
+            cfg.Tuner.Filter.Rules = ruleRows.Select(r => r.ToRule()).ToList();
+            cfg.Tuner.Filter.OverrideRules = overrideRows.Select(r => r.ToRule()).ToList();
             cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
             _service.SaveConfig();
             MessageBox.Show("Tuner config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -387,7 +385,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var hint = new TextBlock
         {
-            Text = "Open the 發條 (tuning) window, capture, then drag a box around the grade letter + 3 attribute lines.",
+            Text = "Open the 發條 (tuning) window, capture, then drag three boxes: the grade letter, the 3 attribute lines, and the spring count.",
             Foreground = (Brush)FindResource("HighlightBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 4),
@@ -479,16 +477,20 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         _tunerScreenshot = shot;
         _tunerImage!.Source = shot;
-        _tunerOcrBox = null;
+        _tunerStep = 0;
+        _tunerGradeBox = null;
+        _tunerAttrBox = null;
+        _tunerRemainingBox = null;
         _tunerDragStart = null;
         _tunerMarquee = null;
         _tunerCanvas!.Children.Clear();
-        _tunerHint!.Text = "Drag a rectangle around the grade letter + 3 attribute lines.";
+        _tunerHint!.Text = "Step 1/3 — drag a box around the grade letter (e.g. DG / G / N).";
     }
 
     private void TunerMouseDown(Canvas canvas, Point p)
     {
         if (_tunerScreenshot == null) return;
+        if (_tunerStep >= 3) return;
         _tunerDragStart = p;
         _tunerMarquee = new Rectangle { Stroke = Brushes.LimeGreen, StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 2 } };
         Canvas.SetLeft(_tunerMarquee, p.X);
@@ -512,31 +514,63 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_tunerMarquee == null || _tunerDragStart == null || _tunerScreenshot == null || _tunerCanvas == null) return;
         var a = CanvasToNatural(_tunerDragStart.Value, _tunerScreenshot, _tunerCanvas);
         var b = CanvasToNatural(p, _tunerScreenshot, _tunerCanvas);
-        _tunerOcrBox = new Rect(
+        var box = new Rect(
             new Point(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y)),
             new Point(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y)));
+
+        // Reject accidental clicks/tiny drags — a zero-height band would crash OCR later.
+        if (box.Width < 4 || box.Height < 4)
+        {
+            canvas.Children.Remove(_tunerMarquee);
+            _tunerMarquee = null;
+            _tunerDragStart = null;
+            return;
+        }
+
+        // Solidify the marquee so the completed box stays visible (colour-coded per band).
+        _tunerMarquee.Stroke = _tunerStep switch { 0 => Brushes.LimeGreen, 1 => Brushes.DodgerBlue, _ => Brushes.Orange };
+        _tunerMarquee.StrokeDashArray = null;
         _tunerMarquee = null;
         _tunerDragStart = null;
-        _tunerHint!.Text = "OCR box selected — click Save Tuner.";
+
+        switch (_tunerStep)
+        {
+            case 0:
+                _tunerGradeBox = box;
+                _tunerStep = 1;
+                _tunerHint!.Text = "Step 2/3 — drag a box around the 3 attribute lines.";
+                break;
+            case 1:
+                _tunerAttrBox = box;
+                _tunerStep = 2;
+                _tunerHint!.Text = "Step 3/3 — drag a box around the spring count (remaining).";
+                break;
+            default:
+                _tunerRemainingBox = box;
+                _tunerStep = 3;
+                _tunerHint!.Text = "All bands set — click Check OCR to verify, then Save Tuner.";
+                break;
+        }
     }
 
     private void CheckTunerOcr()
     {
-        if (_tunerOcrBox == null)
+        if (_tunerGradeBox == null || _tunerAttrBox == null || _tunerRemainingBox == null)
         {
-            _tunerHint!.Text = "Drag the OCR box first.";
+            _tunerHint!.Text = "Drag all three boxes first (grade, attributes, remaining).";
             return;
         }
 
-        var ocr = BuildOcrGeometry(_tunerOcrBox.Value);
+        var ocr = BuildOcrGeometry(_tunerGradeBox.Value, _tunerAttrBox.Value, _tunerRemainingBox.Value);
         if (ocr.Region.Width < 20 || ocr.Region.Height < 20)
         {
-            _tunerHint!.Text = "The OCR box is too small — drag a real rectangle.";
+            _tunerHint!.Text = "The boxes are too small — drag real rectangles.";
             return;
         }
 
         _tunerHint!.Text = "Running OCR…";
         var result = _service.CheckOcr(ocr);
+        _tunerAttrPitch = result?.AttrLineSpacing;
         if (result == null)
         {
             _tunerHint!.Text = "OCR failed — game window not found?";
@@ -553,41 +587,60 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void TunerSave()
     {
-        if (_tunerOcrBox == null)
+        if (_tunerGradeBox == null || _tunerAttrBox == null || _tunerRemainingBox == null)
         {
-            _tunerHint!.Text = "Drag the OCR box first.";
+            _tunerHint!.Text = "Drag all three boxes first (grade, attributes, remaining).";
             return;
         }
 
-        var ocr = BuildOcrGeometry(_tunerOcrBox.Value);
+        var ocr = BuildOcrGeometry(_tunerGradeBox.Value, _tunerAttrBox.Value, _tunerRemainingBox.Value, _tunerAttrPitch);
         if (ocr.Region.Width < 20 || ocr.Region.Height < 20)
         {
-            _tunerHint!.Text = "The OCR box is too small — drag a real rectangle.";
+            _tunerHint!.Text = "The boxes are too small — drag real rectangles.";
             return;
         }
 
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
         _service.SaveLocal(local);
+        // Refresh the in-memory config too, or the next tuner run still uses the
+        // startup geometry (seeded from local.yaml.example) instead of the boxes
+        // just calibrated — the cause of the "Check OCR is fine, run drifts" bug.
+        _service.Config.Tuner.Ocr = ocr;
         _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
         MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private static OcrGeometry BuildOcrGeometry(Rect box)
+    private static OcrGeometry BuildOcrGeometry(Rect grade, Rect attr, Rect remaining, int? rowHeight = null)
     {
-        var w = box.Width;
-        var h = box.Height;
-        double R(double v) => Math.Round(v / 320.0 * h);
-        double Cx(double v) => Math.Round(v / 300.0 * w);
+        // Region = bounding box of the three measured bands; sub-bands are their
+        // offsets relative to it. Everything is measured, so it adapts to any window.
+        var left = (int)Math.Min(grade.Left, Math.Min(attr.Left, remaining.Left));
+        var top = (int)Math.Min(grade.Top, Math.Min(attr.Top, remaining.Top));
+        var right = (int)Math.Max(grade.Right, Math.Max(attr.Right, remaining.Right));
+        var bottom = (int)Math.Max(grade.Bottom, Math.Max(attr.Bottom, remaining.Bottom));
+
+        // row_height is the real line pitch when "Check OCR" measured it (preferred), else
+        // fall back to attr.Height/3 — which is only exact if the box is drawn tight around
+        // the three lines; a loose box (with padding) overestimates it and merges rows.
+        var measured = rowHeight is > 0 ? rowHeight.Value : Math.Max(1, (int)Math.Round(attr.Height / 3.0));
 
         return new OcrGeometry
         {
-            Region = new RegionConfig { Left = (int)box.Left, Top = (int)box.Top, Width = (int)w, Height = (int)h },
-            GradeArea = new BoxConfig { X1 = (int)Cx(149), Y1 = (int)R(1), X2 = (int)Cx(232), Y2 = (int)R(44) },
-            GradeY = new List<int> { (int)R(1), (int)R(44) },
-            AttrY = new List<int> { (int)R(42), (int)R(140) },
-            RemainingY = new List<int> { (int)R(190), (int)R(235) },
-            RowHeight = Math.Max(1, (int)R(25)),
+            Region = new RegionConfig { Left = left, Top = top, Width = right - left, Height = bottom - top },
+            GradeArea = new BoxConfig
+            {
+                X1 = (int)(grade.Left - left),
+                Y1 = (int)(grade.Top - top),
+                X2 = (int)(grade.Right - left),
+                Y2 = (int)(grade.Bottom - top),
+            },
+            GradeY = new List<int> { (int)(grade.Top - top), (int)(grade.Bottom - top) },
+            AttrY = new List<int> { (int)(attr.Top - top), (int)(attr.Bottom - top) },
+            RemainingY = new List<int> { (int)(remaining.Top - top), (int)(remaining.Bottom - top) },
+            AttrX = new List<int> { (int)(attr.Left - left), (int)(attr.Right - left) },
+            RemainingX = new List<int> { (int)(remaining.Left - left), (int)(remaining.Right - left) },
+            RowHeight = measured,
         };
     }
 
@@ -639,6 +692,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         local.Gem = new ConfigLoader.LocalGem { GradePositions = positions };
         _service.SaveLocal(local);
+        // Refresh in-memory config so the next gem run uses the just-calibrated
+        // click points rather than the startup (example-seeded) ones.
+        _service.Config.Gem.GradePositions = positions;
         _gemHint!.Text = "Gem Composer saved to config\\local.yaml.";
         MessageBox.Show("Gem calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
@@ -833,29 +889,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 10, 6, 0),
         };
 
-    private static string SerializeRules(List<FilterRule> rules) =>
-        string.Join("\n", rules.Select(r => FormattableString.Invariant($"{r.Name},{r.Count},{r.Min},{r.Max}")));
-
-    private static List<FilterRule> ParseRules(string text)
-    {
-        var result = new List<FilterRule>();
-        foreach (var line in text.Split('\n'))
-        {
-            var t = line.Trim();
-            if (t.Length == 0) continue;
-
-            var parts = t.Split(',');
-            if (parts.Length < 2) continue;
-
-            var rule = new FilterRule { Name = parts[0].Trim() };
-            if (int.TryParse(parts[1].Trim(), out var count)) rule.Count = count;
-            if (parts.Length > 2 && int.TryParse(parts[2].Trim(), out var min)) rule.Min = min;
-            if (parts.Length > 3 && int.TryParse(parts[3].Trim(), out var max)) rule.Max = max;
-            result.Add(rule);
-        }
-        return result;
-    }
-
     private static string SerializeKeys(Dictionary<string, double> keys) =>
         string.Join("\n", keys.Select(kv => $"{kv.Key}:{kv.Value}"));
 
@@ -875,6 +908,78 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         return result;
     }
+
+    // A single filter-rule editor row: attribute dropdown + count/min/max number boxes.
+    private sealed class RuleRow
+    {
+        public ComboBox Name { get; } = new();
+        public TextBox Count { get; } = new();
+        public TextBox Min { get; } = new();
+        public TextBox Max { get; } = new();
+
+        public FilterRule ToRule()
+        {
+            var r = new FilterRule { Name = Name.SelectedItem?.ToString() ?? "" };
+            if (int.TryParse(Count.Text, out var c)) r.Count = c;
+            if (int.TryParse(Min.Text, out var m)) r.Min = m;
+            if (int.TryParse(Max.Text, out var mx)) r.Max = mx;
+            return r;
+        }
+    }
+
+    // Builds an editable rule list: attribute dropdown + count/min/max boxes + delete,
+    // with an "Add" button at the bottom. Rows are appended to `rows` as they are created.
+    private StackPanel BuildRulesEditor(List<FilterRule> initial, List<RuleRow> rows, string addLabel)
+    {
+        var panel = new StackPanel();
+        var names = _service.Attributes.Attributes.Select(a => a.Name).ToList();
+
+        void AddRow(FilterRule? rule)
+        {
+            var row = new RuleRow();
+            foreach (var n in names) row.Name.Items.Add(n);
+            row.Name.SelectedItem = rule != null && names.Contains(rule.Name) ? rule.Name : (names.Count > 0 ? names[0] : "");
+            row.Name.Width = 160;
+            row.Count.Text = (rule?.Count ?? 1).ToString(CultureInfo.InvariantCulture);
+            row.Min.Text = rule?.Min?.ToString(CultureInfo.InvariantCulture) ?? "";
+            row.Max.Text = rule?.Max?.ToString(CultureInfo.InvariantCulture) ?? "";
+            row.Count.Width = 36;
+            row.Min.Width = 44;
+            row.Max.Width = 44;
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(row.Name);
+            line.Children.Add(FieldLabel("Count"));
+            line.Children.Add(row.Count);
+            line.Children.Add(FieldLabel("Min"));
+            line.Children.Add(row.Min);
+            line.Children.Add(FieldLabel("Max"));
+            line.Children.Add(row.Max);
+
+            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(8, 0, 0, 0) };
+            del.Click += (_, _) => { panel.Children.Remove(line); rows.Remove(row); };
+            line.Children.Add(del);
+
+            panel.Children.Add(line);
+            rows.Add(row);
+        }
+
+        foreach (var r in initial) AddRow(r);
+
+        var add = MakeButton(addLabel, ControlAppearance.Secondary);
+        add.Click += (_, _) => AddRow(null);
+        panel.Children.Add(add);
+
+        return panel;
+    }
+
+    private TextBlock FieldLabel(string text) => new()
+    {
+        Text = " " + text + " ",
+        VerticalAlignment = VerticalAlignment.Center,
+        Foreground = (Brush)FindResource("MutedBrush"),
+        FontSize = 12,
+    };
 
     private static string FindRootDir()
     {

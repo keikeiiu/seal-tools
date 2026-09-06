@@ -78,6 +78,8 @@ public sealed class OcrGeometry
     public List<int> GradeY { get; set; } = new();
     public List<int> AttrY { get; set; } = new();
     public List<int> RemainingY { get; set; } = new();
+    public List<int> AttrX { get; set; } = new();
+    public List<int> RemainingX { get; set; } = new();
     public int RowHeight { get; set; }
 }
 

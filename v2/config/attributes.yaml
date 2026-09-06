@@ -120,6 +120,7 @@ text_fixes:
     - {from: "經值", to: "經驗值"}
     - {from: "減少害力", to: "減少傷害力"}
     - {from: "艘力", to: "體力"}
+    - {from: "幸蓮", to: "幸運"}
   simplified_traditional:   # RapidOCR defaults to simplified Chinese; convert to traditional
     - {from: "减少", to: "減少"}
     - {from: "装备", to: "裝備"}

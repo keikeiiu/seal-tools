@@ -1,6 +1,12 @@
 # Seal Tools v2 — machine-specific calibration (copy to local.yaml, then adjust).
-# local.yaml is gitignored. Values here are the v1 measured values as a starting point;
-# they are window/client-area-relative and should be re-verified with the calibrator.
+# local.yaml is gitignored. Values here are the v1 measured values as a starting point
+# for the first-run seed; they WILL be off until you run the calibrator and hit Save.
+#
+# NOTE on coordinate origin: the `tuner.ocr` region/sub-bands below are v1 WINDOW-relative
+# (measured from the window's top-left INCLUDING the title bar), but v2 captures are
+# CLIENT-area-relative (origin = the game window's client top-left, no title bar). So the
+# seeded geometry is shifted down by the title-bar height until you recalibrate in-app.
+# Same applies to `gem.grade_positions`, which are absolute SCREEN coordinates — re-measure.
 
 tuner:
   ocr:

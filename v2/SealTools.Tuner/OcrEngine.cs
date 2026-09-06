@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using OpenCvSharp;
 using RapidOCRSharpOnnx;
@@ -27,6 +28,14 @@ public sealed class ScanResult
     public List<List<string>> Attributes { get; set; } = new();
     public string? CapturePath { get; set; }
     public WindowRect? Window { get; set; }
+
+    /// <summary>
+    /// The vertical spacing between attribute rows, measured from the raw detected items
+    /// in the attribute band. Used by the calibrator to persist an accurate row_height
+    /// instead of assuming attr.Height/3 (which is only correct if the box is drawn tight
+    /// around the three lines). Null when it couldn't be measured.
+    /// </summary>
+    public int? AttrLineSpacing { get; set; }
 }
 
 public sealed class OcrEngine : IDisposable
@@ -89,35 +98,20 @@ public sealed class OcrEngine : IDisposable
         var gy = ocr.GradeY;
         var at = ocr.AttrY;
         var ry = ocr.RemainingY;
+        var ax = ocr.AttrX;
+        var rx = ocr.RemainingX;
         int rowHeight = ocr.RowHeight;
 
         // Reconstruct line-level results from char-level WordResults.
         var textLines = BuildLines(items, rowHeight);
+        // Attributes and remaining are additionally filtered by X, so a stray element
+        // sitting beside them at the same Y (e.g. the "X" near the count) is excluded.
+        var attrTextLines = BuildLines(FilterItems(items, ax, at), rowHeight);
+        var remainingTextLines = BuildLines(FilterItems(items, rx, ry), rowHeight);
 
-        // 1. Grade — OCR the grade-letter crop first (more reliable for DG/G).
-        string? grade = null;
-        using (var gradeCrop = mat[new Rect(ga.X1, gy[0], ga.X2 - ga.X1, gy[1] - gy[0])])
-        {
-            var gradePath = _cfg.Tuner.SaveCaptures ? Path.Combine(_captureDir, $"grade_{timestamp}.png") : null;
-            var gRes = _ocr!.RecognizeText(gradeCrop, gradePath!);
-            foreach (var it in gRes.WordResults ?? Array.Empty<DetBoxItem>())
-            {
-                var t = (it.Word ?? "").Trim().ToUpperInvariant();
-                if (it.Score < 0.5f) continue;
-                if (t is "DG" or "XG" or "SG") { grade = t; break; }
-                if (t == "N") grade = "N";
-                else if (t == "G") grade = "G";
-                else if (t == "D" && grade == null) grade = "DG";
-            }
-        }
-
-        // 2. Color fallback (always computed for logging).
-        var colorScores = DetectGradeColorScores(mat, ga);
-        if (grade == null) grade = DecideGrade(colorScores);
-
-        // 3. Grade line (full OCR, Y-filtered).
+        // 1. Grade line (full OCR, Y-filtered) — the "<label>：<letter>" line.
         var gradeLine = new List<string>();
-        foreach (var (y, text, conf) in textLines)
+        foreach (var (y, _, _, text, conf) in textLines)
         {
             var t = _cleaner.Clean(text);
             if (y >= gy[0] && y <= gy[1] && conf > 0.1f && t.Length > 1 && t != "300")
@@ -125,12 +119,21 @@ public sealed class OcrEngine : IDisposable
         }
         gradeLine = gradeLine.Distinct().ToList();
 
-        // 4. Attributes (full OCR, Y-filtered + row bucketing).
+        // 2. Grade letter — detect it from the grade line, not by scanning every raw
+        //    glyph in the band. The band also contains the "GRADE" label, whose own "D"
+        //    made the old per-glyph D/G scan read a genuine "G" item as "DG".
+        string? grade = DetectGradeFromLine(gradeLine);
+
+        // 3. Color fallback (always computed for logging).
+        var colorScores = DetectGradeColorScores(mat, ga);
+        if (grade == null) grade = DecideGrade(colorScores);
+
+        // 4. Attributes (X+Y-filtered + row bucketing).
         var rows = new Dictionary<int, List<string>>();
-        foreach (var (y, text, conf) in textLines)
+        foreach (var (y, _, _, text, conf) in attrTextLines)
         {
             var t = _cleaner.Clean(text);
-            if (conf < 0.3f || t.Length < 2 || y < at[0] || y > at[1]) continue;
+            if (conf < 0.3f || t.Length < 2) continue;
             int rowKey = rowHeight > 0 ? y / rowHeight : 0;
             if (!rows.TryGetValue(rowKey, out var list)) { list = new List<string>(); rows[rowKey] = list; }
             if (!list.Contains(t)) list.Add(t);
@@ -159,22 +162,17 @@ public sealed class OcrEngine : IDisposable
         for (int i = 0; i < 3; i++)
             attributes.Add(i < lines.Count ? FixSign(lines[i].Labels, lines[i].Values) : new List<string>());
 
-        // 5. Remaining spring count.
+        // 5. Remaining spring count — X+Y-filtered, regex so it works with a glued label.
         int? remaining = null;
-        foreach (var (y, text, conf) in textLines)
+        foreach (var (y, _, _, text, conf) in remainingTextLines)
         {
             var t = text.Trim();
-            if (y >= ry[0] && y <= ry[1] && conf > 0.4f && t.Length <= 6)
+            if (conf <= 0.4f) continue;
+            var m = Regex.Match(t, @"\d+");
+            if (m.Success && int.TryParse(m.Value, out var n) && n >= 1 && n <= 99999)
             {
-                foreach (var part in t.Split(' ').Reverse())
-                {
-                    if (part.Length > 0 && part.All(char.IsDigit) && int.TryParse(part, out var n) && n >= 1 && n <= 99999)
-                    {
-                        remaining = n;
-                        break;
-                    }
-                }
-                if (remaining != null) break;
+                remaining = n;
+                break;
             }
         }
 
@@ -187,6 +185,7 @@ public sealed class OcrEngine : IDisposable
             Attributes = attributes,
             CapturePath = capturePath,
             Window = client,
+            AttrLineSpacing = MeasureLineSpacing(FilterItems(items, ax, at)),
         };
 
         _ocrLog.WriteLine(JsonSerializer.Serialize(new
@@ -197,6 +196,10 @@ public sealed class OcrEngine : IDisposable
             gradeLine,
             attributes,
             colorScores,
+            client = new { left = client.Left, top = client.Top, w = client.Width, h = client.Height },
+            region = new { left = region.Left, top = region.Top, w = region.Width, h = region.Height },
+            dpi = WindowFinder.GetDpi(hwnd),
+            lines = textLines.Select(t => new { y = t.y, x = t.minX, x2 = t.maxX, text = t.text, conf = t.conf }),
         }));
 
         return result;
@@ -218,6 +221,51 @@ public sealed class OcrEngine : IDisposable
 
     private static int ItemY(DetBoxItem it) =>
         it.Box is { Length: > 0 } ? (int)it.Box.Min(p => p.Y) : 0;
+
+    private static int ItemX(DetBoxItem it) =>
+        it.Box is { Length: > 0 } ? (int)it.Box.Min(p => p.X) : 0;
+
+    private static int ItemMaxX(DetBoxItem it) =>
+        it.Box is { Length: > 0 } ? (int)it.Box.Max(p => p.X) : 0;
+
+    // Detect the grade letter from the reconstructed grade line. The line reads
+    // "<label>：<letter>" (e.g. "GRADE：G"), and the label's own "D"/"G" must not be
+    // mistaken for a grade — so we cut at the last separator (：/:) or strip a leading
+    // "GRADE"/等级 label, then return the rightmost longest known grade token.
+    // Returns null when no known grade token is present (caller falls back to color).
+    private static string? DetectGradeFromLine(List<string> gradeLine)
+    {
+        var text = string.Concat(gradeLine).ToUpperInvariant();
+        var sep = Math.Max(text.LastIndexOf('：'), text.LastIndexOf(':'));
+        if (sep >= 0)
+        {
+            text = text[(sep + 1)..];
+        }
+        else
+        {
+            foreach (var label in new[] { "GRADE", "等级" })
+                if (text.StartsWith(label, StringComparison.Ordinal)) { text = text[label.Length..]; break; }
+        }
+
+        // Longest-first so "DG"/"XG"/"SG" win over a bare "G" nested inside them;
+        // rightmost wins so the letter after the label is chosen.
+        string[] grades = { "SG", "XG", "DG", "G", "N" };
+        string best = "";
+        var bestIdx = -1; var bestLen = 0;
+        foreach (var g in grades)
+        {
+            int start = 0;
+            while ((start = text.IndexOf(g, start, StringComparison.Ordinal)) >= 0)
+            {
+                if (start > bestIdx || (start == bestIdx && g.Length > bestLen))
+                {
+                    best = g; bestIdx = start; bestLen = g.Length;
+                }
+                start += g.Length;
+            }
+        }
+        return best.Length > 0 ? best : null;
+    }
 
     private Dictionary<string, int> DetectGradeColorScores(Mat img, BoxConfig ga)
     {
@@ -263,16 +311,27 @@ public sealed class OcrEngine : IDisposable
         int white = scores["N"], blue = scores["G"], yellow = scores["DG"], red = scores["XG"], purple = scores["SG"];
         int total = white + yellow + blue + red + purple;
         if (total < d.TotalMin) return null;
-        if (yellow > d.DgYellow && yellow > white * d.DgWhiteRatio) return "DG";
-        if (blue > d.GBlue && blue > white * d.GWhiteRatio) return "G";
-        if (red > d.XgRed) return "XG";
-        if (purple > d.SgPurple) return "SG";
+
+        // Each grade letter is a single colour. The "GRADE" label is white and constant, so
+        // the old white-ratio rule let the label veto a real letter (blue=119 < white*0.5=385)
+        // and produced no colour grade. The letter is the ONLY coloured blob in the box, so
+        // it wins by being the dominant colour above its absolute floor. A white "N" grade
+        // has no coloured blob and falls through to the white branch.
+        bool blueWin = blue > d.GBlue && blue >= yellow && blue >= red && blue >= purple;
+        bool yellowWin = yellow > d.DgYellow && yellow >= blue && yellow >= red && yellow >= purple;
+        bool redWin = red > d.XgRed && red >= blue && red >= yellow && red >= purple;
+        bool purpleWin = purple > d.SgPurple && purple >= blue && purple >= yellow && purple >= red;
+
+        if (blueWin) return "G";
+        if (yellowWin) return "DG";
+        if (redWin) return "XG";
+        if (purpleWin) return "SG";
         if (white > d.NWhite && yellow < d.NYellowMax && blue < d.NBlueMax) return "N";
         return null;
     }
 
     // Group char-level OCR results into text lines (group by Y row, sort by X, concatenate).
-    private static List<(int y, string text, float conf)> BuildLines(DetBoxItem[] items, int rowHeight)
+    private static List<(int y, int minX, int maxX, string text, float conf)> BuildLines(DetBoxItem[] items, int rowHeight)
     {
         var map = new Dictionary<int, List<DetBoxItem>>();
         foreach (var it in items)
@@ -283,16 +342,54 @@ public sealed class OcrEngine : IDisposable
             list.Add(it);
         }
 
-        var lines = new List<(int y, string text, float conf)>();
+        var lines = new List<(int y, int minX, int maxX, string text, float conf)>();
         foreach (var kv in map.OrderBy(k => k.Key))
         {
             var sorted = kv.Value.OrderBy(it => it.Box is { Length: > 0 } ? it.Box.Min(p => p.X) : 0f);
             var text = string.Concat(sorted.Select(it => it.Word ?? "")).Trim();
             var conf = kv.Value.Average(it => it.Score);
             var minY = kv.Value.Min(it => ItemY(it));
-            lines.Add((minY, text, conf));
+            var minX = kv.Value.Min(it => ItemX(it));
+            var maxX = kv.Value.Max(it => ItemMaxX(it));
+            lines.Add((minY, minX, maxX, text, conf));
         }
         return lines;
+    }
+
+    // Keep only items whose Y falls in the band and whose X overlaps the X range
+    // (X is optional for back-compat with older local.yaml that only had Y bands).
+    private static DetBoxItem[] FilterItems(DetBoxItem[] items, List<int> xRange, List<int> yRange)
+    {
+        var hasX = xRange.Count >= 2;
+        var result = new List<DetBoxItem>();
+        foreach (var it in items)
+        {
+            var y = ItemY(it);
+            if (y < yRange[0] || y > yRange[1]) continue;
+            if (hasX && (ItemMaxX(it) < xRange[0] || ItemX(it) > xRange[1])) continue;
+            result.Add(it);
+        }
+        return result.ToArray();
+    }
+
+    // Measure the vertical pitch between attribute rows from the raw detected items,
+    // independent of the config row_height. Collapse tops that are a few px apart
+    // (same physical line + descender jitter), then take the median gap between adjacent
+    // line tops. Returns the pitch in pixels, or null when fewer than two lines exist.
+    private static int? MeasureLineSpacing(DetBoxItem[] items)
+    {
+        var collaped = new List<int>();
+        foreach (var y in items.Select(ItemY).OrderBy(y => y))
+        {
+            if (collaped.Count == 0 || y - collaped[^1] > 3) collaped.Add(y);
+        }
+        if (collaped.Count < 2) return null;
+
+        var gaps = new List<int>();
+        for (int i = 1; i < collaped.Count; i++)
+            gaps.Add(collaped[i] - collaped[i - 1]);
+        gaps.Sort();
+        return gaps[gaps.Count / 2]; // median gap
     }
 
     public void Dispose()
