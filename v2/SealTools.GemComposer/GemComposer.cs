@@ -13,6 +13,7 @@ public sealed class GemComposer
 {
     private readonly AppConfig _cfg;
     private bool _quitPressed;
+    private bool _pauseRequested;
 
     public GemComposer(AppConfig cfg)
     {
@@ -144,6 +145,13 @@ public sealed class GemComposer
                 SleepCheck(0.5);
 
                 if (cycle % 10 == 0) Console.WriteLine($"  Cycle: {cycle}");
+                if (_pauseRequested)
+                {
+                    Console.WriteLine("[PAUSE] graceful stop");
+                    running = false; state.Running = false;
+                    _pauseRequested = false;
+                    break;
+                }
             }
         }
         finally
@@ -163,6 +171,7 @@ public sealed class GemComposer
         {
             Thread.Sleep(ms);
             if (Hotkeys.IsDown(_cfg.Hotkeys.Quit)) { _quitPressed = true; return; }
+            if (Hotkeys.IsDown(_cfg.Hotkeys.Pause)) { _pauseRequested = true; }
         }
     }
 

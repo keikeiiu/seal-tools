@@ -20,6 +20,7 @@ public sealed class SealTuner
     private readonly string _rootDir;
     private readonly AttrMatcher _matcher;
     private bool _quitPressed;
+    private bool _pauseRequested;
 
     public SealTuner(AppConfig cfg, AttributesConfig attrs, string rootDir)
     {
@@ -174,7 +175,7 @@ public sealed class SealTuner
                 // Stop conditions.
                 string target = _cfg.Tuner.TargetGrade;
                 string? requireGrade = filter.RequireGrade;
-                string effectiveGrade = (requireGrade != null && !requireGrade.Equals("false", StringComparison.OrdinalIgnoreCase))
+                string effectiveGrade = (!string.IsNullOrWhiteSpace(requireGrade) && !requireGrade.Equals("false", StringComparison.OrdinalIgnoreCase))
                     ? requireGrade : target;
                 bool filterOk = filter.Enabled ? filterPass : true;
                 bool gradeOk = grade != null && GradeIndex(grade) >= GradeIndex(effectiveGrade);
@@ -216,6 +217,13 @@ public sealed class SealTuner
                     running = false; state.Running = false;
                     break;
                 }
+                if (_pauseRequested)
+                {
+                    Console.WriteLine("[PAUSE] graceful stop");
+                    running = false; state.Running = false;
+                    _pauseRequested = false;
+                    break;
+                }
             }
         }
         finally
@@ -238,6 +246,7 @@ public sealed class SealTuner
         {
             Thread.Sleep(ms);
             if (Hotkeys.IsDown(_cfg.Hotkeys.Quit)) { _quitPressed = true; return; }
+            if (Hotkeys.IsDown(_cfg.Hotkeys.Pause)) { _pauseRequested = true; }
         }
     }
 

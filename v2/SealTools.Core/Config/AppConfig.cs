@@ -49,6 +49,7 @@ public sealed class HotkeysConfig
     public int Start { get; set; }
     public int Quit { get; set; }
     public int AdvanceGrade { get; set; }
+    public int Pause { get; set; }
 }
 
 public sealed class TunerConfig

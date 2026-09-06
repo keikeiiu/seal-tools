@@ -79,9 +79,10 @@ public sealed class OcrEngine : IDisposable
         using var mat = ScreenCapture.CaptureRegion(client, region);
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
-        var capturePath = Path.Combine(_captureDir, $"capture_{timestamp}.png");
+        // Captures are debug-only artifacts; save_captures:false keeps the disk clean for end users.
+        var capturePath = _cfg.Tuner.SaveCaptures ? Path.Combine(_captureDir, $"capture_{timestamp}.png") : null;
 
-        var ocrResult = _ocr!.RecognizeText(mat, capturePath);
+        var ocrResult = _ocr!.RecognizeText(mat, capturePath!);
         var items = ocrResult.WordResults ?? Array.Empty<DetBoxItem>();
 
         var ga = ocr.GradeArea;
@@ -97,7 +98,8 @@ public sealed class OcrEngine : IDisposable
         string? grade = null;
         using (var gradeCrop = mat[new Rect(ga.X1, gy[0], ga.X2 - ga.X1, gy[1] - gy[0])])
         {
-            var gRes = _ocr!.RecognizeText(gradeCrop, Path.Combine(_captureDir, $"grade_{timestamp}.png"));
+            var gradePath = _cfg.Tuner.SaveCaptures ? Path.Combine(_captureDir, $"grade_{timestamp}.png") : null;
+            var gRes = _ocr!.RecognizeText(gradeCrop, gradePath!);
             foreach (var it in gRes.WordResults ?? Array.Empty<DetBoxItem>())
             {
                 var t = (it.Word ?? "").Trim().ToUpperInvariant();

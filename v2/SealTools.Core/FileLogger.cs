@@ -3,8 +3,8 @@ using System.IO;
 
 namespace SealTools.Core;
 
-// Simple thread-safe append logger. Writes to a file so results can be reviewed
-// later (or read back by the program), independent of the console.
+// Simple thread-safe append logger. Writes results to a file for later review,
+// independent of the console. Logs are never read back to control the program.
 public sealed class FileLogger : IDisposable
 {
     private readonly object _lock = new();
@@ -14,7 +14,8 @@ public sealed class FileLogger : IDisposable
     {
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        _writer = new StreamWriter(path, append: true) { AutoFlush = true };
+        var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        _writer = new StreamWriter(stream) { AutoFlush = true };
     }
 
     public void WriteLine(string line)

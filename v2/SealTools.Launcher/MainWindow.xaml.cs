@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -37,6 +38,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] Grades = { "N", "G", "DG", "XG", "SG" };
     private static readonly string[] MatchModes = { "any", "all", "per_attr" };
     private static readonly string[] GemGrades = { "N", "G", "DG" };
+    private static readonly string[] RequireGradeOptions = { "None", "N", "G", "DG", "XG", "SG" };
 
     private readonly LauncherService _service;
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
@@ -98,17 +100,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 Text = name,
                 Foreground = (Brush)FindResource("FgBrush"),
-                FontSize = 16,
-                FontWeight = FontWeights.Bold,
+                FontSize = 18,
+                FontWeight = FontWeights.SemiBold,
             };
 
             var statusText = new TextBlock
             {
                 Text = "stopped",
                 Foreground = (Brush)FindResource("BadBrush"),
-                FontSize = 12,
+                FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin = new Thickness(0, 6, 0, 0),
             };
             _statusBlocks[id] = statusText;
 
@@ -137,9 +139,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             var card = new Border
             {
                 Background = (Brush)FindResource("CardBrush"),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(16),
-                Margin = new Thickness(0, 0, 0, 10),
+                CornerRadius = new CornerRadius(12),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(20),
+                Margin = new Thickness(0, 0, 0, 12),
                 Child = cardGrid,
             };
 
@@ -195,11 +199,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
+        ConfigTabs.Items.Add(BuildSettingsTab());
     }
 
     private TabItem BuildTunerTab()
     {
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(8) };
 
         var targetGrade = MakeComboBox(Grades, _service.Config.Tuner.TargetGrade);
         panel.Children.Add(LabeledField("Target grade", targetGrade));
@@ -213,12 +218,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var ocrDelay = new TextBox { Text = _service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture) };
         panel.Children.Add(LabeledField("OCR delay (s)", ocrDelay));
 
-        var matchMode = MakeComboBox(MatchModes, _service.Config.Tuner.Filter.MatchMode);
-        panel.Children.Add(LabeledField("Match mode", matchMode));
-
-        var requireGrade = MakeComboBox(Grades, _service.Config.Tuner.Filter.RequireGrade);
-        panel.Children.Add(LabeledField("Require grade", requireGrade));
-
         var filterEnabled = new CheckBox
         {
             IsChecked = _service.Config.Tuner.Filter.Enabled,
@@ -226,6 +225,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             Foreground = (Brush)FindResource("FgBrush"),
         };
         panel.Children.Add(filterEnabled);
+
+        var matchMode = MakeComboBox(MatchModes, _service.Config.Tuner.Filter.MatchMode);
+        panel.Children.Add(LabeledField("Match mode", matchMode));
+
+        var requireGrade = MakeComboBox(RequireGradeOptions, GradeOrNone(_service.Config.Tuner.Filter.RequireGrade));
+        panel.Children.Add(LabeledField("Require grade", requireGrade));
+
+        var saveCaptures = new CheckBox
+        {
+            IsChecked = _service.Config.Tuner.SaveCaptures,
+            Content = "Save OCR captures (debug only)",
+            Foreground = (Brush)FindResource("FgBrush"),
+        };
+        panel.Children.Add(saveCaptures);
 
         var rules = new TextBox
         {
@@ -245,6 +258,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         panel.Children.Add(LabeledField("Override rules", overrideRules));
 
+        void SetFilterFieldsEnabled(bool on)
+        {
+            matchMode.IsEnabled = on;
+            requireGrade.IsEnabled = on;
+            rules.IsEnabled = on;
+            overrideRules.IsEnabled = on;
+        }
+        filterEnabled.Checked += (_, _) => SetFilterFieldsEnabled(true);
+        filterEnabled.Unchecked += (_, _) => SetFilterFieldsEnabled(false);
+        SetFilterFieldsEnabled(filterEnabled.IsChecked ?? false);
+
         var save = MakeButton("Save Tuner Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
@@ -254,21 +278,31 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (double.TryParse(clickDelay.Text, out var cd)) cfg.Tuner.Timing.ClickEnterDelay = cd;
             if (double.TryParse(ocrDelay.Text, out var od)) cfg.Tuner.Timing.OcrDelay = od;
             cfg.Tuner.Filter.MatchMode = matchMode.SelectedItem?.ToString() ?? "any";
-            cfg.Tuner.Filter.RequireGrade = requireGrade.SelectedItem?.ToString();
+            var rg = requireGrade.SelectedItem?.ToString();
+            cfg.Tuner.Filter.RequireGrade = (rg == null || rg == "None") ? null : rg;
             cfg.Tuner.Filter.Enabled = filterEnabled.IsChecked ?? false;
             cfg.Tuner.Filter.Rules = ParseRules(rules.Text);
             cfg.Tuner.Filter.OverrideRules = ParseRules(overrideRules.Text);
+            cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
             _service.SaveConfig();
             MessageBox.Show("Tuner config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
         panel.Children.Add(save);
+
+        var cleanup = MakeButton("Clean up captures", ControlAppearance.Secondary);
+        cleanup.Click += (_, _) =>
+        {
+            var n = _service.CleanupCaptures();
+            MessageBox.Show($"Deleted {n} capture image(s).", "Clean up", MessageBoxButton.OK, MessageBoxImage.Information);
+        };
+        panel.Children.Add(cleanup);
 
         return new TabItem { Header = "Tuner", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private TabItem BuildGemTab()
     {
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(8) };
 
         var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
         panel.Children.Add(LabeledField("Start grade", startGrade));
@@ -287,7 +321,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildSpammerTab()
     {
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(8) };
 
         var keys = new TextBox
         {
@@ -312,13 +346,41 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildAttributesTab()
     {
-        var list = new ListBox { Foreground = (Brush)FindResource("FgBrush"), Background = (Brush)FindResource("CardBrush") };
-        foreach (var attr in _service.Attributes.Attributes)
-        {
-            list.Items.Add($"{attr.Name}   ({attr.Category})");
-        }
+        var panel = new StackPanel { Margin = new Thickness(8) };
 
-        return new TabItem { Header = "Attributes", Content = list };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "OCR attribute dictionary — the item attributes the tuner can recognize and match against your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the garbled forms OCR actually produces and auto-corrects to that name.",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10),
+        });
+
+        var grid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            Background = (Brush)FindResource("CardBrush"),
+            Foreground = (Brush)FindResource("FgBrush"),
+            RowBackground = (Brush)FindResource("CardBrush"),
+            BorderThickness = new Thickness(0),
+        };
+
+        grid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding("Name"), Width = new DataGridLength(160) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Category", Binding = new Binding("Category"), Width = new DataGridLength(100) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "OCR variants", Binding = new Binding("Variants"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+
+        grid.ItemsSource = _service.Attributes.Attributes
+            .Select(a => new { Name = a.Name, Category = a.Category, Variants = string.Join(" / ", a.Variants) })
+            .ToList();
+
+        panel.Children.Add(grid);
+
+        return new TabItem { Header = "Attributes", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private TabItem BuildTunerCalibrateTab()
@@ -348,20 +410,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var capture = MakeButton("Capture 發條 window", ControlAppearance.Primary);
         capture.Click += (_, _) => TunerCapture();
 
-        var auto = MakeButton("Auto-anchor", ControlAppearance.Primary);
-        auto.Click += (_, _) =>
-        {
-            try
-            {
-                _service.AutoAnchor();
-                _tunerHint!.Text = "Auto-anchored — capture to verify.";
-            }
-            catch (Exception ex)
-            {
-                _tunerHint!.Text = ex.Message;
-            }
-        };
-
         var save = MakeButton("Save Tuner", ControlAppearance.Primary);
         save.Click += (_, _) => TunerSave();
 
@@ -370,10 +418,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var top = new StackPanel { Orientation = Orientation.Horizontal };
         top.Children.Add(capture);
-        top.Children.Add(auto);
         top.Children.Add(check);
 
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(8) };
         panel.Children.Add(hint);
         panel.Children.Add(top);
         panel.Children.Add(grid);
@@ -410,7 +457,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
 
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(8) };
         panel.Children.Add(hint);
         panel.Children.Add(capture);
         panel.Children.Add(grid);
@@ -659,6 +706,89 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
+    private TabItem BuildSettingsTab()
+    {
+        var panel = new StackPanel { Margin = new Thickness(8) };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Hotkeys. Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10),
+        });
+
+        var startBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Start) };
+        var quitBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Quit) };
+        var gradeBox = new TextBox { Text = VkName(_service.Config.Hotkeys.AdvanceGrade) };
+        var pauseBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Pause) };
+
+        panel.Children.Add(LabeledField("Start / stop rolling", startBox));
+        panel.Children.Add(LabeledField("Quit (immediate)", quitBox));
+        panel.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
+        panel.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
+
+        var save = MakeButton("Save Hotkeys", ControlAppearance.Primary);
+        save.Click += (_, _) =>
+        {
+            var s = ParseVk(startBox.Text);
+            var q = ParseVk(quitBox.Text);
+            var g = ParseVk(gradeBox.Text);
+            var p = ParseVk(pauseBox.Text);
+            if (s == 0 || q == 0 || g == 0 || p == 0)
+            {
+                MessageBox.Show("Invalid hotkey name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            _service.Config.Hotkeys.Start = s;
+            _service.Config.Hotkeys.Quit = q;
+            _service.Config.Hotkeys.AdvanceGrade = g;
+            _service.Config.Hotkeys.Pause = p;
+            _service.SaveConfig();
+            MessageBox.Show("Hotkeys saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        };
+        panel.Children.Add(save);
+
+        return new TabItem { Header = "Settings", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+    }
+
+    private static int ParseVk(string name)
+    {
+        var n = name.Trim();
+        if (n.StartsWith("F", StringComparison.OrdinalIgnoreCase) && int.TryParse(n.AsSpan(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var f) && f is >= 1 and <= 24)
+        {
+            return 0x70 + f - 1;
+        }
+
+        return n.ToUpperInvariant() switch
+        {
+            "ESC" or "ESCAPE" => 0x1B,
+            "CAPSLOCK" or "CAPS" => 0x14,
+            "SPACE" => 0x20,
+            "TAB" => 0x09,
+            "ENTER" or "RETURN" => 0x0D,
+            "BACKSPACE" => 0x08,
+            _ when n.Length == 1 => char.ToUpperInvariant(n[0]),
+            _ => 0,
+        };
+    }
+
+    private static string VkName(int vk)
+    {
+        if (vk is >= 0x70 and <= 0x87) return $"F{vk - 0x70 + 1}";
+        return vk switch
+        {
+            0x1B => "Esc",
+            0x14 => "CapsLock",
+            0x20 => "Space",
+            0x09 => "Tab",
+            0x0D => "Enter",
+            0x08 => "Backspace",
+            _ when vk is >= 0x21 and <= 0x7E => ((char)vk).ToString(),
+            _ => $"0x{vk:X}",
+        };
+    }
+
     private Grid LabeledField(string label, FrameworkElement control)
     {
         var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };
@@ -690,12 +820,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         return combo;
     }
 
+    // "None" means no grade floor; the code also treats null/"false" as unset.
+    private static string GradeOrNone(string? g) =>
+        string.IsNullOrWhiteSpace(g) || g.Equals("false", StringComparison.OrdinalIgnoreCase) ? "None" : g;
+
     private static UiButton MakeButton(string text, ControlAppearance appearance) =>
         new()
         {
             Content = text,
             Appearance = appearance,
-            Margin = new Thickness(0, 10, 0, 0),
+            MinWidth = 84,
+            Margin = new Thickness(0, 10, 6, 0),
         };
 
     private static string SerializeRules(List<FilterRule> rules) =>

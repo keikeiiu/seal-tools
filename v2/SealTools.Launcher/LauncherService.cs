@@ -67,6 +67,7 @@ public sealed class LauncherService : IDisposable
             catch (Exception ex)
             {
                 Console.WriteLine($"[!] {id} crashed: {ex.Message}");
+                try { File.AppendAllText(Path.Combine(_rootDir, "logs", "error.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}: {ex}\n\n"); } catch { }
                 state.Running = false;
             }
         });
@@ -104,22 +105,17 @@ public sealed class LauncherService : IDisposable
         return _diagnosticOcr.Scan(ocr);
     }
 
-    /// <summary>Scales the machine-specific coords to the current window size (auto-anchor first guess).</summary>
-    public void AutoAnchor()
+    /// <summary>Deletes the debug OCR capture images (logs/captures/*.png). Returns the number removed.</summary>
+    public int CleanupCaptures()
     {
-        var hwnd = WindowFinder.FindByTitle(Config.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
-        if (client == null)
+        var dir = Path.Combine(_rootDir, "logs", "captures");
+        if (!Directory.Exists(dir)) return 0;
+        var n = 0;
+        foreach (var f in Directory.EnumerateFiles(dir, "*.png", SearchOption.TopDirectoryOnly))
         {
-            throw new InvalidOperationException("Game window not found.");
+            try { File.Delete(f); n++; } catch { /* file locked — skip */ }
         }
-
-        var scaleX = (double)client.Width / Config.ReferenceWindow.Width;
-        var scaleY = (double)client.Height / Config.ReferenceWindow.Height;
-        var local = LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        if (local.Tuner?.Ocr != null) Calibration.ScaleOcr(local.Tuner.Ocr, scaleX, scaleY);
-        if (local.Gem?.GradePositions != null) Calibration.ScalePositions(local.Gem.GradePositions, scaleX, scaleY);
-        SaveLocal(local);
+        return n;
     }
 
     private int RunTool(string id, ToolState state, CancellationToken ct) => id switch

@@ -74,6 +74,4 @@ public static class Arduino
         sp.Open();
         return sp;
     }
-
-    public static void Write(SerialPort sp, string line) => sp.Write(line);
 }

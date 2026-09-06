@@ -18,7 +18,8 @@ arduino:
 hotkeys:                    # Windows virtual-key codes
   start: 0x7B               # F12
   quit: 0x7A                # F11
-  advance_grade: 0x78       # F9
+  advance_grade: 0x47       # G
+  pause: 0x14               # CapsLock — graceful stop (finish current cycle, then pause)
 
 tuner:
   grade_order: ["N", "G", "DG", "XG", "SG"]
@@ -61,10 +62,17 @@ tuner:
 
 gem:
   grades: ["N", "G", "DG"]
-  start_grade: "N"
+  start_grade: "DG"
 
 spammer:
   keys:
-    "F2": 1.0
-    "5": 1.0
-    "6": 1.0
+    "*0": 0.2
+    "*1": 0.2
+    "*2": 0.2
+    "*3": 0.2
+    "*4": 0.2
+    "*5": 0.2
+    "*6": 0.2
+    "*7": 0.2
+    "*8": 0.2
+    "*9": 0.2
