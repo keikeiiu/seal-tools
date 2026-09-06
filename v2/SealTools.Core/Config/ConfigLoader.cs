@@ -31,7 +31,17 @@ public sealed class ConfigLoader
     {
         var defaults = Deserialize<AppConfig>("defaults.yaml");
 
-        if (File.Exists(PathOf("local.yaml")))
+        // First run on a new machine: seed the machine-specific config from the
+        // example template (v1 coords as a starting point), then calibrate in-app.
+        var localPath = PathOf("local.yaml");
+        if (!File.Exists(localPath))
+        {
+            var examplePath = PathOf("local.yaml.example");
+            if (File.Exists(examplePath))
+                File.Copy(examplePath, localPath);
+        }
+
+        if (File.Exists(localPath))
         {
             var local = Deserialize<LocalOverrides>("local.yaml");
             ApplyOverrides(defaults, local);
@@ -39,8 +49,7 @@ public sealed class ConfigLoader
         else
         {
             throw new ConfigException(
-                "config/local.yaml not found. Copy config/local.yaml.example to config/local.yaml " +
-                "and calibrate, or run the auto-anchor calibrator.");
+                "config/local.yaml not found and config/local.yaml.example is missing, so it cannot be created.");
         }
 
         ConfigValidator.Validate(defaults);

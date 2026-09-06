@@ -16,9 +16,8 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 ## Quick start
 
 1. Unzip `SealTools-v2.zip`.
-2. Copy `config\local.yaml.example` → `config\local.yaml`.
-3. Run `SealTools.Launcher.exe` — **as Administrator** so the hotkeys work while the game is focused.
-4. Use the in-app **Calibrate** tabs (Tuner + Gem) to set your machine's coordinates once.
+2. Run `SealTools.Launcher.exe` — **as Administrator** so the hotkeys work while the game is focused. (On first run it auto-creates `config\local.yaml` from the example.)
+3. Use the in-app **Calibrate** tabs (Tuner + Gem) to set your machine's coordinates once.
 
 ## What's inside
 
