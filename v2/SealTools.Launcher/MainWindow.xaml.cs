@@ -835,13 +835,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var client = GemPointer.Client(_service.Config.Window.Title);
         if (client == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
-        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
-        if (port == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+        var ser = _service.ArduinoPort();
+        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
 
         try
         {
-            using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
-
             // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click, no
             // double click). Send the raw D the composer uses.
             GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
@@ -893,13 +891,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
-        if (port == null)
+        var ser = _service.ArduinoPort();
+        if (ser == null)
         {
             _gemHint!.Text = "Arduino not found — plug it in and retry.";
             return;
         }
-        using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
 
         // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
         // set the cursor onto the point and click once.
@@ -948,8 +945,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found — open the game first.";
             return;
         }
-        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
-        if (port == null)
+        var ser = _service.ArduinoPort();
+        if (ser == null)
         {
             _gemHint!.Text = "Arduino not found — plug it in and retry.";
             return;
@@ -965,7 +962,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         try
         {
-            using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
 
             // v1 single-click core: SetCursorPos(from) -> C -> D raw -> C (no focus-click, no
             // double click). Same raw movement the composer sends.

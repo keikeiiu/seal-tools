@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using SealTools.Core;
@@ -22,6 +23,7 @@ public sealed class LauncherService : IDisposable
     private ToolState? _state;
     private string? _currentId;
     private OcrEngine? _diagnosticOcr;
+    private SerialPort? _arduino;
 
     public LauncherService(string rootDir)
     {
@@ -43,6 +45,19 @@ public sealed class LauncherService : IDisposable
     /// <summary>The live state of the currently-launched tool, or null when idle.</summary>
     public ToolState? CurrentState => _state;
 
+    /// <summary>Gets the shared Arduino serial port, opening it once (with a boot delay) if needed.
+    /// Returns null when the Arduino isn't found. Tools and the calibrate test buttons both use this
+    /// single open port, so it is never opened twice (which was causing "COM port denied").</summary>
+    public SerialPort? ArduinoPort()
+    {
+        if (_arduino is { IsOpen: true }) return _arduino;
+        var port = Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid);
+        if (port == null) return null;
+        _arduino = Arduino.Open(port, Config.Arduino.Baud);
+        Thread.Sleep(2000); // one-time boot delay after the serial open
+        return _arduino;
+    }
+
     /// <summary>Launches a tool (stopping the current one first) and starts it rolling.</summary>
     public void StartTool(string id)
     {
@@ -52,6 +67,12 @@ public sealed class LauncherService : IDisposable
         }
 
         StopTool();
+        var ser = ArduinoPort();
+        if (ser == null)
+        {
+            Console.WriteLine("[!] Arduino not found");
+            return;
+        }
         _currentId = id;
         _cts = new CancellationTokenSource();
         _state = new ToolState { Running = true };
@@ -62,7 +83,7 @@ public sealed class LauncherService : IDisposable
         {
             try
             {
-                RunTool(id, state, ct);
+                RunTool(id, ser, state, ct);
             }
             catch (Exception ex)
             {
@@ -118,11 +139,11 @@ public sealed class LauncherService : IDisposable
         return n;
     }
 
-    private int RunTool(string id, ToolState state, CancellationToken ct) => id switch
+    private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct) => id switch
     {
-        "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(state, ct),
-        "gem" => new GemComposerTool(Config).Run(state, ct),
-        "spammer" => new SkillSpammer(Config).Run(state, ct),
+        "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
+        "gem" => new GemComposerTool(Config).Run(ser, state, ct),
+        "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
         _ => 1,
     };
 
@@ -130,5 +151,7 @@ public sealed class LauncherService : IDisposable
     {
         _diagnosticOcr?.Dispose();
         StopTool();
+        _arduino?.Dispose();
+        _arduino = null;
     }
 }

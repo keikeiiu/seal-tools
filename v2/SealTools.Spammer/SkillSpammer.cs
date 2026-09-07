@@ -23,18 +23,8 @@ public sealed class SkillSpammer
         _cfg = cfg;
     }
 
-    public int Run(ToolState state, CancellationToken ct)
+    public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
-        var port = Arduino.Find(_cfg.Arduino.Vid, _cfg.Arduino.Pid);
-        if (port == null)
-        {
-            Console.WriteLine("[!] Arduino not found");
-            return 1;
-        }
-        using var ser = Arduino.Open(port, _cfg.Arduino.Baud);
-        Thread.Sleep(2000);
-        Console.WriteLine($"[OK] Arduino on {port}");
-
         var cooldowns = _cfg.Spammer.Keys;
         bool running = false;
         int count = 0;

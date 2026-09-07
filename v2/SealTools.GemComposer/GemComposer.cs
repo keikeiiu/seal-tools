@@ -20,18 +20,8 @@ public sealed class GemComposer
         _cfg = cfg;
     }
 
-    public int Run(ToolState state, CancellationToken ct)
+    public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
-        var port = Arduino.Find(_cfg.Arduino.Vid, _cfg.Arduino.Pid);
-        if (port == null)
-        {
-            Console.WriteLine("[!] Arduino not found");
-            return 1;
-        }
-        using var ser = Arduino.Open(port, _cfg.Arduino.Baud);
-        Thread.Sleep(2000);
-        Console.WriteLine($"[OK] Arduino on {port}");
-
         var grades = _cfg.Gem.Grades;
         int gidx = Math.Max(0, grades.IndexOf(_cfg.Gem.StartGrade));
         bool running = false;

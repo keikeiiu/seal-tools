@@ -30,24 +30,13 @@ public sealed class SealTuner
         _matcher = new AttrMatcher(attrs);
     }
 
-    public int Run(ToolState state, CancellationToken ct)
+    public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
         var logDir = Path.Combine(_rootDir, "logs");
         Directory.CreateDirectory(logDir);
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         using var runJson = new FileLogger(Path.Combine(logDir, $"run_{timestamp}.jsonl"));
         using var runTxt = new FileLogger(Path.Combine(logDir, $"run_{timestamp}.txt"));
-
-        var port = Arduino.Find(_cfg.Arduino.Vid, _cfg.Arduino.Pid);
-        if (port == null)
-        {
-            Console.WriteLine("[!] Arduino not found");
-            return 1;
-        }
-
-        using var ser = Arduino.Open(port, _cfg.Arduino.Baud);
-        Thread.Sleep(2000);
-        Console.WriteLine($"[OK] Arduino on {port}");
 
         using var ocr = new OcrEngine(_cfg, _attrs, _rootDir);
 
