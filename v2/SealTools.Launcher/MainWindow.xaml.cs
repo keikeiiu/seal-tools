@@ -38,6 +38,14 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] Grades = { "N", "G", "DG", "XG", "SG" };
     private static readonly string[] MatchModes = { "any", "all", "per_attr" };
     private static readonly string[] GemGrades = { "N", "G", "DG" };
+    // What the gem composer does when the result window is empty (a grade ran out of resources).
+    // Label is shown in the config tab; Value is the empty_mode value written to config.
+    private static readonly (string Label, string Value)[] GemEmptyModes =
+    {
+        ("Stop", "stop"),
+        ("Advance to next grade", "advance_grade"),
+        ("Clear resources, then advance", "advance_grade_clear"),
+    };
     private static readonly string[] RequireGradeOptions = { "None", "N", "G", "DG", "XG", "SG" };
 
     private readonly LauncherService _service;
@@ -45,12 +53,22 @@ public partial class MainWindow : FluentWindow, IDisposable
     private readonly DispatcherTimer _timer;
 
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
+    private static readonly string[] CalibResourceSteps = { "Resource1", "Resource2", "Resource3" };
+    // Points offered by the gem "Test Click" move-cursor check.
+    private static readonly string[] GemTestPoints =
+        CalibGemSteps.Concat(CalibResourceSteps).Concat(new[] { "ResultCenter" }).ToArray();
+    // Click steps come first (grade buttons + resource slots), then one drag step for the
+    // result-gem area. The result gem box is an AREA (not a point) because it's both OCR-read
+    // and clicked (centre).
+    private static readonly int GemResultBoxStep = CalibGemSteps.Length + CalibResourceSteps.Length;
+    private static readonly int GemTotalSteps = GemResultBoxStep + 1;
     private bool _disposed;
 
     // Tuner calibrator (drag three boxes: grade / attributes / remaining) state.
     private Image? _tunerImage;
     private Canvas? _tunerCanvas;
     private TextBlock? _tunerHint;
+    private Grid? _tunerGrid;
     private BitmapSource? _tunerScreenshot;
     private int _tunerStep;
     private Rect? _tunerGradeBox;
@@ -62,13 +80,20 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Point? _tunerDragStart;
     private Rectangle? _tunerMarquee;
 
-    // Gem calibrator (click buttons) state.
+    // Gem calibrator (click buttons + drag the result-gem area) state.
     private Image? _gemImage;
     private Canvas? _gemCanvas;
     private TextBlock? _gemHint;
     private BitmapSource? _gemScreenshot;
+    private Grid? _gemGrid;
     private readonly Dictionary<string, Point> _gemPoints = new();
+    private Rect? _gemResultBox;
+    private Point? _gemDragStart;
+    private Rectangle? _gemMarquee;
     private int _gemStep;
+    private System.Windows.Controls.ComboBox? _gemTestPoint;
+    private System.Windows.Controls.ComboBox? _gemTestFrom;
+    private System.Windows.Controls.Image? _gemResultPreview;
 
     public MainWindow()
     {
@@ -77,6 +102,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _service = new LauncherService(FindRootDir());
         BuildToolCards();
         BuildConfigTabs();
+        LoadCalibrationImages();
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _timer.Tick += (_, _) => RefreshStatus();
@@ -305,10 +331,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
         panel.Children.Add(LabeledField("Start grade", startGrade));
 
+        // What the composer does when the result window is empty (grade ran out of resources).
+        var emptyMode = MakeComboBox(
+            GemEmptyModes.Select(m => m.Label).ToList(),
+            GemEmptyModes.First(m => m.Value == _service.Config.Gem.EmptyMode).Label);
+        panel.Children.Add(LabeledField("On empty result", emptyMode));
+
         var save = MakeButton("Save Gem Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             _service.Config.Gem.StartGrade = startGrade.SelectedItem?.ToString() ?? "N";
+            var mode = GemEmptyModes.First(m => m.Label == emptyMode.SelectedItem?.ToString());
+            _service.Config.Gem.EmptyMode = mode.Value;
             _service.SaveConfig();
             MessageBox.Show("Gem config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
@@ -404,6 +438,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
         grid.Children.Add(image);
         grid.Children.Add(canvas);
+        _tunerGrid = grid;
 
         var capture = MakeButton("Capture 發條 window", ControlAppearance.Primary);
         capture.Click += (_, _) => TunerCapture();
@@ -431,7 +466,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var hint = new TextBlock
         {
-            Text = "Open the gem combine window, capture, then click each button in order.",
+            Text = "Open the gem combine window, capture, then click each button in order, and drag a box around the composed result gem.",
             Foreground = (Brush)FindResource("HighlightBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 4),
@@ -444,10 +479,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         _gemCanvas = canvas;
 
         canvas.MouseDown += (_, e) => GemMouseDown(canvas, e.GetPosition(canvas));
+        canvas.MouseMove += (_, e) => GemMouseMove(canvas, e.GetPosition(canvas));
+        canvas.MouseUp += (_, e) => GemMouseUp(canvas, e.GetPosition(canvas));
 
         var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
         grid.Children.Add(image);
         grid.Children.Add(canvas);
+        _gemGrid = grid;
 
         var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
@@ -455,14 +493,385 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
 
+        // Test-click: move the cursor to a calibrated point so the user can confirm it
+        // lands on the right on-screen control. Move-only (no in-game click) on purpose —
+        // real clicks go through the Arduino HID, and this is purely a position check.
+        var testBox = new ComboBox
+        {
+            ItemsSource = GemTestPoints,
+            SelectedIndex = 0,
+            MinWidth = 140,
+        };
+        var testFromBox = new ComboBox
+        {
+            ItemsSource = GemTestPoints,
+            SelectedIndex = 0,
+            MinWidth = 140,
+            MaxWidth = 140,
+        };
+        var testBtn = MakeButton("Test Click", ControlAppearance.Secondary);
+        testBtn.Click += (_, _) => GemTestClick(testBox);
+        var testMoveBtn = MakeButton("Test Move (rel)", ControlAppearance.Secondary);
+        testMoveBtn.Click += (_, _) => GemTestRelativeMove(testFromBox, testBox);
+        var checkColBtn = MakeButton("Check Result Colour", ControlAppearance.Secondary);
+        checkColBtn.Click += (_, _) => GemCheckResultColor();
+        var testGemBtn = MakeButton("Test Result Gem", ControlAppearance.Secondary);
+        testGemBtn.Click += (_, _) => GemTestResult();
+        _gemTestPoint = testBox;
+        _gemTestFrom = testFromBox;
+        var testRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        testRow.Children.Add(testBtn);
+        testRow.Children.Add(new TextBlock { Text = "from", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
+        testRow.Children.Add(testFromBox);
+        testRow.Children.Add(testMoveBtn);
+        testRow.Children.Add(testBox);
+        testRow.Children.Add(checkColBtn);
+        testRow.Children.Add(testGemBtn);
+
+        // Result-gem box crop preview: once the result box is dragged, show the exact region
+        // being sampled for empty-detection, so the user can visually confirm it's over the
+        // empty slot (and not an offset/mis-sized area).
+        var resultPreview = new Image { Stretch = Stretch.Uniform, MaxWidth = 260, MaxHeight = 140, Margin = new Thickness(0, 4, 0, 0) };
+        _gemResultPreview = resultPreview;
+        var resultPreviewLabel = new TextBlock
+        {
+            Text = "Result gem box crop (empty-detection region):",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            Margin = new Thickness(0, 10, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var resultPreviewPanel = new StackPanel { Margin = new Thickness(0) };
+        resultPreviewPanel.Children.Add(resultPreviewLabel);
+        resultPreviewPanel.Children.Add(resultPreview);
+
         var panel = new StackPanel { Margin = new Thickness(8) };
         panel.Children.Add(hint);
         panel.Children.Add(capture);
         panel.Children.Add(grid);
         panel.Children.Add(save);
+        panel.Children.Add(testRow);
+        panel.Children.Add(resultPreviewPanel);
 
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
+
+    // Resolve a calibrated point by name, preferring the just-dragged/clicked in-session point
+    // then falling back to the saved config (so a test works right after a restart, before
+    // re-capturing the canvas). Returns null when the name isn't calibrated.
+    private Point? ResolveGemPoint(string name)
+    {
+        var cfg = _service.Config.Gem;
+        Point? pt = name == "ResultCenter"
+            ? (_gemResultBox is { } rb ? new Point(rb.X + rb.Width / 2, rb.Y + rb.Height / 2) : (Point?)null)
+            : _gemPoints.TryGetValue(name, out var p) ? (Point?)p : null;
+        pt ??= name switch
+        {
+            _ when name == "ResultCenter" => cfg.ResultGemCenter is { } c ? new Point(c.X, c.Y) : (Point?)null,
+            _ when name.StartsWith("Resource", StringComparison.Ordinal) =>
+                int.TryParse(name.AsSpan(8), out var i) && cfg.ResourceGems.Count > i - 1
+                    ? new Point(cfg.ResourceGems[i - 1][0], cfg.ResourceGems[i - 1][1]) : (Point?)null,
+            _ when cfg.GradePositions.TryGetValue(name, out var pos) && pos.Count > 1
+                => new Point(pos[0], pos[1]),
+            _ => null,
+        };
+        return pt;
+    }
+
+    // Move the cursor to the selected calibrated point (client-relative -> screen) without
+    // clicking, so the user can verify each calibration position visually.
+    private void GemTestClick(ComboBox box)
+    {
+        if (box.SelectedItem is not string name)
+        {
+            _gemHint!.Text = "Pick a point to test.";
+            return;
+        }
+
+        var pt = ResolveGemPoint(name);
+        if (pt == null)
+        {
+            _gemHint!.Text = $"\"{name}\" isn't calibrated yet.";
+            return;
+        }
+
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        if (client == null)
+        {
+            _gemHint!.Text = "Game window not found — open the game first.";
+            return;
+        }
+
+        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
+        if (port == null)
+        {
+            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            return;
+        }
+        using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
+
+        // v1 gem_composer does NO focus-click here — it just does SetCursorPos(gx, gy) directly
+        // and clicks, because the game stays focused during a gem run. Center-clicking to "focus"
+        // makes the game CAPTURE the cursor (raw-input), so the follow-up SetCursorPos moves the
+        // OS cursor but the game's in-game pointer stays pinned at centre — every click lands at
+        // centre. So mirror v1: set the cursor straight onto the point, no focus click.
+        WindowFinder.MoveCursor(client, (int)pt.Value.X, (int)pt.Value.Y);
+        System.Threading.Thread.Sleep(200);
+        ser.Write("C\n");
+
+        _gemHint!.Text = $"Test click: set cursor to ({pt.Value.X},{pt.Value.Y}) and clicked \"{name}\".";
+        DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
+            WindowFinder.ForegroundTitle(), WindowFinder.ForegroundTitle(), 0, false);
+    }
+
+    // Test a RELATIVE "D" move at 1:1 between two user-chosen points, mirroring the composer's
+    // real anchor: focus-click the SOURCE (SetCursorPos -> C), then a relative move D(source->target)
+    // at 1:1, then confirm-click the TARGET. This confirms the mouse scale is 1:1: if every step
+    // lands on a button, the scale is correct. With a separated in-game cursor the pixel distance
+    // can't be measured, so this is judged visually (does each click land?).
+    private void GemTestRelativeMove(ComboBox fromBox, ComboBox toBox)
+    {
+        if (fromBox.SelectedItem is not string fromName)
+        {
+            _gemHint!.Text = "Pick a START point (where the test focus-clicks).";
+            return;
+        }
+        if (toBox.SelectedItem is not string toName)
+        {
+            _gemHint!.Text = "Pick a TARGET point to move to.";
+            return;
+        }
+        var from = ResolveGemPoint(fromName);
+        if (from == null)
+        {
+            _gemHint!.Text = $"Start \"{fromName}\" isn't calibrated yet.";
+            return;
+        }
+        var target = ResolveGemPoint(toName);
+        if (target == null)
+        {
+            _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet.";
+            return;
+        }
+
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        if (client == null)
+        {
+            _gemHint!.Text = "Game window not found — open the game first.";
+            return;
+        }
+        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
+        if (port == null)
+        {
+            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            return;
+        }
+        try
+        {
+            using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
+            System.Threading.Thread.Sleep(1200);
+
+            // Reproduce the composer's real anchor: the SOURCE click selects the source and lets
+            // the game capture the in-game pointer there, exactly as a compose cycle leaves it.
+            // Then a relative D source->target through the LIVE mouse_scale from the X/Y boxes —
+            // the same value the composer uses (GemComposer applies (point - Register) * scale/100).
+            // So the scale that makes the test land IS the composer's scale. Tune the boxes until
+            // it lands: overshoot => lower, short => raise. No separate centre focus-click — same
+            // as the composer, which avoids the pin-at-centre drift.
+            WindowFinder.MoveCursor(client, (int)from.Value.X, (int)from.Value.Y);
+            System.Threading.Thread.Sleep(300);
+            ser.Write("C\n");
+            System.Threading.Thread.Sleep(500);
+            var dx = (int)Math.Round(target.Value.X - from.Value.X);
+            var dy = (int)Math.Round(target.Value.Y - from.Value.Y);
+            ser.Write($"D {dx} {dy}\n");
+            System.Threading.Thread.Sleep(300);
+            ser.Write("C\n");
+            System.Threading.Thread.Sleep(300);
+
+            _gemHint!.Text = $"Test move: click \"{fromName}\" then D {dx} {dy} (1:1) then click \"{toName}\". Does it land?";
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = $"Test move failed: {ex.Message}";
+        }
+    }
+
+    // Append test-click diagnostics to logs/test_click_debug.txt so the focus/positioning can be
+    // inspected without relying on the on-screen hint.
+    private static void DebugClickLog(string title, string name, WindowRect client, Point pt, Point center,
+        string beforeTitle, string afterTitle, int attempts, bool focused)
+    {
+        try
+        {
+            var line = $"{DateTime.Now:yyyyMMdd_HHmmss} name={name} title=\"{title}\" " +
+                $"client=({client.Left},{client.Top},{client.Width}x{client.Height}) " +
+                $"center=({(int)center.X},{(int)center.Y}) target=({(int)pt.X},{(int)pt.Y}) " +
+                $"attempts={attempts} focused={focused} " +
+                $"bgTitle=\"{beforeTitle}\" agTitle=\"{afterTitle}\" windowCenter=" +
+                $"({client.Left + client.Width / 2},{client.Top + client.Height / 2})\n";
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "test_click_debug.txt"), line);
+        }
+        catch { /* diagnostics must never break the click */ }
+    }
+
+    // Sample the live result box and report its colour composition ("colour code"), plus the
+    // distance to the sampled empty reference and the empty/has-gem verdict.
+    private void GemCheckResultColor()
+    {
+        if (!SampleResultBox(out var frame, out var sig, out var rb)) return;
+        var verdict = sig == null
+            ? " — no empty reference yet (save with the box empty to capture it)"
+            : $" — distance {GemColorAnalyzer.Distance(frame, sig):0.000} => " +
+              (GemColorAnalyzer.IsEmpty(frame, sig, _service.Config.Gem.EmptyDistance) ? "EMPTY" : "has gem");
+        _gemHint!.Text = $"Result colour: {DescribeColor(frame)}{verdict}";
+    }
+
+    // Test empty-vs-gem detection: sample the CURRENT result box (manually put a gem in the box,
+    // or leave it empty) and report the colour + channel spread + verdict, so the user can
+    // validate the discriminator against a real gem by hand. No in-game clicking.
+    private void GemTestResult()
+    {
+        if (!SampleResultBox(out var frame, out var sig, out var rb)) return;
+        var spread = Spread(frame);
+        // Rough expected signs: empty slot is near-white/pale (spread small, RGB means close);
+        // a red/blue/green gem dominates ONE channel (spread large, one RGB mean far from others).
+        var dominant = DominantTone(frame);
+        var baseVerdict = sig == null
+            ? "no empty reference yet"
+            : (GemColorAnalyzer.IsEmpty(frame, sig, _service.Config.Gem.EmptyDistance) ? "EMPTY" : "has gem");
+        var hint = $"Test object: {DescribeColor(frame)}  channel spread {spread:0.00}  tone {dominant}  => {baseVerdict}" +
+                   (sig != null ? $" (distance {GemColorAnalyzer.Distance(frame, sig):0.000})" : "");
+        if (sig != null)
+            hint += $"\n  vs empty ref: dV {Math.Abs(frame.MeanV - sig.MeanV):0.000}  dS {Math.Abs(frame.MeanSat - sig.MeanSat):0.000}  dC {Math.Abs(frame.ColoredFraction - sig.ColoredFraction):0.000}  dB {Math.Abs(frame.MeanB - sig.MeanB):0.000}";
+        _gemHint!.Text = hint;
+    }
+
+    // Resolve the result box (in-session drag or saved config) and sample it. Sets a hint and
+    // returns false on failure.
+    private bool SampleResultBox(out ColorComposition frame, out ColorComposition? sig, out Rect rb)
+    {
+        frame = null!; sig = null; rb = default;
+        var a = _service.Config.Gem.ResultGemArea;
+        var box = _gemResultBox ?? (a is { Count: 4 }
+            ? new Rect(a[0], a[1], a[2], a[3]) : (Rect?)null);
+        if (box == null)
+        {
+            _gemHint!.Text = "No result box yet — drag it during gem calibration (or it's not saved).";
+            return false;
+        }
+        rb = box.Value;
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        if (client == null)
+        {
+            _gemHint!.Text = "Game window not found — open the game first.";
+            return false;
+        }
+        frame = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+        sig = _service.Config.Gem.EmptySignature;
+        SaveResultCrop(client, rb);
+        return true;
+    }
+
+    // Channel dominance of the mean colour: max(r,g,b) - min(r,g,b). Pale-yellow empty slots are
+    // near-neutral (small spread); a red/blue/green gem dominates one channel (large spread).
+    private static double Spread(ColorComposition c) =>
+        Math.Max(c.MeanR, Math.Max(c.MeanG, c.MeanB)) - Math.Min(c.MeanR, Math.Min(c.MeanG, c.MeanB));
+
+    // Rough reading of the dominant channel, for the Test Result Gem hint: an empty slot is
+    // near-white/pale (no dominant channel => "neutral"); a gem is a single hue.
+    private static string DominantTone(ColorComposition c)
+    {
+        if (Spread(c) < 0.08) return "neutral / pale";
+        var r = c.MeanR; var g = c.MeanG; var b = c.MeanB;
+        return r >= g && r >= b ? "reddom"
+             : g >= r && g >= b ? "greendom"
+             : "bluedom";
+    }
+
+    // Save a crop-out PNG of the result-gem box so its exact pixels can be compared later
+    // (e.g. against the empty reference or a previous run). Writes logs/captures/result_box.png.
+    private static void SaveResultCrop(WindowRect client, Rect rb)
+    {
+        try
+        {
+            using var mat = ScreenCapture.CaptureRegion(client, new SealTools.Core.Config.RegionConfig
+            { Left = (int)rb.X, Top = (int)rb.Y, Width = (int)rb.Width, Height = (int)rb.Height });
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+            Directory.CreateDirectory(dir);
+            mat.ImWrite(Path.Combine(dir, "result_box.png"));
+        }
+        catch { /* diagnostics must never break the check */ }
+    }
+
+    // Persist the calibration tab's current screenshot (+ drawn box/point overlays) as a
+    // reference PNG next to local.yaml, so the layout is visible again on next launch. The
+    // grid is rendered at its on-screen size, so the picture mirrors exactly what's in the tab.
+    private static void SaveCalibrationImage(FrameworkElement? grid, string fileName)
+    {
+        if (grid == null || grid.ActualWidth < 1 || grid.ActualHeight < 1) return;
+        try
+        {
+            grid.Measure(new Size(grid.ActualWidth, grid.ActualHeight));
+            grid.Arrange(new Rect(0, 0, grid.ActualWidth, grid.ActualHeight));
+            var bmp = new RenderTargetBitmap(
+                (int)Math.Ceiling(grid.ActualWidth), (int)Math.Ceiling(grid.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(grid);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bmp));
+            var path = CalibrationImagePath(fileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using var fs = File.Create(path);
+            encoder.Save(fs);
+        }
+        catch { /* never break a Save */ }
+    }
+
+    // Reload a saved calibration reference image into a tab (boxes are shown baked in, NOT
+    // re-activated). Returns true when the file was loaded.
+    private static bool LoadCalibrationImage(Image? target, string fileName, string altPath)
+    {
+        if (target == null) return false;
+        var path = File.Exists(altPath) ? altPath : CalibrationImagePath(fileName);
+        if (!File.Exists(path)) return false;
+        try
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(path, UriKind.Absolute);
+            bmp.EndInit();
+            bmp.Freeze();
+            target.Source = bmp;
+            return true;
+        }
+        catch { return false; }
+    }
+
+    // Absolute path of a calibration reference image (co-located with config/local.yaml).
+    private static string CalibrationImagePath(string fileName)
+        => Path.Combine(FindRootDir(), "config", fileName);
+
+    // Called once at launch: if a Save Tuner / Save Gem wrote a calibration reference image,
+    // show it in its tab. Boxes are baked into the PNG and NOT re-activated — the drag handlers
+    // stay inert because _tunerScreenshot/_gemScreenshot remain null, so the reloaded picture is
+    // a static reference until the user Captures + Saves a new calibration.
+    private void LoadCalibrationImages()
+    {
+        if (LoadCalibrationImage(_tunerImage, "calib_tuner.png", ""))
+            _tunerHint!.Text = "Showing last saved Tuner calibration (reference). Capture + Save to update.";
+        if (LoadCalibrationImage(_gemImage, "calib_gem.png", ""))
+            _gemHint!.Text = "Showing last saved Gem calibration (reference). Capture + Save to update.";
+    }
+
+    // Compact human-readable colour composition.
+    private static string DescribeColor(ColorComposition c) =>
+        $"V {c.MeanV * 100:0}% S {c.MeanSat * 100:0}% colour {c.ColoredFraction * 100:0}% " +
+        $"RGB({c.MeanR * 255:0},{c.MeanG * 255:0},{c.MeanB * 255:0})";
 
     // ── Tuner calibrator (drag an OCR box) ──────────────────────────────────
 
@@ -607,6 +1016,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // startup geometry (seeded from local.yaml.example) instead of the boxes
         // just calibrated — the cause of the "Check OCR is fine, run drifts" bug.
         _service.Config.Tuner.Ocr = ocr;
+        SaveCalibrationImage(_tunerGrid, "calib_tuner.png");
         _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
         MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
@@ -658,30 +1068,112 @@ public partial class MainWindow : FluentWindow, IDisposable
         _gemScreenshot = shot;
         _gemImage!.Source = shot;
         _gemPoints.Clear();
+        _gemResultBox = null;
+        if (_gemResultPreview != null) _gemResultPreview.Source = null;
+        _gemDragStart = null;
+        _gemMarquee = null;
         _gemStep = 0;
         _gemCanvas!.Children.Clear();
-        _gemHint!.Text = $"Click the \"{CalibGemSteps[0]}\" button.";
+        _gemHint!.Text = GemStepHint(_gemStep);
+    }
+
+    // Human-readable prompt for the current calibration step.
+    private static string GemStepHint(int step)
+    {
+        if (step < CalibGemSteps.Length) return $"Click the \"{CalibGemSteps[step]}\" button.";
+        if (step < GemResultBoxStep) return $"Click resource gem slot {step - CalibGemSteps.Length + 1}.";
+        return "Drag a box around the composed result gem.";
     }
 
     private void GemMouseDown(Canvas canvas, Point p)
     {
-        if (_gemScreenshot == null || _gemCanvas == null || _gemStep >= CalibGemSteps.Length) return;
-        _gemPoints[CalibGemSteps[_gemStep]] = CanvasToNatural(p, _gemScreenshot, _gemCanvas);
+        if (_gemScreenshot == null || _gemCanvas == null || _gemStep >= GemTotalSteps) return;
+
+        // The final step is the result-gem AREA: it needs a drag, not a click.
+        if (_gemStep == GemResultBoxStep)
+        {
+            _gemDragStart = p;
+            _gemMarquee = new Rectangle { Stroke = Brushes.Magenta, StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 2 } };
+            Canvas.SetLeft(_gemMarquee, p.X);
+            Canvas.SetTop(_gemMarquee, p.Y);
+            canvas.Children.Add(_gemMarquee);
+            return;
+        }
+
+        var label = _gemStep < CalibGemSteps.Length
+            ? CalibGemSteps[_gemStep]
+            : CalibResourceSteps[_gemStep - CalibGemSteps.Length];
+        _gemPoints[label] = CanvasToNatural(p, _gemScreenshot, _gemCanvas);
         AddDot(canvas, p);
         _gemStep++;
-        _gemHint!.Text = _gemStep < CalibGemSteps.Length
-            ? $"Click the \"{CalibGemSteps[_gemStep]}\" button."
-            : "All points set — click Save.";
+        _gemHint!.Text = _gemStep < GemTotalSteps ? GemStepHint(_gemStep) : "All set — click Save.";
+    }
+
+    private void GemMouseMove(Canvas canvas, Point p)
+    {
+        if (_gemMarquee == null || _gemDragStart == null) return;
+        var x = Math.Min(_gemDragStart.Value.X, p.X);
+        var y = Math.Min(_gemDragStart.Value.Y, p.Y);
+        Canvas.SetLeft(_gemMarquee, x);
+        Canvas.SetTop(_gemMarquee, y);
+        _gemMarquee.Width = Math.Abs(p.X - _gemDragStart.Value.X);
+        _gemMarquee.Height = Math.Abs(p.Y - _gemDragStart.Value.Y);
+    }
+
+    private void GemMouseUp(Canvas canvas, Point p)
+    {
+        if (_gemMarquee == null || _gemDragStart == null || _gemScreenshot == null || _gemCanvas == null) return;
+        var a = CanvasToNatural(_gemDragStart.Value, _gemScreenshot, _gemCanvas);
+        var b = CanvasToNatural(p, _gemScreenshot, _gemCanvas);
+        var box = new Rect(
+            new Point(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y)),
+            new Point(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y)));
+
+        // Reject accidental clicks/tiny drags — a zero-size area would break OCR downstream.
+        if (box.Width < 4 || box.Height < 4)
+        {
+            canvas.Children.Remove(_gemMarquee);
+            _gemMarquee = null;
+            _gemDragStart = null;
+            return;
+        }
+
+        _gemMarquee.StrokeDashArray = null;
+        _gemMarquee = null;
+        _gemDragStart = null;
+        _gemResultBox = box;
+        _gemStep++;
+        _gemHint!.Text = "All set — click Save.";
+        ShowResultPreview(box);
+    }
+
+    // Show the cropped-out result gem box (the region empty-detection samples) so the user can
+    // confirm it lines up with the empty slot. The box is in natural/client coords of the capture.
+    private void ShowResultPreview(Rect box)
+    {
+        try
+        {
+            var shot = _gemScreenshot;
+            var img = _gemResultPreview;
+            if (shot == null || img == null) return;
+            var w = (int)Math.Clamp(box.Width, 1, shot.PixelWidth);
+            var h = (int)Math.Clamp(box.Height, 1, shot.PixelHeight);
+            var x = (int)Math.Clamp(box.X, 0, Math.Max(0, shot.PixelWidth - w));
+            var y = (int)Math.Clamp(box.Y, 0, Math.Max(0, shot.PixelHeight - h));
+            img.Source = new CroppedBitmap(shot, new Int32Rect(x, y, w, h));
+        }
+        catch { /* preview must never break calibration */ }
     }
 
     private void GemSave()
     {
-        if (_gemStep < CalibGemSteps.Length)
+        if (_gemStep < GemTotalSteps || _gemResultBox == null)
         {
-            _gemHint!.Text = "Click all five buttons first.";
+            _gemHint!.Text = "Not done yet — finish all buttons and the result-gem box first.";
             return;
         }
 
+        // Grade buttons (N/G/DG/Register/Combine).
         var positions = new Dictionary<string, List<int>>();
         foreach (var key in CalibGemSteps)
         {
@@ -689,14 +1181,59 @@ public partial class MainWindow : FluentWindow, IDisposable
             positions[key] = new List<int> { (int)pt.X, (int)pt.Y };
         }
 
+        // Resource gems: 3 click points.
+        var resources = new List<List<int>>();
+        foreach (var key in CalibResourceSteps)
+        {
+            var pt = _gemPoints[key];
+            resources.Add(new List<int> { (int)pt.X, (int)pt.Y });
+        }
+
+        // Result-gem area [x, y, width, height] (client-relative), used for OCR + centre click.
+        var rb = _gemResultBox.Value;
+        var resultArea = new List<int> { (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height };
+
+        // Empty-result colour reference. We don't decide here whether the box holds a gem —
+        // empty detection is only as good as the reference, so we ASK the user to guarantee the
+        // result box is EMPTY on screen right now. Only then do we sample the empty signature.
+        // If they say the box still has a gem, we skip it entirely so empty-detection stays off
+        // (rather than capture a polluted reference that always misreports "has gem").
+        ColorComposition? emptySig = null;
+        var confirmEmpty = MessageBox.Show(
+            "Empty-check setup: make sure the RESULT box is currently EMPTY (no gem in it).\n\n" +
+            "Click Yes only if the result box is truly empty — the empty colour is captured from it.\n" +
+            "Click No if the box still has a gem (empty-check stays off until you re-save with it empty).",
+            "Empty reference", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirmEmpty == MessageBoxResult.Yes)
+        {
+            var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+            var client = WindowFinder.GetClientRectInScreen(hwnd);
+            if (client != null)
+                emptySig = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+        }
+
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Gem = new ConfigLoader.LocalGem { GradePositions = positions };
+        // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
+        // them by rebuilding LocalGem from scratch.
+        var gem = local.Gem ?? new ConfigLoader.LocalGem();
+        gem.GradePositions = positions;
+        gem.ResourceGems = resources;
+        gem.ResultGemArea = resultArea;
+        gem.EmptySignature = emptySig;
+        local.Gem = gem;
         _service.SaveLocal(local);
         // Refresh in-memory config so the next gem run uses the just-calibrated
         // click points rather than the startup (example-seeded) ones.
         _service.Config.Gem.GradePositions = positions;
+        _service.Config.Gem.ResourceGems = resources;
+        _service.Config.Gem.ResultGemArea = resultArea;
+        _service.Config.Gem.EmptySignature = emptySig;
+        SaveCalibrationImage(_gemGrid, "calib_gem.png");
+        var emptyInfo = emptySig == null
+            ? "\n\n(no empty colour reference captured — result box wasn't available)"
+            : $"\n\nEmpty-result colour code: {DescribeColor(emptySig)}";
         _gemHint!.Text = "Gem Composer saved to config\\local.yaml.";
-        MessageBox.Show("Gem calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show("Gem calibration saved." + emptyInfo, "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     // ── Shared calibrator helpers ───────────────────────────────────────────

@@ -24,18 +24,20 @@ gem:
     DG: [827, 696]
     Register: [835, 724]
     Combine: [785, 871]
-  movements:
-    radio_to_register:
-      N: [65, 20]
-      G: [35, 20]
-      DG: [10, 20]
-    register_combine: [-30, 80]
-    combine_register: [30, -80]
-    grade_next: [33, 0]
-    grade_prev: [-33, 0]
-    register_slot1: [-45, -100]
-    slot1_slot2: [36, 0]
-    slot2_dg: [8, 87]
+  resource_gems:              # 3 click points, one per composer slot (remove a stuck gem)
+    - [450, 696]
+    - [520, 696]
+    - [590, 696]
+  result_gem_area: [610, 800, 220, 60]   # composed-result area [x, y, w, h]; OCR + centre click
+  # empty_signature is filled in automatically by the gem calibrator (it samples the result
+  # box while EMPTY). Leave unset — empty detection stays off until you calibrate. Format:
+  # {mean_v: 0.3, mean_sat: 0.1, colored_fraction: 0.05, mean_r: 0.3, mean_g: 0.3, mean_b: 0.3}
+  # Pointer scale: client-pixels the in-game pointer moves per 100 HID counts, per axis [x, y].
+  # 100,100 = 1:1. All relative "D" moves are computed as (point - Register) * scale / 100, so
+  # NO movement is hand-tuned. Measure once via "Probe scale" in the Gem calibrate tab (with the
+  # Windows 'Enhance pointer precision' checkbox OFF and the pointer notch fixed), then enter the
+  # pixels per 100 counts for X and Y. These examples are v1 starting points; re-measure.
+  mouse_scale: [100, 100]
 
 arduino:
   port: ""   # optional override; empty = auto-detect

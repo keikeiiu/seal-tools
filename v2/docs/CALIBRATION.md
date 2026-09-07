@@ -64,10 +64,17 @@ panel; they also respond to the hotkeys configured in `defaults.yaml` (F12 start
 
 - `tuner.ocr.region` — capture box, client-area-relative.
 - `tuner.ocr.grade_area`, `grade_y`, `attr_y`, `remaining_y`, `row_height` — capture-relative sub-bands.
-- `gem.grade_positions` — absolute (client-area-relative) click points.
-- `gem.movements.*` — Arduino "D" relative-move deltas (auto-derived by the calibrator).
+- `gem.grade_positions` — absolute (client-area-relative) click points (N/G/DG/Register/Combine).
+- `gem.resource_gems` — the 3 resource-slot click points (clear-a-stuck-gem).
+- `gem.mouse_scale` — **[x, y] client-pixels the pointer moves per 100 HID counts.** All relative "D" moves
+  are computed as `(point - Register) * scale / 100`, so no movement is hand-tuned. Measure once via the
+  **Probe scale** action in the Gem calibrate tab (see prerequisite below), then enter X and Y px/100.
 - `arduino.port` — optional override (empty = auto-detect by VID/PID).
 - `display.dpi_scale` — optional manual DPI override (usually auto-detected).
 
-> Note: relative D-moves are affected by Windows pointer speed ("Enhance Pointer Precision"), so the D↔pixel
-> relationship is empirical — verify the gem composer by watching one cycle, and nudge `movements` if needed.
+> **Prerequisite (Gem Composer):** the game is an OS-cursor title (early Windows, not raw-input), so a
+> relative "D" move's distance **is** affected by the Windows pointer precision setting. Set it to a fixed,
+> accelerated-free state or the effective scale varies with move speed and the composer drifts:
+> Settings → Mouse → Additional mouse options → Pointer Options → uncheck **"Enhance pointer precision"** and
+> leave the speed notch fixed. Then probe `gem.mouse_scale` on that machine. This is not a code bug — fix the
+> pointer precision, then (re)measure the scale.

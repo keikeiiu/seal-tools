@@ -45,6 +45,62 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    private const int SwRestore = 9;
+
+    // Bring the window to the foreground via a CLICK at the game window centre, not the
+    // SetForegroundWindow API (Windows blocks programmatic focus-stealing, so that request can be
+    // refused). This mirrors v1's reliable focus method: a real cursor move + click is allowed to
+    // take focus. Restores the window first if it's minimised, moves the OS cursor to the client
+    // centre, and returns the client rect so the caller issues the Arduino click on it.
+    public static WindowRect? BringToForeground(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return null;
+        if (IsIconic(hWnd)) ShowWindow(hWnd, SwRestore);
+        var client = GetClientRectInScreen(hWnd);
+        if (client == null) return null;
+        MoveCursor(client, client.Width / 2, client.Height / 2);
+        return client;
+    }
+
+    // Title of the current foreground window ("" if none). Diagnostic aid for focus issues.
+    public static string ForegroundTitle()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return "";
+        int len = GetWindowTextLengthW(hwnd);
+        if (len == 0) return "";
+        var buf = new char[len + 1];
+        int written = GetWindowTextW(hwnd, buf, len + 1);
+        return written <= 0 ? "" : new string(buf, 0, written);
+    }
+
+    // True when the window whose title contains titleSubstring is currently the foreground
+    // window (v1 is_game_focused). Settles whether a focus click is needed first.
+    public static bool IsForeground(string titleSubstring)
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return false;
+        int len = GetWindowTextLengthW(hwnd);
+        if (len == 0) return false;
+        var buf = new char[len + 1];
+        int written = GetWindowTextW(hwnd, buf, len + 1);
+        if (written <= 0) return false;
+        var title = new string(buf, 0, written);
+        return title.Contains(titleSubstring, StringComparison.Ordinal);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
 

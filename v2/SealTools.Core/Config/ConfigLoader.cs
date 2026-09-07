@@ -160,6 +160,9 @@ public sealed class ConfigLoader
     {
         public Dictionary<string, List<int>>? GradePositions { get; set; }
         public MovementsConfig? Movements { get; set; }
+        public List<int>? ResultGemArea { get; set; }
+        public List<List<int>>? ResourceGems { get; set; }
+        public ColorComposition? EmptySignature { get; set; }
     }
 
     public sealed class LocalArduino

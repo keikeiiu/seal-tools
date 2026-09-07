@@ -58,6 +58,8 @@ public sealed class TunerConfig
     public string TargetGrade { get; set; } = "";
     public int MaxRetries { get; set; }
     public bool SaveCaptures { get; set; }
+    /// <summary>Re-scan up to this many times if a scan looks unconfirmed, then force-capture + log.</summary>
+    public int OcrRetries { get; set; }
     public TimingConfig Timing { get; set; } = new();
     public GradeColorsConfig GradeColors { get; set; } = new();
     public ModelsConfig Models { get; set; } = new();
@@ -155,6 +157,36 @@ public sealed class GemConfig
     [MinLength(1, ErrorMessage = "gem.grade_positions must not be empty")]
     public Dictionary<string, List<int>> GradePositions { get; set; } = new();
     public MovementsConfig Movements { get; set; } = new();
+    /// <summary>Composed-result gem area as [x, y, width, height] (client-relative). Used for
+    /// OCR (read the result) and as a derived centre click point.</summary>
+    public List<int>? ResultGemArea { get; set; }
+    /// <summary>Centre of the result-gem area, used as the click point. Null if the area
+    /// isn't valid (missing or not exactly [x, y, w, h]).</summary>
+    public (int X, int Y)? ResultGemCenter =>
+        ResultGemArea is { Count: 4 }
+            ? (ResultGemArea[0] + ResultGemArea[2] / 2, ResultGemArea[1] + ResultGemArea[3] / 2)
+            : null;
+    /// <summary>Three resource-gem click points [[x, y], ...] used to click a stuck resource
+    /// gem to remove it. One point per composer slot.</summary>
+    public List<List<int>> ResourceGems { get; set; } = new();
+    /// <summary>Action when the auto-check sees the result gem box empty. "stop" halts the
+    /// composer; "advance_grade" moves to the next grade and keeps composing;
+    /// "advance_grade_clear" right-clicks all 3 resource slots (clears a stuck gem) then
+    /// advances to the next grade.</summary>
+    public string EmptyMode { get; set; } = "stop";
+    /// <summary>Normalised colour distance below which the result box is judged empty
+    /// (0..1). Lower = stricter (more likely to call it "has a gem").</summary>
+    public double EmptyDistance { get; set; } = 0.18;
+    /// <summary>Consecutive empty reads required before the EmptyMode action fires — guards
+    /// against a single transient false empty.</summary>
+    public int EmptyStreak { get; set; } = 2;
+    /// <summary>Sampled empty-result-gem colour reference (machine-specific). Null = empty
+    /// detection is off until calibrated.</summary>
+    public ColorComposition? EmptySignature { get; set; }
+    /// <summary>Client-pixels the in-game pointer moves per 100 HID counts, per axis [x, y].
+    /// 100,100 = 1:1. All relative "D" moves are computed as (point - Register) * scale / 100.
+    /// Measured once per machine via the "Probe scale" action in the Gem calibrate tab.</summary>
+    public List<int> MouseScale { get; set; } = new() { 100, 100 };
 }
 
 public sealed class MovementsConfig

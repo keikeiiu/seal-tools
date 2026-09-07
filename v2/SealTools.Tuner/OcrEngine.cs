@@ -46,6 +46,7 @@ public sealed class OcrEngine : IDisposable
     private readonly string _rootDir;
     private readonly string _captureDir;
     private readonly FileLogger _ocrLog;
+    private readonly FileLogger _ocrErrorLog;
     private RapidOCRSharp? _ocr;
 
     public OcrEngine(AppConfig cfg, AttributesConfig attributes, string rootDir)
@@ -57,6 +58,7 @@ public sealed class OcrEngine : IDisposable
         _captureDir = Path.Combine(rootDir, "logs", "captures");
         Directory.CreateDirectory(_captureDir);
         _ocrLog = new FileLogger(Path.Combine(rootDir, "logs", "ocr_log.jsonl"));
+        _ocrErrorLog = new FileLogger(Path.Combine(rootDir, "logs", "ocr_errors.jsonl"));
     }
 
     private void InitOcr()
@@ -84,12 +86,36 @@ public sealed class OcrEngine : IDisposable
 
         InitOcr();
 
+        // Re-scan until a result looks confirmed (grade + 3 attributes + remaining), so a
+        // transient OCR mis-merge or miss (e.g. two attribute lines glued into one, or an
+        // attribute value lost) is not accepted as a bad read. The last attempt force-saves
+        // its frame even when save_captures is off, for post-mortem study.
+        int retries = Math.Max(1, _cfg.Tuner.OcrRetries);
+        ScanResult? last = null;
+        for (int i = 1; i <= retries; i++)
+        {
+            last = ScanOnce(ocr, client, hwnd, forceCapture: i == retries);
+            if (last != null && IsConfirmed(last))
+                return last;
+        }
+
+        // Still unconfirmed after all retries — log it as an OCR error for future reference.
+        if (last != null)
+            LogOcrError(last);
+        return last;
+    }
+
+    // One capture + OCR pass over the geometry (no retry). The retry policy lives in Scan().
+    private ScanResult? ScanOnce(OcrGeometry ocr, WindowRect client, IntPtr hwnd, bool forceCapture)
+    {
         var region = ocr.Region;
         using var mat = ScreenCapture.CaptureRegion(client, region);
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
-        // Captures are debug-only artifacts; save_captures:false keeps the disk clean for end users.
-        var capturePath = _cfg.Tuner.SaveCaptures ? Path.Combine(_captureDir, $"capture_{timestamp}.png") : null;
+        // Normal scans only capture when save_captures is on; forceCapture (the final retry)
+        // overrides that so a persistently unconfirmed scan still leaves a frame to inspect.
+        var capturePath = (_cfg.Tuner.SaveCaptures || forceCapture)
+            ? Path.Combine(_captureDir, $"capture_{timestamp}.png") : null;
 
         var ocrResult = _ocr!.RecognizeText(mat, capturePath!);
         var items = ocrResult.WordResults ?? Array.Empty<DetBoxItem>();
@@ -200,9 +226,47 @@ public sealed class OcrEngine : IDisposable
             region = new { left = region.Left, top = region.Top, w = region.Width, h = region.Height },
             dpi = WindowFinder.GetDpi(hwnd),
             lines = textLines.Select(t => new { y = t.y, x = t.minX, x2 = t.maxX, text = t.text, conf = t.conf }),
+            rowHeight,
+            // Raw per-char boxes + their bucket key, so a "two rows read as one" merge can be
+            // diagnosed: if two real rows land in the same y/row_height bucket, it's a grid
+            // alignment bug; if they're separate buckets, the detector itself fused them.
+            rawItems = items.Select(it => new
+            {
+                word = it.Word,
+                x = ItemX(it),
+                x2 = ItemMaxX(it),
+                y = ItemY(it),
+                rowKey = rowHeight > 0 ? ItemY(it) / rowHeight : 0,
+            }),
         }));
 
         return result;
+    }
+
+    // A scan is "confirmed" when it produced a usable result: a grade, exactly three
+    // non-empty attribute rows, and a spring count. Anything less is "unconfirmed" and
+    // triggers a rescan (see Scan()).
+    private static bool IsConfirmed(ScanResult r) =>
+        r.Grade != null &&
+        r.Attributes.Count == 3 && r.Attributes.All(a => a.Count > 0) &&
+        r.Remaining.HasValue;
+
+    // Log a persistently-unconfirmed scan (and its forced capture) to ocr_errors.jsonl, so
+    // end-user failure cases are preserved for later analysis (e.g. tuning detection or OCR
+    // model robustness). This is deliberately separate from ocr_log.jsonl (every scan).
+    private void LogOcrError(ScanResult r)
+    {
+        _ocrErrorLog.WriteLine(JsonSerializer.Serialize(new
+        {
+            timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture),
+            grade = r.Grade,
+            remaining = r.Remaining,
+            gradeLine = r.GradeLine,
+            attributes = r.Attributes,
+            colorScores = r.ColorScores,
+            capture = r.CapturePath,
+            window = r.Window == null ? null : new { left = r.Window.Left, top = r.Window.Top, w = r.Window.Width, h = r.Window.Height },
+        }));
     }
 
     private List<string> FixSign(List<string> labels, List<string> values)
@@ -397,5 +461,6 @@ public sealed class OcrEngine : IDisposable
         _ocr?.Dispose();
         _ocr = null;
         _ocrLog.Dispose();
+        _ocrErrorLog.Dispose();
     }
 }

@@ -54,8 +54,8 @@ public class ConfigLoaderTests
             Assert.Equal(25, cfg.Tuner.Ocr.RowHeight);
             Assert.Equal(727, cfg.Gem.GradePositions["N"][0]);
             Assert.Equal(696, cfg.Gem.GradePositions["N"][1]);
-            Assert.Equal(-30, cfg.Gem.Movements.RegisterCombine[0]);
-            Assert.Equal(80, cfg.Gem.Movements.RegisterCombine[1]);
+            Assert.Equal(100, cfg.Gem.MouseScale[0]);
+            Assert.Equal(100, cfg.Gem.MouseScale[1]);
         }
         finally
         {

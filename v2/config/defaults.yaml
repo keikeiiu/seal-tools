@@ -26,6 +26,7 @@ tuner:
   target_grade: "DG"
   max_retries: 999999
   save_captures: true
+  ocr_retries: 3            # re-scan up to this many times if a scan looks unconfirmed, then force-capture + log
   models:                   # PP-OCRv4 ONNX model paths (relative to the v2 root)
     detector: "models/ch_PP-OCRv4_det_infer.onnx"
     recognizer: "models/ch_PP-OCRv4_rec_infer.onnx"
@@ -63,6 +64,9 @@ tuner:
 gem:
   grades: ["N", "G", "DG"]
   start_grade: "DG"
+  empty_mode: "stop"            # "stop" | "advance_grade" | "advance_grade_clear" — action when the result box is empty (clear = right-click all 3 resource slots first)
+  empty_distance: 0.18          # normalised colour distance <= => empty (lower = stricter)
+  empty_streak: 2               # consecutive empty reads before acting (guards a transient miss)
 
 spammer:
   keys:
