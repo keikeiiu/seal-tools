@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -53,6 +54,7 @@ public sealed class ConfigLoader
         }
 
         ConfigValidator.Validate(defaults);
+        ScaleGemCoordsToLogical(defaults);
         return defaults;
     }
 
@@ -89,6 +91,19 @@ public sealed class ConfigLoader
         {
             throw new ConfigException($"Failed to parse {path}: {ex.Message}", ex);
         }
+    }
+
+    // The launcher runs DPI-unaware (see app.manifest), so SetCursorPos works in logical pixels, but
+    // the stored gem coordinates are physical (measured on a 150%-scaled display). Scale them to
+    // logical at load time so clicks land correctly without editing the user's local.yaml.
+    private static void ScaleGemCoordsToLogical(AppConfig cfg)
+    {
+        const double scale = 2.0 / 3.0;
+        foreach (var key in cfg.Gem.GradePositions.Keys.ToList())
+            cfg.Gem.GradePositions[key] = cfg.Gem.GradePositions[key].Select(v => (int)Math.Round(v * scale)).ToList();
+        cfg.Gem.ResourceGems = cfg.Gem.ResourceGems.Select(p => p.Select(v => (int)Math.Round(v * scale)).ToList()).ToList();
+        if (cfg.Gem.ResultGemArea is { Count: 4 } area)
+            cfg.Gem.ResultGemArea = area.Select(v => (int)Math.Round(v * scale)).ToList();
     }
 
     private static void ApplyOverrides(AppConfig defaults, LocalOverrides local)

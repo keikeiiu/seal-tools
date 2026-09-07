@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace SealTools.Core;
@@ -42,8 +43,17 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetPhysicalCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern bool ClipCursor(IntPtr lpRect);
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -149,5 +159,52 @@ public static class WindowFinder
     public static uint GetDpi(IntPtr hWnd) => GetDpiForWindow(hWnd);
 
     public static void MoveCursor(WindowRect client, int clientX, int clientY)
-        => SetCursorPos(client.Left + clientX, client.Top + clientY);
+    {
+        int sx = client.Left + clientX, sy = client.Top + clientY;
+        bool ok = SetCursorPos(sx, sy);
+        LogCursor("MOVE", sx, sy, ok, Marshal.GetLastWin32Error());
+    }
+
+    /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
+    public static void DebugCursor(int x, int y)
+    {
+        bool ok = SetCursorPos(x, y);
+        LogCursor("DEBUG", x, y, ok, Marshal.GetLastWin32Error());
+    }
+
+    public static void DebugPhysicalCursor(int x, int y)
+    {
+        bool ok = SetPhysicalCursorPos(x, y);
+        LogCursor("PHYS", x, y, ok, Marshal.GetLastWin32Error());
+    }
+
+    /// <summary>Diagnostic: replicate the full client-relative -> screen calculation and log every step.</summary>
+    public static void DebugCursorCalc(int clientLeft, int clientTop, int relX, int relY)
+    {
+        int sx = clientLeft + relX, sy = clientTop + relY;
+        bool ok = SetCursorPos(sx, sy);
+        int err = Marshal.GetLastWin32Error();
+        var after = GetCursorPos(out var p) ? (p.X, p.Y) : ((int)-1, (int)-1);
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "cursor_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} [CALC] clientOrigin=({clientLeft},{clientTop}) rel=({relX},{relY}) screen=({sx},{sy}) ok={ok} err={err} after=({after.Item1},{after.Item2})\n");
+        }
+        catch { /* ignore logging failures */ }
+    }
+
+    private static void LogCursor(string tag, int x, int y, bool ok, int err)
+    {
+        var after = GetCursorPos(out var p) ? (p.X, p.Y) : ((int)-1, (int)-1);
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "cursor_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} [{tag}] target=({x},{y}) ok={ok} err={err} after=({after.Item1},{after.Item2})\n");
+        }
+        catch { /* ignore logging failures */ }
+    }
 }

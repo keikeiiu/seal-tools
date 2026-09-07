@@ -550,6 +550,24 @@ public partial class MainWindow : FluentWindow, IDisposable
         resultRow.Children.Add(checkColBtn);
         resultRow.Children.Add(testGemBtn);
 
+        var debugCursorBtn = MakeButton("Debug Cursor", ControlAppearance.Secondary);
+        debugCursorBtn.Margin = new Thickness(6, 0, 6, 0);
+        debugCursorBtn.Click += (_, _) =>
+        {
+            // v1 N absolute screen coord (logical) — test SetCursorPos against the known-good value.
+            WindowFinder.DebugCursor(727, 696);
+        };
+        resultRow.Children.Add(debugCursorBtn);
+
+        var debugPhysicalBtn = MakeButton("Debug Physical", ControlAppearance.Secondary);
+        debugPhysicalBtn.Margin = new Thickness(6, 0, 6, 0);
+        debugPhysicalBtn.Click += (_, _) =>
+        {
+            // Physical N absolute screen coord — test SetPhysicalCursorPos.
+            WindowFinder.DebugPhysicalCursor(1096, 1044);
+        };
+        resultRow.Children.Add(debugPhysicalBtn);
+
         // Result-gem box crop preview: once the result box is dragged, show the exact region
         // being sampled for empty-detection, so the user can visually confirm it's over the
         // empty slot (and not an offset/mis-sized area).
@@ -840,8 +858,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         try
         {
-            // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click, no
-            // double click). Send the raw D the composer uses.
+            // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click).
             GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
