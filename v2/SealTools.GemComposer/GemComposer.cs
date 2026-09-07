@@ -38,6 +38,10 @@ public sealed class GemComposer
         int cycle = 0;
         bool f12Was = Hotkeys.IsDown(_cfg.Hotkeys.Start);
         bool f9Was = Hotkeys.IsDown(_cfg.Hotkeys.AdvanceGrade);
+        // The game is ALWAYS unfocused when the composer starts (the launcher window holds
+        // focus). v1 never calls a Win32 focus API — a CLICK is what focuses the game. So we
+        // click the grade position once to bring the game forward, then run the v1 sequence.
+        bool gameFocused = false;
 
         Console.WriteLine("\nGem Composer");
         Console.WriteLine("[F12] start/stop  [F9] advance grade  [F11] quit\n");
@@ -47,17 +51,35 @@ public sealed class GemComposer
 
         void SelectGradeAndRegister()
         {
-            var rect = WindowFinder.GetClientRectInScreen(WindowFinder.FindByTitle(_cfg.Window.Title));
-            if (rect == null) return;
+            var rect = GemPointer.Client(_cfg.Window.Title);
+            if (rect == null)
+            {
+                Console.WriteLine("[!] game window not found");
+                return;
+            }
             var pos = _cfg.Gem.GradePositions[grades[gidx]];
-            WindowFinder.MoveCursor(rect, pos[0], pos[1]);
+
+            // Click-to-focus (shared GemPointer + v1 model): the game is always UNFOCUSED while the
+            // tool runs (the launcher holds focus), so a CLICK brings it forward — no Win32 focus
+            // API, no centre-click (that would pin a raw-input game's in-game cursor at centre).
+            if (!gameFocused)
+            {
+                GemPointer.To(rect, pos[0], pos[1]);
+                SleepCheck(0.3);
+                GemPointer.Click(ser);
+                SleepCheck(0.4);
+                gameFocused = true;
+            }
+
+            // v1 sequence: select grade, move to Register, select.
+            GemPointer.To(rect, pos[0], pos[1]);
             SleepCheck(0.3);
-            ser.Write("C\n");
+            GemPointer.Click(ser);
             SleepCheck(0.5);
             var d = _cfg.Gem.Movements.RadioToRegister[grades[gidx]];
-            ser.Write($"D {d[0]} {d[1]}\n");
+            GemPointer.Move(ser, d[0], d[1]);
             SleepCheck(0.3);
-            ser.Write("C\n");
+            GemPointer.Click(ser);
             SleepCheck(0.5);
         }
 
@@ -129,19 +151,19 @@ public sealed class GemComposer
 
                 // Combine.
                 var rc = _cfg.Gem.Movements.RegisterCombine;
-                ser.Write($"D {rc[0]} {rc[1]}\n");
+                GemPointer.Move(ser, rc[0], rc[1]);
                 SleepCheck(0.2);
-                ser.Write("C\n");
+                GemPointer.Click(ser);
                 SleepCheck(0.8);
 
                 // Back to Register — deregister + register.
                 if (_quitPressed || ct.IsCancellationRequested) break;
                 var cr = _cfg.Gem.Movements.CombineRegister;
-                ser.Write($"D {cr[0]} {cr[1]}\n");
+                GemPointer.Move(ser, cr[0], cr[1]);
                 SleepCheck(0.2);
-                ser.Write("C\n");
+                GemPointer.Click(ser);
                 SleepCheck(0.3);
-                ser.Write("C\n");
+                GemPointer.Click(ser);
                 SleepCheck(0.5);
 
                 if (cycle % 10 == 0) Console.WriteLine($"  Cycle: {cycle}");

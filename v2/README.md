@@ -102,6 +102,22 @@ All relative moves are computed as `(point − Register) × scale / 100` from th
 nothing is hand-tuned. If pointer acceleration is left on, the effective scale varies with move speed and
 the composer drifts: fix the pointer precision, then (re)measure the scale. Not a code bug.
 
+### Focus: the game is always unfocused when you use the tool (Gem Composer)
+
+Verified facts (do not "fix" this by adding a Win32 focus call — v1 doesn't, and it's not the bug):
+
+- **The game is always unfocused while you are using the tool.** The launcher window holds focus
+  (you click its **Start** button), so the game is never the foreground window when the composer acts.
+- **v1 never calls a Win32 focus API** (`SetForegroundWindow` / `BringWindowToTop`). It simply does
+  `SetCursorPos(grade)` + an Arduino `C`, because v1 is started **in-game** (press F12 in the game), so
+  the game is already focused before any click. The launcher-based v2 breaks that assumption.
+- **A click is what focuses the game.** Clicking the game window brings it to the foreground. So the
+  composer brings the game forward with an ordinary click on the grade position before clicking buttons,
+  then runs the normal `SetCursorPos(grade) + C → D → C` sequence. This mirrors v1's click-focus model.
+- **Do NOT center-click to focus** and **do NOT call `SetForegroundWindow`.** A centre-click makes the
+  raw-input game capture its cursor and pin the in-game pointer at centre, so every later click lands on
+  centre instead of the button. Both were tried and are wrong.
+
 ---
 
 ## Logging (for future reference)

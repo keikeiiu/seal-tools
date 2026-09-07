@@ -199,6 +199,10 @@ public sealed class MovementsConfig
     public List<int> RegisterSlot1 { get; set; } = new();
     public List<int> Slot1Slot2 { get; set; } = new();
     public List<int> Slot2Dg { get; set; } = new();
+    public List<int> Slot2Slot3 { get; set; } = new();
+    public List<int> Slot3ToN { get; set; } = new();
+    public List<int> Slot3ToG { get; set; } = new();
+    public List<int> Slot3ToDg { get; set; } = new();
 }
 
 public sealed class SpammerConfig

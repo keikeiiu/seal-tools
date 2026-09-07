@@ -96,6 +96,8 @@ public sealed class ConfigLoader
         if (local.Tuner?.Ocr != null) defaults.Tuner.Ocr = local.Tuner.Ocr;
         if (local.Gem?.GradePositions is { Count: > 0 }) defaults.Gem.GradePositions = local.Gem.GradePositions;
         if (local.Gem?.Movements != null) defaults.Gem.Movements = local.Gem.Movements;
+        if (local.Gem?.ResourceGems != null) defaults.Gem.ResourceGems = local.Gem.ResourceGems;
+        if (local.Gem?.ResultGemArea != null) defaults.Gem.ResultGemArea = local.Gem.ResultGemArea;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
         if (local.Display?.DpiScale != null) defaults.Display.DpiScale = local.Display.DpiScale;
     }

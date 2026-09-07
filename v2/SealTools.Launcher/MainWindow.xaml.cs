@@ -61,6 +61,31 @@ public partial class MainWindow : FluentWindow, IDisposable
     // result-gem area. The result gem box is an AREA (not a point) because it's both OCR-read
     // and clicked (centre).
     private static readonly int GemResultBoxStep = CalibGemSteps.Length + CalibResourceSteps.Length;
+
+    // Composer move routes shown as editable dx/dy rows in the Calibrate Gem tab. Each maps to a
+    // raw `movements` value the composer sends for that step. Key = config field + grade for the
+    // radio->register moves; From/To drive the test button; Dx/Dy are the user's fine-tuned boxes.
+    private sealed class GemMoveRow
+    {
+        public string Key = "";
+        public string From = "";
+        public string To = "";
+        public TextBox Dx = null!;
+        public TextBox Dy = null!;
+    }
+    private readonly List<GemMoveRow> _gemMoveRows = new();
+
+    // Editable coordinate rows in the Calibrate Gem tab (N/G/DG/Register/Combine + Resource1-3 +
+    // result area). Key is the config key; X/Y (and W/H for the result area) are editable boxes.
+    private sealed class GemCoordRow
+    {
+        public string Key = "";
+        public TextBox X = null!;
+        public TextBox Y = null!;
+        public TextBox? W;
+        public TextBox? H;
+    }
+    private readonly List<GemCoordRow> _gemCoordRows = new();
     private static readonly int GemTotalSteps = GemResultBoxStep + 1;
     private bool _disposed;
 
@@ -493,22 +518,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
 
-        // Test-click: move the cursor to a calibrated point so the user can confirm it
-        // lands on the right on-screen control. Move-only (no in-game click) on purpose —
-        // real clicks go through the Arduino HID, and this is purely a position check.
-        var testBox = new ComboBox
-        {
-            ItemsSource = GemTestPoints,
-            SelectedIndex = 0,
-            MinWidth = 140,
-        };
-        var testFromBox = new ComboBox
-        {
-            ItemsSource = GemTestPoints,
-            SelectedIndex = 0,
-            MinWidth = 140,
-            MaxWidth = 140,
-        };
+        // Point/move tests and result tests as two simple horizontal rows (same clean look as the
+        // Tuner tab). "from"/"to" drive the two move tests; the result-gem checks sit on their own
+        // row below. Buttons keep their natural width but drop the top-10 margin so they line up
+        // with the dropdowns.
+        var testBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
+        var testFromBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
         var testBtn = MakeButton("Test Click", ControlAppearance.Secondary);
         testBtn.Click += (_, _) => GemTestClick(testBox);
         var testMoveBtn = MakeButton("Test Move (rel)", ControlAppearance.Secondary);
@@ -519,14 +534,21 @@ public partial class MainWindow : FluentWindow, IDisposable
         testGemBtn.Click += (_, _) => GemTestResult();
         _gemTestPoint = testBox;
         _gemTestFrom = testFromBox;
-        var testRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        testRow.Children.Add(testBtn);
-        testRow.Children.Add(new TextBlock { Text = "from", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
-        testRow.Children.Add(testFromBox);
-        testRow.Children.Add(testMoveBtn);
-        testRow.Children.Add(testBox);
-        testRow.Children.Add(checkColBtn);
-        testRow.Children.Add(testGemBtn);
+
+        foreach (var b in new UiButton[] { testBtn, testMoveBtn, checkColBtn, testGemBtn })
+            b.Margin = new Thickness(6, 0, 6, 0); // left+right gap, drop the top-10 so buttons align with the dropdowns
+
+        var pointRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        pointRow.Children.Add(new TextBlock { Text = "from", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        pointRow.Children.Add(testFromBox);
+        pointRow.Children.Add(new TextBlock { Text = "to", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0) });
+        pointRow.Children.Add(testBox);
+        pointRow.Children.Add(testBtn);
+        pointRow.Children.Add(testMoveBtn);
+
+        var resultRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        resultRow.Children.Add(checkColBtn);
+        resultRow.Children.Add(testGemBtn);
 
         // Result-gem box crop preview: once the result box is dragged, show the exact region
         // being sampled for empty-detection, so the user can visually confirm it's over the
@@ -549,8 +571,173 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(capture);
         panel.Children.Add(grid);
         panel.Children.Add(save);
-        panel.Children.Add(testRow);
+
+        // Editable coordinate fields (positions). Prefilled from the saved config so the user can
+        // fix a point directly (e.g. N/G/DG all on the same vertical level) without re-capturing.
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Coordinates (edit directly, then Save Coordinates):",
+            Foreground = (Brush)FindResource("HighlightBrush"),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 14, 0, 4),
+        });
+
+        var cinv = System.Globalization.CultureInfo.InvariantCulture;
+        var coordGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        coordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });  // label
+        coordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });  // X
+        coordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });  // Y
+        coordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });  // W
+        coordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });  // H
+
+        var coordBold = FontWeights.SemiBold;
+        int cr = 0;
+        coordGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Place(coordGrid, new TextBlock { Text = "Point", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 0);
+        Place(coordGrid, new TextBlock { Text = "X", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 1);
+        Place(coordGrid, new TextBlock { Text = "Y", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 2);
+        Place(coordGrid, new TextBlock { Text = "W", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 3);
+        Place(coordGrid, new TextBlock { Text = "H", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 4);
+        cr++;
+
+        TextBox MakeCoordBox(string val) => new()
+        {
+            Width = 56,
+            Text = val,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 6),
+        };
+
+        void AddCoordRow(string label, string key, int x, int y, int? w = null, int? h = null)
+        {
+            var row = new GemCoordRow { Key = key, X = MakeCoordBox(x.ToString(cinv)), Y = MakeCoordBox(y.ToString(cinv)) };
+            if (w.HasValue) row.W = MakeCoordBox(w.Value.ToString(cinv));
+            if (h.HasValue) row.H = MakeCoordBox(h.Value.ToString(cinv));
+            _gemCoordRows.Add(row);
+            coordGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Place(coordGrid, new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 6) }, cr, 0);
+            Place(coordGrid, row.X, cr, 1);
+            Place(coordGrid, row.Y, cr, 2);
+            if (row.W != null) Place(coordGrid, row.W, cr, 3);
+            if (row.H != null) Place(coordGrid, row.H, cr, 4);
+            cr++;
+        }
+
+        var gem = _service.Config.Gem;
+        foreach (var key in CalibGemSteps)
+            if (gem.GradePositions.TryGetValue(key, out var pos) && pos.Count > 1)
+                AddCoordRow(key, key, pos[0], pos[1]);
+        for (int i = 0; i < gem.ResourceGems.Count; i++)
+        {
+            var r = gem.ResourceGems[i];
+            if (r.Count > 1) AddCoordRow($"Resource{i + 1}", $"Resource{i + 1}", r[0], r[1]);
+        }
+        if (gem.ResultGemArea is { Count: 4 } a)
+            AddCoordRow("Result area", "ResultArea", a[0], a[1], a[2], a[3]);
+
+        panel.Children.Add(coordGrid);
+
+        var saveCoords = MakeButton("Save Coordinates", ControlAppearance.Primary);
+        saveCoords.Click += (_, _) => SaveCoordinates();
+        panel.Children.Add(saveCoords);
+
+        // Position/result tests belong to the "Save Gem Composer" part.
+        panel.Children.Add(pointRow);
+        panel.Children.Add(resultRow);
         panel.Children.Add(resultPreviewPanel);
+
+        // Divider: positions part (above) vs composer-moves part (below).
+        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
+
+        // Composer move editor: one row per mandatory route on a shared Grid so the label / dx / dy /
+        // Test columns all line up. dx/dy are the RAW counts the composer sends (no computation) —
+        // they prefill from the current config, "Test" runs that exact move, and Save writes them back.
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Composer moves (raw dx dy — the composer sends these exact counts):",
+            Foreground = (Brush)FindResource("HighlightBrush"),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 4),
+        });
+
+        var routes = new[]
+        {
+            ("radio_N", "N", "Register", "N → Register"),
+            ("radio_G", "G", "Register", "G → Register"),
+            ("radio_DG", "DG", "Register", "DG → Register"),
+            ("register_combine", "Register", "Combine", "Register → Combine"),
+            ("combine_register", "Combine", "Register", "Combine → Register"),
+            ("register_slot1", "Register", "Resource1", "Register → Resource1"),
+            ("slot1_slot2", "Resource1", "Resource2", "Resource1 → Resource2"),
+            ("slot2_slot3", "Resource2", "Resource3", "Resource2 → Resource3"),
+            ("slot3_n", "Resource3", "N", "Resource3 → N"),
+            ("slot3_g", "Resource3", "G", "Resource3 → G"),
+            ("slot3_dg", "Resource3", "DG", "Resource3 → DG"),
+        };
+
+        // Grid with margin-based spacing: a right margin on each cell provides the column gap, and a
+        // bottom margin provides the row gap, so rows/columns never touch. Controls size naturally
+        // (no fixed heights) and are centred vertically — the same clean look as the Tuner tab.
+        const double ColGap = 8, RowGap = 6;
+        var moveGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });  // route label (fits "Resource1 → Resource2")
+        moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });   // dx box
+        moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });   // dy box
+        moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });      // Test btn
+        for (int r = 0; r <= routes.Length; r++)
+            moveGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // Header row, one cell per column, with the same column gap so it lines up below.
+        var headBold = FontWeights.SemiBold;
+        Place(moveGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
+        Place(moveGrid, new TextBlock { Text = "dx", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
+        Place(moveGrid, new TextBlock { Text = "dy", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 2);
+        Place(moveGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 3);
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        int moveRow = 1;
+        foreach (var (key, from, to, label) in routes)
+        {
+            var cur = GetGemMovement(key);
+            // Width = column (76) - right gap (ColGap), so the box fits flush inside its cell and
+            // the WPF-UI rounded corners aren't clipped on the right edge.
+            var dxBox = new TextBox
+            {
+                Text = cur is { Count: >= 1 } ? cur[0].ToString(inv) : "",
+                Width = 76 - ColGap,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, ColGap, RowGap),
+            };
+            var dyBox = new TextBox
+            {
+                Text = cur is { Count: >= 2 } ? cur[1].ToString(inv) : "",
+                Width = 76 - ColGap,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, ColGap, RowGap),
+            };
+            var row = new GemMoveRow { Key = key, From = from, To = to, Dx = dxBox, Dy = dyBox };
+            _gemMoveRows.Add(row);
+
+            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            testB.Margin = new Thickness(0, 0, 0, RowGap); // align with the boxes, add only the row gap
+            testB.Click += (_, _) => GemTestMovement(row.From, row.To, ParseMove(row.Dx), ParseMove(row.Dy));
+
+            Place(moveGrid, new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, moveRow, 0);
+            Place(moveGrid, dxBox, moveRow, 1);
+            Place(moveGrid, dyBox, moveRow, 2);
+            Place(moveGrid, testB, moveRow, 3);
+            moveRow++;
+        }
+        panel.Children.Add(moveGrid);
+
+        // Save ONLY the composer moves (raw dx/dy), independent of the full click-point
+        // calibration that "Save Gem Composer" requires.
+        var saveMoves = MakeButton("Save Composer Moves", ControlAppearance.Primary);
+        saveMoves.Click += (_, _) => SaveComposerMoves();
+        panel.Children.Add(saveMoves);
 
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
@@ -577,6 +764,111 @@ public partial class MainWindow : FluentWindow, IDisposable
         return pt;
     }
 
+    // RAW hand-tuned movement counts for a composer pair (grade -> Register, Register -> Combine,
+    // Combine -> Register). These are exactly what the composer sends for its "D" moves. The Test
+    // Move feature sends THESE counts (the same value the composer sends) — never a computed
+    // pixel delta, which is what broke the composer before. Returns null if the pair has no
+    // movement defined.
+    private List<int>? ResolveGemMovement(string fromName, string toName)
+    {
+        var m = _service.Config.Gem.Movements;
+        if (toName == "Register" && _service.Config.Gem.GradePositions.ContainsKey(fromName))
+            return m.RadioToRegister.TryGetValue(fromName, out var r) ? r : null;
+        if (fromName == "Register" && toName == "Combine") return m.RegisterCombine.Count == 2 ? m.RegisterCombine : null;
+        if (fromName == "Combine" && toName == "Register") return m.CombineRegister.Count == 2 ? m.CombineRegister : null;
+        // Adjacent grade-to-grade (e.g. N -> G): the composer's "next/prev grade" moves.
+        var grades = _service.Config.Gem.Grades;
+        int fi = grades.IndexOf(fromName), ti = grades.IndexOf(toName);
+        if (fi >= 0 && ti >= 0 && Math.Abs(fi - ti) == 1)
+            return ti > fi ? m.GradeNext : m.GradePrev;
+        return null;
+    }
+
+    // Current raw [dx, dy] for a composer-move route key ("radio_N"/"radio_G"/"radio_DG",
+    // "register_combine", "combine_register"). Used to prefill the Calibrate rows.
+    private List<int>? GetGemMovement(string key)
+    {
+        var mv = _service.Config.Gem.Movements;
+        if (key.StartsWith("radio_", StringComparison.Ordinal))
+            return mv.RadioToRegister.TryGetValue(key[6..], out var r) ? r : null;
+        return key switch
+        {
+            "register_combine" => mv.RegisterCombine.Count == 2 ? mv.RegisterCombine : null,
+            "combine_register" => mv.CombineRegister.Count == 2 ? mv.CombineRegister : null,
+            "register_slot1" => mv.RegisterSlot1.Count == 2 ? mv.RegisterSlot1 : null,
+            "slot1_slot2" => mv.Slot1Slot2.Count == 2 ? mv.Slot1Slot2 : null,
+            "slot2_slot3" => mv.Slot2Slot3.Count == 2 ? mv.Slot2Slot3 : null,
+            "slot3_n" => mv.Slot3ToN.Count == 2 ? mv.Slot3ToN : null,
+            "slot3_g" => mv.Slot3ToG.Count == 2 ? mv.Slot3ToG : null,
+            "slot3_dg" => mv.Slot3ToDg.Count == 2 ? mv.Slot3ToDg : null,
+            _ => null,
+        };
+    }
+
+    // Write the user's fine-tuned [dx, dy] back into the in-memory movement config.
+    private void SetGemMovement(string key, int dx, int dy)
+    {
+        var v = new List<int> { dx, dy };
+        var mv = _service.Config.Gem.Movements;
+        if (key.StartsWith("radio_", StringComparison.Ordinal)) { mv.RadioToRegister[key[6..]] = v; return; }
+        switch (key)
+        {
+            case "register_combine": mv.RegisterCombine = v; break;
+            case "combine_register": mv.CombineRegister = v; break;
+            case "register_slot1": mv.RegisterSlot1 = v; break;
+            case "slot1_slot2": mv.Slot1Slot2 = v; break;
+            case "slot2_slot3": mv.Slot2Slot3 = v; break;
+            case "slot3_n": mv.Slot3ToN = v; break;
+            case "slot3_g": mv.Slot3ToG = v; break;
+            case "slot3_dg": mv.Slot3ToDg = v; break;
+        }
+    }
+
+    // Test a raw composer move WITHOUT computing anything: focus-click the from point, send the
+    // user's exact D dx dy, then confirm-click the to point. The same value the composer sends.
+    private void GemTestMovement(string fromName, string toName, int dx, int dy)
+    {
+        var from = ResolveGemPoint(fromName);
+        if (from == null) { _gemHint!.Text = $"Start \"{fromName}\" isn't calibrated yet."; return; }
+        var target = ResolveGemPoint(toName);
+        if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
+
+        var client = GemPointer.Client(_service.Config.Window.Title);
+        if (client == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
+        var port = Arduino.Find(_service.Config.Arduino.Vid, _service.Config.Arduino.Pid);
+        if (port == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+
+        try
+        {
+            using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
+
+            // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click, no
+            // double click). Send the raw D the composer uses.
+            GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
+            System.Threading.Thread.Sleep(300);
+            GemPointer.Click(ser);
+            System.Threading.Thread.Sleep(500);
+            GemPointer.Move(ser, dx, dy);
+            System.Threading.Thread.Sleep(300);
+            GemPointer.Click(ser);
+            System.Threading.Thread.Sleep(300);
+
+            _gemHint!.Text = $"Test move: click \"{fromName}\" then D {dx} {dy} then click \"{toName}\". Does it land?";
+        }
+        catch (Exception ex) { _gemHint!.Text = $"Test move failed: {ex.Message}"; }
+    }
+
+    // Parse a TextBox int; fall back to 0 on empty/garbage.
+    private static int ParseMove(TextBox box) => int.TryParse(box.Text.Trim(), out var n) ? n : 0;
+
+    // Lay an element into a grid cell. Keeps the Calibrate-Gem move editor aligned.
+    private static void Place(Grid grid, UIElement el, int row, int col)
+    {
+        Grid.SetRow(el, row);
+        Grid.SetColumn(el, col);
+        grid.Children.Add(el);
+    }
+
     // Move the cursor to the selected calibrated point (client-relative -> screen) without
     // clicking, so the user can verify each calibration position visually.
     private void GemTestClick(ComboBox box)
@@ -594,8 +886,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        var client = GemPointer.Client(_service.Config.Window.Title);
         if (client == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
@@ -610,14 +901,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
 
-        // v1 gem_composer does NO focus-click here — it just does SetCursorPos(gx, gy) directly
-        // and clicks, because the game stays focused during a gem run. Center-clicking to "focus"
-        // makes the game CAPTURE the cursor (raw-input), so the follow-up SetCursorPos moves the
-        // OS cursor but the game's in-game pointer stays pinned at centre — every click lands at
-        // centre. So mirror v1: set the cursor straight onto the point, no focus click.
-        WindowFinder.MoveCursor(client, (int)pt.Value.X, (int)pt.Value.Y);
-        System.Threading.Thread.Sleep(200);
-        ser.Write("C\n");
+        // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
+        // set the cursor onto the point and click once.
+        GemPointer.To(client, (int)pt.Value.X, (int)pt.Value.Y);
+        System.Threading.Thread.Sleep(300);
+        GemPointer.Click(ser);
 
         _gemHint!.Text = $"Test click: set cursor to ({pt.Value.X},{pt.Value.Y}) and clicked \"{name}\".";
         DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
@@ -654,8 +942,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        var client = GemPointer.Client(_service.Config.Window.Title);
         if (client == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
@@ -667,30 +954,31 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Arduino not found — plug it in and retry.";
             return;
         }
+        // The composer sends the RAW hand-tuned movement for a pair, not a computed pixel delta
+        // (computing px/100 is what broke it before). So this test must send the SAME raw movement
+        // the composer would send — then a move that lands here means the composer's is correct.
+        var mv = ResolveGemMovement(fromName, toName);
+        if (mv == null)
+        {
+            _gemHint!.Text = $"No raw movement for \"{fromName}\" → \"{toName}\". Pick a composer pair (e.g. N → Register, Register → Combine).";
+            return;
+        }
         try
         {
             using var ser = Arduino.Open(port, _service.Config.Arduino.Baud);
-            System.Threading.Thread.Sleep(1200);
 
-            // Reproduce the composer's real anchor: the SOURCE click selects the source and lets
-            // the game capture the in-game pointer there, exactly as a compose cycle leaves it.
-            // Then a relative D source->target through the LIVE mouse_scale from the X/Y boxes —
-            // the same value the composer uses (GemComposer applies (point - Register) * scale/100).
-            // So the scale that makes the test land IS the composer's scale. Tune the boxes until
-            // it lands: overshoot => lower, short => raise. No separate centre focus-click — same
-            // as the composer, which avoids the pin-at-centre drift.
-            WindowFinder.MoveCursor(client, (int)from.Value.X, (int)from.Value.Y);
+            // v1 single-click core: SetCursorPos(from) -> C -> D raw -> C (no focus-click, no
+            // double click). Same raw movement the composer sends.
+            GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
             System.Threading.Thread.Sleep(300);
-            ser.Write("C\n");
+            GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
-            var dx = (int)Math.Round(target.Value.X - from.Value.X);
-            var dy = (int)Math.Round(target.Value.Y - from.Value.Y);
-            ser.Write($"D {dx} {dy}\n");
+            GemPointer.Move(ser, mv[0], mv[1]);
             System.Threading.Thread.Sleep(300);
-            ser.Write("C\n");
+            GemPointer.Click(ser);
             System.Threading.Thread.Sleep(300);
 
-            _gemHint!.Text = $"Test move: click \"{fromName}\" then D {dx} {dy} (1:1) then click \"{toName}\". Does it land?";
+            _gemHint!.Text = $"Test move: click \"{fromName}\" then D {mv[0]} {mv[1]} then click \"{toName}\". Does it land?";
         }
         catch (Exception ex)
         {
@@ -1212,6 +1500,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 emptySig = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
         }
 
+        // Positions only — movements are saved separately by "Save Composer Moves", so don't
+        // touch gem.Movements here.
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
         // them by rebuilding LocalGem from scratch.
@@ -1233,7 +1523,95 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? "\n\n(no empty colour reference captured — result box wasn't available)"
             : $"\n\nEmpty-result colour code: {DescribeColor(emptySig)}";
         _gemHint!.Text = "Gem Composer saved to config\\local.yaml.";
+        RefreshGemCoords();
         MessageBox.Show("Gem calibration saved." + emptyInfo, "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    // Repopulate the coordinate boxes from the current config (e.g. after a capture-based save).
+    private void RefreshGemCoords()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var gem = _service.Config.Gem;
+        foreach (var row in _gemCoordRows)
+        {
+            if (row.Key == "ResultArea")
+            {
+                if (gem.ResultGemArea is { Count: 4 } a)
+                {
+                    row.X.Text = a[0].ToString(inv);
+                    row.Y.Text = a[1].ToString(inv);
+                    if (row.W != null) row.W.Text = a[2].ToString(inv);
+                    if (row.H != null) row.H.Text = a[3].ToString(inv);
+                }
+            }
+            else if (row.Key.StartsWith("Resource", StringComparison.Ordinal)
+                     && int.TryParse(row.Key.AsSpan(8), out var ri) && ri >= 1 && gem.ResourceGems.Count >= ri)
+            {
+                var r = gem.ResourceGems[ri - 1];
+                if (r.Count > 1)
+                {
+                    row.X.Text = r[0].ToString(inv);
+                    row.Y.Text = r[1].ToString(inv);
+                }
+            }
+            else if (gem.GradePositions.TryGetValue(row.Key, out var pos) && pos.Count > 1)
+            {
+                row.X.Text = pos[0].ToString(inv);
+                row.Y.Text = pos[1].ToString(inv);
+            }
+        }
+    }
+
+    // Save the directly-edited coordinate boxes to local.yaml (no capture guard).
+    private void SaveCoordinates()
+    {
+        var gem = _service.Config.Gem;
+        foreach (var row in _gemCoordRows)
+        {
+            int x = int.TryParse(row.X.Text.Trim(), out var px) ? px : 0;
+            int y = int.TryParse(row.Y.Text.Trim(), out var py) ? py : 0;
+            if (row.Key == "ResultArea")
+            {
+                int w = row.W != null && int.TryParse(row.W.Text.Trim(), out var pw) ? pw : 0;
+                int h = row.H != null && int.TryParse(row.H.Text.Trim(), out var ph) ? ph : 0;
+                gem.ResultGemArea = new List<int> { x, y, w, h };
+            }
+            else if (row.Key.StartsWith("Resource", StringComparison.Ordinal)
+                     && int.TryParse(row.Key.AsSpan(8), out var ri) && ri >= 1 && gem.ResourceGems.Count >= ri)
+            {
+                gem.ResourceGems[ri - 1] = new List<int> { x, y };
+            }
+            else
+            {
+                gem.GradePositions[row.Key] = new List<int> { x, y };
+            }
+        }
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        var lg = local.Gem ?? new ConfigLoader.LocalGem();
+        lg.GradePositions = gem.GradePositions;
+        lg.ResourceGems = gem.ResourceGems;
+        lg.ResultGemArea = gem.ResultGemArea;
+        local.Gem = lg;
+        _service.SaveLocal(local);
+
+        _gemHint!.Text = "Coordinates saved to config\\local.yaml.";
+    }
+
+    // Save ONLY the composer moves (raw dx/dy) from the move-editor boxes. Unlike GemSave, this
+    // does NOT require the full click-point calibration — it just persists Movements to local.yaml.
+    private void SaveComposerMoves()
+    {
+        foreach (var row in _gemMoveRows)
+            SetGemMovement(row.Key, ParseMove(row.Dx), ParseMove(row.Dy));
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        var gem = local.Gem ?? new ConfigLoader.LocalGem();
+        gem.Movements = _service.Config.Gem.Movements;
+        local.Gem = gem;
+        _service.SaveLocal(local);
+
+        _gemHint!.Text = "Composer moves saved to config\\local.yaml.";
     }
 
     // ── Shared calibrator helpers ───────────────────────────────────────────
