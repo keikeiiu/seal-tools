@@ -1109,6 +1109,32 @@ public partial class MainWindow : FluentWindow, IDisposable
         catch { /* diagnostics must never break the check */ }
     }
 
+    // Render the captured screenshot at its NATURAL size with the calibration dots + result box
+    // overlaid at their natural (whole-window) coordinates — so the saved PNG has the overlays
+    // in the exact right spots, independent of the on-screen Stretch.Uniform scaling.
+    private void SaveGemCalibrationImage(string fileName)
+    {
+        var shot = _gemScreenshot;
+        if (shot == null) return;
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawImage(shot, new Rect(0, 0, shot.PixelWidth, shot.PixelHeight));
+            foreach (var pt in _gemPoints.Values)
+                dc.DrawEllipse(Brushes.Yellow, new Pen(Brushes.White, 1), new Point(pt.X, pt.Y), 5, 5);
+            if (_gemResultBox is { } box)
+                dc.DrawRectangle(null, new Pen(Brushes.Magenta, 2), box);
+        }
+        var bmp = new RenderTargetBitmap(shot.PixelWidth, shot.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bmp));
+        var path = CalibrationImagePath(fileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var fs = File.Create(path);
+        encoder.Save(fs);
+    }
+
     // Persist the calibration tab's current screenshot (+ drawn box/point overlays) as a
     // reference PNG next to local.yaml, so the layout is visible again on next launch. The
     // grid is rendered at its on-screen size, so the picture mirrors exactly what's in the tab.
@@ -1167,6 +1193,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _tunerHint!.Text = "Showing last saved Tuner calibration (reference). Capture + Save to update.";
         if (LoadCalibrationImage(_gemImage, "calib_gem.png", ""))
             _gemHint!.Text = "Showing last saved Gem calibration (reference). Capture + Save to update.";
+        LoadCalibrationImage(_gemResultPreview, "calib_gem_result.png", "");
     }
 
     // Compact human-readable colour composition.
@@ -1466,6 +1493,28 @@ public partial class MainWindow : FluentWindow, IDisposable
         catch { /* preview must never break calibration */ }
     }
 
+    // Save the result-gem box crop as a reference image so it reappears on next launch.
+    private void SaveResultGemCrop(Rect box)
+    {
+        try
+        {
+            var shot = _gemScreenshot;
+            if (shot == null) return;
+            var w = (int)Math.Clamp(box.Width, 1, shot.PixelWidth);
+            var h = (int)Math.Clamp(box.Height, 1, shot.PixelHeight);
+            var x = (int)Math.Clamp(box.X, 0, Math.Max(0, shot.PixelWidth - w));
+            var y = (int)Math.Clamp(box.Y, 0, Math.Max(0, shot.PixelHeight - h));
+            var crop = new CroppedBitmap(shot, new Int32Rect(x, y, w, h));
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(crop));
+            var path = CalibrationImagePath("calib_gem_result.png");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using var fs = File.Create(path);
+            encoder.Save(fs);
+        }
+        catch { /* save must never break calibration */ }
+    }
+
     private void GemSave()
     {
         if (_gemStep < GemTotalSteps || _gemResultBox == null)
@@ -1493,6 +1542,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Result-gem area [x, y, width, height] (client-relative), used for OCR + centre click.
         var rb = _gemResultBox.Value;
         var resultArea = new List<int> { (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height };
+        SaveResultGemCrop(rb);
 
         // Empty-result colour reference. We don't decide here whether the box holds a gem —
         // empty detection is only as good as the reference, so we ASK the user to guarantee the
@@ -1531,7 +1581,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _service.Config.Gem.ResourceGems = resources;
         _service.Config.Gem.ResultGemArea = resultArea;
         _service.Config.Gem.EmptySignature = emptySig;
-        SaveCalibrationImage(_gemGrid, "calib_gem.png");
+        SaveGemCalibrationImage("calib_gem.png");
         var emptyInfo = emptySig == null
             ? "\n\n(no empty colour reference captured — result box wasn't available)"
             : $"\n\nEmpty-result colour code: {DescribeColor(emptySig)}";
