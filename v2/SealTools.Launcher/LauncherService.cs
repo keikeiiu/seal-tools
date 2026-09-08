@@ -20,6 +20,7 @@ public sealed class LauncherService : IDisposable
     private readonly string _rootDir;
     private readonly ConfigLoader _loader;
     private CancellationTokenSource? _cts;
+    private Task? _toolTask;
     private ToolState? _state;
     private string? _currentId;
     private OcrEngine? _diagnosticOcr;
@@ -83,7 +84,7 @@ public sealed class LauncherService : IDisposable
         var ct = _cts.Token;
         var state = _state;
 
-        _ = Task.Run(() =>
+        _toolTask = Task.Run(() =>
         {
             try
             {
@@ -101,17 +102,29 @@ public sealed class LauncherService : IDisposable
     /// <summary>Stops the current tool and releases the Arduino COM port.</summary>
     public void StopTool()
     {
-        if (_cts == null)
+        var cts = _cts;
+        var task = _toolTask;
+        if (cts == null)
         {
             return;
         }
 
-        _cts.Cancel();
-        _cts.Dispose();
+        // Null the fields first so a re-entrant call (e.g. StartTool -> StopTool) sees no
+        // current tool and doesn't double-cancel.
         _cts = null;
+        _toolTask = null;
         _state = null;
         _currentId = null;
-        Thread.Sleep(300); // let the COM port release
+
+        cts.Cancel();
+
+        // Dispose the CTS only after the tool thread has fully exited — the tool loop reads
+        // ct.IsCancellationRequested, which throws ObjectDisposedException on a disposed CTS.
+        task?.ContinueWith(
+            _ => cts.Dispose(),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
