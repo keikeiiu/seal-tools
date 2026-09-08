@@ -36,6 +36,10 @@ public abstract class ToolBase
 
     protected static void BeepMany()
     {
-        for (int i = 0; i < 5; i++) Beep(1200, 200);
+        for (int i = 0; i < 5; i++)
+        {
+            Beep(1200, 200);
+            Thread.Sleep(100); // 0.1 s gap so the five beeps read as distinct (matches v1)
+        }
     }
 }
