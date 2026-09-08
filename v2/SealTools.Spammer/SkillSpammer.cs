@@ -117,6 +117,8 @@ public sealed class SkillSpammer
         return 0;
     }
 
+    private static readonly HashSet<string> WarnedKeys = new();
+
     private static void SendKey(SerialPort ser, string key)
     {
         bool fast = key.StartsWith('*');
@@ -124,10 +126,32 @@ public sealed class SkillSpammer
 
         string cmd;
         if (key.StartsWith('F'))
-            cmd = (fast ? "f " : "F ") + int.Parse(key.AsSpan(1), CultureInfo.InvariantCulture) + "\n";
-        else
+        {
+            if (!int.TryParse(key.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var f) || f is < 1 or > 10)
+            {
+                WarnUnsupported(key);
+                return;
+            }
+            cmd = (fast ? "f " : "F ") + f + "\n";
+        }
+        else if (key.Length == 1 && key[0] is >= '0' and <= '9')
+        {
             cmd = (fast ? "k " : "K ") + key + "\n";
+        }
+        else
+        {
+            WarnUnsupported(key);
+            return;
+        }
         ser.Write(cmd);
+    }
+
+    // The Arduino firmware's K/k handler parses a digit (0–9) and its F handler supports F1–F10
+    // only — a letter key would otherwise be silently pressed as '0'. Warn once per bad key.
+    private static void WarnUnsupported(string key)
+    {
+        if (WarnedKeys.Add(key))
+            Console.WriteLine($"[!] Spammer key '{key}' unsupported — only digits 0–9 and F1–F10 are sent.");
     }
 
     private void SleepCheck(double seconds)
