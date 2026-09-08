@@ -12,13 +12,12 @@ namespace SealTools.Spammer;
 // Port of skill_spammer/skill_spammer.py. Control in-memory (CancellationToken),
 // state in a shared ToolState; Console.WriteLine is only for logs.
 
-public sealed class SkillSpammer
+public sealed class SkillSpammer : ToolBase
 {
     private readonly AppConfig _cfg;
-    private bool _quitPressed;
-    private bool _pauseRequested;
 
     public SkillSpammer(AppConfig cfg)
+        : base(cfg.Hotkeys)
     {
         _cfg = cfg;
     }
@@ -56,13 +55,13 @@ public sealed class SkillSpammer
             while (true)
             {
                 SleepCheck(0.02);
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
 
                 // Sync with the launcher's in-memory start/stop signal.
                 if (state.Running && !running)
                 {
                     running = true;
-                    _quitPressed = false;
+                    QuitPressed = false;
                     Reset();
                     Console.WriteLine("[Panel] START");
                     Beep(523, 100);
@@ -79,7 +78,7 @@ public sealed class SkillSpammer
                 {
                     running = !running;
                     state.Running = running;
-                    if (running) { _quitPressed = false; Reset(); Console.WriteLine($"[GO] {string.Join(", ", cooldowns.Keys)}"); Beep(523, 100); }
+                    if (running) { QuitPressed = false; Reset(); Console.WriteLine($"[GO] {string.Join(", ", cooldowns.Keys)}"); Beep(523, 100); }
                     else { Console.WriteLine("[STOP]"); Beep(1000, 150); }
                 }
                 f12Was = f12Now;
@@ -99,11 +98,11 @@ public sealed class SkillSpammer
                         state.Cycle = count;
                     }
                 }
-                if (_pauseRequested)
+                if (PauseRequested)
                 {
                     Console.WriteLine("[PAUSE] graceful stop");
                     running = false; state.Running = false;
-                    _pauseRequested = false;
+                    PauseRequested = false;
                     break;
                 }
             }
@@ -154,20 +153,4 @@ public sealed class SkillSpammer
             Console.WriteLine($"[!] Spammer key '{key}' unsupported — only digits 0–9 and F1–F10 are sent.");
     }
 
-    private void SleepCheck(double seconds)
-    {
-        var steps = Math.Max(1, (int)(seconds / 0.05));
-        var ms = Math.Max(1, (int)(seconds / steps * 1000));
-        for (int i = 0; i < steps; i++)
-        {
-            Thread.Sleep(ms);
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Quit)) { _quitPressed = true; return; }
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Pause)) { _pauseRequested = true; }
-        }
-    }
-
-    private static void Beep(int freq, int ms)
-    {
-        try { Console.Beep(freq, ms); } catch { }
-    }
 }

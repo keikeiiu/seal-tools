@@ -10,13 +10,12 @@ namespace SealTools.GemComposer;
 // Port of gem_composer/gem_composer.py. Grade positions are client-area-relative
 // (plan §3). Control is in-memory (CancellationToken), state is a shared ToolState.
 
-public sealed class GemComposer
+public sealed class GemComposer : ToolBase
 {
     private readonly AppConfig _cfg;
-    private bool _quitPressed;
-    private bool _pauseRequested;
 
     public GemComposer(AppConfig cfg)
+        : base(cfg.Hotkeys)
     {
         _cfg = cfg;
     }
@@ -172,7 +171,7 @@ public sealed class GemComposer
             while (true)
             {
                 SleepCheck(0.05);
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
 
                 // Sync with the launcher's in-memory start/stop signal.
                 if (state.Running && !running)
@@ -222,7 +221,7 @@ public sealed class GemComposer
                 cycle++;
                 state.Cycle = cycle;
 
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
                 if (Hotkeys.IsDown(_cfg.Hotkeys.Start))
                 {
                     f12Was = true;
@@ -257,7 +256,7 @@ public sealed class GemComposer
                 }
 
                 // Move back to Register (the advance flow must start from the Register button).
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
                 var cr = _cfg.Gem.Movements.CombineRegister;
                 GemPointer.Move(ser, cr[0], cr[1]);
                 SleepCheck(0.2);
@@ -275,11 +274,11 @@ public sealed class GemComposer
                 SleepCheck(0.5);
 
                 if (cycle % 10 == 0) Console.WriteLine($"  Cycle: {cycle}");
-                if (_pauseRequested)
+                if (PauseRequested)
                 {
                     Console.WriteLine("[PAUSE] graceful stop");
                     running = false; state.Running = false;
-                    _pauseRequested = false;
+                    PauseRequested = false;
                     break;
                 }
             }
@@ -291,22 +290,5 @@ public sealed class GemComposer
 
         Console.WriteLine($"\nDone. {cycle} cycles.");
         return 0;
-    }
-
-    private void SleepCheck(double seconds)
-    {
-        var steps = Math.Max(1, (int)(seconds / 0.05));
-        var ms = Math.Max(1, (int)(seconds / steps * 1000));
-        for (int i = 0; i < steps; i++)
-        {
-            Thread.Sleep(ms);
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Quit)) { _quitPressed = true; return; }
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Pause)) { _pauseRequested = true; }
-        }
-    }
-
-    private static void Beep(int freq, int ms)
-    {
-        try { Console.Beep(freq, ms); } catch { }
     }
 }

@@ -13,16 +13,15 @@ namespace SealTools.Tuner;
 // Port of tuner/seal_tuner.py main loop. Control is in-memory (CancellationToken),
 // state is a shared ToolState object; Console.WriteLine is only for logs.
 
-public sealed class SealTuner
+public sealed class SealTuner : ToolBase
 {
     private readonly AppConfig _cfg;
     private readonly AttributesConfig _attrs;
     private readonly string _rootDir;
     private readonly AttrMatcher _matcher;
-    private bool _quitPressed;
-    private bool _pauseRequested;
 
     public SealTuner(AppConfig cfg, AttributesConfig attrs, string rootDir)
+        : base(cfg.Hotkeys)
     {
         _cfg = cfg;
         _attrs = attrs;
@@ -55,7 +54,7 @@ public sealed class SealTuner
             while (true)
             {
                 SleepCheck(0.05);
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
 
                 // Sync with the launcher's in-memory start/stop signal.
                 if (state.Running && !running)
@@ -74,7 +73,7 @@ public sealed class SealTuner
                 }
 
                 bool f12Now = Hotkeys.IsDown(_cfg.Hotkeys.Start);
-                if (f12Now && !f12Was && !_quitPressed)
+                if (f12Now && !f12Was && !QuitPressed)
                 {
                     running = !running;
                     state.Running = running;
@@ -90,7 +89,7 @@ public sealed class SealTuner
                     {
                         SleepCheck(0.05);
                         if (Hotkeys.IsDown(_cfg.Hotkeys.Start)) { running = false; state.Running = false; countdown = 0; break; }
-                        if (_quitPressed || ct.IsCancellationRequested) break;
+                        if (QuitPressed || ct.IsCancellationRequested) break;
                     }
                     countdown--;
                     if (countdown == 0) { Console.WriteLine("[>] RUNNING"); Beep(1500, 150); }
@@ -108,7 +107,7 @@ public sealed class SealTuner
                 {
                     ser.Write("C\n");
                     SleepCheck(timing.ClickEnterDelay);
-                    if (_quitPressed || ct.IsCancellationRequested) break;
+                    if (QuitPressed || ct.IsCancellationRequested) break;
                     ser.Write("E\n");
                     SleepCheck(timing.OcrDelay);
                 }
@@ -120,7 +119,7 @@ public sealed class SealTuner
                     break;
                 }
 
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
 
                 var result = ocr.Scan();
                 string? grade = result?.Grade;
@@ -159,7 +158,7 @@ public sealed class SealTuner
                 state.FilterStatus = filter.Enabled ? filterResult.Reason : "disabled";
 
                 SleepCheck(0.3);
-                if (_quitPressed || ct.IsCancellationRequested) break;
+                if (QuitPressed || ct.IsCancellationRequested) break;
 
                 // Stop conditions.
                 string target = _cfg.Tuner.TargetGrade;
@@ -206,11 +205,11 @@ public sealed class SealTuner
                     running = false; state.Running = false;
                     break;
                 }
-                if (_pauseRequested)
+                if (PauseRequested)
                 {
                     Console.WriteLine("[PAUSE] graceful stop");
                     running = false; state.Running = false;
-                    _pauseRequested = false;
+                    PauseRequested = false;
                     break;
                 }
             }
@@ -226,26 +225,4 @@ public sealed class SealTuner
 
     private int GradeIndex(string? grade) =>
         grade == null ? -1 : _cfg.Tuner.GradeOrder.IndexOf(grade);
-
-    private void SleepCheck(double seconds)
-    {
-        var steps = Math.Max(1, (int)(seconds / 0.05));
-        var ms = Math.Max(1, (int)(seconds / steps * 1000));
-        for (int i = 0; i < steps; i++)
-        {
-            Thread.Sleep(ms);
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Quit)) { _quitPressed = true; return; }
-            if (Hotkeys.IsDown(_cfg.Hotkeys.Pause)) { _pauseRequested = true; }
-        }
-    }
-
-    private static void Beep(int freq, int ms)
-    {
-        try { Console.Beep(freq, ms); } catch { }
-    }
-
-    private static void BeepMany()
-    {
-        for (int i = 0; i < 5; i++) Beep(1200, 200);
-    }
 }
