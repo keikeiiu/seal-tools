@@ -266,8 +266,12 @@ public sealed class AttrMatcher
             {
                 if (attr.Name != rule.Name) continue;
                 if (ValueOk(attr.Value, rule))
+                {
                     matchedRules.Add(new FilterHit { Rule = rule.Name, Found = attr.Name, Value = attr.Value });
-                break;
+                    break; // one hit per rule — the first passing attribute with this name suffices
+                }
+                // Otherwise keep scanning: a later attribute with the same name may pass the
+                // min/max bounds even if this one doesn't.
             }
         }
 
