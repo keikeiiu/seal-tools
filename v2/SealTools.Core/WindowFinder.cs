@@ -154,12 +154,16 @@ public static class WindowFinder
         return found;
     }
 
-    // Client-area rect expressed in screen coordinates (the canonical origin).
+    // Client-area rect expressed in screen coordinates (the canonical origin). The origin is the
+    // CLIENT-area top-left (GetClientRect + ClientToScreen), NOT the window frame — the frame
+    // includes the title bar/border, which would offset every region/click by ~(8,31) px.
     public static WindowRect? GetClientRectInScreen(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return null;
-        if (!GetWindowRect(hWnd, out RECT wr)) return null;
-        return new WindowRect(wr.Left, wr.Top, wr.Right - wr.Left, wr.Bottom - wr.Top);
+        if (!GetClientRect(hWnd, out RECT cr)) return null;
+        var origin = new POINT { X = 0, Y = 0 };
+        if (!ClientToScreen(hWnd, ref origin)) return null;
+        return new WindowRect(origin.X, origin.Y, cr.Right - cr.Left, cr.Bottom - cr.Top);
     }
 
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.
