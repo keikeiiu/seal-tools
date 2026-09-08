@@ -136,6 +136,7 @@ public sealed class FilterRule
 public sealed class FilterConfig
 {
     public bool Enabled { get; set; }
+    [AllowedValues("any", "all", "per_attr", ErrorMessage = "tuner.filter.match_mode must be any|all|per_attr")]
     public string MatchMode { get; set; } = "any";
     public string? RequireGrade { get; set; }
     public List<FilterRule> Rules { get; set; } = new();
@@ -165,6 +166,7 @@ public sealed class GemConfig
     /// composer; "advance_grade" moves to the next grade and keeps composing;
     /// "advance_grade_clear" right-clicks all 3 resource slots (clears a stuck gem) then
     /// advances to the next grade.</summary>
+    [AllowedValues("stop", "advance_grade", "advance_grade_clear", ErrorMessage = "gem.empty_mode must be stop|advance_grade|advance_grade_clear")]
     public string EmptyMode { get; set; } = "stop";
     /// <summary>Normalised colour distance below which the result box is judged empty
     /// (0..1). Lower = stricter (more likely to call it "has a gem").</summary>
