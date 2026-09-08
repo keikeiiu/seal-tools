@@ -47,7 +47,8 @@ public sealed class SealTuner : ToolBase
         int attempt = 0;
         bool f12Was = Hotkeys.IsDown(_cfg.Hotkeys.Start);
         var prevSig = (Grade: (string?)null, Remaining: (int?)null, Attrs: "");
-        int sameCount = 0;
+        // Repeats of the previous result; >= 2 means three identical results in a row.
+        int consecutiveRepeats = 0;
 
         try
         {
@@ -141,8 +142,8 @@ public sealed class SealTuner : ToolBase
                     string.Join(" | ", matched.Select(m => $"{m.Name}={m.Value}")));
 
                 var sig = (grade, remaining, string.Join("|", matched.Select(m => m.Name + "=" + m.Value)));
-                if (sig == prevSig) sameCount++;
-                else sameCount = 0;
+                if (sig == prevSig) consecutiveRepeats++;
+                else consecutiveRepeats = 0;
                 prevSig = sig;
 
                 Console.WriteLine($"[{attempt:0000}] Grade: {grade ?? "?"}  Remaining: {(remaining.HasValue ? remaining.Value.ToString(CultureInfo.InvariantCulture) : "?")}");
@@ -193,7 +194,7 @@ public sealed class SealTuner : ToolBase
                     running = false; state.Running = false;
                     break;
                 }
-                if (sameCount >= 2)
+                if (consecutiveRepeats >= 2)
                 {
                     Console.WriteLine(">>> STUCK / OUT OF SPRINGS (same result x3) <<<");
                     running = false; state.Running = false;
