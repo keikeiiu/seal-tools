@@ -117,9 +117,7 @@ public sealed class GradeDecisionConfig
 {
     public int TotalMin { get; set; }
     public int DgYellow { get; set; }
-    public double DgWhiteRatio { get; set; }
     public int GBlue { get; set; }
-    public double GWhiteRatio { get; set; }
     public int XgRed { get; set; }
     public int SgPurple { get; set; }
     public int NWhite { get; set; }
@@ -191,7 +189,6 @@ public sealed class MovementsConfig
     public List<int> GradePrev { get; set; } = new();
     public List<int> RegisterSlot1 { get; set; } = new();
     public List<int> Slot1Slot2 { get; set; } = new();
-    public List<int> Slot2Dg { get; set; } = new();
     public List<int> Slot2Slot3 { get; set; } = new();
     public List<int> Slot3ToN { get; set; } = new();
     public List<int> Slot3ToG { get; set; } = new();

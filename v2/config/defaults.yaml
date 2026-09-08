@@ -43,9 +43,7 @@ tuner:
     decision:
       total_min: 10
       dg_yellow: 80
-      dg_white_ratio: 0.3
       g_blue: 60
-      g_white_ratio: 0.5
       xg_red: 60
       sg_purple: 60
       n_white: 100
