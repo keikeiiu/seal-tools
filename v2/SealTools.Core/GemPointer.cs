@@ -27,4 +27,7 @@ public static class GemPointer
 
     /// <summary>HID relative "D dx dy" move.</summary>
     public static void Move(SerialPort ser, int dx, int dy) => ser.Write($"D {dx} {dy}\n");
+
+    /// <summary>HID right-click at the current cursor position (clears a stuck resource gem).</summary>
+    public static void RightClick(SerialPort ser) => ser.Write("R\n");
 }

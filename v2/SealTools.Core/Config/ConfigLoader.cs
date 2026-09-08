@@ -98,6 +98,8 @@ public sealed class ConfigLoader
         if (local.Gem?.Movements != null) defaults.Gem.Movements = local.Gem.Movements;
         if (local.Gem?.ResourceGems != null) defaults.Gem.ResourceGems = local.Gem.ResourceGems;
         if (local.Gem?.ResultGemArea != null) defaults.Gem.ResultGemArea = local.Gem.ResultGemArea;
+        if (local.Gem?.EmptySignature != null) defaults.Gem.EmptySignature = local.Gem.EmptySignature;
+        if (local.Gem?.EmptyDistance != null) defaults.Gem.EmptyDistance = local.Gem.EmptyDistance.Value;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
         if (local.Display?.DpiScale != null) defaults.Display.DpiScale = local.Display.DpiScale;
     }
@@ -133,7 +135,7 @@ public sealed class ConfigLoader
                 grade_colors = cfg.Tuner.GradeColors,
                 filter = cfg.Tuner.Filter,
             },
-            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade },
+            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
             spammer = new { keys = cfg.Spammer.Keys },
         };
 
@@ -165,6 +167,7 @@ public sealed class ConfigLoader
         public List<int>? ResultGemArea { get; set; }
         public List<List<int>>? ResourceGems { get; set; }
         public ColorComposition? EmptySignature { get; set; }
+        public double? EmptyDistance { get; set; }
     }
 
     public sealed class LocalArduino

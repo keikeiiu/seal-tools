@@ -32,6 +32,9 @@ gem:
   # empty_signature is filled in automatically by the gem calibrator (it samples the result
   # box while EMPTY). Leave unset — empty detection stays off until you calibrate. Format:
   # {mean_v: 0.3, mean_sat: 0.1, colored_fraction: 0.05, mean_r: 0.3, mean_g: 0.3, mean_b: 0.3}
+  # empty_distance: normalised colour distance below which the result box is judged empty (0..1).
+  # Lower = stricter (more likely to call it "has a gem"). Default 0.18. Machine-specific.
+  empty_distance: 0.18
   # Pointer scale: client-pixels the in-game pointer moves per 100 HID counts, per axis [x, y].
   # 100,100 = 1:1. All relative "D" moves are computed as (point - Register) * scale / 100, so
   # NO movement is hand-tuned. Measure once via "Probe scale" in the Gem calibrate tab (with the

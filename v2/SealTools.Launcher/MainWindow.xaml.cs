@@ -362,12 +362,21 @@ public partial class MainWindow : FluentWindow, IDisposable
             GemEmptyModes.First(m => m.Value == _service.Config.Gem.EmptyMode).Label);
         panel.Children.Add(LabeledField("On empty result", emptyMode));
 
+        var saveEmptyCaptures = new CheckBox
+        {
+            IsChecked = _service.Config.Gem.SaveEmptyCaptures,
+            Content = "Save empty-check captures (debug only)",
+            Foreground = (Brush)FindResource("FgBrush"),
+        };
+        panel.Children.Add(saveEmptyCaptures);
+
         var save = MakeButton("Save Gem Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             _service.Config.Gem.StartGrade = startGrade.SelectedItem?.ToString() ?? "N";
             var mode = GemEmptyModes.First(m => m.Label == emptyMode.SelectedItem?.ToString());
             _service.Config.Gem.EmptyMode = mode.Value;
+            _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
             _service.SaveConfig();
             MessageBox.Show("Gem config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
@@ -1573,6 +1582,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         gem.ResourceGems = resources;
         gem.ResultGemArea = resultArea;
         gem.EmptySignature = emptySig;
+        gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
         local.Gem = gem;
         _service.SaveLocal(local);
         // Refresh in-memory config so the next gem run uses the just-calibrated

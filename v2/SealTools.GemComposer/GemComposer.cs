@@ -1,6 +1,7 @@
 using System;
 using System.IO.Ports;
 using System.Threading;
+using OpenCvSharp;
 using SealTools.Core;
 using SealTools.Core.Config;
 
@@ -26,6 +27,7 @@ public sealed class GemComposer
         int gidx = Math.Max(0, grades.IndexOf(_cfg.Gem.StartGrade));
         bool running = false;
         int cycle = 0;
+        int emptyCount = 0;
         bool f12Was = Hotkeys.IsDown(_cfg.Hotkeys.Start);
         bool f9Was = Hotkeys.IsDown(_cfg.Hotkeys.AdvanceGrade);
         // The game is ALWAYS unfocused when the composer starts (the launcher window holds
@@ -66,6 +68,98 @@ public sealed class GemComposer
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
+            var d = _cfg.Gem.Movements.RadioToRegister[grades[gidx]];
+            GemPointer.Move(ser, d[0], d[1]);
+            SleepCheck(0.3);
+            GemPointer.Click(ser);
+            SleepCheck(0.5);
+        }
+
+        // True when the composed result-gem box is empty (no gem), per the calibrated empty
+        // signature. Returns false when empty-detection isn't configured.
+        bool IsResultBoxEmpty()
+        {
+            if (_cfg.Gem.ResultGemArea is not { Count: 4 } area) return false;
+            var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+            var client = WindowFinder.GetClientRectInScreen(hwnd);
+            if (client == null) return false;
+            using var crop = ScreenCapture.CaptureRegion(hwnd, client, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
+            var frame = GemColorAnalyzer.Analyze(crop);
+            var empty = GemColorAnalyzer.IsEmpty(frame, _cfg.Gem.EmptySignature, _cfg.Gem.EmptyDistance);
+            if (_cfg.Gem.SaveEmptyCaptures && _cfg.Gem.EmptySignature is { } sig)
+            {
+                try
+                {
+                    var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+                    Directory.CreateDirectory(dir);
+                    crop.ImWrite(Path.Combine(dir, $"empty_check_crop_{DateTime.Now:HHmmss_fff}.png"));
+                }
+                catch { }
+                var d = GemColorAnalyzer.Distance(frame, sig);
+                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} dist={d:0.000} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
+            }
+            return empty;
+        }
+
+        // Right-click the three resource slots to clear any stuck resource gems.
+        void ClearResources()
+        {
+            var mv = _cfg.Gem.Movements;
+            GemPointer.Move(ser, mv.RegisterSlot1[0], mv.RegisterSlot1[1]);
+            SleepCheck(0.2);
+            GemPointer.RightClick(ser);
+            SleepCheck(0.3);
+            GemPointer.Move(ser, mv.Slot1Slot2[0], mv.Slot1Slot2[1]);
+            SleepCheck(0.2);
+            GemPointer.RightClick(ser);
+            SleepCheck(0.3);
+            GemPointer.Move(ser, mv.Slot2Slot3[0], mv.Slot2Slot3[1]);
+            SleepCheck(0.2);
+            GemPointer.RightClick(ser);
+            SleepCheck(0.3);
+        }
+
+        // Resource3 → grade movement for the given grade label.
+        List<int> Slot3ToGrade(string grade) => grade switch
+        {
+            "N" => _cfg.Gem.Movements.Slot3ToN,
+            "G" => _cfg.Gem.Movements.Slot3ToG,
+            "DG" => _cfg.Gem.Movements.Slot3ToDg,
+            _ => new List<int> { 0, 0 },
+        };
+
+        // Advance to the next grade; in "advance_grade_clear" mode, clear the resource slots first.
+        void AdvanceGrade()
+        {
+            if (_cfg.Gem.EmptyMode == "advance_grade_clear")
+                ClearResources();
+
+            gidx = (gidx + 1) % grades.Count;
+            state.Grade = grades[gidx];
+            Console.WriteLine($"[EMPTY] advancing -> {grades[gidx]}");
+
+            if (_cfg.Gem.EmptyMode == "advance_grade_clear")
+            {
+                // Cursor is at Resource3 → move to the next grade and select it.
+                var slot3 = Slot3ToGrade(grades[gidx]);
+                GemPointer.Move(ser, slot3[0], slot3[1]);
+                SleepCheck(0.2);
+                GemPointer.Click(ser);
+                SleepCheck(0.5);
+            }
+            else
+            {
+                // Cursor is at Register → re-select the grade absolutely.
+                var rect = GemPointer.Client(_cfg.Window.Title);
+                if (rect == null) return;
+                var pos = _cfg.Gem.GradePositions[grades[gidx]];
+                GemPointer.To(rect, pos[0], pos[1]);
+                SleepCheck(0.3);
+                GemPointer.Click(ser);
+                SleepCheck(0.5);
+            }
+
+            // Next grade → Register (radio_to_register) and select.
             var d = _cfg.Gem.Movements.RadioToRegister[grades[gidx]];
             GemPointer.Move(ser, d[0], d[1]);
             SleepCheck(0.3);
@@ -146,11 +240,35 @@ public sealed class GemComposer
                 GemPointer.Click(ser);
                 SleepCheck(0.8);
 
-                // Back to Register — deregister + register.
+                // Auto-advance when the result box is empty (no gem created).
+                bool advanceNow = false;
+                if (_cfg.Gem.EmptyMode != "stop" && _cfg.Gem.EmptySignature != null)
+                {
+                    if (IsResultBoxEmpty())
+                    {
+                        emptyCount++;
+                        if (emptyCount >= _cfg.Gem.EmptyStreak)
+                        {
+                            emptyCount = 0;
+                            advanceNow = true;
+                        }
+                    }
+                    else emptyCount = 0;
+                }
+
+                // Move back to Register (the advance flow must start from the Register button).
                 if (_quitPressed || ct.IsCancellationRequested) break;
                 var cr = _cfg.Gem.Movements.CombineRegister;
                 GemPointer.Move(ser, cr[0], cr[1]);
                 SleepCheck(0.2);
+
+                if (advanceNow)
+                {
+                    AdvanceGrade();
+                    continue;
+                }
+
+                // Normal: deregister + register.
                 GemPointer.Click(ser);
                 SleepCheck(0.3);
                 GemPointer.Click(ser);

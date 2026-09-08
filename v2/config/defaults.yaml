@@ -65,8 +65,8 @@ gem:
   grades: ["N", "G", "DG"]
   start_grade: "DG"
   empty_mode: "stop"            # "stop" | "advance_grade" | "advance_grade_clear" — action when the result box is empty (clear = right-click all 3 resource slots first)
-  empty_distance: 0.18          # normalised colour distance <= => empty (lower = stricter)
   empty_streak: 2               # consecutive empty reads before acting (guards a transient miss)
+  save_empty_captures: false    # write empty-check capture PNG + distance log each cycle (debug only)
 
 spammer:
   keys:

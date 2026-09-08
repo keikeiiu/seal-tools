@@ -180,6 +180,9 @@ public sealed class GemConfig
     /// <summary>Consecutive empty reads required before the EmptyMode action fires — guards
     /// against a single transient false empty.</summary>
     public int EmptyStreak { get; set; } = 2;
+    /// <summary>Write the empty-check capture PNG + distance log line for debugging. Default
+    /// off — the per-cycle disk I/O slows the compose loop.</summary>
+    public bool SaveEmptyCaptures { get; set; }
     /// <summary>Sampled empty-result-gem colour reference (machine-specific). Null = empty
     /// detection is off until calibrated.</summary>
     public ColorComposition? EmptySignature { get; set; }
