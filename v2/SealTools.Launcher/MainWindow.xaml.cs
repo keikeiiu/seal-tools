@@ -1072,9 +1072,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found — open the game first.";
             return false;
         }
-        frame = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+        frame = GemColorAnalyzer.Analyze(hwnd, client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
         sig = _service.Config.Gem.EmptySignature;
-        SaveResultCrop(client, rb);
+        SaveResultCrop(hwnd, client, rb);
         return true;
     }
 
@@ -1096,11 +1096,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Save a crop-out PNG of the result-gem box so its exact pixels can be compared later
     // (e.g. against the empty reference or a previous run). Writes logs/captures/result_box.png.
-    private static void SaveResultCrop(WindowRect client, Rect rb)
+    private static void SaveResultCrop(IntPtr hwnd, WindowRect client, Rect rb)
     {
         try
         {
-            using var mat = ScreenCapture.CaptureRegion(client, new SealTools.Core.Config.RegionConfig
+            using var mat = ScreenCapture.CaptureRegion(hwnd, client, new SealTools.Core.Config.RegionConfig
             { Left = (int)rb.X, Top = (int)rb.Y, Width = (int)rb.Width, Height = (int)rb.Height });
             var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
             Directory.CreateDirectory(dir);
@@ -1510,7 +1510,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
             var client = WindowFinder.GetClientRectInScreen(hwnd);
             if (client != null)
-                emptySig = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+                emptySig = GemColorAnalyzer.Analyze(hwnd, client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
         }
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
@@ -1635,7 +1635,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var client = WindowFinder.GetClientRectInScreen(hwnd);
         if (client == null) return null;
 
-        using var mat = ScreenCapture.Capture(client);
+        using var mat = ScreenCapture.Capture(hwnd, client);
         return MatToBitmapSource(mat);
     }
 

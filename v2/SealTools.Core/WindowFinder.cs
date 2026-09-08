@@ -38,6 +38,9 @@ public static class WindowFinder
     private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 
     [DllImport("user32.dll")]
@@ -149,10 +152,8 @@ public static class WindowFinder
     public static WindowRect? GetClientRectInScreen(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return null;
-        if (!GetClientRect(hWnd, out RECT cr)) return null;
-        var p = new POINT { X = 0, Y = 0 };
-        if (!ClientToScreen(hWnd, ref p)) return null;
-        return new WindowRect(p.X, p.Y, cr.Right - cr.Left, cr.Bottom - cr.Top);
+        if (!GetWindowRect(hWnd, out RECT wr)) return null;
+        return new WindowRect(wr.Left, wr.Top, wr.Right - wr.Left, wr.Bottom - wr.Top);
     }
 
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.

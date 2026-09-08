@@ -1,30 +1,43 @@
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using SealTools.Core.Config;
 
 namespace SealTools.Core;
 
-// GDI screen capture → OpenCvSharp Mat (BGR). Runs DPI-aware (physical pixels)
-// once WindowFinder.EnablePerMonitorDpiAwareness() has been called.
+// Captures the game window via PrintWindow, which works for DirectX/DirectDraw titles that
+// GDI's CopyFromScreen cannot read. Returns an OpenCvSharp Mat (BGR).
 public static class ScreenCapture
 {
-    public static Mat Capture(WindowRect rect)
+    private const int PwRenderFullContent = 0x00000002;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, int nFlags);
+
+    public static Mat Capture(IntPtr hwnd, WindowRect rect)
     {
         using var bmp = new Bitmap(rect.Width, rect.Height, PixelFormat.Format24bppRgb);
         using (var g = Graphics.FromImage(bmp))
         {
-            g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new System.Drawing.Size(rect.Width, rect.Height), CopyPixelOperation.SourceCopy);
+            IntPtr hdc = g.GetHdc();
+            try { PrintWindow(hwnd, hdc, PwRenderFullContent); }
+            finally { g.ReleaseHdc(hdc); }
         }
         return BitmapConverter.ToMat(bmp);
     }
 
-    // Capture a client-area-relative region (canonical coordinate model, plan §3).
-    public static Mat CaptureRegion(WindowRect client, RegionConfig region)
+    // Capture a window-relative region: capture the whole window, then crop.
+    public static Mat CaptureRegion(IntPtr hwnd, WindowRect window, RegionConfig region)
     {
-        var left = client.Left + region.Left;
-        var top = client.Top + region.Top;
-        return Capture(new WindowRect(left, top, region.Width, region.Height));
+        using var whole = Capture(hwnd, window);
+        var left = Math.Clamp(region.Left, 0, window.Width - 1);
+        var top = Math.Clamp(region.Top, 0, window.Height - 1);
+        var w = Math.Min(region.Width, window.Width - left);
+        var h = Math.Min(region.Height, window.Height - top);
+        using var roi = new Mat(whole, new OpenCvSharp.Rect(left, top, w, h));
+        return roi.Clone();
     }
 }

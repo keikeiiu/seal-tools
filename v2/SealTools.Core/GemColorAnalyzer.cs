@@ -26,9 +26,9 @@ public static class GemColorAnalyzer
     private const int ColoredGapMin = 40; // channel max-min gap above which a pixel is "coloured"
 
     // Capture a client-relative box inside the given client rect and analyse it.
-    public static ColorComposition Analyze(WindowRect client, int x, int y, int w, int h)
+    public static ColorComposition Analyze(IntPtr hwnd, WindowRect client, int x, int y, int w, int h)
     {
-        using var mat = ScreenCapture.CaptureRegion(client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
+        using var mat = ScreenCapture.CaptureRegion(hwnd, client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
         return Analyze(mat);
     }
 
