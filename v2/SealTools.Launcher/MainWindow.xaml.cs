@@ -172,7 +172,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _statusBlocks[id] = statusText;
 
             var startButton = MakeButton("Start", ControlAppearance.Primary);
-            startButton.Click += (_, _) => _service.StartTool(id);
+            startButton.Click += async (_, _) => await _service.StartToolAsync(id);
 
             var stopButton = MakeButton("Stop", ControlAppearance.Danger);
             stopButton.Click += (_, _) => _service.StopTool();
@@ -324,9 +324,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         refreshBtn.Click += (_, _) => Refresh();
 
         var testBtn = MakeButton("Test Click (C)", ControlAppearance.Primary);
-        testBtn.Click += (_, _) =>
+        testBtn.Click += async (_, _) =>
         {
-            var ser = _service.ArduinoPort();
+            var ser = await _service.ArduinoPortAsync();
             if (ser == null)
             {
                 light.Fill = (Brush)FindResource("BadBrush");
@@ -950,7 +950,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Test a raw composer move WITHOUT computing anything: focus-click the from point, send the
     // user's exact D dx dy, then confirm-click the to point. The same value the composer sends.
-    private void GemTestMovement(string fromName, string toName, int dx, int dy)
+    private async void GemTestMovement(string fromName, string toName, int dx, int dy)
     {
         var from = ResolveGemPoint(fromName);
         if (from == null) { _gemHint!.Text = $"Start \"{fromName}\" isn't calibrated yet."; return; }
@@ -959,7 +959,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var client = GemPointer.Client(_service.Config.Window.Title);
         if (client == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
-        var ser = _service.ArduinoPort();
+        var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
 
         try
@@ -992,7 +992,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Move the cursor to the selected calibrated point (client-relative -> screen) without
     // clicking, so the user can verify each calibration position visually.
-    private void GemTestClick(ComboBox box)
+    private async void GemTestClick(ComboBox box)
     {
         if (box.SelectedItem is not string name)
         {
@@ -1014,7 +1014,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = _service.ArduinoPort();
+        var ser = await _service.ArduinoPortAsync();
         if (ser == null)
         {
             _gemHint!.Text = "Arduino not found — plug it in and retry.";
@@ -1037,7 +1037,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // at 1:1, then confirm-click the TARGET. This confirms the mouse scale is 1:1: if every step
     // lands on a button, the scale is correct. With a separated in-game cursor the pixel distance
     // can't be measured, so this is judged visually (does each click land?).
-    private void GemTestRelativeMove(ComboBox fromBox, ComboBox toBox)
+    private async void GemTestRelativeMove(ComboBox fromBox, ComboBox toBox)
     {
         if (fromBox.SelectedItem is not string fromName)
         {
@@ -1068,7 +1068,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found — open the game first.";
             return;
         }
-        var ser = _service.ArduinoPort();
+        var ser = await _service.ArduinoPortAsync();
         if (ser == null)
         {
             _gemHint!.Text = "Arduino not found — plug it in and retry.";

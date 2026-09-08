@@ -53,18 +53,18 @@ public sealed class LauncherService : IDisposable
     /// <summary>Gets the shared Arduino serial port, opening it once (with a boot delay) if needed.
     /// Returns null when the Arduino isn't found. Tools and the calibrate test buttons both use this
     /// single open port, so it is never opened twice (which was causing "COM port denied").</summary>
-    public SerialPort? ArduinoPort()
+    public async Task<SerialPort?> ArduinoPortAsync()
     {
         if (_arduino is { IsOpen: true }) return _arduino;
         var port = Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid);
         if (port == null) return null;
         _arduino = Arduino.Open(port, Config.Arduino.Baud);
-        Thread.Sleep(2000); // one-time boot delay after the serial open
+        await Task.Delay(2000); // one-time boot delay after the serial open (non-blocking)
         return _arduino;
     }
 
     /// <summary>Launches a tool (stopping the current one first) and starts it rolling.</summary>
-    public void StartTool(string id)
+    public async Task StartToolAsync(string id)
     {
         if (id is not ("tuner" or "gem" or "spammer"))
         {
@@ -72,7 +72,7 @@ public sealed class LauncherService : IDisposable
         }
 
         StopTool();
-        var ser = ArduinoPort();
+        var ser = await ArduinoPortAsync();
         if (ser == null)
         {
             Console.WriteLine("[!] Arduino not found");
