@@ -101,7 +101,6 @@ public sealed class ConfigLoader
         if (local.Gem?.EmptySignature != null) defaults.Gem.EmptySignature = local.Gem.EmptySignature;
         if (local.Gem?.EmptyDistance != null) defaults.Gem.EmptyDistance = local.Gem.EmptyDistance.Value;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
-        if (local.Display?.DpiScale != null) defaults.Display.DpiScale = local.Display.DpiScale;
     }
 
     // Atomic write so the launcher can save config while tools re-read it.
@@ -152,7 +151,6 @@ public sealed class ConfigLoader
         public LocalTuner? Tuner { get; set; }
         public LocalGem? Gem { get; set; }
         public LocalArduino? Arduino { get; set; }
-        public DisplayOverrides? Display { get; set; }
     }
 
     public sealed class LocalTuner
@@ -173,10 +171,5 @@ public sealed class ConfigLoader
     public sealed class LocalArduino
     {
         public string? Port { get; set; }
-    }
-
-    public sealed class DisplayOverrides
-    {
-        public double? DpiScale { get; set; }
     }
 }

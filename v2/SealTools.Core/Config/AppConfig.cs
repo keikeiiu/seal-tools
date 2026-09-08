@@ -15,12 +15,6 @@ public sealed class AppConfig
     public TunerConfig Tuner { get; set; } = new();
     public GemConfig Gem { get; set; } = new();
     public SpammerConfig Spammer { get; set; } = new();
-    public DisplayConfig Display { get; set; } = new();
-}
-
-public sealed class DisplayConfig
-{
-    public double? DpiScale { get; set; }   // optional manual override; null = auto-detect via GetDpiForWindow
 }
 
 public sealed class WindowConfig
@@ -186,10 +180,6 @@ public sealed class GemConfig
     /// <summary>Sampled empty-result-gem colour reference (machine-specific). Null = empty
     /// detection is off until calibrated.</summary>
     public ColorComposition? EmptySignature { get; set; }
-    /// <summary>Client-pixels the in-game pointer moves per 100 HID counts, per axis [x, y].
-    /// 100,100 = 1:1. All relative "D" moves are computed as (point - Register) * scale / 100.
-    /// Measured once per machine via the "Probe scale" action in the Gem calibrate tab.</summary>
-    public List<int> MouseScale { get; set; } = new() { 100, 100 };
 }
 
 public sealed class MovementsConfig
