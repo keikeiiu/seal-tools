@@ -45,6 +45,10 @@ public sealed class LauncherService : IDisposable
     /// <summary>The live state of the currently-launched tool, or null when idle.</summary>
     public ToolState? CurrentState => _state;
 
+    /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
+    /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
+    public List<ArduinoDevice> ArduinoDevices() => Arduino.Diagnose(Config.Arduino.Vid, Config.Arduino.Pid);
+
     /// <summary>Gets the shared Arduino serial port, opening it once (with a boot delay) if needed.
     /// Returns null when the Arduino isn't found. Tools and the calibrate test buttons both use this
     /// single open port, so it is never opened twice (which was causing "COM port denied").</summary>
@@ -149,9 +153,18 @@ public sealed class LauncherService : IDisposable
 
     public void Dispose()
     {
-        _diagnosticOcr?.Dispose();
-        StopTool();
-        _arduino?.Dispose();
-        _arduino = null;
+        try
+        {
+            _diagnosticOcr?.Dispose();
+            StopTool();
+        }
+        finally
+        {
+            // Always release the COM port, even if an earlier dispose step throws — otherwise a
+            // half-closed process lingers holding the Arduino and the next launch can't open it.
+            try { _arduino?.Dispose(); }
+            catch { /* never let port teardown throw */ }
+            _arduino = null;
+        }
     }
 }

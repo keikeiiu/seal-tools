@@ -109,7 +109,7 @@ public sealed class OcrEngine : IDisposable
     private ScanResult? ScanOnce(OcrGeometry ocr, WindowRect client, IntPtr hwnd, bool forceCapture)
     {
         var region = ocr.Region;
-        using var mat = ScreenCapture.CaptureRegion(hwnd, client, region);
+        using var mat = ScreenCapture.CaptureScreenRegion(client, region);
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
         // Normal scans only capture when save_captures is on; forceCapture (the final retry)

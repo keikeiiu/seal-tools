@@ -13,7 +13,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        WindowFinder.EnablePerMonitorDpiAwareness();
+        // The calibrated coordinates are LOGICAL (v1 convention — the "logical" Debug Cursor value
+        // is 727,696). Run DPI-unaware so SetCursorPos treats them as logical pixels, matching v1.
+        // PerMonitorV2 would read them as physical and land in the wrong place.
         ApplicationThemeManager.Apply(ApplicationTheme.Dark, WindowBackdropType.Mica, true);
         DispatcherUnhandledException += (_, args) => { LogError(args.Exception); args.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, args) => LogError(args.ExceptionObject as Exception);

@@ -83,7 +83,7 @@ public sealed class GemComposer
             var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
             var client = WindowFinder.GetClientRectInScreen(hwnd);
             if (client == null) return false;
-            using var crop = ScreenCapture.CaptureRegion(hwnd, client, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
+            using var crop = ScreenCapture.CaptureScreenRegion(client, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
             var frame = GemColorAnalyzer.Analyze(crop);
             var empty = GemColorAnalyzer.IsEmpty(frame, _cfg.Gem.EmptySignature, _cfg.Gem.EmptyDistance);
             if (_cfg.Gem.SaveEmptyCaptures && _cfg.Gem.EmptySignature is { } sig)

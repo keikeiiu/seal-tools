@@ -256,7 +256,104 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
+        ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSettingsTab());
+    }
+
+    // Arduino connection status: a green/red light, the expected VID/PID, every serial port the
+    // OS sees (with the matching one flagged), and a test click. Used to diagnose "Arduino not
+    // found" without re-reading the code.
+    private TabItem BuildArduinoTab()
+    {
+        var panel = new StackPanel { Margin = new Thickness(8) };
+
+        var light = new Ellipse
+        {
+            Width = 14,
+            Height = 14,
+            Fill = (Brush)FindResource("BadBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        var status = new TextBlock
+        {
+            Foreground = (Brush)FindResource("FgBrush"),
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        statusRow.Children.Add(light);
+        statusRow.Children.Add(status);
+        panel.Children.Add(statusRow);
+
+        var detail = new TextBlock
+        {
+            Foreground = (Brush)FindResource("FgBrush"),
+            FontFamily = new FontFamily("Consolas"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+        panel.Children.Add(detail);
+
+        void Refresh()
+        {
+            var devices = _service.ArduinoDevices();
+            var match = devices.FirstOrDefault(d => d.IsMatch);
+            if (match != null)
+            {
+                light.Fill = (Brush)FindResource("GoodBrush");
+                status.Text = $"Connected — {match.Name} ({match.Port})";
+            }
+            else
+            {
+                light.Fill = (Brush)FindResource("BadBrush");
+                status.Text = "Not found";
+            }
+
+            var lines = new List<string>
+            {
+                $"Expected: VID 0x{_service.Config.Arduino.Vid:X4}  PID {string.Join("/", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}",
+            };
+            if (devices.Count == 0) lines.Add("(no serial ports detected)");
+            foreach (var d in devices)
+                lines.Add($"{(d.IsMatch ? ">>" : "  ")} {d.Port,-8} {d.Name}  [{d.PnpId}]");
+            detail.Text = string.Join(Environment.NewLine, lines);
+        }
+
+        var refreshBtn = MakeButton("Refresh", ControlAppearance.Secondary);
+        refreshBtn.Click += (_, _) => Refresh();
+
+        var testBtn = MakeButton("Test Click (C)", ControlAppearance.Primary);
+        testBtn.Click += (_, _) =>
+        {
+            var ser = _service.ArduinoPort();
+            if (ser == null)
+            {
+                light.Fill = (Brush)FindResource("BadBrush");
+                status.Text = "Not found — cannot send click";
+                return;
+            }
+            try
+            {
+                GemPointer.Click(ser);
+                light.Fill = (Brush)FindResource("GoodBrush");
+                status.Text = "Sent click (C)";
+            }
+            catch (Exception ex)
+            {
+                light.Fill = (Brush)FindResource("BadBrush");
+                status.Text = "Click failed: " + ex.Message;
+            }
+        };
+
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal };
+        buttonRow.Children.Add(refreshBtn);
+        buttonRow.Children.Add(testBtn);
+        panel.Children.Add(buttonRow);
+
+        Refresh();
+
+        return new TabItem { Header = "Arduino", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private TabItem BuildTunerTab()
@@ -1109,7 +1206,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         try
         {
-            using var mat = ScreenCapture.CaptureRegion(hwnd, client, new SealTools.Core.Config.RegionConfig
+            using var mat = ScreenCapture.CaptureScreenRegion(client, new SealTools.Core.Config.RegionConfig
             { Left = (int)rb.X, Top = (int)rb.Y, Width = (int)rb.Width, Height = (int)rb.Height });
             var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
             Directory.CreateDirectory(dir);

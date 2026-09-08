@@ -28,7 +28,7 @@ public static class GemColorAnalyzer
     // Capture a client-relative box inside the given client rect and analyse it.
     public static ColorComposition Analyze(IntPtr hwnd, WindowRect client, int x, int y, int w, int h)
     {
-        using var mat = ScreenCapture.CaptureRegion(hwnd, client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
+        using var mat = ScreenCapture.CaptureScreenRegion(client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
         return Analyze(mat);
     }
 

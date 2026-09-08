@@ -56,6 +56,12 @@ public static class WindowFinder
     private static extern bool GetCursorPos(out POINT lpPoint);
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetThreadDpiAwarenessContext();
+
+    [DllImport("user32.dll")]
+    private static extern int GetAwarenessFromDpiAwarenessContext(IntPtr value);
+
+    [DllImport("user32.dll")]
     private static extern bool ClipCursor(IntPtr lpRect);
 
     [DllImport("user32.dll")]
@@ -207,5 +213,22 @@ public static class WindowFinder
                 $"{DateTime.Now:HH:mm:ss} [{tag}] target=({x},{y}) ok={ok} err={err} after=({after.Item1},{after.Item2})\n");
         }
         catch { /* ignore logging failures */ }
+    }
+
+    // Diagnostic: log the process DPI-awareness context so we can confirm the app is running
+    // DPI-unaware (the mixed-DPI SetCursorPos fix) vs PerMonitorV2. 0=unaware, 1=system-aware,
+    // 2=per-monitor-aware (v1/v2).
+    public static void LogDpiAwareness()
+    {
+        try
+        {
+            var ctx = GetThreadDpiAwarenessContext();
+            int awareness = GetAwarenessFromDpiAwarenessContext(ctx);
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "cursor_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} [DPI] awareness={awareness} ctx=0x{ctx.ToInt64():X}\n");
+        }
+        catch { /* diagnostics must never break startup */ }
     }
 }
