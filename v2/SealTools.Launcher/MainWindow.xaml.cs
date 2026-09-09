@@ -1135,7 +1135,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"attempts={attempts} focused={focused} " +
                 $"bgTitle=\"{beforeTitle}\" agTitle=\"{afterTitle}\" windowCenter=" +
                 $"({client.Left + client.Width / 2},{client.Top + client.Height / 2})\n";
-            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            var dir = LogPath();
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "test_click_debug.txt"), line);
         }
@@ -1226,7 +1226,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             using var mat = ScreenCapture.CaptureScreenRegion(client, new SealTools.Core.Config.RegionConfig
             { Left = (int)rb.X, Top = (int)rb.Y, Width = (int)rb.Width, Height = (int)rb.Height });
-            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+            var dir = LogPath("captures");
             Directory.CreateDirectory(dir);
             mat.ImWrite(Path.Combine(dir, "result_box.png"));
         }
@@ -1306,6 +1306,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Absolute path of a calibration reference image (co-located with config/local.yaml).
     private static string CalibrationImagePath(string fileName)
         => Path.Combine(FindRootDir(), "config", fileName);
+
+    // Runtime logs live under the app root (next to config/), matching the tools' FileLogger paths.
+    // They must NOT go under AppContext.BaseDirectory: in a dev run that is the build output folder,
+    // so the files land somewhere different from logs/ and are easy to lose.
+    private static string LogPath(params string[] parts)
+        => Path.Combine(new[] { FindRootDir(), "logs" }.Concat(parts).ToArray());
 
     // Called once at launch: if a Save Tuner / Save Gem wrote a calibration reference image,
     // show it in its tab. Boxes are baked into the PNG and NOT re-activated — the drag handlers
@@ -1829,7 +1835,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         int title = client.Top - frame.Top;
         try
         {
-            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+            var dir = LogPath("captures");
             Directory.CreateDirectory(dir);
             using (var pw = ScreenCapture.Capture(hwnd, client))
                 pw.ImWrite(Path.Combine(dir, "diag_printwindow.png"));
