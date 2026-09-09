@@ -36,6 +36,7 @@ v2/
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/CALIBRATION.md    # per-machine calibration guide
+  docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe
 ```
 
