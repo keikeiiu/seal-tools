@@ -1556,16 +1556,19 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void CheckTunerOcr()
     {
-        if (_tunerGradeBox == null || _tunerAttrBox == null || _tunerRemainingBox == null)
-        {
-            _tunerHint!.Text = "Drag all three boxes first (grade, attributes, remaining).";
-            return;
-        }
+        bool dragged = _tunerGradeBox != null && _tunerAttrBox != null && _tunerRemainingBox != null;
 
-        var ocr = BuildOcrGeometry(_tunerGradeBox.Value, _tunerAttrBox.Value, _tunerRemainingBox.Value);
+        // No in-session drag? Check the SAVED geometry from local.yaml, so an existing calibration
+        // can be verified against the live game without capturing again.
+        var ocr = dragged
+            ? BuildOcrGeometry(_tunerGradeBox!.Value, _tunerAttrBox!.Value, _tunerRemainingBox!.Value)
+            : _service.Config.Tuner.Ocr;
+
         if (ocr.Region.Width < 20 || ocr.Region.Height < 20)
         {
-            _tunerHint!.Text = "The boxes are too small — drag real rectangles.";
+            _tunerHint!.Text = dragged
+                ? "The boxes are too small — drag real rectangles."
+                : "No saved calibration yet — press Capture and drag the three boxes.";
             return;
         }
 
@@ -1578,11 +1581,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var lines = new List<string>
-        {
-            $"Grade: {result.Grade ?? "?"}",
-            $"Remaining: {(result.Remaining.HasValue ? result.Remaining.Value.ToString(CultureInfo.InvariantCulture) : "?")}",
-        };
+        var lines = new List<string>();
+        if (!dragged) lines.Add("(checking the saved calibration from local.yaml)");
+        lines.Add($"Grade: {result.Grade ?? "?"}");
+        lines.Add(
+            $"Remaining: {(result.Remaining.HasValue ? result.Remaining.Value.ToString(CultureInfo.InvariantCulture) : "?")}");
         for (var i = 0; i < result.Attributes.Count; i++)
         {
             lines.Add($"Attr {i + 1}: {string.Join(" ", result.Attributes[i])}");
