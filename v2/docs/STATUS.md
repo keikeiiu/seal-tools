@@ -27,6 +27,11 @@ Fixing the capture crop led to reworking the coordinate model. Design and measur
 **Required after this pass:** recalibrate once (Tuner + Gem). Coordinates written before it are
 logical and wrong in the physical space; `gem.movements` (HID counts) are unaffected.
 
+**Status 2026-09-09:** done and verified on the live game — capture, cursor path (`SetCursorPos`
+logical), composer Test Click / Test Move, and Check OCR (in-session and saved-geometry). The
+one-off debugging aids added while chasing this (`Diagnose capture`, the full-frame OCR dump, the two
+Debug cursor buttons) are kept as diagnostics. Remaining live checks are in [TODO.md](TODO.md).
+
 ## Pass 2 — review fixes
 
 | # | Commit | Fix |

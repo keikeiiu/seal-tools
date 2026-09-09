@@ -21,19 +21,23 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   **Diagnose capture** button reports the frame/client rects and saves a sample capture if you need to
   re-check.
 
-## Recalibrate (required after the physical-coordinate change)
+## Verified working on the live game (2026-09-09)
 
-- [ ] **Setup tab → Detect** — confirm the monitor scale (1.5 here) and client size; **Save Setup**.
-- [ ] **Calibrate Tuner → Capture** — the image must now show the whole game (minimap + hotbar).
-  Drag the three boxes → **Check OCR** (a real grade + 3 attribute rows) → **Save Tuner**.
-- [ ] **Calibrate Gem → Capture** — click N/G/DG/Register/Combine + the 3 resource slots, drag the
-  result box → **Save Gem Composer** (with the result box empty when asked).
-- [ ] **Save Composer Moves** — `gem.movements` survived the change, but verify one route with
-  **Test Move** (pointer acceleration off).
-- [ ] One full tuner run and one composer cycle.
+Both tools are calibrated and tested on the reference machine. What was confirmed:
 
-## Verify on a live game (no code change expected)
+- **Setup tab → Detect** — scale 1.5, client 2865×1789; **Save Setup** writes the `calibration:` block.
+- **Capture** — shows the whole game (minimap + hotbar); the launcher hides itself for the grab.
+- **Cursor** — `Debug Cursor (logical)` and `Test Click → N` both land on the N radio; the logical
+  `SetCursorPos` path is the one used (see [COORDINATES.md](COORDINATES.md)).
+- **Composer moves** — the raw hand-tuned `D dx dy` counts are per-PC (Arduino + pointer speed +
+  in-game display) and verified; **Test Move** lands.
+- **Check OCR** — tests the in-session boxes after a drag, or the saved `local.yaml` geometry when
+  nothing is dragged; prints grade, spring count, the three attribute lines, the matcher output and
+  the filter verdict.
 
+Remaining live checks (no code change expected):
+
+- [ ] One full tuner run and one composer cycle end to end.
 - [ ] Tuner `remaining_y` band (spring count) may need a manual nudge per machine — it is derived
   proportionally.
 
