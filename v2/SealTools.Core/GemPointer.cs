@@ -27,9 +27,11 @@ public static class GemPointer
         return hwnd == IntPtr.Zero ? null : Dpi.Measure(hwnd);
     }
 
-    /// <summary>Absolute move of the OS cursor to a client-relative PHYSICAL point (no click).</summary>
+    /// <summary>Absolute move of the OS cursor to a client-relative PHYSICAL point (no click), via
+    /// SetCursorPos on the virtualised coordinates — v1's call. SetPhysicalCursorPos is NOT used:
+    /// measured on the reference machine, it does not land where it claims, while this does.</summary>
     public static void To(DisplayInfo display, int physicalX, int physicalY)
-        => WindowFinder.MoveCursorPhysical(display, physicalX, physicalY);
+        => WindowFinder.SetLogicalCursorPosition(display, physicalX, physicalY);
 
     /// <summary>HID left-click at the current cursor position. This is what focuses the game.</summary>
     public static void Click(SerialPort ser) => ser.Write("C\n");

@@ -12,7 +12,7 @@ changing anything in `WindowFinder`, `ScreenCapture`, `GemPointer` or the calibr
 | Canonical coordinate space | **physical pixels, client-area-relative** |
 | Process DPI awareness | **unaware** (unchanged — see "Why we stay unaware") |
 | How physical values are obtained | a **thread-scoped** awareness switch, used only for measurement and capture |
-| Cursor moves | physical → logical conversion (`SetPhysicalCursorPos` if it works, else `SetCursorPos(physical / scale)`) |
+| Cursor moves | `SetCursorPos(logicalOrigin + physical / scale)` — v1's call. **Not** `SetPhysicalCursorPos` |
 | The scale | **measured at runtime**, never hardcoded |
 | `gem.movements` | raw HID counts — **not** coordinates, never scaled |
 | `gem.empty_signature` | colour composition — **not** coordinates, never scaled |
@@ -51,9 +51,15 @@ Facts that matter:
 ### What the physical-coordinate change alters
 
 Only step 2/3: the stored offsets become physical, so the call becomes
-`SetCursorPos(logicalLeft + round(x / scale), logicalTop + round(y / scale))` — or
-`SetPhysicalCursorPos(x, y)` directly if that API works from this unaware process (to be verified).
-Steps 1, 3 and 4 are unchanged, and the Arduino side never sees any of this.
+`SetCursorPos(logicalLeft + round(x / scale), logicalTop + round(y / scale))` — the same call v1
+makes, with the offset converted. Steps 1, 3 and 4 are unchanged, and the Arduino side never sees
+any of this.
+
+**`SetPhysicalCursorPos` is deliberately not used.** Measured on the reference machine
+(2026-09-09, "Debug Cursor (logical)" vs "Debug Physical" buttons on the same calibrated point):
+the physical API accepts the call but the cursor does not land where it claims, while the logical
+call lands correctly. The buttons remain in the calibrator to re-check this if the environment
+changes.
 
 ### Rules (each one has a recorded failure behind it)
 

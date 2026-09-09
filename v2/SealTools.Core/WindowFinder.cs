@@ -157,18 +157,8 @@ public static class WindowFinder
     /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
     public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);
 
-    /// <summary>Move the cursor to a client-relative PHYSICAL point of a measured window.
-    ///
-    /// Prefers SetPhysicalCursorPos, which ignores DPI virtualisation, so the physical offset is
-    /// used as-is. Falls back to SetCursorPos on the virtualised (logical) coordinates when the
-    /// physical API refuses — it can return false on some mixed-DPI setups. Returns which path was
-    /// taken, for logging. Never call this on a thread with an aware DPI context (see Dpi.cs).</summary>
-    public static string MoveCursorPhysical(DisplayInfo display, int physicalX, int physicalY)
-    {
-        if (SetPhysicalCursorPosition(display, physicalX, physicalY)) return "physical";
-        SetLogicalCursorPosition(display, physicalX, physicalY);
-        return "logical";
-    }
+    // Note: SetPhysicalCursorPosition exists for the calibrator's debug button only. The tools move
+    // the cursor with SetLogicalCursorPosition — see GemPointer.To and docs/COORDINATES.md.
 
     /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
     public static void DebugCursor(int x, int y)
