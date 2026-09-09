@@ -193,9 +193,14 @@ public sealed class GemConfig
     /// advances to the next grade.</summary>
     [AllowedValues("stop", "advance_grade", "advance_grade_clear", ErrorMessage = "gem.empty_mode must be stop|advance_grade|advance_grade_clear")]
     public string EmptyMode { get; set; } = "stop";
-    /// <summary>Normalised colour distance below which the result box is judged empty
-    /// (0..1). Lower = stricter (more likely to call it "has a gem").</summary>
-    public double EmptyDistance { get; set; } = 0.18;
+    /// <summary>How different the result box may look from the saved empty-box crop before it
+    /// counts as holding a gem (0..1). With the pixel-difference test this is the FRACTION of
+    /// pixels allowed to differ; with the colour-signature fallback it is the colour distance.
+    /// Measured on the reference machine: empty 0.000 (pixel-identical) and 0.001 (signature),
+    /// gem 0.357 / 0.293 — so 0.01 is ~35x below the gem signal and 10x above the floor: a gem
+    /// can never read as empty, while a few dozen stray pixels don't stall the composer.
+    /// Lower = stricter (quicker to say "has a gem").</summary>
+    public double EmptyDistance { get; set; } = 0.01;
     /// <summary>Channel max-min gap (0..255) above which a pixel counts as "coloured" in the
     /// result-box colour fingerprint. Portable: the empty reference self-calibrates, this is
     /// just the pixel-classification threshold.</summary>

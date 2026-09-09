@@ -12,12 +12,37 @@ namespace SealTools.GemComposer;
 
 public sealed class GemComposer : ToolBase
 {
-    private readonly AppConfig _cfg;
+    // Per-channel difference above which a pixel counts as "not the empty box". The game's empty
+    // result slot is static UI: a live crop of it measured pixel-identical to the saved reference
+    // (0.000 at every threshold from 10 to 60), while a box holding a gem differs on ~36% of its
+    // pixels by far more than 60. 30 sits in the empty middle of that gap.
+    private const int EmptyDiffTolerance = 30;
 
-    public GemComposer(AppConfig cfg)
+    private readonly AppConfig _cfg;
+    private readonly string _rootDir;
+    private Mat? _emptyReference;
+    private bool _emptyReferenceLoaded;
+
+    public GemComposer(AppConfig cfg, string rootDir)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
+        _rootDir = rootDir;
+    }
+
+    // The empty result-box crop saved by the calibrator (config/calib_gem_result.png), loaded once.
+    // Null when it isn't there — then the colour signature is used instead.
+    private Mat? EmptyReference()
+    {
+        if (_emptyReferenceLoaded) return _emptyReference;
+        _emptyReferenceLoaded = true;
+        try
+        {
+            var path = Path.Combine(_rootDir, "config", "calib_gem_result.png");
+            if (File.Exists(path)) _emptyReference = Cv2.ImRead(path, ImreadModes.Color);
+        }
+        catch { _emptyReference = null; }
+        return _emptyReference;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -145,8 +170,16 @@ public sealed class GemComposer : ToolBase
             SleepCheck(0.5);
         }
 
-        // True when the composed result-gem box is empty (no gem), per the calibrated empty
-        // signature. Returns false when empty-detection isn't configured.
+        // True when the composed result-gem box is empty (no gem).
+        //
+        // Primary signal: the fraction of pixels that differ from the saved empty-box crop — this
+        // is colour- and shape-blind, so any gem (red/green/blue, any grade's shape) reads the same.
+        // Measured: empty 0.000, gem 0.357, threshold (gem.empty_distance) 0.18.
+        //
+        // Fallback when that crop is missing: the colour signature, which averages the whole box
+        // and is therefore the weaker test (a gem colour close to the empty slot's can hide in it).
+        // Returns false (not empty) when neither is available, so the composer never advances on a
+        // missing reference.
         bool IsResultBoxEmpty()
         {
             if (_cfg.Gem.ResultGemArea is not { Count: 4 } area) return false;
@@ -154,9 +187,26 @@ public sealed class GemComposer : ToolBase
             var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
             if (cap == null) return false;
             using var crop = cap.Image;
-            var frame = GemColorAnalyzer.Analyze(crop, _cfg.Gem.ColoredGapMin);
-            var empty = GemColorAnalyzer.IsEmpty(frame, _cfg.Gem.EmptySignature, _cfg.Gem.EmptyDistance);
-            if (_cfg.Gem.SaveEmptyCaptures && _cfg.Gem.EmptySignature is { } sig)
+
+            double? diff = null;
+            if (EmptyReference() is { } reference)
+                diff = GemColorAnalyzer.DiffFraction(crop, reference, EmptyDiffTolerance);
+
+            bool empty;
+            if (diff is { } fraction)
+            {
+                empty = fraction <= _cfg.Gem.EmptyDistance;
+            }
+            else if (_cfg.Gem.EmptySignature is { } sig)
+            {
+                empty = GemColorAnalyzer.IsEmpty(GemColorAnalyzer.Analyze(crop, _cfg.Gem.ColoredGapMin), sig, _cfg.Gem.EmptyDistance);
+            }
+            else
+            {
+                return false;
+            }
+
+            if (_cfg.Gem.SaveEmptyCaptures)
             {
                 try
                 {
@@ -165,8 +215,8 @@ public sealed class GemComposer : ToolBase
                     crop.ImWrite(Path.Combine(dir, $"empty_check_crop_{DateTime.Now:HHmmss_fff}.png"));
                 }
                 catch { }
-                var d = GemColorAnalyzer.Distance(frame, sig);
-                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} dist={d:0.000} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
+                var detail = diff is { } f ? $"diff={f:0.000}" : "diff=n/a";
+                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} {detail} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
             }
             return empty;
         }

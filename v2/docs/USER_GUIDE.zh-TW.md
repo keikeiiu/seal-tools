@@ -63,7 +63,7 @@ Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
 |---|---|
 | **Start grade** | 合成器開始的等級（`N` / `G` / `DG`）。 |
 | **On empty result** | 合成結果欄位為空時要怎麼做：**Stop**（停止）、**Advance to next grade**（前往下一個等級）、或 **Clear resources, then advance**（先對三個資源欄位按右鍵清除卡住的寶石，再前往下一個等級）。 |
-| **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與距離記錄（僅供除錯）。 |
+| **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與 `diff=…` 記錄（僅供除錯）。空欄偵測的運作方式見 [CALIBRATION.md](CALIBRATION.md)。 |
 | **Save Gem Config** | 把以上設定寫入 `defaults.yaml`。 |
 
 ## Spammer 分頁

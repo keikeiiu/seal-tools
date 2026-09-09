@@ -62,7 +62,7 @@ Behaviour of the Gem Composer. Saved to `config/defaults.yaml`.
 |---|---|
 | **Start grade** | Grade the composer begins on (`N` / `G` / `DG`). |
 | **On empty result** | What to do when the composed-result box is empty: **Stop**, **Advance to next grade**, or **Clear resources, then advance** (right-clicks the three resource slots first — for a stuck gem). |
-| **Save empty-check captures** | Writes the sampled result-box crop and a distance log each cycle (debug only). |
+| **Save empty-check captures** | Writes the sampled result-box crop and a `diff=…` line each cycle (debug only). See [CALIBRATION.md](CALIBRATION.md) for how the empty check works. |
 | **Save Gem Config** | Writes the above to `defaults.yaml`. |
 
 ## Spammer tab

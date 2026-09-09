@@ -202,7 +202,7 @@ public sealed class LauncherService : IDisposable
     private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct) => id switch
     {
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
-        "gem" => new GemComposerTool(Config).Run(ser, state, ct),
+        "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
         _ => 1,
     };

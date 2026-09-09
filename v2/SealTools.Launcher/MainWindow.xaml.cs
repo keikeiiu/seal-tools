@@ -2244,6 +2244,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         catch { /* preview must never break calibration */ }
     }
 
+    // The given box from the CALIBRATION SCREENSHOT (launcher hidden) as an OpenCV Mat, or null
+    // when there is no screenshot yet. Same pixels SaveResultGemCrop writes as the reference image,
+    // so the empty signature and the reference crop can never disagree.
+    private Mat? CropScreenshot(Rect box)
+    {
+        var shot = _gemScreenshot;
+        if (shot == null) return null;
+        int x = (int)Math.Clamp(box.X, 0, Math.Max(0, shot.PixelWidth - 1));
+        int y = (int)Math.Clamp(box.Y, 0, Math.Max(0, shot.PixelHeight - 1));
+        int w = (int)Math.Clamp(box.Width, 1, shot.PixelWidth - x);
+        int h = (int)Math.Clamp(box.Height, 1, shot.PixelHeight - y);
+        var bgr = new FormatConvertedBitmap(shot, PixelFormats.Bgr24, null, 0);
+        var mat = new Mat(h, w, OpenCvSharp.MatType.CV_8UC3);
+        bgr.CopyPixels(new Int32Rect(x, y, w, h), mat.Data, h * w * 3, w * 3);
+        return mat;
+    }
+
     // Save the result-gem box crop as a reference image so it reappears on next launch.
     private void SaveResultGemCrop(Rect box)
     {
@@ -2308,9 +2325,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             "Empty reference", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirmEmpty == MessageBoxResult.Yes)
         {
-            var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-            emptySig = GemColorAnalyzer.Analyze(hwnd, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
-                _service.Config.Gem.ColoredGapMin);
+            // Sample the CALIBRATION SCREENSHOT (taken with the launcher hidden), not a live screen
+            // grab. A live grab is CopyFromScreen, so whatever covers the box at that instant — the
+            // launcher itself, a tooltip — becomes part of the "empty" reference. That is how the
+            // stored signature ended up 0.17 (mean) / 0.53 (norm) away from the reference crop the
+            // same save wrote, which made every later check meaningless.
+            using var crop = CropScreenshot(rb);
+            emptySig = crop == null ? null : GemColorAnalyzer.Analyze(crop, _service.Config.Gem.ColoredGapMin);
         }
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't

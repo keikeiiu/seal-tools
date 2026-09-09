@@ -92,6 +92,35 @@ on, that mapping is velocity-dependent and the composer drifts between runs.
 There is no scale factor to measure and none is stored — the raw counts *are* the tuning. This is
 why the moves are hand-tuned rather than computed from pixel deltas.
 
+## Empty-result detection (what "advance on empty" actually compares)
+
+The composer has to decide whether the result box still holds a gem. It compares the box's live
+pixels against **`config/calib_gem_result.png`** — the crop of the box saved by **Save Gem Composer**
+— and counts the pixels that differ by more than 30 on any channel:
+
+| | measured (62×59 crop) |
+|---|---|
+| empty box vs the saved crop | **0.000** — pixel-identical |
+| box holding a gem | **0.357** |
+
+`gem.empty_distance` is that fraction (default **0.01**): below it the box is "empty". The margin is
+enormous on both sides, and the test is deliberately **colour- and shape-blind** — it asks "is this
+still the same picture?", so a red, green or blue gem, or a different grade's shape, all read the
+same. (A colour average cannot do this: `dominant hue` measured *identical* for empty and gem,
+because the pale slot dominates the average in both.)
+
+Two consequences for calibration:
+
+- **The reference crop must show an EMPTY box.** Save Gem Composer asks you to confirm this; if the
+  box has a gem, answer **No** — empty detection stays off rather than capturing a gem as "empty".
+- **The empty reference is taken from the launcher-hidden screenshot**, not a live screen grab, so a
+  window covering the box at save time can't contaminate it.
+
+If the crop is missing, the composer falls back to the older colour-signature comparison, which
+averages the whole box and is the weaker test. With `gem.save_empty_captures: true` every check
+writes the crop plus a line to `<bin>\logs\empty_check.txt` (`diff=0.000 threshold=0.01 empty=True`)
+— that is the number to look at if detection ever misbehaves.
+
 ## 5. Files written by calibration
 
 | File | Written by |
