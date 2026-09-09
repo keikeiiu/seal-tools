@@ -1,80 +1,106 @@
 # Seal Tools v2 — Per-Machine Calibration
 
-The tools locate things on screen by **pixel coordinates** that depend on the monitor resolution, Windows
-display scale (DPI), and the game window size. **They are not automatic** — each machine must be calibrated
-once. v2 makes this much easier than v1: coordinates live in a single machine-specific file, and there is an
-in-browser calibrator plus a one-shot auto-anchor.
+The tools locate things on screen by **pixel coordinates** that depend on the monitor resolution,
+Windows display scale, the game window size, and where the window sits. **They are not automatic** —
+each machine must be calibrated once. v2 keeps every machine-specific value in a single file,
+`config/local.yaml` (gitignored), written by the launcher's two calibration tabs.
 
 Everything else (the `.exe`, models, behavior flags) is portable.
 
 ---
 
-## 0. What changed from v1
+## Coordinate model
 
-| v1 | v2 |
-|----|----|
-| Coordinates scattered across `tuner/config.yaml` + `gem_composer_config.yaml` | One file: `config/local.yaml` (gitignored) |
-| Manual YAML edit + `grid_last.png` | In-browser calibrator (click where things are) |
-| Hand-computed gem `movements` deltas | Click the points; deltas derived |
-| DPI-unaware (logical pixels) | DPI-aware physical pixels + client-area-relative |
+- **Client-area-relative.** The origin is the game window's client-area top-left
+  (`GetClientRect` + `ClientToScreen`), *excluding* the title bar and border. Not window-relative,
+  not screen-absolute.
+- **Logical pixels.** The process runs **DPI-unaware** (`app.manifest` → `dpiAwareness=unaware`),
+  so all stored values are logical pixels — the v1 convention. Do **not** re-enable PerMonitorV2:
+  it makes Windows read the same numbers as physical pixels and every click lands in the wrong place.
+- **Absolute clicks:** `SetCursorPos(client.Left + x, client.Top + y)` then an Arduino `C` (HID click).
+- **Relative moves:** raw Arduino HID counts, sent as `D dx dy`. They are **hand-tuned values, not
+  computed from pixel distances** — see the pointer-precision prerequisite below.
 
-**Coordinate model:** every anchor is a **client-area-relative offset** from the game window's top-left
-(client area, i.e. excluding the title bar). The process is DPI-aware, so all values are physical pixels.
+## 1. First run
 
-## 1. Config files
+1. If `config/local.yaml` is missing, `ConfigLoader` seeds it from `config/local.yaml.example`
+   automatically. (You can also copy it by hand.)
+2. Open the launcher and go to the **Calibrate Tuner** and **Calibrate Gem** tabs.
 
-- `config/defaults.yaml` — portable defaults (window title, Arduino VID/PID, hotkeys, grade order, grade-color
-  thresholds, timing, filter rules, model paths, reference window size). Committed.
-- `config/attributes.yaml` — the OCR "wordings": attribute dictionary + OCR-garbled variants + text fixes +
-  negative-attribute markers. Committed.
-- `config/local.yaml` — **machine-specific coordinates** (OCR region + sub-bands, gem click points, optional
-  port). Gitignored; created from `local.yaml.example`.
+> The seeded values are v1 window-relative measurements. They are a starting point only and **will
+> be off** until you recalibrate — expect to do both tabs once per machine.
 
-## 2. First run
+## 2. Calibrate Tuner
 
-1. `copy config\local.yaml.example config\local.yaml`
-2. Run the auto-anchor: `SealTools.Launcher.exe --autoanchor`
+1. Open the game's 發條 (tuning) window.
+2. **Capture 發條 window** — a screenshot of the game window appears.
+3. Drag three boxes in order: the **grade letter**, the **3 attribute lines**, and the **spring
+   count**.
+4. **Check OCR** — confirm it reads the right grade and three attribute rows. This also measures the
+   real attribute line pitch and stores it as `row_height` (a tighter, more accurate value than the
+   `attr.Height / 3` fallback used if you skip this step).
+5. **Save Tuner** — writes `tuner.ocr` (region + sub-bands + `row_height`) to `local.yaml`, refreshes
+   the in-memory config so the next run uses it immediately, and saves a reference PNG
+   (`config/calib_tuner.png`).
 
-The auto-anchor detects the game window size and scales the reference coordinates (measured at
-`reference_window` in `defaults.yaml`) to the current window. It is a **first guess** — if the game window was
-resized or the in-game layout differs, fine-tune with the visual calibrator.
+## 3. Calibrate Gem
 
-## 3. Visual calibrator (recommended)
+1. Open the gem-combine window.
+2. **Capture gem window**.
+3. Click, in order: **N**, **G**, **DG**, **Register**, **Combine**, then the **3 resource slots**,
+   then drag a box around the **composed result gem**.
+4. **Save Gem Composer** — writes `gem.grade_positions`, `gem.resource_gems` and
+   `gem.result_gem_area` to `local.yaml`. It then asks whether the result box is currently **empty**;
+   answer **Yes** to sample the empty-box colour reference (`gem.empty_signature`), which is what
+   empty-result detection compares against. Answer No and empty detection stays off until you re-save
+   with the box empty.
+5. **Composer moves are saved separately.** The **Composer moves** grid holds the raw `dx`/`dy`
+   counts the composer sends for each route (grade → Register, Register → Combine, and so on). Edit
+   them and press **Save Composer Moves** to write `gem.movements` to `local.yaml`. *Save Gem
+   Composer* does not touch them.
+6. **Coordinates can also be typed directly.** The **Coordinates** grid (N/G/DG/Register/Combine,
+   Resource1-3, result area) accepts edits — press **Save Coordinates** to persist them.
 
-1. Start the panel: `SealTools.Launcher.exe` → open http://127.0.0.1:5003
-2. Open the game's 發條 (tuning) window.
-3. Click **"1. Capture window"** — a screenshot of the game window appears.
-4. Click, in order:
-   - the **top-left** then **bottom-right** corner of the OCR box (the grade letter + 3 attribute lines),
-   - the gem **N**, **G**, **DG** radio buttons, **Register**, and **Combine** buttons.
-5. Click **"3. Save"** — the coordinates (and derived sub-regions/deltas) are written to `config/local.yaml`.
+### Verifying without running a full cycle
 
-## 4. Verify
+- **Test Click** — moves the cursor to the selected point and clicks it.
+- **Test Move (rel)** — clicks the `from` point, sends that route's raw `D dx dy`, then clicks the
+  `to` point. If it lands, the composer's move for that route is correct.
+- **Check Result Colour** / **Test Result Gem** — sample the result box and report its colour
+  composition, the distance to the empty reference, and the empty/has-gem verdict.
 
-`SealTools.Launcher.exe --diagnose` captures the region and prints the detected grade, color scores, and
-attribute lines. A correct calibration shows a real grade letter and 3 attribute lines.
+## 4. Prerequisite: fixed Windows pointer precision (Gem Composer)
 
-## 5. Run
+The game is an OS-cursor title (early Windows, not raw-input), so the on-screen distance a relative
+`D dx dy` travels depends on the Windows pointer-precision mapping. With "Enhance pointer precision"
+on, that mapping is velocity-dependent and the composer drifts between runs.
 
-`SealTools.Launcher.exe` starts the unified panel (http://127.0.0.1:5003). Only one tool runs at a time
-(they share the Arduino COM port). Magic Tuner / Gem Composer / Skill Spammer can be started/stopped from the
-panel; they also respond to the hotkeys configured in `defaults.yaml` (F12 start, F11 quit, F9 advance grade).
+1. `Settings → Bluetooth & devices → Mouse → Additional mouse options → Pointer Options` → uncheck
+   **"Enhance pointer precision"**, and leave the speed notch where it is.
+2. Then **hand-tune** the raw `dx`/`dy` values in the Composer moves grid until **Test Move** lands
+   on its target.
 
-## 6. Machine-specific values (all in `local.yaml`)
+There is no scale factor to measure and none is stored — the raw counts *are* the tuning. This is
+why the moves are hand-tuned rather than computed from pixel deltas.
 
-- `tuner.ocr.region` — capture box, client-area-relative.
-- `tuner.ocr.grade_area`, `grade_y`, `attr_y`, `remaining_y`, `row_height` — capture-relative sub-bands.
-- `gem.grade_positions` — absolute (client-area-relative) click points (N/G/DG/Register/Combine).
-- `gem.resource_gems` — the 3 resource-slot click points (clear-a-stuck-gem).
-- `gem.mouse_scale` — **[x, y] client-pixels the pointer moves per 100 HID counts.** All relative "D" moves
-  are computed as `(point - Register) * scale / 100`, so no movement is hand-tuned. Measure once via the
-  **Probe scale** action in the Gem calibrate tab (see prerequisite below), then enter X and Y px/100.
-- `arduino.port` — optional override (empty = auto-detect by VID/PID).
-- `display.dpi_scale` — optional manual DPI override (usually auto-detected).
+## 5. Files written by calibration
 
-> **Prerequisite (Gem Composer):** the game is an OS-cursor title (early Windows, not raw-input), so a
-> relative "D" move's distance **is** affected by the Windows pointer precision setting. Set it to a fixed,
-> accelerated-free state or the effective scale varies with move speed and the composer drifts:
-> Settings → Mouse → Additional mouse options → Pointer Options → uncheck **"Enhance pointer precision"** and
-> leave the speed notch fixed. Then probe `gem.mouse_scale` on that machine. This is not a code bug — fix the
-> pointer precision, then (re)measure the scale.
+| File | Written by |
+|------|-----------|
+| `config/local.yaml` | Save Tuner / Save Gem Composer / Save Coordinates / Save Composer Moves |
+| `config/calib_tuner.png` | Save Tuner (reference screenshot with the bands drawn on it) |
+| `config/calib_gem.png` | Save Gem Composer (reference screenshot with the click points + result box) |
+| `config/calib_gem_result.png` | Save Gem Composer (crop of the result-gem area) |
+
+## 6. Removed v1 mechanisms (do not look for them)
+
+The old Python build's calibration aids no longer exist in v2, and older copies of this document
+described them:
+
+- **No web panel** — there is no `http://127.0.0.1:5003` UI; calibration is in the WPF launcher.
+- **No `--autoanchor` / `--diagnose` flags** — the launcher takes no arguments. Auto-anchor is
+  documented as a planned feature but is **not implemented**; `reference_window` in `defaults.yaml`
+  is currently unused.
+- **No `gem.mouse_scale` and no "Probe scale" button** — the scale-based relative-move computation
+  was removed; moves are raw hand-tuned counts.
+- **No `display.dpi_scale`** — the process is DPI-unaware and the key was removed.

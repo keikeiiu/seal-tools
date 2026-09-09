@@ -78,29 +78,31 @@ different game screens:
 
 1. **Calibrate Tuner** — open the 發條 window → **Capture** → **drag a box** around the grade + 3 attribute lines
    → **Check OCR** (verify it reads the correct grade + attributes) → **Save Tuner**.
-   - **Auto-anchor** scales the reference coords to the current window size as a first guess.
-2. **Calibrate Gem** — open the gem-combine window → **Capture** → **click** N / G / DG / Register / Combine → **Save Gem Composer**.
+2. **Calibrate Gem** — open the gem-combine window → **Capture** → **click** N / G / DG / Register / Combine,
+   the 3 resource slots, and **drag a box** around the composed result gem → **Save Gem Composer**.
+   Composer moves (raw `dx`/`dy`) are saved separately with **Save Composer Moves**.
 
-Coordinates are **client-area-relative** (game window client top-left = origin), and the process is
-**DPI-aware** (physical pixels). Relative "D" moves are **computed** from the calibrated absolute points
-× a per-machine mouse scale (see prerequisite below) — never hand-tuned.
+Coordinates are **client-area-relative** (game window client top-left = origin), and the process runs
+**DPI-unaware** (logical pixels). Relative `D dx dy` moves are **raw hand-tuned HID counts** — not
+computed from pixel deltas and not scaled (see prerequisite below). Full step-by-step detail, including
+the verification buttons, is in `docs/CALIBRATION.md`.
 
 ### Prerequisite: fixed Windows mouse precision (Gem Composer)
 
-The Gem Composer sends relative `D dx dy` moves. Its on-screen distance depends on the **Windows pointer
+The Gem Composer sends relative `D dx dy` moves. Their on-screen distance depends on the **Windows pointer
 precision** mapping (raw HID counts → pixels). This title is an OS-cursor game (early Windows, not
 raw-input), so the mapping is velocity-dependent while "Enhance pointer precision" is on. For the moves
 to be reproducible the pointer must be in a fixed, linear state — same on every run and after a reboot:
 
 1. **Disable acceleration:** `Settings → Bluetooth & devices → Mouse → Additional mouse options →
-   Pointer Options →` uncheck **"Enhance pointer precision"**.
-2. **Measure the per-machine scale once** — the Gem calibrate tab's **"Probe scale"** sends a known
-   `D 100 0` / `D 0 100`; enter how many pixels the in-game pointer moved (100 = 1:1). This stores
-   `gem.mouse_scale` (`[x, y]` px per 100 counts) in `local.yaml`.
+   Pointer Options →` uncheck **"Enhance pointer precision"**, and leave the speed notch where it is.
+2. **Hand-tune the raw `dx`/`dy`** in the Gem calibrate tab's **Composer moves** grid until **Test Move**
+   lands on its target, then **Save Composer Moves**.
 
-All relative moves are computed as `(point − Register) × scale / 100` from the calibrated absolute points —
-nothing is hand-tuned. If pointer acceleration is left on, the effective scale varies with move speed and
-the composer drifts: fix the pointer precision, then (re)measure the scale. Not a code bug.
+There is no scale factor to measure and none is stored: the raw counts *are* the tuning. (An earlier
+build computed moves as `(point − Register) × scale / 100`; that approach was removed because it made the
+moves drift with pointer speed.) If pointer acceleration is left on, the composer drifts — fix the
+pointer precision, then re-tune the counts. Not a code bug.
 
 ### Focus: the game is always unfocused when you use the tool (Gem Composer)
 
@@ -176,8 +178,8 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
 
 **Known gaps / to verify (next):**
 - The tuner's `remaining_y` band (spring count) is derived proportionally and may need a manual nudge per machine.
-- Gem composer `mouse_scale` must be probed once per machine (with pointer precision off); the composer moves
-  are computed from it. Verify by watching one cycle after probing.
+- Gem composer moves are raw hand-tuned `dx`/`dy` per route (saved by **Save Composer Moves**); verify them
+  with the **Test Move** button after turning pointer acceleration off.
 - Check OCR / title-bar drag / TitleBar buttons were added late and still need a real end-to-end pass by the user.
 - Check-in remains the standalone Python script (`checkin/checkin.py`) — out of scope for v2.
 - `skill_spammer/skill_spammer_config.yaml` (v1) has an unrelated uncommitted modification — not part of v2.
