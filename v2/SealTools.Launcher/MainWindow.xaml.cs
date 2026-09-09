@@ -1095,15 +1095,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         var target = ResolveGemPoint(toName);
         if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
 
-        var client = GemPointer.Client(_service.Config.Window.Title);
-        if (client == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
+        var display = GemPointer.Display(_service.Config.Window.Title);
+        if (display == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
         var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
 
         try
         {
             // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click).
-            GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
+            GemPointer.To(display, (int)from.Value.X, (int)from.Value.Y);
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
@@ -1145,8 +1145,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var client = GemPointer.Client(_service.Config.Window.Title);
-        if (client == null)
+        var display = GemPointer.Display(_service.Config.Window.Title);
+        if (display == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
             return;
@@ -1162,10 +1162,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
         // set the cursor onto the point and click once.
         var foregroundBefore = WindowFinder.ForegroundTitle();
-        GemPointer.To(client, (int)pt.Value.X, (int)pt.Value.Y);
+        GemPointer.To(display, (int)pt.Value.X, (int)pt.Value.Y);
         System.Threading.Thread.Sleep(300);
         GemPointer.Click(ser);
 
+        var client = display.PhysicalClient;
         _gemHint!.Text = $"Test click: set cursor to ({pt.Value.X},{pt.Value.Y}) and clicked \"{name}\".";
         DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
             foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
@@ -1201,8 +1202,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var client = GemPointer.Client(_service.Config.Window.Title);
-        if (client == null)
+        var display = GemPointer.Display(_service.Config.Window.Title);
+        if (display == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
             return;
@@ -1227,7 +1228,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             // v1 single-click core: SetCursorPos(from) -> C -> D raw -> C (no focus-click, no
             // double click). Same raw movement the composer sends.
-            GemPointer.To(client, (int)from.Value.X, (int)from.Value.Y);
+            GemPointer.To(display, (int)from.Value.X, (int)from.Value.Y);
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);

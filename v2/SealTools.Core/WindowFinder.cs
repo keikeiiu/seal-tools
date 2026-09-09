@@ -125,10 +125,24 @@ public static class WindowFinder
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.
     public static uint GetDpi(IntPtr hWnd) => GetDpiForWindow(hWnd);
 
-    // No logging here: this is the composer's per-move hot path. The Debug* methods below log
-    // explicitly when you actually want a cursor trace.
-    public static void MoveCursor(WindowRect client, int clientX, int clientY)
-        => SetCursorPos(client.Left + clientX, client.Top + clientY);
+    /// <summary>Move the cursor to a client-relative PHYSICAL point of a measured window.
+    ///
+    /// Prefers SetPhysicalCursorPos, which ignores DPI virtualisation, so the physical offset is
+    /// used as-is. Falls back to SetCursorPos on the virtualised (logical) coordinates when the
+    /// physical API refuses — it can return false on some mixed-DPI setups. Returns which path was
+    /// taken, for logging. Never call this on a thread with an aware DPI context (see Dpi.cs).</summary>
+    public static string MoveCursorPhysical(DisplayInfo display, int physicalX, int physicalY)
+    {
+        var physical = display.PhysicalClient;
+        if (SetPhysicalCursorPos(physical.Left + physicalX, physical.Top + physicalY))
+            return "physical";
+
+        var logical = display.LogicalClient;
+        int lx = logical.Left + (int)Math.Round(physicalX / display.Scale);
+        int ly = logical.Top + (int)Math.Round(physicalY / display.Scale);
+        SetCursorPos(lx, ly);
+        return "logical";
+    }
 
     /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
     public static void DebugCursor(int x, int y)

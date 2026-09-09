@@ -66,8 +66,8 @@ public sealed class GemComposer : ToolBase
 
         void SelectGradeAndRegister()
         {
-            var rect = GemPointer.Client(_cfg.Window.Title);
-            if (rect == null)
+            var display = GemPointer.Display(_cfg.Window.Title);
+            if (display == null)
             {
                 Fail("Game window not found — open the game first.");
                 return;
@@ -81,7 +81,7 @@ public sealed class GemComposer : ToolBase
             // click on the grade button does both jobs (activates the game window and presses the
             // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
-            GemPointer.To(rect, gx, gy);
+            GemPointer.To(display, gx, gy);
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -171,14 +171,14 @@ public sealed class GemComposer : ToolBase
             else
             {
                 // Cursor is at Register → re-select the grade absolutely.
-                var rect = GemPointer.Client(_cfg.Window.Title);
-                if (rect == null)
+                var display = GemPointer.Display(_cfg.Window.Title);
+                if (display == null)
                 {
                     Fail("Game window not found — open the game first.");
                     return;
                 }
                 if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-                GemPointer.To(rect, gx, gy);
+                GemPointer.To(display, gx, gy);
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
