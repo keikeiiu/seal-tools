@@ -129,6 +129,7 @@ public sealed class ConfigLoader
                 target_grade = cfg.Tuner.TargetGrade,
                 max_retries = cfg.Tuner.MaxRetries,
                 save_captures = cfg.Tuner.SaveCaptures,
+                ocr_retries = cfg.Tuner.OcrRetries,
                 models = cfg.Tuner.Models,
                 timing = cfg.Tuner.Timing,
                 grade_colors = cfg.Tuner.GradeColors,

@@ -61,6 +61,39 @@ public class ConfigLoaderTests
         }
     }
 
+    // SaveDefaults rewrites defaults.yaml from an explicit field list, so a field that exists in
+    // defaults.yaml but is missing from that list is silently dropped on every launcher Save.
+    // (ocr_retries was: 3 -> 0, which quietly disabled the OCR re-scan.)
+    [Fact]
+    public void SaveDefaultsPreservesEveryPortableField()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var before = loader.Load();
+            Assert.Equal(3, before.Tuner.OcrRetries);
+
+            loader.SaveDefaults(before);
+
+            var after = new ConfigLoader(dir).Load();
+            Assert.Equal(before.Tuner.OcrRetries, after.Tuner.OcrRetries);
+            Assert.Equal(before.Tuner.SaveCaptures, after.Tuner.SaveCaptures);
+            Assert.Equal(before.Tuner.MaxRetries, after.Tuner.MaxRetries);
+            Assert.Equal(before.Tuner.TargetGrade, after.Tuner.TargetGrade);
+            Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(before.Window.Title, after.Window.Title);
+            Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
+            Assert.Equal(before.Spammer.Keys, after.Spammer.Keys);
+            Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
+            Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void LoadMissingLocalYamlThrowsConfigException()
     {
