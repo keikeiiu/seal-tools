@@ -59,6 +59,13 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetThreadDpiAwarenessContext();
+
+    /// <summary>Diagnostic: the calling thread's DPI awareness context. UNAWARE is -1; anything
+    /// else means the thread is DPI-aware, where SetCursorPos fails on this machine (7f9e1c7).</summary>
+    public static IntPtr ThreadDpiAwarenessContext() => GetThreadDpiAwarenessContext();
+
     /// <summary>True when the window is minimized. A minimized window reports its rect off-screen
     /// (e.g. -48000,-48000 with size 0x0), so any coordinate derived from it is garbage.</summary>
     public static bool IsMinimized(IntPtr hwnd) => hwnd != IntPtr.Zero && IsIconic(hwnd);
