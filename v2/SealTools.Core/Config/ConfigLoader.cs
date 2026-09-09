@@ -52,8 +52,22 @@ public sealed class ConfigLoader
                 "config/local.yaml not found and config/local.yaml.example is missing, so it cannot be created.");
         }
 
+        MigrateSpammerPresets(defaults);
         ConfigValidator.Validate(defaults);
         return defaults;
+    }
+
+    // A config written before presets existed has a flat `spammer.keys` list. Move it into a preset
+    // named "default" so the rest of the app only deals with presets.
+    private static void MigrateSpammerPresets(AppConfig cfg)
+    {
+        var sp = cfg.Spammer;
+        if (sp.Presets.Count == 0 && sp.Keys is { Count: > 0 } legacy)
+        {
+            sp.Presets["default"] = legacy;
+            sp.Active = "default";
+        }
+        sp.Keys = null;
     }
 
     public AttributesConfig LoadAttributes() => Deserialize<AttributesConfig>("attributes.yaml");
@@ -137,7 +151,7 @@ public sealed class ConfigLoader
                 filter = cfg.Tuner.Filter,
             },
             gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
-            spammer = new { keys = cfg.Spammer.Keys },
+            spammer = new { active = cfg.Spammer.Active, presets = cfg.Spammer.Presets },
         };
 
         var path = PathOf("defaults.yaml");

@@ -24,7 +24,7 @@ public sealed class SkillSpammer : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
-        var cooldowns = _cfg.Spammer.Keys;
+        var cooldowns = _cfg.Spammer.ActiveKeys;
         bool running = false;
         int count = 0;
         string current = "";

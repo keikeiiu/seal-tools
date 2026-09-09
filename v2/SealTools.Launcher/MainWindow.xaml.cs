@@ -635,9 +635,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 0, 0, 8),
         });
 
+        // Named key sets — switching presets changes which rotation the spammer presses.
+        var presets = _service.Config.Spammer.Presets;
+        if (presets.Count == 0) presets["default"] = new Dictionary<string, double>();
+        string current = presets.ContainsKey(_service.Config.Spammer.Active)
+            ? _service.Config.Spammer.Active
+            : presets.Keys.First();
+
         var rows = new List<SpamKeyRow>();
         var rowsPanel = new StackPanel();
-        panel.Children.Add(rowsPanel);
+        var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
+        var presetName = new TextBox { Width = 110, VerticalContentAlignment = VerticalAlignment.Center };
 
         void AddRow(string key, string delay)
         {
@@ -661,7 +669,62 @@ public partial class MainWindow : FluentWindow, IDisposable
             rows.Add(row);
         }
 
-        foreach (var kv in _service.Config.Spammer.Keys)
+        void LoadRows(string name)
+        {
+            rowsPanel.Children.Clear();
+            rows.Clear();
+            if (!presets.TryGetValue(name, out var keys)) return;
+            foreach (var kv in keys)
+                AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        void RefreshPresetList(string select)
+        {
+            presetBox.ItemsSource = presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+            presetBox.SelectedItem = select;
+        }
+
+        bool loading = false;
+        presetBox.SelectionChanged += (_, _) =>
+        {
+            if (loading || presetBox.SelectedItem is not string name || name == current) return;
+            presets[current] = RowsToKeys(); // keep unsaved edits when switching
+            current = name;
+            LoadRows(name);
+        };
+
+        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        presetRow.Children.Add(presetBox);
+        presetRow.Children.Add(presetName);
+        var addPreset = MakeButton("+ New Preset", ControlAppearance.Secondary);
+        addPreset.Click += (_, _) =>
+        {
+            var name = presetName.Text.Trim();
+            if (name.Length == 0 || presets.ContainsKey(name)) return;
+            presets[current] = RowsToKeys();
+            presets[name] = new Dictionary<string, double>();
+            current = name;
+            loading = true; RefreshPresetList(name); loading = false;
+            LoadRows(name);
+            presetName.Text = "";
+        };
+        presetRow.Children.Add(addPreset);
+        var delPreset = MakeButton("Delete Preset", ControlAppearance.Secondary);
+        delPreset.Click += (_, _) =>
+        {
+            if (presets.Count <= 1) return;
+            presets.Remove(current);
+            current = presets.Keys.First();
+            loading = true; RefreshPresetList(current); loading = false;
+            LoadRows(current);
+        };
+        presetRow.Children.Add(delPreset);
+        panel.Children.Add(presetRow);
+
+        panel.Children.Add(rowsPanel);
+
+        foreach (var kv in presets[current])
             AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
@@ -724,11 +787,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
-            _service.Config.Spammer.Keys = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            presets[current] = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            _service.Config.Spammer.Active = current;
             _service.SaveConfig();
-            MessageBox.Show("Spammer config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Preset '{current}' saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
         panel.Children.Add(save);
+
+        loading = true;
+        RefreshPresetList(current);
+        loading = false;
 
         return new TabItem { Header = "Spammer", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }

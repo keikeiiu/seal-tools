@@ -223,7 +223,21 @@ public sealed class MovementsConfig
 
 public sealed class SpammerConfig
 {
-    public Dictionary<string, double> Keys { get; set; } = new();
+    /// <summary>Name of the preset the spammer presses.</summary>
+    public string Active { get; set; } = "default";
+
+    /// <summary>Named key sets — preset name → (key → cooldown seconds). Switch presets in the UI
+    /// to run a different skill rotation.</summary>
+    public Dictionary<string, Dictionary<string, double>> Presets { get; set; } = new();
+
+    /// <summary>Legacy flat key list (pre-presets). Read on load for migration only — SpammerConfig
+    /// is never serialized (SaveDefaults writes an explicit shape), so this is not written back.</summary>
+    public Dictionary<string, double>? Keys { get; set; }
+
+    /// <summary>The keys of the active preset (empty when it is missing).</summary>
+    public Dictionary<string, double> ActiveKeys =>
+        Presets.TryGetValue(Active, out var keys) ? keys
+        : Presets.Count > 0 ? Presets.Values.First() : new Dictionary<string, double>();
 }
 
 public sealed class ModelsConfig

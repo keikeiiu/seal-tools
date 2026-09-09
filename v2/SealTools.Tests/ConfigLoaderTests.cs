@@ -84,7 +84,8 @@ public class ConfigLoaderTests
             Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
             Assert.Equal(before.Window.Title, after.Window.Title);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
-            Assert.Equal(before.Spammer.Keys, after.Spammer.Keys);
+            Assert.Equal(before.Spammer.Active, after.Spammer.Active);
+            Assert.Equal(before.Spammer.ActiveKeys, after.Spammer.ActiveKeys);
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
             Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
             Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);
@@ -181,6 +182,32 @@ public class ConfigLoaderTests
             Assert.Equal(new System.Collections.Generic.List<int> { 3840, 2160 }, reloaded.Calibration.Screen);
             Assert.Equal(new System.Collections.Generic.List<int> { 2865, 1789 }, reloaded.Calibration.ClientSize);
             Assert.Equal("2026-09-09 21:00:00", reloaded.Calibration.MeasuredAt);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // A config written before presets existed has a flat `spammer.keys` list; it must migrate into
+    // a preset named "default" so the rest of the app only deals with presets.
+    [Fact]
+    public void LegacyFlatSpammerKeysMigrateIntoADefaultPreset()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var path = Path.Combine(dir, "defaults.yaml");
+            var text = File.ReadAllText(path);
+            var spammerAt = text.IndexOf("spammer:", StringComparison.Ordinal);
+            Assert.True(spammerAt > 0, "defaults.yaml should end with the spammer block");
+            File.WriteAllText(path, text[..spammerAt] + "spammer:\n  keys:\n    '*0': 0.25\n    'F1': 5.0\n");
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("default", cfg.Spammer.Active);
+            Assert.Equal(0.25, cfg.Spammer.ActiveKeys["*0"]);
+            Assert.Equal(5.0, cfg.Spammer.ActiveKeys["F1"]);
         }
         finally
         {
