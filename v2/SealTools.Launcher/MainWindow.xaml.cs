@@ -1347,15 +1347,34 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
         // set the cursor onto the point and click once.
-        var foregroundBefore = WindowFinder.ForegroundTitle();
-        GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y));
-        System.Threading.Thread.Sleep(300);
-        GemPointer.Click(ser);
+        try
+        {
+            var foregroundBefore = WindowFinder.ForegroundTitle();
+            var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
+            GemPointer.To(target);
+            System.Threading.Thread.Sleep(300);
+            var placed = WindowFinder.LogicalCursorPosition();
+            GemPointer.Click(ser);
+            System.Threading.Thread.Sleep(200);
 
-        var client = display.PhysicalClient;
-        _gemHint!.Text = $"Test click: set cursor to ({pt.Value.X},{pt.Value.Y}) and clicked \"{name}\".";
-        DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
-            foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
+            var client = display.PhysicalClient;
+            _gemHint!.Text = $"Test click \"{name}\": offset ({pt.Value.X},{pt.Value.Y}) → SetCursorPos({target.LogicalX},{target.LogicalY}), " +
+                $"cursor now ({placed.X},{placed.Y}), clicked via {ser.PortName} (open={ser.IsOpen}).";
+            DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
+                foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
+
+            try
+            {
+                File.AppendAllText(LogPath("arduino_debug.txt"),
+                    $"{DateTime.Now:HH:mm:ss} test-click name={name} port={ser.PortName} open={ser.IsOpen} baud={ser.BaudRate} " +
+                    $"target=({target.LogicalX},{target.LogicalY}) cursorAfter=({placed.X},{placed.Y}) fg=\"{foregroundBefore}\"\n");
+            }
+            catch { /* diagnostics must never break the click */ }
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = $"Test click failed: {ex.Message}";
+        }
     }
 
     // Test a RELATIVE "D" move at 1:1 between two user-chosen points, mirroring the composer's
