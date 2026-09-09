@@ -1,5 +1,7 @@
 # Seal Tools v2 — User Guide
 
+**繁體中文版：[USER_GUIDE.zh-TW.md](USER_GUIDE.zh-TW.md)**
+
 Every tab and button in the launcher, what it does and when to use it. For *why* the coordinates
 work the way they do, see [COORDINATES.md](COORDINATES.md); for the step-by-step calibration flow,
 see [CALIBRATION.md](CALIBRATION.md).
