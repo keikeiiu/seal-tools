@@ -1963,25 +1963,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (display == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
 
         int x = (int)pt.Value.X, y = (int)pt.Value.Y;
-        string target;
-        bool ok;
-        if (physical)
-        {
-            int sx = display.PhysicalClient.Left + x, sy = display.PhysicalClient.Top + y;
-            target = $"SetPhysicalCursorPos({sx},{sy})";
-            ok = WindowFinder.SetPhysicalCursorPosition(sx, sy);
-        }
-        else
-        {
-            int sx = display.LogicalClient.Left + (int)Math.Round(x / display.Scale);
-            int sy = display.LogicalClient.Top + (int)Math.Round(y / display.Scale);
-            target = $"SetCursorPos({sx},{sy})";
-            ok = WindowFinder.SetLogicalCursorPosition(display, x, y);
-        }
+
+        // Calculation first (pure), then the API call — kept separate so the numbers can be checked
+        // on their own.
+        var target = WindowFinder.ComputeCursorTarget(display, x, y);
+        bool ok = physical
+            ? WindowFinder.SetPhysicalCursorPosition(display, x, y)
+            : WindowFinder.SetLogicalCursorPosition(display, x, y);
 
         var after = WindowFinder.LogicalCursorPosition();
-        _gemHint!.Text = $"Debug {name} [{(physical ? "physical" : "logical")}] offset {x},{y} " +
-            $"(scale {display.Scale:0.###}) → {target} ok={ok}; cursor now ({after.X},{after.Y}).";
+        _gemHint!.Text =
+            $"{name}: offset ({x},{y}), scale {display.Scale:0.###}\n" +
+            $"  computed logical  = ({target.LogicalX},{target.LogicalY})\n" +
+            $"  computed physical = ({target.PhysicalX},{target.PhysicalY})\n" +
+            $"  called {(physical ? "SetPhysicalCursorPos" : "SetCursorPos")} → ok={ok}; cursor now ({after.X},{after.Y}).";
     }
 
     // Diagnostic: report the window rects and save a sample capture, so "is the game being captured

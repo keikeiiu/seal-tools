@@ -125,17 +125,34 @@ public static class WindowFinder
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.
     public static uint GetDpi(IntPtr hWnd) => GetDpiForWindow(hWnd);
 
-    /// <summary>Position the cursor with the PHYSICAL API (absolute physical screen coords, which
-    /// ignore DPI virtualisation). Returns whether the call was accepted.</summary>
-    public static bool SetPhysicalCursorPosition(int physicalScreenX, int physicalScreenY)
-        => SetPhysicalCursorPos(physicalScreenX, physicalScreenY);
+    /// <summary>Where a client-relative physical offset lands on screen, in both coordinate spaces.</summary>
+    public sealed record CursorTarget(int LogicalX, int LogicalY, int PhysicalX, int PhysicalY);
 
-    /// <summary>Position the cursor with the virtualised (logical) API — v1's call — converting a
-    /// client-relative PHYSICAL offset by the measured scale. Returns whether it was accepted.</summary>
+    /// <summary>Pure calculation, no Win32 call: converts a client-relative PHYSICAL offset into the
+    /// absolute screen coordinates each cursor API expects.
+    ///   logical  = logicalClientOrigin  + round(offset / scale)   (what SetCursorPos wants)
+    ///   physical = physicalClientOrigin + offset                  (what SetPhysicalCursorPos wants)</summary>
+    public static CursorTarget ComputeCursorTarget(DisplayInfo display, int physicalX, int physicalY) => new(
+        display.LogicalClient.Left + (int)Math.Round(physicalX / display.Scale),
+        display.LogicalClient.Top + (int)Math.Round(physicalY / display.Scale),
+        display.PhysicalClient.Left + physicalX,
+        display.PhysicalClient.Top + physicalY);
+
+    /// <summary>Position the cursor with the PHYSICAL API (ignores DPI virtualisation). Returns
+    /// whether the call was accepted.</summary>
+    public static bool SetPhysicalCursorPosition(DisplayInfo display, int physicalX, int physicalY)
+    {
+        var t = ComputeCursorTarget(display, physicalX, physicalY);
+        return SetPhysicalCursorPos(t.PhysicalX, t.PhysicalY);
+    }
+
+    /// <summary>Position the cursor with the virtualised (logical) API — v1's call. Returns whether
+    /// the call was accepted.</summary>
     public static bool SetLogicalCursorPosition(DisplayInfo display, int physicalX, int physicalY)
-        => SetCursorPos(
-            display.LogicalClient.Left + (int)Math.Round(physicalX / display.Scale),
-            display.LogicalClient.Top + (int)Math.Round(physicalY / display.Scale));
+    {
+        var t = ComputeCursorTarget(display, physicalX, physicalY);
+        return SetCursorPos(t.LogicalX, t.LogicalY);
+    }
 
     /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
     public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);
@@ -148,10 +165,7 @@ public static class WindowFinder
     /// taken, for logging. Never call this on a thread with an aware DPI context (see Dpi.cs).</summary>
     public static string MoveCursorPhysical(DisplayInfo display, int physicalX, int physicalY)
     {
-        var physical = display.PhysicalClient;
-        if (SetPhysicalCursorPosition(physical.Left + physicalX, physical.Top + physicalY))
-            return "physical";
-
+        if (SetPhysicalCursorPosition(display, physicalX, physicalY)) return "physical";
         SetLogicalCursorPosition(display, physicalX, physicalY);
         return "logical";
     }
