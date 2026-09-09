@@ -271,6 +271,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
+        ConfigTabs.Items.Add(BuildSetupTab());
         ConfigTabs.Items.Add(BuildSettingsTab());
     }
 
@@ -368,6 +369,123 @@ public partial class MainWindow : FluentWindow, IDisposable
         Refresh();
 
         return new TabItem { Header = "Arduino", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+    }
+
+    // Display environment: shows what the tools measure for this machine and stores the reference
+    // a calibration was made against. Detect fills the fields; the user may override the scale and
+    // the client size if detection is wrong (e.g. an unusual monitor arrangement).
+    private TabItem BuildSetupTab()
+    {
+        var panel = new StackPanel { Margin = new Thickness(8) };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game " +
+                   "window's client area. Detect reads the current setup; the scale and reference client " +
+                   "size stay editable if detection is wrong. If another machine's values differ from the " +
+                   "stored calibration, recalibrate there (see docs/COORDINATES.md).",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10),
+        });
+
+        var monitor = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2) };
+        var window = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        var stored = new TextBlock { Foreground = (Brush)FindResource("MutedBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        var warning = new TextBlock { Foreground = (Brush)FindResource("HighlightBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+        panel.Children.Add(monitor);
+        panel.Children.Add(window);
+
+        var scaleBox = new TextBox { Width = 80, VerticalContentAlignment = VerticalAlignment.Center };
+        var clientWBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
+        var clientHBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
+        panel.Children.Add(LabeledField("Scale (physical px per logical px)", scaleBox));
+
+        var clientRow = new StackPanel { Orientation = Orientation.Horizontal };
+        clientRow.Children.Add(clientWBox);
+        clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        clientRow.Children.Add(clientHBox);
+        panel.Children.Add(LabeledField("Reference client size (physical)", clientRow));
+
+        DisplayInfo? detected = null;
+
+        void ShowStored()
+        {
+            var c = _service.Config.Calibration;
+            stored.Text = c.DpiScale == null
+                ? "Stored calibration: none yet — run Calibrate Tuner / Calibrate Gem."
+                : $"Stored calibration: scale {c.DpiScale} · client {string.Join("×", c.ClientSize ?? new List<int>())} · {c.MeasuredAt}";
+
+            warning.Text = detected is { } d && c.ClientSize is { Count: 2 } cs &&
+                           (cs[0] != d.PhysicalClient.Width || cs[1] != d.PhysicalClient.Height)
+                ? $"⚠ The calibration was measured on a {cs[0]}×{cs[1]} client; yours is " +
+                  $"{d.PhysicalClient.Width}×{d.PhysicalClient.Height} — recalibrate."
+                : "";
+        }
+
+        var detect = MakeButton("Detect", ControlAppearance.Primary);
+        detect.Click += (_, _) =>
+        {
+            var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+            if (hwnd == IntPtr.Zero) { monitor.Text = "Game window not found — open the game first."; return; }
+            var info = Dpi.Measure(hwnd);
+            if (info == null) { monitor.Text = "Could not measure the display."; return; }
+
+            detected = info;
+            monitor.Text = $"Monitor: {info.ScreenWidth}×{info.ScreenHeight} physical, {info.MonitorDpi} dpi " +
+                           $"({info.Scale * 100:0.#}%)";
+            window.Text = $"Game window: frame {info.PhysicalFrame.Width}×{info.PhysicalFrame.Height}, " +
+                          $"client {info.PhysicalClient.Width}×{info.PhysicalClient.Height} @ " +
+                          $"({info.PhysicalClient.Left},{info.PhysicalClient.Top})";
+
+            scaleBox.Text = info.Scale.ToString("0.###", CultureInfo.InvariantCulture);
+            clientWBox.Text = info.PhysicalClient.Width.ToString(CultureInfo.InvariantCulture);
+            clientHBox.Text = info.PhysicalClient.Height.ToString(CultureInfo.InvariantCulture);
+            ShowStored();
+        };
+
+        var save = MakeButton("Save Setup", ControlAppearance.Primary);
+        save.Click += (_, _) =>
+        {
+            double scale = double.TryParse(scaleBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) && s > 0
+                ? s : 1.0;
+            int w = int.TryParse(clientWBox.Text.Trim(), out var ww) ? ww : 0;
+            int h = int.TryParse(clientHBox.Text.Trim(), out var hh) ? hh : 0;
+
+            var cal = _service.Config.Calibration;
+            cal.DpiScale = Math.Round(scale, 4);
+            cal.MonitorDpi = (uint)Math.Round(96 * scale);
+            cal.ClientSize = new List<int> { w, h };
+            if (detected is { } d) cal.Screen = new List<int> { d.ScreenWidth, d.ScreenHeight };
+            cal.MeasuredAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Calibration = cal;
+            _service.SaveLocal(local);
+            ShowStored();
+            MessageBox.Show("Setup saved to config\\local.yaml.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        };
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        buttons.Children.Add(detect);
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        panel.Children.Add(stored);
+        panel.Children.Add(warning);
+
+        // Prefill from what is already stored, so the tab is informative before Detect is pressed.
+        if (_service.Config.Calibration.DpiScale is { } saved)
+        {
+            scaleBox.Text = saved.ToString("0.###", CultureInfo.InvariantCulture);
+            if (_service.Config.Calibration.ClientSize is { Count: 2 } cs)
+            {
+                clientWBox.Text = cs[0].ToString(CultureInfo.InvariantCulture);
+                clientHBox.Text = cs[1].ToString(CultureInfo.InvariantCulture);
+            }
+        }
+        ShowStored();
+
+        return new TabItem { Header = "Setup", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private TabItem BuildTunerTab()
