@@ -27,7 +27,7 @@ Three core tools + one daily script:
 
 | | v1 (Python) | v2 (C# / .NET 8 WPF) |
 |---|---|---|
-| Location | repo root (`launcher.py`, `tuner/`, `gem_composer/`, `skill_spammer/`, `checkin/`) | `v2/` |
+| Location | `v1/` (`launcher.py`, `tuner/`, `gem_composer/`, `skill_spammer/`, `checkin/`) | `v2/` |
 | Runtime | Python 3.12 + pip | self-contained native Windows `.exe` |
 | UI | Flask web panels (`:5002`/`:5000`) | WPF + WPF-UI 4.3.0 single window |
 | Control/state | out-of-process `control.txt`/`state.json` files | in-memory `CancellationToken` + shared `ToolState` |

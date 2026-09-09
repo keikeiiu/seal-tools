@@ -1,7 +1,8 @@
 # ── Secrets — NEVER commit ─────────────────────────────
-# Check-in account credentials + saved login sessions
-checkin/checkin_config.yaml
-checkin/sessions/
+# Check-in account credentials + saved login sessions.
+# Unanchored (no directory prefix) so they stay ignored wherever v1 lives.
+checkin_config.yaml
+sessions/
 
 # ── Runtime state files ────────────────────────────────
 state.json

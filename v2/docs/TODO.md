@@ -51,5 +51,5 @@ Remaining live checks (no code change expected):
 
 ## Out of scope
 
-- Check-in stays the standalone Python script (`checkin/checkin.py`).
+- Check-in stays the standalone Python script (`v1/checkin/checkin.py`).
 - v1 (Python) is frozen — do not port further from it.

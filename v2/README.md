@@ -9,8 +9,8 @@ for the coordinate model.
 A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Python build with a
 **native Windows desktop app** (WPF + WPF-UI) that ships as a **single self-contained `.exe`**.
 
-> The original Python build (`launcher.py`, `tuner/`, `gem_composer/`, `skill_spammer/`, `checkin/`)
-> is untouched and still works. v2 lives entirely under this `v2/` folder.
+> The original Python build lives under `v1/` (`launcher.py`, `tuner/`, `gem_composer/`,
+> `skill_spammer/`, `checkin/`), is untouched, and still works. v2 lives entirely under this `v2/` folder.
 
 ---
 
@@ -217,5 +217,5 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
   recalibrate once (see `docs/COORDINATES.md`). Hand-tuned `gem.movements` are HID counts and survive.
 - OCR row-bucket pooling: a fixed `row_height` grid can merge two attribute rows — needs real unconfirmed
   frames as evidence before changing (see `docs/REVIEW.md`).
-- Check-in remains the standalone Python script (`checkin/checkin.py`) — out of scope for v2.
-- `skill_spammer/skill_spammer_config.yaml` (v1) has an unrelated uncommitted modification — not part of v2.
+- Check-in remains the standalone Python script (`v1/checkin/checkin.py`) — out of scope for v2.
+- `v1/skill_spammer/skill_spammer_config.yaml` has an unrelated uncommitted modification — not part of v2.

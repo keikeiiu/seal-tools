@@ -19,7 +19,7 @@ changing anything in `WindowFinder`, `ScreenCapture`, `GemPointer` or the calibr
 
 ## Cursor positioning — v1 parity, the validated path
 
-v1 is the working reference. Its entire positioning logic (`gem_composer/gem_composer.py`) is:
+v1 is the working reference. Its entire positioning logic (`v1/gem_composer/gem_composer.py`) is:
 
 ```python
 gx, gy = CFG["grade_positions"][grades[gidx]]     # absolute screen coords
