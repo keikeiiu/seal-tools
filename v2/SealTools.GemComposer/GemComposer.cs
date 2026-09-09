@@ -260,12 +260,25 @@ public sealed class GemComposer : ToolBase
         };
 
         // Advance to the next grade; in "advance_grade_clear" mode, clear the resource slots first.
-        void AdvanceGrade()
+        // Returns false when there is no next grade — a run is N -> G -> DG ONCE, not a loop, so the
+        // composer ends instead of wrapping back to the first grade. Also false when a step failed
+        // (the reason is already on the card).
+        bool AdvanceGrade()
         {
             if (_cfg.Gem.EmptyMode == "advance_grade_clear" && !ClearResources())
-                return;
+                return false;
 
-            gidx = (gidx + 1) % grades.Count;
+            if (gidx + 1 >= grades.Count)
+            {
+                Console.WriteLine($"[DONE] {grades[gidx]} was the last grade");
+                state.Message = $"All grades done (last was {grades[gidx]}) — composer stopped.";
+                running = false;
+                state.Running = false;
+                Beep(880, 200);
+                return false;
+            }
+
+            gidx++;
             state.Grade = grades[gidx];
             Console.WriteLine($"[EMPTY] advancing -> {grades[gidx]}");
 
@@ -275,9 +288,9 @@ public sealed class GemComposer : ToolBase
                 if (Slot3RouteKey(grades[gidx]) is not { } slotKey)
                 {
                     Fail($"No route Resource3 → {grades[gidx]}.");
-                    return;
+                    return false;
                 }
-                if (!Route($"Move Resource3 → {grades[gidx]}", slotKey, Slot3ToGrade(grades[gidx]))) return;
+                if (!Route($"Move Resource3 → {grades[gidx]}", slotKey, Slot3ToGrade(grades[gidx]))) return false;
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
@@ -289,14 +302,14 @@ public sealed class GemComposer : ToolBase
                 if (display == null)
                 {
                     Fail("Game window not found (or minimized) — open and restore the game first.");
-                    return;
+                    return false;
                 }
-                if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
+                if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return false;
                 var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
                 if (!placed.Ok)
                 {
                     Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
-                    return;
+                    return false;
                 }
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
@@ -305,10 +318,11 @@ public sealed class GemComposer : ToolBase
 
             // Next grade → Register (radio_to_register) and select.
             if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
-                    _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]))) return;
+                    _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]))) return false;
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
+            return true;
         }
 
         try
@@ -406,7 +420,7 @@ public sealed class GemComposer : ToolBase
 
                 if (advanceNow)
                 {
-                    AdvanceGrade();
+                    if (!AdvanceGrade()) break;   // last grade done, or a step failed
                     continue;
                 }
 
