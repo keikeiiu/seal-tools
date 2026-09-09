@@ -81,8 +81,7 @@ public sealed class OcrEngine : IDisposable
     public ScanResult? Scan(OcrGeometry ocr)
     {
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
-        if (client == null) return null;
+        if (hwnd == IntPtr.Zero) return null;
 
         InitOcr();
 
@@ -94,7 +93,7 @@ public sealed class OcrEngine : IDisposable
         ScanResult? last = null;
         for (int i = 1; i <= retries; i++)
         {
-            last = ScanOnce(ocr, client, hwnd, forceCapture: i == retries);
+            last = ScanOnce(ocr, hwnd, forceCapture: i == retries);
             if (last != null && IsConfirmed(last))
                 return last;
         }
@@ -106,10 +105,14 @@ public sealed class OcrEngine : IDisposable
     }
 
     // One capture + OCR pass over the geometry (no retry). The retry policy lives in Scan().
-    private ScanResult? ScanOnce(OcrGeometry ocr, WindowRect client, IntPtr hwnd, bool forceCapture)
+    private ScanResult? ScanOnce(OcrGeometry ocr, IntPtr hwnd, bool forceCapture)
     {
         var region = ocr.Region;
-        using var mat = ScreenCapture.CaptureScreenRegion(client, region);
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, region);
+        if (cap == null) return null;
+        using var mat = cap.Image;
+        // Physical client rect + measured scale (the image is physical pixels).
+        var client = cap.Display.PhysicalClient;
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
         // Normal scans only capture when save_captures is on; forceCapture (the final retry)
@@ -224,7 +227,8 @@ public sealed class OcrEngine : IDisposable
             colorScores,
             client = new { left = client.Left, top = client.Top, w = client.Width, h = client.Height },
             region = new { left = region.Left, top = region.Top, w = region.Width, h = region.Height },
-            dpi = WindowFinder.GetDpi(hwnd),
+            dpi = cap.Display.MonitorDpi,
+            scale = cap.Display.Scale,
             lines = textLines.Select(t => new { y = t.y, x = t.minX, x2 = t.maxX, text = t.text, conf = t.conf }),
             rowHeight,
             // Raw per-char boxes + their bucket key, so a "two rows read as one" merge can be

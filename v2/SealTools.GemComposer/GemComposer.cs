@@ -97,9 +97,9 @@ public sealed class GemComposer : ToolBase
         {
             if (_cfg.Gem.ResultGemArea is not { Count: 4 } area) return false;
             var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
-            var client = WindowFinder.GetClientRectInScreen(hwnd);
-            if (client == null) return false;
-            using var crop = ScreenCapture.CaptureScreenRegion(client, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
+            var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
+            if (cap == null) return false;
+            using var crop = cap.Image;
             var frame = GemColorAnalyzer.Analyze(crop, _cfg.Gem.ColoredGapMin);
             var empty = GemColorAnalyzer.IsEmpty(frame, _cfg.Gem.EmptySignature, _cfg.Gem.EmptyDistance);
             if (_cfg.Gem.SaveEmptyCaptures && _cfg.Gem.EmptySignature is { } sig)

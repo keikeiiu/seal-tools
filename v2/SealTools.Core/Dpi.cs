@@ -29,6 +29,26 @@ public static class Dpi
     [DllImport("user32.dll")]
     private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
 
+    /// <summary>Runs <paramref name="action"/> with THIS THREAD switched to per-monitor-aware, so
+    /// Win32 calls return physical pixels, then restores the previous context.
+    ///
+    /// HARD RULE: the action must never move the cursor (SetCursorPos / SetPhysicalCursorPos) —
+    /// they fail with ok=False on an aware thread on a mixed-DPI dual-monitor setup (7f9e1c7).
+    /// Measurement and screen capture only.</summary>
+    public static T WithAwareContext<T>(Func<T> action)
+    {
+        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+        bool switched = previous != IntPtr.Zero; // null return means the call failed; nothing to restore
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            if (switched) SetThreadDpiAwarenessContext(previous);
+        }
+    }
+
     /// <summary>Reads the window in both spaces and returns the measured scale, or null when the
     /// window handle is invalid / the rects can't be read.</summary>
     public static DisplayInfo? Measure(IntPtr hwnd)
@@ -39,13 +59,11 @@ public static class Dpi
         var logicalClient = WindowFinder.GetClientRectInScreen(hwnd);
         if (logicalClient == null) return null;
 
-        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
-        bool switched = previous != IntPtr.Zero; // null return means the call failed; nothing to restore
-        try
+        return WithAwareContext(() =>
         {
             var physicalClient = WindowFinder.GetClientRectInScreen(hwnd);
             var physicalFrame = WindowFinder.GetFrameRect(hwnd);
-            if (physicalClient == null || physicalFrame == null) return null;
+            if (physicalClient == null || physicalFrame == null) return (DisplayInfo?)null;
 
             // Widths, not heights: the height ratio truncates (1193 * 1.5 = 1789.5 -> 1789).
             double scale = logicalClient.Width > 0
@@ -57,10 +75,6 @@ public static class Dpi
             uint dpi = (uint)Math.Round(96 * scale);
 
             return new DisplayInfo(scale, dpi, physicalFrame, physicalClient, logicalClient);
-        }
-        finally
-        {
-            if (switched) SetThreadDpiAwarenessContext(previous);
-        }
+        });
     }
 }

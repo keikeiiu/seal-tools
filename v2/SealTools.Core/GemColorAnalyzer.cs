@@ -23,10 +23,13 @@ public sealed class ColorComposition
 
 public static class GemColorAnalyzer
 {
-    // Capture a client-relative box inside the given client rect and analyse it.
-    public static ColorComposition Analyze(WindowRect client, int x, int y, int w, int h, int coloredGapMin)
+    // Capture a client-relative box (physical pixels) and analyse it. Null when the game window
+    // can't be read.
+    public static ColorComposition? Analyze(IntPtr hwnd, int x, int y, int w, int h, int coloredGapMin)
     {
-        using var mat = ScreenCapture.CaptureScreenRegion(client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
+        if (cap == null) return null;
+        using var mat = cap.Image;
         return Analyze(mat, coloredGapMin);
     }
 

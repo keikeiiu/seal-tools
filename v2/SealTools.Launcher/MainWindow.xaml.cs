@@ -102,6 +102,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Measured attribute line pitch from the last "Check OCR", used by BuildOcrGeometry
     // to persist an accurate row_height instead of the loose attr.Height/3 guess.
     private int? _tunerAttrPitch;
+    // Display measurement from the last capture of each tab (scale + physical client rect), saved
+    // with the calibration so another machine can convert (docs/COORDINATES.md).
+    private DisplayInfo? _tunerDisplay;
+    private DisplayInfo? _gemDisplay;
     private Point? _tunerDragStart;
     private Rectangle? _tunerMarquee;
 
@@ -1189,16 +1193,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         rb = box.Value;
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
-        if (client == null)
+        var analyzed = GemColorAnalyzer.Analyze(hwnd, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
+            _service.Config.Gem.ColoredGapMin);
+        if (analyzed == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
             return false;
         }
-        frame = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
-            _service.Config.Gem.ColoredGapMin);
+        frame = analyzed;
         sig = _service.Config.Gem.EmptySignature;
-        SaveResultCrop(hwnd, client, rb);
+        SaveResultCrop(hwnd, rb);
         return true;
     }
 
@@ -1220,12 +1224,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Save a crop-out PNG of the result-gem box so its exact pixels can be compared later
     // (e.g. against the empty reference or a previous run). Writes logs/captures/result_box.png.
-    private static void SaveResultCrop(IntPtr hwnd, WindowRect client, Rect rb)
+    private static void SaveResultCrop(IntPtr hwnd, Rect rb)
     {
         try
         {
-            using var mat = ScreenCapture.CaptureScreenRegion(client, new SealTools.Core.Config.RegionConfig
+            var cap = ScreenCapture.CaptureClientRegion(hwnd, new SealTools.Core.Config.RegionConfig
             { Left = (int)rb.X, Top = (int)rb.Y, Width = (int)rb.Width, Height = (int)rb.Height });
+            if (cap == null) return;
+            using var mat = cap.Image;
             var dir = LogPath("captures");
             Directory.CreateDirectory(dir);
             mat.ImWrite(Path.Combine(dir, "result_box.png"));
@@ -1333,17 +1339,18 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Tuner calibrator (drag an OCR box) ──────────────────────────────────
 
-    private void TunerCapture()
+    private async void TunerCapture()
     {
-        var shot = CaptureScreenshot();
+        var shot = await CaptureScreenshotAsync();
         if (shot == null)
         {
             _tunerHint!.Text = "Game window not found — open the game first.";
             return;
         }
 
-        _tunerScreenshot = shot;
-        _tunerImage!.Source = shot;
+        _tunerDisplay = shot.Value.Display;
+        _tunerScreenshot = shot.Value.Image;
+        _tunerImage!.Source = shot.Value.Image;
         _tunerStep = 0;
         _tunerGradeBox = null;
         _tunerAttrBox = null;
@@ -1514,17 +1521,18 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Gem calibrator (click buttons) ─────────────────────────────────────
 
-    private void GemCapture()
+    private async void GemCapture()
     {
-        var shot = CaptureScreenshot();
+        var shot = await CaptureScreenshotAsync();
         if (shot == null)
         {
             _gemHint!.Text = "Game window not found — open the game first.";
             return;
         }
 
-        _gemScreenshot = shot;
-        _gemImage!.Source = shot;
+        _gemDisplay = shot.Value.Display;
+        _gemScreenshot = shot.Value.Image;
+        _gemImage!.Source = shot.Value.Image;
         _gemPoints.Clear();
         _gemResultBox = null;
         if (_gemResultPreview != null) _gemResultPreview.Source = null;
@@ -1688,10 +1696,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (confirmEmpty == MessageBoxResult.Yes)
         {
             var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-            var client = WindowFinder.GetClientRectInScreen(hwnd);
-            if (client != null)
-                emptySig = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
-                    _service.Config.Gem.ColoredGapMin);
+            emptySig = GemColorAnalyzer.Analyze(hwnd, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
+                _service.Config.Gem.ColoredGapMin);
         }
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
@@ -1813,7 +1819,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // correctly, and does the launcher cover it?" can be checked without guessing. Also shows the
     // non-client offset (frame vs client), which is what a whole-window capture would have been
     // shifted by — the capture path itself is client-origin CopyFromScreen.
-    private void DiagnoseCapture()
+    private async void DiagnoseCapture()
     {
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero)
@@ -1836,15 +1842,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var dir = LogPath("captures");
             Directory.CreateDirectory(dir);
-            using var shot = ScreenCapture.CaptureScreen(client);
-            shot.ImWrite(Path.Combine(dir, "diag_capture.png"));
+            await WithLauncherHiddenAsync(() =>
+            {
+                using var shot = ScreenCapture.CaptureScreen(client);
+                shot.ImWrite(Path.Combine(dir, "diag_capture.png"));
+                return true;
+            });
 
             _gemHint!.Text =
                 $"frame=({frame.Left},{frame.Top}) {frame.Width}x{frame.Height}   " +
                 $"client=({client.Left},{client.Top}) {client.Width}x{client.Height}   " +
                 $"non-client offset=({border},{title})\n" +
-                "Saved logs\\captures\\diag_capture.png — if it shows the launcher or anything other " +
-                "than the game, move the launcher off the game and capture again.";
+                "Saved logs\\captures\\diag_capture.png (launcher hidden for the grab).";
         }
         catch (Exception ex)
         {
@@ -1854,16 +1863,38 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Shared calibrator helpers ───────────────────────────────────────────
 
-    private BitmapSource? CaptureScreenshot()
+    // CopyFromScreen reads the actual screen, so anything covering the game — this launcher window
+    // in particular — ends up in the capture. Hide the launcher for the grab, then restore it.
+    private async Task<T> WithLauncherHiddenAsync<T>(Func<T> capture)
     {
-        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-        var client = WindowFinder.GetClientRectInScreen(hwnd);
-        if (client == null) return null;
+        var wasVisible = Visibility == Visibility.Visible;
+        if (wasVisible)
+        {
+            Visibility = Visibility.Hidden;
+            await Task.Delay(300); // let the compositor take the window off the screen
+        }
+        try
+        {
+            return capture();
+        }
+        finally
+        {
+            if (wasVisible) Visibility = Visibility.Visible;
+        }
+    }
 
-        // CopyFromScreen, not PrintWindow: PrintWindow returns a black frame for this game (see
-        // ScreenCapture.cs). The game must be visible when capturing.
-        using var mat = ScreenCapture.CaptureScreen(client);
-        return MatToBitmapSource(mat);
+    // Physical-pixel capture of the whole game client, plus the display measurement taken in the
+    // same peek. Null when the game window isn't open.
+    private async Task<(BitmapSource Image, DisplayInfo Display)?> CaptureScreenshotAsync()
+    {
+        var cap = await WithLauncherHiddenAsync(() =>
+        {
+            var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+            return ScreenCapture.CaptureClient(hwnd);
+        });
+        if (cap == null) return null;
+
+        using (cap.Image) return (MatToBitmapSource(cap.Image), cap.Display);
     }
 
     private static Point CanvasToNatural(Point p, BitmapSource screenshot, Canvas canvas)
