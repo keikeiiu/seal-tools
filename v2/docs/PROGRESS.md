@@ -28,6 +28,10 @@ button in Calibrate Gem that plays a whole cycle with arduino moves only.
 
 **Commit** — `ac0f8ec` (branch `v2-arduino-moves`).
 
+**Follow-up, same session:** the composer was switched over — `gem.move_mode: arduino` in
+`defaults.yaml` (this commit). The composer now runs the arduino set on every route; the tuned counts
+stay in `local.yaml` untouched, so switching back is one line.
+
 **Left open** — same as the entry below: no full composer run with `gem.move_mode: arduino` yet, and
 the reason `SetCursorPos` is refused in our process is still unknown.
 

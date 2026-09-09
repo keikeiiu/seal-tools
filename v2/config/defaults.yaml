@@ -91,7 +91,7 @@ gem:
   start_grade: N
   # tuned = send the hand-tuned gem.movements counts; arduino = place the cursor on the route's
   # destination point (closed loop). See docs/MOVE-SETS.md.
-  move_mode: tuned
+  move_mode: arduino
   empty_mode: advance_grade_clear
   empty_streak: 2
   colored_gap_min: 40
