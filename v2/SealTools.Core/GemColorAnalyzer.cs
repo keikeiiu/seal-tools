@@ -23,17 +23,16 @@ public sealed class ColorComposition
 
 public static class GemColorAnalyzer
 {
-    private const int ColoredGapMin = 40; // channel max-min gap above which a pixel is "coloured"
-
     // Capture a client-relative box inside the given client rect and analyse it.
-    public static ColorComposition Analyze(IntPtr hwnd, WindowRect client, int x, int y, int w, int h)
+    public static ColorComposition Analyze(WindowRect client, int x, int y, int w, int h, int coloredGapMin)
     {
         using var mat = ScreenCapture.CaptureScreenRegion(client, new RegionConfig { Left = x, Top = y, Width = w, Height = h });
-        return Analyze(mat);
+        return Analyze(mat, coloredGapMin);
     }
 
-    // Analyse a BGR image (24bpp, 3-channel).
-    public static ColorComposition Analyze(Mat img)
+    // Analyse a BGR image (24bpp, 3-channel). coloredGapMin is the channel max-min gap (0-255)
+    // above which a pixel counts as "coloured" (config: gem.colored_gap_min).
+    public static ColorComposition Analyze(Mat img, int coloredGapMin)
     {
         using var typed = new Mat<Vec3b>(img);
         var idx = typed.GetIndexer();
@@ -53,7 +52,7 @@ public static class GemColorAnalyzer
                 sumR += R / 255.0;
                 sumG += G / 255.0;
                 sumB += B / 255.0;
-                if (v - mn >= ColoredGapMin) colored++;
+                if (v - mn >= coloredGapMin) colored++;
             }
 
         double n = (double)img.Height * img.Width;

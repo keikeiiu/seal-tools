@@ -171,6 +171,11 @@ public sealed class GemConfig
     /// <summary>Normalised colour distance below which the result box is judged empty
     /// (0..1). Lower = stricter (more likely to call it "has a gem").</summary>
     public double EmptyDistance { get; set; } = 0.18;
+    /// <summary>Channel max-min gap (0..255) above which a pixel counts as "coloured" in the
+    /// result-box colour fingerprint. Portable: the empty reference self-calibrates, this is
+    /// just the pixel-classification threshold.</summary>
+    [Range(0, 255, ErrorMessage = "gem.colored_gap_min must be 0-255")]
+    public int ColoredGapMin { get; set; } = 40;
     /// <summary>Consecutive empty reads required before the EmptyMode action fires — guards
     /// against a single transient false empty.</summary>
     public int EmptyStreak { get; set; } = 2;

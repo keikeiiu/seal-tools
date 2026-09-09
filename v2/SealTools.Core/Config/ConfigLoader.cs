@@ -135,7 +135,7 @@ public sealed class ConfigLoader
                 grade_colors = cfg.Tuner.GradeColors,
                 filter = cfg.Tuner.Filter,
             },
-            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
+            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
             spammer = new { keys = cfg.Spammer.Keys },
         };
 

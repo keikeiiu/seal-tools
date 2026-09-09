@@ -87,6 +87,7 @@ public class ConfigLoaderTests
             Assert.Equal(before.Spammer.Keys, after.Spammer.Keys);
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
             Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
+            Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);
         }
         finally
         {

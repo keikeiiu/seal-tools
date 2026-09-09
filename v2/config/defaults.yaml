@@ -64,6 +64,7 @@ gem:
   start_grade: "DG"
   empty_mode: "stop"            # "stop" | "advance_grade" | "advance_grade_clear" — action when the result box is empty (clear = right-click all 3 resource slots first)
   empty_streak: 2               # consecutive empty reads before acting (guards a transient miss)
+  colored_gap_min: 40           # channel max-min gap (0-255) above which a pixel counts as "coloured"
   save_empty_captures: false    # write empty-check capture PNG + distance log each cycle (debug only)
 
 spammer:

@@ -1188,7 +1188,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found — open the game first.";
             return false;
         }
-        frame = GemColorAnalyzer.Analyze(hwnd, client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+        frame = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
+            _service.Config.Gem.ColoredGapMin);
         sig = _service.Config.Gem.EmptySignature;
         SaveResultCrop(hwnd, client, rb);
         return true;
@@ -1676,7 +1677,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
             var client = WindowFinder.GetClientRectInScreen(hwnd);
             if (client != null)
-                emptySig = GemColorAnalyzer.Analyze(hwnd, client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height);
+                emptySig = GemColorAnalyzer.Analyze(client, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
+                    _service.Config.Gem.ColoredGapMin);
         }
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
