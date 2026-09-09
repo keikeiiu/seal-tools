@@ -15,6 +15,7 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 using Ellipse = System.Windows.Shapes.Ellipse;
 using SealTools.Core;
 using SealTools.Core.Config;
+using SealTools.Tuner;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using ControlAppearance = Wpf.Ui.Controls.ControlAppearance;
 using UiButton = Wpf.Ui.Controls.Button;
@@ -1582,6 +1583,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         for (var i = 0; i < result.Attributes.Count; i++)
         {
             lines.Add($"Attr {i + 1}: {string.Join(" ", result.Attributes[i])}");
+        }
+
+        // Show what the tuner's matcher makes of those raw lines, and the filter verdict — the same
+        // processing a run performs, so the whole pipeline can be verified from here.
+        var matched = new AttrMatcher(_service.Attributes).MatchAttributes(result.Attributes);
+        lines.Add("");
+        lines.Add("Matched:");
+        foreach (var m in matched)
+        {
+            lines.Add($"  {m.Name} = {(m.Value.HasValue ? m.Value.Value.ToString(CultureInfo.InvariantCulture) : "?")}");
+        }
+
+        var filter = _service.Config.Tuner.Filter;
+        if (filter.Enabled)
+        {
+            var fr = AttrMatcher.CheckFilter(matched, filter);
+            lines.Add($"Filter: {(fr.Passed ? "MATCH" : "no match")} ({fr.Reason})");
         }
         _tunerHint!.Text = string.Join(Environment.NewLine, lines);
     }
