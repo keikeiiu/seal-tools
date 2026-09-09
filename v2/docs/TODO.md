@@ -5,6 +5,14 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
 
 ---
 
+## Planned (design written, not built)
+
+- [ ] **Tuner spring positioning + cursor guard.** Place the cursor on the 發條 button with the
+  Arduino closed loop when a run starts, and a `tuner.mouse_guard` toggle that either stops the run
+  when the mouse is moved or re-centres the cursor and carries on. Full plan, including the
+  ideas this unlocks and the two questions to answer with data first:
+  [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+
 ## Needs a live check before any code change
 
 - [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed
