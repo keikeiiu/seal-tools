@@ -1358,6 +1358,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (!moved) { System.Threading.Thread.Sleep(50); retried = WindowFinder.SetLogicalCursorPosition(target); }
             bool phys = false;
             if (!moved && !retried) phys = WindowFinder.SetPhysicalCursorPosition(target);
+            bool bg = false;
+            if (!moved && !retried && !phys)
+                bg = System.Threading.Tasks.Task.Run(() => WindowFinder.SetLogicalCursorPosition(target)).GetAwaiter().GetResult();
             var rightAfter = WindowFinder.LogicalCursorPosition(); // did the OS take it at all?
             System.Threading.Thread.Sleep(300);
             var placed = WindowFinder.LogicalCursorPosition();     // did it survive the sleep?
@@ -1375,7 +1378,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 File.AppendAllText(LogPath("arduino_debug.txt"),
                     $"{DateTime.Now:HH:mm:ss} test-click name={name} port={ser.PortName} open={ser.IsOpen} baud={ser.BaudRate} " +
                     $"target=({target.LogicalX},{target.LogicalY}) accepted={moved} immediate=({rightAfter.X},{rightAfter.Y}) " +
-                    $"after300ms=({placed.X},{placed.Y}) dpiCtx={dpiCtx} err={moveErr} retry={retried} phys={phys} " +
+                    $"after300ms=({placed.X},{placed.Y}) dpiCtx={dpiCtx} err={moveErr} retry={retried} phys={phys} bg={bg} " +
                     $"clip={(clip == null ? "?" : $"{clip.Left},{clip.Top},{clip.Width}x{clip.Height}")} fg=\"{foregroundBefore}\"\n");
             }
             catch { /* diagnostics must never break the click */ }
