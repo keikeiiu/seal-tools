@@ -9,6 +9,30 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-10 (2) — Test Full Cycle (Arduino)
+
+**Goal.** Let the new move set be judged on a real run before the composer is switched to it: one
+button in Calibrate Gem that plays a whole cycle with arduino moves only.
+
+**What was decided, and why**
+
+- The sequence mirrors the **composer's own loop body**, not a guess: select → Register → Combine,
+  then the composer's normal-path *deregister + register* (two Register clicks), then Combine again.
+  Without that pair a second combine does nothing. The user asked for the combine loop twice at N and
+  G; DG combines once and the cycle stops (no trailing resource clear — the user's choice).
+- It always uses the **arduino** set regardless of `gem.move_mode`; that is the point of the button.
+- All points are resolved *before* the first click, so a missing calibration can't half-run a cycle.
+
+**Measured (live)** — `test-cycle-arduino done steps=21`, game focused the whole way, gold down ~2.16M
+(the combines really ran), slots and result box empty afterwards.
+
+**Commit** — `ac0f8ec` (branch `v2-arduino-moves`).
+
+**Left open** — same as the entry below: no full composer run with `gem.move_mode: arduino` yet, and
+the reason `SetCursorPos` is refused in our process is still unknown.
+
+---
+
 ## 2026-09-10 — cursor placement rebuilt on the Arduino; a second move set
 
 **Goal.** Finish the `SetCursorPos` bug: test the last untested hypothesis (the game's anti-cheat
