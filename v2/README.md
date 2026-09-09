@@ -159,6 +159,13 @@ publish.bat
 The published `publish\` folder is the distributable: `SealTools.Launcher.exe` + native OCR DLLs +
 `config\` + `models\`. Copy it to the target PC and run the exe — no install.
 
+> **Packaging note (deliberate):** `publish.bat` copies the whole `config\` folder, so the
+> distributable **includes your `local.yaml`** — your machine's calibration. That is intentional for
+> personal / same-machine use: the exe arrives already calibrated. Before giving the folder to
+> someone else, delete `config\local.yaml` (and any `local.yaml.corrupt-backup`) from the published
+> copy; the exe re-seeds it from `config\local.yaml.example` on first run, and they calibrate their
+> own. Revisit this once the build is genuinely release-ready.
+
 ---
 
 ## Code quality
@@ -177,15 +184,22 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
 - OCR pipeline (capture → RapidOCR → grade color + OCR → line reconstruction → attribute match + filter).
 - All three tools ported to C#, config-driven, client-area-relative, in-memory control/state.
 - WPF-UI launcher: tool cards + live status (structured multi-line), config editing tabs, attribute list,
-  calibrator (two tabs: Tuner drag-box + Gem click-points, with Check OCR + Auto-anchor).
+  calibrator (two tabs: Tuner drag-box + Gem click-points, with Check OCR).
 - File logging (run logs + ocr log).
 - Self-contained single-file publish.
 - Lint/analyzers clean, `dotnet format` applied.
+- Fix pass on branch `v2-saving-attempt` — `docs/STATUS.md` has the full commit list and the items
+  still deferred.
 
 **Known gaps / to verify (next):**
 - The tuner's `remaining_y` band (spring count) is derived proportionally and may need a manual nudge per machine.
 - Gem composer moves are raw hand-tuned `dx`/`dy` per route (saved by **Save Composer Moves**); verify them
   with the **Test Move** button after turning pointer acceleration off.
-- Check OCR / title-bar drag / TitleBar buttons were added late and still need a real end-to-end pass by the user.
+- Calibration and OCR still need a real end-to-end pass on a live game.
+- **Open question:** the calibrator captures with `PrintWindow` (origin = window frame, incl. title bar)
+  while the runtime OCR/composer path uses `CopyFromScreen` (origin = client area). If the game window has
+  a title bar these origins differ by its height. See `docs/STATUS.md`.
+- OCR row-bucket pooling: a fixed `row_height` grid can merge two attribute rows — needs real unconfirmed
+  frames as evidence before changing (see `docs/REVIEW.md`).
 - Check-in remains the standalone Python script (`checkin/checkin.py`) — out of scope for v2.
 - `skill_spammer/skill_spammer_config.yaml` (v1) has an unrelated uncommitted modification — not part of v2.
