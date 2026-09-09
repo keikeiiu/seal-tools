@@ -27,6 +27,9 @@ calibration steps, see [CALIBRATION.md](CALIBRATION.md).
 | 12 | `8fbbf10` | Removed the redundant gem focus-click — the single click both focuses the game and presses the button |
 | 13 | `8472ae8` | Documented the gem focus lifecycle precisely (unfocused at start → first click focuses + presses) |
 | 14 | `94a7fd3` | Missing gem calibration now reports on the card ("Move N → Register isn't saved yet…") instead of throwing |
+| 15 | `1cc1e8b` | Added the "Diagnose capture" button + `WindowFinder.GetFrameRect` — the evidence-gathering step |
+| 16 | `795d13e` | Launcher diagnostics written under the app root (`logs/`), not the build output dir |
+| 17 | `3e23ef7` | Capture switched to `CopyFromScreen`; `PrintWindow` removed — it returned a **black frame** for the game, so the calibrator screenshot was blank |
 
 ### Local-only repair (not a commit)
 
@@ -59,10 +62,9 @@ only intact copy of the calibration.
 
 ## Open items (deferred, with reasons)
 
-- **Calibration vs runtime capture origin.** The calibrator uses `PrintWindow` (whole-window origin)
-  while OCR/composer use `CopyFromScreen` (client-area origin). If the game window has a title bar the
-  two origins differ by its height. Needs a live check (does the calibration screenshot show the title
-  bar?) before changing anything — the runtime path works today, so this may be a non-issue.
+- **Capture method — settled by measurement (2026-09-09).** `PrintWindow` returns a solid black frame
+  for this game; `CopyFromScreen` returns the real screen (`logs/captures/diag_printwindow.png` vs
+  `diag_copyfromscreen.png`). All capture now uses `CopyFromScreen`. Do not reintroduce `PrintWindow`.
 - **OCR row-bucket pooling.** A fixed `row_height` grid can pool two attribute rows. **Evidence first**
   — `ocr_log.jsonl` already records each raw item with its bucket key; do not change the bucketing blind.
 - **Machine-specific Debug Cursor / Debug Physical buttons** in the Gem calibrate tab — diagnostic value

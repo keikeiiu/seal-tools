@@ -196,9 +196,10 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
 - Gem composer moves are raw hand-tuned `dx`/`dy` per route (saved by **Save Composer Moves**); verify them
   with the **Test Move** button after turning pointer acceleration off.
 - Calibration and OCR still need a real end-to-end pass on a live game.
-- **Open question:** the calibrator captures with `PrintWindow` (origin = window frame, incl. title bar)
-  while the runtime OCR/composer path uses `CopyFromScreen` (origin = client area). If the game window has
-  a title bar these origins differ by its height. See `docs/STATUS.md`.
+- Capture uses `CopyFromScreen` everywhere (calibration, OCR, composer), so the capture origin is always
+  the client area — the space coordinates are stored in. `PrintWindow` was measured to return a **black
+  frame** for this game; do not reintroduce it. Because the capture reads the screen, the game must be
+  visible (not covered by the launcher) when you press Capture.
 - OCR row-bucket pooling: a fixed `row_height` grid can merge two attribute rows — needs real unconfirmed
   frames as evidence before changing (see `docs/REVIEW.md`).
 - Check-in remains the standalone Python script (`checkin/checkin.py`) — out of scope for v2.

@@ -7,22 +7,19 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
 
 ## Needs a live check before any code change
 
-- [ ] **Calibration vs runtime capture origin.** The calibrator captures with `PrintWindow` (origin =
-  window frame, includes the title bar); OCR and the composer capture with `CopyFromScreen` (origin =
-  client area). If the game window has a title bar, the calibration image is offset from the coordinate
-  space those coordinates are used in.
-  - **Run the diagnostic:** with the game open, **Calibrate Gem → Diagnose capture**. It reports the
-    frame and client rects plus the non-client offset, and saves both captures
-    (`logs/captures/diag_printwindow.png` / `diag_copyfromscreen.png`) to compare.
-  - Offset `(0,0)` → the origins coincide, nothing to fix. Non-zero → the saved calibration is shifted
-    by that amount and needs recalibrating, or a one-time shift of the stored coordinates.
-  - Do **not** switch the calibration path to `CopyFromScreen` blind — it was chosen for a reason, and
-    the runtime path already works.
 - [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed
   grid can pool two nearby attribute rows into one.
   - Evidence already collected: `logs/ocr_log.jsonl` records every raw item with its `rowKey`. Collect
     a few real unconfirmed frames, then decide whether the grid or the detector is at fault.
   - Do **not** change the bucketing without that evidence.
+
+## Settled (measured — do not reopen)
+
+- **Capture method.** `PrintWindow` returns a **black frame** for this game; `CopyFromScreen` returns
+  the real screen. Everything now captures with `CopyFromScreen` (client-area origin). Evidence:
+  `logs/captures/diag_printwindow.png` vs `diag_copyfromscreen.png` (2026-09-09). The calibrator's
+  **Diagnose capture** button reports the frame/client rects and saves a sample capture if you need to
+  re-check.
 
 ## Verify on a live game (no code change expected)
 

@@ -1,40 +1,25 @@
-using System;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using SealTools.Core.Config;
 
 namespace SealTools.Core;
 
-// Two capture methods:
-// - PrintWindow (Capture): grabs the WHOLE game window (incl. title bar). Used by the calibrator,
-//   which needs the full window image to click points on.
-// - CopyFromScreen (CaptureScreen): grabs a SCREEN region at absolute coords. Used by OCR and the
-//   composer loop. The game is windowed (not exclusive-fullscreen), so GDI can read it.
-// Both return an OpenCvSharp Mat (BGR).
+// GDI CopyFromScreen capture, used for everything: calibration, OCR and the composer loop. The game
+// is a windowed title, so GDI can read it, and using one method everywhere means the capture origin
+// is always the CLIENT area — the space all stored coordinates live in.
+//
+// Do NOT reintroduce PrintWindow. It was used for the calibration screenshot and returned a solid
+// black frame for this game (measured 2026-09-09 via the "Diagnose capture" button:
+// diag_printwindow.png was a black client-sized image, diag_copyfromscreen.png the real screen).
+// It also rendered from the window FRAME origin while everything else uses the CLIENT origin.
+//
+// Caveat: CopyFromScreen reads what is actually on screen, so the game must be visible — not
+// covered by the launcher or another window — when capturing.
 public static class ScreenCapture
 {
-    private const int PwRenderFullContent = 0x00000002;
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, int nFlags);
-
-    /// <summary>PrintWindow capture of the whole game window (frame-relative). Calibration only.</summary>
-    public static Mat Capture(IntPtr hwnd, WindowRect rect)
-    {
-        using var bmp = new Bitmap(rect.Width, rect.Height, PixelFormat.Format24bppRgb);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            IntPtr hdc = g.GetHdc();
-            try { PrintWindow(hwnd, hdc, PwRenderFullContent); }
-            finally { g.ReleaseHdc(hdc); }
-        }
-        return BitmapConverter.ToMat(bmp);
-    }
-
-    /// <summary>GDI screen capture of an absolute screen region. OCR + composer loop.</summary>
+    /// <summary>GDI screen capture of an absolute screen region (BGR).</summary>
     public static Mat CaptureScreen(WindowRect rect)
     {
         using var bmp = new Bitmap(rect.Width, rect.Height, PixelFormat.Format24bppRgb);
@@ -46,7 +31,7 @@ public static class ScreenCapture
         return BitmapConverter.ToMat(bmp);
     }
 
-    /// <summary>CopyFromScreen of a window-relative region (absolute coords = window origin + region).</summary>
+    /// <summary>CopyFromScreen of a client-relative region (absolute coords = client origin + region).</summary>
     public static Mat CaptureScreenRegion(WindowRect client, RegionConfig region)
         => CaptureScreen(new WindowRect(
             client.Left + region.Left,

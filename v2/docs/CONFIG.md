@@ -65,7 +65,8 @@ Transient runtime state that must not survive a restart.
 | `empty_distance` | `local.yaml` | colour-distance threshold below which the box is "empty" |
 | `empty_signature` | `local.yaml` | the sampled empty-box colour reference |
 
-> Note on capture: the calibrator's **Capture** button uses `PrintWindow`, which grabs the whole game
-> window (title bar included) so you can click points on it. The runtime paths — OCR and the composer
-> loop — use `CopyFromScreen` on a screen region instead. Keep these two separate: switching
-> calibration back to `CopyFromScreen` is what broke the DirectX capture.
+> Note on capture: everything uses `CopyFromScreen` (a screen region) — the calibrator's **Capture**
+> button, OCR and the composer loop. `PrintWindow` was tried for calibration and returns a **black
+> frame** for this game (measured with the "Diagnose capture" button); do not reintroduce it. Because
+> the capture reads the screen, the game must be visible — not covered by the launcher — when you
+> press Capture.

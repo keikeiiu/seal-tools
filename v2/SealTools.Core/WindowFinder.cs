@@ -106,8 +106,8 @@ public static class WindowFinder
 
     // Window FRAME rect in screen coords — includes the title bar and borders. Diagnostic only:
     // the canonical origin everywhere else is the CLIENT area (see GetClientRectInScreen). The
-    // difference between the two is the non-client offset, which is what makes a PrintWindow
-    // capture (frame-origin) differ from a CopyFromScreen capture (client-origin).
+    // difference between the two is the non-client offset, reported by the calibrator's
+    // "Diagnose capture" button.
     public static WindowRect? GetFrameRect(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return null;

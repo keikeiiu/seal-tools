@@ -631,7 +631,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
 
-        // Diagnostics: does the PrintWindow calibration origin match the CopyFromScreen runtime origin?
+        // Diagnostics: report the window rects and save a sample capture.
         var diag = MakeButton("Diagnose capture", ControlAppearance.Secondary);
         diag.Click += (_, _) => DiagnoseCapture();
         var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1809,11 +1809,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         _gemHint!.Text = "Composer moves saved to config\\local.yaml.";
     }
 
-    // Diagnostic: compare the two capture origins. Calibration uses PrintWindow (renders the whole
-    // window from its FRAME origin), while OCR/composer use CopyFromScreen (CLIENT-area origin). If
-    // the window has a title bar the two differ by the non-client offset, and coordinates dragged
-    // out of the calibration image are shifted by that much in the space they are used in.
-    // Reports the rects + offset and saves both captures so they can be compared visually.
+    // Diagnostic: report the window rects and save a sample capture, so "is the game being captured
+    // correctly, and does the launcher cover it?" can be checked without guessing. Also shows the
+    // non-client offset (frame vs client), which is what a whole-window capture would have been
+    // shifted by — the capture path itself is client-origin CopyFromScreen.
     private void DiagnoseCapture()
     {
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
@@ -1837,19 +1836,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var dir = LogPath("captures");
             Directory.CreateDirectory(dir);
-            using (var pw = ScreenCapture.Capture(hwnd, client))
-                pw.ImWrite(Path.Combine(dir, "diag_printwindow.png"));
-            using (var cfs = ScreenCapture.CaptureScreen(client))
-                cfs.ImWrite(Path.Combine(dir, "diag_copyfromscreen.png"));
+            using var shot = ScreenCapture.CaptureScreen(client);
+            shot.ImWrite(Path.Combine(dir, "diag_capture.png"));
 
-            var verdict = border == 0 && title == 0
-                ? "Offset is ZERO — both captures share the client origin, so calibration coords are already correct."
-                : $"Offset is NON-ZERO — the PrintWindow calibration image is shifted by ({border},{title}) vs the runtime origin.";
             _gemHint!.Text =
                 $"frame=({frame.Left},{frame.Top}) {frame.Width}x{frame.Height}   " +
                 $"client=({client.Left},{client.Top}) {client.Width}x{client.Height}   " +
-                $"non-client offset=({border},{title})\n{verdict}\n" +
-                "Saved logs\\captures\\diag_printwindow.png and diag_copyfromscreen.png — compare them.";
+                $"non-client offset=({border},{title})\n" +
+                "Saved logs\\captures\\diag_capture.png — if it shows the launcher or anything other " +
+                "than the game, move the launcher off the game and capture again.";
         }
         catch (Exception ex)
         {
@@ -1865,7 +1860,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         var client = WindowFinder.GetClientRectInScreen(hwnd);
         if (client == null) return null;
 
-        using var mat = ScreenCapture.Capture(hwnd, client);
+        // CopyFromScreen, not PrintWindow: PrintWindow returns a black frame for this game (see
+        // ScreenCapture.cs). The game must be visible when capturing.
+        using var mat = ScreenCapture.CaptureScreen(client);
         return MatToBitmapSource(mat);
     }
 

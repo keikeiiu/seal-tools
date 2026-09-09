@@ -33,7 +33,8 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 ## 2. Calibrate Tuner
 
 1. Open the game's 發條 (tuning) window.
-2. **Capture 發條 window** — a screenshot of the game window appears.
+2. **Capture 發條 window** — a screenshot of the game window appears. (The capture reads the screen, so
+   keep the game visible — don't let the launcher window cover it.)
 3. Drag three boxes in order: the **grade letter**, the **3 attribute lines**, and the **spring
    count**.
 4. **Check OCR** — confirm it reads the right grade and three attribute rows. This also measures the
@@ -46,7 +47,7 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 ## 3. Calibrate Gem
 
 1. Open the gem-combine window.
-2. **Capture gem window**.
+2. **Capture gem window** — keep the game visible (not covered by the launcher).
 3. Click, in order: **N**, **G**, **DG**, **Register**, **Combine**, then the **3 resource slots**,
    then drag a box around the **composed result gem**.
 4. **Save Gem Composer** — writes `gem.grade_positions`, `gem.resource_gems` and
