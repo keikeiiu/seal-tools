@@ -129,7 +129,14 @@ public sealed class OcrEngine : IDisposable
             if (full != null)
             {
                 using (full.Image)
+                {
+                    // Mark where the OCR region sits inside the frame, so a region that doesn't
+                    // cover the tuning window is obvious at a glance.
+                    Cv2.Rectangle(full.Image,
+                        new Rect(region.Left, region.Top, region.Width, region.Height),
+                        new Scalar(0, 0, 255), 4);
                     full.Image.ImWrite(Path.Combine(_captureDir, $"full_{timestamp}.png"));
+                }
             }
         }
 
