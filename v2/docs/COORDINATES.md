@@ -17,6 +17,54 @@ changing anything in `WindowFinder`, `ScreenCapture`, `GemPointer` or the calibr
 | `gem.movements` | raw HID counts — **not** coordinates, never scaled |
 | `gem.empty_signature` | colour composition — **not** coordinates, never scaled |
 
+## Cursor positioning — v1 parity, the validated path
+
+v1 is the working reference. Its entire positioning logic (`gem_composer/gem_composer.py`) is:
+
+```python
+gx, gy = CFG["grade_positions"][grades[gidx]]     # absolute screen coords
+user32.SetCursorPos(gx, gy)                       # position the OS cursor
+ser.write(b'C\n')                                 # Arduino HID click
+d = CFG["movements"]["radio_to_register"][grades[gidx]]
+ser.write('D {} {}\n'.format(*d).encode())         # Arduino relative move (raw HID counts)
+ser.write(b'C\n')
+```
+
+Facts that matter:
+
+- **v1 contains no DPI API at all** — no `SetProcessDPIAware`, no manifest. Python is DPI-unaware
+  by default, so `SetCursorPos` receives *logical* (virtualised) coordinates and Windows maps them
+  to physical. This is the proven-good path.
+- **The Arduino does the clicking.** The OS only positions the cursor; the HID device produces the
+  click and the relative moves. `SendInput`/`SetForegroundWindow` are never used (GameGuard).
+- **v1 stores absolute screen coordinates**; v2 stores them **client-area-relative** so moving the
+  window doesn't invalidate them. That is the only difference — v2 computes
+  `screen = clientOrigin + offset` immediately before the same `SetCursorPos` call.
+
+### The v2 path, step by step
+
+1. `WindowFinder.GetClientRectInScreen(hwnd)` → the client origin (unaware/logical space).
+2. Read the calibrated offset `x, y` for the target (grade radio, Register, Combine, resource slot).
+3. `SetCursorPos(clientLeft + x, clientTop + y)`.
+4. Arduino `C` — or for a relative route, `D dx dy` then `C`.
+
+### What the physical-coordinate change alters
+
+Only step 2/3: the stored offsets become physical, so the call becomes
+`SetCursorPos(logicalLeft + round(x / scale), logicalTop + round(y / scale))` — or
+`SetPhysicalCursorPos(x, y)` directly if that API works from this unaware process (to be verified).
+Steps 1, 3 and 4 are unchanged, and the Arduino side never sees any of this.
+
+### Rules (each one has a recorded failure behind it)
+
+- **Never call `SetCursorPos` / `SetPhysicalCursorPos` while a thread is DPI-aware** — `7f9e1c7`:
+  they return `ok=False` under PerMonitorV2 on a mixed-DPI dual-monitor setup.
+- **Never use `SendInput` or a Win32 focus call** — GameGuard blocks synthetic input; the Arduino
+  HID device is the whole point.
+- **No focus-click** — the single click both focuses the game and presses the button (see README).
+- **Never compute a relative move from a pixel delta** — `D dx dy` are raw HID counts, hand-tuned
+  (see `gemcompose` notes in the review history). Scaling them by DPI would be nonsense.
+
 ## The problem this solves (measured 2026-09-09)
 
 The launcher captured only the top-left **2/3** of the game: the minimap, the skill hotbar and the
