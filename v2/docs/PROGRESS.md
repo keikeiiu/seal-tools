@@ -9,6 +9,43 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-10 (3) — empty-result detection rebuilt on a pixel difference
+
+**Goal.** The composer advanced the grade while the result box plainly held a gem, so `empty_mode:
+advance_grade_clear` ran away. Chased it to the empty check, not the moves.
+
+**What was measured** (62×59 crop, the real empty reference vs a real gem frame)
+
+- The old metric — mean of six absolute colour differences — scored the pair **0.100**, under the
+  0.18 threshold: a box full of gem read as "empty". The one strong signal, the coloured fraction
+  (0.556 → 0.930), was being divided by six.
+- Euclidean norm over the same six: **0.294** (empty vs gem) and **0.001** (empty vs itself).
+- Per-pixel difference vs the saved empty crop: **0.000** for an empty box at every channel
+  threshold 10–60, **0.357** with a gem. The empty slot is static UI and renders pixel-identical.
+- A metric sweep showed *every* pure-colour feature is the wrong family: `dominant hue` is identical
+  (60°) for both, and mean R/G/B invert depending on gem colour. Structure metrics (edges 6×,
+  distinct colours 8×, laplacian variance 10×) all separate and are colour/shape-blind.
+
+**What was decided, and why**
+
+- **Primary test = fraction of pixels differing from the saved empty crop** (>30 on any channel),
+  threshold `gem.empty_distance` lowered 0.18 → **0.01**: ~35× below the gem signal, ~10× above the
+  floor. Colour- and shape-blind, so any gem colour or grade shape reads the same.
+- Euclidean colour signature kept only as a fallback for when the crop is missing.
+- **The empty reference is now taken from the launcher-hidden screenshot**, not a live screen grab:
+  the launcher covering the box at save time is what had poisoned the stored signature (0.17 away
+  from its own reference crop).
+- Diagnosis trap worth remembering: the sampler reads *screen* pixels, so a covering window makes
+  every reading garbage — a check run with the launcher in front returned `RGB(26,26,46)`.
+
+**Commit** — `f4b5f02` (branch `v2-arduino-moves`). 5 new tests, 17/17 pass.
+
+**Left open** — the composer has not yet run a full session in `arduino` mode with the new empty
+check; the next live run should show `diff=0.000` on empty boxes and `diff≈0.36` on gems in
+`<bin>\logs\empty_check.txt`.
+
+---
+
 ## 2026-09-10 (2) — Test Full Cycle (Arduino)
 
 **Goal.** Let the new move set be judged on a real run before the composer is switched to it: one
