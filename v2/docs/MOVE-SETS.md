@@ -84,6 +84,23 @@ Each New-Gem-Composer-Moves test appends one line to `logs/arduino_debug.txt`:
 01:32:15 test-route-arduino Register → Combine from ok=True at (829,725), to ok=True at (785,871) fg="-TW_LIVE"
 ```
 
+### Test Full Cycle (Arduino)
+
+The third test runs a whole cycle with the arduino set, so the new moves can be judged on a real run
+before the composer is switched over to them. It mirrors the composer's own loop body:
+
+| | |
+|---|---|
+| N | select → Register (register) → Combine → Register, Register (deregister + register) → Combine → right-click Resource1/2/3 |
+| G | the same |
+| DG | select → Register → Combine, then stop |
+
+21 HID clicks, all placed closed-loop; the hint line shows `Full cycle 12/21: click "Register"…` as it
+goes and `logs/arduino_debug.txt` gets one line at the end (`test-cycle-arduino done steps=21`) or the
+step it stopped at. Needs GEM COMPOSE open with the resource slots loaded. The two Register clicks in
+a row are not a mistake — they are the composer's deregister + register; without them a second combine
+does nothing.
+
 ## Reverting / coexistence
 
 `gem.movements` is never modified by the `arduino` set — the tuned values stay in `local.yaml` and the

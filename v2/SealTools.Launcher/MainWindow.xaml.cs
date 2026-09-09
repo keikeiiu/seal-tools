@@ -124,6 +124,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private int _gemStep;
     private System.Windows.Controls.ComboBox? _gemTestPoint;
     private System.Windows.Controls.ComboBox? _gemMoveMode;
+    private bool _cycleRunning;
     private System.Windows.Controls.Image? _gemResultPreview;
 
     public MainWindow()
@@ -1238,6 +1239,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 0, 0, 6),
         });
 
+        // One complete cycle, driven entirely by the arduino moves — the fastest way to see whether
+        // the new set survives a real run before switching the composer over to it.
+        var cycleBtn = MakeButton("Test Full Cycle (Arduino)", ControlAppearance.Primary);
+        cycleBtn.Margin = new Thickness(0, 8, 0, 0);
+        cycleBtn.Click += (_, _) => GemTestFullCycle();
+        panel.Children.Add(cycleBtn);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Runs one complete cycle with the arduino moves: N → register → combine, then the composer's " +
+                   "deregister+register and a second combine, clear the three resource slots; the same for G; " +
+                   "DG combines once. Stops after DG's combine.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
+            Margin = new Thickness(0, 4, 0, 6),
+        });
+
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
@@ -1570,6 +1587,117 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             _gemHint!.Text = $"Test move failed: {ex.Message}";
         }
+    }
+
+    // One complete composer cycle driven by the ARDUINO move set (closed-loop placement, no tuned
+    // counts) — the fastest way to validate the new set on a live run before switching the composer
+    // to it. Mirrors the composer's own loop body, so the click order is the one the composer uses:
+    //
+    //   select grade → Register (register) → Combine (combine #1)
+    //     → Register, Register (deregister + register, as the composer's normal path does)
+    //     → Combine (combine #2)
+    //     → right-click Resource1/2/3 to clear the slots
+    //
+    // N and G run that loop twice; DG runs it once and the cycle stops there (no trailing clear).
+    private async void GemTestFullCycle()
+    {
+        if (_cycleRunning)
+        {
+            _gemHint!.Text = "A full-cycle test is already running.";
+            return;
+        }
+
+        // action = which HID click; Point = a calibrated point name (Core/GemRoutes.Resolve knows
+        // the same names). Two Register clicks in a row are deliberate: deregister the produced gem,
+        // then register the next batch — without them a second combine does nothing.
+        var steps = new (string Action, string Point)[]
+        {
+            ("click", "N"), ("click", "Register"), ("click", "Combine"),
+            ("click", "Register"), ("click", "Register"), ("click", "Combine"),
+            ("rclick", "Resource1"), ("rclick", "Resource2"), ("rclick", "Resource3"),
+            ("click", "G"), ("click", "Register"), ("click", "Combine"),
+            ("click", "Register"), ("click", "Register"), ("click", "Combine"),
+            ("rclick", "Resource1"), ("rclick", "Resource2"), ("rclick", "Resource3"),
+            ("click", "DG"), ("click", "Register"), ("click", "Combine"),
+        };
+
+        // Resolve every point BEFORE clicking anything: a cycle that half-runs because one point
+        // wasn't calibrated would leave the game in a confusing state.
+        var targets = new (string Action, string Point, Point At)[steps.Length];
+        for (int i = 0; i < steps.Length; i++)
+        {
+            var pt = ResolveGemPoint(steps[i].Point);
+            if (pt == null)
+            {
+                _gemHint!.Text = $"Full cycle: \"{steps[i].Point}\" isn't calibrated yet — nothing was clicked.";
+                return;
+            }
+            targets[i] = (steps[i].Action, steps[i].Point, pt.Value);
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            return;
+        }
+
+        _cycleRunning = true;
+        try
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var (action, point, at) = targets[i];
+                _gemHint!.Text = $"Full cycle {i + 1}/{targets.Length}: {action} \"{point}\"…";
+
+                var display = GemPointer.Display(_service.Config.Window.Title);
+                if (display == null)
+                {
+                    _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — game window not found (or minimized).";
+                    LogCycle($"stopped at {i + 1}/{targets.Length} {action} {point}: game window gone");
+                    return;
+                }
+
+                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)at.X, (int)at.Y));
+                if (!placed.Ok)
+                {
+                    _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — {placed.Error}.";
+                    LogCycle($"stopped at {i + 1}/{targets.Length} {action} {point}: {placed.Error}");
+                    return;
+                }
+
+                System.Threading.Thread.Sleep(300);
+                if (action == "click") GemPointer.Click(ser);
+                else GemPointer.RightClick(ser);
+                // A combine click gets longer: the game animates the result before the next step.
+                System.Threading.Thread.Sleep(point == "Combine" ? 800 : 500);
+            }
+
+            _gemHint!.Text = $"Full cycle done ({targets.Length} steps): N and G each combined twice " +
+                "(with the composer's deregister+register between them) and had their resource slots cleared, " +
+                "then DG combined once. Did every step land?";
+            LogCycle($"done steps={targets.Length}");
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = $"Full cycle failed: {ex.Message}";
+            LogCycle($"failed: {ex.Message}");
+        }
+        finally
+        {
+            _cycleRunning = false;
+        }
+    }
+
+    // One line per full-cycle run, so a cycle that stopped halfway can be inspected afterwards.
+    private static void LogCycle(string outcome)
+    {
+        try
+        {
+            File.AppendAllText(LogPath("arduino_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} test-cycle-arduino {outcome} fg=\"{WindowFinder.ForegroundTitle()}\"\n");
+        }
+        catch { /* diagnostics must never break the cycle */ }
     }
 
     // One line per New-Gem-Composer-Moves test, mirroring the Test Click line so a route that

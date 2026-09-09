@@ -121,6 +121,7 @@ Points the composer at the gem-combine UI and stores the relative move counts.
 | **Save Composer Moves** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
 | **Composer move mode** | `tuned` (default) = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
 | **New Gem Composer Moves** grid | The same routes, each shown with the **point it goes to**, and a **Test** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
+| **Test Full Cycle (Arduino)** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
 
 ## Arduino tab
 

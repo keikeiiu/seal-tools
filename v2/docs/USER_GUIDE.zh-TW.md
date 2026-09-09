@@ -121,6 +121,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | **Save Composer Moves** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
 | **Composer move mode** | `tuned`（預設）= 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
 | **New Gem Composer Moves** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Test** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
+| **Test Full Cycle (Arduino)** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
 
 ## Arduino 分頁
 
