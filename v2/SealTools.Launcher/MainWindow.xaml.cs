@@ -693,34 +693,65 @@ public partial class MainWindow : FluentWindow, IDisposable
             LoadRows(name);
         };
 
-        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        var status = new TextBlock
+        {
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
         presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
         presetRow.Children.Add(presetBox);
+        presetRow.Children.Add(new TextBlock { Text = " name ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
         presetRow.Children.Add(presetName);
-        var addPreset = MakeButton("+ New Preset", ControlAppearance.Secondary);
+        var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
         addPreset.Click += (_, _) =>
         {
             var name = presetName.Text.Trim();
-            if (name.Length == 0 || presets.ContainsKey(name)) return;
+            if (name.Length == 0) { status.Text = "Type a name first."; return; }
+            if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
             presets[current] = RowsToKeys();
             presets[name] = new Dictionary<string, double>();
             current = name;
             loading = true; RefreshPresetList(name); loading = false;
             LoadRows(name);
             presetName.Text = "";
+            status.Text = $"Added preset '{name}'.";
         };
         presetRow.Children.Add(addPreset);
-        var delPreset = MakeButton("Delete Preset", ControlAppearance.Secondary);
+        var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
+        renamePreset.Click += (_, _) =>
+        {
+            var name = presetName.Text.Trim();
+            if (name.Length == 0) { status.Text = "Type the new name first."; return; }
+            if (name == current) { status.Text = "That is already the name."; return; }
+            if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
+            presets[current] = RowsToKeys();
+            var keys = presets[current];
+            presets.Remove(current);
+            presets[name] = keys;
+            var old = current;
+            current = name;
+            loading = true; RefreshPresetList(name); loading = false;
+            presetName.Text = "";
+            status.Text = $"Renamed '{old}' to '{name}'.";
+        };
+        presetRow.Children.Add(renamePreset);
+        var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
         delPreset.Click += (_, _) =>
         {
-            if (presets.Count <= 1) return;
+            if (presets.Count <= 1) { status.Text = "The last preset cannot be deleted."; return; }
+            var gone = current;
             presets.Remove(current);
             current = presets.Keys.First();
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
+            status.Text = $"Deleted preset '{gone}'.";
         };
         presetRow.Children.Add(delPreset);
         panel.Children.Add(presetRow);
+        panel.Children.Add(status);
 
         panel.Children.Add(rowsPanel);
 
