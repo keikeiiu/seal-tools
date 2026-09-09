@@ -120,6 +120,19 @@ public sealed class OcrEngine : IDisposable
         var capturePath = (_cfg.Tuner.SaveCaptures || forceCapture)
             ? Path.Combine(_captureDir, $"capture_{timestamp}.png") : null;
 
+        // On the final (forced) attempt, also dump the WHOLE client at the same instant, so a
+        // region that looks wrong can be checked against the full frame — e.g. an in-game window
+        // covering the tuning window, or a region placed on the wrong spot.
+        if (forceCapture)
+        {
+            var full = ScreenCapture.CaptureClient(hwnd);
+            if (full != null)
+            {
+                using (full.Image)
+                    full.Image.ImWrite(Path.Combine(_captureDir, $"full_{timestamp}.png"));
+            }
+        }
+
         var ocrResult = _ocr!.RecognizeText(mat, capturePath!);
         var items = ocrResult.WordResults ?? Array.Empty<DetBoxItem>();
 
