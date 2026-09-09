@@ -36,29 +36,56 @@ public sealed class GemComposer : ToolBase
         state.Cycle = 0;
         state.Grade = grades[gidx];
 
+        // Calibrated points/moves only exist once the user has saved them (Save Gem Composer writes
+        // the positions, Save Composer Moves writes the movements). A missing entry used to throw
+        // KeyNotFoundException / ArgumentOutOfRangeException, which stopped the tool with no
+        // explanation on the card. Report it there and stop instead.
+        void Fail(string msg)
+        {
+            Console.WriteLine("[!] " + msg);
+            state.Message = msg;
+            running = false;
+            state.Running = false;
+        }
+
+        bool TryPoint(string what, IReadOnlyDictionary<string, List<int>> map, string key, out int x, out int y)
+        {
+            x = 0; y = 0;
+            if (map.TryGetValue(key, out var p) && p is { Count: >= 2 }) { x = p[0]; y = p[1]; return true; }
+            Fail($"{what} '{key}' isn't calibrated yet — open Calibrate Gem and save it.");
+            return false;
+        }
+
+        bool TryMove(string what, List<int>? d, out int dx, out int dy)
+        {
+            dx = 0; dy = 0;
+            if (d is { Count: >= 2 }) { dx = d[0]; dy = d[1]; return true; }
+            Fail($"{what} isn't saved yet — open Calibrate Gem and press Save Composer Moves.");
+            return false;
+        }
+
         void SelectGradeAndRegister()
         {
             var rect = GemPointer.Client(_cfg.Window.Title);
             if (rect == null)
             {
-                // Console is invisible in the published WinExe — put it on the launcher card too.
-                const string msg = "Game window not found — open the game first.";
-                Console.WriteLine("[!] " + msg);
-                state.Message = msg;
+                Fail("Game window not found — open the game first.");
                 return;
             }
-            var pos = _cfg.Gem.GradePositions[grades[gidx]];
+
+            var mv = _cfg.Gem.Movements;
+            if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
+            if (!TryMove($"Move {grades[gidx]} → Register", mv.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
 
             // v1 sequence: select grade, move to Register, select. No focus handling — the single
             // click on the grade button does both jobs (activates the game window and presses the
             // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
-            GemPointer.To(rect, pos[0], pos[1]);
+            GemPointer.To(rect, gx, gy);
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
-            var d = _cfg.Gem.Movements.RadioToRegister[grades[gidx]];
-            GemPointer.Move(ser, d[0], d[1]);
+            GemPointer.Move(ser, dx, dy);
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -91,37 +118,42 @@ public sealed class GemComposer : ToolBase
         }
 
         // Right-click the three resource slots to clear any stuck resource gems.
-        void ClearResources()
+        bool ClearResources()
         {
             var mv = _cfg.Gem.Movements;
-            GemPointer.Move(ser, mv.RegisterSlot1[0], mv.RegisterSlot1[1]);
+            if (!TryMove("Move Register → Resource1", mv.RegisterSlot1, out var x1, out var y1)) return false;
+            GemPointer.Move(ser, x1, y1);
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            GemPointer.Move(ser, mv.Slot1Slot2[0], mv.Slot1Slot2[1]);
+            if (!TryMove("Move Resource1 → Resource2", mv.Slot1Slot2, out var x2, out var y2)) return false;
+            GemPointer.Move(ser, x2, y2);
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            GemPointer.Move(ser, mv.Slot2Slot3[0], mv.Slot2Slot3[1]);
+            if (!TryMove("Move Resource2 → Resource3", mv.Slot2Slot3, out var x3, out var y3)) return false;
+            GemPointer.Move(ser, x3, y3);
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
+            return true;
         }
 
-        // Resource3 → grade movement for the given grade label.
-        List<int> Slot3ToGrade(string grade) => grade switch
+        // Resource3 → grade movement for the given grade label (null when the grade isn't one of
+        // the three configured gem grades, so the caller reports it instead of moving 0,0).
+        List<int>? Slot3ToGrade(string grade) => grade switch
         {
             "N" => _cfg.Gem.Movements.Slot3ToN,
             "G" => _cfg.Gem.Movements.Slot3ToG,
             "DG" => _cfg.Gem.Movements.Slot3ToDg,
-            _ => new List<int> { 0, 0 },
+            _ => null,
         };
 
         // Advance to the next grade; in "advance_grade_clear" mode, clear the resource slots first.
         void AdvanceGrade()
         {
-            if (_cfg.Gem.EmptyMode == "advance_grade_clear")
-                ClearResources();
+            if (_cfg.Gem.EmptyMode == "advance_grade_clear" && !ClearResources())
+                return;
 
             gidx = (gidx + 1) % grades.Count;
             state.Grade = grades[gidx];
@@ -130,8 +162,8 @@ public sealed class GemComposer : ToolBase
             if (_cfg.Gem.EmptyMode == "advance_grade_clear")
             {
                 // Cursor is at Resource3 → move to the next grade and select it.
-                var slot3 = Slot3ToGrade(grades[gidx]);
-                GemPointer.Move(ser, slot3[0], slot3[1]);
+                if (!TryMove($"Move Resource3 → {grades[gidx]}", Slot3ToGrade(grades[gidx]), out var sx, out var sy)) return;
+                GemPointer.Move(ser, sx, sy);
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
@@ -142,19 +174,20 @@ public sealed class GemComposer : ToolBase
                 var rect = GemPointer.Client(_cfg.Window.Title);
                 if (rect == null)
                 {
-                    state.Message = "Game window not found — open the game first.";
+                    Fail("Game window not found — open the game first.");
                     return;
                 }
-                var pos = _cfg.Gem.GradePositions[grades[gidx]];
-                GemPointer.To(rect, pos[0], pos[1]);
+                if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
+                GemPointer.To(rect, gx, gy);
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
             }
 
             // Next grade → Register (radio_to_register) and select.
-            var d = _cfg.Gem.Movements.RadioToRegister[grades[gidx]];
-            GemPointer.Move(ser, d[0], d[1]);
+            if (!TryMove($"Move {grades[gidx]} → Register",
+                _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
+            GemPointer.Move(ser, dx, dy);
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -227,8 +260,8 @@ public sealed class GemComposer : ToolBase
                 }
 
                 // Combine.
-                var rc = _cfg.Gem.Movements.RegisterCombine;
-                GemPointer.Move(ser, rc[0], rc[1]);
+                if (!TryMove("Move Register → Combine", _cfg.Gem.Movements.RegisterCombine, out var rcx, out var rcy)) break;
+                GemPointer.Move(ser, rcx, rcy);
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.8);
@@ -251,8 +284,8 @@ public sealed class GemComposer : ToolBase
 
                 // Move back to Register (the advance flow must start from the Register button).
                 if (QuitPressed || ct.IsCancellationRequested) break;
-                var cr = _cfg.Gem.Movements.CombineRegister;
-                GemPointer.Move(ser, cr[0], cr[1]);
+                if (!TryMove("Move Combine → Register", _cfg.Gem.Movements.CombineRegister, out var crx, out var cry)) break;
+                GemPointer.Move(ser, crx, cry);
                 SleepCheck(0.2);
 
                 if (advanceNow)
