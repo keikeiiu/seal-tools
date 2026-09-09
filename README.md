@@ -6,12 +6,18 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 > The original Python build lives under [`v1/`](v1/) — its launcher, tools, docs and tests — and is
 > documented in [v1/README.md](v1/README.md). v2 lives entirely under [`v2/`](v2/).
 
-## Download
+## Downloads
 
-**[Download SealTools-v2.1.zip](https://github.com/keikeiiu/seal-tools/releases/latest/download/SealTools-v2.1.zip)** — the self-contained distributable (exe + OCR models + config templates).
+| Version | File | What it is |
+|---|---|---|
+| **v2.1** (latest) | [SealTools-v2.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.1/SealTools-v2.1.zip) | Physical-pixel capture, Setup tab, spammer presets, [user guide](v2/docs/USER_GUIDE.md) |
+| v2.0 | [SealTools-v2.zip](https://github.com/keikeiiu/seal-tools/releases/download/V2.0.0/SealTools-v2.zip) | First C#/.NET release |
 
-> The zip is built from `v2/publish.bat` (~144 MB of binaries), so it's published as a
-> **GitHub Release asset** rather than committed to the repo. To build from source, see [v2/README.md](v2/README.md).
+Self-contained distributables (exe + OCR models + config templates) — unzip and run. All releases:
+[github.com/keikeiiu/seal-tools/releases](https://github.com/keikeiiu/seal-tools/releases).
+
+> The zips are built from `v2/publish.bat` (~144 MB of binaries), so they're published as
+> **GitHub Release assets** rather than committed to the repo. To build from source, see [v2/README.md](v2/README.md).
 
 ## Quick start
 
