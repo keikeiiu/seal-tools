@@ -15,6 +15,7 @@ hotkeys:
   quit: 122
   advance_grade: 71
   pause: 20
+  panic: 20
 tuner:
   grade_order:
   - N
@@ -94,9 +95,9 @@ gem:
   colored_gap_min: 40
   save_empty_captures: false
 spammer:
-  active: default          # which preset the spammer presses
-  presets:                 # named key sets — switch between them in the Spammer tab
-    default:
+  active: knight skillspam
+  presets:
+    knight skillspam:
       '*0': 0.2
       '*1': 0.2
       '*2': 0.2

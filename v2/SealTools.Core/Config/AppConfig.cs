@@ -63,6 +63,10 @@ public sealed class HotkeysConfig
     public int Quit { get; set; }
     public int AdvanceGrade { get; set; }
     public int Pause { get; set; }
+    /// <summary>System-registered panic stop. Unlike the others (polled with GetAsyncKeyState, which
+    /// the game's anti-cheat blocks while it has focus), this is delivered by Windows as WM_HOTKEY
+    /// and therefore works with the game focused. It is captured system-wide while the launcher runs.</summary>
+    public int Panic { get; set; }
 }
 
 public sealed class TunerConfig
