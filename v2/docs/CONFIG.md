@@ -30,7 +30,6 @@ overlay created from `local.yaml.example`).
 - `gem.empty_signature` — the sampled empty-box colour (filled by the calibrator)
 - `gem.empty_distance` — colour-distance threshold tuned against the empty signature
 - `arduino.port` (optional override)
-- `display.dpi_scale` (optional override)
 
 ### 3. In-memory only (never written to disk)
 
@@ -52,9 +51,10 @@ Transient runtime state that must not survive a restart.
 
 - The launcher's **Save** writes the portable sections to `defaults.yaml` (`SaveDefaults`) and the
   machine-specific parts to `local.yaml` (`SaveLocal`).
-- The gem calibrator's **Save Gem Composer** writes positions / movements / result-area /
-  `empty_signature` / `empty_distance` to `local.yaml`, and `empty_mode` / `empty_streak` to
-  `defaults.yaml`.
+- The gem calibrator's **Save Gem Composer** writes positions / resource gems / result-area /
+  `empty_signature` / `empty_distance` to `local.yaml`. **Save Composer Moves** writes
+  `gem.movements` separately, and **Save Coordinates** writes the typed-in positions. `empty_mode` /
+  `empty_streak` live in `defaults.yaml`.
 
 ## The empty-detection fields (gem)
 
@@ -65,5 +65,7 @@ Transient runtime state that must not survive a restart.
 | `empty_distance` | `local.yaml` | colour-distance threshold below which the box is "empty" |
 | `empty_signature` | `local.yaml` | the sampled empty-box colour reference |
 
-> Note: the **capture** (`PrintWindow`) requires running the launcher **as Administrator**; it
-> cannot be avoided because the game is a DirectX title that GDI's `CopyFromScreen` can't read.
+> Note on capture: the calibrator's **Capture** button uses `PrintWindow`, which grabs the whole game
+> window (title bar included) so you can click points on it. The runtime paths — OCR and the composer
+> loop — use `CopyFromScreen` on a screen region instead. Keep these two separate: switching
+> calibration back to `CopyFromScreen` is what broke the DirectX capture.
