@@ -29,10 +29,6 @@ public sealed class GemComposer : ToolBase
         int emptyCount = 0;
         bool f12Was = Hotkeys.IsDown(_cfg.Hotkeys.Start);
         bool f9Was = Hotkeys.IsDown(_cfg.Hotkeys.AdvanceGrade);
-        // The game is ALWAYS unfocused when the composer starts (the launcher window holds
-        // focus). v1 never calls a Win32 focus API — a CLICK is what focuses the game. So we
-        // click the grade position once to bring the game forward, then run the v1 sequence.
-        bool gameFocused = false;
 
         Console.WriteLine("\nGem Composer");
         Console.WriteLine("[F12] start/stop  [F9] advance grade  [F11] quit\n");
@@ -53,19 +49,10 @@ public sealed class GemComposer : ToolBase
             }
             var pos = _cfg.Gem.GradePositions[grades[gidx]];
 
-            // Click-to-focus (shared GemPointer + v1 model): the game is always UNFOCUSED while the
-            // tool runs (the launcher holds focus), so a CLICK brings it forward — no Win32 focus
-            // API, no centre-click (that would pin a raw-input game's in-game cursor at centre).
-            if (!gameFocused)
-            {
-                GemPointer.To(rect, pos[0], pos[1]);
-                SleepCheck(0.3);
-                GemPointer.Click(ser);
-                SleepCheck(0.4);
-                gameFocused = true;
-            }
-
-            // v1 sequence: select grade, move to Register, select.
+            // v1 sequence: select grade, move to Register, select. No focus handling — the single
+            // click on the grade button does both jobs (activates the game window and presses the
+            // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
+            // centre-click (a centre-click pins a raw-input game's cursor at centre).
             GemPointer.To(rect, pos[0], pos[1]);
             SleepCheck(0.3);
             GemPointer.Click(ser);

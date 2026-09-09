@@ -104,21 +104,18 @@ build computed moves as `(point − Register) × scale / 100`; that approach was
 moves drift with pointer speed.) If pointer acceleration is left on, the composer drifts — fix the
 pointer precision, then re-tune the counts. Not a code bug.
 
-### Focus: the game is always unfocused when you use the tool (Gem Composer)
+### Focus: the composer does no focus handling (Gem Composer)
 
-Verified facts (do not "fix" this by adding a Win32 focus call — v1 doesn't, and it's not the bug):
+The composer mirrors v1 exactly — start from the launcher, move to the target, click once:
 
-- **The game is always unfocused while you are using the tool.** The launcher window holds focus
-  (you click its **Start** button), so the game is never the foreground window when the composer acts.
-- **v1 never calls a Win32 focus API** (`SetForegroundWindow` / `BringWindowToTop`). It simply does
-  `SetCursorPos(grade)` + an Arduino `C`, because v1 is started **in-game** (press F12 in the game), so
-  the game is already focused before any click. The launcher-based v2 breaks that assumption.
-- **A click is what focuses the game.** Clicking the game window brings it to the foreground. So the
-  composer brings the game forward with an ordinary click on the grade position before clicking buttons,
-  then runs the normal `SetCursorPos(grade) + C → D → C` sequence. This mirrors v1's click-focus model.
-- **Do NOT center-click to focus** and **do NOT call `SetForegroundWindow`.** A centre-click makes the
-  raw-input game capture its cursor and pin the in-game pointer at centre, so every later click lands on
-  centre instead of the button. Both were tried and are wrong.
+- **One click does both jobs.** Starting a tool from the launcher means the game is not the foreground
+  window, but the first `SetCursorPos(grade)` + Arduino `C` both activates the game window *and* presses
+  the button. There is no separate click-to-focus step, and none is needed.
+- **v1 never calls a Win32 focus API** (`SetForegroundWindow` / `BringWindowToTop`) — it just does
+  `SetCursorPos(grade)` + `C`, then `D dx dy` + `C`. v2 does the same sequence.
+- **Do NOT add a focus-click, do NOT centre-click, do NOT call `SetForegroundWindow`.** A focus-click was
+  tried and removed as redundant; a centre-click makes the raw-input game capture its cursor and pin the
+  in-game pointer at centre, so every later click lands on centre instead of the button.
 
 ---
 

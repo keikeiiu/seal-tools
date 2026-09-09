@@ -9,10 +9,10 @@ namespace SealTools.Core;
 // in the composer too, and the paths can't drift apart. Callers keep their own sleeps in between so
 // the composer's quit-aware SleepCheck (and its tuned delays) is preserved unchanged.
 //
-// Focus model (do not "fix" by adding a Win32 focus API or a centre-click): the game is always
-// UNFOCUSED while the tool is in use (the launcher window holds focus). v1 never calls
-// SetForegroundWindow — a CLICK on the game is what brings it forward, so Click() is the focus
-// mechanism.
+// Focus model (do not "fix" by adding a Win32 focus API, a centre-click, or a dedicated
+// focus-click): when a tool is started from the launcher the game is not the foreground window,
+// but a single click on the target button BOTH activates the game window and presses the button —
+// the same thing v1's SetCursorPos + C does. Click() is the only focus mechanism needed.
 public static class GemPointer
 {
     /// <summary>Game client rect by window-title substring; null if the game isn't open.</summary>
