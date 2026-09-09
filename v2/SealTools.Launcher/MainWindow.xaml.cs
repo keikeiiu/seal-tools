@@ -94,7 +94,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Image? _tunerImage;
     private Canvas? _tunerCanvas;
     private TextBlock? _tunerHint;
-    private Grid? _tunerGrid;
     private BitmapSource? _tunerScreenshot;
     private int _tunerStep;
     private Rect? _tunerGradeBox;
@@ -702,7 +701,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
         grid.Children.Add(image);
         grid.Children.Add(canvas);
-        _tunerGrid = grid;
 
         var capture = MakeButton("Capture 發條 window", ControlAppearance.Primary);
         capture.Click += (_, _) => TunerCapture();
@@ -1379,27 +1377,32 @@ public partial class MainWindow : FluentWindow, IDisposable
         encoder.Save(fs);
     }
 
-    // Persist the calibration tab's current screenshot (+ drawn box/point overlays) as a
-    // reference PNG next to local.yaml, so the layout is visible again on next launch. The
-    // grid is rendered at its on-screen size, so the picture mirrors exactly what's in the tab.
-    private static void SaveCalibrationImage(FrameworkElement? grid, string fileName)
+    // Render the tuner screenshot at NATURAL size with the three calibration bands overlaid, so the
+    // saved reference shows exactly which bands were selected — same approach as the Gem tab.
+    // (The old version rendered the on-screen grid, so the PNG came out at display size.)
+    private void SaveTunerCalibrationImage(string fileName)
     {
-        if (grid == null || grid.ActualWidth < 1 || grid.ActualHeight < 1) return;
-        try
+        var shot = _tunerScreenshot;
+        if (shot == null) return;
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
         {
-            grid.Measure(new Size(grid.ActualWidth, grid.ActualHeight));
-            grid.Arrange(new Rect(0, 0, grid.ActualWidth, grid.ActualHeight));
-            var bmp = new RenderTargetBitmap(
-                (int)Math.Ceiling(grid.ActualWidth), (int)Math.Ceiling(grid.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-            bmp.Render(grid);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bmp));
-            var path = CalibrationImagePath(fileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using var fs = File.Create(path);
-            encoder.Save(fs);
+            dc.DrawImage(shot, new Rect(0, 0, shot.PixelWidth, shot.PixelHeight));
+            if (_tunerGradeBox is { } g)
+                dc.DrawRectangle(null, new Pen(Brushes.LimeGreen, 3), g);
+            if (_tunerAttrBox is { } a)
+                dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 3), a);
+            if (_tunerRemainingBox is { } r)
+                dc.DrawRectangle(null, new Pen(Brushes.Orange, 3), r);
         }
-        catch { /* never break a Save */ }
+        var bmp = new RenderTargetBitmap(shot.PixelWidth, shot.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bmp));
+        var path = CalibrationImagePath(fileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var fs = File.Create(path);
+        encoder.Save(fs);
     }
 
     // Reload a saved calibration reference image into a tab (boxes are shown baked in, NOT
@@ -1631,7 +1634,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // startup geometry (seeded from local.yaml.example) instead of the boxes
         // just calibrated — the cause of the "Check OCR is fine, run drifts" bug.
         _service.Config.Tuner.Ocr = ocr;
-        SaveCalibrationImage(_tunerGrid, "calib_tuner.png");
+        SaveTunerCalibrationImage("calib_tuner.png");
         _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
         MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
