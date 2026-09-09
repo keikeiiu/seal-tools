@@ -12,6 +12,11 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   when the mouse is moved or re-centres the cursor and carries on. Full plan, including the
   ideas this unlocks and the two questions to answer with data first:
   [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+- [ ] **UI cleanup (tabs, buttons, text-box layout).** Make the launcher readable: one tab one job,
+  controls grouped by intent, advanced/diagnostic bits behind a toggle, one shared row builder.
+  **Study first** — the target structure has to be agreed before any code, or the layout churn gets
+  redone. Inventory, problems, principles, five open questions and the tab-by-tab method:
+  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
 
 ## Needs a live check before any code change
 

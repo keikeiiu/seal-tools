@@ -53,6 +53,7 @@ v2/
   docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
   docs/PROGRESS.md       # dated log of what was done and why (append per session)
   docs/PLAN-TUNER-SPRING.md  # planned: tuner spring placement + cursor guard (not built)
+  docs/PLAN-UI-CLEANUP.md    # planned: launcher UI rework — study/decide before coding
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe
