@@ -50,21 +50,48 @@ public sealed class LauncherService : IDisposable
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
     public List<ArduinoDevice> ArduinoDevices() => Arduino.Diagnose(Config.Arduino.Vid, Config.Arduino.Pid);
 
+    /// <summary>Why the last <see cref="ArduinoPortAsync"/> call failed, or null on success.
+    /// Surfaced to the user because the launcher has no console in the published WinExe.</summary>
+    public string? LastArduinoError { get; private set; }
+
     /// <summary>Gets the shared Arduino serial port, opening it once (with a boot delay) if needed.
-    /// Returns null when the Arduino isn't found. Tools and the calibrate test buttons both use this
-    /// single open port, so it is never opened twice (which was causing "COM port denied").</summary>
+    /// Returns null when the Arduino isn't found or can't be opened (see <see cref="LastArduinoError"/>).
+    /// Tools and the calibrate test buttons both use this single open port, so it is never opened twice
+    /// (which was causing "COM port denied").</summary>
     public async Task<SerialPort?> ArduinoPortAsync()
     {
+        LastArduinoError = null;
         if (_arduino is { IsOpen: true }) return _arduino;
         var port = Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid);
-        if (port == null) return null;
-        _arduino = Arduino.Open(port, Config.Arduino.Baud);
+        if (port == null)
+        {
+            LastArduinoError = $"Arduino not found (VID 0x{Config.Arduino.Vid:X4}, " +
+                $"PID {string.Join("/", Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}). " +
+                "Check the Arduino tab.";
+            return null;
+        }
+
+        try
+        {
+            // A stale handle from a previous open is never reused.
+            _arduino?.Dispose();
+            _arduino = Arduino.Open(port, Config.Arduino.Baud);
+        }
+        catch (Exception ex)
+        {
+            _arduino = null;
+            LastArduinoError = $"Could not open {port}: {ex.Message}";
+            return null;
+        }
+
         await Task.Delay(2000); // one-time boot delay after the serial open (non-blocking)
         return _arduino;
     }
 
-    /// <summary>Launches a tool (stopping the current one first) and starts it rolling.</summary>
-    public async Task StartToolAsync(string id)
+    /// <summary>Launches a tool (stopping the current one first) and starts it rolling.
+    /// Returns false when the Arduino can't be opened, so the caller can tell the user
+    /// instead of the click silently doing nothing.</summary>
+    public async Task<bool> StartToolAsync(string id)
     {
         if (id is not ("tuner" or "gem" or "spammer"))
         {
@@ -75,8 +102,7 @@ public sealed class LauncherService : IDisposable
         var ser = await ArduinoPortAsync();
         if (ser == null)
         {
-            Console.WriteLine("[!] Arduino not found");
-            return;
+            return false;
         }
         _currentId = id;
         _cts = new CancellationTokenSource();
@@ -97,6 +123,7 @@ public sealed class LauncherService : IDisposable
                 state.Running = false;
             }
         });
+        return true;
     }
 
     /// <summary>Stops the current tool and releases the Arduino COM port.</summary>

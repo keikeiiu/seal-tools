@@ -45,7 +45,10 @@ public sealed class GemComposer : ToolBase
             var rect = GemPointer.Client(_cfg.Window.Title);
             if (rect == null)
             {
-                Console.WriteLine("[!] game window not found");
+                // Console is invisible in the published WinExe — put it on the launcher card too.
+                const string msg = "Game window not found — open the game first.";
+                Console.WriteLine("[!] " + msg);
+                state.Message = msg;
                 return;
             }
             var pos = _cfg.Gem.GradePositions[grades[gidx]];
@@ -150,7 +153,11 @@ public sealed class GemComposer : ToolBase
             {
                 // Cursor is at Register → re-select the grade absolutely.
                 var rect = GemPointer.Client(_cfg.Window.Title);
-                if (rect == null) return;
+                if (rect == null)
+                {
+                    state.Message = "Game window not found — open the game first.";
+                    return;
+                }
                 var pos = _cfg.Gem.GradePositions[grades[gidx]];
                 GemPointer.To(rect, pos[0], pos[1]);
                 SleepCheck(0.3);

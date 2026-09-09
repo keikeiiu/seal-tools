@@ -172,7 +172,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             _statusBlocks[id] = statusText;
 
             var startButton = MakeButton("Start", ControlAppearance.Primary);
-            startButton.Click += async (_, _) => await _service.StartToolAsync(id);
+            startButton.Click += async (_, _) =>
+            {
+                if (!await _service.StartToolAsync(id))
+                {
+                    // Without this the click just does nothing: the tools' "Arduino not found"
+                    // message goes to a console the published WinExe doesn't have.
+                    MessageBox.Show(
+                        _service.LastArduinoError ?? "Arduino not found.",
+                        "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            };
 
             var stopButton = MakeButton("Stop", ControlAppearance.Danger);
             stopButton.Click += (_, _) => _service.StopTool();
@@ -243,6 +253,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!string.IsNullOrEmpty(state.Current)) lines.Add($"Current: {state.Current}");
         if (state.Attributes.Count > 0) lines.AddRange(state.Attributes.Select(a => "· " + a));
         if (!string.IsNullOrEmpty(state.FilterStatus)) lines.Add($"Filter: {state.FilterStatus}");
+        if (!string.IsNullOrEmpty(state.Message)) lines.Add("⚠ " + state.Message);
         return string.Join(Environment.NewLine, lines);
     }
 
