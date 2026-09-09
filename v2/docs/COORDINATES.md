@@ -60,7 +60,9 @@ scale = physical client width ÷ logical client width
       = 1.5
 ```
 
-Cross-checks: `GetDpiForWindow(aware) / 96 = 144/96 = 1.5`; `3840 / 2560 = 1.5`.
+Cross-check: `3840 / 2560 = 1.5`. Note that `GetDpiForWindow` is **not** usable here — it reports
+the *window's* awareness (96 for this DPI-unaware game window, even on an aware thread), not the
+monitor's scale. The effective DPI shown in the UI is derived as `96 × scale`.
 
 - **Widths, not heights** — `1193 × 1.5 = 1789.5` truncates to 1789 (0.03% error); the width ratio
   is exact.
