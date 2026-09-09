@@ -1,5 +1,12 @@
 # Seal Tools v2 (C# / .NET WPF)
 
+**Version 2.2** (2026-09-10) — the cursor is positioned by the **Arduino** in a closed loop instead
+of `SetCursorPos` (which this process is intermittently refused — see
+[docs/CURSOR-INVESTIGATION.md](docs/CURSOR-INVESTIGATION.md)), the Gem Composer moves between
+calibrated points instead of hand-tuned counts by default ([docs/MOVE-SETS.md](docs/MOVE-SETS.md)),
+empty-result detection compares **pixels** against the saved empty crop instead of a colour average,
+and a composer run is N → G → DG **once** and ends.
+
 **Version 2.1** (2026-09-09) — the first release verified end to end on a live game: physical-pixel
 coordinates with the measured display environment stored alongside the calibration, a **Setup** tab,
 spammer **presets**, and both the Magic Tuner and the Gem Composer confirmed working. See
@@ -21,7 +28,7 @@ Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 | Tool | What it does |
 |------|--------------|
 | **Magic Tuner** | Rolls the 發條 (magic tuning) UI — Arduino click+Enter, OCR reads the grade (N/G/DG/XG/SG) + 3 attribute lines, matches them against a config dictionary, applies filter rules, stops at the target grade. |
-| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) using calibrated absolute points + relative Arduino "D" moves. |
+| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points, moving between them with the Arduino (closed loop by default, hand-tuned counts available via `gem.move_mode`). Combines each grade until the result box reads empty, then advances; ends after the last grade. |
 | **Skill Spammer** | Presses configured keys, each on its own cooldown. |
 
 Only one tool runs at a time (they share the single Arduino COM port).

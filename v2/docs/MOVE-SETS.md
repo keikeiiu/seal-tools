@@ -4,7 +4,7 @@ The composer has to move the mouse cursor between a handful of fixed game button
 radios, **Register**, **Combine**, the three resource slots). There are two ways it can do that, and
 they are both live: **nothing was replaced.** Which one runs is `gem.move_mode`.
 
-| | `tuned` (default) | `arduino` |
+| | `tuned` | `arduino` (default since 2.2) |
 |---|---|---|
 | What is sent | one `D dx dy` per route, using the hand-tuned counts in `gem.movements` | `D dx dy` corrections in a loop until the cursor sits on the route's destination **point** |
 | Where the numbers come from | tuned by hand on this PC (Calibrate Gem → "Composer moves") | none — it reuses the points you already calibrated |
@@ -14,8 +14,8 @@ they are both live: **nothing was replaced.** Which one runs is `gem.move_mode`.
 | Defined by | `gem.movements` in `config/local.yaml` | `GemRoutes.All` + `gem.grade_positions` / `gem.resource_gems` |
 
 **Choosing one.** Calibrate Gem → **New Gem Composer Moves** → *Composer move mode*, then **Save Gem
-Composer** (the choice is written to `config/defaults.yaml` as `gem.move_mode`). `tuned` is the
-default, so an untouched install behaves exactly as before.
+Composer** (the choice is written to `config/defaults.yaml` as `gem.move_mode`). `arduino` has been
+the default since 2.2, so the tuned set is the opt-in one now.
 
 ## How the `arduino` move works
 
@@ -105,7 +105,7 @@ does nothing.
 
 `gem.movements` is never modified by the `arduino` set — the tuned values stay in `local.yaml` and the
 tuned editor stays on screen. Switch the mode back to `tuned` (or delete the `move_mode` line, which
-defaults to `tuned`) and the old path runs unchanged.
+defaults to `arduino`) and the old path runs unchanged.
 
 ## Rules for anyone touching this later
 
