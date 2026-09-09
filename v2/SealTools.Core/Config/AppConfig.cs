@@ -169,6 +169,12 @@ public sealed class GemConfig
     [MinLength(1, ErrorMessage = "gem.grade_positions must not be empty")]
     public Dictionary<string, List<int>> GradePositions { get; set; } = new();
     public MovementsConfig Movements { get; set; } = new();
+    /// <summary>Which move set the composer uses between calibrated points (see
+    /// <see cref="SealTools.Core.GemRoutes"/>): "tuned" sends the hand-tuned gem.movements counts,
+    /// "arduino" places the cursor on the destination point with the Arduino (closed loop, no
+    /// tuning). Default "tuned" — the arduino set is opt-in.</summary>
+    [AllowedValues("tuned", "arduino", ErrorMessage = "gem.move_mode must be tuned|arduino")]
+    public string MoveMode { get; set; } = "tuned";
     /// <summary>Composed-result gem area as [x, y, width, height] (client-relative). Used for
     /// OCR (read the result) and as a derived centre click point.</summary>
     public List<int>? ResultGemArea { get; set; }
