@@ -9,6 +9,23 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-10 (4) — a run ends after the last grade
+
+**Symptom.** The first live `arduino`-mode run worked — combines until empty, N → G → DG, empty check
+correct throughout — but after DG's material ran out it went back to N and started over.
+
+**Why.** `AdvanceGrade` advanced with `gidx = (gidx + 1) % grades.Count`, an intentional endless
+loop from v1. A run is meant to be N → G → DG once.
+
+**Fix.** `AdvanceGrade` returns false when there is no next grade; the composer reports "All grades
+done (last was DG) — composer stopped." on the card and breaks out of the loop. The manual F9
+advance still wraps. Commit `6a28ecf`.
+
+**Evidence from the run** (`<bin>\logs\empty_check.txt`) — the new empty check behaved exactly as
+designed: gem frames `diff=0.44–0.54`, empty frames `diff=0.000`, gate `0.01`.
+
+---
+
 ## 2026-09-10 (3) — empty-result detection rebuilt on a pixel difference
 
 **Goal.** The composer advanced the grade while the result box plainly held a gem, so `empty_mode:
