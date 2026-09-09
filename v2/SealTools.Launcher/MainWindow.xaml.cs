@@ -1351,14 +1351,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var foregroundBefore = WindowFinder.ForegroundTitle();
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
-            GemPointer.To(target);
+            bool moved = WindowFinder.SetLogicalCursorPosition(target);
             System.Threading.Thread.Sleep(300);
             var placed = WindowFinder.LogicalCursorPosition();
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(200);
 
             var client = display.PhysicalClient;
-            _gemHint!.Text = $"Test click \"{name}\": offset ({pt.Value.X},{pt.Value.Y}) → SetCursorPos({target.LogicalX},{target.LogicalY}), " +
+            _gemHint!.Text = $"Test click \"{name}\": SetCursorPos({target.LogicalX},{target.LogicalY}) accepted={moved}, " +
                 $"cursor now ({placed.X},{placed.Y}), clicked via {ser.PortName} (open={ser.IsOpen}).";
             DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
                 foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
@@ -1367,7 +1367,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 File.AppendAllText(LogPath("arduino_debug.txt"),
                     $"{DateTime.Now:HH:mm:ss} test-click name={name} port={ser.PortName} open={ser.IsOpen} baud={ser.BaudRate} " +
-                    $"target=({target.LogicalX},{target.LogicalY}) cursorAfter=({placed.X},{placed.Y}) fg=\"{foregroundBefore}\"\n");
+                    $"target=({target.LogicalX},{target.LogicalY}) accepted={moved} cursorAfter=({placed.X},{placed.Y}) fg=\"{foregroundBefore}\"\n");
             }
             catch { /* diagnostics must never break the click */ }
         }
