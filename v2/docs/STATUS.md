@@ -1,5 +1,8 @@
 # Seal Tools v2 — Fix Execution Status (branch `v2-saving-attempt`)
 
+> **v2.1 (2026-09-09).** The state described here is tagged `v2.1`: capture, cursor, tuner OCR and
+> the composer verified on a live game, plus spammer presets and the Setup tab.
+
 Current state of the fix work. Every row is **one commit**. Build is clean (`0 warnings / 0 errors`)
 and all tests pass at every step. Nothing is pushed; the branch is ahead of `origin/v2-saving-attempt`.
 

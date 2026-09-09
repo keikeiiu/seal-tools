@@ -1,5 +1,11 @@
 # Seal Tools v2 (C# / .NET WPF)
 
+**Version 2.1** (2026-09-09) — the first release verified end to end on a live game: physical-pixel
+coordinates with the measured display environment stored alongside the calibration, a **Setup** tab,
+spammer **presets**, and both the Magic Tuner and the Gem Composer confirmed working. See
+[docs/STATUS.md](docs/STATUS.md) for the change list and [docs/COORDINATES.md](docs/COORDINATES.md)
+for the coordinate model.
+
 A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Python build with a
 **native Windows desktop app** (WPF + WPF-UI) that ships as a **single self-contained `.exe`**.
 
