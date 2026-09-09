@@ -125,6 +125,21 @@ public static class WindowFinder
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.
     public static uint GetDpi(IntPtr hWnd) => GetDpiForWindow(hWnd);
 
+    /// <summary>Position the cursor with the PHYSICAL API (absolute physical screen coords, which
+    /// ignore DPI virtualisation). Returns whether the call was accepted.</summary>
+    public static bool SetPhysicalCursorPosition(int physicalScreenX, int physicalScreenY)
+        => SetPhysicalCursorPos(physicalScreenX, physicalScreenY);
+
+    /// <summary>Position the cursor with the virtualised (logical) API — v1's call — converting a
+    /// client-relative PHYSICAL offset by the measured scale. Returns whether it was accepted.</summary>
+    public static bool SetLogicalCursorPosition(DisplayInfo display, int physicalX, int physicalY)
+        => SetCursorPos(
+            display.LogicalClient.Left + (int)Math.Round(physicalX / display.Scale),
+            display.LogicalClient.Top + (int)Math.Round(physicalY / display.Scale));
+
+    /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
+    public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);
+
     /// <summary>Move the cursor to a client-relative PHYSICAL point of a measured window.
     ///
     /// Prefers SetPhysicalCursorPos, which ignores DPI virtualisation, so the physical offset is
@@ -134,13 +149,10 @@ public static class WindowFinder
     public static string MoveCursorPhysical(DisplayInfo display, int physicalX, int physicalY)
     {
         var physical = display.PhysicalClient;
-        if (SetPhysicalCursorPos(physical.Left + physicalX, physical.Top + physicalY))
+        if (SetPhysicalCursorPosition(physical.Left + physicalX, physical.Top + physicalY))
             return "physical";
 
-        var logical = display.LogicalClient;
-        int lx = logical.Left + (int)Math.Round(physicalX / display.Scale);
-        int ly = logical.Top + (int)Math.Round(physicalY / display.Scale);
-        SetCursorPos(lx, ly);
+        SetLogicalCursorPosition(display, physicalX, physicalY);
         return "logical";
     }
 

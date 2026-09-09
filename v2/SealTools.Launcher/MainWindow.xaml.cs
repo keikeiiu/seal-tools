@@ -794,22 +794,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         resultRow.Children.Add(checkColBtn);
         resultRow.Children.Add(testGemBtn);
 
-        var debugCursorBtn = MakeButton("Debug Cursor", ControlAppearance.Secondary);
+        // The two cursor APIs, tested separately on the SELECTED point with the real computed
+        // coordinates, so their behaviour can be compared directly.
+        var debugCursorBtn = MakeButton("Debug Cursor (logical)", ControlAppearance.Secondary);
         debugCursorBtn.Margin = new Thickness(6, 0, 6, 0);
-        debugCursorBtn.Click += (_, _) =>
-        {
-            // v1 N absolute screen coord (logical) — test SetCursorPos against the known-good value.
-            WindowFinder.DebugCursor(727, 696);
-        };
+        debugCursorBtn.Click += (_, _) => DebugCursorPath(testBox, physical: false);
         resultRow.Children.Add(debugCursorBtn);
 
         var debugPhysicalBtn = MakeButton("Debug Physical", ControlAppearance.Secondary);
         debugPhysicalBtn.Margin = new Thickness(6, 0, 6, 0);
-        debugPhysicalBtn.Click += (_, _) =>
-        {
-            // Physical N absolute screen coord — test SetPhysicalCursorPos.
-            WindowFinder.DebugPhysicalCursor(1096, 1044);
-        };
+        debugPhysicalBtn.Click += (_, _) => DebugCursorPath(testBox, physical: true);
         resultRow.Children.Add(debugPhysicalBtn);
 
         // Result-gem box crop preview: once the result box is dragged, show the exact region
@@ -1952,6 +1946,42 @@ public partial class MainWindow : FluentWindow, IDisposable
         _service.SaveLocal(local);
 
         _gemHint!.Text = "Composer moves saved to config\\local.yaml.";
+    }
+
+    // Diagnostic: move the cursor to the SELECTED point using one specific API, so the two paths can
+    // be compared directly on the same target.
+    //   physical = SetPhysicalCursorPos(physical client origin + offset)          — no conversion
+    //   logical  = SetCursorPos(logical client origin + offset / scale)           — v1's call
+    // Reports the computed coordinates, whether the API accepted them, and where the cursor ended up.
+    private void DebugCursorPath(ComboBox? box, bool physical)
+    {
+        if (box?.SelectedItem is not string name) { _gemHint!.Text = "Pick a point first."; return; }
+        var pt = ResolveGemPoint(name);
+        if (pt == null) { _gemHint!.Text = $"\"{name}\" isn't calibrated yet."; return; }
+
+        var display = GemPointer.Display(_service.Config.Window.Title);
+        if (display == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
+
+        int x = (int)pt.Value.X, y = (int)pt.Value.Y;
+        string target;
+        bool ok;
+        if (physical)
+        {
+            int sx = display.PhysicalClient.Left + x, sy = display.PhysicalClient.Top + y;
+            target = $"SetPhysicalCursorPos({sx},{sy})";
+            ok = WindowFinder.SetPhysicalCursorPosition(sx, sy);
+        }
+        else
+        {
+            int sx = display.LogicalClient.Left + (int)Math.Round(x / display.Scale);
+            int sy = display.LogicalClient.Top + (int)Math.Round(y / display.Scale);
+            target = $"SetCursorPos({sx},{sy})";
+            ok = WindowFinder.SetLogicalCursorPosition(display, x, y);
+        }
+
+        var after = WindowFinder.LogicalCursorPosition();
+        _gemHint!.Text = $"Debug {name} [{(physical ? "physical" : "logical")}] offset {x},{y} " +
+            $"(scale {display.Scale:0.###}) → {target} ok={ok}; cursor now ({after.X},{after.Y}).";
     }
 
     // Diagnostic: report the window rects and save a sample capture, so "is the game being captured
