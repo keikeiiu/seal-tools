@@ -48,8 +48,8 @@ public sealed class SkillSpammer : ToolBase
             state.Current = null;
         }
 
-        state.Running = false;
-
+        // Do NOT touch state.Running here: LauncherService starts the tool with Running = true and
+        // this loop picks that up to begin. Clearing it would leave the tool paused on Start.
         try
         {
             while (true)
