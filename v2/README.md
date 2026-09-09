@@ -83,10 +83,16 @@ different game screens:
    the 3 resource slots, and **drag a box** around the composed result gem → **Save Gem Composer**.
    Composer moves (raw `dx`/`dy`) are saved separately with **Save Composer Moves**.
 
-Coordinates are **client-area-relative** (game window client top-left = origin), and the process runs
-**DPI-unaware** (logical pixels). Relative `D dx dy` moves are **raw hand-tuned HID counts** — not
-computed from pixel deltas and not scaled (see prerequisite below). Full step-by-step detail, including
-the verification buttons, is in `docs/CALIBRATION.md`.
+Coordinates are **client-area-relative physical pixels** (game window client top-left = origin). The
+process runs **DPI-unaware**, so captures and measurements switch one thread to per-monitor-aware
+briefly to get real physical pixels — see `docs/COORDINATES.md` for the full model and the measured
+evidence. Relative `D dx dy` moves are **raw hand-tuned HID counts** — not computed from pixel deltas
+and never scaled (see prerequisite below). Full step-by-step detail, including the verification
+buttons, is in `docs/CALIBRATION.md`.
+
+The **Setup** tab shows the detected environment (monitor size/scale, game window rects) and stores
+the scale and reference client size a calibration was measured against; **Detect** fills it in and the
+values stay editable.
 
 ### Prerequisite: fixed Windows mouse precision (Gem Composer)
 
@@ -197,10 +203,12 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
 - Gem composer moves are raw hand-tuned `dx`/`dy` per route (saved by **Save Composer Moves**); verify them
   with the **Test Move** button after turning pointer acceleration off.
 - Calibration and OCR still need a real end-to-end pass on a live game.
-- Capture uses `CopyFromScreen` everywhere (calibration, OCR, composer), so the capture origin is always
-  the client area — the space coordinates are stored in. `PrintWindow` was measured to return a **black
-  frame** for this game; do not reintroduce it. Because the capture reads the screen, the game must be
-  visible (not covered by the launcher) when you press Capture.
+- Capture uses `CopyFromScreen` in **physical pixels** everywhere (calibration, OCR, composer), on a
+  thread briefly switched to per-monitor-aware. `PrintWindow` was measured to return a **black frame**
+  for this game; do not reintroduce it. The launcher hides itself for the grab, so you no longer have
+  to move windows — but keep the game unobstructed by anything else.
+- Coordinates in an existing `local.yaml` written before this change are **logical**, not physical —
+  recalibrate once (see `docs/COORDINATES.md`). Hand-tuned `gem.movements` are HID counts and survive.
 - OCR row-bucket pooling: a fixed `row_height` grid can merge two attribute rows — needs real unconfirmed
   frames as evidence before changing (see `docs/REVIEW.md`).
 - Check-in remains the standalone Python script (`checkin/checkin.py`) — out of scope for v2.

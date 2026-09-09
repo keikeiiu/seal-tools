@@ -14,10 +14,12 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 - **Client-area-relative.** The origin is the game window's client-area top-left
   (`GetClientRect` + `ClientToScreen`), *excluding* the title bar and border. Not window-relative,
   not screen-absolute.
-- **Logical pixels.** The process runs **DPI-unaware** (`app.manifest` → `dpiAwareness=unaware`),
-  so all stored values are logical pixels — the v1 convention. Do **not** re-enable PerMonitorV2:
-  it makes Windows read the same numbers as physical pixels and every click lands in the wrong place.
-- **Absolute clicks:** `SetCursorPos(client.Left + x, client.Top + y)` then an Arduino `C` (HID click).
+- **Physical pixels.** Values are real screen pixels. The process stays **DPI-unaware** (PerMonitorV2
+  makes `SetCursorPos` fail — see `docs/COORDINATES.md`); captures and measurements briefly switch one
+  thread to per-monitor-aware to get true physical coordinates, and the cursor is positioned with
+  `SetPhysicalCursorPos` (falling back to a scale-divided `SetCursorPos`).
+- **Absolute clicks:** position the cursor at the calibrated client-relative physical point, then an
+  Arduino `C` (HID click).
 - **Relative moves:** raw Arduino HID counts, sent as `D dx dy`. They are **hand-tuned values, not
   computed from pixel distances** — see the pointer-precision prerequisite below.
 
@@ -29,6 +31,12 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 
 > The seeded values are v1 window-relative measurements. They are a starting point only and **will
 > be off** until you recalibrate — expect to do both tabs once per machine.
+
+> A `local.yaml` written before the physical-pixel change holds **logical** coordinates, which are
+> wrong in the new space — recalibrate. Hand-tuned `gem.movements` (HID counts) are unaffected.
+
+The **Setup** tab shows the detected monitor scale and game client size and stores them with the
+calibration, so a different machine can tell whether it must recalibrate. See `docs/COORDINATES.md`.
 
 ## 2. Calibrate Tuner
 

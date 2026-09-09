@@ -21,11 +21,19 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   **Diagnose capture** button reports the frame/client rects and saves a sample capture if you need to
   re-check.
 
+## Recalibrate (required after the physical-coordinate change)
+
+- [ ] **Setup tab → Detect** — confirm the monitor scale (1.5 here) and client size; **Save Setup**.
+- [ ] **Calibrate Tuner → Capture** — the image must now show the whole game (minimap + hotbar).
+  Drag the three boxes → **Check OCR** (a real grade + 3 attribute rows) → **Save Tuner**.
+- [ ] **Calibrate Gem → Capture** — click N/G/DG/Register/Combine + the 3 resource slots, drag the
+  result box → **Save Gem Composer** (with the result box empty when asked).
+- [ ] **Save Composer Moves** — `gem.movements` survived the change, but verify one route with
+  **Test Move** (pointer acceleration off).
+- [ ] One full tuner run and one composer cycle.
+
 ## Verify on a live game (no code change expected)
 
-- [ ] End-to-end pass: **Calibrate Tuner → Check OCR**, then one full tuner run.
-- [ ] **Calibrate Gem → Save Gem Composer**, then **Save Composer Moves**, then **Test Move** per route
-  (with "Enhance pointer precision" off), then one composer cycle.
 - [ ] Tuner `remaining_y` band (spring count) may need a manual nudge per machine — it is derived
   proportionally.
 

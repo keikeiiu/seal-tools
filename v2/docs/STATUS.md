@@ -9,7 +9,25 @@ calibration steps, see [CALIBRATION.md](CALIBRATION.md).
 
 ---
 
-## Pass 2 — review fixes (latest)
+## Pass 3 — physical coordinate space (latest)
+
+Fixing the capture crop led to reworking the coordinate model. Design and measured evidence:
+[docs/COORDINATES.md](COORDINATES.md).
+
+| # | Commit | Change |
+|---|--------|--------|
+| 1 | `a9d296c` | Decision record: the measurements, why the process stays DPI-unaware, the scale formula, what must never be scaled |
+| 2 | `6912805` | `Dpi.Measure` — thread-scoped per-monitor-aware peek; verified live (scale 1.5, physical 2865×1789 vs logical 1910×1193) |
+| 3 | `f7e0742` | Document the cursor positioning path against v1's working code |
+| 4 | `03e4035` | Capture in physical pixels (`CaptureClient` / `CaptureClientRegion` on the aware thread) |
+| 5 | `ad88273` | `calibration:` block in `local.yaml` (dpi_scale, monitor_dpi, screen, client_size, measured_at) + round-trip test |
+| 6 | `87f34c6` | **Setup** tab: Detect / editable scale + client size / Save / client-size mismatch warning |
+| 7 | `61d6624` | Cursor positioned from physical client-relative coordinates (`SetPhysicalCursorPos`, scale-divided fallback) |
+
+**Required after this pass:** recalibrate once (Tuner + Gem). Coordinates written before it are
+logical and wrong in the physical space; `gem.movements` (HID counts) are unaffected.
+
+## Pass 2 — review fixes
 
 | # | Commit | Fix |
 |---|--------|-----|
@@ -64,7 +82,10 @@ only intact copy of the calibration.
 
 - **Capture method — settled by measurement (2026-09-09).** `PrintWindow` returns a solid black frame
   for this game; `CopyFromScreen` returns the real screen (`logs/captures/diag_printwindow.png` vs
-  `diag_copyfromscreen.png`). All capture now uses `CopyFromScreen`. Do not reintroduce `PrintWindow`.
+  `diag_copyfromscreen.png`). All capture now uses `CopyFromScreen` in physical pixels. Do not
+  reintroduce `PrintWindow`.
+- **Recalibration is pending** after the physical-coordinate change (Pass 3) — see
+  [TODO.md](TODO.md).
 - **OCR row-bucket pooling.** A fixed `row_height` grid can pool two attribute rows. **Evidence first**
   — `ocr_log.jsonl` already records each raw item with its bucket key; do not change the bucketing blind.
 - **Machine-specific Debug Cursor / Debug Physical buttons** in the Gem calibrate tab — diagnostic value
