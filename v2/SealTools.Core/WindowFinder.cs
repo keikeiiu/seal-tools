@@ -33,6 +33,9 @@ public static class WindowFinder
     private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 
     [DllImport("user32.dll")]
@@ -99,6 +102,17 @@ public static class WindowFinder
         var origin = new POINT { X = 0, Y = 0 };
         if (!ClientToScreen(hWnd, ref origin)) return null;
         return new WindowRect(origin.X, origin.Y, cr.Right - cr.Left, cr.Bottom - cr.Top);
+    }
+
+    // Window FRAME rect in screen coords — includes the title bar and borders. Diagnostic only:
+    // the canonical origin everywhere else is the CLIENT area (see GetClientRectInScreen). The
+    // difference between the two is the non-client offset, which is what makes a PrintWindow
+    // capture (frame-origin) differ from a CopyFromScreen capture (client-origin).
+    public static WindowRect? GetFrameRect(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return null;
+        if (!GetWindowRect(hWnd, out RECT r)) return null;
+        return new WindowRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
     }
 
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.

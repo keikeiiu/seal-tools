@@ -631,6 +631,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
 
+        // Diagnostics: does the PrintWindow calibration origin match the CopyFromScreen runtime origin?
+        var diag = MakeButton("Diagnose capture", ControlAppearance.Secondary);
+        diag.Click += (_, _) => DiagnoseCapture();
+        var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
+        captureRow.Children.Add(capture);
+        captureRow.Children.Add(diag);
+
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
 
@@ -701,7 +708,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var panel = new StackPanel { Margin = new Thickness(8) };
         panel.Children.Add(hint);
-        panel.Children.Add(capture);
+        panel.Children.Add(captureRow);
         panel.Children.Add(grid);
         panel.Children.Add(save);
 
@@ -1794,6 +1801,54 @@ public partial class MainWindow : FluentWindow, IDisposable
         _service.SaveLocal(local);
 
         _gemHint!.Text = "Composer moves saved to config\\local.yaml.";
+    }
+
+    // Diagnostic: compare the two capture origins. Calibration uses PrintWindow (renders the whole
+    // window from its FRAME origin), while OCR/composer use CopyFromScreen (CLIENT-area origin). If
+    // the window has a title bar the two differ by the non-client offset, and coordinates dragged
+    // out of the calibration image are shifted by that much in the space they are used in.
+    // Reports the rects + offset and saves both captures so they can be compared visually.
+    private void DiagnoseCapture()
+    {
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        if (hwnd == IntPtr.Zero)
+        {
+            _gemHint!.Text = "Game window not found — open the game first.";
+            return;
+        }
+
+        var client = WindowFinder.GetClientRectInScreen(hwnd);
+        var frame = WindowFinder.GetFrameRect(hwnd);
+        if (client == null || frame == null)
+        {
+            _gemHint!.Text = "Could not read the window rects.";
+            return;
+        }
+
+        int border = client.Left - frame.Left;
+        int title = client.Top - frame.Top;
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+            Directory.CreateDirectory(dir);
+            using (var pw = ScreenCapture.Capture(hwnd, client))
+                pw.ImWrite(Path.Combine(dir, "diag_printwindow.png"));
+            using (var cfs = ScreenCapture.CaptureScreen(client))
+                cfs.ImWrite(Path.Combine(dir, "diag_copyfromscreen.png"));
+
+            var verdict = border == 0 && title == 0
+                ? "Offset is ZERO — both captures share the client origin, so calibration coords are already correct."
+                : $"Offset is NON-ZERO — the PrintWindow calibration image is shifted by ({border},{title}) vs the runtime origin.";
+            _gemHint!.Text =
+                $"frame=({frame.Left},{frame.Top}) {frame.Width}x{frame.Height}   " +
+                $"client=({client.Left},{client.Top}) {client.Width}x{client.Height}   " +
+                $"non-client offset=({border},{title})\n{verdict}\n" +
+                "Saved logs\\captures\\diag_printwindow.png and diag_copyfromscreen.png — compare them.";
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = "Capture diagnostic failed: " + ex.Message;
+        }
     }
 
     // ── Shared calibrator helpers ───────────────────────────────────────────

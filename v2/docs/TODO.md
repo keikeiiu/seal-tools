@@ -11,9 +11,11 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   window frame, includes the title bar); OCR and the composer capture with `CopyFromScreen` (origin =
   client area). If the game window has a title bar, the calibration image is offset from the coordinate
   space those coordinates are used in.
-  - Cheapest evidence: open **Calibrate Tuner → Capture** and look at the screenshot. If the title bar
-    is visible at the top of the image, the two origins differ; if the image starts at the game content,
-    they coincide and there is nothing to fix.
+  - **Run the diagnostic:** with the game open, **Calibrate Gem → Diagnose capture**. It reports the
+    frame and client rects plus the non-client offset, and saves both captures
+    (`logs/captures/diag_printwindow.png` / `diag_copyfromscreen.png`) to compare.
+  - Offset `(0,0)` → the origins coincide, nothing to fix. Non-zero → the saved calibration is shifted
+    by that amount and needs recalibrating, or a one-time shift of the stored coordinates.
   - Do **not** switch the calibration path to `CopyFromScreen` blind — it was chosen for a reason, and
     the runtime path already works.
 - [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed
