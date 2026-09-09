@@ -42,7 +42,9 @@ v2/
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/USER_GUIDE.md     # every tab and button explained
-  docs/CURSOR-INVESTIGATION.md  # open bug: SetCursorPos refused in our process
+  docs/CURSOR-INVESTIGATION.md  # why the cursor is placed with the Arduino, not SetCursorPos
+  docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
+  docs/PROGRESS.md       # dated log of what was done and why (append per session)
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe
@@ -122,11 +124,11 @@ pointer precision, then re-tune the counts. Not a code bug.
 ### Focus: how the game gets focused (Gem Composer)
 
 The composer does **no focus handling at all** — it mirrors v1's sequence exactly:
-`SetCursorPos(grade)` + `C` → `D dx dy` + `C`. Focus is a side effect of that, and the lifecycle is:
+`place cursor on grade` + `C` → `D dx dy` + `C`. Focus is a side effect of that, and the lifecycle is:
 
 - **At start the game is unfocused.** You press **Start** in the launcher, so the launcher window is the
   foreground window when the composer begins.
-- **The first click focuses it.** That `SetCursorPos(grade)` + `C` does both jobs at once: it activates
+- **The first click focuses it.** That `place cursor on grade` + `C` does both jobs at once: it activates
   the game window *and* presses the grade button. No separate click-to-focus is needed.
 - **It stays focused for the rest of the run**, because nothing else is clicked while the tool works.
 - **Any later click re-focuses it.** If you click back to the launcher mid-run (e.g. to press **Stop**),

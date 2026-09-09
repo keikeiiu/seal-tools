@@ -59,13 +59,6 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetThreadDpiAwarenessContext();
-
-    /// <summary>Diagnostic: the calling thread's DPI awareness context. UNAWARE is -1; anything
-    /// else means the thread is DPI-aware, where SetCursorPos fails on this machine (7f9e1c7).</summary>
-    public static IntPtr ThreadDpiAwarenessContext() => GetThreadDpiAwarenessContext();
-
     /// <summary>True when the window is minimized. A minimized window reports its rect off-screen
     /// (e.g. -48000,-48000 with size 0x0), so any coordinate derived from it is garbage.</summary>
     public static bool IsMinimized(IntPtr hwnd) => hwnd != IntPtr.Zero && IsIconic(hwnd);
@@ -154,7 +147,7 @@ public static class WindowFinder
 
     /// <summary>Position the cursor with the PHYSICAL API (ignores DPI virtualisation) at a
     /// precomputed target. Returns whether the call was accepted. Debug/diagnostic use only — the
-    /// tools use SetLogicalCursorPosition (see docs/COORDINATES.md).</summary>
+    /// tools position the cursor with the Arduino (GemPointer.To, docs/CURSOR-INVESTIGATION.md).</summary>
     public static bool SetPhysicalCursorPosition(CursorTarget target)
         => SetPhysicalCursorPos(target.PhysicalX, target.PhysicalY);
 
@@ -163,31 +156,13 @@ public static class WindowFinder
     public static bool SetLogicalCursorPosition(CursorTarget target)
         => SetCursorPos(target.LogicalX, target.LogicalY);
 
-    /// <summary>Same as <see cref="SetLogicalCursorPosition"/> but reports the Win32 error when
-    /// the call is refused (0 on success). Diagnostic — a refusal is otherwise silent.</summary>
-    public static bool SetLogicalCursorPosition(CursorTarget target, out int error)
-    {
-        bool ok = SetCursorPos(target.LogicalX, target.LogicalY);
-        error = ok ? 0 : Marshal.GetLastWin32Error();
-        return ok;
-    }
+    /// <summary>Where the cursor is now, in the process's (logical) space, or null when the position
+    /// can't be read. Nullable on purpose: a NEGATIVE coordinate is legitimate on a monitor left of
+    /// the primary one, so it must never double as the failure signal.</summary>
+    public static (int X, int Y)? LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : null;
 
-    [DllImport("user32.dll")]
-    private static extern bool GetClipCursor(out RECT lpRect);
-
-    /// <summary>The rect the cursor is currently clipped to. The whole desktop means unclipped;
-    /// a clip that excludes the target would make SetCursorPos ineffective. Diagnostic.</summary>
-    public static WindowRect? CursorClip()
-    {
-        if (!GetClipCursor(out RECT r)) return null;
-        return new WindowRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
-    }
-
-    /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
-    public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);
-
-    // Note: SetPhysicalCursorPosition exists for the calibrator's debug button only. The tools move
-    // the cursor with SetLogicalCursorPosition — see GemPointer.To and docs/COORDINATES.md.
+    // Note: the Set*CursorPosition helpers exist for the calibrator's debug buttons only. The tools
+    // position the cursor with the Arduino — see GemPointer.To and docs/CURSOR-INVESTIGATION.md.
 
     /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
     public static void DebugCursor(int x, int y)

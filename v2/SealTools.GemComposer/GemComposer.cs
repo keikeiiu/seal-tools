@@ -64,6 +64,52 @@ public sealed class GemComposer : ToolBase
             return false;
         }
 
+        // Place the cursor on a calibrated POINT with the Arduino (closed loop) — the "arduino"
+        // move set. The same call the calibrator's Test Click makes, so a move that lands in a test
+        // lands here. Returns false (and stops the tool with a reason on the card) if the point
+        // isn't calibrated or the cursor can't be placed.
+        bool PlaceAt(string what, string pointName)
+        {
+            if (GemRoutes.Resolve(_cfg, pointName) is not { } p)
+            {
+                Fail($"{what}: '{pointName}' isn't calibrated yet — open Calibrate Gem and save it.");
+                return false;
+            }
+            var display = GemPointer.Display(_cfg.Window.Title);
+            if (display == null)
+            {
+                Fail("Game window not found (or minimized) — open and restore the game first.");
+                return false;
+            }
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, p.X, p.Y));
+            if (!placed.Ok)
+            {
+                Fail($"{what}: couldn't move the cursor to {pointName} — {placed.Error}.");
+                return false;
+            }
+            return true;
+        }
+
+        // One composer route move, honouring gem.move_mode: "tuned" sends the hand-tuned counts in
+        // gem.movements, "arduino" places the cursor on the route's destination point instead (and
+        // `tuned` is ignored). Both are one call so a route reads the same either way.
+        bool Route(string what, string routeKey, List<int>? tuned)
+        {
+            if (_cfg.Gem.MoveMode == "arduino")
+            {
+                if (GemRoutes.Destination(routeKey) is not { } destination)
+                {
+                    Fail($"{what}: unknown route '{routeKey}'.");
+                    return false;
+                }
+                return PlaceAt(what, destination);
+            }
+
+            if (!TryMove(what, tuned, out var dx, out var dy)) return false;
+            GemPointer.Move(ser, dx, dy);
+            return true;
+        }
+
         void SelectGradeAndRegister()
         {
             var display = GemPointer.Display(_cfg.Window.Title);
@@ -75,17 +121,25 @@ public sealed class GemComposer : ToolBase
 
             var mv = _cfg.Gem.Movements;
             if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-            if (!TryMove($"Move {grades[gidx]} → Register", mv.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
 
             // v1 sequence: select grade, move to Register, select. No focus handling — the single
             // click on the grade button does both jobs (activates the game window and presses the
             // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
-            GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
+            //
+            // A cursor that can't be placed must NOT be clicked through: the click would land
+            // wherever the pointer happens to be (docs/CURSOR-INVESTIGATION.md).
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+            if (!placed.Ok)
+            {
+                Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
+                return;
+            }
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
-            GemPointer.Move(ser, dx, dy);
+            if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
+                    mv.RadioToRegister.GetValueOrDefault(grades[gidx]))) return;
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -121,18 +175,15 @@ public sealed class GemComposer : ToolBase
         bool ClearResources()
         {
             var mv = _cfg.Gem.Movements;
-            if (!TryMove("Move Register → Resource1", mv.RegisterSlot1, out var x1, out var y1)) return false;
-            GemPointer.Move(ser, x1, y1);
+            if (!Route("Move Register → Resource1", "register_slot1", mv.RegisterSlot1)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            if (!TryMove("Move Resource1 → Resource2", mv.Slot1Slot2, out var x2, out var y2)) return false;
-            GemPointer.Move(ser, x2, y2);
+            if (!Route("Move Resource1 → Resource2", "slot1_slot2", mv.Slot1Slot2)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            if (!TryMove("Move Resource2 → Resource3", mv.Slot2Slot3, out var x3, out var y3)) return false;
-            GemPointer.Move(ser, x3, y3);
+            if (!Route("Move Resource2 → Resource3", "slot2_slot3", mv.Slot2Slot3)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
@@ -149,6 +200,15 @@ public sealed class GemComposer : ToolBase
             _ => null,
         };
 
+        // The route key for that same movement, so the arduino set can resolve its destination.
+        static string? Slot3RouteKey(string grade) => grade switch
+        {
+            "N" => "slot3_n",
+            "G" => "slot3_g",
+            "DG" => "slot3_dg",
+            _ => null,
+        };
+
         // Advance to the next grade; in "advance_grade_clear" mode, clear the resource slots first.
         void AdvanceGrade()
         {
@@ -162,8 +222,12 @@ public sealed class GemComposer : ToolBase
             if (_cfg.Gem.EmptyMode == "advance_grade_clear")
             {
                 // Cursor is at Resource3 → move to the next grade and select it.
-                if (!TryMove($"Move Resource3 → {grades[gidx]}", Slot3ToGrade(grades[gidx]), out var sx, out var sy)) return;
-                GemPointer.Move(ser, sx, sy);
+                if (Slot3RouteKey(grades[gidx]) is not { } slotKey)
+                {
+                    Fail($"No route Resource3 → {grades[gidx]}.");
+                    return;
+                }
+                if (!Route($"Move Resource3 → {grades[gidx]}", slotKey, Slot3ToGrade(grades[gidx]))) return;
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
@@ -178,16 +242,20 @@ public sealed class GemComposer : ToolBase
                     return;
                 }
                 if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-                GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
+                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+                if (!placed.Ok)
+                {
+                    Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
+                    return;
+                }
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
             }
 
             // Next grade → Register (radio_to_register) and select.
-            if (!TryMove($"Move {grades[gidx]} → Register",
-                _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
-            GemPointer.Move(ser, dx, dy);
+            if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
+                    _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]))) return;
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -260,8 +328,7 @@ public sealed class GemComposer : ToolBase
                 }
 
                 // Combine.
-                if (!TryMove("Move Register → Combine", _cfg.Gem.Movements.RegisterCombine, out var rcx, out var rcy)) break;
-                GemPointer.Move(ser, rcx, rcy);
+                if (!Route("Move Register → Combine", "register_combine", _cfg.Gem.Movements.RegisterCombine)) break;
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.8);
@@ -284,8 +351,7 @@ public sealed class GemComposer : ToolBase
 
                 // Move back to Register (the advance flow must start from the Register button).
                 if (QuitPressed || ct.IsCancellationRequested) break;
-                if (!TryMove("Move Combine → Register", _cfg.Gem.Movements.CombineRegister, out var crx, out var cry)) break;
-                GemPointer.Move(ser, crx, cry);
+                if (!Route("Move Combine → Register", "combine_register", _cfg.Gem.Movements.CombineRegister)) break;
                 SleepCheck(0.2);
 
                 if (advanceNow)

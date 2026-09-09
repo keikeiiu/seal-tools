@@ -12,14 +12,27 @@ changing anything in `WindowFinder`, `ScreenCapture`, `GemPointer` or the calibr
 | Canonical coordinate space | **physical pixels, client-area-relative** |
 | Process DPI awareness | **unaware** (unchanged — see "Why we stay unaware") |
 | How physical values are obtained | a **thread-scoped** awareness switch, used only for measurement and capture |
-| Cursor moves | `SetCursorPos(logicalOrigin + physical / scale)` — v1's call. **Not** `SetPhysicalCursorPos` |
+| Cursor moves | the **Arduino** — `D dx dy` in a closed loop against `GetCursorPos` (see below). `SetCursorPos` is refused in this process |
 | The scale | **measured at runtime**, never hardcoded |
 | `gem.movements` | raw HID counts — **not** coordinates, never scaled |
 | `gem.empty_signature` | colour composition — **not** coordinates, never scaled |
 
-## Cursor positioning — v1 parity, the validated path
+## Cursor positioning — the Arduino, not `SetCursorPos`
 
-v1 is the working reference. Its entire positioning logic (`v1/gem_composer/gem_composer.py`) is:
+> **Changed 2026-09-10.** v1 positioned the cursor with `SetCursorPos`; v2 now does it with the
+> Arduino. `SetCursorPos` and `SetPhysicalCursorPos` return `false` from the launcher's process —
+> intermittently, while the identical call succeeds from another process under the same user, session
+> and integrity level — and the refused move is silently ignored. Full evidence, including the
+> refutation of the "anti-cheat reacts to the Arduino" theory, is in `CURSOR-INVESTIGATION.md`.
+
+`GemPointer.To(ser, target)` reads `GetCursorPos`, computes the remaining error, sends it as `D dx dy`
+(clamped to 600 px per move), and repeats until within 2 px, polling until the cursor stops moving
+between moves. Measured gain is 1:1, so a normal placement is one move. It returns a result the
+callers must check: a cursor that can't be placed stops the tool and reports it, rather than clicking
+somewhere arbitrary.
+
+v1 remains the reference for the *sequence*. Its entire positioning logic
+(`v1/gem_composer/gem_composer.py`) was:
 
 ```python
 gx, gy = CFG["grade_positions"][grades[gidx]]     # absolute screen coords
@@ -33,33 +46,32 @@ ser.write(b'C\n')
 Facts that matter:
 
 - **v1 contains no DPI API at all** — no `SetProcessDPIAware`, no manifest. Python is DPI-unaware
-  by default, so `SetCursorPos` receives *logical* (virtualised) coordinates and Windows maps them
-  to physical. This is the proven-good path.
-- **The Arduino does the clicking.** The OS only positions the cursor; the HID device produces the
-  click and the relative moves. `SendInput`/`SetForegroundWindow` are never used (GameGuard).
+  by default, so its `SetCursorPos` received *logical* (virtualised) coordinates and Windows mapped
+  them to physical.
+- **The Arduino does the clicking.** The OS only positioned the cursor; the HID device produces the
+  click and the relative moves. `SendInput`/`SetForegroundWindow` are never used (GameGuard). The
+  HID device now produces the positioning move too.
 - **v1 stores absolute screen coordinates**; v2 stores them **client-area-relative** so moving the
-  window doesn't invalidate them. That is the only difference — v2 computes
-  `screen = clientOrigin + offset` immediately before the same `SetCursorPos` call.
+  window doesn't invalidate them. v2 computes `screen = clientOrigin + offset` immediately before
+  placing the cursor.
 
 ### The v2 path, step by step
 
 1. `WindowFinder.GetClientRectInScreen(hwnd)` → the client origin (unaware/logical space).
 2. Read the calibrated offset `x, y` for the target (grade radio, Register, Combine, resource slot).
-3. `SetCursorPos(clientLeft + x, clientTop + y)`.
+3. `GemPointer.To` drives the cursor to `(clientLeft + x/scale, clientTop + y/scale)` — the target is
+   computed in the process's virtualised space, then reached with `D` moves in a closed loop.
 4. Arduino `C` — or for a relative route, `D dx dy` then `C`.
 
 ### What the physical-coordinate change alters
 
-Only step 2/3: the stored offsets become physical, so the call becomes
-`SetCursorPos(logicalLeft + round(x / scale), logicalTop + round(y / scale))` — the same call v1
-makes, with the offset converted. Steps 1, 3 and 4 are unchanged, and the Arduino side never sees
-any of this.
+Only step 2/3: the stored offsets become physical, so the target becomes
+`(logicalLeft + round(x / scale), logicalTop + round(y / scale))`. Steps 1, 3 and 4 are unchanged,
+and the Arduino side never sees any of this.
 
-**`SetPhysicalCursorPos` is deliberately not used.** Measured on the reference machine
-(2026-09-09, "Debug Cursor (logical)" vs "Debug Physical" buttons on the same calibrated point):
-the physical API accepts the call but the cursor does not land where it claims, while the logical
-call lands correctly. The buttons remain in the calibrator to re-check this if the environment
-changes.
+**`SetPhysicalCursorPos` is deliberately not used** — it is refused along with `SetCursorPos`
+(`CURSOR-INVESTIGATION.md`, probes 13 and 17). Both remain behind the calibrator's **Debug Cursor
+(logical)** and **Debug Physical** buttons for manual comparison.
 
 ### Rules (each one has a recorded failure behind it)
 
@@ -68,8 +80,10 @@ changes.
 - **Never use `SendInput` or a Win32 focus call** — GameGuard blocks synthetic input; the Arduino
   HID device is the whole point.
 - **No focus-click** — the single click both focuses the game and presses the button (see README).
-- **Never compute a relative move from a pixel delta** — `D dx dy` are raw HID counts, hand-tuned
-  (see `gemcompose` notes in the review history). Scaling them by DPI would be nonsense.
+- **Never compute a *tuned* composer move from a pixel delta** — `gem.movements.*` are raw HID counts,
+  hand-tuned (see `gemcompose` notes in the review history). Scaling them by DPI would be nonsense.
+  The `arduino` move set is the explicit alternative: it does not re-interpret those counts, it
+  places the cursor on the calibrated point instead (see `MOVE-SETS.md`).
 
 ## The problem this solves (measured 2026-09-09)
 

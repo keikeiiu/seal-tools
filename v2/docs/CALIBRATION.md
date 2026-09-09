@@ -16,8 +16,8 @@ Everything else (the `.exe`, models, behavior flags) is portable.
   not screen-absolute.
 - **Physical pixels.** Values are real screen pixels. The process stays **DPI-unaware** (PerMonitorV2
   makes `SetCursorPos` fail — see `docs/COORDINATES.md`); captures and measurements briefly switch one
-  thread to per-monitor-aware to get true physical coordinates, and the cursor is positioned with
-  `SetPhysicalCursorPos` (falling back to a scale-divided `SetCursorPos`).
+  thread to per-monitor-aware to get true physical coordinates, and the cursor is positioned by the
+  **Arduino** (a closed `D dx dy` loop against `GetCursorPos` — see `docs/CURSOR-INVESTIGATION.md`).
 - **Absolute clicks:** position the cursor at the calibrated client-relative physical point, then an
   Arduino `C` (HID click).
 - **Relative moves:** raw Arduino HID counts, sent as `D dx dy`. They are **hand-tuned values, not
