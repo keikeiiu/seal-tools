@@ -25,7 +25,7 @@ if errorlevel 1 (
 
 set PUB=SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish
 
-echo [2/3] Copying models + config + panel...
+echo [2/3] Copying models + config...
 if not exist models (
   echo [!] models\ folder missing. Copy the PP-OCRv4 .onnx files there first:
   echo     ch_PP-OCRv4_det_infer.onnx
@@ -36,7 +36,6 @@ if not exist models (
   xcopy models %PUB%\models\ /E /I /Y >nul
 )
 xcopy config %PUB%\config\ /E /I /Y >nul
-copy launcher.html %PUB%\ >nul
 
 echo [3/3] Done.
 echo.
@@ -44,8 +43,8 @@ echo Distributable: %PUB%
 echo.
 echo To run on the target PC (no Python/.NET needed):
 echo   1. Copy the whole publish folder.
-echo   2. First run: copy config\local.yaml.example  ->  config\local.yaml
-echo   3. SealTools.Launcher.exe --autoanchor   (scales coords to the window size)
-echo   4. SealTools.Launcher.exe                (launcher panel on http://127.0.0.1:5003)
-echo      Use the in-browser "Calibrate" tool to fine-tune, or --diagnose to verify.
+echo   2. Run SealTools.Launcher.exe. config\local.yaml is created automatically
+echo      from config\local.yaml.example on first run.
+echo   3. Calibrate once per machine in the launcher's "Calibrate Tuner" and
+echo      "Calibrate Gem" tabs (see docs\CALIBRATION.md), then start a tool.
 pause
