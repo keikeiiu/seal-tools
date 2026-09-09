@@ -1574,7 +1574,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var lines = new List<string> { $"Grade: {result.Grade ?? "?"}" };
+        var lines = new List<string>
+        {
+            $"Grade: {result.Grade ?? "?"}",
+            $"Remaining: {(result.Remaining.HasValue ? result.Remaining.Value.ToString(CultureInfo.InvariantCulture) : "?")}",
+        };
         for (var i = 0; i < result.Attributes.Count; i++)
         {
             lines.Add($"Attr {i + 1}: {string.Join(" ", result.Attributes[i])}");
