@@ -42,6 +42,7 @@ v2/
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/USER_GUIDE.md     # every tab and button explained
+  docs/CURSOR-INVESTIGATION.md  # open bug: SetCursorPos refused in our process
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe
