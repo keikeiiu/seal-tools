@@ -9,6 +9,8 @@ namespace SealTools.Core.Config;
 public sealed class AppConfig
 {
     public WindowConfig Window { get; set; } = new();
+    /// <summary>Environment the machine-specific calibration was measured in (local.yaml only).</summary>
+    public CalibrationInfo Calibration { get; set; } = new();
     public ReferenceWindowConfig ReferenceWindow { get; set; } = new();
     public ArduinoConfig Arduino { get; set; } = new();
     public HotkeysConfig Hotkeys { get; set; } = new();
@@ -27,6 +29,23 @@ public sealed class ReferenceWindowConfig
 {
     public int Width { get; set; }
     public int Height { get; set; }
+}
+
+/// <summary>The display environment a calibration was measured in — written by the calibrators,
+/// read by the Setup tab. All sizes are PHYSICAL pixels. Storing the scale makes the coordinates
+/// portable: another machine can tell it must convert or recalibrate (see docs/COORDINATES.md).</summary>
+public sealed class CalibrationInfo
+{
+    /// <summary>Physical px per logical px at calibration time (e.g. 1.5).</summary>
+    public double? DpiScale { get; set; }
+    /// <summary>Effective monitor DPI at calibration time (96 * dpi_scale, e.g. 144).</summary>
+    public uint? MonitorDpi { get; set; }
+    /// <summary>Primary screen size in physical pixels [width, height].</summary>
+    public List<int>? Screen { get; set; }
+    /// <summary>Game client size in physical pixels [width, height].</summary>
+    public List<int>? ClientSize { get; set; }
+    /// <summary>When the calibration was saved (informational).</summary>
+    public string? MeasuredAt { get; set; }
 }
 
 public sealed class ArduinoConfig

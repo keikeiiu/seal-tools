@@ -6,7 +6,9 @@ namespace SealTools.Core;
 // The same window as it appears in the two coordinate spaces that matter here.
 public sealed record DisplayInfo(
     double Scale,             // physical px per logical px, measured (e.g. 1.5)
-    uint MonitorDpi,          // GetDpiForWindow on the aware thread (e.g. 144)
+    uint MonitorDpi,          // effective DPI, derived as 96 * scale (e.g. 144)
+    int ScreenWidth,          // primary screen width in physical pixels
+    int ScreenHeight,         // primary screen height in physical pixels
     WindowRect PhysicalFrame,
     WindowRect PhysicalClient,
     WindowRect LogicalClient);
@@ -73,8 +75,10 @@ public static class Dpi
             // GetDpiForWindow reports the WINDOW's awareness (96 for a DPI-unaware game), not the
             // monitor's scale, so derive the effective DPI from the measured ratio instead.
             uint dpi = (uint)Math.Round(96 * scale);
+            var screen = WindowFinder.PrimaryScreenSize();
 
-            return new DisplayInfo(scale, dpi, physicalFrame, physicalClient, logicalClient);
+            return new DisplayInfo(scale, dpi, screen.Width, screen.Height,
+                physicalFrame, physicalClient, logicalClient);
         });
     }
 }

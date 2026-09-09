@@ -158,6 +158,37 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void SaveLocalPersistsTheCalibrationEnvironmentBlock()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal()!;
+            local.Calibration = new CalibrationInfo
+            {
+                DpiScale = 1.5,
+                MonitorDpi = 144,
+                Screen = new System.Collections.Generic.List<int> { 3840, 2160 },
+                ClientSize = new System.Collections.Generic.List<int> { 2865, 1789 },
+                MeasuredAt = "2026-09-09 21:00:00",
+            };
+            loader.SaveLocal(local);
+
+            var reloaded = new ConfigLoader(dir).Load();
+            Assert.Equal(1.5, reloaded.Calibration.DpiScale);
+            Assert.Equal(144u, reloaded.Calibration.MonitorDpi);
+            Assert.Equal(new System.Collections.Generic.List<int> { 3840, 2160 }, reloaded.Calibration.Screen);
+            Assert.Equal(new System.Collections.Generic.List<int> { 2865, 1789 }, reloaded.Calibration.ClientSize);
+            Assert.Equal("2026-09-09 21:00:00", reloaded.Calibration.MeasuredAt);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadMissingLocalYamlThrowsConfigException()
     {
         var dir = MakeTempConfigDir(includeLocal: false);

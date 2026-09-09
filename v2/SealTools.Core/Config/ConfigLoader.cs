@@ -93,6 +93,7 @@ public sealed class ConfigLoader
 
     private static void ApplyOverrides(AppConfig defaults, LocalOverrides local)
     {
+        if (local.Calibration != null) defaults.Calibration = local.Calibration;
         if (local.Tuner?.Ocr != null) defaults.Tuner.Ocr = local.Tuner.Ocr;
         if (local.Gem?.GradePositions is { Count: > 0 }) defaults.Gem.GradePositions = local.Gem.GradePositions;
         if (local.Gem?.Movements != null) defaults.Gem.Movements = local.Gem.Movements;
@@ -149,6 +150,7 @@ public sealed class ConfigLoader
     // Machine-specific overlay shape (mirrors local.yaml).
     public sealed class LocalOverrides
     {
+        public CalibrationInfo? Calibration { get; set; }
         public LocalTuner? Tuner { get; set; }
         public LocalGem? Gem { get; set; }
         public LocalArduino? Arduino { get; set; }

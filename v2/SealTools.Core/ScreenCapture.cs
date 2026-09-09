@@ -51,7 +51,9 @@ public static class ScreenCapture
             var frame = WindowFinder.GetFrameRect(hwnd) ?? client;
 
             double scale = logicalClient.Width > 0 ? client.Width / (double)logicalClient.Width : 1.0;
-            var info = new DisplayInfo(scale, (uint)Math.Round(96 * scale), frame, client, logicalClient);
+            var screen = WindowFinder.PrimaryScreenSize();
+            var info = new DisplayInfo(scale, (uint)Math.Round(96 * scale), screen.Width, screen.Height,
+                frame, client, logicalClient);
             return new GameCapture(CaptureScreen(client), info);
         });
     }
@@ -72,7 +74,9 @@ public static class ScreenCapture
             var frame = WindowFinder.GetFrameRect(hwnd) ?? client;
 
             double scale = logicalClient.Width > 0 ? client.Width / (double)logicalClient.Width : 1.0;
-            var info = new DisplayInfo(scale, (uint)Math.Round(96 * scale), frame, client, logicalClient);
+            var screen = WindowFinder.PrimaryScreenSize();
+            var info = new DisplayInfo(scale, (uint)Math.Round(96 * scale), screen.Width, screen.Height,
+                frame, client, logicalClient);
 
             var rect = new WindowRect(
                 client.Left + region.Left,

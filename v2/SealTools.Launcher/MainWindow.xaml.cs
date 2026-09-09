@@ -1313,6 +1313,16 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static string CalibrationImagePath(string fileName)
         => Path.Combine(FindRootDir(), "config", fileName);
 
+    // Environment block recorded with a calibration (physical pixels). See docs/COORDINATES.md.
+    private static CalibrationInfo ToCalibration(DisplayInfo d) => new()
+    {
+        DpiScale = Math.Round(d.Scale, 4),
+        MonitorDpi = d.MonitorDpi,
+        Screen = new List<int> { d.ScreenWidth, d.ScreenHeight },
+        ClientSize = new List<int> { d.PhysicalClient.Width, d.PhysicalClient.Height },
+        MeasuredAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+    };
+
     // Runtime logs live under the app root (next to config/), matching the tools' FileLogger paths.
     // They must NOT go under AppContext.BaseDirectory: in a dev run that is the build output folder,
     // so the files land somewhere different from logs/ and are easy to lose.
@@ -1476,6 +1486,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
+        if (_tunerDisplay is { } d)
+        {
+            local.Calibration = ToCalibration(d);
+            _service.Config.Calibration = local.Calibration;
+        }
         _service.SaveLocal(local);
         // Refresh the in-memory config too, or the next tuner run still uses the
         // startup geometry (seeded from local.yaml.example) instead of the boxes
@@ -1712,6 +1727,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         gem.EmptySignature = emptySig;
         gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
         local.Gem = gem;
+        if (_gemDisplay is { } d)
+        {
+            local.Calibration = ToCalibration(d);
+            _service.Config.Calibration = local.Calibration;
+        }
         _service.SaveLocal(local);
         // Refresh in-memory config so the next gem run uses the just-calibrated
         // click points rather than the startup (example-seeded) ones.

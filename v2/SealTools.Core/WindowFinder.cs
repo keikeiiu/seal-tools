@@ -53,6 +53,13 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    /// <summary>Primary screen size as this thread sees it — PHYSICAL on a DPI-aware thread,
+    /// virtualised (logical) on the unaware default. Only meaningful inside Dpi.WithAwareContext.</summary>
+    public static (int Width, int Height) PrimaryScreenSize() => (GetSystemMetrics(0), GetSystemMetrics(1));
+
     // Title of the current foreground window ("" if none). Diagnostic aid for focus issues.
     public static string ForegroundTitle()
     {
