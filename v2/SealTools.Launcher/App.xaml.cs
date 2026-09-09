@@ -7,7 +7,9 @@ using Wpf.Ui.Controls;
 
 namespace SealTools.Launcher;
 
-/// <summary>Application entry point. Enables DPI awareness, applies the WPF-UI dark theme, and logs unhandled exceptions.</summary>
+/// <summary>Application entry point. Applies the WPF-UI dark theme and logs unhandled exceptions.
+/// (DPI awareness is deliberately NOT enabled — app.manifest declares the process DPI-unaware so
+/// the calibrated coordinates stay logical pixels, matching v1.)</summary>
 public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
