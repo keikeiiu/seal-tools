@@ -614,29 +614,123 @@ public partial class MainWindow : FluentWindow, IDisposable
         return new TabItem { Header = "Gem", Content = panel };
     }
 
+    // One key + cooldown row in the spammer editor.
+    private sealed class SpamKeyRow
+    {
+        public TextBox Key { get; } = new();
+        public TextBox Delay { get; } = new();
+    }
+
     private TabItem BuildSpammerTab()
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        var keys = new TextBox
+        panel.Children.Add(new TextBlock
         {
-            Text = SerializeKeys(_service.Config.Spammer.Keys),
+            Text = "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
+                   "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
+                   "on the tool card).",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var rows = new List<SpamKeyRow>();
+        var rowsPanel = new StackPanel();
+        panel.Children.Add(rowsPanel);
+
+        void AddRow(string key, string delay)
+        {
+            var row = new SpamKeyRow();
+            row.Key.Text = key;
+            row.Key.Width = 80;
+            row.Delay.Text = delay;
+            row.Delay.Width = 70;
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(FieldLabel("Key"));
+            line.Children.Add(row.Key);
+            line.Children.Add(FieldLabel("Delay (s)"));
+            line.Children.Add(row.Delay);
+
+            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(8, 0, 0, 0) };
+            del.Click += (_, _) => { rowsPanel.Children.Remove(line); rows.Remove(row); };
+            line.Children.Add(del);
+
+            rowsPanel.Children.Add(line);
+            rows.Add(row);
+        }
+
+        foreach (var kv in _service.Config.Spammer.Keys)
+            AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
+
+        var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
+        addButton.Click += (_, _) => AddRow("", "0.2");
+        panel.Children.Add(addButton);
+
+        Dictionary<string, double> RowsToKeys()
+        {
+            var result = new Dictionary<string, double>();
+            foreach (var r in rows)
+            {
+                var k = r.Key.Text.Trim();
+                if (k.Length == 0) continue;
+                if (double.TryParse(r.Delay.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
+                    result[k] = d;
+            }
+            return result;
+        }
+
+        void RebuildRowsFromRaw(string text)
+        {
+            var parsed = ParseKeys(text);
+            if (parsed.Count == 0) return; // empty/garbage — leave the rows alone
+            rowsPanel.Children.Clear();
+            rows.Clear();
+            foreach (var kv in parsed)
+                AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        // Advanced: the same data as raw "key:seconds" lines, for setups the rows can't express.
+        var advanced = new CheckBox
+        {
+            Content = "Advanced — edit the raw key:seconds list",
+            Foreground = (Brush)FindResource("FgBrush"),
+            Margin = new Thickness(0, 12, 0, 4),
+        };
+        panel.Children.Add(advanced);
+
+        var raw = new TextBox
+        {
             AcceptsReturn = true,
             Height = 110,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
-        panel.Children.Add(LabeledField("Keys (key:seconds)", keys));
+        var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
+        rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
+        panel.Children.Add(rawPanel);
+
+        advanced.Checked += (_, _) =>
+        {
+            raw.Text = SerializeKeys(RowsToKeys()); // reflect the rows before editing raw
+            rawPanel.Visibility = Visibility.Visible;
+        };
+        advanced.Unchecked += (_, _) =>
+        {
+            RebuildRowsFromRaw(raw.Text);
+            rawPanel.Visibility = Visibility.Collapsed;
+        };
 
         var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
-            _service.Config.Spammer.Keys = ParseKeys(keys.Text);
+            _service.Config.Spammer.Keys = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
             _service.SaveConfig();
             MessageBox.Show("Spammer config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Spammer", Content = panel };
+        return new TabItem { Header = "Spammer", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private TabItem BuildAttributesTab()
