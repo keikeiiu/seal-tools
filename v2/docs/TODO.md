@@ -29,6 +29,10 @@ needs new machinery, just a small driver per feature.
   the natural home) and a hard cap per run so it can't empty a bag by accident.
 - [ ] **Auto-buy items.** The mirror image: calibrate the vendor's list + a quantity control, buy a
   configured amount, stop on gold or stock limits.
+- [ ] **Auto-submit missions.** Calibrate the quest-list entry + the submit/complete button (and any
+  confirmation dialog); click through the finished missions one by one. Needs a way to know when
+  nothing is left to submit — a capture/OCR check on the list, or a fixed cap — so it stops rather
+  than clicking empty rows.
 - [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
 - [ ] **Park the cursor off the OCR bands** before a capture — the pointer's pixels sit in the crop
   today. Needs a measurement first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
