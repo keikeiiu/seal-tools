@@ -163,6 +163,26 @@ public static class WindowFinder
     public static bool SetLogicalCursorPosition(CursorTarget target)
         => SetCursorPos(target.LogicalX, target.LogicalY);
 
+    /// <summary>Same as <see cref="SetLogicalCursorPosition"/> but reports the Win32 error when
+    /// the call is refused (0 on success). Diagnostic — a refusal is otherwise silent.</summary>
+    public static bool SetLogicalCursorPosition(CursorTarget target, out int error)
+    {
+        bool ok = SetCursorPos(target.LogicalX, target.LogicalY);
+        error = ok ? 0 : Marshal.GetLastWin32Error();
+        return ok;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetClipCursor(out RECT lpRect);
+
+    /// <summary>The rect the cursor is currently clipped to. The whole desktop means unclipped;
+    /// a clip that excludes the target would make SetCursorPos ineffective. Diagnostic.</summary>
+    public static WindowRect? CursorClip()
+    {
+        if (!GetClipCursor(out RECT r)) return null;
+        return new WindowRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+    }
+
     /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
     public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);
 
