@@ -98,7 +98,15 @@ public sealed class LauncherService : IDisposable
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
 
-        StopTool();
+        var stopped = StopTool();
+        if (stopped != null)
+        {
+            // Wait for the previous tool loop to leave the shared serial port before this one
+            // starts writing to it — otherwise their byte streams can interleave. Bounded, so a
+            // wedged tool can't hang the UI's Start click.
+            await Task.WhenAny(stopped, Task.Delay(3000));
+        }
+
         var ser = await ArduinoPortAsync();
         if (ser == null)
         {
@@ -126,14 +134,16 @@ public sealed class LauncherService : IDisposable
         return true;
     }
 
-    /// <summary>Stops the current tool and releases the Arduino COM port.</summary>
-    public void StopTool()
+    /// <summary>Stops the current tool and releases the Arduino COM port. Returns a task that
+    /// completes once the tool loop has exited and its CTS is disposed — await it before starting
+    /// another tool, since all tools share one serial port. Null when nothing was running.</summary>
+    public Task? StopTool()
     {
         var cts = _cts;
         var task = _toolTask;
         if (cts == null)
         {
-            return;
+            return null;
         }
 
         // Null the fields first so a re-entrant call (e.g. StartTool -> StopTool) sees no
@@ -145,9 +155,15 @@ public sealed class LauncherService : IDisposable
 
         cts.Cancel();
 
+        if (task == null)
+        {
+            cts.Dispose();
+            return null;
+        }
+
         // Dispose the CTS only after the tool thread has fully exited — the tool loop reads
         // ct.IsCancellationRequested, which throws ObjectDisposedException on a disposed CTS.
-        task?.ContinueWith(
+        return task.ContinueWith(
             _ => cts.Dispose(),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
@@ -196,7 +212,10 @@ public sealed class LauncherService : IDisposable
         try
         {
             _diagnosticOcr?.Dispose();
-            StopTool();
+            var stopped = StopTool();
+            // Let the tool loop leave the port before we close it, or its last write throws on a
+            // disposed SerialPort and gets logged as a spurious crash. Bounded — shutdown wins.
+            try { stopped?.Wait(TimeSpan.FromSeconds(3)); } catch { /* the tool logs its own failure */ }
         }
         finally
         {
