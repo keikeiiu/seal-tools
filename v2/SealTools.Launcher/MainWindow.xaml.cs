@@ -1352,14 +1352,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             var foregroundBefore = WindowFinder.ForegroundTitle();
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
             bool moved = WindowFinder.SetLogicalCursorPosition(target);
+            var rightAfter = WindowFinder.LogicalCursorPosition(); // did the OS take it at all?
             System.Threading.Thread.Sleep(300);
-            var placed = WindowFinder.LogicalCursorPosition();
+            var placed = WindowFinder.LogicalCursorPosition();     // did it survive the sleep?
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(200);
 
             var client = display.PhysicalClient;
             _gemHint!.Text = $"Test click \"{name}\": SetCursorPos({target.LogicalX},{target.LogicalY}) accepted={moved}, " +
-                $"cursor now ({placed.X},{placed.Y}), clicked via {ser.PortName} (open={ser.IsOpen}).";
+                $"immediately ({rightAfter.X},{rightAfter.Y}), after 300ms ({placed.X},{placed.Y}), clicked via {ser.PortName} (open={ser.IsOpen}).";
             DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
                 foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
 
@@ -1367,7 +1368,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 File.AppendAllText(LogPath("arduino_debug.txt"),
                     $"{DateTime.Now:HH:mm:ss} test-click name={name} port={ser.PortName} open={ser.IsOpen} baud={ser.BaudRate} " +
-                    $"target=({target.LogicalX},{target.LogicalY}) accepted={moved} cursorAfter=({placed.X},{placed.Y}) fg=\"{foregroundBefore}\"\n");
+                    $"target=({target.LogicalX},{target.LogicalY}) accepted={moved} immediate=({rightAfter.X},{rightAfter.Y}) " +
+                    $"after300ms=({placed.X},{placed.Y}) fg=\"{foregroundBefore}\"\n");
             }
             catch { /* diagnostics must never break the click */ }
         }
