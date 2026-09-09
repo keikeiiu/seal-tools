@@ -104,12 +104,10 @@ public static class WindowFinder
     // Re-query per call — never cache across a mixed-DPI multi-monitor move.
     public static uint GetDpi(IntPtr hWnd) => GetDpiForWindow(hWnd);
 
+    // No logging here: this is the composer's per-move hot path. The Debug* methods below log
+    // explicitly when you actually want a cursor trace.
     public static void MoveCursor(WindowRect client, int clientX, int clientY)
-    {
-        int sx = client.Left + clientX, sy = client.Top + clientY;
-        bool ok = SetCursorPos(sx, sy);
-        LogCursor("MOVE", sx, sy, ok, Marshal.GetLastWin32Error());
-    }
+        => SetCursorPos(client.Left + clientX, client.Top + clientY);
 
     /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
     public static void DebugCursor(int x, int y)

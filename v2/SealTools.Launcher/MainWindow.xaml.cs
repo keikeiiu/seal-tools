@@ -117,7 +117,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Rectangle? _gemMarquee;
     private int _gemStep;
     private System.Windows.Controls.ComboBox? _gemTestPoint;
-    private System.Windows.Controls.ComboBox? _gemTestFrom;
     private System.Windows.Controls.Image? _gemResultPreview;
 
     public MainWindow()
@@ -650,7 +649,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var testGemBtn = MakeButton("Test Result Gem", ControlAppearance.Secondary);
         testGemBtn.Click += (_, _) => GemTestResult();
         _gemTestPoint = testBox;
-        _gemTestFrom = testFromBox;
 
         foreach (var b in new UiButton[] { testBtn, testMoveBtn, checkColBtn, testGemBtn })
             b.Margin = new Thickness(6, 0, 6, 0); // left+right gap, drop the top-10 so buttons align with the dropdowns
@@ -1034,13 +1032,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
         // set the cursor onto the point and click once.
+        var foregroundBefore = WindowFinder.ForegroundTitle();
         GemPointer.To(client, (int)pt.Value.X, (int)pt.Value.Y);
         System.Threading.Thread.Sleep(300);
         GemPointer.Click(ser);
 
         _gemHint!.Text = $"Test click: set cursor to ({pt.Value.X},{pt.Value.Y}) and clicked \"{name}\".";
         DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
-            WindowFinder.ForegroundTitle(), WindowFinder.ForegroundTitle(), 0, false);
+            foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
     }
 
     // Test a RELATIVE "D" move at 1:1 between two user-chosen points, mirroring the composer's
@@ -1277,10 +1276,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Reload a saved calibration reference image into a tab (boxes are shown baked in, NOT
     // re-activated). Returns true when the file was loaded.
-    private static bool LoadCalibrationImage(Image? target, string fileName, string altPath)
+    private static bool LoadCalibrationImage(Image? target, string fileName)
     {
         if (target == null) return false;
-        var path = File.Exists(altPath) ? altPath : CalibrationImagePath(fileName);
+        var path = CalibrationImagePath(fileName);
         if (!File.Exists(path)) return false;
         try
         {
@@ -1306,11 +1305,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     // a static reference until the user Captures + Saves a new calibration.
     private void LoadCalibrationImages()
     {
-        if (LoadCalibrationImage(_tunerImage, "calib_tuner.png", ""))
+        if (LoadCalibrationImage(_tunerImage, "calib_tuner.png"))
             _tunerHint!.Text = "Showing last saved Tuner calibration (reference). Capture + Save to update.";
-        if (LoadCalibrationImage(_gemImage, "calib_gem.png", ""))
+        if (LoadCalibrationImage(_gemImage, "calib_gem.png"))
             _gemHint!.Text = "Showing last saved Gem calibration (reference). Capture + Save to update.";
-        LoadCalibrationImage(_gemResultPreview, "calib_gem_result.png", "");
+        LoadCalibrationImage(_gemResultPreview, "calib_gem_result.png");
     }
 
     // Compact human-readable colour composition.
