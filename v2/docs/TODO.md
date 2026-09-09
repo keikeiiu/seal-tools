@@ -20,6 +20,10 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
 
 ## Ideas for later (captured, not designed)
 
+The wider backlog — reliability, safety, calibration UX, observability, code health, release and
+game-side mini-features, each with a rough size and a "decide first" flag — is in
+[IDEAS.md](IDEAS.md).
+
 Mini-features worth having once the UI work lands. Each reuses what already exists — calibrated
 points, the closed-loop cursor placement, the HID click, and a capture/OCR pass — so none of them
 needs new machinery, just a small driver per feature.
