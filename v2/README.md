@@ -104,18 +104,27 @@ build computed moves as `(point − Register) × scale / 100`; that approach was
 moves drift with pointer speed.) If pointer acceleration is left on, the composer drifts — fix the
 pointer precision, then re-tune the counts. Not a code bug.
 
-### Focus: the composer does no focus handling (Gem Composer)
+### Focus: how the game gets focused (Gem Composer)
 
-The composer mirrors v1 exactly — start from the launcher, move to the target, click once:
+The composer does **no focus handling at all** — it mirrors v1's sequence exactly:
+`SetCursorPos(grade)` + `C` → `D dx dy` + `C`. Focus is a side effect of that, and the lifecycle is:
 
-- **One click does both jobs.** Starting a tool from the launcher means the game is not the foreground
-  window, but the first `SetCursorPos(grade)` + Arduino `C` both activates the game window *and* presses
-  the button. There is no separate click-to-focus step, and none is needed.
-- **v1 never calls a Win32 focus API** (`SetForegroundWindow` / `BringWindowToTop`) — it just does
-  `SetCursorPos(grade)` + `C`, then `D dx dy` + `C`. v2 does the same sequence.
-- **Do NOT add a focus-click, do NOT centre-click, do NOT call `SetForegroundWindow`.** A focus-click was
-  tried and removed as redundant; a centre-click makes the raw-input game capture its cursor and pin the
-  in-game pointer at centre, so every later click lands on centre instead of the button.
+- **At start the game is unfocused.** You press **Start** in the launcher, so the launcher window is the
+  foreground window when the composer begins.
+- **The first click focuses it.** That `SetCursorPos(grade)` + `C` does both jobs at once: it activates
+  the game window *and* presses the grade button. No separate click-to-focus is needed.
+- **It stays focused for the rest of the run**, because nothing else is clicked while the tool works.
+- **Any later click re-focuses it.** If you click back to the launcher mid-run (e.g. to press **Stop**),
+  the game loses focus; the next click on a game button activates it again. Every composer action starts
+  with a click on a game control, so the composer never depends on the game *already* being focused.
+
+Guardrails — each of these was tried and is wrong:
+
+- **No dedicated focus-click.** It is redundant and clicks the same button twice (removed in this pass).
+- **No Win32 focus API** (`SetForegroundWindow` / `BringWindowToTop`) — v1 never calls one, and neither
+  does v2.
+- **No centre-click to focus.** A raw-input game captures the cursor and pins the in-game pointer at
+  centre, so every later click lands on centre instead of the button.
 
 ---
 

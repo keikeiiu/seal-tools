@@ -144,7 +144,9 @@ These are settled by evidence/memory — **do not reverse them**:
 1. **Do NOT touch v1 (Python)** — it works, is a reference/fallback, and is treated as frozen. Check-in is v1-only and stays out of v2.
 2. **Do NOT re-enable DPI awareness (PerMonitorV2)** — root cause of the coordinate regression `7f9e1c7` fixed. Keep the process DPI-unaware + logical pixels.
 3. **Do NOT move clicks from Arduino HID to `SendInput`/`SetCursorPos`-while-focused** — GameGuard blocks synthetic input; the design depends on the Arduino being a genuine HID device.
-4. **Do NOT add a focus-click before gem clicks** — focus is *not* the issue; the coordinate is. v1 is unfocused too and works.
+4. **Do NOT add a focus-click before gem clicks** — focus is *not* the issue; the coordinate is. The game
+   is unfocused only at start (the launcher holds focus); the first click on a game button both focuses the
+   game and presses the button, so no extra click is needed.
 5. **Do NOT re-introduce pixel-computed relative-move (`(point - Register) * scale / 100`)** — that is what broke relative moves; the composer intentionally sends raw HID counts.
 6. **Do NOT "fix" OCR row-bucketing blind** — evidence first.
 7. **Do NOT change the PrintWindow capture path** for calibration back to CopyFromScreen — PrintWindow is the DirectX-safe fix.
