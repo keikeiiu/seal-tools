@@ -1097,7 +1097,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click).
-            GemPointer.To(display, (int)from.Value.X, (int)from.Value.Y);
+            GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
@@ -1156,7 +1156,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
         // set the cursor onto the point and click once.
         var foregroundBefore = WindowFinder.ForegroundTitle();
-        GemPointer.To(display, (int)pt.Value.X, (int)pt.Value.Y);
+        GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y));
         System.Threading.Thread.Sleep(300);
         GemPointer.Click(ser);
 
@@ -1222,7 +1222,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             // v1 single-click core: SetCursorPos(from) -> C -> D raw -> C (no focus-click, no
             // double click). Same raw movement the composer sends.
-            GemPointer.To(display, (int)from.Value.X, (int)from.Value.Y);
+            GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
@@ -1964,12 +1964,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         int x = (int)pt.Value.X, y = (int)pt.Value.Y;
 
-        // Calculation first (pure), then the API call — kept separate so the numbers can be checked
-        // on their own.
+        // Calculation first (pure), then the API call — the same split the tools use.
         var target = WindowFinder.ComputeCursorTarget(display, x, y);
         bool ok = physical
-            ? WindowFinder.SetPhysicalCursorPosition(display, x, y)
-            : WindowFinder.SetLogicalCursorPosition(display, x, y);
+            ? WindowFinder.SetPhysicalCursorPosition(target)
+            : WindowFinder.SetLogicalCursorPosition(target);
 
         var after = WindowFinder.LogicalCursorPosition();
         _gemHint!.Text =

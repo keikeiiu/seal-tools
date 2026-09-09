@@ -138,21 +138,16 @@ public static class WindowFinder
         display.PhysicalClient.Left + physicalX,
         display.PhysicalClient.Top + physicalY);
 
-    /// <summary>Position the cursor with the PHYSICAL API (ignores DPI virtualisation). Returns
-    /// whether the call was accepted.</summary>
-    public static bool SetPhysicalCursorPosition(DisplayInfo display, int physicalX, int physicalY)
-    {
-        var t = ComputeCursorTarget(display, physicalX, physicalY);
-        return SetPhysicalCursorPos(t.PhysicalX, t.PhysicalY);
-    }
+    /// <summary>Position the cursor with the PHYSICAL API (ignores DPI virtualisation) at a
+    /// precomputed target. Returns whether the call was accepted. Debug/diagnostic use only — the
+    /// tools use SetLogicalCursorPosition (see docs/COORDINATES.md).</summary>
+    public static bool SetPhysicalCursorPosition(CursorTarget target)
+        => SetPhysicalCursorPos(target.PhysicalX, target.PhysicalY);
 
-    /// <summary>Position the cursor with the virtualised (logical) API — v1's call. Returns whether
-    /// the call was accepted.</summary>
-    public static bool SetLogicalCursorPosition(DisplayInfo display, int physicalX, int physicalY)
-    {
-        var t = ComputeCursorTarget(display, physicalX, physicalY);
-        return SetCursorPos(t.LogicalX, t.LogicalY);
-    }
+    /// <summary>Position the cursor with the virtualised (logical) API — v1's call — at a
+    /// precomputed target. Returns whether the call was accepted.</summary>
+    public static bool SetLogicalCursorPosition(CursorTarget target)
+        => SetCursorPos(target.LogicalX, target.LogicalY);
 
     /// <summary>Where the cursor is now, in the process's (logical) space.</summary>
     public static (int X, int Y) LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : (-1, -1);

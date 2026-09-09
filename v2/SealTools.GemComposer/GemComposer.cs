@@ -81,7 +81,7 @@ public sealed class GemComposer : ToolBase
             // click on the grade button does both jobs (activates the game window and presses the
             // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
-            GemPointer.To(display, gx, gy);
+            GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
@@ -178,7 +178,7 @@ public sealed class GemComposer : ToolBase
                     return;
                 }
                 if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-                GemPointer.To(display, gx, gy);
+                GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
