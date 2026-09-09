@@ -29,7 +29,7 @@ calibration steps, see [CALIBRATION.md](CALIBRATION.md).
 | 14 | `94a7fd3` | Missing gem calibration now reports on the card ("Move N → Register isn't saved yet…") instead of throwing |
 | 15 | `1cc1e8b` | Added the "Diagnose capture" button + `WindowFinder.GetFrameRect` — the evidence-gathering step |
 | 16 | `795d13e` | Launcher diagnostics written under the app root (`logs/`), not the build output dir |
-| 17 | `3e23ef7` | Capture switched to `CopyFromScreen`; `PrintWindow` removed — it returned a **black frame** for the game, so the calibrator screenshot was blank |
+| 17 | `94129b7` | Capture switched to `CopyFromScreen`; `PrintWindow` removed — it returned a **black frame** for the game, so the calibrator screenshot was blank |
 
 ### Local-only repair (not a commit)
 
