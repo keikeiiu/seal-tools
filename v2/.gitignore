@@ -1,5 +1,7 @@
 # Machine-specific calibration — never commit
 config/local.yaml
+# Backup of the corrupted local.yaml kept beside the live one (local repair, 2026-09-09)
+config/local.yaml.corrupt-backup
 
 # Runtime state/control files
 run/
