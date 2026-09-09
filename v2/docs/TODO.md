@@ -18,6 +18,21 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   redone. Inventory, problems, principles, five open questions and the tab-by-tab method:
   [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
 
+## Ideas for later (captured, not designed)
+
+Mini-features worth having once the UI work lands. Each reuses what already exists — calibrated
+points, the closed-loop cursor placement, the HID click, and a capture/OCR pass — so none of them
+needs new machinery, just a small driver per feature.
+
+- [ ] **Auto-sell items.** Calibrate the vendor's sell slot + the inventory grid; click an item, read
+  whether it matches a keep-list, sell the rest. Needs a keep/sell rule set (the attribute matcher is
+  the natural home) and a hard cap per run so it can't empty a bag by accident.
+- [ ] **Auto-buy items.** The mirror image: calibrate the vendor's list + a quantity control, buy a
+  configured amount, stop on gold or stock limits.
+- [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
+- [ ] **Park the cursor off the OCR bands** before a capture — the pointer's pixels sit in the crop
+  today. Needs a measurement first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+
 ## Needs a live check before any code change
 
 - [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed
