@@ -333,7 +333,17 @@ public sealed class OcrEngine : IDisposable
 
     private Dictionary<string, int> DetectGradeColorScores(Mat img, BoxConfig ga)
     {
-        using var crop = img[new Rect(ga.X1, ga.Y1, ga.X2 - ga.X1, ga.Y2 - ga.Y1)];
+        // ConfigValidator rejects an out-of-region grade_area, but clamp anyway: a hand-edited
+        // local.yaml must degrade to "no colour score" (grade then comes from the OCR line)
+        // rather than throwing an OpenCV exception out of the tool loop.
+        int x1 = Math.Clamp(ga.X1, 0, img.Width);
+        int y1 = Math.Clamp(ga.Y1, 0, img.Height);
+        int x2 = Math.Clamp(ga.X2, 0, img.Width);
+        int y2 = Math.Clamp(ga.Y2, 0, img.Height);
+        if (x2 - x1 < 1 || y2 - y1 < 1)
+            return new Dictionary<string, int> { ["N"] = 0, ["G"] = 0, ["DG"] = 0, ["XG"] = 0, ["SG"] = 0 };
+
+        using var crop = img[new Rect(x1, y1, x2 - x1, y2 - y1)];
         var gc = _cfg.Tuner.GradeColors;
         int yellow = 0, blue = 0, red = 0, purple = 0, white = 0;
 

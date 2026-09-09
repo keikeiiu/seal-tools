@@ -94,6 +94,68 @@ public class ConfigLoaderTests
         }
     }
 
+    // Writes a custom local.yaml so a broken calibration can be exercised directly.
+    private static string MakeTempConfigDirWithLocal(string localYaml)
+    {
+        var dir = MakeTempConfigDir(includeLocal: false);
+        File.WriteAllText(Path.Combine(dir, "local.yaml"), localYaml);
+        return dir;
+    }
+
+    private const string ValidOcrLocal =
+        "tuner:\n  ocr:\n    region: {left: 0, top: 0, width: 300, height: 320}\n" +
+        "    grade_area: {x1: 10, y1: 10, x2: 100, y2: 40}\n" +
+        "    grade_y: [10, 40]\n    attr_y: [42, 140]\n    remaining_y: [190, 235]\n" +
+        "    row_height: 25\n" +
+        "gem:\n  grade_positions:\n    N: [730, 698]\n";
+
+    [Fact]
+    public void LoadRejectsTruncatedOcrBand()
+    {
+        // grade_y has one entry; OcrEngine indexes [0] and [1].
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal.Replace("grade_y: [10, 40]", "grade_y: [10]"));
+        try
+        {
+            var ex = Assert.Throws<ConfigException>(() => new ConfigLoader(dir).Load());
+            Assert.Contains("grade_y", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadRejectsGradeAreaOutsideRegion()
+    {
+        // grade_area x2 (400) exceeds the 300 px region width.
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal.Replace("x2: 100", "x2: 400"));
+        try
+        {
+            var ex = Assert.Throws<ConfigException>(() => new ConfigLoader(dir).Load());
+            Assert.Contains("grade_area", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadAcceptsValidOcrGeometry()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+            Assert.Equal(25, cfg.Tuner.Ocr.RowHeight);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void LoadMissingLocalYamlThrowsConfigException()
     {

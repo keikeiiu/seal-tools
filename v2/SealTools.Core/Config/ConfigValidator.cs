@@ -15,10 +15,21 @@ internal static class ConfigValidator
         var errors = new List<string>();
         ValidateObject(c, "", errors);
 
-        // Relational check DataAnnotations can't express declaratively.
-        var ga = c.Tuner.Ocr.GradeArea;
+        // Relational checks DataAnnotations can't express declaratively.
+        var ocr = c.Tuner.Ocr;
+        var ga = ocr.GradeArea;
         if (ga.X2 <= ga.X1 || ga.Y2 <= ga.Y1)
             errors.Add("tuner.ocr.grade_area: x2/y2 must be greater than x1/y1");
+        else if (ga.X1 < 0 || ga.Y1 < 0 || ga.X2 > ocr.Region.Width || ga.Y2 > ocr.Region.Height)
+            errors.Add("tuner.ocr.grade_area must lie inside tuner.ocr.region " +
+                $"(region is {ocr.Region.Width}x{ocr.Region.Height})");
+
+        // OcrEngine indexes these as [0]/[1]; a short list is an IndexOutOfRange at scan time.
+        RequireBand(errors, "tuner.ocr.grade_y", ocr.GradeY);
+        RequireBand(errors, "tuner.ocr.attr_y", ocr.AttrY);
+        RequireBand(errors, "tuner.ocr.remaining_y", ocr.RemainingY);
+        RequireOptionalBand(errors, "tuner.ocr.attr_x", ocr.AttrX);
+        RequireOptionalBand(errors, "tuner.ocr.remaining_x", ocr.RemainingX);
 
         if (errors.Count > 0)
             throw new ConfigException(
@@ -55,6 +66,22 @@ internal static class ConfigValidator
                 ValidateObject(value, Append(path, prop.Name), errors);
             }
         }
+    }
+
+    // A required band is [top, bottom] (or [left, right]) and must be ordered.
+    private static void RequireBand(List<string> errors, string name, List<int> band)
+    {
+        if (band.Count < 2)
+            errors.Add($"{name}: needs 2 values; got {band.Count}");
+        else if (band[1] <= band[0])
+            errors.Add($"{name}: the second value must be greater than the first");
+    }
+
+    // An optional X band may be omitted entirely, but if present it must be a complete pair.
+    private static void RequireOptionalBand(List<string> errors, string name, List<int> band)
+    {
+        if (band.Count is 1)
+            errors.Add($"{name}: leave it out or give 2 values; got 1");
     }
 
     private static string Append(string path, string name)
