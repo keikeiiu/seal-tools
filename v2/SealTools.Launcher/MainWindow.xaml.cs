@@ -8,7 +8,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -138,48 +137,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _timer.Start();
         RefreshStatus();
 
-        SourceInitialized += (_, _) => RegisterPanicHotkey();
         Closed += (_, _) => Dispose();
-    }
-
-    // ── Panic hotkey ────────────────────────────────────────────────────────
-    //
-    // The tools poll their hotkeys with GetAsyncKeyState, which the game's anti-cheat blocks while
-    // the game window has focus (measured: CapsLock presses only register once you leave the game).
-    // A system-registered hotkey is delivered by Windows as WM_HOTKEY to this window regardless of
-    // focus, so it is the reliable stop. Trade-off: the key is captured system-wide while the
-    // launcher runs — which also stops CapsLock from toggling caps.
-    private const int WmHotkey = 0x0312;
-    private const int PanicHotkeyId = 0x5EA1;
-
-    private IntPtr _hotkeyWindow;
-    private HwndSource? _hotkeySource;
-
-    // Safe to call again after the hotkeys are edited: it re-registers the (possibly new) key.
-    private void RegisterPanicHotkey()
-    {
-        if (_hotkeyWindow == IntPtr.Zero)
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd == IntPtr.Zero) return;
-            _hotkeyWindow = hwnd;
-            _hotkeySource = HwndSource.FromHwnd(hwnd);
-            _hotkeySource?.AddHook(HotkeyHook);
-        }
-
-        WindowFinder.UnregisterHotkey(_hotkeyWindow, PanicHotkeyId);
-        int vk = _service.Config.Hotkeys.Panic;
-        if (vk != 0) WindowFinder.TryRegisterHotkey(_hotkeyWindow, PanicHotkeyId, 0, (uint)vk);
-    }
-
-    private IntPtr HotkeyHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg == WmHotkey && wParam.ToInt32() == PanicHotkeyId)
-        {
-            _service.StopTool();
-            handled = true;
-        }
-        return IntPtr.Zero;
     }
 
     /// <inheritdoc />
@@ -188,8 +146,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
-        if (_hotkeyWindow != IntPtr.Zero) WindowFinder.UnregisterHotkey(_hotkeyWindow, PanicHotkeyId);
-        _hotkeySource?.RemoveHook(HotkeyHook);
         _service.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -2392,13 +2348,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         var quitBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Quit) };
         var gradeBox = new TextBox { Text = VkName(_service.Config.Hotkeys.AdvanceGrade) };
         var pauseBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Pause) };
-        var panicBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Panic) };
 
         panel.Children.Add(LabeledField("Start / stop rolling", startBox));
         panel.Children.Add(LabeledField("Quit (immediate)", quitBox));
         panel.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
         panel.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
-        panel.Children.Add(LabeledField("Panic — stops any tool even while the game is focused", panicBox));
 
         var save = MakeButton("Save Hotkeys", ControlAppearance.Primary);
         save.Click += (_, _) =>
@@ -2407,8 +2361,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var q = ParseVk(quitBox.Text);
             var g = ParseVk(gradeBox.Text);
             var p = ParseVk(pauseBox.Text);
-            var pan = ParseVk(panicBox.Text);
-            if (s == 0 || q == 0 || g == 0 || p == 0 || pan == 0)
+            if (s == 0 || q == 0 || g == 0 || p == 0)
             {
                 MessageBox.Show("Invalid hotkey name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -2417,9 +2370,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.Quit = q;
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
-            _service.Config.Hotkeys.Panic = pan;
             _service.SaveConfig();
-            RegisterPanicHotkey(); // apply a changed panic key immediately
             MessageBox.Show("Hotkeys saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         };
         panel.Children.Add(save);

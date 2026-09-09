@@ -56,21 +56,6 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    /// <summary>Registers a system-wide hotkey, delivered to the window as WM_HOTKEY (0x0312).
-    /// Works while another process (e.g. the game) has focus. Returns false when the combination
-    /// is already owned by another application.</summary>
-    public static bool TryRegisterHotkey(IntPtr hwnd, int id, uint modifiers, uint vk)
-        => RegisterHotKey(hwnd, id, modifiers, vk);
-
-    /// <summary>Releases a hotkey registered with <see cref="TryRegisterHotkey"/>.</summary>
-    public static void UnregisterHotkey(IntPtr hwnd, int id) => UnregisterHotKey(hwnd, id);
-
     /// <summary>Primary screen size as this thread sees it — PHYSICAL on a DPI-aware thread,
     /// virtualised (logical) on the unaware default. Only meaningful inside Dpi.WithAwareContext.</summary>
     public static (int Width, int Height) PrimaryScreenSize() => (GetSystemMetrics(0), GetSystemMetrics(1));
