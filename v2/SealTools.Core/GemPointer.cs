@@ -20,11 +20,14 @@ namespace SealTools.Core;
 // the same thing v1's SetCursorPos + C does. Click() is the only focus mechanism needed.
 public static class GemPointer
 {
-    /// <summary>Measures the game window (scale + physical/logical rects); null if it isn't open.</summary>
+    /// <summary>Measures the game window (scale + physical/logical rects). Null when it isn't open
+    /// OR is minimized — a minimized window's rect is off-screen, which would fling the cursor to
+    /// the screen edge instead of the button.</summary>
     public static DisplayInfo? Display(string titleSubstring)
     {
         var hwnd = WindowFinder.FindByTitle(titleSubstring);
-        return hwnd == IntPtr.Zero ? null : Dpi.Measure(hwnd);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        return Dpi.Measure(hwnd);
     }
 
     /// <summary>Move the OS cursor to a precomputed target (no click), via SetCursorPos on the

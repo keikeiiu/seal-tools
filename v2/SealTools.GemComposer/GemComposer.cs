@@ -69,7 +69,7 @@ public sealed class GemComposer : ToolBase
             var display = GemPointer.Display(_cfg.Window.Title);
             if (display == null)
             {
-                Fail("Game window not found — open the game first.");
+                Fail("Game window not found (or minimized) — open and restore the game first.");
                 return;
             }
 
@@ -174,7 +174,7 @@ public sealed class GemComposer : ToolBase
                 var display = GemPointer.Display(_cfg.Window.Title);
                 if (display == null)
                 {
-                    Fail("Game window not found — open the game first.");
+                    Fail("Game window not found (or minimized) — open and restore the game first.");
                     return;
                 }
                 if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;

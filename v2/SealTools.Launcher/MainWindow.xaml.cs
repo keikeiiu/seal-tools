@@ -1282,7 +1282,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
 
         var display = GemPointer.Display(_service.Config.Window.Title);
-        if (display == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
+        if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
         var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
 
@@ -1334,7 +1334,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var display = GemPointer.Display(_service.Config.Window.Title);
         if (display == null)
         {
-            _gemHint!.Text = "Game window not found — open the game first.";
+            _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
 
@@ -1391,7 +1391,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var display = GemPointer.Display(_service.Config.Window.Title);
         if (display == null)
         {
-            _gemHint!.Text = "Game window not found — open the game first.";
+            _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
         var ser = await _service.ArduinoPortAsync();
@@ -1502,7 +1502,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Gem.ColoredGapMin);
         if (analyzed == null)
         {
-            _gemHint!.Text = "Game window not found — open the game first.";
+            _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return false;
         }
         frame = analyzed;
@@ -1875,7 +1875,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var shot = await CaptureScreenshotAsync();
         if (shot == null)
         {
-            _gemHint!.Text = "Game window not found — open the game first.";
+            _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
 
@@ -2181,7 +2181,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (pt == null) { _gemHint!.Text = $"\"{name}\" isn't calibrated yet."; return; }
 
         var display = GemPointer.Display(_service.Config.Window.Title);
-        if (display == null) { _gemHint!.Text = "Game window not found — open the game first."; return; }
+        if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
 
         int x = (int)pt.Value.X, y = (int)pt.Value.Y;
 
@@ -2208,7 +2208,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero)
         {
-            _gemHint!.Text = "Game window not found — open the game first.";
+            _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
 

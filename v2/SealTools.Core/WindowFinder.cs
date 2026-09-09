@@ -56,6 +56,13 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    /// <summary>True when the window is minimized. A minimized window reports its rect off-screen
+    /// (e.g. -48000,-48000 with size 0x0), so any coordinate derived from it is garbage.</summary>
+    public static bool IsMinimized(IntPtr hwnd) => hwnd != IntPtr.Zero && IsIconic(hwnd);
+
     /// <summary>Primary screen size as this thread sees it — PHYSICAL on a DPI-aware thread,
     /// virtualised (logical) on the unaware default. Only meaningful inside Dpi.WithAwareContext.</summary>
     public static (int Width, int Height) PrimaryScreenSize() => (GetSystemMetrics(0), GetSystemMetrics(1));
