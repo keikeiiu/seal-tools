@@ -310,32 +310,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         ClearButtonEnabled = true,
     };
 
-    // One section heading inside a tab, so the heading style lives in one place instead of being
-    // re-specified per tab. (The shared row builder and the rest of the style constants come with
-    // the first tab that needs them.)
-    private TextBlock SectionHeading(string text) => new()
+    // A titled section: a bordered Card with a header, which is how every tab groups its controls.
+    // Card rather than CardControl on purpose — CardControl measures its content with unbounded
+    // width, so wrapping text runs past the border (see docs/PLAN-UI-CLEANUP.md).
+    private static Card Section(string title, params UIElement[] children)
     {
-        Text = text,
-        FontWeight = FontWeights.SemiBold,
-        Foreground = Res("TextFillColorPrimaryBrush"),
-        Margin = new Thickness(0, 12, 0, 4),
-    };
+        var body = new StackPanel();
+        body.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+        foreach (var child in children) body.Children.Add(child);
+        return new Card { Content = body, Margin = new Thickness(0, 0, 0, 12) };
+    }
 
     private TabItem BuildArduinoTab()
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Is the Arduino there, and does its click reach the game?",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 2),
-        });
+        panel.Children.Add(Hint("Is the Arduino there, and does its click reach the game?"));
 
         // ── Connection ──────────────────────────────────────────────────────
-        panel.Children.Add(SectionHeading("Connection"));
-
         var light = new Ellipse
         {
             Width = 14,
@@ -353,7 +350,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         statusRow.Children.Add(light);
         statusRow.Children.Add(status);
-        panel.Children.Add(statusRow);
 
         var detail = new TextBlock
         {
@@ -362,7 +358,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 4),
         };
-        panel.Children.Add(detail);
 
         void Refresh()
         {
@@ -371,7 +366,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (match != null)
             {
                 light.Fill = Res("SystemFillColorSuccessBrush");
-                status.Text = $"Connected — {match.Name} ({match.Port})";
+                // The friendly name usually already ends in "(COM5)" — don't repeat the port.
+                status.Text = match.Name.Contains($"({match.Port})", StringComparison.OrdinalIgnoreCase)
+                    ? $"Connected — {match.Name}"
+                    : $"Connected — {match.Name} ({match.Port})";
             }
             else
             {
@@ -393,19 +391,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         refreshBtn.Click += (_, _) => Refresh();
         var refreshRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         refreshRow.Children.Add(refreshBtn);
-        panel.Children.Add(refreshRow);
+
+        panel.Children.Add(Section("Connection", statusRow, detail, refreshRow));
 
         // ── Input test ──────────────────────────────────────────────────────
-        panel.Children.Add(SectionHeading("Input test"));
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Sends one left click through the Arduino, at wherever the cursor already is — it does " +
-                   "not move the cursor. Use it to prove the HID path works, or Calibrate Gem → Test to " +
-                   "place the cursor as well.",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 6),
-        });
 
         // Its own result line, so a click test can't overwrite the connection status above.
         var testResult = new TextBlock
@@ -435,10 +424,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         };
 
-        var testRow = new StackPanel { Orientation = Orientation.Horizontal };
+        var testRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
         testRow.Children.Add(testBtn);
         testRow.Children.Add(testResult);
-        panel.Children.Add(testRow);
+
+        panel.Children.Add(Section("Input test",
+            Hint("Sends one left click through the Arduino, at wherever the cursor already is — it does " +
+                 "not move the cursor. Use it to prove the HID path works, or Calibrate Gem → Test to " +
+                 "place the cursor as well."),
+            testRow));
 
         Refresh();
 

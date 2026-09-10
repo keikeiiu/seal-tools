@@ -78,7 +78,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 |---|---|---|---|
 | 0 | **Palette**: eight hex brushes deleted; the UI now uses WPF-UI's semantic brushes | ✔ | *(this commit)* |
 | 1 | `Hotkeys` (was Settings) — **redone** with `ui:Card`, `ui:TextBox`, `ui:InfoBar` | ✔ | *(this commit)* |
-| 2 | `Arduino` — **redo** with WPF-UI controls + Cards | ⟳ | *(2 commits ago)* |
+| 2 | `Arduino` — **redone**: Connection / Input test as cards | ✔ | *(this commit)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
 | 4 | `Gem` settings (run / advanced) | ☐ | |
 | 5 | `Spammer` (preset / keys / save) | ☐ | |
