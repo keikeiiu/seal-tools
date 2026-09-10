@@ -75,6 +75,51 @@ because it changes how something else should be done.
 - **Decide whether the zip ships `local.yaml`** (S, already a TODO decision).
 - **Changelog** (S). One file, newest first, so a release note is a copy-paste.
 
+## 7b. Spammer as a key pad (nice-to-have, designed not built)
+
+Idea from review: replace the key/delay rows with a small **key layout** — click a key to include it
+in the preset, and have it light up (or flash) while the spammer is pressing it.
+
+**It is cheap, because two things already hold:**
+
+- The spammer already publishes the key it is firing — `SkillSpammer.cs:97` sets
+  `State.Current = k`, which the tool card prints as `Current:`. The highlight needs a faster poll
+  than the card's 750 ms, nothing else.
+- The Arduino accepts exactly 20 keys (digits `0–9`, `F1–F10`), so the pad can show *every* key the
+  tool can send — no invented layout, and unsupported keys stop being typeable rather than being
+  rejected at runtime.
+
+**Sketch**
+
+```
+Keys — click to include
+
+  1  2  3  4  5        digits, lit when in the preset
+  6  7  8  9  0
+  F1 F2 F3 F4 F5       function keys
+  F6 F7 F8 F9 F10
+
+  click        add / remove the key
+  right-click  toggle the fast tap (the '*' in the raw list)
+  caption      its cooldown, e.g. 0.2s
+```
+
+**Open questions before building**
+
+- **Where do the cooldowns get edited?** A tiny field under each key is cramped; the alternatives are
+  a "select a key, edit its delay beside the pad" panel, or keeping a compact list under the pad for
+  numbers only. This is the one thing the current row UI does *better* than a pad.
+- **Flash or steady highlight?** `State.Current` holds the last key fired until the next one, so a
+  steady moving highlight is what the data honestly supports; a flash would be a timer illusion on
+  top. At 0.2 s cooldowns a flash also risks looking flickery.
+- **The `*` flag** needs a place — right-click is undiscoverable on its own, so it probably wants a
+  visible marker on the key plus a mention in the hint.
+- Keep the **raw `key:seconds` editor** (Advanced) either way: it is the only way to set up a preset
+  in bulk, and the only escape hatch if the pad ever can't express something.
+
+**Effort:** moderate — ~20 toggle buttons, the delay control from the question above, a faster status
+poll, and the highlight style. No new plumbing, no firmware change.
+
 ## 8. Game-side mini-features
 
 Already captured in TODO.md: auto-sell, auto-buy, auto-submit missions, anti-AFK nudge.
