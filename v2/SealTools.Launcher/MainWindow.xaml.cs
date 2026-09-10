@@ -347,11 +347,13 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // A WPF-UI text box, so every text field gets the same Fluent chrome (placeholder, clear button)
     // instead of the plain WPF one. ComboBox/CheckBox are already restyled by WPF-UI's dictionary.
-    private static Wpf.Ui.Controls.TextBox UiText(string text, string? placeholder = null) => new()
+    private static Wpf.Ui.Controls.TextBox UiText(string text, string? placeholder = null, bool clearButton = true) => new()
     {
         Text = text,
         PlaceholderText = placeholder ?? "",
-        ClearButtonEnabled = true,
+        // The clear button needs room to sit inside the field; off for the narrow ones (key/delay).
+        ClearButtonEnabled = clearButton,
+        VerticalContentAlignment = VerticalAlignment.Center,
     };
 
     // A titled section: a bordered Card with a header, which is how every tab groups its controls.
@@ -817,8 +819,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     // One key + cooldown row in the spammer editor.
     private sealed class SpamKeyRow
     {
-        public TextBox Key { get; } = new();
-        public TextBox Delay { get; } = new();
+        // Fluent text boxes, so their height matches the preset ComboBox beside them — plain WPF
+        // boxes are shorter and sat on a different baseline. No clear button: these are 88px wide.
+        public Wpf.Ui.Controls.TextBox Key { get; } = UiText("", null, clearButton: false);
+        public Wpf.Ui.Controls.TextBox Delay { get; } = UiText("", null, clearButton: false);
     }
 
     private TabItem BuildSpammerTab()
@@ -858,7 +862,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
         var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
-        var presetName = new TextBox { Width = 110, VerticalContentAlignment = VerticalAlignment.Center };
+        var presetName = UiText("");
+        presetName.Width = 110;
+        presetName.VerticalAlignment = VerticalAlignment.Center;
 
         void AddRow(string key, string delay)
         {
