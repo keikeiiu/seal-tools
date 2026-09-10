@@ -84,7 +84,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 5 | `Spammer` — Preset / Keys / Advanced cards, key rows on a header grid | ✔ | *(this commit)* |
 | 6 | `Attributes` — Dictionary card (read-only table) | ✔ | *(this commit)* |
 | 7 | `Tuner` — Goal / Timing / Filter-rules / Filter-overrides / Advanced cards | ✔ | *(this commit)* |
-| 8 | `Calibrate Tuner` (capture / steps / save) | ☐ | |
+| 8 | `Calibrate Tuner` — Capture / Boxes / Result cards | ✔ | *(this commit)* |
 | 9 | `Calibrate Gem` — Capture / Points / Tests / Moves / Full-run-test / Advanced | ☐ | |
 | 10 | **Shell last**: `TabControl` → `ui:NavigationView` rail (driven via `SelectionChanged`) or a plain rail + content host | ☐ | |
 | — | ~~Shared row builder~~ — largely obsolete: `ui:` controls carry their own spacing (kept only if the move grids still need one) | – | |

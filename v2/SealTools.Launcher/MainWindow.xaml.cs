@@ -1064,13 +1064,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildTunerCalibrateTab()
     {
-        var hint = new TextBlock
-        {
-            Text = "Open the 發條 (tuning) window, capture, then drag three boxes: the grade letter, the 3 attribute lines, and the spring count.",
-            Foreground = Res("SystemFillColorCautionBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 4),
-        };
+        // The status/output line of this tab: capture result, OCR dump, save confirmation. Mono, not
+        // a warning colour — it prints multi-line diagnostics rather than warnings.
+        var hint = Mono();
+        hint.Text = "Capture the 發條 window to begin.";
         _tunerHint = hint;
 
         var image = new Image { Stretch = Stretch.Uniform };
@@ -1100,9 +1097,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         top.Children.Add(check);
 
         var panel = new StackPanel { Margin = new Thickness(8) };
-        panel.Children.Add(hint);
-        panel.Children.Add(top);
-        panel.Children.Add(grid);
+        panel.Children.Add(Section("Capture",
+            Hint("Open the 發條 (tuning) window first; the launcher hides itself for the grab so it " +
+                 "cannot cover the game. The image must show the whole window."),
+            top));
+        panel.Children.Add(Section("Boxes",
+            Hint("Drag three boxes on the capture: the grade letter, the three attribute lines, and " +
+                 "the spring count. They are colour-coded, and a too-small drag is ignored."),
+            grid));
+        panel.Children.Add(Section("Result", hint));
         panel.Children.Add(save);
 
         return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer
