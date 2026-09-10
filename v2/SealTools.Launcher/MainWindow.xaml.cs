@@ -832,9 +832,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
-            "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
-            "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
-            "on the tool card)."));
+            "Keys the spammer presses, each on its own cooldown. Keys the Arduino can't send are " +
+            "ignored, with a warning on the tool card."));
 
         // Named key sets — switching presets changes which rotation the spammer presses.
         var presets = _service.Config.Spammer.Presets;
@@ -998,7 +997,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Preset", pickRow),
             LabeledField("Name", nameRow),
             status));
-        panel.Children.Add(Section("Keys", keyHeader, rowsPanel, addButton));
+        panel.Children.Add(Section("Keys",
+            // Said here as well as in the tab intro: the default preset is all "*0, *1, …" rows, and
+            // the one thing a reader needs to know about them is what that star means.
+            Hint("* is a fast tap — the key is held about 10 ms instead of the normal 30–80 ms. " +
+                 "Without it the press is longer, which is what most games want for a held skill. " +
+                 "Only digits 0–9 and F1–F10 are supported."),
+            keyHeader, rowsPanel, addButton));
 
         Dictionary<string, double> RowsToKeys()
         {
