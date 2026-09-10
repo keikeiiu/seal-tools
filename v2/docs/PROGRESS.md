@@ -36,6 +36,17 @@ identical. That alone was 7.7 % of the box — six times the 0.01 gate.
 The gem is drawn in the interior, so the separation gets *better*, not worse. A new test pins the
 inset, including the fallback when the inset would swallow the whole image.
 
+**Verified live afterwards**, same run, from `empty_check.txt`:
+
+```
+23:38:47  diff=0.818  empty=False     ← gem in the box (0.68–0.82 across the run)
+23:39:13  diff=0.000  empty=True      ← emptied, so the composer cleared and advanced
+```
+
+The gem signal on a real run is even wider than the offline measurement (0.82 vs 0.55), and the empty
+state is exactly 0.000 — the two states are now further apart than at any point before, with the gate
+untouched at 0.01.
+
 **Lesson worth keeping:** a 0.01 gate is only safe when the empty state really is pixel-identical. It
 was — until the window moved. The inset is what makes the tight gate honest.
 
