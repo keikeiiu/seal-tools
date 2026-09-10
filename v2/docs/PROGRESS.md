@@ -9,6 +9,42 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-11 — the v2.3 zip is built; publish.bat gains a public/personal split
+
+**Goal.** Build the v2.3 distributable and close the packaging gap: `publish.bat` produced a
+`publish\` folder but never the zip the README points at, and it copied `config\` wholesale — shipping
+the machine's real `local.yaml` and 14 MB of `calib_*.png` screenshots into a public zip.
+
+**What was decided, and why**
+
+- **Two publish modes.** `publish.bat` (public, the default) ships only the config templates
+  (`attributes.yaml`, `defaults.yaml`, `local.yaml.example`); `publish.bat local` ships the full
+  `config\` for a same-machine reinstall that is already calibrated. The safe one is the default, so
+  an unthinking `publish.bat` cannot leak a calibration.
+- **A cleanup step clears the previous mode's `config\`/`models\`** before each copy, so a public
+  build can never carry a `local.yaml` a local build left behind. Verified by building `local` then
+  `public` and listing the zips: public holds exactly the three templates, local holds the calibration.
+
+**Two traps found while writing the script**
+
+- **`set VERSION=v2.3` leaked into `dotnet publish`.** MSBuild reads env vars as properties
+  (case-insensitive), so `VERSION` overrode the `Version` property and `'v2.3'` failed semver. The
+  variable is now `RELTAG`.
+- **LF-only line endings broke cmd's batch parser** (`goto`/`if` blocks → spurious
+  "not recognized" errors). The file is CRLF, and the CRLF fix must be the *last* edit — GNU
+  `sed -i` re-strips `\r`.
+
+**Measured.** `dist\SealTools-v2.3.zip` = 166 MB (20 files: exe + native OCR DLLs + 3 models + 3
+templates); `SealTools-v2.3-local.zip` carries `local.yaml` + the three `calib_*.png`. The public zip
+built *after* the local one still holds only the templates — the cleanup works.
+
+**Left open.** The zip is built but **not uploaded**: `gh` is unauthenticated and the GitHub release
+`v2.3` does not exist yet. Nor does the `v2.2` release the README advertised — its features shipped
+inside v2.3, and that row is now folded into v2.3's. The old v2.0/v2.1 folders and zips in `dist\`
+are still there, to delete once the release lands.
+
+---
+
 ## 2026-09-11 — the launcher adopts WPF-UI; the window learns where it belongs
 
 **Goal.** Make the launcher readable and keep the tool status visible while playing. The project had

@@ -187,19 +187,21 @@ dotnet test
 dotnet run --project SealTools.Launcher
 
 :: publish a self-contained single-file exe (+ config + models)
-publish.bat
-:: output: SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish\SealTools.Launcher.exe
+publish.bat          :: public build  -> dist\SealTools-v2.3.zip        (template config only)
+publish.bat local    :: personal build -> dist\SealTools-v2.3-local.zip (your full calibration)
+:: output also left in SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish\
 ```
 
 The published `publish\` folder is the distributable: `SealTools.Launcher.exe` + native OCR DLLs +
 `config\` + `models\`. Copy it to the target PC and run the exe — no install.
 
-> **Packaging note (deliberate):** `publish.bat` copies the whole `config\` folder, so the
-> distributable **includes your `local.yaml`** — your machine's calibration. That is intentional for
-> personal / same-machine use: the exe arrives already calibrated. Before giving the folder to
-> someone else, delete `config\local.yaml` (and any `local.yaml.corrupt-backup`) from the published
-> copy; the exe re-seeds it from `config\local.yaml.example` on first run, and they calibrate their
-> own. Revisit this once the build is genuinely release-ready.
+> **Two packaging modes.** `publish.bat` (public, the default) ships only the config *templates* —
+> `attributes.yaml`, `defaults.yaml`, `local.yaml.example` — so the zip is safe to share without
+> leaking your calibration. `publish.bat local` ships your full `config\` (including `local.yaml` and
+> the `calib_*.png` screenshots) for reinstalling on the same machine already calibrated. The exe
+> re-seeds `config\local.yaml` from the example on first run, and a fresh machine calibrates its own.
+> The script clears the previous mode's config before copying, so a public build can never carry a
+> `local.yaml` that a local build left behind.
 
 ---
 

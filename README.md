@@ -10,8 +10,7 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 | Version | File | What it is |
 |---|---|---|
-| **v2.3** (latest) | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | WPF-UI launcher: card-based tabs, collapsible config, pin-on-top and a running-tool mini view |
-| v2.2 | [SealTools-v2.2.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.2/SealTools-v2.2.zip) | Arduino closed-loop cursor + moves, pixel-based empty-result check, run ends after the last grade |
+| **v2.3** (latest) | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | WPF-UI launcher, Arduino closed-loop cursor, pixel-based empty-result check; a run ends after the last grade |
 | v2.1 | [SealTools-v2.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.1/SealTools-v2.1.zip) | Physical-pixel capture, Setup tab, spammer presets, [user guide](v2/docs/USER_GUIDE.md) |
 | v2.0 | [SealTools-v2.zip](https://github.com/keikeiiu/seal-tools/releases/download/V2.0.0/SealTools-v2.zip) | First C#/.NET release |
 

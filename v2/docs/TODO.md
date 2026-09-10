@@ -79,8 +79,9 @@ Remaining live checks (no code change expected):
 
 ## Decisions waiting on you
 
-- [ ] **`publish.bat` ships `local.yaml`.** Deliberate for personal/same-machine use. Revisit when the
-  build is release-ready: either document it or exclude the file so a shared build starts uncalibrated.
+- [x] **`publish.bat` ships `local.yaml`.** Resolved (2026-09-11): `publish.bat` now has two modes —
+  `public` (default) ships only the config templates, `local` ships your full `config\` incl.
+  `local.yaml` + `calib_*.png`. A shared build starts uncalibrated; a personal build arrives calibrated.
 - [ ] **`ReferenceWindowConfig`** is written to `defaults.yaml` but never read (auto-anchor is *not*
   implemented). Remove it, or leave it as a placeholder for the planned feature.
 - [ ] **Debug Cursor / Debug Physical buttons** in the Gem calibrate tab — keep as diagnostics or remove.

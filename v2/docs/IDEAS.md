@@ -71,8 +71,11 @@ because it changes how something else should be done.
 
 ## 7. Release and packaging
 
-- **Refresh `dist/`** (S). The copies are v2.1; `publish.bat` should update them as part of a release.
-- **Decide whether the zip ships `local.yaml`** (S, already a TODO decision).
+- **Refresh `dist/`** (S). ~~The copies are v2.1~~ — `publish.bat` now writes `dist\SealTools-v2.3.zip`
+  and `dist\SealTools-v2.3-local.zip` (2026-09-11). The old v2.0/v2.1 folders and zips are still there;
+  delete them once the v2.3 release is confirmed.
+- **Decide whether the zip ships `local.yaml`** (S) — **decided**: two publish modes, `public` (templates
+  only) and `local` (full calibration). See [publish.bat](../publish.bat) and [README.md](../README.md).
 - **Changelog** (S). One file, newest first, so a release note is a copy-paste.
 
 ## 7b. Spammer as a key pad (nice-to-have, designed not built)
