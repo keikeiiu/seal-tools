@@ -282,9 +282,31 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Arduino connection status: a green/red light, the expected VID/PID, every serial port the
     // OS sees (with the matching one flagged), and a test click. Used to diagnose "Arduino not
     // found" without re-reading the code.
+    // One section heading inside a tab, so the heading style lives in one place instead of being
+    // re-specified per tab. (The shared row builder and the rest of the style constants come with
+    // the first tab that needs them.)
+    private TextBlock SectionHeading(string text) => new()
+    {
+        Text = text,
+        FontWeight = FontWeights.SemiBold,
+        Foreground = (Brush)FindResource("FgBrush"),
+        Margin = new Thickness(0, 12, 0, 4),
+    };
+
     private TabItem BuildArduinoTab()
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Is the Arduino there, and does its click reach the game?",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 2),
+        });
+
+        // ── Connection ──────────────────────────────────────────────────────
+        panel.Children.Add(SectionHeading("Connection"));
 
         var light = new Ellipse
         {
@@ -341,34 +363,54 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var refreshBtn = MakeButton("Refresh", ControlAppearance.Secondary);
         refreshBtn.Click += (_, _) => Refresh();
+        var refreshRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        refreshRow.Children.Add(refreshBtn);
+        panel.Children.Add(refreshRow);
 
-        var testBtn = MakeButton("Test Click (C)", ControlAppearance.Primary);
+        // ── Input test ──────────────────────────────────────────────────────
+        panel.Children.Add(SectionHeading("Input test"));
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Sends one left click through the Arduino, at wherever the cursor already is — it does " +
+                   "not move the cursor. Use it to prove the HID path works, or Calibrate Gem → Test to " +
+                   "place the cursor as well.",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+
+        // Its own result line, so a click test can't overwrite the connection status above.
+        var testResult = new TextBlock
+        {
+            Foreground = (Brush)FindResource("FgBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        var testBtn = MakeButton("Send a test click", ControlAppearance.Primary);
         testBtn.Click += async (_, _) =>
         {
             var ser = await _service.ArduinoPortAsync();
             if (ser == null)
             {
-                light.Fill = (Brush)FindResource("BadBrush");
-                status.Text = "Not found — cannot send click";
+                testResult.Text = "No Arduino — see Connection above.";
                 return;
             }
             try
             {
                 GemPointer.Click(ser);
-                light.Fill = (Brush)FindResource("GoodBrush");
-                status.Text = "Sent click (C)";
+                testResult.Text = $"Sent (clicked via {ser.PortName}).";
             }
             catch (Exception ex)
             {
-                light.Fill = (Brush)FindResource("BadBrush");
-                status.Text = "Click failed: " + ex.Message;
+                testResult.Text = "Click failed: " + ex.Message;
             }
         };
 
-        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal };
-        buttonRow.Children.Add(refreshBtn);
-        buttonRow.Children.Add(testBtn);
-        panel.Children.Add(buttonRow);
+        var testRow = new StackPanel { Orientation = Orientation.Horizontal };
+        testRow.Children.Add(testBtn);
+        testRow.Children.Add(testResult);
+        panel.Children.Add(testRow);
 
         Refresh();
 

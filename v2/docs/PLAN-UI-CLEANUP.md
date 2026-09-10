@@ -20,7 +20,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | # | Tab / step | State | Commit |
 |---|---|---|---|
 | 1 | `Settings` → **`Hotkeys`** (rename + focus caveat + guides) | ✔ | `b43a6d1` |
-| 2 | `Arduino` (connection / input test, spacing) | ☐ | |
+| 2 | `Arduino` — split into **Connection** / **Input test**, own result line, button renamed | ✔ | *(this commit)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
 | 4 | `Gem` settings (run / advanced) | ☐ | |
 | 5 | `Spammer` (preset / keys / save) | ☐ | |

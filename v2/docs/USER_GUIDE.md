@@ -125,14 +125,15 @@ Points the composer at the gem-combine UI and stores the relative move counts.
 
 ## Arduino tab
 
-Connection diagnostics.
+Connection diagnostics, split into the two questions you actually ask: *is the Arduino there*, and
+*does its click reach the game*.
 
-| Control | What it does |
-|---|---|
-| Status light | Green when a serial device matching the configured VID/PID is present. |
-| Port list | Every serial port the OS sees, with `>>` marking the match, plus the expected VID/PID. |
-| **Refresh** | Re-runs the scan (it is not live). |
-| **Test Click (C)** | Opens the port and sends a real Arduino click — the end-to-end check that the device is alive. |
+| Section | Control | What it does |
+|---|---|---|
+| Connection | Status light | Green when a serial device matching the configured VID/PID is present. |
+| Connection | Port list | Every serial port the OS sees, with `>>` marking the match, plus the expected VID/PID. |
+| Connection | **Refresh** | Re-runs the scan (it is not live). |
+| Input test | **Send a test click** | Opens the port and sends one Arduino left click at the cursor's current position — the end-to-end check that the device is alive. It does **not** move the cursor; use Calibrate Gem → Test for placing it. Its result shows beside the button, so it can't overwrite the connection status. |
 
 ## Setup tab
 
