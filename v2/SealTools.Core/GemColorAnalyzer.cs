@@ -71,16 +71,58 @@ public static class GemColorAnalyzer
         };
     }
 
-    // Normalised distance between two compositions (0..1). Brightness, saturation and the
-    // coloured fraction are the distinguishing signals for empty-vs-gem; the RGB means add
-    // a coarse hue cue. Equal weight, mean of the per-metric absolute differences.
-    public static double Distance(ColorComposition a, ColorComposition b) =>
-        (Math.Abs(a.MeanV - b.MeanV) + Math.Abs(a.MeanSat - b.MeanSat) +
-         Math.Abs(a.ColoredFraction - b.ColoredFraction) +
-         Math.Abs(a.MeanR - b.MeanR) + Math.Abs(a.MeanG - b.MeanG) + Math.Abs(a.MeanB - b.MeanB)) / 6.0;
+    // Distance between two compositions: the EUCLIDEAN norm over the six features, not their mean.
+    //
+    // The mean was measured to be useless here (2026-09-10): a genuinely empty box and the same box
+    // holding a gem differ by only 0.10 as a mean of six absolute differences, because the gem
+    // covers part of the box and no single feature moves much on its own — so a box full of gem read
+    // as "empty" and the composer advanced the grade. The same pair is 0.29 as a norm, which the
+    // calibrated threshold (0.18) separates cleanly. The features are all 0..1, so the norm is
+    // 0..sqrt(6); `gem.empty_distance` is on that scale.
+    public static double Distance(ColorComposition a, ColorComposition b)
+    {
+        double dv = a.MeanV - b.MeanV;
+        double ds = a.MeanSat - b.MeanSat;
+        double df = a.ColoredFraction - b.ColoredFraction;
+        double dr = a.MeanR - b.MeanR;
+        double dg = a.MeanG - b.MeanG;
+        double db = a.MeanB - b.MeanB;
+        return Math.Sqrt(dv * dv + ds * ds + df * df + dr * dr + dg * dg + db * db);
+    }
 
     // True when the frame is close enough to the sampled EMPTY reference. A null reference
     // means empty-detection hasn't been calibrated yet, so we conservatively say NOT empty.
     public static bool IsEmpty(ColorComposition frame, ColorComposition? emptyRef, double emptyDistance) =>
         emptyRef != null && Distance(frame, emptyRef) <= emptyDistance;
+
+    // Fraction of pixels (0..1) that differ from the reference crop by more than channelTolerance
+    // on ANY channel. 0 = pixel-identical; null when the images aren't the same size.
+    //
+    // This is the empty test's primary signal because it is colour- AND shape-blind: it asks "is
+    // this still the same picture?" instead of "what colour is it", so a red, green or blue gem —
+    // or a differently-shaped higher-grade gem — all read the same. Measured on the reference
+    // machine (2026-09-10, 62x59 crop): an EMPTY box scores 0.000 (pixel-identical), a box holding
+    // a gem scores 0.357. Anything from 0.05 to 0.30 separates them, so the calibrated threshold
+    // (gem.empty_distance) has a wide margin on both sides.
+    public static double? DiffFraction(Mat live, Mat reference, int channelTolerance)
+    {
+        if (live.Width != reference.Width || live.Height != reference.Height) return null;
+
+        using var livePx = new Mat<Vec3b>(live);
+        using var refPx = new Mat<Vec3b>(reference);
+        var a = livePx.GetIndexer();
+        var b = refPx.GetIndexer();
+        int differing = 0;
+        for (int y = 0; y < live.Height; y++)
+            for (int x = 0; x < live.Width; x++)
+            {
+                var pa = a[y, x];
+                var pb = b[y, x];
+                int d = Math.Max(Math.Abs(pa.Item0 - pb.Item0),
+                        Math.Max(Math.Abs(pa.Item1 - pb.Item1), Math.Abs(pa.Item2 - pb.Item2)));
+                if (d > channelTolerance) differing++;
+            }
+
+        return differing / (double)(live.Width * live.Height);
+    }
 }

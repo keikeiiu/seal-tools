@@ -63,7 +63,7 @@ Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
 |---|---|
 | **Start grade** | 合成器開始的等級（`N` / `G` / `DG`）。 |
 | **On empty result** | 合成結果欄位為空時要怎麼做：**Stop**（停止）、**Advance to next grade**（前往下一個等級）、或 **Clear resources, then advance**（先對三個資源欄位按右鍵清除卡住的寶石，再前往下一個等級）。 |
-| **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與距離記錄（僅供除錯）。 |
+| **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與 `diff=…` 記錄（僅供除錯）。空欄偵測的運作方式見 [CALIBRATION.md](CALIBRATION.md)。 |
 | **Save Gem Config** | 把以上設定寫入 `defaults.yaml`。 |
 
 ## Spammer 分頁
@@ -115,10 +115,13 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | **Test Move (rel)** | 點 `from`、送出該路線的原始 `D dx dy`、再點 `to`。用來確認合成器的移動會落在正確位置。 |
 | **Check Result Colour** | 立即取樣結果欄位，回報它的顏色、與空欄參考的距離，以及「空／有寶石」的判定。 |
 | **Test Result Gem** | 同樣取樣，但附上更多細節（通道差值、主要色調），方便你人工判斷空欄偵測的門檻。 |
-| **Debug Cursor (logical)** | 用 `SetCursorPos` 加上換算後的座標把游標移到選定的點（工具實際使用的方式），並顯示計算出的目標、API 是否接受、以及游標最後的位置。**不會點擊。** |
+| **Debug Cursor (logical)** | 用 `SetCursorPos` 加上換算後的座標把游標移到選定的點，並顯示計算出的目標、API 是否接受、以及游標最後的位置。**不會點擊。** 僅供診斷 — 工具實際上是靠 Arduino 移動游標，不是這個呼叫。 |
 | **Debug Physical** | 同上，但改用 `SetPhysicalCursorPos`。保留它是為了比較兩種 API。 |
 | **Composer moves** 表格 | 每條路線一列（N→Register、G→Register、DG→Register、Register→Combine、Combine→Register、Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3→N/G/DG），可編輯原始 `dx`/`dy`，每列有 **Test** 按鈕。 |
 | **Save Composer Moves** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
+| **Composer move mode** | `tuned`（預設）= 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
+| **New Gem Composer Moves** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Test** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
+| **Test Full Cycle (Arduino)** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
 
 ## Arduino 分頁
 

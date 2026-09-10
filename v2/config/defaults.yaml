@@ -88,14 +88,17 @@ gem:
   - N
   - G
   - DG
-  start_grade: DG
-  empty_mode: stop
+  start_grade: N
+  # tuned = send the hand-tuned gem.movements counts; arduino = place the cursor on the route's
+  # destination point (closed loop). See docs/MOVE-SETS.md.
+  move_mode: arduino
+  empty_mode: advance_grade_clear
   empty_streak: 2
   colored_gap_min: 40
   save_empty_captures: false
 spammer:
-  active: default          # which preset the spammer presses
-  presets:                 # named key sets — switch between them in the Spammer tab
+  active: default
+  presets:
     default:
       '*0': 0.2
       '*1': 0.2

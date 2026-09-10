@@ -1,5 +1,9 @@
 # Seal Tools v2 — Fix Execution Status (branch `v2-saving-attempt`)
 
+> **v2.2 (2026-09-10).** Cursor positioning moved off `SetCursorPos` onto the Arduino, the composer
+> gained a second move set (calibrated points, closed loop), empty-result detection became a pixel
+> comparison, and a run ends after the last grade. All of it verified on a live game.
+>
 > **v2.1 (2026-09-09).** The state described here is tagged `v2.1`: capture, cursor, tuner OCR and
 > the composer verified on a live game, plus spammer presets and the Setup tab.
 
@@ -12,7 +16,32 @@ calibration steps, see [CALIBRATION.md](CALIBRATION.md).
 
 ---
 
-## Pass 3 — physical coordinate space (latest)
+## Pass 4 — Arduino cursor, move sets, empty check (v2.2, latest)
+
+Branch `v2-arduino-moves`. Detail: [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md),
+[MOVE-SETS.md](MOVE-SETS.md), [PROGRESS.md](PROGRESS.md).
+
+| # | Commit | Change |
+|---|--------|--------|
+| 1 | `624fddd` | The `arduino` move set: `GemRoutes` (each route ends on a calibrated point) + `gem.move_mode` |
+| 2 | `2e0b043` | Cursor positioned by the Arduino in a closed loop; a failed placement stops the tool instead of clicking blind; the port hypothesis refuted |
+| 3 | `3ca2995` | `PROGRESS.md` — dated log of what was done and why |
+| 4 | `ac0f8ec` | **Test Full Cycle (Arduino)** button in Calibrate Gem |
+| 5 | `accaf90` | Progress entry |
+| 6 | `0afdc46` | Composer switched to `gem.move_mode: arduino` |
+| 7 | `f4b5f02` | Empty-result detection by pixel difference vs the saved empty crop; signature sampled from the launcher-hidden screenshot; `Distance` → Euclidean |
+| 8 | `9fc03d6` | Progress entry |
+| 9 | `6a28ecf` | A run ends after the last grade instead of wrapping to the first |
+| 10 | `25db00a` | Progress entry |
+
+**Status 2026-09-10:** verified on a live game — the composer runs N → G → DG in `arduino` mode,
+combining each grade until the result box reads empty (`diff 0.44–0.54` with a gem, `0.000` empty,
+gate `0.01`), and stops after DG.
+
+**Still open:** why `SetCursorPos` is refused in this process (no longer load-bearing — nothing calls
+it), and the tuner's OCR row-bucket question ([TODO.md](TODO.md)).
+
+## Pass 3 — physical coordinate space
 
 Fixing the capture crop led to reworking the coordinate model. Design and measured evidence:
 [docs/COORDINATES.md](COORDINATES.md).

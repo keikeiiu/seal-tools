@@ -12,12 +12,37 @@ namespace SealTools.GemComposer;
 
 public sealed class GemComposer : ToolBase
 {
-    private readonly AppConfig _cfg;
+    // Per-channel difference above which a pixel counts as "not the empty box". The game's empty
+    // result slot is static UI: a live crop of it measured pixel-identical to the saved reference
+    // (0.000 at every threshold from 10 to 60), while a box holding a gem differs on ~36% of its
+    // pixels by far more than 60. 30 sits in the empty middle of that gap.
+    private const int EmptyDiffTolerance = 30;
 
-    public GemComposer(AppConfig cfg)
+    private readonly AppConfig _cfg;
+    private readonly string _rootDir;
+    private Mat? _emptyReference;
+    private bool _emptyReferenceLoaded;
+
+    public GemComposer(AppConfig cfg, string rootDir)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
+        _rootDir = rootDir;
+    }
+
+    // The empty result-box crop saved by the calibrator (config/calib_gem_result.png), loaded once.
+    // Null when it isn't there — then the colour signature is used instead.
+    private Mat? EmptyReference()
+    {
+        if (_emptyReferenceLoaded) return _emptyReference;
+        _emptyReferenceLoaded = true;
+        try
+        {
+            var path = Path.Combine(_rootDir, "config", "calib_gem_result.png");
+            if (File.Exists(path)) _emptyReference = Cv2.ImRead(path, ImreadModes.Color);
+        }
+        catch { _emptyReference = null; }
+        return _emptyReference;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -64,6 +89,52 @@ public sealed class GemComposer : ToolBase
             return false;
         }
 
+        // Place the cursor on a calibrated POINT with the Arduino (closed loop) — the "arduino"
+        // move set. The same call the calibrator's Test Click makes, so a move that lands in a test
+        // lands here. Returns false (and stops the tool with a reason on the card) if the point
+        // isn't calibrated or the cursor can't be placed.
+        bool PlaceAt(string what, string pointName)
+        {
+            if (GemRoutes.Resolve(_cfg, pointName) is not { } p)
+            {
+                Fail($"{what}: '{pointName}' isn't calibrated yet — open Calibrate Gem and save it.");
+                return false;
+            }
+            var display = GemPointer.Display(_cfg.Window.Title);
+            if (display == null)
+            {
+                Fail("Game window not found (or minimized) — open and restore the game first.");
+                return false;
+            }
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, p.X, p.Y));
+            if (!placed.Ok)
+            {
+                Fail($"{what}: couldn't move the cursor to {pointName} — {placed.Error}.");
+                return false;
+            }
+            return true;
+        }
+
+        // One composer route move, honouring gem.move_mode: "tuned" sends the hand-tuned counts in
+        // gem.movements, "arduino" places the cursor on the route's destination point instead (and
+        // `tuned` is ignored). Both are one call so a route reads the same either way.
+        bool Route(string what, string routeKey, List<int>? tuned)
+        {
+            if (_cfg.Gem.MoveMode == "arduino")
+            {
+                if (GemRoutes.Destination(routeKey) is not { } destination)
+                {
+                    Fail($"{what}: unknown route '{routeKey}'.");
+                    return false;
+                }
+                return PlaceAt(what, destination);
+            }
+
+            if (!TryMove(what, tuned, out var dx, out var dy)) return false;
+            GemPointer.Move(ser, dx, dy);
+            return true;
+        }
+
         void SelectGradeAndRegister()
         {
             var display = GemPointer.Display(_cfg.Window.Title);
@@ -75,24 +146,40 @@ public sealed class GemComposer : ToolBase
 
             var mv = _cfg.Gem.Movements;
             if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-            if (!TryMove($"Move {grades[gidx]} → Register", mv.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
 
             // v1 sequence: select grade, move to Register, select. No focus handling — the single
             // click on the grade button does both jobs (activates the game window and presses the
             // button), so no separate click-to-focus is needed. Do NOT add a Win32 focus API or a
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
-            GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
+            //
+            // A cursor that can't be placed must NOT be clicked through: the click would land
+            // wherever the pointer happens to be (docs/CURSOR-INVESTIGATION.md).
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+            if (!placed.Ok)
+            {
+                Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
+                return;
+            }
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
-            GemPointer.Move(ser, dx, dy);
+            if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
+                    mv.RadioToRegister.GetValueOrDefault(grades[gidx]))) return;
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
         }
 
-        // True when the composed result-gem box is empty (no gem), per the calibrated empty
-        // signature. Returns false when empty-detection isn't configured.
+        // True when the composed result-gem box is empty (no gem).
+        //
+        // Primary signal: the fraction of pixels that differ from the saved empty-box crop — this
+        // is colour- and shape-blind, so any gem (red/green/blue, any grade's shape) reads the same.
+        // Measured: empty 0.000, gem 0.357, threshold (gem.empty_distance) 0.18.
+        //
+        // Fallback when that crop is missing: the colour signature, which averages the whole box
+        // and is therefore the weaker test (a gem colour close to the empty slot's can hide in it).
+        // Returns false (not empty) when neither is available, so the composer never advances on a
+        // missing reference.
         bool IsResultBoxEmpty()
         {
             if (_cfg.Gem.ResultGemArea is not { Count: 4 } area) return false;
@@ -100,9 +187,26 @@ public sealed class GemComposer : ToolBase
             var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
             if (cap == null) return false;
             using var crop = cap.Image;
-            var frame = GemColorAnalyzer.Analyze(crop, _cfg.Gem.ColoredGapMin);
-            var empty = GemColorAnalyzer.IsEmpty(frame, _cfg.Gem.EmptySignature, _cfg.Gem.EmptyDistance);
-            if (_cfg.Gem.SaveEmptyCaptures && _cfg.Gem.EmptySignature is { } sig)
+
+            double? diff = null;
+            if (EmptyReference() is { } reference)
+                diff = GemColorAnalyzer.DiffFraction(crop, reference, EmptyDiffTolerance);
+
+            bool empty;
+            if (diff is { } fraction)
+            {
+                empty = fraction <= _cfg.Gem.EmptyDistance;
+            }
+            else if (_cfg.Gem.EmptySignature is { } sig)
+            {
+                empty = GemColorAnalyzer.IsEmpty(GemColorAnalyzer.Analyze(crop, _cfg.Gem.ColoredGapMin), sig, _cfg.Gem.EmptyDistance);
+            }
+            else
+            {
+                return false;
+            }
+
+            if (_cfg.Gem.SaveEmptyCaptures)
             {
                 try
                 {
@@ -111,8 +215,8 @@ public sealed class GemComposer : ToolBase
                     crop.ImWrite(Path.Combine(dir, $"empty_check_crop_{DateTime.Now:HHmmss_fff}.png"));
                 }
                 catch { }
-                var d = GemColorAnalyzer.Distance(frame, sig);
-                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} dist={d:0.000} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
+                var detail = diff is { } f ? $"diff={f:0.000}" : "diff=n/a";
+                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} {detail} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
             }
             return empty;
         }
@@ -121,18 +225,15 @@ public sealed class GemComposer : ToolBase
         bool ClearResources()
         {
             var mv = _cfg.Gem.Movements;
-            if (!TryMove("Move Register → Resource1", mv.RegisterSlot1, out var x1, out var y1)) return false;
-            GemPointer.Move(ser, x1, y1);
+            if (!Route("Move Register → Resource1", "register_slot1", mv.RegisterSlot1)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            if (!TryMove("Move Resource1 → Resource2", mv.Slot1Slot2, out var x2, out var y2)) return false;
-            GemPointer.Move(ser, x2, y2);
+            if (!Route("Move Resource1 → Resource2", "slot1_slot2", mv.Slot1Slot2)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
-            if (!TryMove("Move Resource2 → Resource3", mv.Slot2Slot3, out var x3, out var y3)) return false;
-            GemPointer.Move(ser, x3, y3);
+            if (!Route("Move Resource2 → Resource3", "slot2_slot3", mv.Slot2Slot3)) return false;
             SleepCheck(0.2);
             GemPointer.RightClick(ser);
             SleepCheck(0.3);
@@ -149,21 +250,47 @@ public sealed class GemComposer : ToolBase
             _ => null,
         };
 
+        // The route key for that same movement, so the arduino set can resolve its destination.
+        static string? Slot3RouteKey(string grade) => grade switch
+        {
+            "N" => "slot3_n",
+            "G" => "slot3_g",
+            "DG" => "slot3_dg",
+            _ => null,
+        };
+
         // Advance to the next grade; in "advance_grade_clear" mode, clear the resource slots first.
-        void AdvanceGrade()
+        // Returns false when there is no next grade — a run is N -> G -> DG ONCE, not a loop, so the
+        // composer ends instead of wrapping back to the first grade. Also false when a step failed
+        // (the reason is already on the card).
+        bool AdvanceGrade()
         {
             if (_cfg.Gem.EmptyMode == "advance_grade_clear" && !ClearResources())
-                return;
+                return false;
 
-            gidx = (gidx + 1) % grades.Count;
+            if (gidx + 1 >= grades.Count)
+            {
+                Console.WriteLine($"[DONE] {grades[gidx]} was the last grade");
+                state.Message = $"All grades done (last was {grades[gidx]}) — composer stopped.";
+                running = false;
+                state.Running = false;
+                Beep(880, 200);
+                return false;
+            }
+
+            gidx++;
             state.Grade = grades[gidx];
             Console.WriteLine($"[EMPTY] advancing -> {grades[gidx]}");
 
             if (_cfg.Gem.EmptyMode == "advance_grade_clear")
             {
                 // Cursor is at Resource3 → move to the next grade and select it.
-                if (!TryMove($"Move Resource3 → {grades[gidx]}", Slot3ToGrade(grades[gidx]), out var sx, out var sy)) return;
-                GemPointer.Move(ser, sx, sy);
+                if (Slot3RouteKey(grades[gidx]) is not { } slotKey)
+                {
+                    Fail($"No route Resource3 → {grades[gidx]}.");
+                    return false;
+                }
+                if (!Route($"Move Resource3 → {grades[gidx]}", slotKey, Slot3ToGrade(grades[gidx]))) return false;
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
@@ -175,22 +302,27 @@ public sealed class GemComposer : ToolBase
                 if (display == null)
                 {
                     Fail("Game window not found (or minimized) — open and restore the game first.");
-                    return;
+                    return false;
                 }
-                if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return;
-                GemPointer.To(WindowFinder.ComputeCursorTarget(display, gx, gy));
+                if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return false;
+                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+                if (!placed.Ok)
+                {
+                    Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
+                    return false;
+                }
                 SleepCheck(0.3);
                 GemPointer.Click(ser);
                 SleepCheck(0.5);
             }
 
             // Next grade → Register (radio_to_register) and select.
-            if (!TryMove($"Move {grades[gidx]} → Register",
-                _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]), out var dx, out var dy)) return;
-            GemPointer.Move(ser, dx, dy);
+            if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
+                    _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]))) return false;
             SleepCheck(0.3);
             GemPointer.Click(ser);
             SleepCheck(0.5);
+            return true;
         }
 
         try
@@ -260,8 +392,7 @@ public sealed class GemComposer : ToolBase
                 }
 
                 // Combine.
-                if (!TryMove("Move Register → Combine", _cfg.Gem.Movements.RegisterCombine, out var rcx, out var rcy)) break;
-                GemPointer.Move(ser, rcx, rcy);
+                if (!Route("Move Register → Combine", "register_combine", _cfg.Gem.Movements.RegisterCombine)) break;
                 SleepCheck(0.2);
                 GemPointer.Click(ser);
                 SleepCheck(0.8);
@@ -284,13 +415,12 @@ public sealed class GemComposer : ToolBase
 
                 // Move back to Register (the advance flow must start from the Register button).
                 if (QuitPressed || ct.IsCancellationRequested) break;
-                if (!TryMove("Move Combine → Register", _cfg.Gem.Movements.CombineRegister, out var crx, out var cry)) break;
-                GemPointer.Move(ser, crx, cry);
+                if (!Route("Move Combine → Register", "combine_register", _cfg.Gem.Movements.CombineRegister)) break;
                 SleepCheck(0.2);
 
                 if (advanceNow)
                 {
-                    AdvanceGrade();
+                    if (!AdvanceGrade()) break;   // last grade done, or a step failed
                     continue;
                 }
 

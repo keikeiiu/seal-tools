@@ -1,0 +1,138 @@
+# Progress log
+
+A dated, append-only record of what was actually done and why — the reasoning that is not visible in
+the code or the commit titles. One entry per session or per landed victory, newest first.
+
+**How to use it:** append an entry when a change lands. Keep it short: what was the goal, what was
+decided and why, what was measured, what is still open. Link to the commit and to the doc that owns
+the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what the code already says.
+
+---
+
+## 2026-09-10 (4) — a run ends after the last grade
+
+**Symptom.** The first live `arduino`-mode run worked — combines until empty, N → G → DG, empty check
+correct throughout — but after DG's material ran out it went back to N and started over.
+
+**Why.** `AdvanceGrade` advanced with `gidx = (gidx + 1) % grades.Count`, an intentional endless
+loop from v1. A run is meant to be N → G → DG once.
+
+**Fix.** `AdvanceGrade` returns false when there is no next grade; the composer reports "All grades
+done (last was DG) — composer stopped." on the card and breaks out of the loop. The manual F9
+advance still wraps. Commit `6a28ecf`.
+
+**Evidence from the run** (`<bin>\logs\empty_check.txt`) — the new empty check behaved exactly as
+designed: gem frames `diff=0.44–0.54`, empty frames `diff=0.000`, gate `0.01`.
+
+---
+
+## 2026-09-10 (3) — empty-result detection rebuilt on a pixel difference
+
+**Goal.** The composer advanced the grade while the result box plainly held a gem, so `empty_mode:
+advance_grade_clear` ran away. Chased it to the empty check, not the moves.
+
+**What was measured** (62×59 crop, the real empty reference vs a real gem frame)
+
+- The old metric — mean of six absolute colour differences — scored the pair **0.100**, under the
+  0.18 threshold: a box full of gem read as "empty". The one strong signal, the coloured fraction
+  (0.556 → 0.930), was being divided by six.
+- Euclidean norm over the same six: **0.294** (empty vs gem) and **0.001** (empty vs itself).
+- Per-pixel difference vs the saved empty crop: **0.000** for an empty box at every channel
+  threshold 10–60, **0.357** with a gem. The empty slot is static UI and renders pixel-identical.
+- A metric sweep showed *every* pure-colour feature is the wrong family: `dominant hue` is identical
+  (60°) for both, and mean R/G/B invert depending on gem colour. Structure metrics (edges 6×,
+  distinct colours 8×, laplacian variance 10×) all separate and are colour/shape-blind.
+
+**What was decided, and why**
+
+- **Primary test = fraction of pixels differing from the saved empty crop** (>30 on any channel),
+  threshold `gem.empty_distance` lowered 0.18 → **0.01**: ~35× below the gem signal, ~10× above the
+  floor. Colour- and shape-blind, so any gem colour or grade shape reads the same.
+- Euclidean colour signature kept only as a fallback for when the crop is missing.
+- **The empty reference is now taken from the launcher-hidden screenshot**, not a live screen grab:
+  the launcher covering the box at save time is what had poisoned the stored signature (0.17 away
+  from its own reference crop).
+- Diagnosis trap worth remembering: the sampler reads *screen* pixels, so a covering window makes
+  every reading garbage — a check run with the launcher in front returned `RGB(26,26,46)`.
+
+**Commit** — `f4b5f02` (branch `v2-arduino-moves`). 5 new tests, 17/17 pass.
+
+**Left open** — the composer has not yet run a full session in `arduino` mode with the new empty
+check; the next live run should show `diff=0.000` on empty boxes and `diff≈0.36` on gems in
+`<bin>\logs\empty_check.txt`.
+
+---
+
+## 2026-09-10 (2) — Test Full Cycle (Arduino)
+
+**Goal.** Let the new move set be judged on a real run before the composer is switched to it: one
+button in Calibrate Gem that plays a whole cycle with arduino moves only.
+
+**What was decided, and why**
+
+- The sequence mirrors the **composer's own loop body**, not a guess: select → Register → Combine,
+  then the composer's normal-path *deregister + register* (two Register clicks), then Combine again.
+  Without that pair a second combine does nothing. The user asked for the combine loop twice at N and
+  G; DG combines once and the cycle stops (no trailing resource clear — the user's choice).
+- It always uses the **arduino** set regardless of `gem.move_mode`; that is the point of the button.
+- All points are resolved *before* the first click, so a missing calibration can't half-run a cycle.
+
+**Measured (live)** — `test-cycle-arduino done steps=21`, game focused the whole way, gold down ~2.16M
+(the combines really ran), slots and result box empty afterwards.
+
+**Commit** — `ac0f8ec` (branch `v2-arduino-moves`).
+
+**Follow-up, same session:** the composer was switched over — `gem.move_mode: arduino` in
+`defaults.yaml` (this commit). The composer now runs the arduino set on every route; the tuned counts
+stay in `local.yaml` untouched, so switching back is one line.
+
+**Left open** — same as the entry below: no full composer run with `gem.move_mode: arduino` yet, and
+the reason `SetCursorPos` is refused in our process is still unknown.
+
+---
+
+## 2026-09-10 — cursor placement rebuilt on the Arduino; a second move set
+
+**Goal.** Finish the `SetCursorPos` bug: test the last untested hypothesis (the game's anti-cheat
+reacting to the process holding the Arduino port), then stop depending on the refused API at all.
+
+**What was decided, and why**
+
+- **The port hypothesis is refuted.** A throwaway process opened COM5, drove it, and called
+  `SetCursorPos` 30 times while holding it: 30/30 accepted. A second process managed 29/30 while the
+  port stayed held. So the refusal is not about the Arduino at all — it stays specific to the
+  launcher's process, and stays unexplained. Details and every earlier probe:
+  [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md).
+- **The cursor is now positioned with the Arduino** — a closed loop against `GetCursorPos`, which
+  always worked in our process. The HID path cannot be refused, and a placement that fails now stops
+  the tool instead of clicking somewhere arbitrary.
+- **The move set was added, not replaced.** The user asked for the inter-point movement to use the
+  same mechanism as Test Click, explicitly *without* discarding the hand-tuned `gem.movements`
+  counts. So both sets are live, selected by `gem.move_mode` (default `tuned` — nothing changes for
+  an untouched install). [MOVE-SETS.md](MOVE-SETS.md) explains both and how to test each.
+
+**Measured (live, on the reference PC)**
+
+- `D n 0` moves the cursor exactly `n` px in the process's cursor space at 100 / 250 / 500 / 600 px —
+  gain 1.0, no acceleration. A placement therefore converges in one move; from a far start, three.
+- The firmware walks a `D` move out in 10-px chunks with a 1 ms gap, so a fixed 20 ms settle read a
+  stale position and stacked corrections. Polling until the cursor stops moving fixed it.
+- Test Click lands exactly on the N radio and the radio selects; the `Register → Combine` arduino
+  route places on (829,725) → (785,871) against calibrated targets (830,726) / (786,872).
+
+**Commits** (branch `v2-arduino-moves`, not merged)
+
+| Commit | What |
+|---|---|
+| `624fddd` | `feat(v2)`: the arduino move set — `GemRoutes`, `gem.move_mode`, `MOVE-SETS.md` |
+| `2e0b043` | `fix(v2)`: closed-loop Arduino placement, failure stops the tool, mode wired to the UI |
+
+**Left open**
+
+- Why `SetCursorPos` is refused in the launcher's process — intermittently, while another process
+  under the same user/session/integrity succeeds. Not load-bearing any more; the shortest next step
+  if it ever matters is a minimal WPF app that only calls `SetCursorPos`.
+- The `arduino` move set has been tested per route through the calibrator buttons, not yet through a
+  full composer run with `gem.move_mode: arduino`.
+- The composer's runtime path (both modes) is the same call the tests make, but a live composer run
+  was not started during this session — it clicks in the game.

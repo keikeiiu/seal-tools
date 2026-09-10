@@ -1,5 +1,12 @@
 # Seal Tools v2 (C# / .NET WPF)
 
+**Version 2.2** (2026-09-10) — the cursor is positioned by the **Arduino** in a closed loop instead
+of `SetCursorPos` (which this process is intermittently refused — see
+[docs/CURSOR-INVESTIGATION.md](docs/CURSOR-INVESTIGATION.md)), the Gem Composer moves between
+calibrated points instead of hand-tuned counts by default ([docs/MOVE-SETS.md](docs/MOVE-SETS.md)),
+empty-result detection compares **pixels** against the saved empty crop instead of a colour average,
+and a composer run is N → G → DG **once** and ends.
+
 **Version 2.1** (2026-09-09) — the first release verified end to end on a live game: physical-pixel
 coordinates with the measured display environment stored alongside the calibration, a **Setup** tab,
 spammer **presets**, and both the Magic Tuner and the Gem Composer confirmed working. See
@@ -21,7 +28,7 @@ Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 | Tool | What it does |
 |------|--------------|
 | **Magic Tuner** | Rolls the 發條 (magic tuning) UI — Arduino click+Enter, OCR reads the grade (N/G/DG/XG/SG) + 3 attribute lines, matches them against a config dictionary, applies filter rules, stops at the target grade. |
-| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) using calibrated absolute points + relative Arduino "D" moves. |
+| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points, moving between them with the Arduino (closed loop by default, hand-tuned counts available via `gem.move_mode`). Combines each grade until the result box reads empty, then advances; ends after the last grade. |
 | **Skill Spammer** | Presses configured keys, each on its own cooldown. |
 
 Only one tool runs at a time (they share the single Arduino COM port).
@@ -42,7 +49,12 @@ v2/
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/USER_GUIDE.md     # every tab and button explained
-  docs/CURSOR-INVESTIGATION.md  # open bug: SetCursorPos refused in our process
+  docs/CURSOR-INVESTIGATION.md  # why the cursor is placed with the Arduino, not SetCursorPos
+  docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
+  docs/PROGRESS.md       # dated log of what was done and why (append per session)
+  docs/PLAN-TUNER-SPRING.md  # planned: tuner spring placement + cursor guard (not built)
+  docs/PLAN-UI-CLEANUP.md    # planned: launcher UI rework — study/decide before coding
+  docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe
@@ -122,11 +134,11 @@ pointer precision, then re-tune the counts. Not a code bug.
 ### Focus: how the game gets focused (Gem Composer)
 
 The composer does **no focus handling at all** — it mirrors v1's sequence exactly:
-`SetCursorPos(grade)` + `C` → `D dx dy` + `C`. Focus is a side effect of that, and the lifecycle is:
+`place cursor on grade` + `C` → `D dx dy` + `C`. Focus is a side effect of that, and the lifecycle is:
 
 - **At start the game is unfocused.** You press **Start** in the launcher, so the launcher window is the
   foreground window when the composer begins.
-- **The first click focuses it.** That `SetCursorPos(grade)` + `C` does both jobs at once: it activates
+- **The first click focuses it.** That `place cursor on grade` + `C` does both jobs at once: it activates
   the game window *and* presses the grade button. No separate click-to-focus is needed.
 - **It stays focused for the rest of the run**, because nothing else is clicked while the tool works.
 - **Any later click re-focuses it.** If you click back to the launcher mid-run (e.g. to press **Stop**),

@@ -5,6 +5,42 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
 
 ---
 
+## Planned (design written, not built)
+
+- [ ] **Tuner spring positioning + cursor guard.** Place the cursor on the 發條 button with the
+  Arduino closed loop when a run starts, and a `tuner.mouse_guard` toggle that either stops the run
+  when the mouse is moved or re-centres the cursor and carries on. Full plan, including the
+  ideas this unlocks and the two questions to answer with data first:
+  [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+- [ ] **UI cleanup (tabs, buttons, text-box layout).** Make the launcher readable: one tab one job,
+  controls grouped by intent, advanced/diagnostic bits behind a toggle, one shared row builder.
+  **Study first** — the target structure has to be agreed before any code, or the layout churn gets
+  redone. Inventory, problems, principles, five open questions and the tab-by-tab method:
+  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+
+## Ideas for later (captured, not designed)
+
+The wider backlog — reliability, safety, calibration UX, observability, code health, release and
+game-side mini-features, each with a rough size and a "decide first" flag — is in
+[IDEAS.md](IDEAS.md).
+
+Mini-features worth having once the UI work lands. Each reuses what already exists — calibrated
+points, the closed-loop cursor placement, the HID click, and a capture/OCR pass — so none of them
+needs new machinery, just a small driver per feature.
+
+- [ ] **Auto-sell items.** Calibrate the vendor's sell slot + the inventory grid; click an item, read
+  whether it matches a keep-list, sell the rest. Needs a keep/sell rule set (the attribute matcher is
+  the natural home) and a hard cap per run so it can't empty a bag by accident.
+- [ ] **Auto-buy items.** The mirror image: calibrate the vendor's list + a quantity control, buy a
+  configured amount, stop on gold or stock limits.
+- [ ] **Auto-submit missions.** Calibrate the quest-list entry + the submit/complete button (and any
+  confirmation dialog); click through the finished missions one by one. Needs a way to know when
+  nothing is left to submit — a capture/OCR check on the list, or a fixed cap — so it stops rather
+  than clicking empty rows.
+- [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
+- [ ] **Park the cursor off the OCR bands** before a capture — the pointer's pixels sit in the crop
+  today. Needs a measurement first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+
 ## Needs a live check before any code change
 
 - [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed

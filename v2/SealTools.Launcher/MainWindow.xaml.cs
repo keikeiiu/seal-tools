@@ -54,6 +54,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private readonly DispatcherTimer _timer;
 
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
+    // The two composer move sets (Core/GemRoutes.cs): tuned counts vs closed-loop point placement.
+    private static readonly string[] GemMoveModes = { "tuned", "arduino" };
     private static readonly string[] CalibResourceSteps = { "Resource1", "Resource2", "Resource3" };
     // Points offered by the gem "Test Click" move-cursor check.
     private static readonly string[] GemTestPoints =
@@ -121,6 +123,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Rectangle? _gemMarquee;
     private int _gemStep;
     private System.Windows.Controls.ComboBox? _gemTestPoint;
+    private System.Windows.Controls.ComboBox? _gemMoveMode;
+    private bool _cycleRunning;
     private System.Windows.Controls.Image? _gemResultPreview;
 
     public MainWindow()
@@ -1109,20 +1113,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 4, 0, 4),
         });
 
-        var routes = new[]
-        {
-            ("radio_N", "N", "Register", "N → Register"),
-            ("radio_G", "G", "Register", "G → Register"),
-            ("radio_DG", "DG", "Register", "DG → Register"),
-            ("register_combine", "Register", "Combine", "Register → Combine"),
-            ("combine_register", "Combine", "Register", "Combine → Register"),
-            ("register_slot1", "Register", "Resource1", "Register → Resource1"),
-            ("slot1_slot2", "Resource1", "Resource2", "Resource1 → Resource2"),
-            ("slot2_slot3", "Resource2", "Resource3", "Resource2 → Resource3"),
-            ("slot3_n", "Resource3", "N", "Resource3 → N"),
-            ("slot3_g", "Resource3", "G", "Resource3 → G"),
-            ("slot3_dg", "Resource3", "DG", "Resource3 → DG"),
-        };
+        // One shared definition of the routes (Core/GemRoutes.cs), so the tuned editor, the arduino
+        // editor below and the composer can never drift apart.
+        var routes = GemRoutes.All;
 
         // Grid with margin-based spacing: a right margin on each cell provides the column gap, and a
         // bottom margin provides the row gap, so rows/columns never touch. Controls size naturally
@@ -1133,7 +1126,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });   // dx box
         moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });   // dy box
         moveGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });      // Test btn
-        for (int r = 0; r <= routes.Length; r++)
+        for (int r = 0; r <= routes.Count; r++)
             moveGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         // Header row, one cell per column, with the same column gap so it lines up below.
@@ -1145,9 +1138,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         int moveRow = 1;
-        foreach (var (key, from, to, label) in routes)
+        foreach (var route in routes)
         {
-            var cur = GetGemMovement(key);
+            var cur = GetGemMovement(route.Key);
             // Width = column (76) - right gap (ColGap), so the box fits flush inside its cell and
             // the WPF-UI rounded corners aren't clipped on the right edge.
             var dxBox = new TextBox
@@ -1166,14 +1159,14 @@ public partial class MainWindow : FluentWindow, IDisposable
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, ColGap, RowGap),
             };
-            var row = new GemMoveRow { Key = key, From = from, To = to, Dx = dxBox, Dy = dyBox };
+            var row = new GemMoveRow { Key = route.Key, From = route.From, To = route.To, Dx = dxBox, Dy = dyBox };
             _gemMoveRows.Add(row);
 
             var testB = MakeButton("Test", ControlAppearance.Secondary);
             testB.Margin = new Thickness(0, 0, 0, RowGap); // align with the boxes, add only the row gap
             testB.Click += (_, _) => GemTestMovement(row.From, row.To, ParseMove(row.Dx), ParseMove(row.Dy));
 
-            Place(moveGrid, new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, moveRow, 0);
+            Place(moveGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, moveRow, 0);
             Place(moveGrid, dxBox, moveRow, 1);
             Place(moveGrid, dyBox, moveRow, 2);
             Place(moveGrid, testB, moveRow, 3);
@@ -1186,6 +1179,81 @@ public partial class MainWindow : FluentWindow, IDisposable
         var saveMoves = MakeButton("Save Composer Moves", ControlAppearance.Primary);
         saveMoves.Click += (_, _) => SaveComposerMoves();
         panel.Children.Add(saveMoves);
+
+        // The NEW move set: the same routes, but each move places the cursor on the route's
+        // destination POINT with the Arduino (closed loop) instead of sending tuned counts — the
+        // same mechanism as Test Click. Nothing above is replaced; the composer picks the set with
+        // gem.move_mode, and this section is how you try the new one on a live run first.
+        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "New Gem Composer Moves (cursor placed on the destination point — no tuned counts):",
+            Foreground = (Brush)FindResource("HighlightBrush"),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 4),
+        });
+
+        _gemMoveMode = MakeComboBox(GemMoveModes, _service.Config.Gem.MoveMode);
+        var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        modeRow.Children.Add(new TextBlock
+        {
+            Text = "Composer move mode",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        });
+        modeRow.Children.Add(_gemMoveMode);
+        panel.Children.Add(modeRow);
+
+        var arduinoGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) }); // route label
+        arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); // destination
+        arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });     // Test btn
+        for (int r = 0; r <= routes.Count; r++)
+            arduinoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        Place(arduinoGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
+        Place(arduinoGrid, new TextBlock { Text = "Goes to", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
+        Place(arduinoGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 2);
+
+        int arduinoRow = 1;
+        foreach (var route in routes)
+        {
+            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            testB.Margin = new Thickness(0, 0, 0, RowGap);
+            // Distinguishable in the accessibility tree (every row's visible label is "Test").
+            System.Windows.Automation.AutomationProperties.SetName(testB, $"Test new move {route.Label}");
+            testB.Click += (_, _) => GemTestArduinoRoute(route.From, route.To);
+
+            Place(arduinoGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, arduinoRow, 0);
+            Place(arduinoGrid, new TextBlock { Text = route.To, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, arduinoRow, 1);
+            Place(arduinoGrid, testB, arduinoRow, 2);
+            arduinoRow++;
+        }
+        panel.Children.Add(arduinoGrid);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Test clicks the source point, then places the cursor on the destination point and clicks — " +
+                   "the same closed-loop move the composer makes when move mode is \"arduino\".",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+
+        // One complete cycle, driven entirely by the arduino moves — the fastest way to see whether
+        // the new set survives a real run before switching the composer over to it.
+        var cycleBtn = MakeButton("Test Full Cycle (Arduino)", ControlAppearance.Primary);
+        cycleBtn.Margin = new Thickness(0, 8, 0, 0);
+        cycleBtn.Click += (_, _) => GemTestFullCycle();
+        panel.Children.Add(cycleBtn);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Runs one complete cycle with the arduino moves: N → register → combine, then the composer's " +
+                   "deregister+register and a second combine, clear the three resource slots; the same for G; " +
+                   "DG combines once. Stops after DG's combine.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
+            Margin = new Thickness(0, 4, 0, 6),
+        });
 
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
@@ -1288,8 +1356,13 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         try
         {
-            // v1 single-click core: SetCursorPos(from) -> C -> D dx dy -> C (no focus-click).
-            GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            // v1 single-click core: place(from) -> C -> D dx dy -> C (no focus-click).
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            if (!placed.Ok)
+            {
+                _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placed.Error}. Nothing was clicked.";
+                return;
+            }
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
@@ -1345,48 +1418,48 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        // v1 does a single SetCursorPos + C — no focus-click, no double click. Mirror that:
-        // set the cursor onto the point and click once.
+        // v1 does a single cursor-place + C — no focus-click, no double click. Mirror that: put the
+        // cursor on the point with the Arduino and click once. A cursor that can't be placed is
+        // reported, never clicked through (docs/CURSOR-INVESTIGATION.md).
         try
         {
-            var foregroundBefore = WindowFinder.ForegroundTitle();
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
-            var dpiCtx = WindowFinder.ThreadDpiAwarenessContext();   // 24592 == unaware on this machine
-            var clip = WindowFinder.CursorClip();
-            bool moved = WindowFinder.SetLogicalCursorPosition(target, out var moveErr);
-            bool retried = false;
-            if (!moved) { System.Threading.Thread.Sleep(50); retried = WindowFinder.SetLogicalCursorPosition(target); }
-            bool phys = false;
-            if (!moved && !retried) phys = WindowFinder.SetPhysicalCursorPosition(target);
-            bool bg = false;
-            if (!moved && !retried && !phys)
-                bg = System.Threading.Tasks.Task.Run(() => WindowFinder.SetLogicalCursorPosition(target)).GetAwaiter().GetResult();
-            var rightAfter = WindowFinder.LogicalCursorPosition(); // did the OS take it at all?
+            var placed = GemPointer.To(ser, target);
+
+            if (!placed.Ok)
+            {
+                _gemHint!.Text = $"Test click \"{name}\": couldn't place the cursor — {placed.Error}. Nothing was clicked.";
+                LogCursorMove(name, target, placed);
+                return;
+            }
+
             System.Threading.Thread.Sleep(300);
-            var placed = WindowFinder.LogicalCursorPosition();     // did it survive the sleep?
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(200);
 
-            var client = display.PhysicalClient;
-            _gemHint!.Text = $"Test click \"{name}\": SetCursorPos({target.LogicalX},{target.LogicalY}) accepted={moved}, " +
-                $"immediately ({rightAfter.X},{rightAfter.Y}), after 300ms ({placed.X},{placed.Y}), clicked via {ser.PortName} (open={ser.IsOpen}).";
-            DebugClickLog(_service.Config.Window.Title, name, client, pt.Value, new Point(client.Width / 2, client.Height / 2),
-                foregroundBefore, WindowFinder.ForegroundTitle(), 0, false);
-
-            try
-            {
-                File.AppendAllText(LogPath("arduino_debug.txt"),
-                    $"{DateTime.Now:HH:mm:ss} test-click name={name} port={ser.PortName} open={ser.IsOpen} baud={ser.BaudRate} " +
-                    $"target=({target.LogicalX},{target.LogicalY}) accepted={moved} immediate=({rightAfter.X},{rightAfter.Y}) " +
-                    $"after300ms=({placed.X},{placed.Y}) dpiCtx={dpiCtx} err={moveErr} retry={retried} phys={phys} bg={bg} " +
-                    $"clip={(clip == null ? "?" : $"{clip.Left},{clip.Top},{clip.Width}x{clip.Height}")} fg=\"{foregroundBefore}\"\n");
-            }
-            catch { /* diagnostics must never break the click */ }
+            _gemHint!.Text = $"Test click \"{name}\": cursor placed at ({placed.X},{placed.Y}) " +
+                $"in {placed.Steps} Arduino move(s), clicked via {ser.PortName}.";
+            LogCursorMove(name, target, placed);
         }
         catch (Exception ex)
         {
             _gemHint!.Text = $"Test click failed: {ex.Message}";
         }
+    }
+
+    // One line per Test Click, so a mis-placed cursor can be inspected after the fact. Replaces the
+    // per-probe logging (accepted/retry/phys/bg/dpiCtx/clip) that found the SetCursorPos refusal.
+    private static void LogCursorMove(string name, WindowFinder.CursorTarget target, CursorPlacement placed)
+    {
+        try
+        {
+            var final = placed.X is { } px && placed.Y is { } py ? $"({px},{py})" : "(?)";
+            File.AppendAllText(LogPath("arduino_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} test-click name={name} target=({target.LogicalX},{target.LogicalY}) " +
+                $"ok={placed.Ok} steps={placed.Steps} final={final} fg=\"{WindowFinder.ForegroundTitle()}\"" +
+                $"{(placed.Error == null ? "" : $" error=\"{placed.Error}\"")}\n");
+        }
+        catch { /* diagnostics must never break the click */ }
     }
 
     // Test a RELATIVE "D" move at 1:1 between two user-chosen points, mirroring the composer's
@@ -1443,9 +1516,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
 
-            // v1 single-click core: SetCursorPos(from) -> C -> D raw -> C (no focus-click, no
-            // double click). Same raw movement the composer sends.
-            GemPointer.To(WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            // v1 single-click core: place(from) -> C -> D raw -> C (no focus-click, no double
+            // click). Same raw movement the composer sends.
+            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            if (!placed.Ok)
+            {
+                _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placed.Error}. Nothing was clicked.";
+                return;
+            }
             System.Threading.Thread.Sleep(300);
             GemPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
@@ -1462,24 +1540,179 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
-    // Append test-click diagnostics to logs/test_click_debug.txt so the focus/positioning can be
-    // inspected without relying on the on-screen hint.
-    private static void DebugClickLog(string title, string name, WindowRect client, Point pt, Point center,
-        string beforeTitle, string afterTitle, int attempts, bool focused)
+    // Test a route with the NEW move set: place on the SOURCE point (Arduino closed loop), click,
+    // then place on the DESTINATION point and click. These are the exact two placements the composer
+    // makes when gem.move_mode is "arduino" — no tuned counts involved, so a route that lands here
+    // lands in the composer. (GemTestRelativeMove above tests the tuned set.)
+    private async void GemTestArduinoRoute(string fromName, string toName)
+    {
+        var from = ResolveGemPoint(fromName);
+        if (from == null) { _gemHint!.Text = $"Start \"{fromName}\" isn't calibrated yet."; return; }
+        var target = ResolveGemPoint(toName);
+        if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
+
+        var display = GemPointer.Display(_service.Config.Window.Title);
+        if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+
+        try
+        {
+            var placedFrom = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            if (!placedFrom.Ok)
+            {
+                _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placedFrom.Error}. Nothing was clicked.";
+                LogRouteMove(fromName, toName, placedFrom, null);
+                return;
+            }
+            System.Threading.Thread.Sleep(300);
+            GemPointer.Click(ser);
+            System.Threading.Thread.Sleep(500);
+
+            var placedTo = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)target.Value.X, (int)target.Value.Y));
+            if (!placedTo.Ok)
+            {
+                _gemHint!.Text = $"Couldn't place the cursor on \"{toName}\" — {placedTo.Error}. Stopped instead of clicking blind.";
+                LogRouteMove(fromName, toName, placedFrom, placedTo);
+                return;
+            }
+            System.Threading.Thread.Sleep(300);
+            GemPointer.Click(ser);
+            System.Threading.Thread.Sleep(300);
+
+            _gemHint!.Text = $"New move: placed on \"{fromName}\", clicked, then placed on \"{toName}\", clicked. Does it land?";
+            LogRouteMove(fromName, toName, placedFrom, placedTo);
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = $"Test move failed: {ex.Message}";
+        }
+    }
+
+    // One complete composer cycle driven by the ARDUINO move set (closed-loop placement, no tuned
+    // counts) — the fastest way to validate the new set on a live run before switching the composer
+    // to it. Mirrors the composer's own loop body, so the click order is the one the composer uses:
+    //
+    //   select grade → Register (register) → Combine (combine #1)
+    //     → Register, Register (deregister + register, as the composer's normal path does)
+    //     → Combine (combine #2)
+    //     → right-click Resource1/2/3 to clear the slots
+    //
+    // N and G run that loop twice; DG runs it once and the cycle stops there (no trailing clear).
+    private async void GemTestFullCycle()
+    {
+        if (_cycleRunning)
+        {
+            _gemHint!.Text = "A full-cycle test is already running.";
+            return;
+        }
+
+        // action = which HID click; Point = a calibrated point name (Core/GemRoutes.Resolve knows
+        // the same names). Two Register clicks in a row are deliberate: deregister the produced gem,
+        // then register the next batch — without them a second combine does nothing.
+        var steps = new (string Action, string Point)[]
+        {
+            ("click", "N"), ("click", "Register"), ("click", "Combine"),
+            ("click", "Register"), ("click", "Register"), ("click", "Combine"),
+            ("rclick", "Resource1"), ("rclick", "Resource2"), ("rclick", "Resource3"),
+            ("click", "G"), ("click", "Register"), ("click", "Combine"),
+            ("click", "Register"), ("click", "Register"), ("click", "Combine"),
+            ("rclick", "Resource1"), ("rclick", "Resource2"), ("rclick", "Resource3"),
+            ("click", "DG"), ("click", "Register"), ("click", "Combine"),
+        };
+
+        // Resolve every point BEFORE clicking anything: a cycle that half-runs because one point
+        // wasn't calibrated would leave the game in a confusing state.
+        var targets = new (string Action, string Point, Point At)[steps.Length];
+        for (int i = 0; i < steps.Length; i++)
+        {
+            var pt = ResolveGemPoint(steps[i].Point);
+            if (pt == null)
+            {
+                _gemHint!.Text = $"Full cycle: \"{steps[i].Point}\" isn't calibrated yet — nothing was clicked.";
+                return;
+            }
+            targets[i] = (steps[i].Action, steps[i].Point, pt.Value);
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            return;
+        }
+
+        _cycleRunning = true;
+        try
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var (action, point, at) = targets[i];
+                _gemHint!.Text = $"Full cycle {i + 1}/{targets.Length}: {action} \"{point}\"…";
+
+                var display = GemPointer.Display(_service.Config.Window.Title);
+                if (display == null)
+                {
+                    _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — game window not found (or minimized).";
+                    LogCycle($"stopped at {i + 1}/{targets.Length} {action} {point}: game window gone");
+                    return;
+                }
+
+                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)at.X, (int)at.Y));
+                if (!placed.Ok)
+                {
+                    _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — {placed.Error}.";
+                    LogCycle($"stopped at {i + 1}/{targets.Length} {action} {point}: {placed.Error}");
+                    return;
+                }
+
+                System.Threading.Thread.Sleep(300);
+                if (action == "click") GemPointer.Click(ser);
+                else GemPointer.RightClick(ser);
+                // A combine click gets longer: the game animates the result before the next step.
+                System.Threading.Thread.Sleep(point == "Combine" ? 800 : 500);
+            }
+
+            _gemHint!.Text = $"Full cycle done ({targets.Length} steps): N and G each combined twice " +
+                "(with the composer's deregister+register between them) and had their resource slots cleared, " +
+                "then DG combined once. Did every step land?";
+            LogCycle($"done steps={targets.Length}");
+        }
+        catch (Exception ex)
+        {
+            _gemHint!.Text = $"Full cycle failed: {ex.Message}";
+            LogCycle($"failed: {ex.Message}");
+        }
+        finally
+        {
+            _cycleRunning = false;
+        }
+    }
+
+    // One line per full-cycle run, so a cycle that stopped halfway can be inspected afterwards.
+    private static void LogCycle(string outcome)
     {
         try
         {
-            var line = $"{DateTime.Now:yyyyMMdd_HHmmss} name={name} title=\"{title}\" " +
-                $"client=({client.Left},{client.Top},{client.Width}x{client.Height}) " +
-                $"center=({(int)center.X},{(int)center.Y}) target=({(int)pt.X},{(int)pt.Y}) " +
-                $"attempts={attempts} focused={focused} " +
-                $"bgTitle=\"{beforeTitle}\" agTitle=\"{afterTitle}\" windowCenter=" +
-                $"({client.Left + client.Width / 2},{client.Top + client.Height / 2})\n";
-            var dir = LogPath();
-            Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "test_click_debug.txt"), line);
+            File.AppendAllText(LogPath("arduino_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} test-cycle-arduino {outcome} fg=\"{WindowFinder.ForegroundTitle()}\"\n");
         }
-        catch { /* diagnostics must never break the click */ }
+        catch { /* diagnostics must never break the cycle */ }
+    }
+
+    // One line per New-Gem-Composer-Moves test, mirroring the Test Click line so a route that
+    // didn't land can be inspected after the fact.
+    private static void LogRouteMove(string fromName, string toName, CursorPlacement from, CursorPlacement? to)
+    {
+        try
+        {
+            static string Pos(CursorPlacement p) => p.X is { } x && p.Y is { } y ? $"({x},{y})" : "(?)";
+            File.AppendAllText(LogPath("arduino_debug.txt"),
+                $"{DateTime.Now:HH:mm:ss} test-route-arduino {fromName} → {toName} " +
+                $"from ok={from.Ok} at {Pos(from)}, to ok={to?.Ok} at {(to == null ? "-" : Pos(to))} " +
+                $"fg=\"{WindowFinder.ForegroundTitle()}\"\n");
+        }
+        catch { /* diagnostics must never break the move */ }
     }
 
     // Sample the live result box and report its colour composition ("colour code"), plus the
@@ -2011,6 +2244,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         catch { /* preview must never break calibration */ }
     }
 
+    // The given box from the CALIBRATION SCREENSHOT (launcher hidden) as an OpenCV Mat, or null
+    // when there is no screenshot yet. Same pixels SaveResultGemCrop writes as the reference image,
+    // so the empty signature and the reference crop can never disagree.
+    private Mat? CropScreenshot(Rect box)
+    {
+        var shot = _gemScreenshot;
+        if (shot == null) return null;
+        int x = (int)Math.Clamp(box.X, 0, Math.Max(0, shot.PixelWidth - 1));
+        int y = (int)Math.Clamp(box.Y, 0, Math.Max(0, shot.PixelHeight - 1));
+        int w = (int)Math.Clamp(box.Width, 1, shot.PixelWidth - x);
+        int h = (int)Math.Clamp(box.Height, 1, shot.PixelHeight - y);
+        var bgr = new FormatConvertedBitmap(shot, PixelFormats.Bgr24, null, 0);
+        var mat = new Mat(h, w, OpenCvSharp.MatType.CV_8UC3);
+        bgr.CopyPixels(new Int32Rect(x, y, w, h), mat.Data, h * w * 3, w * 3);
+        return mat;
+    }
+
     // Save the result-gem box crop as a reference image so it reappears on next launch.
     private void SaveResultGemCrop(Rect box)
     {
@@ -2075,9 +2325,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             "Empty reference", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirmEmpty == MessageBoxResult.Yes)
         {
-            var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-            emptySig = GemColorAnalyzer.Analyze(hwnd, (int)rb.X, (int)rb.Y, (int)rb.Width, (int)rb.Height,
-                _service.Config.Gem.ColoredGapMin);
+            // Sample the CALIBRATION SCREENSHOT (taken with the launcher hidden), not a live screen
+            // grab. A live grab is CopyFromScreen, so whatever covers the box at that instant — the
+            // launcher itself, a tooltip — becomes part of the "empty" reference. That is how the
+            // stored signature ended up 0.17 (mean) / 0.53 (norm) away from the reference crop the
+            // same save wrote, which made every later check meaningless.
+            using var crop = CropScreenshot(rb);
+            emptySig = crop == null ? null : GemColorAnalyzer.Analyze(crop, _service.Config.Gem.ColoredGapMin);
         }
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
@@ -2098,6 +2352,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Calibration = local.Calibration;
         }
         _service.SaveLocal(local);
+        // Which move set the composer uses is a preference, not a coordinate — it lives in the
+        // portable config (defaults.yaml) like gem.start_grade/empty_mode.
+        _service.Config.Gem.MoveMode = _gemMoveMode?.SelectedItem as string ?? "tuned";
+        _service.SaveConfig();
         // Refresh in-memory config so the next gem run uses the just-calibrated
         // click points rather than the startup (example-seeded) ones.
         _service.Config.Gem.GradePositions = positions;
@@ -2223,11 +2481,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             : WindowFinder.SetLogicalCursorPosition(target);
 
         var after = WindowFinder.LogicalCursorPosition();
+        var afterText = after is { } a ? $"({a.X},{a.Y})" : "?";
         _gemHint!.Text =
             $"{name}: offset ({x},{y}), scale {display.Scale:0.###}\n" +
             $"  computed logical  = ({target.LogicalX},{target.LogicalY})\n" +
             $"  computed physical = ({target.PhysicalX},{target.PhysicalY})\n" +
-            $"  called {(physical ? "SetPhysicalCursorPos" : "SetCursorPos")} → ok={ok}; cursor now ({after.X},{after.Y}).";
+            $"  called {(physical ? "SetPhysicalCursorPos" : "SetCursorPos")} → ok={ok}; cursor now {afterText}.";
     }
 
     // Diagnostic: report the window rects and save a sample capture, so "is the game being captured

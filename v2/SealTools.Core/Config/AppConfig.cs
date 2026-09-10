@@ -169,6 +169,12 @@ public sealed class GemConfig
     [MinLength(1, ErrorMessage = "gem.grade_positions must not be empty")]
     public Dictionary<string, List<int>> GradePositions { get; set; } = new();
     public MovementsConfig Movements { get; set; } = new();
+    /// <summary>Which move set the composer uses between calibrated points (see
+    /// <see cref="SealTools.Core.GemRoutes"/>): "arduino" (default since 2.2) places the cursor on
+    /// the destination point with the Arduino, closed loop, and re-aims every move; "tuned" sends
+    /// the hand-tuned gem.movements counts instead.</summary>
+    [AllowedValues("tuned", "arduino", ErrorMessage = "gem.move_mode must be tuned|arduino")]
+    public string MoveMode { get; set; } = "arduino";
     /// <summary>Composed-result gem area as [x, y, width, height] (client-relative). Used for
     /// OCR (read the result) and as a derived centre click point.</summary>
     public List<int>? ResultGemArea { get; set; }
@@ -187,9 +193,14 @@ public sealed class GemConfig
     /// advances to the next grade.</summary>
     [AllowedValues("stop", "advance_grade", "advance_grade_clear", ErrorMessage = "gem.empty_mode must be stop|advance_grade|advance_grade_clear")]
     public string EmptyMode { get; set; } = "stop";
-    /// <summary>Normalised colour distance below which the result box is judged empty
-    /// (0..1). Lower = stricter (more likely to call it "has a gem").</summary>
-    public double EmptyDistance { get; set; } = 0.18;
+    /// <summary>How different the result box may look from the saved empty-box crop before it
+    /// counts as holding a gem (0..1). With the pixel-difference test this is the FRACTION of
+    /// pixels allowed to differ; with the colour-signature fallback it is the colour distance.
+    /// Measured on the reference machine: empty 0.000 (pixel-identical) and 0.001 (signature),
+    /// gem 0.357 / 0.293 — so 0.01 is ~35x below the gem signal and 10x above the floor: a gem
+    /// can never read as empty, while a few dozen stray pixels don't stall the composer.
+    /// Lower = stricter (quicker to say "has a gem").</summary>
+    public double EmptyDistance { get; set; } = 0.01;
     /// <summary>Channel max-min gap (0..255) above which a pixel counts as "coloured" in the
     /// result-box colour fingerprint. Portable: the empty reference self-calibrates, this is
     /// just the pixel-classification threshold.</summary>

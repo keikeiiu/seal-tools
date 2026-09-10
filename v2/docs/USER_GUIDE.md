@@ -62,7 +62,7 @@ Behaviour of the Gem Composer. Saved to `config/defaults.yaml`.
 |---|---|
 | **Start grade** | Grade the composer begins on (`N` / `G` / `DG`). |
 | **On empty result** | What to do when the composed-result box is empty: **Stop**, **Advance to next grade**, or **Clear resources, then advance** (right-clicks the three resource slots first — for a stuck gem). |
-| **Save empty-check captures** | Writes the sampled result-box crop and a distance log each cycle (debug only). |
+| **Save empty-check captures** | Writes the sampled result-box crop and a `diff=…` line each cycle (debug only). See [CALIBRATION.md](CALIBRATION.md) for how the empty check works. |
 | **Save Gem Config** | Writes the above to `defaults.yaml`. |
 
 ## Spammer tab
@@ -115,10 +115,13 @@ Points the composer at the gem-combine UI and stores the relative move counts.
 | **Test Move (rel)** | Click `from`, send that route's raw `D dx dy`, click `to`. Confirms a composer move lands. |
 | **Check Result Colour** | Samples the result box now and reports its colour plus the distance to the empty reference and the empty/has-gem verdict. |
 | **Test Result Gem** | Same sample with extra detail (channel spread, dominant tone) for judging the empty-detection threshold by hand. |
-| **Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates (the call the tools use) and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** |
+| **Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** Diagnostic only — the tools place the cursor with the Arduino, not this call. |
 | **Debug Physical** | Same, but with `SetPhysicalCursorPos`. Kept for comparing the two APIs. |
 | **Composer moves** grid | One row per route (N→Register, G→Register, DG→Register, Register→Combine, Combine→Register, Register→Resource1, Resource1→Resource2, Resource2→Resource3, Resource3→N/G/DG) with raw `dx`/`dy` and a **Test** button per row. |
 | **Save Composer Moves** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
+| **Composer move mode** | `tuned` (default) = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
+| **New Gem Composer Moves** grid | The same routes, each shown with the **point it goes to**, and a **Test** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
+| **Test Full Cycle (Arduino)** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
 
 ## Arduino tab
 

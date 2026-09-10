@@ -1,8 +1,8 @@
 # Cursor investigation — `SetCursorPos` refused inside the launcher (2026-09-10)
 
 Debug log for the "Gem Composer / Test Click stopped landing" bug. Written so the next session can
-pick it up without re-deriving it. **Open** — root cause not yet identified; the fix is proposed but
-not implemented.
+pick it up without re-deriving it. **Fixed** — the tool no longer positions the cursor with
+`SetCursorPos`; the refusal itself is still unexplained but no longer load-bearing.
 
 ---
 
@@ -11,24 +11,22 @@ not implemented.
 Pressing **Test Click** (Calibrate Gem) or running the **Gem Composer** did nothing useful: the N
 radio never got selected. Intermittent — the same build worked at 00:48, failed at 01:00.
 
-## Instrumentation added along the way
+## The bug's own defect
 
-Each of these is its own commit and writes one line per Test Click to `logs/arduino_debug.txt`:
+`GemPointer.To` / `SetLogicalCursorPosition` **discarded the return value**, so a refused move was
+indistinguishable from a successful one and the tool clicked wherever the mouse happened to be. That
+is why the symptom was "clicked the wrong place" rather than "stopped and complained".
 
-- `2b12475` — log target, port, cursor read-back, foreground title.
-- `8e0a892` — log whether `SetCursorPos` was accepted.
-- `a25c753` — log the cursor immediately after the move **and** after the 300 ms wait.
-- `9cc1d47` — log the thread's DPI awareness context.
-- `83387f7` — log the Win32 error and the cursor clip rect.
-- `3f154a4` — log whether an immediate retry succeeds.
-- `f1ca65c` — log `SetPhysicalCursorPos` as a fallback.
-- `87323e1` — log the same call from a background thread.
+## The probes, in order
+
+Each of these was its own commit and wrote one line per Test Click to `logs/arduino_debug.txt`:
+`2b12475` target/port/read-back/foreground · `8e0a892` accepted · `a25c753` immediate + after 300 ms ·
+`9cc1d47` DPI awareness context · `83387f7` Win32 error + clip rect · `3f154a4` immediate retry ·
+`f1ca65c` `SetPhysicalCursorPos` fallback · `87323e1` background thread.
 
 The launcher also gained `WindowFinder.IsMinimized` (`8c3d4aa`): a minimized window reports
 `-48000,-48000 0×0`, so every derived coordinate is garbage. Several of the early "failures" were
 exactly this — the log proved it (`client=(-48000,-48000,0x0)`).
-
-## The probes, in order
 
 | # | Probe | Result | Ruled out |
 |---|---|---|---|
@@ -48,25 +46,42 @@ exactly this — the log proved it (`client=(-48000,-48000,0x0)`).
 | 14 | Same call on a thread-pool thread | `bg=False` | UI-thread-specific cause |
 | 15 | Cursor clip rect | `-1067,0,3627x1707` (whole virtual desktop) | clip rect excluding the target |
 | 16 | Win32 error | `err=0` | no error reported (SetCursorPos is not documented to set one) |
+| **17** | **Hold + drive COM5 in a throwaway process, then `SetCursorPos`** | **`ok=30/30`; a second process 29/30 while the port was held** | **the anti-cheat reacting to the Arduino port — see below** |
+| 18 | Park the cursor exactly where it sat during the failures (`2049,741`, over an Explorer window) and call `SetCursorPos(729,695)` | `ok=12/12` (and `12/12` parked over the game) | cursor start position / window under the cursor |
+| 19 | Decode `dpiCtx=24592` | `AreDpiAwarenessContextsEqual(ctx, UNAWARE)=True`; PerMonitorV2 is a **different** handle (`34`) | DPI awareness, independently re-confirmed |
 
 Evidence line, verbatim:
 
 ```
 01:10:42 test-click name=N port=COM5 open=True baud=115200 target=(729,695) accepted=False
          immediate=(2049,741) after300ms=(2049,741) dpiCtx=24592 err=0 retry=False phys=False
-         bg=False clip=-1067,0,3627x1707 fg="Seal Tools v2"
+         bg=False clip=-1067,0,3627x1707 fg="Seal Tools V2"
 ```
+
+### Probe 17 — the last untested difference, and it is refuted
+
+Every successful external test up to then had the COM port closed, so the standing hypothesis was
+that the game's anti-cheat reacts to the process driving the Arduino. It does not:
+
+- A throwaway PowerShell process **opened COM5, waited out the boot delay, sent `D 0 0`, then called
+  `SetCursorPos` 30 times while still holding the port: 30/30 accepted.**
+- While that process kept the port open and kept writing to it, a **second** process (no port) called
+  `SetCursorPos` 30 times: **29/30 accepted** (the one miss was `accepted=True` landing 2 px short).
+- Control with the port free: 30/30.
+
+So neither holding the port nor driving the device from the calling process changes anything. The
+refusal remains specific to the **launcher's process**, and it is not the port.
 
 ## Where it stands
 
-- **Our own defect:** `GemPointer.To` / `SetLogicalCursorPosition` discard the return value, so a
-  refused move is indistinguishable from a successful one and the tool clicks the wrong place.
-- **The refusal is specific to our process.** The identical call succeeds from PowerShell under the
-  same user, session and integrity level, with the game running.
-- **Not identified:** why the OS refuses our process. The one difference never tested is that the
-  launcher holds the **Arduino COM port** open; every successful external test had it closed. A
-  plausible (unverified) explanation is the game's anti-cheat reacting to the process driving the
-  Arduino.
+- **Our own defect: fixed** — the placement is verified now, and a cursor that can't be placed stops
+  the tool instead of clicking blind (below).
+- **The refusal is still specific to our process and still unexplained.** Ruled out: coordinates,
+  calibration, the API, the process name, foreground ownership, mouse capture, session/user,
+  integrity level, DPI awareness, the clip rect, retries, a different API, a different thread, the
+  Arduino port, and the cursor's starting position. The one lead left unexplored is the difference
+  between a WPF app and a console app; it is not worth chasing, because the tool no longer calls the
+  API.
 
 ### Hypotheses that were wrong (don't repeat them)
 
@@ -75,56 +90,83 @@ Evidence line, verbatim:
 - "The physical mouse moved the cursor between the move and the click" — the app's own read-back
   shows the move never took effect (`accepted=False`), and the user confirmed they weren't touching
   the mouse.
+- "The anti-cheat is reacting to the process driving the Arduino" — probe 17.
 - "v1 is started in-game so it never faced this" — v1's `launcher.py` spawns the tool with
   `subprocess.Popen` and is driven from a browser panel, so the game was unfocused for v1 too. That
   claim lived in an older README and is not in any current doc.
 
-## Proposed fix (not implemented)
+## The fix (implemented)
 
-**Move the cursor with the Arduino instead of `SetCursorPos`.** The Arduino is a genuine HID mouse;
-its input cannot be refused, and the project already depends on it for every click and relative
-move. Concretely, in the one place that positions the cursor:
+**The cursor is positioned with the Arduino, not `SetCursorPos`.** The Arduino is a genuine HID
+mouse; its input cannot be refused, and the project already depends on it for every click and
+relative move. `GemPointer.To(ser, target)` now:
 
-1. read the current position with `GetCursorPos` (this works in our process — every read-back was
-   correct);
-2. compute `delta = target − current` in logical screen coordinates;
-3. send `D delta.x delta.y` (clamped per step), repeat until within ~2 px.
+1. reads the current position with `GetCursorPos` (this always worked in our process);
+2. computes `delta = target − current` in the process's (logical) cursor space;
+3. sends `D dx dy`, clamped to 600 px per move, and repeats until within 2 px.
 
-Measured scale is exactly 1:1 (`D 100 0` → +100 px), so the loop converges in one or two iterations;
-iterating also absorbs any pointer-acceleration non-linearity.
+It returns a `CursorPlacement` (ok, steps, final position, reason). **Every caller checks it**:
 
-Independently of that, **never ignore the move's result**: if the cursor cannot be placed, stop the
-tool and say so on the card rather than clicking somewhere arbitrary.
+- `GemComposer.SelectGradeAndRegister` / `AdvanceGrade` call `Fail(...)`, which stops the tool and
+  puts the reason on the card, instead of clicking somewhere arbitrary.
+- The calibrate test buttons report it in the hint and skip the click.
+
+Measured gain is exactly 1:1 (`D 100 0` → +100 px, and 250/500/600 px all land exactly), so a normal
+placement converges in **one** move.
+
+### The one non-obvious detail: the firmware walks long moves out in chunks
+
+`arduino/seal_mouse.ino` implements `D dx dy` as a loop of **10-px `Mouse.move` calls with
+`delay(1)` between them**. A 600 px move therefore keeps arriving for tens of milliseconds after
+`SerialPort.Write` returns. With a fixed 20 ms settle the loop read a **stale** position, computed a
+correction from it, and stacked a second move on top of a first that was still running — which is how
+a far target ended up at `(340,445)` after six moves:
+
+```
+step 1 : at (2400,1400) err=1671 sent=(-600,-600) -> (2000,1001) actualDelta=(-400,-399)
+step 2 : at (1990,991)  err=1261 sent=(-600,-296) -> (1560,560)  actualDelta=(-430,-431)  <- y overshoots
+```
+
+`To` now polls `GetCursorPos` after each move until two consecutive polls agree (15 ms apart, bounded
+at 24 polls) instead of sleeping a fixed amount. Verified through the launcher's real UI: from
+`(2400,1400)` it reaches `(729,695)` in 3 moves, and from a nearby point in 1.
+
+### Instrumentation
+
+The per-probe logging (`accepted`/`retry`/`phys`/`bg`/`dpiCtx`/`clip`) is gone, along with the now
+dead `WindowFinder.ThreadDpiAwarenessContext`, `CursorClip` and the error-reporting
+`SetLogicalCursorPosition` overload. One line per Test Click remains:
+
+```
+01:20:40 test-click name=N target=(729,695) ok=True steps=3 final=(729,695) fg="Seal Tools v2"
+```
+
+`SetCursorPos`/`SetPhysicalCursorPos` survive only behind the calibrator's **Debug Cursor (logical)**
+and **Debug Physical** buttons, which exist to compare the two APIs by hand.
 
 ## Reproducing
 
 ```
-logs/arduino_debug.txt        one line per Test Click, with all the fields above
-logs/test_click_debug.txt     target / client rect / foreground titles per Test Click
+logs/arduino_debug.txt        one line per Test Click (target / ok / steps / final position / fg)
 logs/captures/                screen captures used to verify what is on screen
 ```
 
+Throwaway probes used for this round (not part of the repo): a PowerShell `SetCursorPos` loop with an
+optional `-Hold` on COM5, a window-under-point reporter, a `D`-move gain measurement, and a UI
+Automation driver for the launcher's Test Click button.
+
 ---
 
-## Prompt for the next session
+## Still open
 
-> Continue the Seal Tools v2 cursor bug in `v2/docs/CURSOR-INVESTIGATION.md`. Read that file first —
-> it lists every probe and what each one ruled out, so don't redo them.
->
-> Summary: `SetCursorPos` (and `SetPhysicalCursorPos`) return **false** from the launcher's process,
-> intermittently, while the identical call succeeds from PowerShell under the same user, session and
-> integrity level. The move is silently ignored, so the Arduino click lands wherever the mouse was.
->
-> Two things to do, in this order:
-> 1. **Test the last untested difference:** hold the Arduino COM5 port open in a throwaway process
->    and then call `SetCursorPos` — every successful external test so far had the port closed. If it
->    fails while the port is held, the anti-cheat is reacting to the process driving the Arduino.
-> 2. **Implement the fix regardless of the answer:** position the cursor with the Arduino (relative
->    `D dx dy` in a closed loop against `GetCursorPos`, which works fine in our process) instead of
->    `SetCursorPos`, and stop ignoring the result — if the cursor can't be placed, stop the tool and
->    report it on the card instead of clicking somewhere arbitrary. The Arduino scale is 1:1
->    (`D 100 0` → +100 px), so the loop converges in one or two steps.
->
-> Constraints: do not re-add a focus-click or a Win32 focus API; keep `gem.movements` untouched; the
-> test instrumentation in `MainWindow.xaml.cs` (the `accepted`/`retry`/`phys`/`bg` probes) should be
-> folded into a clean single check once the fix lands.
+Why the OS refuses `SetCursorPos` for the launcher's process — intermittently, while another process
+under the same user/session/integrity succeeds — is **unanswered**. It no longer matters to the tool,
+but if it ever resurfaces the shortest next step is a minimal WPF app that only calls `SetCursorPos`,
+to see whether the refusal follows the framework rather than this code.
+
+One late clue (user-reported 2026-09-10, not yet reproduced in the logs): after the launcher was
+restarted for the fix, **both Debug Cursor buttons succeeded** — `ok=True`, cursor landing on the
+target. The failures at 01:00–01:10 came from an instance that had been running a while. That points
+at a *runtime-state* degradation inside the process rather than a property of the process, and would
+be the first thing to look at if the refusal ever matters again. It does not change the fix: the
+placement path never calls the API.
