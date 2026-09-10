@@ -21,12 +21,22 @@ the machine's real `local.yaml` and 14 MB of `calib_*.png` screenshots into a pu
   (`attributes.yaml`, `defaults.yaml`, `local.yaml.example`); `publish.bat local` ships the full
   `config\` for a same-machine reinstall that is already calibrated. The safe one is the default, so
   an unthinking `publish.bat` cannot leak a calibration.
-- **A cleanup step clears the previous mode's `config\`/`models\`** before each copy, so a public
-  build can never carry a `local.yaml` a local build left behind. Verified by building `local` then
-  `public` and listing the zips: public holds exactly the three templates, local holds the calibration.
+- **The publish folder is deleted before `dotnet publish`** — not just the mode's config. A stale
+  folder carries whatever a previous mode left, so the clean delete is what guarantees a public build
+  can never ship a `local.yaml` a local build left behind.
 
-**Two traps found while writing the script**
+**Three traps found while writing the script**
 
+- **An incremental `dotnet publish` silently drops the native OCR DLLs.** A second publish without a
+  source change produced only `SealTools.Launcher.exe` + models + config — no `onnxruntime.dll`,
+  `OpenCvSharpExtern.dll`, `libSkiaSharp.dll`, … (11 DLLs, ~170 MB). The exe is 182 MB either way, so
+  nothing looked wrong until the zip was listed against the known-good v2.1 release, which ships all 11
+  alongside the exe. The fix is the clean delete above, which forces a full publish every time. This is
+  the measured, don't-assume lesson: the "obvious" build worked, the second one didn't, and only
+  diffing the zip's file list against v2.1 caught it.
+- **NuGet content ships an 89 MB `libSkiaSharp.pdb` and `*.lib` import libraries** that
+  `-p:DebugType=None` does not touch (it only stops *our* symbols). The script strips `*.pdb` / `*.lib`
+  after publish; v2.1's zip never had them.
 - **`set VERSION=v2.3` leaked into `dotnet publish`.** MSBuild reads env vars as properties
   (case-insensitive), so `VERSION` overrode the `Version` property and `'v2.3'` failed semver. The
   variable is now `RELTAG`.
@@ -34,9 +44,10 @@ the machine's real `local.yaml` and 14 MB of `calib_*.png` screenshots into a pu
   "not recognized" errors). The file is CRLF, and the CRLF fix must be the *last* edit — GNU
   `sed -i` re-strips `\r`.
 
-**Measured.** `dist\SealTools-v2.3.zip` = 166 MB (20 files: exe + native OCR DLLs + 3 models + 3
-templates); `SealTools-v2.3-local.zip` carries `local.yaml` + the three `calib_*.png`. The public zip
-built *after* the local one still holds only the templates — the cleanup works.
+**Measured.** `dist\SealTools-v2.3.zip` (public) = 144 MB — 11 native DLLs + exe + 3 models + 3
+templates, no `.pdb`/`.lib`, no `local.yaml`. `SealTools-v2.3-local.zip` = 159 MB — the same plus the
+full `config\` (`local.yaml` + three `calib_*.png`). The public zip built *after* the local one still
+holds only the templates.
 
 **Left open.** The zip is built but **not uploaded**: `gh` is unauthenticated and the GitHub release
 `v2.3` does not exist yet. Nor does the `v2.2` release the README advertised — its features shipped

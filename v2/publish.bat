@@ -31,7 +31,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [1/5] Publishing self-contained single-file exe...
+echo [1/5] Publishing self-contained single-file exe (clean)...
+:: Delete the whole publish folder first: an incremental publish skips the native
+:: OCR DLLs, leaving an exe that cannot load onnxruntime / OpenCV at runtime.
+if exist %PUB% rd /s /q %PUB%
 dotnet publish SealTools.Launcher -c Release -r win-x64 --self-contained ^
     -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false
 if errorlevel 1 (
@@ -40,11 +43,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-:: Clear any models/config left by a previous mode, so a public build can never
-:: ship a local.yaml or calibration screenshot that a local build left behind.
-echo [2/5] Clearing stale models + config...
-if exist %PUB%\models rd /s /q %PUB%\models
-if exist %PUB%\config rd /s /q %PUB%\config
+:: NuGet content also ships an 89 MB libSkiaSharp.pdb and *.lib import libraries;
+:: DebugType=None only stops our own symbols, so strip the leftovers here.
+echo [2/5] Stripping debug symbols + import libraries...
+del /q %PUB%\*.pdb 2>nul
+del /q %PUB%\*.lib 2>nul
 
 echo [3/5] Copying models...
 if not exist models (
