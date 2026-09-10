@@ -1247,11 +1247,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         debugPhysicalBtn.Margin = new Thickness(6, 0, 6, 0);
         debugPhysicalBtn.Click += (_, _) => DebugCursorPath(testBox, physical: true);
 
-        // Advanced: the one-off diagnostics, out of the calibration path.
+        // Advanced: the one-off diagnostics, out of the calibration path. Same gap on every button —
+        // they used to have mixed margins, so the spacing read as misalignment.
         var advancedRow = new StackPanel { Orientation = Orientation.Horizontal };
-        advancedRow.Children.Add(diag);
-        advancedRow.Children.Add(debugCursorBtn);
-        advancedRow.Children.Add(debugPhysicalBtn);
+        foreach (var b in new[] { diag, debugCursorBtn, debugPhysicalBtn })
+        {
+            b.Margin = new Thickness(0, 0, 8, 0);
+            advancedRow.Children.Add(b);
+        }
 
         // Result-gem box crop preview: once the result box is dragged, show the exact region
         // being sampled for empty-detection, so the user can visually confirm it's over the
@@ -1422,6 +1425,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         var saveMoves = MakeButton("Save tuned counts", ControlAppearance.Primary);
         saveMoves.Click += (_, _) => SaveComposerMoves();
 
+        // The mode selector gets its OWN card, deliberately not the arduino card: that card is
+        // disabled whenever the other set is active, which disabled the selector with it and left the
+        // mode impossible to switch back from.
+        _gemMoveMode = MakeComboBox(GemMoveModes, _service.Config.Gem.MoveMode);
+        var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        modeRow.Children.Add(new TextBlock
+        {
+            Text = "Composer move mode",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        });
+        modeRow.Children.Add(_gemMoveMode);
+        panel.Children.Add(Section("Move set",
+            Hint("Which set the composer uses. The set that is NOT active is dimmed below; switching " +
+                 "here wakes it up again."),
+            modeRow));
+
         var tunedCard = Section("Moves — tuned (hand-tuned counts)",
             Hint("What the composer sends when move mode is \"tuned\": one raw D dx dy per route, " +
                  "tuned by hand on this PC. The per-row button sends that exact move."),
@@ -1431,15 +1451,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The other move set: the same routes, each ending on a calibrated POINT that the Arduino
         // drives the cursor to (closed loop). Nothing above is replaced — the composer picks with
         // gem.move_mode, and this card is how the set is tried on a live run first.
-        _gemMoveMode = MakeComboBox(GemMoveModes, _service.Config.Gem.MoveMode);
-        var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        modeRow.Children.Add(new TextBlock
-        {
-            Text = "Composer move mode",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0),
-        });
-        modeRow.Children.Add(_gemMoveMode);
         var arduinoGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) }); // route label
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); // destination
@@ -1468,7 +1479,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Hint("What the composer sends when move mode is \"arduino\": it places the cursor on the " +
                  "route's destination point and re-aims every move, so nothing needs tuning. The " +
                  "per-row button runs the route for real: click the source, place, click the target."),
-            modeRow, arduinoGrid);
+            arduinoGrid);
         panel.Children.Add(arduinoCard);
 
         // Dim whichever set the composer is not using, so the two grids can't be confused. The mode
@@ -1498,8 +1509,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "these calibrate anything on their own."),
             advancedRow));
 
-        panel.Children.Add(save);
+        // Same shape as Calibrate Tuner: the status card, then the primary action last — the save
+        // used to sit between two cards, belonging to neither.
         panel.Children.Add(Section("Result", hint));
+        panel.Children.Add(save);
 
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer
         {
