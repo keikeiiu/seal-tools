@@ -37,6 +37,24 @@ The two tabs already rebuilt (`Hotkeys`, `Arduino`) are marked for redo below �
 smallest, so the cost is minutes, but doing the cleanup twice on every tab is exactly what the
 sequencing existed to avoid.
 
+### Two gotchas found while rebuilding the first tab (apply to every later tab)
+
+1. **Use `ui:Card`, not `ui:CardControl`.** `CardControl`'s template measures its content with
+   unbounded width, so a hint paragraph never wraps — it runs past the border and gets clipped.
+   `Card` is a bordered `ContentControl`; put our own header `TextBlock` inside it and the width is
+   constrained as expected.
+2. **Tabs' `ScrollViewer` needs `HorizontalScrollBarVisibility = Disabled`.** With horizontal
+   scrolling available the content is measured with infinite width, which is the other way to make
+   every `TextWrapping.Wrap` hint silently stop wrapping. Applied to all eight tab ScrollViewers.
+
+Also worth noting for the shell step: in a 720-tall window a card plus its save button can push the
+primary action below the fold (the Hotkeys tab does). A sticky footer — or a taller default window —
+should be part of the shell decision.
+
+Icons (`ui:SymbolIcon`) are deliberately not used yet: `CardControl.Icon`/`SymbolIcon.Symbol` take a
+`SymbolRegular` value, and those enum member names can't be verified from here (PowerShell 5.1 can't
+reflect a .NET 8 assembly). Pick them from WPF-UI's icon list, or log the enum once from the app.
+
 ### Ordering (revised after checking the API)
 
 WPF-UI's `NavigationView` is built for Frame/Page navigation (`NavigationViewItem.TargetPageType`,
@@ -59,7 +77,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | # | Tab / step | State | Commit |
 |---|---|---|---|
 | 0 | **Palette**: eight hex brushes deleted; the UI now uses WPF-UI's semantic brushes | ✔ | *(this commit)* |
-| 1 | `Hotkeys` (was Settings) — **redo** with WPF-UI controls + Card | ⟳ | `b43a6d1` |
+| 1 | `Hotkeys` (was Settings) — **redone** with `ui:Card`, `ui:TextBox`, `ui:InfoBar` | ✔ | *(this commit)* |
 | 2 | `Arduino` — **redo** with WPF-UI controls + Cards | ⟳ | *(2 commits ago)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
 | 4 | `Gem` settings (run / advanced) | ☐ | |

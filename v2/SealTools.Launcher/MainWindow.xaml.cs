@@ -19,6 +19,10 @@ using SealTools.Tuner;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using ControlAppearance = Wpf.Ui.Controls.ControlAppearance;
 using UiButton = Wpf.Ui.Controls.Button;
+using CardControl = Wpf.Ui.Controls.CardControl;
+using Card = Wpf.Ui.Controls.Card;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 using Mat = OpenCvSharp.Mat;
 
 namespace SealTools.Launcher;
@@ -276,7 +280,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSetupTab());
-        ConfigTabs.Items.Add(BuildSettingsTab());
+        ConfigTabs.Items.Add(BuildHotkeysTab());
     }
 
     // Arduino connection status: a green/red light, the expected VID/PID, every serial port the
@@ -287,6 +291,24 @@ public partial class MainWindow : FluentWindow, IDisposable
     // If a theme switch should repaint live later, this becomes SetResourceReference and every
     // call site follows.
     private Brush Res(string key) => (Brush)FindResource(key);
+
+    // The one "grey explanation" paragraph, so hints read the same in every tab.
+    private TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        Foreground = Res("TextFillColorSecondaryBrush"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 10),
+    };
+
+    // A WPF-UI text box, so every text field gets the same Fluent chrome (placeholder, clear button)
+    // instead of the plain WPF one. ComboBox/CheckBox are already restyled by WPF-UI's dictionary.
+    private static Wpf.Ui.Controls.TextBox UiText(string text, string? placeholder = null) => new()
+    {
+        Text = text,
+        PlaceholderText = placeholder ?? "",
+        ClearButtonEnabled = true,
+    };
 
     // One section heading inside a tab, so the heading style lives in one place instead of being
     // re-specified per tab. (The shared row builder and the rest of the style constants come with
@@ -420,7 +442,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         Refresh();
 
-        return new TabItem { Header = "Arduino", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Arduino", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // Display environment: shows what the tools measure for this machine and stores the reference
@@ -537,7 +566,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         ShowStored();
 
-        return new TabItem { Header = "Setup", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Setup", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildTunerTab()
@@ -627,7 +663,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         panel.Children.Add(cleanup);
 
-        return new TabItem { Header = "Tuner", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Tuner", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildGemTab()
@@ -881,7 +924,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPresetList(current);
         loading = false;
 
-        return new TabItem { Header = "Spammer", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Spammer", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildAttributesTab()
@@ -920,7 +970,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(grid);
 
-        return new TabItem { Header = "Attributes", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Attributes", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildTunerCalibrateTab()
@@ -966,7 +1023,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(grid);
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildGemCalibrateTab()
@@ -1303,7 +1367,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 4, 0, 6),
         });
 
-        return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // Resolve a calibrated point by name, preferring the just-dragged/clicked in-session point
@@ -2670,39 +2741,42 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private TabItem BuildSettingsTab()
+    private TabItem BuildHotkeysTab()
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        panel.Children.Add(new TextBlock
+        var startBox = UiText(VkName(_service.Config.Hotkeys.Start));
+        var quitBox = UiText(VkName(_service.Config.Hotkeys.Quit));
+        var gradeBox = UiText(VkName(_service.Config.Hotkeys.AdvanceGrade));
+        var pauseBox = UiText(VkName(_service.Config.Hotkeys.Pause));
+
+        var fields = new StackPanel();
+        fields.Children.Add(LabeledField("Start / stop rolling", startBox));
+        fields.Children.Add(LabeledField("Quit (immediate)", quitBox));
+        fields.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
+        fields.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
+
+        // Card (bordered content), not CardControl: CardControl's template measures its content with
+        // unbounded width, so the hint paragraph could not wrap and was clipped at the border.
+        var cardBody = new StackPanel();
+        cardBody.Children.Add(new TextBlock
         {
-            Text = "Hotkeys. Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 6),
+            Text = "Keys",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
         });
+        cardBody.Children.Add(Hint(
+            "Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.\n" +
+            "They only reach the tool while the LAUNCHER has focus — the game's anti-cheat blocks " +
+            "background key reads. Click the launcher first, then press the key."));
+        cardBody.Children.Add(fields);
+        panel.Children.Add(new Card { Content = cardBody });
 
-        // The single most confusing thing about these keys: they do nothing while the game has focus.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "They only reach the tool while the LAUNCHER has focus — the game's anti-cheat blocks " +
-                   "background key reads. Click the launcher first, then press the key.",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        });
-
-        var startBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Start) };
-        var quitBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Quit) };
-        var gradeBox = new TextBox { Text = VkName(_service.Config.Hotkeys.AdvanceGrade) };
-        var pauseBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Pause) };
-
-        panel.Children.Add(LabeledField("Start / stop rolling", startBox));
-        panel.Children.Add(LabeledField("Quit (immediate)", quitBox));
-        panel.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
-        panel.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
+        // Result of a save shown inline instead of a modal "Saved." dialog.
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
 
         var save = MakeButton("Save Hotkeys", ControlAppearance.Primary);
+        save.Margin = new Thickness(0, 12, 0, 0);
         save.Click += (_, _) =>
         {
             var s = ParseVk(startBox.Text);
@@ -2711,7 +2785,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             var p = ParseVk(pauseBox.Text);
             if (s == 0 || q == 0 || g == 0 || p == 0)
             {
-                MessageBox.Show("Invalid hotkey name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                result.Severity = InfoBarSeverity.Error;
+                result.Title = "Invalid hotkey";
+                result.Message = "One of the names isn't a key. Use F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.";
+                result.IsOpen = true;
                 return;
             }
             _service.Config.Hotkeys.Start = s;
@@ -2719,11 +2796,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
             _service.SaveConfig();
-            MessageBox.Show("Hotkeys saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = "Hotkeys written to defaults.yaml.";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
-        return new TabItem { Header = "Hotkeys", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Hotkeys", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private static int ParseVk(string name)
