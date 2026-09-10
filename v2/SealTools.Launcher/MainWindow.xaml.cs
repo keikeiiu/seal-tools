@@ -996,13 +996,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "OCR attribute dictionary — the item attributes the tuner can recognize and match against your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the garbled forms OCR actually produces and auto-corrects to that name.",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        });
+        panel.Children.Add(Hint(
+            "OCR attribute dictionary — the item attributes the tuner can recognize and match against " +
+            "your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the " +
+            "garbled forms OCR actually produces and auto-corrects to that name. Read-only: edit " +
+            "attributes.yaml and restart to change it."));
 
         var grid = new DataGrid
         {
@@ -1012,9 +1010,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             CanUserDeleteRows = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
             GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            Background = Res("CardBackgroundFillColorDefaultBrush"),
+            // Transparent so the table sits inside its card rather than painting a second surface.
+            Background = Brushes.Transparent,
             Foreground = Res("TextFillColorPrimaryBrush"),
-            RowBackground = Res("CardBackgroundFillColorDefaultBrush"),
+            RowBackground = Brushes.Transparent,
             BorderThickness = new Thickness(0),
         };
 
@@ -1026,7 +1025,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             .Select(a => new { Name = a.Name, Category = a.Category, Variants = string.Join(" / ", a.Variants) })
             .ToList();
 
-        panel.Children.Add(grid);
+        panel.Children.Add(Section($"Dictionary · {_service.Attributes.Attributes.Count} attributes", grid));
 
         return new TabItem { Header = "Attributes", Content = new ScrollViewer
         {
