@@ -13,15 +13,26 @@
 
 ## 視窗結構
 
+啟動器一開始只顯示三張工具卡片 — 只有真的要設定東西時，設定分頁才會出現：
+
 ```
 ┌─ 工具卡片 ──────────────────────────────────────────┐
 │  Magic Tuner      [Start] [Stop]                    │
 │  ● RUNNING / stopped  ＋即時狀態                     │
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
+│                                                     │
+│  ▸ Configuration                                    │
 └─────────────────────────────────────────────────────┘
+```
+
+按 **▸ Configuration** 會展開分頁，視窗也會跟著長高：
+
+```
  Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
 ```
+
+再按一次就會收起來，並把視窗高度還原成展開前的大小。
 
 ### 工具卡片
 

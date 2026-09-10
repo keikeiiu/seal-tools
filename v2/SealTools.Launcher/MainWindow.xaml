@@ -14,10 +14,17 @@
         <Grid Grid.Row="1" Margin="20,12,20,20">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <StackPanel x:Name="ToolsPanel"/>
-            <TabControl x:Name="ConfigTabs" Grid.Row="1" Margin="0,16,0,0"
+            <!-- The configuration tabs are hidden unless you are actually configuring something: the
+                 window opens as just the three tool cards, and the chevron reveals the rest. -->
+            <ui:Button x:Name="ConfigToggle" Grid.Row="1" HorizontalAlignment="Left"
+                       Appearance="Secondary" Padding="10,3,12,3" Margin="0,14,0,0"
+                       ToolTip="Show or hide the configuration tabs"/>
+            <TabControl x:Name="ConfigTabs" Grid.Row="2" Margin="0,10,0,0"
+                        Visibility="Collapsed"
                         Background="{DynamicResource ApplicationBackgroundBrush}"
                         BorderBrush="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
         </Grid>

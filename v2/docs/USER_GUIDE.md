@@ -12,15 +12,27 @@ see [CALIBRATION.md](CALIBRATION.md).
 
 ## The window
 
+The launcher opens as just the three tool cards — the configuration tabs only appear when you are
+actually configuring something:
+
 ```
 ┌─ Tool cards ────────────────────────────────────────┐
 │  Magic Tuner      [Start] [Stop]                    │
 │  ● RUNNING / stopped  + live status                 │
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
+│                                                     │
+│  ▸ Configuration                                    │
 └─────────────────────────────────────────────────────┘
+```
+
+**▸ Configuration** expands the tabs and grows the window to fit:
+
+```
  Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
 ```
+
+Clicking it again collapses them and returns the window to the size it had before.
 
 ### Tool cards
 

@@ -140,6 +140,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         BuildConfigTabs();
         LoadCalibrationImages();
 
+        // Config region: collapsed to start, so the window opens as just the tool cards. The chevron
+        // reveals the tabs and the window grows to fit; collapsing puts the previous height back.
+        ConfigToggle.Click += (_, _) => SetConfigExpanded(ConfigTabs.Visibility != Visibility.Visible);
+        SetConfigExpanded(false);
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _timer.Tick += (_, _) => RefreshStatus();
         _timer.Start();
@@ -269,6 +274,36 @@ public partial class MainWindow : FluentWindow, IDisposable
     }
 
     // ── Config tabs ─────────────────────────────────────────────────────────
+
+    // Height of the window with the tool cards only — title bar, three cards, and the chevron below
+    // them. Measured by hand: at 350 the chevron was clipped by the window edge, so this leaves it
+    // room rather than sitting exactly on the boundary.
+    private const double ConfigCollapsedHeight = 430;
+
+    // What to restore when the region is expanded again. Zero until the first collapse, so a fresh
+    // launch expands to the window's designed height.
+    private double _configExpandedHeight;
+
+    /// <summary>Show or hide the configuration tabs. Collapsing also shrinks the window to the tool
+    /// cards, so "nothing to configure" is a genuinely small window rather than the same window with
+    /// an empty half; expanding puts the previous height back.</summary>
+    private void SetConfigExpanded(bool expanded)
+    {
+        if (expanded)
+        {
+            ConfigTabs.Visibility = Visibility.Visible;
+            ConfigToggle.Content = "▾  Configuration";
+            Height = _configExpandedHeight > 0 ? _configExpandedHeight : 720;
+        }
+        else
+        {
+            if (ConfigTabs.Visibility == Visibility.Visible && Height > ConfigCollapsedHeight)
+                _configExpandedHeight = Height;
+            ConfigTabs.Visibility = Visibility.Collapsed;
+            ConfigToggle.Content = "▸  Configuration";
+            Height = ConfigCollapsedHeight;
+        }
+    }
 
     private void BuildConfigTabs()
     {
