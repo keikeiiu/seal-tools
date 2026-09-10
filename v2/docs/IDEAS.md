@@ -15,8 +15,8 @@ because it changes how something else should be done.
 - **Refuse to run on stale calibration** (S). At tool start compare the live client size — and a
   cheap fingerprint of the captured UI against the calibration screenshot — and stop with
   "recalibrate" rather than clicking points that moved.
-- **Harden the empty check** (S). Only trust a verdict while the game window is the foreground
-  window; a covering window currently yields garbage (`RGB(26,26,46)` in one real case).
+- ~~**Harden the empty check**~~ — **done** [2026-09-10]: the check only judges while the game is the
+  foreground window, and logs a refusal otherwise. See [CALIBRATION.md](CALIBRATION.md).
 - **Game-window watchdog** (S). If the window closes or minimizes mid-run, stop cleanly.
 - **Surface crashes on the card** (S). A tool exception already writes `logs/error.log`; put the last
   error on the card so it is seen, not buried.

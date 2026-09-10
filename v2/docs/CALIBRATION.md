@@ -116,6 +116,12 @@ Two consequences for calibration:
 - **The empty reference is taken from the launcher-hidden screenshot**, not a live screen grab, so a
   window covering the box at save time can't contaminate it.
 
+**The check only judges while the game is the foreground window.** The crop comes from
+`CopyFromScreen`, so it shows whatever is *in front* — measuring the launcher's own dark UI once
+produced `RGB(26,26,46)` and a meaningless verdict. When the game isn't in front the check answers
+"not empty" instead (the safe direction: it keeps combining rather than advancing a grade) and writes
+`refused: not foreground (fg="…")` to the log.
+
 If the crop is missing, the composer falls back to the older colour-signature comparison, which
 averages the whole box and is the weaker test. With `gem.save_empty_captures: true` every check
 writes the crop plus a line to `<bin>\logs\empty_check.txt` (`diff=0.000 threshold=0.01 empty=True`)

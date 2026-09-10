@@ -67,6 +67,10 @@ public static class WindowFinder
     /// virtualised (logical) on the unaware default. Only meaningful inside Dpi.WithAwareContext.</summary>
     public static (int Width, int Height) PrimaryScreenSize() => (GetSystemMetrics(0), GetSystemMetrics(1));
 
+    /// <summary>The current foreground window, or <see cref="IntPtr.Zero"/>. Callers that read the
+    /// screen need this: a screen grab shows whatever is in front, not a chosen window.</summary>
+    public static IntPtr ForegroundWindow() => GetForegroundWindow();
+
     // Title of the current foreground window ("" if none). Diagnostic aid for focus issues.
     public static string ForegroundTitle()
     {

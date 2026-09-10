@@ -9,6 +9,25 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-10 (5) — the empty check refuses to judge a screen grab that isn't the game
+
+**Why.** The check crops the result box from a screen grab (`CopyFromScreen`), so it measures
+whatever is *in front*. During the empty-detection investigation a check ran with the launcher in
+front and returned `RGB(26,26,46)` — the launcher's own dark UI — which produced a verdict about a
+window that had nothing to do with the game. Nothing warned about it; the log line just looked odd.
+
+**Fix.** `IsResultBoxEmpty` now requires the game window to be the foreground window before it
+judges. When it isn't, it answers **"not empty"** — the safe direction (the composer keeps combining
+instead of advancing a grade on a bad read) — and writes `refused: not foreground (fg="…")` to
+`empty_check.txt` so the reason is visible rather than silent. The refusal shares the same log path
+as a normal check, via a small `LogEmptyCheck` helper.
+
+This is item 1 of the "Small robustness wins" list in [IDEAS.md](IDEAS.md), which is now ticked off.
+Not yet verified live: the refusal only fires when something steals focus from the game mid-run, so
+the next composer run with a stray click on the launcher is the observation to look for.
+
+---
+
 ## 2026-09-10 (4) — a run ends after the last grade
 
 **Symptom.** The first live `arduino`-mode run worked — combines until empty, N → G → DG, empty check

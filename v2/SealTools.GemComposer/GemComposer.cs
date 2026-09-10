@@ -184,6 +184,19 @@ public sealed class GemComposer : ToolBase
         {
             if (_cfg.Gem.ResultGemArea is not { Count: 4 } area) return false;
             var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+            if (hwnd == IntPtr.Zero) return false;
+
+            // The crop is a screen grab (CopyFromScreen), so it shows whatever is IN FRONT — not
+            // necessarily the game. Measuring the launcher's own dark UI once produced
+            // RGB(26,26,46) and a meaningless verdict. Only judge while the game is the foreground
+            // window; otherwise answer "not empty", which is the safe direction (it keeps combining
+            // instead of advancing a grade on a bad read).
+            if (WindowFinder.ForegroundWindow() != hwnd)
+            {
+                LogEmptyCheck(null, empty: false, refused: $"not foreground (fg=\"{WindowFinder.ForegroundTitle()}\")");
+                return false;
+            }
+
             var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig { Left = area[0], Top = area[1], Width = area[2], Height = area[3] });
             if (cap == null) return false;
             using var crop = cap.Image;
@@ -215,10 +228,25 @@ public sealed class GemComposer : ToolBase
                     crop.ImWrite(Path.Combine(dir, $"empty_check_crop_{DateTime.Now:HHmmss_fff}.png"));
                 }
                 catch { }
-                var detail = diff is { } f ? $"diff={f:0.000}" : "diff=n/a";
-                try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"), $"{DateTime.Now:HH:mm:ss} {detail} threshold={_cfg.Gem.EmptyDistance} empty={empty}\n"); } catch { }
+                LogEmptyCheck(diff, empty, refused: null);
             }
             return empty;
+        }
+
+        // One line per empty check — and per refusal, which is otherwise invisible (the composer
+        // simply keeps combining). Only written when save_empty_captures is on, like the crop.
+        void LogEmptyCheck(double? diff, bool empty, string? refused)
+        {
+            if (!_cfg.Gem.SaveEmptyCaptures) return;
+            try
+            {
+                var detail = refused != null
+                    ? $"refused: {refused}"
+                    : $"{(diff is { } f ? $"diff={f:0.000}" : "diff=n/a")} threshold={_cfg.Gem.EmptyDistance} empty={empty}";
+                File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"),
+                    $"{DateTime.Now:HH:mm:ss} {detail}\n");
+            }
+            catch { /* diagnostics must never break the loop */ }
         }
 
         // Right-click the three resource slots to clear any stuck resource gems.
