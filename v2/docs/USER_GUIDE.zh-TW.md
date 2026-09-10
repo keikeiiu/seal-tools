@@ -51,9 +51,9 @@ Magic Tuner 的過濾條件與停止條件。儲存到 `config/defaults.yaml`（
 | **Require grade** | 過濾通過所需的等級下限；`None` 表示不限等級。 |
 | **Save OCR captures** | 每次掃描都把 OCR 區域存到 `logs/captures/`（僅供除錯，會佔用磁碟）。 |
 | **Rules** | 目標清單：屬性 + 數量 + 數值上下限，按 `✕` 刪除，按 **+ Add Rule** 新增。 |
-| **Override rules** | 只要符合其中任一項，不論等級都會立刻停止。 |
+| **Override rules**（在 *Filter — overrides (stop immediately)* 卡片內） | 只要符合其中任一項，不論等級都會立刻停止。 |
 | **Save Tuner Config** | 把以上設定寫入 `defaults.yaml`。 |
-| **Clean up captures** | 刪除 `logs/captures/*.png`，並回報刪了幾張。 |
+| **Clean up capture images** | 刪除 `logs/captures/*.png`，並在按鈕旁回報刪了幾張。 |
 
 ## Gem 分頁
 
@@ -173,7 +173,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
    彈簧次數與三行屬性）→ **Save Tuner**。
 3. **Calibrate Gem** → **Capture gem window** → 點擊各點並拖曳結果框 → **Save Gem Composer** →
    **Save Composer Moves** → 用 **Test Move** 測試一條路線。
-4. **Arduino** → **Refresh** → **Test Click (C)** 確認裝置。
+4. **Arduino** → **Refresh** → **Send a test click** 確認裝置。
 
 **驗證既有的校正**（不需重新擷取）
 

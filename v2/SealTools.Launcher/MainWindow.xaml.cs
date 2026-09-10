@@ -592,17 +592,32 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
+        panel.Children.Add(Hint(
+            "What the tuner rolls for and how it judges each result. Rerolling stops at the target grade, " +
+            "or earlier if an override rule matches."));
+
         var targetGrade = MakeComboBox(Grades, _service.Config.Tuner.TargetGrade);
-        panel.Children.Add(LabeledField("Target grade", targetGrade));
+        var requireGrade = MakeComboBox(RequireGradeOptions, GradeOrNone(_service.Config.Tuner.Filter.RequireGrade));
+        var maxRetries = UiText(_service.Config.Tuner.MaxRetries.ToString(CultureInfo.InvariantCulture));
 
-        var maxRetries = new TextBox { Text = _service.Config.Tuner.MaxRetries.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("Max retries", maxRetries));
+        var goalFields = new StackPanel();
+        goalFields.Children.Add(LabeledField("Target grade", targetGrade));
+        goalFields.Children.Add(LabeledField("Require grade", requireGrade));
+        goalFields.Children.Add(LabeledField("Max retries", maxRetries));
+        panel.Children.Add(Section("Goal",
+            Hint("The run stops the moment the target grade is reached — that outranks everything below."),
+            goalFields));
 
-        var clickDelay = new TextBox { Text = _service.Config.Tuner.Timing.ClickEnterDelay.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("Click delay (s)", clickDelay));
+        var clickDelay = UiText(_service.Config.Tuner.Timing.ClickEnterDelay.ToString(CultureInfo.InvariantCulture));
+        var ocrDelay = UiText(_service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture));
 
-        var ocrDelay = new TextBox { Text = _service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("OCR delay (s)", ocrDelay));
+        var timingFields = new StackPanel();
+        timingFields.Children.Add(LabeledField("Click delay (s)", clickDelay));
+        timingFields.Children.Add(LabeledField("OCR delay (s)", ocrDelay));
+        panel.Children.Add(Section("Timing",
+            Hint("Wait after clicking before pressing Enter, then after Enter before reading the screen. " +
+                 "Too short and the read catches the previous frame."),
+            timingFields));
 
         var filterEnabled = new CheckBox
         {
@@ -610,31 +625,21 @@ public partial class MainWindow : FluentWindow, IDisposable
             Content = "Filter enabled",
             Foreground = Res("TextFillColorPrimaryBrush"),
         };
-        panel.Children.Add(filterEnabled);
-
         var matchMode = MakeComboBox(MatchModes, _service.Config.Tuner.Filter.MatchMode);
-        panel.Children.Add(LabeledField("Match mode", matchMode));
-
-        var requireGrade = MakeComboBox(RequireGradeOptions, GradeOrNone(_service.Config.Tuner.Filter.RequireGrade));
-        panel.Children.Add(LabeledField("Require grade", requireGrade));
-
-        var saveCaptures = new CheckBox
-        {
-            IsChecked = _service.Config.Tuner.SaveCaptures,
-            Content = "Save OCR captures (debug only)",
-            Foreground = Res("TextFillColorPrimaryBrush"),
-        };
-        panel.Children.Add(saveCaptures);
-
         var ruleRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Rules (main goal)", FontWeight = FontWeights.SemiBold, Foreground = Res("TextFillColorPrimaryBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var rulesEditor = BuildRulesEditor(_service.Config.Tuner.Filter.Rules, ruleRows, "+ Add Rule");
-        panel.Children.Add(rulesEditor);
+
+        var filterFields = new StackPanel();
+        filterFields.Children.Add(LabeledField("Match mode", matchMode));
+        panel.Children.Add(Section("Filter — rules (the main goal)",
+            Hint("Keep rolling until the result matches these rules."),
+            filterEnabled, filterFields, rulesEditor));
 
         var overrideRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Override rules (stop immediately if matched)", FontWeight = FontWeights.SemiBold, Foreground = Res("TextFillColorPrimaryBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var overrideEditor = BuildRulesEditor(_service.Config.Tuner.Filter.OverrideRules, overrideRows, "+ Add Override");
-        panel.Children.Add(overrideEditor);
+        panel.Children.Add(Section("Filter — overrides (stop immediately)",
+            Hint("Stop the moment a result matches one of these, whatever the rules above say."),
+            overrideEditor));
 
         void SetFilterFieldsEnabled(bool on)
         {
@@ -647,6 +652,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         filterEnabled.Unchecked += (_, _) => SetFilterFieldsEnabled(false);
         SetFilterFieldsEnabled(filterEnabled.IsChecked ?? false);
 
+        var saveCaptures = new CheckBox
+        {
+            IsChecked = _service.Config.Tuner.SaveCaptures,
+            Content = "Save OCR captures",
+            Foreground = Res("TextFillColorPrimaryBrush"),
+        };
+        var cleanupNote = new TextBlock
+        {
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        var cleanup = MakeButton("Clean up capture images", ControlAppearance.Secondary);
+        cleanup.Click += (_, _) => cleanupNote.Text = $"Deleted {_service.CleanupCaptures()} capture image(s).";
+        var cleanupRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+        cleanupRow.Children.Add(cleanup);
+        cleanupRow.Children.Add(cleanupNote);
+        panel.Children.Add(Section("Advanced",
+            Hint("Writes every OCR frame to logs/captures as it is read — useful when a read looks wrong, " +
+                 "at the cost of disk writes on every attempt."),
+            saveCaptures, cleanupRow));
+
+        var result = new InfoBar { IsOpen = false, IsClosable = true };
         var save = MakeButton("Save Tuner Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
@@ -663,17 +691,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.Filter.OverrideRules = overrideRows.Select(r => r.ToRule()).ToList();
             cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
             _service.SaveConfig();
-            MessageBox.Show("Tuner config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
+                             $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
-
-        var cleanup = MakeButton("Clean up captures", ControlAppearance.Secondary);
-        cleanup.Click += (_, _) =>
-        {
-            var n = _service.CleanupCaptures();
-            MessageBox.Show($"Deleted {n} capture image(s).", "Clean up", MessageBoxButton.OK, MessageBoxImage.Information);
-        };
-        panel.Children.Add(cleanup);
+        panel.Children.Add(result);
 
         return new TabItem { Header = "Tuner", Content = new ScrollViewer
         {

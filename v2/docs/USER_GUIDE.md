@@ -49,10 +49,10 @@ Filter and stop conditions for the Magic Tuner. Saved to `config/defaults.yaml` 
 | **Match mode** | `any` (one rule is enough), `all` (every rule must match), `per_attr` (each rule needs its own count of matching attributes). |
 | **Require grade** | Grade floor for a filter match; `None` means "any grade". |
 | **Save OCR captures** | Writes the OCR region to `logs/captures/` on every scan (debug only — it fills disk). |
-| **Rules** | The goal list: attribute + count + min/max value, `✕` to remove, **+ Add Rule** to append. |
-| **Override rules** | If any of these match, the tuner stops immediately regardless of the grade. |
+| **Rules** (under *Filter — rules (the main goal)*) | The goal list: attribute + count + min/max value, `✕` to remove, **+ Add Rule** to append. |
+| **Override rules** (under *Filter — overrides (stop immediately)*) | If any of these match, the tuner stops immediately regardless of the grade. |
 | **Save Tuner Config** | Writes the above to `defaults.yaml`. |
-| **Clean up captures** | Deletes `logs/captures/*.png` and reports how many were removed. |
+| **Clean up capture images** | Deletes `logs/captures/*.png` and reports how many were removed, beside the button. |
 
 ## Gem tab
 
@@ -176,7 +176,7 @@ letter/digit.
    real grade, the count and three attribute lines) → **Save Tuner**.
 3. **Calibrate Gem** → **Capture gem window** → click the points + drag the result box →
    **Save Gem Composer** → **Save Composer Moves** → **Test Move** one route.
-4. **Arduino** → **Refresh** → **Test Click (C)** to confirm the device.
+4. **Arduino** → **Refresh** → **Send a test click** to confirm the device.
 
 **Verifying an existing calibration** (no capture needed)
 
