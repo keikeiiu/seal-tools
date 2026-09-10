@@ -37,14 +37,28 @@ The two tabs already rebuilt (`Hotkeys`, `Arduino`) are marked for redo below �
 smallest, so the cost is minutes, but doing the cleanup twice on every tab is exactly what the
 sequencing existed to avoid.
 
+### Ordering (revised after checking the API)
+
+WPF-UI's `NavigationView` is built for Frame/Page navigation (`NavigationViewItem.TargetPageType`,
+`GoBack`/`GoForward`/`ClearJournal`, `FrameMargin`, an internal content presenter). It also raises
+`SelectionChanged` / `ItemInvoked`, so it can be driven directly and host our own panels instead of
+`Page` classes.
+
+That makes the shell the **last** step, not the first: the tab rebuilds don't depend on it, and doing
+them first means the shell decision is a single change to `MainWindow.xaml` plus how the builders are
+registered — with a fallback (a plain rail + content host) if `NavigationView`'s template fights us.
+
+1. **Palette** — one `App.xaml` change, sets the tone for every tab that follows.
+2. **Tabs, one commit each** — ui: controls, `Card` sections, in the order below.
+3. **Shell last** — rail instead of the tab strip, once we know it works.
+
 ## Progress
 
 Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not started.
 
 | # | Tab / step | State | Commit |
 |---|---|---|---|
-| 0 | **Shell**: `TabControl` → `ui:NavigationView` rail + content host; builders return their panel | ☐ | |
-| 0b | **Palette**: replace the eight hex brushes with WPF-UI's semantic ones | ☐ | |
+| 0 | **Palette**: replace the eight hex brushes with WPF-UI's semantic ones | ☐ | |
 | 1 | `Hotkeys` (was Settings) — **redo** with WPF-UI controls + Card | ⟳ | `b43a6d1` |
 | 2 | `Arduino` — **redo** with WPF-UI controls + Cards | ⟳ | *(2 commits ago)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
@@ -54,6 +68,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 7 | `Tuner` settings (goal / timing / filter rules / overrides / save) | ☐ | |
 | 8 | `Calibrate Tuner` (capture / steps / save) | ☐ | |
 | 9 | `Calibrate Gem` — Capture / Points / Tests / Moves / Full-run-test / Advanced | ☐ | |
+| 10 | **Shell last**: `TabControl` → `ui:NavigationView` rail (driven via `SelectionChanged`) or a plain rail + content host | ☐ | |
 | — | ~~Shared row builder~~ — largely obsolete: `ui:` controls carry their own spacing (kept only if the move grids still need one) | – | |
 | — | Button label/weight convention — still applies, per tab as it is rebuilt | ☐ | |
 
