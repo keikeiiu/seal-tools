@@ -689,23 +689,33 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
-        panel.Children.Add(LabeledField("Start grade", startGrade));
+        panel.Children.Add(Hint(
+            "How the Gem Composer starts and what it does when a grade runs out of resources. " +
+            "The click points and move set live in Calibrate Gem."));
 
+        var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
         // What the composer does when the result window is empty (grade ran out of resources).
         var emptyMode = MakeComboBox(
             GemEmptyModes.Select(m => m.Label).ToList(),
             GemEmptyModes.First(m => m.Value == _service.Config.Gem.EmptyMode).Label);
-        panel.Children.Add(LabeledField("On empty result", emptyMode));
+
+        var runFields = new StackPanel();
+        runFields.Children.Add(LabeledField("Start grade", startGrade));
+        runFields.Children.Add(LabeledField("On empty result", emptyMode));
+        panel.Children.Add(Section("Run", runFields));
 
         var saveEmptyCaptures = new CheckBox
         {
             IsChecked = _service.Config.Gem.SaveEmptyCaptures,
-            Content = "Save empty-check captures (debug only)",
+            Content = "Save empty-check captures",
             Foreground = Res("TextFillColorPrimaryBrush"),
         };
-        panel.Children.Add(saveEmptyCaptures);
+        panel.Children.Add(Section("Advanced",
+            Hint("Writes the sampled result-box crop plus a diff line per cycle; useful when the " +
+                 "empty check misbehaves, at the cost of disk I/O every cycle."),
+            saveEmptyCaptures));
 
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 0, 0, 0) };
         var save = MakeButton("Save Gem Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
@@ -714,11 +724,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Gem.EmptyMode = mode.Value;
             _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
             _service.SaveConfig();
-            MessageBox.Show("Gem config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
-        return new TabItem { Header = "Gem", Content = panel };
+        return new TabItem { Header = "Gem", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // One key + cooldown row in the spammer editor.

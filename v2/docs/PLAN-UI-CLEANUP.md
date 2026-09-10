@@ -80,7 +80,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 1 | `Hotkeys` (was Settings) — **redone** with `ui:Card`, `ui:TextBox`, `ui:InfoBar` | ✔ | *(this commit)* |
 | 2 | `Arduino` — **redone**: Connection / Input test as cards | ✔ | *(this commit)* |
 | 3 | `Setup` — Display environment / Stored calibration cards | ✔ | *(this commit)* |
-| 4 | `Gem` settings (run / advanced) | ☐ | |
+| 4 | `Gem` settings — Run / Advanced cards | ✔ | *(this commit)* |
 | 5 | `Spammer` (preset / keys / save) | ☐ | |
 | 6 | `Attributes` (dictionary / save) | ☐ | |
 | 7 | `Tuner` settings (goal / timing / filter rules / overrides / save) | ☐ | |
