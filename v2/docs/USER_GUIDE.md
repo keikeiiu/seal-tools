@@ -19,7 +19,7 @@ see [CALIBRATION.md](CALIBRATION.md).
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
 └─────────────────────────────────────────────────────┘
- Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Settings
+ Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
 ```
 
 ### Tool cards
@@ -147,7 +147,7 @@ Records the display environment the calibration was measured in.
 | Stored calibration | Shows the saved scale / client size / timestamp. |
 | ⚠ warning | Appears when the live client size differs from the stored one — **recalibrate**, don't trust the old coordinates. |
 
-## Settings tab
+## Hotkeys tab
 
 Global hotkeys. Type a name: `F1–F24`, `Esc`, `CapsLock`, `Space`, `Tab`, `Enter`, or a single
 letter/digit.
@@ -199,4 +199,4 @@ letter/digit.
 | Composer clicks drift | "Enhance pointer precision" is on, or the Arduino/pointer speed changed — re-tune `gem.movements` with **Test Move**. |
 | Everything is off after moving to a new monitor/resolution | Open **Setup**: if the scale or client size differs, recalibrate. |
 | Spammer never presses a key | The key isn't a digit or F1–F10 — the card shows a `⚠`. |
-| Hotkeys dead while playing | Expected: focus the launcher first (see Settings). |
+| Hotkeys dead while playing | Expected: focus the launcher first (see Hotkeys). |

@@ -20,7 +20,7 @@
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
 └─────────────────────────────────────────────────────┘
- Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Settings
+ Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
 ```
 
 ### 工具卡片
@@ -147,7 +147,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | 已儲存校正 | 顯示已儲存的縮放比例／客戶區尺寸／時間。 |
 | ⚠ 警告 | 當目前客戶區尺寸與已儲存的不同時出現 — **請重新校正**，不要沿用舊座標。 |
 
-## Settings 分頁
+## Hotkeys 分頁
 
 全域熱鍵。輸入名稱：`F1–F24`、`Esc`、`CapsLock`、`Space`、`Tab`、`Enter`，或單一字母／數字。
 
@@ -196,4 +196,4 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | 合成器點擊會偏移 | 開啟了「增強指標精確度」，或 Arduino／滑鼠速度改變 — 用 **Test Move** 重新調校 `gem.movements`。 |
 | 換螢幕或改解析度後全部偏移 | 打開 **Setup**：若縮放比例或客戶區尺寸不同，請重新校正。 |
 | Spammer 完全沒按鍵 | 該按鍵不是數字或 F1–F10 — 卡片會顯示 `⚠`。 |
-| 遊戲中熱鍵沒反應 | 這是預期行為：請先讓啟動器取得焦點（見 Settings）。 |
+| 遊戲中熱鍵沒反應 | 這是預期行為：請先讓啟動器取得焦點（見 Hotkeys）。 |

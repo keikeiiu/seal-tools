@@ -2631,6 +2631,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             Text = "Hotkeys. Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
             Foreground = (Brush)FindResource("MutedBrush"),
             TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+
+        // The single most confusing thing about these keys: they do nothing while the game has focus.
+        panel.Children.Add(new TextBlock
+        {
+            Text = "They only reach the tool while the LAUNCHER has focus — the game's anti-cheat blocks " +
+                   "background key reads. Click the launcher first, then press the key.",
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         });
 
@@ -2665,7 +2675,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Settings", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Hotkeys", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
     }
 
     private static int ParseVk(string name)
