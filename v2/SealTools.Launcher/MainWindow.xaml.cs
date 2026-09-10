@@ -58,6 +58,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
     private readonly DispatcherTimer _timer;
+    // Debounces the placement save while the window is being dragged or resized.
+    private DispatcherTimer? _uiSaveTimer;
 
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
     // The two composer move sets (Core/GemRoutes.cs): tuned counts vs closed-loop point placement.
@@ -149,6 +151,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         PinToggle.Click += (_, _) => SetPinned(!Topmost);
         SetConfigExpanded(false);
 
+        // Commit a move or a resize shortly after the user stops dragging. Without this the
+        // placement is only written on a graceful close, so a session that ends any other way
+        // (killed process, crash) silently loses it — which is exactly how a resize went missing.
+        _uiSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        _uiSaveTimer.Tick += (_, _) => { _uiSaveTimer.Stop(); SaveUiState(); };
+        LocationChanged += (_, _) => QueueUiStateSave();
+        SizeChanged += (_, _) => QueueUiStateSave();
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _timer.Tick += (_, _) => RefreshStatus();
         _timer.Start();
@@ -163,6 +173,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        _uiSaveTimer?.Stop();
         // Before the service goes: remember where the window was so the next launch opens there.
         SaveUiState();
         _service.Dispose();
@@ -348,8 +359,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         SetPinned(ui?.Pinned ?? false, persist: false);
     }
 
-    /// <summary>Persist placement, expanded height and pinning. Called on a pin change and on close;
-    /// never throws — window state must not be able to break shutdown.</summary>
+    /// <summary>Ask for the placement to be written shortly — restarted on every move/resize event,
+    /// so a drag writes once, at the end of it, rather than continuously.</summary>
+    private void QueueUiStateSave()
+    {
+        _uiSaveTimer?.Stop();
+        _uiSaveTimer?.Start();
+    }
+
+    /// <summary>Persist placement, expanded height and pinning. Called on a pin change, on close, and
+    /// after a move or resize settles; never throws — window state must not be able to break
+    /// shutdown.</summary>
     private void SaveUiState()
     {
         try
