@@ -301,6 +301,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         Margin = new Thickness(0, 0, 0, 10),
     };
 
+    // A fixed-width line for machine-read values (rects, ports, ids), used by several tabs.
+    private TextBlock Mono() => new()
+    {
+        Foreground = Res("TextFillColorPrimaryBrush"),
+        FontFamily = new FontFamily("Consolas"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 2),
+    };
+
     // A WPF-UI text box, so every text field gets the same Fluent chrome (placeholder, clear button)
     // instead of the plain WPF one. ComboBox/CheckBox are already restyled by WPF-UI's dictionary.
     private static Wpf.Ui.Controls.TextBox UiText(string text, string? placeholder = null) => new()
@@ -453,34 +462,29 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game " +
-                   "window's client area. Detect reads the current setup; the scale and reference client " +
-                   "size stay editable if detection is wrong. If another machine's values differ from the " +
-                   "stored calibration, recalibrate there (see docs/COORDINATES.md).",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        });
+        panel.Children.Add(Hint(
+            "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game window's " +
+            "client area. Detect reads the current setup; the scale and reference client size stay editable " +
+            "if detection is wrong. If another machine's values differ from the stored calibration, " +
+            "recalibrate there (see docs/COORDINATES.md)."));
 
-        var monitor = new TextBlock { Foreground = Res("TextFillColorPrimaryBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2) };
-        var window = new TextBlock { Foreground = Res("TextFillColorPrimaryBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
-        var stored = new TextBlock { Foreground = Res("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        var monitor = Mono();
+        var window = Mono();
+        window.Margin = new Thickness(0, 0, 0, 8);
+        var stored = new TextBlock { Foreground = Res("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
         var warning = new TextBlock { Foreground = Res("SystemFillColorCautionBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-        panel.Children.Add(monitor);
-        panel.Children.Add(window);
 
-        var scaleBox = new TextBox { Width = 80, VerticalContentAlignment = VerticalAlignment.Center };
-        var clientWBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
-        var clientHBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
-        panel.Children.Add(LabeledField("Scale (physical px per logical px)", scaleBox));
+        var scaleBox = UiText("", "1.5");
+        scaleBox.Width = 80;
+        var clientWBox = UiText("", "width");
+        clientWBox.Width = 76;
+        var clientHBox = UiText("", "height");
+        clientHBox.Width = 76;
 
         var clientRow = new StackPanel { Orientation = Orientation.Horizontal };
         clientRow.Children.Add(clientWBox);
         clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
         clientRow.Children.Add(clientHBox);
-        panel.Children.Add(LabeledField("Reference client size (physical)", clientRow));
 
         DisplayInfo? detected = null;
 
@@ -519,7 +523,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             ShowStored();
         };
 
+        var fields = new StackPanel();
+        fields.Children.Add(LabeledField("Scale (physical px per logical px)", scaleBox));
+        fields.Children.Add(LabeledField("Reference client size (physical)", clientRow));
+
+        var detectRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        detectRow.Children.Add(detect);
+
+        panel.Children.Add(Section("Display environment",
+            Hint("Detect reads the live window. The fields below stay editable in case detection is wrong."),
+            monitor, window, fields, detectRow));
+
+        panel.Children.Add(Section("Stored calibration", stored, warning));
+
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
         var save = MakeButton("Save Setup", ControlAppearance.Primary);
+        save.Margin = new Thickness(0, 0, 0, 0);
         save.Click += (_, _) =>
         {
             double scale = double.TryParse(scaleBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) && s > 0
@@ -538,15 +557,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             local.Calibration = cal;
             _service.SaveLocal(local);
             ShowStored();
-            MessageBox.Show("Setup saved to config\\local.yaml.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.";
+            result.IsOpen = true;
         };
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(detect);
-        buttons.Children.Add(save);
-        panel.Children.Add(buttons);
-        panel.Children.Add(stored);
-        panel.Children.Add(warning);
+        panel.Children.Add(save);
+        panel.Children.Add(result);
 
         // Prefill from what is already stored, so the tab is informative before Detect is pressed.
         if (_service.Config.Calibration.DpiScale is { } saved)
@@ -2845,10 +2863,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
     }
 
+    // Label column width: wide enough that the longest label in the app ("Scale (physical px per
+    // logical px)") sits on one line — at 180 it wrapped, which looked accidental.
+    private const double LabelColumnWidth = 230;
+
     private Grid LabeledField(string label, FrameworkElement control)
     {
         var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(LabelColumnWidth) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var labelText = new TextBlock
