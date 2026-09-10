@@ -753,15 +753,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel { Margin = new Thickness(8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
-                   "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
-                   "on the tool card).",
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
+        panel.Children.Add(Hint(
+            "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
+            "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
+            "on the tool card)."));
 
         // Named key sets — switching presets changes which rotation the spammer presses.
         var presets = _service.Config.Spammer.Presets;
@@ -771,7 +766,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             : presets.Keys.First();
 
         var rows = new List<SpamKeyRow>();
-        var rowsPanel = new StackPanel();
+        // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
+        // noise. One header, then bare boxes lined up underneath it.
+        var rowsPanel = new Grid();
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var keyHeader = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var keyHeaderLabel = new TextBlock { Text = "Key", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
+        var delayHeaderLabel = new TextBlock { Text = "Delay (s)", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
+        Grid.SetColumn(keyHeaderLabel, 0);
+        Grid.SetColumn(delayHeaderLabel, 1);
+        keyHeader.Children.Add(keyHeaderLabel);
+        keyHeader.Children.Add(delayHeaderLabel);
         var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
         var presetName = new TextBox { Width = 110, VerticalContentAlignment = VerticalAlignment.Center };
 
@@ -779,27 +790,37 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var row = new SpamKeyRow();
             row.Key.Text = key;
-            row.Key.Width = 80;
+            row.Key.Width = 88;
             row.Delay.Text = delay;
-            row.Delay.Width = 70;
+            row.Delay.Width = 88;
+            row.Key.Margin = new Thickness(0, 2, 8, 2);
+            row.Delay.Margin = new Thickness(0, 2, 8, 2);
 
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-            line.Children.Add(FieldLabel("Key"));
-            line.Children.Add(row.Key);
-            line.Children.Add(FieldLabel("Delay (s)"));
-            line.Children.Add(row.Delay);
+            int r = rowsPanel.RowDefinitions.Count;
+            rowsPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(8, 0, 0, 0) };
-            del.Click += (_, _) => { rowsPanel.Children.Remove(line); rows.Remove(row); };
-            line.Children.Add(del);
+            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(0, 2, 0, 2) };
+            del.Click += (_, _) =>
+            {
+                rowsPanel.Children.Remove(row.Key);
+                rowsPanel.Children.Remove(row.Delay);
+                rowsPanel.Children.Remove(del);
+                rows.Remove(row);
+            };
 
-            rowsPanel.Children.Add(line);
+            Grid.SetRow(row.Key, r); Grid.SetColumn(row.Key, 0);
+            Grid.SetRow(row.Delay, r); Grid.SetColumn(row.Delay, 1);
+            Grid.SetRow(del, r); Grid.SetColumn(del, 2);
+            rowsPanel.Children.Add(row.Key);
+            rowsPanel.Children.Add(row.Delay);
+            rowsPanel.Children.Add(del);
             rows.Add(row);
         }
 
         void LoadRows(string name)
         {
             rowsPanel.Children.Clear();
+            rowsPanel.RowDefinitions.Clear();
             rows.Clear();
             if (!presets.TryGetValue(name, out var keys)) return;
             foreach (var kv in keys)
@@ -878,17 +899,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             status.Text = $"Deleted preset '{gone}'.";
         };
         presetRow.Children.Add(delPreset);
-        panel.Children.Add(presetRow);
-        panel.Children.Add(status);
-
-        panel.Children.Add(rowsPanel);
-
         foreach (var kv in presets[current])
             AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => AddRow("", "0.2");
-        panel.Children.Add(addButton);
+
+        panel.Children.Add(Section("Preset", presetRow, status));
+        panel.Children.Add(Section("Keys", keyHeader, rowsPanel, addButton));
 
         Dictionary<string, double> RowsToKeys()
         {
@@ -908,6 +926,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var parsed = ParseKeys(text);
             if (parsed.Count == 0) return; // empty/garbage — leave the rows alone
             rowsPanel.Children.Clear();
+            rowsPanel.RowDefinitions.Clear();
             rows.Clear();
             foreach (var kv in parsed)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
@@ -920,8 +939,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Foreground = Res("TextFillColorPrimaryBrush"),
             Margin = new Thickness(0, 12, 0, 4),
         };
-        panel.Children.Add(advanced);
-
         var raw = new TextBox
         {
             AcceptsReturn = true,
@@ -930,7 +947,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
         rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
-        panel.Children.Add(rawPanel);
+        panel.Children.Add(Section("Advanced",
+            Hint("The same data as raw key:seconds lines, for setups the rows above can't express. " +
+                 "Tick the box to edit it; unticking rebuilds the rows from your text."),
+            advanced, rawPanel));
 
         advanced.Checked += (_, _) =>
         {
@@ -943,15 +963,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             rawPanel.Visibility = Visibility.Collapsed;
         };
 
+        var result = new InfoBar { IsOpen = false, IsClosable = true };
         var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             presets[current] = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
             _service.Config.Spammer.Active = current;
             _service.SaveConfig();
-            MessageBox.Show($"Preset '{current}' saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Preset '{current}' written to defaults.yaml ({presets[current].Count} key(s)).";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
         loading = true;
         RefreshPresetList(current);

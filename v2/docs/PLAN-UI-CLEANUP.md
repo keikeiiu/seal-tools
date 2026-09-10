@@ -81,7 +81,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 2 | `Arduino` — **redone**: Connection / Input test as cards | ✔ | *(this commit)* |
 | 3 | `Setup` — Display environment / Stored calibration cards | ✔ | *(this commit)* |
 | 4 | `Gem` settings — Run / Advanced cards | ✔ | *(this commit)* |
-| 5 | `Spammer` (preset / keys / save) | ☐ | |
+| 5 | `Spammer` — Preset / Keys / Advanced cards, key rows on a header grid | ✔ | *(this commit)* |
 | 6 | `Attributes` (dictionary / save) | ☐ | |
 | 7 | `Tuner` settings (goal / timing / filter rules / overrides / save) | ☐ | |
 | 8 | `Calibrate Tuner` (capture / steps / save) | ☐ | |

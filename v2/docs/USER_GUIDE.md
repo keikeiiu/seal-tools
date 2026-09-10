@@ -78,7 +78,7 @@ else is skipped and reported as a `⚠` on the tool card.
 | **name** box + **+ New** | Create a new empty preset with the name you type. |
 | **Rename** | Move the current preset's keys to the typed name. |
 | **Delete** | Remove the current preset (the last one can't be deleted). |
-| Key rows | One row per key: the key, its cooldown in seconds, `✕` to remove. |
+| Key rows | One row per key, listed under the **Key** / **Delay (s)** headings; `✕` removes it. |
 | **+ Add Key** | Adds an empty row. |
 | **Advanced** | Reveals the raw `key:seconds` list for the current preset. Ticking it fills the text from the rows; unticking rebuilds the rows from the text. |
 | **Save Spammer Config** | Writes the current preset and marks it active. |
