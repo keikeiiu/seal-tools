@@ -1,5 +1,9 @@
 # Seal Tools v2 — Fix Execution Status (branch `v2-saving-attempt`)
 
+> **v2.3 (2026-09-11).** The launcher adopts WPF-UI properly — card-based tabs, a collapsible
+> configuration region, pin-on-top and a mini view that shrinks to the running tool's card — plus a
+> placement that is remembered and two real bugs fixed (see Pass 5).
+>
 > **v2.2 (2026-09-10).** Cursor positioning moved off `SetCursorPos` onto the Arduino, the composer
 > gained a second move set (calibrated points, closed loop), empty-result detection became a pixel
 > comparison, and a run ends after the last grade. All of it verified on a live game.
@@ -16,7 +20,36 @@ calibration steps, see [CALIBRATION.md](CALIBRATION.md).
 
 ---
 
-## Pass 4 — Arduino cursor, move sets, empty check (v2.2, latest)
+## Pass 5 — WPF-UI adoption and the launcher shell (v2.3, latest)
+
+Branch `v2-ui-cleanup`, merged to `main` and tagged `v2.3`. Design and the per-tab checklist:
+[PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+
+| # | Commit | Change |
+|---|--------|--------|
+| 1 | `43c08f7` | Palette: the eight hex brushes deleted, the UI uses WPF-UI's semantic theme brushes |
+| 2–3 | `ef0d649` `97fbd57` | Hotkeys and Arduino rebuilt on `Card` + `ui:` controls; `Res`/`Hint`/`Mono`/`UiText`/`Section` helpers |
+| 4–7 | `fd06f7d` `141da64` `ebfe803` `8d16e28` | Setup, Gem, Spammer (key grid with one header), Attributes |
+| 8–9 | `e53a040` `39768c0` | Tuner, Calibrate Tuner |
+| 10 | `dba4c67` | Calibrate Gem split into Capture/Points/Coordinates/Tests/Moves×2/Full-run/Advanced/Result, with the button renames |
+| 11 | `415b135` | Config tabs behind a `▸ Configuration` chevron; the window opens as the tool cards |
+| 12 | `2a9527d` | Pin on top; placement and size remembered in `local.yaml` |
+| 13 | `d2437b2` | Mini mode: while a tool runs, only its card is shown |
+| 14 | `73258af` | Placement committed automatically ~0.7 s after a move/resize |
+| — | `025e801` | **fix**: the empty check refuses to judge a screen grab that isn't the game |
+| — | `25bdde5` | **fix**: the empty check compares only the box's interior, so a moved window can't stall the composer |
+| — | `e3f374b` | **fix**: the move-set selector no longer lives inside the card it disables |
+
+**Status 2026-09-11:** verified live — pin and placement survive a relaunch (moved to logical
+`(1927,3)`, reopened there at `619×430`, pinned), mini mode drops the window to the running tool's
+card, and a full composer run advanced correctly with the inset fix (gem frames `0.68–0.82`, empty
+`0.000`).
+
+**Still open:** the v2.3 zip is not built or published; the robustness list and the tuner spring plan
+are in [IDEAS.md](IDEAS.md) and [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md); the tuner's OCR
+row-bucket question ([TODO.md](TODO.md)) still needs evidence.
+
+## Pass 4 — Arduino cursor, move sets, empty check (v2.2)
 
 Branch `v2-arduino-moves`. Detail: [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md),
 [MOVE-SETS.md](MOVE-SETS.md), [PROGRESS.md](PROGRESS.md).

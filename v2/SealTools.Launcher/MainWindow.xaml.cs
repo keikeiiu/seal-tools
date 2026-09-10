@@ -19,6 +19,10 @@ using SealTools.Tuner;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using ControlAppearance = Wpf.Ui.Controls.ControlAppearance;
 using UiButton = Wpf.Ui.Controls.Button;
+using CardControl = Wpf.Ui.Controls.CardControl;
+using Card = Wpf.Ui.Controls.Card;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 using Mat = OpenCvSharp.Mat;
 
 namespace SealTools.Launcher;
@@ -50,8 +54,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] RequireGradeOptions = { "None", "N", "G", "DG", "XG", "SG" };
 
     private readonly LauncherService _service;
+    // id -> its card Border, so mini mode can show only the running tool's card.
+    private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
     private readonly DispatcherTimer _timer;
+    // Debounces the placement save while the window is being dragged or resized.
+    private DispatcherTimer? _uiSaveTimer;
 
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
     // The two composer move sets (Core/GemRoutes.cs): tuned counts vs closed-loop point placement.
@@ -136,6 +144,21 @@ public partial class MainWindow : FluentWindow, IDisposable
         BuildConfigTabs();
         LoadCalibrationImages();
 
+        // Window layout: placement and "on top" are remembered (local.yaml), and the config region
+        // starts collapsed so the window opens as just the tool cards.
+        RestoreUiState();
+        ConfigToggle.Click += (_, _) => SetConfigExpanded(!_configExpanded);
+        PinToggle.Click += (_, _) => SetPinned(!Topmost);
+        SetConfigExpanded(false);
+
+        // Commit a move or a resize shortly after the user stops dragging. Without this the
+        // placement is only written on a graceful close, so a session that ends any other way
+        // (killed process, crash) silently loses it — which is exactly how a resize went missing.
+        _uiSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        _uiSaveTimer.Tick += (_, _) => { _uiSaveTimer.Stop(); SaveUiState(); };
+        LocationChanged += (_, _) => QueueUiStateSave();
+        SizeChanged += (_, _) => QueueUiStateSave();
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _timer.Tick += (_, _) => RefreshStatus();
         _timer.Start();
@@ -150,6 +173,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        _uiSaveTimer?.Stop();
+        // Before the service goes: remember where the window was so the next launch opens there.
+        SaveUiState();
         _service.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -163,7 +189,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var nameText = new TextBlock
             {
                 Text = name,
-                Foreground = (Brush)FindResource("FgBrush"),
+                Foreground = Res("TextFillColorPrimaryBrush"),
                 FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
             };
@@ -171,7 +197,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var statusText = new TextBlock
             {
                 Text = "stopped",
-                Foreground = (Brush)FindResource("BadBrush"),
+                Foreground = Res("SystemFillColorCriticalBrush"),
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
@@ -212,7 +238,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var card = new Border
             {
-                Background = (Brush)FindResource("CardBrush"),
+                Background = Res("CardBackgroundFillColorDefaultBrush"),
                 CornerRadius = new CornerRadius(12),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
                 BorderThickness = new Thickness(1),
@@ -222,12 +248,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
 
             ToolsPanel.Children.Add(card);
+            _toolCards[id] = card;
         }
     }
 
     private void RefreshStatus()
     {
         var state = _service.CurrentState;
+
+        // Mini mode: while a tool runs, the window shows only that tool's card so it takes a corner
+        // rather than the whole left edge. Only one tool can run at a time, so nothing is hidden
+        // that could be used anyway.
+        _miniToolId = state is { Running: true } ? _service.CurrentId : null;
+        ApplyWindowLayout();
+
         foreach (var (id, _) in Tools)
         {
             if (!_statusBlocks.TryGetValue(id, out var block))
@@ -239,13 +273,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 block.Text = FormatStatus(state);
                 block.Foreground = state.Running
-                    ? (Brush)FindResource("GoodBrush")
-                    : (Brush)FindResource("BadBrush");
+                    ? Res("SystemFillColorSuccessBrush")
+                    : Res("SystemFillColorCriticalBrush");
             }
             else
             {
                 block.Text = "stopped";
-                block.Foreground = (Brush)FindResource("BadBrush");
+                block.Foreground = Res("SystemFillColorCriticalBrush");
             }
         }
     }
@@ -266,6 +300,124 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Config tabs ─────────────────────────────────────────────────────────
 
+    // Height of the window with the tool cards only — title bar, three cards, and the chevron below
+    // them. Measured by hand: at 350 the chevron was clipped by the window edge, so this leaves it
+    // room rather than sitting exactly on the boundary.
+    private const double ConfigCollapsedHeight = 430;
+
+    // While a tool runs the window shrinks to that tool's card alone (only one tool can run at a
+    // time), so the status can sit in a corner of the screen over the game without covering much.
+    // Measured: 320 is what it settles at — WPF will not go below the content's minimum, so a
+    // smaller number here has no effect.
+    private const double ConfigMiniHeight = 320;
+
+    // What to restore when the region is expanded again. Zero until something shrinks the window, so
+    // a fresh launch expands to the window's designed height.
+    private double _configExpandedHeight;
+
+    // Layout state. Both the config collapse and the mini mode want to set Height, so one function
+    // owns it — otherwise they fight, each undoing the other's resize.
+    private bool _configExpanded;
+    private string? _miniToolId;
+    private bool _layoutApplied;
+    private bool _appliedExpanded;
+    private bool _appliedMini;
+
+    private void SetConfigExpanded(bool expanded)
+    {
+        _configExpanded = expanded;
+        ApplyWindowLayout();
+    }
+
+    /// <summary>Floats the window above every other window, so the tool status stays readable while
+    /// you play. Remembered, so it survives a restart.</summary>
+    private void SetPinned(bool pinned, bool persist = true)
+    {
+        Topmost = pinned;
+        PinToggle.Content = pinned ? "Pinned on top" : "Pin on top";
+        PinToggle.Appearance = pinned ? ControlAppearance.Primary : ControlAppearance.Secondary;
+        if (persist) SaveUiState();
+    }
+
+    // Restore placement and pinning from local.yaml. Geometry is machine-specific, so it lives there
+    // rather than in defaults.yaml.
+    private void RestoreUiState()
+    {
+        ConfigLoader.LocalUi? ui = null;
+        try
+        {
+            ui = _service.LoadLocal()?.Ui;
+            if (ui?.Left is { } left) Left = left;
+            if (ui?.Top is { } top) Top = top;
+            if (ui?.Width is { } width) Width = width;
+            if (ui?.ExpandedHeight is { } h) _configExpandedHeight = h;
+        }
+        catch { /* a bad ui block must not stop the launcher opening */ }
+
+        // Always, even with nothing saved: this is what labels the button. Not persisted here, so a
+        // first launch doesn't write a local.yaml just for opening.
+        SetPinned(ui?.Pinned ?? false, persist: false);
+    }
+
+    /// <summary>Ask for the placement to be written shortly — restarted on every move/resize event,
+    /// so a drag writes once, at the end of it, rather than continuously.</summary>
+    private void QueueUiStateSave()
+    {
+        _uiSaveTimer?.Stop();
+        _uiSaveTimer?.Start();
+    }
+
+    /// <summary>Persist placement, expanded height and pinning. Called on a pin change, on close, and
+    /// after a move or resize settles; never throws — window state must not be able to break
+    /// shutdown.</summary>
+    private void SaveUiState()
+    {
+        try
+        {
+            if (WindowState != WindowState.Normal) return; // maximized/minimized: keep the last real size
+            if (_configExpanded && _miniToolId == null && Height > ConfigCollapsedHeight)
+                _configExpandedHeight = Height;
+
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Ui = new ConfigLoader.LocalUi
+            {
+                Left = double.IsNaN(Left) ? null : Left,
+                Top = double.IsNaN(Top) ? null : Top,
+                Width = double.IsNaN(Width) ? null : Width,
+                ExpandedHeight = _configExpandedHeight > 0 ? _configExpandedHeight : null,
+                Pinned = Topmost,
+            };
+            _service.SaveLocal(local);
+        }
+        catch { /* never let this break shutdown */ }
+    }
+
+    /// <summary>Applies the window's layout for the current state: the config region, whether only
+    /// the running tool's card is shown, and the height that follows from those.</summary>
+    private void ApplyWindowLayout()
+    {
+        bool mini = _miniToolId != null;
+        if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded) return;
+
+        // Remember the height the user was working with before anything shrinks it.
+        if (_layoutApplied && _appliedExpanded && !_appliedMini && Height > ConfigCollapsedHeight)
+            _configExpandedHeight = Height;
+
+        ConfigTabs.Visibility = _configExpanded ? Visibility.Visible : Visibility.Collapsed;
+        ConfigToggle.Content = (_configExpanded ? "▾  " : "▸  ") + "Configuration";
+
+        foreach (var (id, card) in _toolCards)
+            card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
+
+        Height = mini ? ConfigMiniHeight
+            : _configExpanded ? (_configExpandedHeight > 0 ? _configExpandedHeight : 720)
+            : ConfigCollapsedHeight;
+
+        _layoutApplied = true;
+        _appliedExpanded = _configExpanded;
+        _appliedMini = mini;
+    }
+
     private void BuildConfigTabs()
     {
         ConfigTabs.Items.Add(BuildTunerTab());
@@ -276,43 +428,97 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSetupTab());
-        ConfigTabs.Items.Add(BuildSettingsTab());
+        ConfigTabs.Items.Add(BuildHotkeysTab());
     }
 
     // Arduino connection status: a green/red light, the expected VID/PID, every serial port the
     // OS sees (with the matching one flagged), and a test click. Used to diagnose "Arduino not
     // found" without re-reading the code.
+    // One place that names a theme brush. WPF-UI's semantic brushes are used directly (no second
+    // palette beside the theme), so the app follows the theme rather than hard-coded hex values.
+    // If a theme switch should repaint live later, this becomes SetResourceReference and every
+    // call site follows.
+    private Brush Res(string key) => (Brush)FindResource(key);
+
+    // The one "grey explanation" paragraph, so hints read the same in every tab.
+    private TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        Foreground = Res("TextFillColorSecondaryBrush"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 10),
+    };
+
+    // A fixed-width line for machine-read values (rects, ports, ids), used by several tabs.
+    private TextBlock Mono() => new()
+    {
+        Foreground = Res("TextFillColorPrimaryBrush"),
+        FontFamily = new FontFamily("Consolas"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 2),
+    };
+
+    // A WPF-UI text box, so every text field gets the same Fluent chrome (placeholder, clear button)
+    // instead of the plain WPF one. ComboBox/CheckBox are already restyled by WPF-UI's dictionary.
+    private static Wpf.Ui.Controls.TextBox UiText(string text, string? placeholder = null, bool clearButton = true) => new()
+    {
+        Text = text,
+        PlaceholderText = placeholder ?? "",
+        // The clear button needs room to sit inside the field; off for the narrow ones (key/delay).
+        ClearButtonEnabled = clearButton,
+        VerticalContentAlignment = VerticalAlignment.Center,
+    };
+
+    // A titled section: a bordered Card with a header, which is how every tab groups its controls.
+    // Card rather than CardControl on purpose — CardControl measures its content with unbounded
+    // width, so wrapping text runs past the border (see docs/PLAN-UI-CLEANUP.md).
+    private static Card Section(string title, params UIElement[] children)
+    {
+        var body = new StackPanel();
+        body.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+        foreach (var child in children) body.Children.Add(child);
+        return new Card { Content = body, Margin = new Thickness(0, 0, 0, 12) };
+    }
+
     private TabItem BuildArduinoTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
+        panel.Children.Add(Hint("Is the Arduino there, and does its click reach the game?"));
+
+        // ── Connection ──────────────────────────────────────────────────────
         var light = new Ellipse
         {
             Width = 14,
             Height = 14,
-            Fill = (Brush)FindResource("BadBrush"),
+            Fill = Res("SystemFillColorCriticalBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0),
         };
         var status = new TextBlock
         {
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
         };
         var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         statusRow.Children.Add(light);
         statusRow.Children.Add(status);
-        panel.Children.Add(statusRow);
 
         var detail = new TextBlock
         {
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 4),
         };
-        panel.Children.Add(detail);
 
         void Refresh()
         {
@@ -320,12 +526,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             var match = devices.FirstOrDefault(d => d.IsMatch);
             if (match != null)
             {
-                light.Fill = (Brush)FindResource("GoodBrush");
-                status.Text = $"Connected — {match.Name} ({match.Port})";
+                light.Fill = Res("SystemFillColorSuccessBrush");
+                // The friendly name usually already ends in "(COM5)" — don't repeat the port.
+                status.Text = match.Name.Contains($"({match.Port})", StringComparison.OrdinalIgnoreCase)
+                    ? $"Connected — {match.Name}"
+                    : $"Connected — {match.Name} ({match.Port})";
             }
             else
             {
-                light.Fill = (Brush)FindResource("BadBrush");
+                light.Fill = Res("SystemFillColorCriticalBrush");
                 status.Text = "Not found";
             }
 
@@ -341,38 +550,61 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var refreshBtn = MakeButton("Refresh", ControlAppearance.Secondary);
         refreshBtn.Click += (_, _) => Refresh();
+        var refreshRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        refreshRow.Children.Add(refreshBtn);
 
-        var testBtn = MakeButton("Test Click (C)", ControlAppearance.Primary);
+        panel.Children.Add(Section("Connection", statusRow, detail, refreshRow));
+
+        // ── Input test ──────────────────────────────────────────────────────
+
+        // Its own result line, so a click test can't overwrite the connection status above.
+        var testResult = new TextBlock
+        {
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        var testBtn = MakeButton("Send a test click", ControlAppearance.Primary);
         testBtn.Click += async (_, _) =>
         {
             var ser = await _service.ArduinoPortAsync();
             if (ser == null)
             {
-                light.Fill = (Brush)FindResource("BadBrush");
-                status.Text = "Not found — cannot send click";
+                testResult.Text = "No Arduino — see Connection above.";
                 return;
             }
             try
             {
                 GemPointer.Click(ser);
-                light.Fill = (Brush)FindResource("GoodBrush");
-                status.Text = "Sent click (C)";
+                testResult.Text = $"Sent (clicked via {ser.PortName}).";
             }
             catch (Exception ex)
             {
-                light.Fill = (Brush)FindResource("BadBrush");
-                status.Text = "Click failed: " + ex.Message;
+                testResult.Text = "Click failed: " + ex.Message;
             }
         };
 
-        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal };
-        buttonRow.Children.Add(refreshBtn);
-        buttonRow.Children.Add(testBtn);
-        panel.Children.Add(buttonRow);
+        var testRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+        testRow.Children.Add(testBtn);
+        testRow.Children.Add(testResult);
+
+        panel.Children.Add(Section("Input test",
+            Hint("Sends one left click through the Arduino, at wherever the cursor already is — it does " +
+                 "not move the cursor. Use it to prove the HID path works, or Calibrate Gem → Test to " +
+                 "place the cursor as well."),
+            testRow));
 
         Refresh();
 
-        return new TabItem { Header = "Arduino", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Arduino", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // Display environment: shows what the tools measure for this machine and stores the reference
@@ -380,36 +612,33 @@ public partial class MainWindow : FluentWindow, IDisposable
     // the client size if detection is wrong (e.g. an unusual monitor arrangement).
     private TabItem BuildSetupTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game " +
-                   "window's client area. Detect reads the current setup; the scale and reference client " +
-                   "size stay editable if detection is wrong. If another machine's values differ from the " +
-                   "stored calibration, recalibrate there (see docs/COORDINATES.md).",
-            Foreground = (Brush)FindResource("MutedBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        });
+        panel.Children.Add(Hint(
+            "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game window's " +
+            "client area. Detect reads the current setup; the scale and reference client size stay editable " +
+            "if detection is wrong. If another machine's values differ from the stored calibration, " +
+            "recalibrate there (see docs/COORDINATES.md)."));
 
-        var monitor = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2) };
-        var window = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
-        var stored = new TextBlock { Foreground = (Brush)FindResource("MutedBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        var warning = new TextBlock { Foreground = (Brush)FindResource("HighlightBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-        panel.Children.Add(monitor);
-        panel.Children.Add(window);
+        var monitor = Mono();
+        var window = Mono();
+        window.Margin = new Thickness(0, 0, 0, 8);
+        var stored = new TextBlock { Foreground = Res("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
+        var warning = new TextBlock { Foreground = Res("SystemFillColorCautionBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
 
-        var scaleBox = new TextBox { Width = 80, VerticalContentAlignment = VerticalAlignment.Center };
-        var clientWBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
-        var clientHBox = new TextBox { Width = 76, VerticalContentAlignment = VerticalAlignment.Center };
-        panel.Children.Add(LabeledField("Scale (physical px per logical px)", scaleBox));
+        var scaleBox = UiText("", "1.5");
+        scaleBox.Width = 80;
+        var clientWBox = UiText("", "width");
+        clientWBox.Width = 76;
+        var clientHBox = UiText("", "height");
+        clientHBox.Width = 76;
 
         var clientRow = new StackPanel { Orientation = Orientation.Horizontal };
         clientRow.Children.Add(clientWBox);
-        clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
         clientRow.Children.Add(clientHBox);
-        panel.Children.Add(LabeledField("Reference client size (physical)", clientRow));
 
         DisplayInfo? detected = null;
 
@@ -448,7 +677,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             ShowStored();
         };
 
+        var fields = new StackPanel();
+        fields.Children.Add(LabeledField("Scale (physical px per logical px)", scaleBox));
+        fields.Children.Add(LabeledField("Reference client size (physical)", clientRow));
+
+        var detectRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        detectRow.Children.Add(detect);
+
+        panel.Children.Add(Section("Display environment",
+            Hint("Detect reads the live window. The fields below stay editable in case detection is wrong."),
+            monitor, window, fields, detectRow));
+
+        panel.Children.Add(Section("Stored calibration", stored, warning));
+
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
         var save = MakeButton("Save Setup", ControlAppearance.Primary);
+        save.Margin = new Thickness(0, 0, 0, 0);
         save.Click += (_, _) =>
         {
             double scale = double.TryParse(scaleBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) && s > 0
@@ -467,15 +711,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             local.Calibration = cal;
             _service.SaveLocal(local);
             ShowStored();
-            MessageBox.Show("Setup saved to config\\local.yaml.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.";
+            result.IsOpen = true;
         };
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(detect);
-        buttons.Children.Add(save);
-        panel.Children.Add(buttons);
-        panel.Children.Add(stored);
-        panel.Children.Add(warning);
+        panel.Children.Add(save);
+        panel.Children.Add(result);
 
         // Prefill from what is already stored, so the tab is informative before Detect is pressed.
         if (_service.Config.Calibration.DpiScale is { } saved)
@@ -489,56 +732,74 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         ShowStored();
 
-        return new TabItem { Header = "Setup", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Setup", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildTunerTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+
+        panel.Children.Add(Hint(
+            "What the tuner rolls for and how it judges each result. Rerolling stops at the target grade, " +
+            "or earlier if an override rule matches."));
 
         var targetGrade = MakeComboBox(Grades, _service.Config.Tuner.TargetGrade);
-        panel.Children.Add(LabeledField("Target grade", targetGrade));
+        var requireGrade = MakeComboBox(RequireGradeOptions, GradeOrNone(_service.Config.Tuner.Filter.RequireGrade));
+        var maxRetries = UiText(_service.Config.Tuner.MaxRetries.ToString(CultureInfo.InvariantCulture));
 
-        var maxRetries = new TextBox { Text = _service.Config.Tuner.MaxRetries.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("Max retries", maxRetries));
+        var goalFields = new StackPanel();
+        goalFields.Children.Add(LabeledField("Target grade", targetGrade));
+        goalFields.Children.Add(LabeledField("Require grade", requireGrade));
+        goalFields.Children.Add(LabeledField("Max retries", maxRetries));
+        panel.Children.Add(Section("Goal",
+            Hint("The run stops the moment the target grade is reached — that outranks everything below."),
+            goalFields));
 
-        var clickDelay = new TextBox { Text = _service.Config.Tuner.Timing.ClickEnterDelay.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("Click delay (s)", clickDelay));
+        var clickDelay = UiText(_service.Config.Tuner.Timing.ClickEnterDelay.ToString(CultureInfo.InvariantCulture));
+        var ocrDelay = UiText(_service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture));
 
-        var ocrDelay = new TextBox { Text = _service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture) };
-        panel.Children.Add(LabeledField("OCR delay (s)", ocrDelay));
+        var timingFields = new StackPanel();
+        timingFields.Children.Add(LabeledField("Click delay (s)", clickDelay));
+        timingFields.Children.Add(LabeledField("OCR delay (s)", ocrDelay));
+        panel.Children.Add(Section("Timing",
+            Hint("Wait after clicking before pressing Enter, then after Enter before reading the screen. " +
+                 "Too short and the read catches the previous frame."),
+            timingFields));
 
         var filterEnabled = new CheckBox
         {
             IsChecked = _service.Config.Tuner.Filter.Enabled,
             Content = "Filter enabled",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
         };
-        panel.Children.Add(filterEnabled);
-
         var matchMode = MakeComboBox(MatchModes, _service.Config.Tuner.Filter.MatchMode);
-        panel.Children.Add(LabeledField("Match mode", matchMode));
-
-        var requireGrade = MakeComboBox(RequireGradeOptions, GradeOrNone(_service.Config.Tuner.Filter.RequireGrade));
-        panel.Children.Add(LabeledField("Require grade", requireGrade));
-
-        var saveCaptures = new CheckBox
-        {
-            IsChecked = _service.Config.Tuner.SaveCaptures,
-            Content = "Save OCR captures (debug only)",
-            Foreground = (Brush)FindResource("FgBrush"),
-        };
-        panel.Children.Add(saveCaptures);
-
         var ruleRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Rules (main goal)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var rulesEditor = BuildRulesEditor(_service.Config.Tuner.Filter.Rules, ruleRows, "+ Add Rule");
-        panel.Children.Add(rulesEditor);
+
+        var filterFields = new StackPanel();
+        filterFields.Children.Add(LabeledField("Match mode", matchMode));
+        filterFields.Children.Add(Hint(
+            "any — one rule matching is enough. all — every rule must match. per_attr — every rule " +
+            "must reach its own Count, counting matching attributes (so Count only matters here). " +
+            "Overrides short-circuit all three: a hit stops the run immediately."));
+        panel.Children.Add(Section("Filter — rules (the main goal)",
+            Hint("Keep rolling until the result matches these rules."),
+            filterEnabled, filterFields, rulesEditor));
 
         var overrideRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Override rules (stop immediately if matched)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var overrideEditor = BuildRulesEditor(_service.Config.Tuner.Filter.OverrideRules, overrideRows, "+ Add Override");
-        panel.Children.Add(overrideEditor);
+        panel.Children.Add(Section("Filter — overrides (stop immediately)",
+            Hint("Stop the moment a result matches one of these, whatever the rules above say."),
+            overrideEditor));
 
         void SetFilterFieldsEnabled(bool on)
         {
@@ -551,6 +812,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         filterEnabled.Unchecked += (_, _) => SetFilterFieldsEnabled(false);
         SetFilterFieldsEnabled(filterEnabled.IsChecked ?? false);
 
+        var saveCaptures = new CheckBox
+        {
+            IsChecked = _service.Config.Tuner.SaveCaptures,
+            Content = "Save OCR captures",
+            Foreground = Res("TextFillColorPrimaryBrush"),
+        };
+        var cleanupNote = new TextBlock
+        {
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        var cleanup = MakeButton("Clean up capture images", ControlAppearance.Secondary);
+        cleanup.Click += (_, _) => cleanupNote.Text = $"Deleted {_service.CleanupCaptures()} capture image(s).";
+        var cleanupRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+        cleanupRow.Children.Add(cleanup);
+        cleanupRow.Children.Add(cleanupNote);
+        panel.Children.Add(Section("Advanced",
+            Hint("Writes every OCR frame to logs/captures as it is read — useful when a read looks wrong, " +
+                 "at the cost of disk writes on every attempt."),
+            saveCaptures, cleanupRow));
+
+        var result = new InfoBar { IsOpen = false, IsClosable = true };
         var save = MakeButton("Save Tuner Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
@@ -567,42 +851,58 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.Filter.OverrideRules = overrideRows.Select(r => r.ToRule()).ToList();
             cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
             _service.SaveConfig();
-            MessageBox.Show("Tuner config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
+                             $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
-        var cleanup = MakeButton("Clean up captures", ControlAppearance.Secondary);
-        cleanup.Click += (_, _) =>
+        return new TabItem { Header = "Tuner", Content = new ScrollViewer
         {
-            var n = _service.CleanupCaptures();
-            MessageBox.Show($"Deleted {n} capture image(s).", "Clean up", MessageBoxButton.OK, MessageBoxImage.Information);
-        };
-        panel.Children.Add(cleanup);
-
-        return new TabItem { Header = "Tuner", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildGemTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+
+        panel.Children.Add(Hint(
+            "How the Gem Composer starts and what it does when a grade runs out of resources. " +
+            "The click points and move set live in Calibrate Gem."));
 
         var startGrade = MakeComboBox(GemGrades, _service.Config.Gem.StartGrade);
-        panel.Children.Add(LabeledField("Start grade", startGrade));
-
         // What the composer does when the result window is empty (grade ran out of resources).
         var emptyMode = MakeComboBox(
             GemEmptyModes.Select(m => m.Label).ToList(),
             GemEmptyModes.First(m => m.Value == _service.Config.Gem.EmptyMode).Label);
-        panel.Children.Add(LabeledField("On empty result", emptyMode));
+
+        var runFields = new StackPanel();
+        runFields.Children.Add(LabeledField("Start grade", startGrade));
+        runFields.Children.Add(LabeledField("On empty result", emptyMode));
+        panel.Children.Add(Section("Run", runFields));
 
         var saveEmptyCaptures = new CheckBox
         {
             IsChecked = _service.Config.Gem.SaveEmptyCaptures,
-            Content = "Save empty-check captures (debug only)",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Content = "Save empty-check captures",
+            Foreground = Res("TextFillColorPrimaryBrush"),
         };
-        panel.Children.Add(saveEmptyCaptures);
+        panel.Children.Add(Section("Advanced",
+            Hint("Writes the sampled result-box crop plus a diff line per cycle; useful when the " +
+                 "empty check misbehaves, at the cost of disk I/O every cycle."),
+            saveEmptyCaptures));
 
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 0, 0, 0) };
         var save = MakeButton("Save Gem Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
@@ -611,33 +911,42 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Gem.EmptyMode = mode.Value;
             _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
             _service.SaveConfig();
-            MessageBox.Show("Gem config saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
-        return new TabItem { Header = "Gem", Content = panel };
+        return new TabItem { Header = "Gem", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // One key + cooldown row in the spammer editor.
     private sealed class SpamKeyRow
     {
-        public TextBox Key { get; } = new();
-        public TextBox Delay { get; } = new();
+        // Fluent text boxes, so their height matches the preset ComboBox beside them — plain WPF
+        // boxes are shorter and sat on a different baseline. No clear button: these are 88px wide.
+        public Wpf.Ui.Controls.TextBox Key { get; } = UiText("", null, clearButton: false);
+        public Wpf.Ui.Controls.TextBox Delay { get; } = UiText("", null, clearButton: false);
     }
 
     private TabItem BuildSpammerTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
-                   "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
-                   "on the tool card).",
-            Foreground = (Brush)FindResource("MutedBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
+        panel.Children.Add(Hint(
+            "Keys the spammer presses, each on its own cooldown. Keys the Arduino can't send are " +
+            "ignored, with a warning on the tool card."));
 
         // Named key sets — switching presets changes which rotation the spammer presses.
         var presets = _service.Config.Spammer.Presets;
@@ -647,35 +956,63 @@ public partial class MainWindow : FluentWindow, IDisposable
             : presets.Keys.First();
 
         var rows = new List<SpamKeyRow>();
-        var rowsPanel = new StackPanel();
+        // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
+        // noise. One header, then bare boxes lined up underneath it.
+        var rowsPanel = new Grid();
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var keyHeader = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var keyHeaderLabel = new TextBlock { Text = "Key", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
+        var delayHeaderLabel = new TextBlock { Text = "Delay (s)", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
+        Grid.SetColumn(keyHeaderLabel, 0);
+        Grid.SetColumn(delayHeaderLabel, 1);
+        keyHeader.Children.Add(keyHeaderLabel);
+        keyHeader.Children.Add(delayHeaderLabel);
         var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
-        var presetName = new TextBox { Width = 110, VerticalContentAlignment = VerticalAlignment.Center };
+        var presetName = UiText("");
+        presetName.Width = 160;
+        presetName.VerticalAlignment = VerticalAlignment.Center;
 
         void AddRow(string key, string delay)
         {
             var row = new SpamKeyRow();
             row.Key.Text = key;
-            row.Key.Width = 80;
+            row.Key.Width = 88;
             row.Delay.Text = delay;
-            row.Delay.Width = 70;
+            row.Delay.Width = 88;
+            row.Key.Margin = new Thickness(0, 2, 8, 2);
+            row.Delay.Margin = new Thickness(0, 2, 8, 2);
 
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-            line.Children.Add(FieldLabel("Key"));
-            line.Children.Add(row.Key);
-            line.Children.Add(FieldLabel("Delay (s)"));
-            line.Children.Add(row.Delay);
+            int r = rowsPanel.RowDefinitions.Count;
+            rowsPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(8, 0, 0, 0) };
-            del.Click += (_, _) => { rowsPanel.Children.Remove(line); rows.Remove(row); };
-            line.Children.Add(del);
+            var del = new UiButton { Content = "✕", Appearance = ControlAppearance.Secondary, MinWidth = 28, Margin = new Thickness(0, 2, 0, 2) };
+            del.Click += (_, _) =>
+            {
+                rowsPanel.Children.Remove(row.Key);
+                rowsPanel.Children.Remove(row.Delay);
+                rowsPanel.Children.Remove(del);
+                rows.Remove(row);
+            };
 
-            rowsPanel.Children.Add(line);
+            Grid.SetRow(row.Key, r); Grid.SetColumn(row.Key, 0);
+            Grid.SetRow(row.Delay, r); Grid.SetColumn(row.Delay, 1);
+            Grid.SetRow(del, r); Grid.SetColumn(del, 2);
+            rowsPanel.Children.Add(row.Key);
+            rowsPanel.Children.Add(row.Delay);
+            rowsPanel.Children.Add(del);
             rows.Add(row);
         }
 
         void LoadRows(string name)
         {
             rowsPanel.Children.Clear();
+            rowsPanel.RowDefinitions.Clear();
             rows.Clear();
             if (!presets.TryGetValue(name, out var keys)) return;
             foreach (var kv in keys)
@@ -699,16 +1036,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var status = new TextBlock
         {
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
-        presetRow.Children.Add(presetBox);
-        presetRow.Children.Add(new TextBlock { Text = " name ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
-        presetRow.Children.Add(presetName);
         var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
         addPreset.Click += (_, _) =>
         {
@@ -723,7 +1055,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = "";
             status.Text = $"Added preset '{name}'.";
         };
-        presetRow.Children.Add(addPreset);
         var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
         renamePreset.Click += (_, _) =>
         {
@@ -741,7 +1072,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = "";
             status.Text = $"Renamed '{old}' to '{name}'.";
         };
-        presetRow.Children.Add(renamePreset);
         var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
         delPreset.Click += (_, _) =>
         {
@@ -753,18 +1083,40 @@ public partial class MainWindow : FluentWindow, IDisposable
             LoadRows(current);
             status.Text = $"Deleted preset '{gone}'.";
         };
-        presetRow.Children.Add(delPreset);
-        panel.Children.Add(presetRow);
-        panel.Children.Add(status);
-
-        panel.Children.Add(rowsPanel);
-
         foreach (var kv in presets[current])
             AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => AddRow("", "0.2");
-        panel.Children.Add(addButton);
+
+        // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
+        // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
+        // the name field. LabeledField gives both rows the same label column.
+        foreach (var b in new[] { addPreset, renamePreset, delPreset })
+            b.Margin = new Thickness(8, 0, 0, 0);
+
+        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        pickRow.Children.Add(presetBox);
+        pickRow.Children.Add(delPreset);
+
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        nameRow.Children.Add(presetName);
+        nameRow.Children.Add(addPreset);
+        nameRow.Children.Add(renamePreset);
+
+        panel.Children.Add(Section("Preset",
+            Hint("Which key set the spammer presses. Type a name below, then + New makes a preset with " +
+                 "it or Rename moves the current one to it; the last preset can't be deleted."),
+            LabeledField("Preset", pickRow),
+            LabeledField("Name", nameRow),
+            status));
+        panel.Children.Add(Section("Keys",
+            // Said here as well as in the tab intro: the default preset is all "*0, *1, …" rows, and
+            // the one thing a reader needs to know about them is what that star means.
+            Hint("* is a fast tap — the key is held about 10 ms instead of the normal 30–80 ms. " +
+                 "Without it the press is longer, which is what most games want for a held skill. " +
+                 "Only digits 0–9 and F1–F10 are supported."),
+            keyHeader, rowsPanel, addButton));
 
         Dictionary<string, double> RowsToKeys()
         {
@@ -784,6 +1136,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var parsed = ParseKeys(text);
             if (parsed.Count == 0) return; // empty/garbage — leave the rows alone
             rowsPanel.Children.Clear();
+            rowsPanel.RowDefinitions.Clear();
             rows.Clear();
             foreach (var kv in parsed)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
@@ -793,11 +1146,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         var advanced = new CheckBox
         {
             Content = "Advanced — edit the raw key:seconds list",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             Margin = new Thickness(0, 12, 0, 4),
         };
-        panel.Children.Add(advanced);
-
         var raw = new TextBox
         {
             AcceptsReturn = true,
@@ -806,7 +1157,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
         rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
-        panel.Children.Add(rawPanel);
+        panel.Children.Add(Section("Advanced",
+            Hint("The same data as raw key:seconds lines, for setups the rows above can't express. " +
+                 "Tick the box to edit it; unticking rebuilds the rows from your text."),
+            advanced, rawPanel));
 
         advanced.Checked += (_, _) =>
         {
@@ -819,34 +1173,46 @@ public partial class MainWindow : FluentWindow, IDisposable
             rawPanel.Visibility = Visibility.Collapsed;
         };
 
+        var result = new InfoBar { IsOpen = false, IsClosable = true };
         var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             presets[current] = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
             _service.Config.Spammer.Active = current;
             _service.SaveConfig();
-            MessageBox.Show($"Preset '{current}' saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = $"Preset '{current}' written to defaults.yaml ({presets[current].Count} key(s)).";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
         loading = true;
         RefreshPresetList(current);
         loading = false;
 
-        return new TabItem { Header = "Spammer", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Spammer", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildAttributesTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "OCR attribute dictionary — the item attributes the tuner can recognize and match against your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the garbled forms OCR actually produces and auto-corrects to that name.",
-            Foreground = (Brush)FindResource("MutedBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        });
+        panel.Children.Add(Hint(
+            "OCR attribute dictionary — the item attributes the tuner can recognize and match against " +
+            "your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the " +
+            "garbled forms OCR actually produces and auto-corrects to that name. Read-only: edit " +
+            "attributes.yaml and restart to change it."));
 
         var grid = new DataGrid
         {
@@ -856,9 +1222,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             CanUserDeleteRows = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
             GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            Background = (Brush)FindResource("CardBrush"),
-            Foreground = (Brush)FindResource("FgBrush"),
-            RowBackground = (Brush)FindResource("CardBrush"),
+            // Transparent so the table sits inside its card rather than painting a second surface.
+            Background = Brushes.Transparent,
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            RowBackground = Brushes.Transparent,
             BorderThickness = new Thickness(0),
         };
 
@@ -870,20 +1237,24 @@ public partial class MainWindow : FluentWindow, IDisposable
             .Select(a => new { Name = a.Name, Category = a.Category, Variants = string.Join(" / ", a.Variants) })
             .ToList();
 
-        panel.Children.Add(grid);
+        panel.Children.Add(Section($"Dictionary · {_service.Attributes.Attributes.Count} attributes", grid));
 
-        return new TabItem { Header = "Attributes", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Attributes", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildTunerCalibrateTab()
     {
-        var hint = new TextBlock
-        {
-            Text = "Open the 發條 (tuning) window, capture, then drag three boxes: the grade letter, the 3 attribute lines, and the spring count.",
-            Foreground = (Brush)FindResource("HighlightBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 4),
-        };
+        // The status/output line of this tab: capture result, OCR dump, save confirmation. Mono, not
+        // a warning colour — it prints multi-line diagnostics rather than warnings.
+        var hint = Mono();
+        hint.Text = "Capture the 發條 window to begin.";
         _tunerHint = hint;
 
         var image = new Image { Stretch = Stretch.Uniform };
@@ -912,24 +1283,36 @@ public partial class MainWindow : FluentWindow, IDisposable
         top.Children.Add(capture);
         top.Children.Add(check);
 
-        var panel = new StackPanel { Margin = new Thickness(8) };
-        panel.Children.Add(hint);
-        panel.Children.Add(top);
-        panel.Children.Add(grid);
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+        panel.Children.Add(Section("Capture",
+            Hint("Open the 發條 (tuning) window first; the launcher hides itself for the grab so it " +
+                 "cannot cover the game. The image must show the whole window."),
+            top));
+        panel.Children.Add(Section("Boxes",
+            Hint("Drag three boxes on the capture: the grade letter, the three attribute lines, and " +
+                 "the spring count. They are colour-coded, and a too-small drag is ignored."),
+            grid));
+        panel.Children.Add(Section("Result", hint));
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private TabItem BuildGemCalibrateTab()
     {
-        var hint = new TextBlock
-        {
-            Text = "Open the gem combine window, capture, then click each button in order, and drag a box around the composed result gem.",
-            Foreground = (Brush)FindResource("HighlightBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 4),
-        };
+        // The status/output line of this tab: what a test just did, where the cursor landed, whether
+        // a save worked. Mono, because most of it is coordinates and machine output.
+        var hint = Mono();
+        hint.Text = "Capture the gem window to begin.";
         _gemHint = hint;
 
         var image = new Image { Stretch = Stretch.Uniform };
@@ -949,12 +1332,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
 
-        // Diagnostics: report the window rects and save a sample capture.
+        // Diagnostics: report the window rects and save a sample capture. Advanced — it is a
+        // one-off "why is the capture wrong" tool, not part of calibrating.
         var diag = MakeButton("Diagnose capture", ControlAppearance.Secondary);
         diag.Click += (_, _) => DiagnoseCapture();
         var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
         captureRow.Children.Add(capture);
-        captureRow.Children.Add(diag);
 
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
@@ -965,13 +1348,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // with the dropdowns.
         var testBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
         var testFromBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
-        var testBtn = MakeButton("Test Click", ControlAppearance.Secondary);
+        var testBtn = MakeButton("Place cursor + click", ControlAppearance.Secondary);
         testBtn.Click += (_, _) => GemTestClick(testBox);
-        var testMoveBtn = MakeButton("Test Move (rel)", ControlAppearance.Secondary);
+        var testMoveBtn = MakeButton("Test tuned move", ControlAppearance.Secondary);
         testMoveBtn.Click += (_, _) => GemTestRelativeMove(testFromBox, testBox);
         var checkColBtn = MakeButton("Check Result Colour", ControlAppearance.Secondary);
         checkColBtn.Click += (_, _) => GemCheckResultColor();
-        var testGemBtn = MakeButton("Test Result Gem", ControlAppearance.Secondary);
+        var testGemBtn = MakeButton("Sample result gem", ControlAppearance.Secondary);
         testGemBtn.Click += (_, _) => GemTestResult();
         _gemTestPoint = testBox;
 
@@ -995,12 +1378,19 @@ public partial class MainWindow : FluentWindow, IDisposable
         var debugCursorBtn = MakeButton("Debug Cursor (logical)", ControlAppearance.Secondary);
         debugCursorBtn.Margin = new Thickness(6, 0, 6, 0);
         debugCursorBtn.Click += (_, _) => DebugCursorPath(testBox, physical: false);
-        resultRow.Children.Add(debugCursorBtn);
 
         var debugPhysicalBtn = MakeButton("Debug Physical", ControlAppearance.Secondary);
         debugPhysicalBtn.Margin = new Thickness(6, 0, 6, 0);
         debugPhysicalBtn.Click += (_, _) => DebugCursorPath(testBox, physical: true);
-        resultRow.Children.Add(debugPhysicalBtn);
+
+        // Advanced: the one-off diagnostics, out of the calibration path. Same gap on every button —
+        // they used to have mixed margins, so the spacing read as misalignment.
+        var advancedRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new[] { diag, debugCursorBtn, debugPhysicalBtn })
+        {
+            b.Margin = new Thickness(0, 0, 8, 0);
+            advancedRow.Children.Add(b);
+        }
 
         // Result-gem box crop preview: once the result box is dragged, show the exact region
         // being sampled for empty-detection, so the user can visually confirm it's over the
@@ -1010,7 +1400,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var resultPreviewLabel = new TextBlock
         {
             Text = "Result gem box crop (empty-detection region):",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             Margin = new Thickness(0, 10, 0, 0),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -1018,21 +1408,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         resultPreviewPanel.Children.Add(resultPreviewLabel);
         resultPreviewPanel.Children.Add(resultPreview);
 
-        var panel = new StackPanel { Margin = new Thickness(8) };
-        panel.Children.Add(hint);
-        panel.Children.Add(captureRow);
-        panel.Children.Add(grid);
-        panel.Children.Add(save);
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+
+        panel.Children.Add(Section("Capture",
+            Hint("Open the gem combine window first; the launcher hides itself for the grab so it " +
+                 "cannot cover the game. The image must show the whole window."),
+            captureRow));
+
+        panel.Children.Add(Section("Points",
+            Hint("Click each button in the captured image in order — N, G, DG, Register, Combine, " +
+                 "then the three resource slots — and finally drag a box around the composed result gem."),
+            grid));
 
         // Editable coordinate fields (positions). Prefilled from the saved config so the user can
         // fix a point directly (e.g. N/G/DG all on the same vertical level) without re-capturing.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Coordinates (edit directly, then Save Coordinates):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 14, 0, 4),
-        });
 
         var cinv = System.Globalization.CultureInfo.InvariantCulture;
         var coordGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
@@ -1052,14 +1443,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         Place(coordGrid, new TextBlock { Text = "H", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 4);
         cr++;
 
-        TextBox MakeCoordBox(string val) => new()
+        // Fluent, like every other field in the app — a plain WPF box is a different height, which
+        // showed up as the coordinate grid not matching the rest of the tab.
+        Wpf.Ui.Controls.TextBox MakeCoordBox(string val)
         {
-            Width = 56,
-            Text = val,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 6),
-        };
+            var box = UiText(val, null, clearButton: false);
+            box.Width = 56;
+            box.VerticalAlignment = VerticalAlignment.Center;
+            box.Margin = new Thickness(0, 0, 8, 6);
+            return box;
+        }
 
         void AddCoordRow(string label, string key, int x, int y, int? w = null, int? h = null)
         {
@@ -1088,31 +1481,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (gem.ResultGemArea is { Count: 4 } a)
             AddCoordRow("Result area", "ResultArea", a[0], a[1], a[2], a[3]);
 
-        panel.Children.Add(coordGrid);
-
         var saveCoords = MakeButton("Save Coordinates", ControlAppearance.Primary);
         saveCoords.Click += (_, _) => SaveCoordinates();
-        panel.Children.Add(saveCoords);
+        panel.Children.Add(Section("Coordinates",
+            Hint("The points the clicks land on, in client-relative physical pixels. Edit a value " +
+                 "directly to nudge a point (e.g. N/G/DG on the same level) without re-capturing."),
+            coordGrid, saveCoords));
 
-        // Position/result tests belong to the "Save Gem Composer" part.
-        panel.Children.Add(pointRow);
-        panel.Children.Add(resultRow);
-        panel.Children.Add(resultPreviewPanel);
+        // Read-only checks: nothing here writes config or clicks in the game except the two move
+        // tests, which only click the buttons you picked.
+        panel.Children.Add(Section("Tests",
+            Hint("Place the cursor on a point, run a single route, or sample the result box. " +
+                 "Nothing here changes the config."),
+            pointRow, resultRow, resultPreviewPanel));
 
-        // Divider: positions part (above) vs composer-moves part (below).
-        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
-
-        // Composer move editor: one row per mandatory route on a shared Grid so the label / dx / dy /
-        // Test columns all line up. dx/dy are the RAW counts the composer sends (no computation) —
-        // they prefill from the current config, "Test" runs that exact move, and Save writes them back.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Composer moves (raw dx dy — the composer sends these exact counts):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 4),
-        });
-
+        // Tuned move editor: one row per route on a shared Grid so the label / dx / dy / Test columns
+        // line up. dx/dy are the RAW counts the composer sends (no computation) — they prefill from
+        // the config, the per-row button sends that exact move, and Save writes them back.
         // One shared definition of the routes (Core/GemRoutes.cs), so the tuned editor, the arduino
         // editor below and the composer can never drift apart.
         var routes = GemRoutes.All;
@@ -1134,7 +1519,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         Place(moveGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
         Place(moveGrid, new TextBlock { Text = "dx", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
         Place(moveGrid, new TextBlock { Text = "dy", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 2);
-        Place(moveGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 3);
+        Place(moveGrid, new TextBlock { Text = "Send", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 3);
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         int moveRow = 1;
@@ -1162,8 +1547,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             var row = new GemMoveRow { Key = route.Key, From = route.From, To = route.To, Dx = dxBox, Dy = dyBox };
             _gemMoveRows.Add(row);
 
-            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            var testB = MakeButton("Send", ControlAppearance.Secondary);
             testB.Margin = new Thickness(0, 0, 0, RowGap); // align with the boxes, add only the row gap
+            System.Windows.Automation.AutomationProperties.SetName(testB, $"Send tuned move {route.Label}");
             testB.Click += (_, _) => GemTestMovement(row.From, row.To, ParseMove(row.Dx), ParseMove(row.Dy));
 
             Place(moveGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, moveRow, 0);
@@ -1172,29 +1558,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             Place(moveGrid, testB, moveRow, 3);
             moveRow++;
         }
-        panel.Children.Add(moveGrid);
-
-        // Save ONLY the composer moves (raw dx/dy), independent of the full click-point
-        // calibration that "Save Gem Composer" requires.
-        var saveMoves = MakeButton("Save Composer Moves", ControlAppearance.Primary);
+        // Save ONLY the tuned counts, independent of the full click-point calibration that
+        // "Save Gem Composer" requires.
+        var saveMoves = MakeButton("Save tuned counts", ControlAppearance.Primary);
         saveMoves.Click += (_, _) => SaveComposerMoves();
-        panel.Children.Add(saveMoves);
 
-        // The NEW move set: the same routes, but each move places the cursor on the route's
-        // destination POINT with the Arduino (closed loop) instead of sending tuned counts — the
-        // same mechanism as Test Click. Nothing above is replaced; the composer picks the set with
-        // gem.move_mode, and this section is how you try the new one on a live run first.
-        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "New Gem Composer Moves (cursor placed on the destination point — no tuned counts):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 4),
-        });
-
+        // The mode selector gets its OWN card, deliberately not the arduino card: that card is
+        // disabled whenever the other set is active, which disabled the selector with it and left the
+        // mode impossible to switch back from.
         _gemMoveMode = MakeComboBox(GemMoveModes, _service.Config.Gem.MoveMode);
-        var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
         modeRow.Children.Add(new TextBlock
         {
             Text = "Composer move mode",
@@ -1202,8 +1575,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 0, 8, 0),
         });
         modeRow.Children.Add(_gemMoveMode);
-        panel.Children.Add(modeRow);
+        panel.Children.Add(Section("Move set",
+            Hint("Which set the composer uses. The set that is NOT active is dimmed below; switching " +
+                 "here wakes it up again."),
+            modeRow));
 
+        var tunedCard = Section("Moves — tuned (hand-tuned counts)",
+            Hint("What the composer sends when move mode is \"tuned\": one raw D dx dy per route, " +
+                 "tuned by hand on this PC. The per-row button sends that exact move."),
+            moveGrid, saveMoves);
+        panel.Children.Add(tunedCard);
+
+        // The other move set: the same routes, each ending on a calibrated POINT that the Arduino
+        // drives the cursor to (closed loop). Nothing above is replaced — the composer picks with
+        // gem.move_mode, and this card is how the set is tried on a live run first.
         var arduinoGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) }); // route label
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); // destination
@@ -1213,15 +1598,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         Place(arduinoGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
         Place(arduinoGrid, new TextBlock { Text = "Goes to", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
-        Place(arduinoGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 2);
+        Place(arduinoGrid, new TextBlock { Text = "Run", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 2);
 
         int arduinoRow = 1;
         foreach (var route in routes)
         {
-            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            var testB = MakeButton("Run", ControlAppearance.Secondary);
             testB.Margin = new Thickness(0, 0, 0, RowGap);
-            // Distinguishable in the accessibility tree (every row's visible label is "Test").
-            System.Windows.Automation.AutomationProperties.SetName(testB, $"Test new move {route.Label}");
+            System.Windows.Automation.AutomationProperties.SetName(testB, $"Run arduino route {route.Label}");
             testB.Click += (_, _) => GemTestArduinoRoute(route.From, route.To);
 
             Place(arduinoGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, arduinoRow, 0);
@@ -1229,33 +1613,53 @@ public partial class MainWindow : FluentWindow, IDisposable
             Place(arduinoGrid, testB, arduinoRow, 2);
             arduinoRow++;
         }
-        panel.Children.Add(arduinoGrid);
-        panel.Children.Add(new TextBlock
+        var arduinoCard = Section("Moves — arduino (cursor placed on the point)",
+            Hint("What the composer sends when move mode is \"arduino\": it places the cursor on the " +
+                 "route's destination point and re-aims every move, so nothing needs tuning. The " +
+                 "per-row button runs the route for real: click the source, place, click the target."),
+            arduinoGrid);
+        panel.Children.Add(arduinoCard);
+
+        // Dim whichever set the composer is not using, so the two grids can't be confused. The mode
+        // selector is inside the arduino card, so switching is one click away.
+        void ApplyMoveMode()
         {
-            Text = "Test clicks the source point, then places the cursor on the destination point and clicks — " +
-                   "the same closed-loop move the composer makes when move mode is \"arduino\".",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
-            Margin = new Thickness(0, 0, 0, 6),
-        });
+            bool arduino = (_gemMoveMode?.SelectedItem as string) == "arduino";
+            arduinoCard.Opacity = arduino ? 1.0 : 0.45;
+            tunedCard.Opacity = arduino ? 0.45 : 1.0;
+            arduinoCard.IsEnabled = arduino;
+            tunedCard.IsEnabled = !arduino;
+        }
+        _gemMoveMode.SelectionChanged += (_, _) => ApplyMoveMode();
+        ApplyMoveMode();
 
         // One complete cycle, driven entirely by the arduino moves — the fastest way to see whether
         // the new set survives a real run before switching the composer over to it.
-        var cycleBtn = MakeButton("Test Full Cycle (Arduino)", ControlAppearance.Primary);
-        cycleBtn.Margin = new Thickness(0, 8, 0, 0);
+        var cycleBtn = MakeButton("Run one full cycle", ControlAppearance.Primary);
         cycleBtn.Click += (_, _) => GemTestFullCycle();
-        panel.Children.Add(cycleBtn);
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Runs one complete cycle with the arduino moves: N → register → combine, then the composer's " +
-                   "deregister+register and a second combine, clear the three resource slots; the same for G; " +
-                   "DG combines once. Stops after DG's combine.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
-            Margin = new Thickness(0, 4, 0, 6),
-        });
+        panel.Children.Add(Section("Full-run test",
+            Hint("Plays one whole cycle with the arduino moves — N, G and DG combined, resource slots " +
+                 "cleared in between, stopping after DG. This one really clicks in the game: 21 clicks."),
+            cycleBtn));
 
-        return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        panel.Children.Add(Section("Advanced",
+            Hint("Input tests that compare the two cursor APIs, plus a capture diagnostic. None of " +
+                 "these calibrate anything on their own."),
+            advancedRow));
+
+        // Same shape as Calibrate Tuner: the status card, then the primary action last — the save
+        // used to sit between two cards, belonging to neither.
+        panel.Children.Add(Section("Result", hint));
+        panel.Children.Add(save);
+
+        return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     // Resolve a calibrated point by name, preferring the just-dragged/clicked in-session point
@@ -2622,29 +3026,44 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private TabItem BuildSettingsTab()
+    private TabItem BuildHotkeysTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
-        panel.Children.Add(new TextBlock
+        var startBox = UiText(VkName(_service.Config.Hotkeys.Start));
+        var quitBox = UiText(VkName(_service.Config.Hotkeys.Quit));
+        var gradeBox = UiText(VkName(_service.Config.Hotkeys.AdvanceGrade));
+        var pauseBox = UiText(VkName(_service.Config.Hotkeys.Pause));
+
+        var fields = new StackPanel();
+        fields.Children.Add(LabeledField("Start / stop rolling", startBox));
+        fields.Children.Add(LabeledField("Quit (immediate)", quitBox));
+        fields.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
+        fields.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
+
+        // Card (bordered content), not CardControl: CardControl's template measures its content with
+        // unbounded width, so the hint paragraph could not wrap and was clipped at the border.
+        var cardBody = new StackPanel();
+        cardBody.Children.Add(new TextBlock
         {
-            Text = "Hotkeys. Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-            Foreground = (Brush)FindResource("MutedBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
+            Text = "Keys",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
         });
+        cardBody.Children.Add(Hint(
+            "Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.\n" +
+            "They only reach the tool while the LAUNCHER has focus — the game's anti-cheat blocks " +
+            "background key reads. Click the launcher first, then press the key."));
+        cardBody.Children.Add(fields);
+        panel.Children.Add(new Card { Content = cardBody });
 
-        var startBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Start) };
-        var quitBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Quit) };
-        var gradeBox = new TextBox { Text = VkName(_service.Config.Hotkeys.AdvanceGrade) };
-        var pauseBox = new TextBox { Text = VkName(_service.Config.Hotkeys.Pause) };
-
-        panel.Children.Add(LabeledField("Start / stop rolling", startBox));
-        panel.Children.Add(LabeledField("Quit (immediate)", quitBox));
-        panel.Children.Add(LabeledField("Advance grade (gem)", gradeBox));
-        panel.Children.Add(LabeledField("Pause (graceful stop)", pauseBox));
+        // Result of a save shown inline instead of a modal "Saved." dialog.
+        var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
 
         var save = MakeButton("Save Hotkeys", ControlAppearance.Primary);
+        save.Margin = new Thickness(0, 12, 0, 0);
         save.Click += (_, _) =>
         {
             var s = ParseVk(startBox.Text);
@@ -2653,7 +3072,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             var p = ParseVk(pauseBox.Text);
             if (s == 0 || q == 0 || g == 0 || p == 0)
             {
-                MessageBox.Show("Invalid hotkey name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                result.Severity = InfoBarSeverity.Error;
+                result.Title = "Invalid hotkey";
+                result.Message = "One of the names isn't a key. Use F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.";
+                result.IsOpen = true;
                 return;
             }
             _service.Config.Hotkeys.Start = s;
@@ -2661,11 +3083,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
             _service.SaveConfig();
-            MessageBox.Show("Hotkeys saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            result.Severity = InfoBarSeverity.Success;
+            result.Title = "Saved";
+            result.Message = "Hotkeys written to defaults.yaml.";
+            result.IsOpen = true;
         };
         panel.Children.Add(save);
+        panel.Children.Add(result);
 
-        return new TabItem { Header = "Settings", Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        return new TabItem { Header = "Hotkeys", Content = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // Disabled, not Auto: with horizontal scrolling available the content is measured
+            // with infinite width, so hint paragraphs never wrap and get clipped instead.
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        } };
     }
 
     private static int ParseVk(string name)
@@ -2705,16 +3138,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
     }
 
+    // Label column width: wide enough that the longest label in the app ("Scale (physical px per
+    // logical px)") sits on one line — at 180 it wrapped, which looked accidental.
+    private const double LabelColumnWidth = 230;
+
     private Grid LabeledField(string label, FrameworkElement control)
     {
         var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(LabelColumnWidth) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var labelText = new TextBlock
         {
             Text = label,
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         };
@@ -2837,7 +3274,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         Text = " " + text + " ",
         VerticalAlignment = VerticalAlignment.Center,
-        Foreground = (Brush)FindResource("MutedBrush"),
+        Foreground = Res("TextFillColorSecondaryBrush"),
         FontSize = 12,
     };
 

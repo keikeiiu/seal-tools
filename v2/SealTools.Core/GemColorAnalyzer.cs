@@ -104,25 +104,32 @@ public static class GemColorAnalyzer
     // machine (2026-09-10, 62x59 crop): an EMPTY box scores 0.000 (pixel-identical), a box holding
     // a gem scores 0.357. Anything from 0.05 to 0.30 separates them, so the calibrated threshold
     // (gem.empty_distance) has a wide margin on both sides.
-    public static double? DiffFraction(Mat live, Mat reference, int channelTolerance)
+    public static double? DiffFraction(Mat live, Mat reference, int channelTolerance, int inset = 0)
     {
         if (live.Width != reference.Width || live.Height != reference.Height) return null;
+
+        // Leave the frame out of the comparison (see EmptyCompareInset in the composer): the box's
+        // drawn border moves by a pixel when the window moves, and those rows otherwise dominate the
+        // result — measured 7.7% differing for an EMPTY box, against 0.0% with the border excluded.
+        if (inset < 0 || inset * 2 >= Math.Min(live.Width, live.Height)) inset = 0;
 
         using var livePx = new Mat<Vec3b>(live);
         using var refPx = new Mat<Vec3b>(reference);
         var a = livePx.GetIndexer();
         var b = refPx.GetIndexer();
         int differing = 0;
-        for (int y = 0; y < live.Height; y++)
-            for (int x = 0; x < live.Width; x++)
+        int compared = 0;
+        for (int y = inset; y < live.Height - inset; y++)
+            for (int x = inset; x < live.Width - inset; x++)
             {
                 var pa = a[y, x];
                 var pb = b[y, x];
                 int d = Math.Max(Math.Abs(pa.Item0 - pb.Item0),
                         Math.Max(Math.Abs(pa.Item1 - pb.Item1), Math.Abs(pa.Item2 - pb.Item2)));
+                compared++;
                 if (d > channelTolerance) differing++;
             }
 
-        return differing / (double)(live.Width * live.Height);
+        return compared == 0 ? null : differing / (double)compared;
     }
 }

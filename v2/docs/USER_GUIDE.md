@@ -12,15 +12,48 @@ see [CALIBRATION.md](CALIBRATION.md).
 
 ## The window
 
+The launcher opens as just the three tool cards — the configuration tabs only appear when you are
+actually configuring something:
+
 ```
 ┌─ Tool cards ────────────────────────────────────────┐
 │  Magic Tuner      [Start] [Stop]                    │
 │  ● RUNNING / stopped  + live status                 │
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
+│                                                     │
+│  ▸ Configuration                                    │
 └─────────────────────────────────────────────────────┘
- Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Settings
 ```
+
+**▸ Configuration** expands the tabs and grows the window to fit:
+
+```
+ Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
+```
+
+Clicking it again collapses them and returns the window to the size it had before.
+
+**Pin on top** floats the window above everything else, so the tool status stays readable while the
+game has focus. It remembers both the setting and where you put the window — position and size are
+saved to `local.yaml` and restored next launch, so you only place it once. (It is written when you
+toggle the pin or close the window normally, not when the process is killed.)
+
+### While a tool runs
+
+Only one tool can run at a time, so while one is running the window shows **just that tool's card**:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Skill Spammer        [Start] [Stop]                │
+│  ● RUNNING · Grade/Cycle …                          │
+│                                                     │
+│  ▸ Configuration      [Pinned on top]               │
+└─────────────────────────────────────────────────────┘
+```
+
+The other two cards come back when it stops. Combined with **Pin on top**, that gives a small always
+visible status strip you can park in a corner of the screen over the game.
 
 ### Tool cards
 
@@ -49,10 +82,10 @@ Filter and stop conditions for the Magic Tuner. Saved to `config/defaults.yaml` 
 | **Match mode** | `any` (one rule is enough), `all` (every rule must match), `per_attr` (each rule needs its own count of matching attributes). |
 | **Require grade** | Grade floor for a filter match; `None` means "any grade". |
 | **Save OCR captures** | Writes the OCR region to `logs/captures/` on every scan (debug only — it fills disk). |
-| **Rules** | The goal list: attribute + count + min/max value, `✕` to remove, **+ Add Rule** to append. |
-| **Override rules** | If any of these match, the tuner stops immediately regardless of the grade. |
+| **Rules** (under *Filter — rules (the main goal)*) | The goal list: attribute + count + min/max value, `✕` to remove, **+ Add Rule** to append. |
+| **Override rules** (under *Filter — overrides (stop immediately)*) | If any of these match, the tuner stops immediately regardless of the grade. |
 | **Save Tuner Config** | Writes the above to `defaults.yaml`. |
-| **Clean up captures** | Deletes `logs/captures/*.png` and reports how many were removed. |
+| **Clean up capture images** | Deletes `logs/captures/*.png` and reports how many were removed, beside the button. |
 
 ## Gem tab
 
@@ -78,7 +111,7 @@ else is skipped and reported as a `⚠` on the tool card.
 | **name** box + **+ New** | Create a new empty preset with the name you type. |
 | **Rename** | Move the current preset's keys to the typed name. |
 | **Delete** | Remove the current preset (the last one can't be deleted). |
-| Key rows | One row per key: the key, its cooldown in seconds, `✕` to remove. |
+| Key rows | One row per key, listed under the **Key** / **Delay (s)** headings; `✕` removes it. |
 | **+ Add Key** | Adds an empty row. |
 | **Advanced** | Reveals the raw `key:seconds` list for the current preset. Ticking it fills the text from the rows; unticking rebuilds the rows from the text. |
 | **Save Spammer Config** | Writes the current preset and marks it active. |
@@ -108,31 +141,32 @@ Points the composer at the gem-combine UI and stores the relative move counts.
 |---|---|
 | **Capture gem window** | Same physical-pixel grab, launcher hidden during it. |
 | Canvas | Click, in order: **N, G, DG, Register, Combine**, then the **3 resource slots**, then drag a box around the **composed result gem**. |
-| **Diagnose capture** | Reports the window's frame/client rects and the non-client offset, and saves `logs/captures/diag_capture.png` — use it to confirm the launcher isn't covering the game. |
+| **Advanced → Diagnose capture** | Reports the window's frame/client rects and the non-client offset, and saves `logs/captures/diag_capture.png` — use it to confirm the launcher isn't covering the game. |
 | **Save Gem Composer** | Writes positions, resource points and the result area to `local.yaml`. It then asks whether the result box is **empty** — answer **Yes** to sample the empty-colour reference used by empty detection, **No** to leave it off. Also saves `calib_gem.png` and the result-box crop. |
 | **Coordinates** grid + **Save Coordinates** | Type X/Y (and W/H for the result area) directly instead of re-capturing. |
-| **from / to** + **Test Click** | Moves the cursor to the selected point **and clicks it** (Arduino `C`). |
-| **Test Move (rel)** | Click `from`, send that route's raw `D dx dy`, click `to`. Confirms a composer move lands. |
+| **from / to** + **Place cursor + click** | Moves the cursor to the selected point **and clicks it** (Arduino `C`). |
+| **Test tuned move** | Click `from`, send that route's raw `D dx dy`, click `to`. Confirms a tuned move lands. |
 | **Check Result Colour** | Samples the result box now and reports its colour plus the distance to the empty reference and the empty/has-gem verdict. |
-| **Test Result Gem** | Same sample with extra detail (channel spread, dominant tone) for judging the empty-detection threshold by hand. |
-| **Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** Diagnostic only — the tools place the cursor with the Arduino, not this call. |
-| **Debug Physical** | Same, but with `SetPhysicalCursorPos`. Kept for comparing the two APIs. |
-| **Composer moves** grid | One row per route (N→Register, G→Register, DG→Register, Register→Combine, Combine→Register, Register→Resource1, Resource1→Resource2, Resource2→Resource3, Resource3→N/G/DG) with raw `dx`/`dy` and a **Test** button per row. |
-| **Save Composer Moves** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
-| **Composer move mode** | `tuned` (default) = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
-| **New Gem Composer Moves** grid | The same routes, each shown with the **point it goes to**, and a **Test** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
-| **Test Full Cycle (Arduino)** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
+| **Sample result gem** | Same sample with extra detail (channel spread, dominant tone) for judging the empty-detection threshold by hand. |
+| **Advanced → Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** Diagnostic only — the tools place the cursor with the Arduino, not this call. |
+| **Advanced → Debug Physical** | Same, but with `SetPhysicalCursorPos`. Kept for comparing the two APIs. |
+| **Moves — tuned (hand-tuned counts)** grid | One row per route (N→Register, G→Register, DG→Register, Register→Combine, Combine→Register, Register→Resource1, Resource1→Resource2, Resource2→Resource3, Resource3→N/G/DG) with raw `dx`/`dy` and a **Send** button per row that sends that exact move. |
+| **Save tuned counts** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
+| **Composer move mode** | Which move set the composer uses. Whichever set is **not** active is dimmed, so the two grids can't be confused. `tuned` = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
+| **Moves — arduino (cursor placed on the point)** grid | The same routes, each shown with the **point it goes to**, and a **Run** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
+| **Run one full cycle** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
 
 ## Arduino tab
 
-Connection diagnostics.
+Connection diagnostics, split into the two questions you actually ask: *is the Arduino there*, and
+*does its click reach the game*.
 
-| Control | What it does |
-|---|---|
-| Status light | Green when a serial device matching the configured VID/PID is present. |
-| Port list | Every serial port the OS sees, with `>>` marking the match, plus the expected VID/PID. |
-| **Refresh** | Re-runs the scan (it is not live). |
-| **Test Click (C)** | Opens the port and sends a real Arduino click — the end-to-end check that the device is alive. |
+| Section | Control | What it does |
+|---|---|---|
+| Connection | Status light | Green when a serial device matching the configured VID/PID is present. |
+| Connection | Port list | Every serial port the OS sees, with `>>` marking the match, plus the expected VID/PID. |
+| Connection | **Refresh** | Re-runs the scan (it is not live). |
+| Input test | **Send a test click** | Opens the port and sends one Arduino left click at the cursor's current position — the end-to-end check that the device is alive. It does **not** move the cursor; use Calibrate Gem → Test for placing it. Its result shows beside the button, so it can't overwrite the connection status. |
 
 ## Setup tab
 
@@ -147,7 +181,7 @@ Records the display environment the calibration was measured in.
 | Stored calibration | Shows the saved scale / client size / timestamp. |
 | ⚠ warning | Appears when the live client size differs from the stored one — **recalibrate**, don't trust the old coordinates. |
 
-## Settings tab
+## Hotkeys tab
 
 Global hotkeys. Type a name: `F1–F24`, `Esc`, `CapsLock`, `Space`, `Tab`, `Enter`, or a single
 letter/digit.
@@ -175,7 +209,7 @@ letter/digit.
    real grade, the count and three attribute lines) → **Save Tuner**.
 3. **Calibrate Gem** → **Capture gem window** → click the points + drag the result box →
    **Save Gem Composer** → **Save Composer Moves** → **Test Move** one route.
-4. **Arduino** → **Refresh** → **Test Click (C)** to confirm the device.
+4. **Arduino** → **Refresh** → **Send a test click** to confirm the device.
 
 **Verifying an existing calibration** (no capture needed)
 
@@ -199,4 +233,4 @@ letter/digit.
 | Composer clicks drift | "Enhance pointer precision" is on, or the Arduino/pointer speed changed — re-tune `gem.movements` with **Test Move**. |
 | Everything is off after moving to a new monitor/resolution | Open **Setup**: if the scale or client size differs, recalibrate. |
 | Spammer never presses a key | The key isn't a digit or F1–F10 — the card shows a `⚠`. |
-| Hotkeys dead while playing | Expected: focus the launcher first (see Settings). |
+| Hotkeys dead while playing | Expected: focus the launcher first (see Hotkeys). |

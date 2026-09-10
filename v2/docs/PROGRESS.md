@@ -9,6 +9,107 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-11 — the launcher adopts WPF-UI; the window learns where it belongs
+
+**Goal.** Make the launcher readable and keep the tool status visible while playing. The project had
+WPF-UI loaded but only ever used `FluentWindow`, `ui:TitleBar` and `ui:Button` — every tab was plain
+WPF with a second, hard-coded palette beside the theme.
+
+**What was decided, and why**
+
+- **Adopt WPF-UI properly, one tab per commit.** Card-based sections, `ui:` controls, and the
+  theme's semantic brushes instead of our hex ones. The information architecture carried over
+  untouched: grouping, renames, the `Hotkeys` rename. Full checklist in
+  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+- **The shell change was tried and reverted.** A `ui:NavigationView` rail rendered correctly but
+  clicking an item never switched the page, and the tab strip read better anyway — so the tabs
+  stayed and the experiment is recorded so nobody retries it blind.
+- **The window now belongs to the user.** It opens as just the tool cards, the configuration tabs
+  hide behind a chevron, it can be pinned above the game, and while a tool runs it shrinks to that
+  tool's card. Placement, size and expanded height are remembered in `local.yaml` and written
+  ~0.7 s after a move or resize settles — not only on a clean close, which is what used to lose a
+  resize when the process was killed.
+
+**Two real bugs found in review (both fixed, both were live-facing)**
+
+- **The move-set selector disabled itself.** It sat inside the arduino card, which is disabled
+  whenever the other set is active — so choosing `tuned` disabled the only control that could switch
+  back. It has its own card now.
+- **The empty check was comparing the box's border.** The frame shifts by a pixel when the game
+  window moves, which made an *empty* box score 7.7 % against a 0.01 gate and stalled the composer.
+  Comparing the interior only: empty 0.0 %, gem 0.68–0.82 on a live run.
+
+**Verified live.** Pin and placement survive a relaunch (moved to logical `(1927,3)`, reopened there
+at `619×430`, pinned). Mini mode: `920×430` idle → `920×320` running → back on stop. A full composer
+run advanced correctly with the inset fix.
+
+**Left open.** The v2.3 zip is not built or published. The robustness list, the tuner spring plan and
+the spammer key pad are all designed and waiting in [IDEAS.md](IDEAS.md).
+
+---
+
+## 2026-09-10 (6) — the empty check was comparing the box's border, and a moved window broke it
+
+**Symptom (reported live).** The composer kept combining and never advanced, with the result box
+visibly empty. The card said "stopped" only because the run had been stopped by hand.
+
+**First check: not the guard.** The foreground guard from entry (5) was the obvious suspect, but the
+log showed it working — `diff=0.077 empty=False` for six cycles, and exactly one
+`refused: not foreground` line, at the moment focus moved to VS Code. So the check was running and
+judging; it was judging wrongly.
+
+**Diagnosis.** `save_empty_captures` was turned back on, the run repeated, and the saved crop showed
+an *empty* box. Comparing that crop against the reference per-row showed the differing pixels were
+not in the middle but in horizontal bands at the very top and bottom — y=0,1,4 and y=55–58: the box's
+drawn frame. A one-pixel shift in where the crop lands moves those rows while the flat interior stays
+identical. That alone was 7.7 % of the box — six times the 0.01 gate.
+
+**Fix.** The comparison now skips a 6 px border on each edge (`EmptyCompareInset`, passed through to
+`GemColorAnalyzer.DiffFraction`). Measured on the real crops:
+
+| inset | empty | gem |
+|---|---|---|
+| 0 (before) | 7.7 % | 35.6 % |
+| 6 (now) | **0.0 %** | **54.6 %** |
+
+The gem is drawn in the interior, so the separation gets *better*, not worse. A new test pins the
+inset, including the fallback when the inset would swallow the whole image.
+
+**Verified live afterwards**, same run, from `empty_check.txt`:
+
+```
+23:38:47  diff=0.818  empty=False     ← gem in the box (0.68–0.82 across the run)
+23:39:13  diff=0.000  empty=True      ← emptied, so the composer cleared and advanced
+```
+
+The gem signal on a real run is even wider than the offline measurement (0.82 vs 0.55), and the empty
+state is exactly 0.000 — the two states are now further apart than at any point before, with the gate
+untouched at 0.01.
+
+**Lesson worth keeping:** a 0.01 gate is only safe when the empty state really is pixel-identical. It
+was — until the window moved. The inset is what makes the tight gate honest.
+
+---
+
+## 2026-09-10 (5) — the empty check refuses to judge a screen grab that isn't the game
+
+**Why.** The check crops the result box from a screen grab (`CopyFromScreen`), so it measures
+whatever is *in front*. During the empty-detection investigation a check ran with the launcher in
+front and returned `RGB(26,26,46)` — the launcher's own dark UI — which produced a verdict about a
+window that had nothing to do with the game. Nothing warned about it; the log line just looked odd.
+
+**Fix.** `IsResultBoxEmpty` now requires the game window to be the foreground window before it
+judges. When it isn't, it answers **"not empty"** — the safe direction (the composer keeps combining
+instead of advancing a grade on a bad read) — and writes `refused: not foreground (fg="…")` to
+`empty_check.txt` so the reason is visible rather than silent. The refusal shares the same log path
+as a normal check, via a small `LogEmptyCheck` helper.
+
+This is item 1 of the "Small robustness wins" list in [IDEAS.md](IDEAS.md), which is now ticked off.
+Not yet verified live: the refusal only fires when something steals focus from the game mid-run, so
+the next composer run with a stray click on the launcher is the observation to look for.
+
+---
+
 ## 2026-09-10 (4) — a run ends after the last grade
 
 **Symptom.** The first live `arduino`-mode run worked — combines until empty, N → G → DG, empty check

@@ -9,14 +9,10 @@
                 <ui:ThemesDictionary Theme="Dark" />
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
-            <SolidColorBrush x:Key="BgBrush" Color="#1A1A2E"/>
-            <SolidColorBrush x:Key="CardBrush" Color="#16213E"/>
-            <SolidColorBrush x:Key="FgBrush" Color="#EEEEEE"/>
-            <SolidColorBrush x:Key="MutedBrush" Color="#AAAAAA"/>
-            <SolidColorBrush x:Key="GoodBrush" Color="#00E676"/>
-            <SolidColorBrush x:Key="BadBrush" Color="#FF5252"/>
-            <SolidColorBrush x:Key="AccentBrush" Color="#00C853"/>
-            <SolidColorBrush x:Key="HighlightBrush" Color="#FFD54F"/>
+            <!-- No palette of our own: the UI uses WPF-UI's semantic theme brushes directly
+                 (TextFillColorPrimary/Secondary, SystemFillColorSuccess/Critical/Caution,
+                 CardBackgroundFillColorDefault, ApplicationBackground). One palette, and the
+                 theme switch in the merged ThemesDictionary actually governs the app. -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>

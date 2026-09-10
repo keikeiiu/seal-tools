@@ -101,7 +101,12 @@ pixels against **`config/calib_gem_result.png`** — the crop of the box saved b
 | | measured (62×59 crop) |
 |---|---|
 | empty box vs the saved crop | **0.000** — pixel-identical |
-| box holding a gem | **0.357** |
+| box holding a gem | **0.55** |
+
+**The comparison skips the box's drawn border** (6 px at each edge). The frame moves by a pixel when
+the game window moves, and those few rows were enough to make an *empty* box score 7.7 % — above the
+gate, so the composer never advanced again. Looking only at the interior fixes it exactly: empty
+0.0 %, gem 55 %, and the gem is drawn in the middle so nothing is lost.
 
 `gem.empty_distance` is that fraction (default **0.01**): below it the box is "empty". The margin is
 enormous on both sides, and the test is deliberately **colour- and shape-blind** — it asks "is this
@@ -115,6 +120,12 @@ Two consequences for calibration:
   box has a gem, answer **No** — empty detection stays off rather than capturing a gem as "empty".
 - **The empty reference is taken from the launcher-hidden screenshot**, not a live screen grab, so a
   window covering the box at save time can't contaminate it.
+
+**The check only judges while the game is the foreground window.** The crop comes from
+`CopyFromScreen`, so it shows whatever is *in front* — measuring the launcher's own dark UI once
+produced `RGB(26,26,46)` and a meaningless verdict. When the game isn't in front the check answers
+"not empty" instead (the safe direction: it keeps combining rather than advancing a grade) and writes
+`refused: not foreground (fg="…")` to the log.
 
 If the crop is missing, the composer falls back to the older colour-signature comparison, which
 averages the whole box and is the weaker test. With `gem.save_empty_captures: true` every check

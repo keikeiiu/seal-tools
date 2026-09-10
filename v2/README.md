@@ -1,5 +1,12 @@
 # Seal Tools v2 (C# / .NET WPF)
 
+**Version 2.3** (2026-09-11) — the launcher adopts WPF-UI properly. Every tab was rebuilt on the
+theme's own controls and cards, the window opens as just the tool cards with the configuration
+tabs behind a chevron, and it can be pinned above the game and shrunk to the running tool's card so
+the status stays visible while you play. Window placement and size are remembered. Two real bugs
+were found on the way: the move-set selector disabled the control needed to switch back, and the
+empty check compared the result box's *border*, so a moved game window stalled the composer.
+
 **Version 2.2** (2026-09-10) — the cursor is positioned by the **Arduino** in a closed loop instead
 of `SetCursorPos` (which this process is intermittently refused — see
 [docs/CURSOR-INVESTIGATION.md](docs/CURSOR-INVESTIGATION.md)), the Gem Composer moves between
@@ -55,6 +62,7 @@ v2/
   docs/PLAN-TUNER-SPRING.md  # planned: tuner spring placement + cursor guard (not built)
   docs/PLAN-UI-CLEANUP.md    # planned: launcher UI rework — study/decide before coding
   docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features
+  docs/HANDOVER.md       # prompt for the next session: state, conventions, open threads
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
   publish.bat            # build + package the .exe

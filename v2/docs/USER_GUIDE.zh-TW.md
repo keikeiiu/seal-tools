@@ -13,15 +13,46 @@
 
 ## 視窗結構
 
+啟動器一開始只顯示三張工具卡片 — 只有真的要設定東西時，設定分頁才會出現：
+
 ```
 ┌─ 工具卡片 ──────────────────────────────────────────┐
 │  Magic Tuner      [Start] [Stop]                    │
 │  ● RUNNING / stopped  ＋即時狀態                     │
 │  Gem Composer     [Start] [Stop]                    │
 │  Skill Spammer    [Start] [Stop]                    │
+│                                                     │
+│  ▸ Configuration                                    │
 └─────────────────────────────────────────────────────┘
- Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Settings
 ```
+
+按 **▸ Configuration** 會展開分頁，視窗也會跟著長高：
+
+```
+ Tuner | Gem | Spammer | Attributes | Calibrate Tuner | Calibrate Gem | Arduino | Setup | Hotkeys
+```
+
+再按一次就會收起來，並把視窗高度還原成展開前的大小。
+
+**Pin on top** 會讓視窗浮在所有視窗之上，這樣遊戲取得焦點時仍然看得到工具狀態。它會記住這個
+設定以及你把視窗放在哪裡 — 位置與大小寫入 `local.yaml`，下次啟動會還原，所以只需要擺放一次。
+（只在切換 Pin 或正常關閉視窗時寫入，用工作管理員強制結束不會存檔。）
+
+### 工具執行時
+
+同一時間只能跑一個工具，所以有工具在跑的時候，視窗只會顯示**那個工具的卡片**：
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Skill Spammer        [Start] [Stop]                │
+│  ● RUNNING · Grade/Cycle …                          │
+│                                                     │
+│  ▸ Configuration      [Pinned on top]               │
+└─────────────────────────────────────────────────────┘
+```
+
+停止後另外兩張卡片就會回來。搭配 **Pin on top**，就等於一條小巧、永遠可見的狀態列，可以放在
+螢幕角落、疊在遊戲上面。
 
 ### 工具卡片
 
@@ -51,9 +82,9 @@ Magic Tuner 的過濾條件與停止條件。儲存到 `config/defaults.yaml`（
 | **Require grade** | 過濾通過所需的等級下限；`None` 表示不限等級。 |
 | **Save OCR captures** | 每次掃描都把 OCR 區域存到 `logs/captures/`（僅供除錯，會佔用磁碟）。 |
 | **Rules** | 目標清單：屬性 + 數量 + 數值上下限，按 `✕` 刪除，按 **+ Add Rule** 新增。 |
-| **Override rules** | 只要符合其中任一項，不論等級都會立刻停止。 |
+| **Override rules**（在 *Filter — overrides (stop immediately)* 卡片內） | 只要符合其中任一項，不論等級都會立刻停止。 |
 | **Save Tuner Config** | 把以上設定寫入 `defaults.yaml`。 |
-| **Clean up captures** | 刪除 `logs/captures/*.png`，並回報刪了幾張。 |
+| **Clean up capture images** | 刪除 `logs/captures/*.png`，並在按鈕旁回報刪了幾張。 |
 
 ## Gem 分頁
 
@@ -79,7 +110,7 @@ Arduino 支援數字 **0–9** 與 **F1–F10**；在鍵前面加 `*` 表示快�
 | **name** 欄位 + **+ New** | 用你輸入的名稱建立一個新的空組合。 |
 | **Rename** | 把目前組合的按鍵搬到你輸入的新名稱。 |
 | **Delete** | 刪除目前組合（最後一個組合無法刪除）。 |
-| 按鍵列 | 每個按鍵一列：按鍵、冷卻秒數、`✕` 刪除。 |
+| 按鍵列 | 每個按鍵一列，欄位標題為 **Key** / **Delay (s)**；`✕` 可移除。 |
 | **+ Add Key** | 新增一個空白列。 |
 | **Advanced** | 顯示目前組合的原始 `key:seconds` 清單。勾選時會把列內容填入文字框；取消勾選時會用文字框內容重建列。 |
 | **Save Spammer Config** | 儲存目前組合，並將它設為使用中的組合。 |
@@ -111,28 +142,28 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | **Diagnose capture** | 回報視窗的框架／客戶區尺寸與非客戶區偏移，並儲存 `logs/captures/diag_capture.png` — 用來確認啟動器沒有遮住遊戲。 |
 | **Save Gem Composer** | 把座標點、資源點與結果區域寫入 `local.yaml`。接著會詢問結果欄位現在是否為**空的** — 選 **Yes** 會取樣「空欄位顏色」作為空欄偵測的參考，選 **No** 則不啟用空欄偵測。同時儲存 `calib_gem.png` 與結果欄位截圖。 |
 | **Coordinates** 表格 + **Save Coordinates** | 直接輸入 X/Y（結果區域還可輸入 W/H），不必重新擷取。 |
-| **from / to** + **Test Click** | 把游標移到選定的點**並點擊**（Arduino `C`）。 |
-| **Test Move (rel)** | 點 `from`、送出該路線的原始 `D dx dy`、再點 `to`。用來確認合成器的移動會落在正確位置。 |
+| **from / to** + **Place cursor + click** | 把游標移到選定的點**並點擊**（Arduino `C`）。 |
+| **Test tuned move** | 點 `from`、送出該路線的原始 `D dx dy`、再點 `to`。用來確認合成器的移動會落在正確位置。 |
 | **Check Result Colour** | 立即取樣結果欄位，回報它的顏色、與空欄參考的距離，以及「空／有寶石」的判定。 |
-| **Test Result Gem** | 同樣取樣，但附上更多細節（通道差值、主要色調），方便你人工判斷空欄偵測的門檻。 |
+| **Sample result gem** | 同樣取樣，但附上更多細節（通道差值、主要色調），方便你人工判斷空欄偵測的門檻。 |
 | **Debug Cursor (logical)** | 用 `SetCursorPos` 加上換算後的座標把游標移到選定的點，並顯示計算出的目標、API 是否接受、以及游標最後的位置。**不會點擊。** 僅供診斷 — 工具實際上是靠 Arduino 移動游標，不是這個呼叫。 |
 | **Debug Physical** | 同上，但改用 `SetPhysicalCursorPos`。保留它是為了比較兩種 API。 |
-| **Composer moves** 表格 | 每條路線一列（N→Register、G→Register、DG→Register、Register→Combine、Combine→Register、Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3→N/G/DG），可編輯原始 `dx`/`dy`，每列有 **Test** 按鈕。 |
-| **Save Composer Moves** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
-| **Composer move mode** | `tuned`（預設）= 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
-| **New Gem Composer Moves** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Test** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
-| **Test Full Cycle (Arduino)** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
+| **Moves — tuned (hand-tuned counts)** 表格 | 每條路線一列（N→Register、G→Register、DG→Register、Register→Combine、Combine→Register、Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3→N/G/DG），可編輯原始 `dx`/`dy`，每列有 **Send** 按鈕，會送出該列的確切移動。 |
+| **Save tuned counts** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
+| **Composer move mode** | 合成器要用哪一組移動。**非**目前使用中的那一組會變淡，避免兩張表混淆。`tuned` = 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
+| **Moves — arduino (cursor placed on the point)** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Run** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
+| **Run one full cycle** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
 
 ## Arduino 分頁
 
-連線診斷。
+連線診斷，分成你真正會問的兩件事：*Arduino 在不在*，以及*它的點擊到不到得了遊戲*。
 
-| 控制項 | 功能 |
-|---|---|
-| 狀態燈號 | 當作業系統上出現符合設定 VID/PID 的序列裝置時顯示綠色。 |
-| 埠清單 | 列出作業系統看到的所有序列埠，符合的以 `>>` 標示，並顯示預期的 VID/PID。 |
-| **Refresh** | 重新掃描（它不會自動更新）。 |
-| **Test Click (C)** | 開啟埠並送出一次真正的 Arduino 點擊 — 確認裝置確實活著的最終檢查。 |
+| 區塊 | 控制項 | 功能 |
+|---|---|---|
+| Connection | 狀態燈號 | 當作業系統上出現符合設定 VID/PID 的序列裝置時顯示綠色。 |
+| Connection | 埠清單 | 列出作業系統看到的所有序列埠，符合的以 `>>` 標示，並顯示預期的 VID/PID。 |
+| Connection | **Refresh** | 重新掃描（它不會自動更新）。 |
+| Input test | **Send a test click** | 開啟埠並在游標目前位置送出一次 Arduino 左鍵 — 確認裝置確實活著的最終檢查。它**不會**移動游標；要連游標一起定位請用 Calibrate Gem → Test。結果顯示在按鈕旁邊，不會蓋掉上面的連線狀態。 |
 
 ## Setup 分頁
 
@@ -147,7 +178,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | 已儲存校正 | 顯示已儲存的縮放比例／客戶區尺寸／時間。 |
 | ⚠ 警告 | 當目前客戶區尺寸與已儲存的不同時出現 — **請重新校正**，不要沿用舊座標。 |
 
-## Settings 分頁
+## Hotkeys 分頁
 
 全域熱鍵。輸入名稱：`F1–F24`、`Esc`、`CapsLock`、`Space`、`Tab`、`Enter`，或單一字母／數字。
 
@@ -172,8 +203,8 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 2. **Calibrate Tuner** → **Capture 發條 window** → 拖曳三個區段 → **Check OCR**（必須讀到正確的等級、
    彈簧次數與三行屬性）→ **Save Tuner**。
 3. **Calibrate Gem** → **Capture gem window** → 點擊各點並拖曳結果框 → **Save Gem Composer** →
-   **Save Composer Moves** → 用 **Test Move** 測試一條路線。
-4. **Arduino** → **Refresh** → **Test Click (C)** 確認裝置。
+   **Save tuned counts** → 用 **Test tuned move** 測試一條路線。
+4. **Arduino** → **Refresh** → **Send a test click** 確認裝置。
 
 **驗證既有的校正**（不需重新擷取）
 
@@ -196,4 +227,4 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | 合成器點擊會偏移 | 開啟了「增強指標精確度」，或 Arduino／滑鼠速度改變 — 用 **Test Move** 重新調校 `gem.movements`。 |
 | 換螢幕或改解析度後全部偏移 | 打開 **Setup**：若縮放比例或客戶區尺寸不同，請重新校正。 |
 | Spammer 完全沒按鍵 | 該按鍵不是數字或 F1–F10 — 卡片會顯示 `⚠`。 |
-| 遊戲中熱鍵沒反應 | 這是預期行為：請先讓啟動器取得焦點（見 Settings）。 |
+| 遊戲中熱鍵沒反應 | 這是預期行為：請先讓啟動器取得焦點（見 Hotkeys）。 |

@@ -1,4 +1,4 @@
-# Seal Tools v2.2 (C# / .NET 8 WPF)
+# Seal Tools v2.3 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -10,7 +10,8 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 | Version | File | What it is |
 |---|---|---|
-| **v2.2** (latest) | [SealTools-v2.2.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.2/SealTools-v2.2.zip) | Arduino closed-loop cursor + moves, pixel-based empty-result check, run ends after the last grade |
+| **v2.3** (latest) | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | WPF-UI launcher: card-based tabs, collapsible config, pin-on-top and a running-tool mini view |
+| v2.2 | [SealTools-v2.2.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.2/SealTools-v2.2.zip) | Arduino closed-loop cursor + moves, pixel-based empty-result check, run ends after the last grade |
 | v2.1 | [SealTools-v2.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.1/SealTools-v2.1.zip) | Physical-pixel capture, Setup tab, spammer presets, [user guide](v2/docs/USER_GUIDE.md) |
 | v2.0 | [SealTools-v2.zip](https://github.com/keikeiiu/seal-tools/releases/download/V2.0.0/SealTools-v2.zip) | First C#/.NET release |
 
@@ -22,7 +23,7 @@ Self-contained distributables (exe + OCR models + config templates) — unzip an
 
 ## Quick start
 
-1. Unzip `SealTools-v2.2.zip`.
+1. Unzip `SealTools-v2.3.zip`.
 2. Run `SealTools.Launcher.exe` — **as Administrator** is recommended (serial access; on some setups the in-game hotkeys need it too). On first run it auto-creates `config\local.yaml` from the example.
 3. Use the in-app **Calibrate** tabs (Tuner + Gem) to set your machine's coordinates once.
 
