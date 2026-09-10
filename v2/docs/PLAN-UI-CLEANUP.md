@@ -13,23 +13,49 @@ grids, and buttons whose labels say what they do.
 | structure (tabs vs collapsible sections) | **pending this document** — see the grouping below |
 | XAML vs code-built | **pending** — see the trade-off section |
 
+## Direction (decided 2026-09-10)
+
+**Adopt WPF-UI properly, tab by tab.** The project already references WPF-UI 4.3 and merges its theme
+dictionaries, but only ever used `FluentWindow`, `ui:TitleBar` and `ui:Button` — every tab is plain
+WPF with a second, hard-coded palette beside the theme. That is why the UI reads as generic WPF.
+
+| | today | with WPF-UI |
+|---|---|---|
+| Navigation | `TabControl`, nine tabs across the top | `ui:NavigationView` — left rail with icons, one content pane |
+| Sections | bare `TextBlock` heading | `ui:Card` (nothing hidden — still "headings only") |
+| Inputs | `TextBox` / `ComboBox` / `CheckBox` | `ui:TextBox` / `ui:ComboBox` / `ui:ToggleSwitch` — consistent padding and focus rings, so far fewer hand-set margins |
+| Messages | `MessageBox.Show` inside save handlers | `ui:InfoBar` / `ui:ContentDialog` |
+| Colour | eight hex brushes duplicating the theme | semantic theme brushes → theme-aware, light mode becomes one line |
+
+**What this changes about the plan:** WPF-UI's `Card` replaces the section-heading helper, and its
+controls carry the spacing the shared row builder was going to fix — so this **subsumes** steps 10–11
+below rather than following them. The information-architecture work is unaffected: the grouping
+(Capture / Points / Tests / Moves / Advanced), the renames and the `Hotkeys` rename all still apply,
+because those are decisions about *what goes where*, not about which control draws it.
+
+The two tabs already rebuilt (`Hotkeys`, `Arduino`) are marked for redo below — they are the two
+smallest, so the cost is minutes, but doing the cleanup twice on every tab is exactly what the
+sequencing existed to avoid.
+
 ## Progress
 
 Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not started.
 
 | # | Tab / step | State | Commit |
 |---|---|---|---|
-| 1 | `Settings` → **`Hotkeys`** (rename + focus caveat + guides) | ✔ | `b43a6d1` |
-| 2 | `Arduino` — split into **Connection** / **Input test**, own result line, button renamed | ✔ | *(this commit)* |
+| 0 | **Shell**: `TabControl` → `ui:NavigationView` rail + content host; builders return their panel | ☐ | |
+| 0b | **Palette**: replace the eight hex brushes with WPF-UI's semantic ones | ☐ | |
+| 1 | `Hotkeys` (was Settings) — **redo** with WPF-UI controls + Card | ⟳ | `b43a6d1` |
+| 2 | `Arduino` — **redo** with WPF-UI controls + Cards | ⟳ | *(2 commits ago)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
 | 4 | `Gem` settings (run / advanced) | ☐ | |
 | 5 | `Spammer` (preset / keys / save) | ☐ | |
 | 6 | `Attributes` (dictionary / save) | ☐ | |
 | 7 | `Tuner` settings (goal / timing / filter rules / overrides / save) | ☐ | |
 | 8 | `Calibrate Tuner` (capture / steps / save) | ☐ | |
-| 9 | `Calibrate Gem` — split into Capture / Points / Tests / Moves / Full-run / Advanced | ☐ | |
-| 10 | Shared row builder + style constants (introduced with the first tab that needs it) | ☐ | |
-| 11 | Button label/weight convention applied across the remaining tabs | ☐ | |
+| 9 | `Calibrate Gem` — Capture / Points / Tests / Moves / Full-run-test / Advanced | ☐ | |
+| — | ~~Shared row builder~~ — largely obsolete: `ui:` controls carry their own spacing (kept only if the move grids still need one) | – | |
+| — | Button label/weight convention — still applies, per tab as it is rebuilt | ☐ | |
 
 ## What exists today (inventory)
 
