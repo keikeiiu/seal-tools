@@ -37,6 +37,23 @@ The two tabs already rebuilt (`Hotkeys`, `Arduino`) are marked for redo below �
 smallest, so the cost is minutes, but doing the cleanup twice on every tab is exactly what the
 sequencing existed to avoid.
 
+### The rail: tried, reverted (2026-09-10) — do not repeat without a fix
+
+The shell step was attempted with `ui:NavigationView` in a left column beside a `ContentControl`
+holding our pages (no `Page` classes — the rail shows titles, `SelectionChanged` swaps the content).
+It **rendered** correctly: nine items, first one active, the Tuner page beside it. But **clicking an
+item did not switch the page**, and on review the tab strip simply read better, so it was reverted
+before commit. Notes for anyone tempted again:
+
+- `NavigationView.SelectedItem` has **no public setter** (CS0272) — the initial page has to be shown
+  by setting the item's `IsActive`, which is what the rail renders as selected.
+- Our `SelectionChanged` handler (`Nav.SelectedItem is NavigationViewItem { Tag: string }`) never
+  fired on click. UIAutomation sees each item as a `DataItem` exposing only
+  `SynchronizedInputPattern`, which is a hint that WPF-UI drives invocation through `ItemInvoked`
+  rather than the routed `SelectionChanged` we subscribed to.
+- The unreverted experiment was cheap because the pages are plain `UIElement`s; the tab builders were
+  unchanged apart from a two-line `AddPage` wrapper.
+
 ### Two gotchas found while rebuilding the first tab (apply to every later tab)
 
 1. **Use `ui:Card`, not `ui:CardControl`.** `CardControl`'s template measures its content with
@@ -86,7 +103,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 7 | `Tuner` — Goal / Timing / Filter-rules / Filter-overrides / Advanced cards | ✔ | *(this commit)* |
 | 8 | `Calibrate Tuner` — Capture / Boxes / Result cards | ✔ | *(this commit)* |
 | 9 | `Calibrate Gem` — Capture / Points / Coordinates / Tests / Moves×2 / Full-run test / Advanced / Result | ✔ | *(this commit)* |
-| 10 | **Shell last**: `TabControl` → `ui:NavigationView` rail (driven via `SelectionChanged`) or a plain rail + content host | ☐ | |
+| 10 | **Shell — tried and reverted.** `ui:NavigationView` rail rendered fine, but clicking an item did not switch the page, and the tab strip read better anyway. Tabs kept; nothing shipped. | ✗ | — |
 | — | ~~Shared row builder~~ — largely obsolete: `ui:` controls carry their own spacing (kept only if the move grids still need one) | – | |
 | — | Button label/weight convention — still applies, per tab as it is rebuilt | ☐ | |
 
