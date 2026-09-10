@@ -163,7 +163,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var nameText = new TextBlock
             {
                 Text = name,
-                Foreground = (Brush)FindResource("FgBrush"),
+                Foreground = Res("TextFillColorPrimaryBrush"),
                 FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
             };
@@ -171,7 +171,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var statusText = new TextBlock
             {
                 Text = "stopped",
-                Foreground = (Brush)FindResource("BadBrush"),
+                Foreground = Res("SystemFillColorCriticalBrush"),
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
@@ -212,7 +212,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var card = new Border
             {
-                Background = (Brush)FindResource("CardBrush"),
+                Background = Res("CardBackgroundFillColorDefaultBrush"),
                 CornerRadius = new CornerRadius(12),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
                 BorderThickness = new Thickness(1),
@@ -239,13 +239,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 block.Text = FormatStatus(state);
                 block.Foreground = state.Running
-                    ? (Brush)FindResource("GoodBrush")
-                    : (Brush)FindResource("BadBrush");
+                    ? Res("SystemFillColorSuccessBrush")
+                    : Res("SystemFillColorCriticalBrush");
             }
             else
             {
                 block.Text = "stopped";
-                block.Foreground = (Brush)FindResource("BadBrush");
+                block.Foreground = Res("SystemFillColorCriticalBrush");
             }
         }
     }
@@ -282,6 +282,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Arduino connection status: a green/red light, the expected VID/PID, every serial port the
     // OS sees (with the matching one flagged), and a test click. Used to diagnose "Arduino not
     // found" without re-reading the code.
+    // One place that names a theme brush. WPF-UI's semantic brushes are used directly (no second
+    // palette beside the theme), so the app follows the theme rather than hard-coded hex values.
+    // If a theme switch should repaint live later, this becomes SetResourceReference and every
+    // call site follows.
+    private Brush Res(string key) => (Brush)FindResource(key);
+
     // One section heading inside a tab, so the heading style lives in one place instead of being
     // re-specified per tab. (The shared row builder and the rest of the style constants come with
     // the first tab that needs them.)
@@ -289,7 +295,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         Text = text,
         FontWeight = FontWeights.SemiBold,
-        Foreground = (Brush)FindResource("FgBrush"),
+        Foreground = Res("TextFillColorPrimaryBrush"),
         Margin = new Thickness(0, 12, 0, 4),
     };
 
@@ -300,7 +306,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "Is the Arduino there, and does its click reach the game?",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 2),
         });
@@ -312,13 +318,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Width = 14,
             Height = 14,
-            Fill = (Brush)FindResource("BadBrush"),
+            Fill = Res("SystemFillColorCriticalBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0),
         };
         var status = new TextBlock
         {
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
         };
@@ -329,7 +335,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var detail = new TextBlock
         {
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 4),
@@ -342,12 +348,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             var match = devices.FirstOrDefault(d => d.IsMatch);
             if (match != null)
             {
-                light.Fill = (Brush)FindResource("GoodBrush");
+                light.Fill = Res("SystemFillColorSuccessBrush");
                 status.Text = $"Connected — {match.Name} ({match.Port})";
             }
             else
             {
-                light.Fill = (Brush)FindResource("BadBrush");
+                light.Fill = Res("SystemFillColorCriticalBrush");
                 status.Text = "Not found";
             }
 
@@ -374,7 +380,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Text = "Sends one left click through the Arduino, at wherever the cursor already is — it does " +
                    "not move the cursor. Use it to prove the HID path works, or Calibrate Gem → Test to " +
                    "place the cursor as well.",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 6),
         });
@@ -382,7 +388,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Its own result line, so a click test can't overwrite the connection status above.
         var testResult = new TextBlock
         {
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(10, 0, 0, 0),
@@ -430,15 +436,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                    "window's client area. Detect reads the current setup; the scale and reference client " +
                    "size stay editable if detection is wrong. If another machine's values differ from the " +
                    "stored calibration, recalibrate there (see docs/COORDINATES.md).",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         });
 
-        var monitor = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2) };
-        var window = new TextBlock { Foreground = (Brush)FindResource("FgBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
-        var stored = new TextBlock { Foreground = (Brush)FindResource("MutedBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        var warning = new TextBlock { Foreground = (Brush)FindResource("HighlightBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+        var monitor = new TextBlock { Foreground = Res("TextFillColorPrimaryBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2) };
+        var window = new TextBlock { Foreground = Res("TextFillColorPrimaryBrush"), FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        var stored = new TextBlock { Foreground = Res("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        var warning = new TextBlock { Foreground = Res("SystemFillColorCautionBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
         panel.Children.Add(monitor);
         panel.Children.Add(window);
 
@@ -449,7 +455,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var clientRow = new StackPanel { Orientation = Orientation.Horizontal };
         clientRow.Children.Add(clientWBox);
-        clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        clientRow.Children.Add(new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
         clientRow.Children.Add(clientHBox);
         panel.Children.Add(LabeledField("Reference client size (physical)", clientRow));
 
@@ -554,7 +560,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             IsChecked = _service.Config.Tuner.Filter.Enabled,
             Content = "Filter enabled",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
         };
         panel.Children.Add(filterEnabled);
 
@@ -568,17 +574,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             IsChecked = _service.Config.Tuner.SaveCaptures,
             Content = "Save OCR captures (debug only)",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
         };
         panel.Children.Add(saveCaptures);
 
         var ruleRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Rules (main goal)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
+        panel.Children.Add(new TextBlock { Text = "Rules (main goal)", FontWeight = FontWeights.SemiBold, Foreground = Res("TextFillColorPrimaryBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var rulesEditor = BuildRulesEditor(_service.Config.Tuner.Filter.Rules, ruleRows, "+ Add Rule");
         panel.Children.Add(rulesEditor);
 
         var overrideRows = new List<RuleRow>();
-        panel.Children.Add(new TextBlock { Text = "Override rules (stop immediately if matched)", FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("FgBrush"), Margin = new Thickness(0, 8, 0, 2) });
+        panel.Children.Add(new TextBlock { Text = "Override rules (stop immediately if matched)", FontWeight = FontWeights.SemiBold, Foreground = Res("TextFillColorPrimaryBrush"), Margin = new Thickness(0, 8, 0, 2) });
         var overrideEditor = BuildRulesEditor(_service.Config.Tuner.Filter.OverrideRules, overrideRows, "+ Add Override");
         panel.Children.Add(overrideEditor);
 
@@ -641,7 +647,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             IsChecked = _service.Config.Gem.SaveEmptyCaptures,
             Content = "Save empty-check captures (debug only)",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
         };
         panel.Children.Add(saveEmptyCaptures);
 
@@ -676,7 +682,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Text = "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
                    "F1–F10; prefix a key with * for the fast hold. Other keys are ignored (a warning appears " +
                    "on the tool card).",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         });
@@ -741,15 +747,15 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var status = new TextBlock
         {
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
         var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
         presetRow.Children.Add(presetBox);
-        presetRow.Children.Add(new TextBlock { Text = " name ", VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("MutedBrush") });
+        presetRow.Children.Add(new TextBlock { Text = " name ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
         presetRow.Children.Add(presetName);
         var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
         addPreset.Click += (_, _) =>
@@ -835,7 +841,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var advanced = new CheckBox
         {
             Content = "Advanced — edit the raw key:seconds list",
-            Foreground = (Brush)FindResource("FgBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
             Margin = new Thickness(0, 12, 0, 4),
         };
         panel.Children.Add(advanced);
@@ -885,7 +891,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "OCR attribute dictionary — the item attributes the tuner can recognize and match against your filter rules. \"Name\" is what a filter rule matches on; \"OCR variants\" are the garbled forms OCR actually produces and auto-corrects to that name.",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         });
@@ -898,9 +904,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             CanUserDeleteRows = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
             GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            Background = (Brush)FindResource("CardBrush"),
-            Foreground = (Brush)FindResource("FgBrush"),
-            RowBackground = (Brush)FindResource("CardBrush"),
+            Background = Res("CardBackgroundFillColorDefaultBrush"),
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            RowBackground = Res("CardBackgroundFillColorDefaultBrush"),
             BorderThickness = new Thickness(0),
         };
 
@@ -922,7 +928,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var hint = new TextBlock
         {
             Text = "Open the 發條 (tuning) window, capture, then drag three boxes: the grade letter, the 3 attribute lines, and the spring count.",
-            Foreground = (Brush)FindResource("HighlightBrush"),
+            Foreground = Res("SystemFillColorCautionBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 4),
         };
@@ -968,7 +974,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var hint = new TextBlock
         {
             Text = "Open the gem combine window, capture, then click each button in order, and drag a box around the composed result gem.",
-            Foreground = (Brush)FindResource("HighlightBrush"),
+            Foreground = Res("SystemFillColorCautionBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 4),
         };
@@ -1052,7 +1058,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var resultPreviewLabel = new TextBlock
         {
             Text = "Result gem box crop (empty-detection region):",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             Margin = new Thickness(0, 10, 0, 0),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -1071,7 +1077,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "Coordinates (edit directly, then Save Coordinates):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
+            Foreground = Res("SystemFillColorCautionBrush"),
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 14, 0, 4),
         });
@@ -1150,7 +1156,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "Composer moves (raw dx dy — the composer sends these exact counts):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
+            Foreground = Res("SystemFillColorCautionBrush"),
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 4, 0, 4),
         });
@@ -1230,7 +1236,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "New Gem Composer Moves (cursor placed on the destination point — no tuned counts):",
-            Foreground = (Brush)FindResource("HighlightBrush"),
+            Foreground = Res("SystemFillColorCautionBrush"),
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 4, 0, 4),
         });
@@ -1277,7 +1283,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Text = "Test clicks the source point, then places the cursor on the destination point and clicks — " +
                    "the same closed-loop move the composer makes when move mode is \"arduino\".",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             Margin = new Thickness(0, 0, 0, 6),
         });
 
@@ -1293,7 +1299,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                    "deregister+register and a second combine, clear the three resource slots; the same for G; " +
                    "DG combines once. Stops after DG's combine.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)FindResource("TextFillColorSecondaryBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             Margin = new Thickness(0, 4, 0, 6),
         });
 
@@ -2671,7 +2677,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "Hotkeys. Type a key name: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 6),
         });
@@ -2681,7 +2687,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Text = "They only reach the tool while the LAUNCHER has focus — the game's anti-cheat blocks " +
                    "background key reads. Click the launcher first, then press the key.",
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         });
@@ -2766,7 +2772,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var labelText = new TextBlock
         {
             Text = label,
-            Foreground = (Brush)FindResource("MutedBrush"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         };
@@ -2889,7 +2895,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         Text = " " + text + " ",
         VerticalAlignment = VerticalAlignment.Center,
-        Foreground = (Brush)FindResource("MutedBrush"),
+        Foreground = Res("TextFillColorSecondaryBrush"),
         FontSize = 12,
     };
 

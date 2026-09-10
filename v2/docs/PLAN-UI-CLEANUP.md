@@ -58,7 +58,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 
 | # | Tab / step | State | Commit |
 |---|---|---|---|
-| 0 | **Palette**: replace the eight hex brushes with WPF-UI's semantic ones | ☐ | |
+| 0 | **Palette**: eight hex brushes deleted; the UI now uses WPF-UI's semantic brushes | ✔ | *(this commit)* |
 | 1 | `Hotkeys` (was Settings) — **redo** with WPF-UI controls + Card | ⟳ | `b43a6d1` |
 | 2 | `Arduino` — **redo** with WPF-UI controls + Cards | ⟳ | *(2 commits ago)* |
 | 3 | `Setup` (display environment / save) | ☐ | |
@@ -187,7 +187,7 @@ the existing code-built shell, so this decision is not irreversible.
    bigger ones — so each diff is reviewable and revertable alone.
 2. Pure moves/renames first; the shared row builder second (introduced with the first tab that needs
    it, then applied as tabs are touched); Advanced toggles last, decided per tab.
-3. Screenshot before/after per tab into `logs/captures/ui/`, and update the matching
+3. Screenshot before/after per tab into `logs/captures/ui/` (gitignored — local review only), and update the matching
    [USER_GUIDE.md](USER_GUIDE.md) rows in the same commit — button names must match the guide.
 4. No behaviour changes, no config keys renamed, no calibration flow reordered.
 

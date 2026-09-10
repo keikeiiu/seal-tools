@@ -18,7 +18,8 @@
             </Grid.RowDefinitions>
             <StackPanel x:Name="ToolsPanel"/>
             <TabControl x:Name="ConfigTabs" Grid.Row="1" Margin="0,16,0,0"
-                        Background="{StaticResource BgBrush}" BorderBrush="{StaticResource CardBrush}"/>
+                        Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
         </Grid>
     </Grid>
 </ui:FluentWindow>
