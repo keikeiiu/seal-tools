@@ -168,6 +168,21 @@ public sealed class ConfigLoader
         public LocalTuner? Tuner { get; set; }
         public LocalGem? Gem { get; set; }
         public LocalArduino? Arduino { get; set; }
+        public LocalUi? Ui { get; set; }
+    }
+
+    /// <summary>Windows-specific launcher state: where the window sits, how big it is when expanded,
+    /// and whether it floats above other windows. Machine-specific, so it lives here rather than in
+    /// defaults.yaml — a second PC wants its own placement.</summary>
+    public sealed class LocalUi
+    {
+        public double? Left { get; set; }
+        public double? Top { get; set; }
+        public double? Width { get; set; }
+        /// <summary>Height to restore when the config region is expanded. The collapsed and mini
+        /// heights are computed by the window, not stored.</summary>
+        public double? ExpandedHeight { get; set; }
+        public bool Pinned { get; set; }
     }
 
     public sealed class LocalTuner

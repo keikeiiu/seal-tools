@@ -54,6 +54,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] RequireGradeOptions = { "None", "N", "G", "DG", "XG", "SG" };
 
     private readonly LauncherService _service;
+    // id -> its card Border, so mini mode can show only the running tool's card.
+    private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
     private readonly DispatcherTimer _timer;
 
@@ -140,9 +142,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         BuildConfigTabs();
         LoadCalibrationImages();
 
-        // Config region: collapsed to start, so the window opens as just the tool cards. The chevron
-        // reveals the tabs and the window grows to fit; collapsing puts the previous height back.
-        ConfigToggle.Click += (_, _) => SetConfigExpanded(ConfigTabs.Visibility != Visibility.Visible);
+        // Window layout: placement and "on top" are remembered (local.yaml), and the config region
+        // starts collapsed so the window opens as just the tool cards.
+        RestoreUiState();
+        ConfigToggle.Click += (_, _) => SetConfigExpanded(!_configExpanded);
+        PinToggle.Click += (_, _) => SetPinned(!Topmost);
         SetConfigExpanded(false);
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
@@ -159,6 +163,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        // Before the service goes: remember where the window was so the next launch opens there.
+        SaveUiState();
         _service.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -231,12 +237,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
 
             ToolsPanel.Children.Add(card);
+            _toolCards[id] = card;
         }
     }
 
     private void RefreshStatus()
     {
         var state = _service.CurrentState;
+
+        // Mini mode: while a tool runs, the window shows only that tool's card so it takes a corner
+        // rather than the whole left edge. Only one tool can run at a time, so nothing is hidden
+        // that could be used anyway.
+        _miniToolId = state is { Running: true } ? _service.CurrentId : null;
+        ApplyWindowLayout();
+
         foreach (var (id, _) in Tools)
         {
             if (!_statusBlocks.TryGetValue(id, out var block))
@@ -280,29 +294,106 @@ public partial class MainWindow : FluentWindow, IDisposable
     // room rather than sitting exactly on the boundary.
     private const double ConfigCollapsedHeight = 430;
 
-    // What to restore when the region is expanded again. Zero until the first collapse, so a fresh
-    // launch expands to the window's designed height.
+    // While a tool runs the window shrinks to that tool's card alone (only one tool can run at a
+    // time), so the status can sit in a corner of the screen over the game without covering much.
+    private const double ConfigMiniHeight = 250;
+
+    // What to restore when the region is expanded again. Zero until something shrinks the window, so
+    // a fresh launch expands to the window's designed height.
     private double _configExpandedHeight;
 
-    /// <summary>Show or hide the configuration tabs. Collapsing also shrinks the window to the tool
-    /// cards, so "nothing to configure" is a genuinely small window rather than the same window with
-    /// an empty half; expanding puts the previous height back.</summary>
+    // Layout state. Both the config collapse and the mini mode want to set Height, so one function
+    // owns it — otherwise they fight, each undoing the other's resize.
+    private bool _configExpanded;
+    private string? _miniToolId;
+    private bool _layoutApplied;
+    private bool _appliedExpanded;
+    private bool _appliedMini;
+
     private void SetConfigExpanded(bool expanded)
     {
-        if (expanded)
+        _configExpanded = expanded;
+        ApplyWindowLayout();
+    }
+
+    /// <summary>Floats the window above every other window, so the tool status stays readable while
+    /// you play. Remembered, so it survives a restart.</summary>
+    private void SetPinned(bool pinned, bool persist = true)
+    {
+        Topmost = pinned;
+        PinToggle.Content = pinned ? "Pinned on top" : "Pin on top";
+        PinToggle.Appearance = pinned ? ControlAppearance.Primary : ControlAppearance.Secondary;
+        if (persist) SaveUiState();
+    }
+
+    // Restore placement and pinning from local.yaml. Geometry is machine-specific, so it lives there
+    // rather than in defaults.yaml.
+    private void RestoreUiState()
+    {
+        ConfigLoader.LocalUi? ui = null;
+        try
         {
-            ConfigTabs.Visibility = Visibility.Visible;
-            ConfigToggle.Content = "▾  Configuration";
-            Height = _configExpandedHeight > 0 ? _configExpandedHeight : 720;
+            ui = _service.LoadLocal()?.Ui;
+            if (ui?.Left is { } left) Left = left;
+            if (ui?.Top is { } top) Top = top;
+            if (ui?.Width is { } width) Width = width;
+            if (ui?.ExpandedHeight is { } h) _configExpandedHeight = h;
         }
-        else
+        catch { /* a bad ui block must not stop the launcher opening */ }
+
+        // Always, even with nothing saved: this is what labels the button. Not persisted here, so a
+        // first launch doesn't write a local.yaml just for opening.
+        SetPinned(ui?.Pinned ?? false, persist: false);
+    }
+
+    /// <summary>Persist placement, expanded height and pinning. Called on a pin change and on close;
+    /// never throws — window state must not be able to break shutdown.</summary>
+    private void SaveUiState()
+    {
+        try
         {
-            if (ConfigTabs.Visibility == Visibility.Visible && Height > ConfigCollapsedHeight)
+            if (WindowState != WindowState.Normal) return; // maximized/minimized: keep the last real size
+            if (_configExpanded && _miniToolId == null && Height > ConfigCollapsedHeight)
                 _configExpandedHeight = Height;
-            ConfigTabs.Visibility = Visibility.Collapsed;
-            ConfigToggle.Content = "▸  Configuration";
-            Height = ConfigCollapsedHeight;
+
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Ui = new ConfigLoader.LocalUi
+            {
+                Left = double.IsNaN(Left) ? null : Left,
+                Top = double.IsNaN(Top) ? null : Top,
+                Width = double.IsNaN(Width) ? null : Width,
+                ExpandedHeight = _configExpandedHeight > 0 ? _configExpandedHeight : null,
+                Pinned = Topmost,
+            };
+            _service.SaveLocal(local);
         }
+        catch { /* never let this break shutdown */ }
+    }
+
+    /// <summary>Applies the window's layout for the current state: the config region, whether only
+    /// the running tool's card is shown, and the height that follows from those.</summary>
+    private void ApplyWindowLayout()
+    {
+        bool mini = _miniToolId != null;
+        if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded) return;
+
+        // Remember the height the user was working with before anything shrinks it.
+        if (_layoutApplied && _appliedExpanded && !_appliedMini && Height > ConfigCollapsedHeight)
+            _configExpandedHeight = Height;
+
+        ConfigTabs.Visibility = _configExpanded ? Visibility.Visible : Visibility.Collapsed;
+        ConfigToggle.Content = (_configExpanded ? "▾  " : "▸  ") + "Configuration";
+
+        foreach (var (id, card) in _toolCards)
+            card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
+
+        Height = mini ? ConfigMiniHeight
+            : _configExpanded ? (_configExpandedHeight > 0 ? _configExpandedHeight : 720)
+            : ConfigCollapsedHeight;
+
+        _layoutApplied = true;
+        _appliedExpanded = _configExpanded;
+        _appliedMini = mini;
     }
 
     private void BuildConfigTabs()
