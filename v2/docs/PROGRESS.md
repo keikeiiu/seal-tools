@@ -9,6 +9,45 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-11 — the launcher adopts WPF-UI; the window learns where it belongs
+
+**Goal.** Make the launcher readable and keep the tool status visible while playing. The project had
+WPF-UI loaded but only ever used `FluentWindow`, `ui:TitleBar` and `ui:Button` — every tab was plain
+WPF with a second, hard-coded palette beside the theme.
+
+**What was decided, and why**
+
+- **Adopt WPF-UI properly, one tab per commit.** Card-based sections, `ui:` controls, and the
+  theme's semantic brushes instead of our hex ones. The information architecture carried over
+  untouched: grouping, renames, the `Hotkeys` rename. Full checklist in
+  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+- **The shell change was tried and reverted.** A `ui:NavigationView` rail rendered correctly but
+  clicking an item never switched the page, and the tab strip read better anyway — so the tabs
+  stayed and the experiment is recorded so nobody retries it blind.
+- **The window now belongs to the user.** It opens as just the tool cards, the configuration tabs
+  hide behind a chevron, it can be pinned above the game, and while a tool runs it shrinks to that
+  tool's card. Placement, size and expanded height are remembered in `local.yaml` and written
+  ~0.7 s after a move or resize settles — not only on a clean close, which is what used to lose a
+  resize when the process was killed.
+
+**Two real bugs found in review (both fixed, both were live-facing)**
+
+- **The move-set selector disabled itself.** It sat inside the arduino card, which is disabled
+  whenever the other set is active — so choosing `tuned` disabled the only control that could switch
+  back. It has its own card now.
+- **The empty check was comparing the box's border.** The frame shifts by a pixel when the game
+  window moves, which made an *empty* box score 7.7 % against a 0.01 gate and stalled the composer.
+  Comparing the interior only: empty 0.0 %, gem 0.68–0.82 on a live run.
+
+**Verified live.** Pin and placement survive a relaunch (moved to logical `(1927,3)`, reopened there
+at `619×430`, pinned). Mini mode: `920×430` idle → `920×320` running → back on stop. A full composer
+run advanced correctly with the inset fix.
+
+**Left open.** The v2.3 zip is not built or published. The robustness list, the tuner spring plan and
+the spammer key pad are all designed and waiting in [IDEAS.md](IDEAS.md).
+
+---
+
 ## 2026-09-10 (6) — the empty check was comparing the box's border, and a moved window broke it
 
 **Symptom (reported live).** The composer kept combining and never advanced, with the result box
