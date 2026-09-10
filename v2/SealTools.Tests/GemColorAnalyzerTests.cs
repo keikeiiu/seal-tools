@@ -45,6 +45,22 @@ public class GemColorAnalyzerTests
     }
 
     [Fact]
+    public void TheInsetExcludesTheBorderRowsFromTheComparison()
+    {
+        // 20x20: the reference's outer 2 rows differ everywhere a gem-like way, the interior is
+        // identical. With inset 0 every pixel of those rows counts; with inset 2 none of them do.
+        using var reference = Solid(20, 20, 100, 100, 100);
+        using var live = Solid(20, 20, 100, 100, 100);
+        live.Row(0).SetTo(new Scalar(0, 0, 255));
+        live.Row(19).SetTo(new Scalar(0, 0, 255));
+
+        Assert.Equal(40 / 400.0, GemColorAnalyzer.DiffFraction(live, reference, 30));
+        Assert.Equal(0.0, GemColorAnalyzer.DiffFraction(live, reference, 30, inset: 2));
+        // An inset larger than the image falls back to comparing everything rather than dividing by 0.
+        Assert.Equal(40 / 400.0, GemColorAnalyzer.DiffFraction(live, reference, 30, inset: 10));
+    }
+
+    [Fact]
     public void DifferentSizesReturnNull()
     {
         using var a = Solid(10, 8, 0, 0, 0);

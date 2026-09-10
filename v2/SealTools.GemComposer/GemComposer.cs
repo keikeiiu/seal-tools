@@ -18,6 +18,13 @@ public sealed class GemComposer : ToolBase
     // pixels by far more than 60. 30 sits in the empty middle of that gap.
     private const int EmptyDiffTolerance = 30;
 
+    // Pixels to ignore at the edge of the result box when comparing. The box's drawn frame moves by
+    // a pixel when the window moves, and that alone used to read as "not empty" for ever: measured
+    // on the real crops, an EMPTY box scored 7.7% differing with the frame included and 0.0% without
+    // it, while a box holding a gem scores 55% either way. The gem is drawn in the interior, so
+    // nothing is lost by looking only there.
+    private const int EmptyCompareInset = 6;
+
     private readonly AppConfig _cfg;
     private readonly string _rootDir;
     private Mat? _emptyReference;
@@ -203,7 +210,7 @@ public sealed class GemComposer : ToolBase
 
             double? diff = null;
             if (EmptyReference() is { } reference)
-                diff = GemColorAnalyzer.DiffFraction(crop, reference, EmptyDiffTolerance);
+                diff = GemColorAnalyzer.DiffFraction(crop, reference, EmptyDiffTolerance, EmptyCompareInset);
 
             bool empty;
             if (diff is { } fraction)

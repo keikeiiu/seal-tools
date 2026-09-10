@@ -9,6 +9,38 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-10 (6) — the empty check was comparing the box's border, and a moved window broke it
+
+**Symptom (reported live).** The composer kept combining and never advanced, with the result box
+visibly empty. The card said "stopped" only because the run had been stopped by hand.
+
+**First check: not the guard.** The foreground guard from entry (5) was the obvious suspect, but the
+log showed it working — `diff=0.077 empty=False` for six cycles, and exactly one
+`refused: not foreground` line, at the moment focus moved to VS Code. So the check was running and
+judging; it was judging wrongly.
+
+**Diagnosis.** `save_empty_captures` was turned back on, the run repeated, and the saved crop showed
+an *empty* box. Comparing that crop against the reference per-row showed the differing pixels were
+not in the middle but in horizontal bands at the very top and bottom — y=0,1,4 and y=55–58: the box's
+drawn frame. A one-pixel shift in where the crop lands moves those rows while the flat interior stays
+identical. That alone was 7.7 % of the box — six times the 0.01 gate.
+
+**Fix.** The comparison now skips a 6 px border on each edge (`EmptyCompareInset`, passed through to
+`GemColorAnalyzer.DiffFraction`). Measured on the real crops:
+
+| inset | empty | gem |
+|---|---|---|
+| 0 (before) | 7.7 % | 35.6 % |
+| 6 (now) | **0.0 %** | **54.6 %** |
+
+The gem is drawn in the interior, so the separation gets *better*, not worse. A new test pins the
+inset, including the fallback when the inset would swallow the whole image.
+
+**Lesson worth keeping:** a 0.01 gate is only safe when the empty state really is pixel-identical. It
+was — until the window moved. The inset is what makes the tight gate honest.
+
+---
+
 ## 2026-09-10 (5) — the empty check refuses to judge a screen grab that isn't the game
 
 **Why.** The check crops the result box from a screen grab (`CopyFromScreen`), so it measures

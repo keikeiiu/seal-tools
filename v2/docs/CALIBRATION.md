@@ -101,7 +101,12 @@ pixels against **`config/calib_gem_result.png`** — the crop of the box saved b
 | | measured (62×59 crop) |
 |---|---|
 | empty box vs the saved crop | **0.000** — pixel-identical |
-| box holding a gem | **0.357** |
+| box holding a gem | **0.55** |
+
+**The comparison skips the box's drawn border** (6 px at each edge). The frame moves by a pixel when
+the game window moves, and those few rows were enough to make an *empty* box score 7.7 % — above the
+gate, so the composer never advanced again. Looking only at the interior fixes it exactly: empty
+0.0 %, gem 55 %, and the gem is drawn in the middle so nothing is lost.
 
 `gem.empty_distance` is that fraction (default **0.01**): below it the box is "empty". The margin is
 enormous on both sides, and the test is deliberately **colour- and shape-blind** — it asks "is this
