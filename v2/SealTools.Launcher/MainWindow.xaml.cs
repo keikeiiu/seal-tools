@@ -337,7 +337,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildArduinoTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint("Is the Arduino there, and does its click reach the game?"));
 
@@ -460,7 +462,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     // the client size if detection is wrong (e.g. an unusual monitor arrangement).
     private TabItem BuildSetupTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
             "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game window's " +
@@ -590,7 +594,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildTunerTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
             "What the tuner rolls for and how it judges each result. Rerolling stops at the target grade, " +
@@ -631,6 +637,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var filterFields = new StackPanel();
         filterFields.Children.Add(LabeledField("Match mode", matchMode));
+        filterFields.Children.Add(Hint(
+            "any — one rule matching is enough. all — every rule must match. per_attr — every rule " +
+            "must reach its own Count, counting matching attributes (so Count only matters here). " +
+            "Overrides short-circuit all three: a hit stops the run immediately."));
         panel.Children.Add(Section("Filter — rules (the main goal)",
             Hint("Keep rolling until the result matches these rules."),
             filterEnabled, filterFields, rulesEditor));
@@ -712,7 +722,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildGemTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
             "How the Gem Composer starts and what it does when a grade runs out of resources. " +
@@ -776,7 +788,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildSpammerTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
             "Keys the spammer presses, each on its own cooldown. The Arduino supports digits 0–9 and " +
@@ -1019,7 +1033,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildAttributesTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Hint(
             "OCR attribute dictionary — the item attributes the tuner can recognize and match against " +
@@ -1096,7 +1112,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         top.Children.Add(capture);
         top.Children.Add(check);
 
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
         panel.Children.Add(Section("Capture",
             Hint("Open the 發條 (tuning) window first; the launcher hides itself for the grab so it " +
                  "cannot cover the game. The image must show the whole window."),
@@ -1216,7 +1234,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         resultPreviewPanel.Children.Add(resultPreviewLabel);
         resultPreviewPanel.Children.Add(resultPreview);
 
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         panel.Children.Add(Section("Capture",
             Hint("Open the gem combine window first; the launcher hides itself for the grab so it " +
@@ -2822,7 +2842,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildHotkeysTab()
     {
-        var panel = new StackPanel { Margin = new Thickness(8) };
+        // No horizontal margin: the cards should line up with the tab strip's left border, not sit
+        // 8px inside it. Vertical margin keeps a little breathing room at the top.
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
 
         var startBox = UiText(VkName(_service.Config.Hotkeys.Start));
         var quitBox = UiText(VkName(_service.Config.Hotkeys.Quit));
