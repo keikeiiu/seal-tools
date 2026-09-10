@@ -34,6 +34,27 @@ actually configuring something:
 
 Clicking it again collapses them and returns the window to the size it had before.
 
+**Pin on top** floats the window above everything else, so the tool status stays readable while the
+game has focus. It remembers both the setting and where you put the window — position and size are
+saved to `local.yaml` and restored next launch, so you only place it once. (It is written when you
+toggle the pin or close the window normally, not when the process is killed.)
+
+### While a tool runs
+
+Only one tool can run at a time, so while one is running the window shows **just that tool's card**:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Skill Spammer        [Start] [Stop]                │
+│  ● RUNNING · Grade/Cycle …                          │
+│                                                     │
+│  ▸ Configuration      [Pinned on top]               │
+└─────────────────────────────────────────────────────┘
+```
+
+The other two cards come back when it stops. Combined with **Pin on top**, that gives a small always
+visible status strip you can park in a corner of the screen over the game.
+
 ### Tool cards
 
 | Control | What it does |

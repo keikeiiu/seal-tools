@@ -296,7 +296,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // While a tool runs the window shrinks to that tool's card alone (only one tool can run at a
     // time), so the status can sit in a corner of the screen over the game without covering much.
-    private const double ConfigMiniHeight = 250;
+    // Measured: 320 is what it settles at — WPF will not go below the content's minimum, so a
+    // smaller number here has no effect.
+    private const double ConfigMiniHeight = 320;
 
     // What to restore when the region is expanded again. Zero until something shrinks the window, so
     // a fresh launch expands to the window's designed height.
