@@ -863,7 +863,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         keyHeader.Children.Add(delayHeaderLabel);
         var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
         var presetName = UiText("");
-        presetName.Width = 110;
+        presetName.Width = 160;
         presetName.VerticalAlignment = VerticalAlignment.Center;
 
         void AddRow(string key, string delay)
@@ -929,11 +929,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        presetRow.Children.Add(new TextBlock { Text = "Preset ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
-        presetRow.Children.Add(presetBox);
-        presetRow.Children.Add(new TextBlock { Text = " name ", VerticalAlignment = VerticalAlignment.Center, Foreground = Res("TextFillColorSecondaryBrush") });
-        presetRow.Children.Add(presetName);
         var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
         addPreset.Click += (_, _) =>
         {
@@ -948,7 +943,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = "";
             status.Text = $"Added preset '{name}'.";
         };
-        presetRow.Children.Add(addPreset);
         var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
         renamePreset.Click += (_, _) =>
         {
@@ -966,7 +960,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = "";
             status.Text = $"Renamed '{old}' to '{name}'.";
         };
-        presetRow.Children.Add(renamePreset);
         var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
         delPreset.Click += (_, _) =>
         {
@@ -978,14 +971,33 @@ public partial class MainWindow : FluentWindow, IDisposable
             LoadRows(current);
             status.Text = $"Deleted preset '{gone}'.";
         };
-        presetRow.Children.Add(delPreset);
         foreach (var kv in presets[current])
             AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => AddRow("", "0.2");
 
-        panel.Children.Add(Section("Preset", presetRow, status));
+        // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
+        // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
+        // the name field. LabeledField gives both rows the same label column.
+        foreach (var b in new[] { addPreset, renamePreset, delPreset })
+            b.Margin = new Thickness(8, 0, 0, 0);
+
+        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        pickRow.Children.Add(presetBox);
+        pickRow.Children.Add(delPreset);
+
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        nameRow.Children.Add(presetName);
+        nameRow.Children.Add(addPreset);
+        nameRow.Children.Add(renamePreset);
+
+        panel.Children.Add(Section("Preset",
+            Hint("Which key set the spammer presses. Type a name below, then + New makes a preset with " +
+                 "it or Rename moves the current one to it; the last preset can't be deleted."),
+            LabeledField("Preset", pickRow),
+            LabeledField("Name", nameRow),
+            status));
         panel.Children.Add(Section("Keys", keyHeader, rowsPanel, addButton));
 
         Dictionary<string, double> RowsToKeys()
@@ -1313,14 +1325,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         Place(coordGrid, new TextBlock { Text = "H", FontWeight = coordBold, Margin = new Thickness(0, 0, 8, 4) }, cr, 4);
         cr++;
 
-        TextBox MakeCoordBox(string val) => new()
+        // Fluent, like every other field in the app — a plain WPF box is a different height, which
+        // showed up as the coordinate grid not matching the rest of the tab.
+        Wpf.Ui.Controls.TextBox MakeCoordBox(string val)
         {
-            Width = 56,
-            Text = val,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 6),
-        };
+            var box = UiText(val, null, clearButton: false);
+            box.Width = 56;
+            box.VerticalAlignment = VerticalAlignment.Center;
+            box.Margin = new Thickness(0, 0, 8, 6);
+            return box;
+        }
 
         void AddCoordRow(string label, string key, int x, int y, int? w = null, int? h = null)
         {
