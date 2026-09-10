@@ -13,6 +13,24 @@ grids, and buttons whose labels say what they do.
 | structure (tabs vs collapsible sections) | **pending this document** — see the grouping below |
 | XAML vs code-built | **pending** — see the trade-off section |
 
+## Progress
+
+Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not started.
+
+| # | Tab / step | State | Commit |
+|---|---|---|---|
+| 1 | `Settings` → **`Hotkeys`** (rename + focus caveat + guides) | ✔ | `b43a6d1` |
+| 2 | `Arduino` (connection / input test, spacing) | ☐ | |
+| 3 | `Setup` (display environment / save) | ☐ | |
+| 4 | `Gem` settings (run / advanced) | ☐ | |
+| 5 | `Spammer` (preset / keys / save) | ☐ | |
+| 6 | `Attributes` (dictionary / save) | ☐ | |
+| 7 | `Tuner` settings (goal / timing / filter rules / overrides / save) | ☐ | |
+| 8 | `Calibrate Tuner` (capture / steps / save) | ☐ | |
+| 9 | `Calibrate Gem` — split into Capture / Points / Tests / Moves / Full-run / Advanced | ☐ | |
+| 10 | Shared row builder + style constants (introduced with the first tab that needs it) | ☐ | |
+| 11 | Button label/weight convention applied across the remaining tabs | ☐ | |
+
 ## What exists today (inventory)
 
 Nine tabs, all built imperatively in `MainWindow.xaml.cs` (~2,700 lines; ~900 are UI):
