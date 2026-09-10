@@ -111,17 +111,17 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | **Diagnose capture** | 回報視窗的框架／客戶區尺寸與非客戶區偏移，並儲存 `logs/captures/diag_capture.png` — 用來確認啟動器沒有遮住遊戲。 |
 | **Save Gem Composer** | 把座標點、資源點與結果區域寫入 `local.yaml`。接著會詢問結果欄位現在是否為**空的** — 選 **Yes** 會取樣「空欄位顏色」作為空欄偵測的參考，選 **No** 則不啟用空欄偵測。同時儲存 `calib_gem.png` 與結果欄位截圖。 |
 | **Coordinates** 表格 + **Save Coordinates** | 直接輸入 X/Y（結果區域還可輸入 W/H），不必重新擷取。 |
-| **from / to** + **Test Click** | 把游標移到選定的點**並點擊**（Arduino `C`）。 |
-| **Test Move (rel)** | 點 `from`、送出該路線的原始 `D dx dy`、再點 `to`。用來確認合成器的移動會落在正確位置。 |
+| **from / to** + **Place cursor + click** | 把游標移到選定的點**並點擊**（Arduino `C`）。 |
+| **Test tuned move** | 點 `from`、送出該路線的原始 `D dx dy`、再點 `to`。用來確認合成器的移動會落在正確位置。 |
 | **Check Result Colour** | 立即取樣結果欄位，回報它的顏色、與空欄參考的距離，以及「空／有寶石」的判定。 |
-| **Test Result Gem** | 同樣取樣，但附上更多細節（通道差值、主要色調），方便你人工判斷空欄偵測的門檻。 |
+| **Sample result gem** | 同樣取樣，但附上更多細節（通道差值、主要色調），方便你人工判斷空欄偵測的門檻。 |
 | **Debug Cursor (logical)** | 用 `SetCursorPos` 加上換算後的座標把游標移到選定的點，並顯示計算出的目標、API 是否接受、以及游標最後的位置。**不會點擊。** 僅供診斷 — 工具實際上是靠 Arduino 移動游標，不是這個呼叫。 |
 | **Debug Physical** | 同上，但改用 `SetPhysicalCursorPos`。保留它是為了比較兩種 API。 |
-| **Composer moves** 表格 | 每條路線一列（N→Register、G→Register、DG→Register、Register→Combine、Combine→Register、Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3→N/G/DG），可編輯原始 `dx`/`dy`，每列有 **Test** 按鈕。 |
-| **Save Composer Moves** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
-| **Composer move mode** | `tuned`（預設）= 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
-| **New Gem Composer Moves** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Test** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
-| **Test Full Cycle (Arduino)** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
+| **Moves — tuned (hand-tuned counts)** 表格 | 每條路線一列（N→Register、G→Register、DG→Register、Register→Combine、Combine→Register、Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3→N/G/DG），可編輯原始 `dx`/`dy`，每列有 **Send** 按鈕，會送出該列的確切移動。 |
+| **Save tuned counts** | 把 `gem.movements` 寫入 `local.yaml`。這些是手工調校的 HID 次數 — 不是由像素換算而來，並且只對你的 Arduino + 滑鼠速度 + 遊戲內顯示設定有效。 |
+| **Composer move mode** | 合成器要用哪一組移動。**非**目前使用中的那一組會變淡，避免兩張表混淆。`tuned` = 合成器送出上面那些手工調校的次數。`arduino` = 改用 Arduino 把游標「定位」到每條路線的目標點（閉環），不需調校，而且每次移動都會重新校正。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
+| **Moves — arduino (cursor placed on the point)** 表格 | 同樣的路線，但每一列顯示**目標點**，並有 **Run** 按鈕：先點來源點，再把游標定位到目標點並點擊。這就是合成器在 `arduino` 模式下做的事，所以在這裡測得準，合成器就會準。 |
+| **Run one full cycle** | 用 arduino 移動跑一整個合成循環：**N** 選取 → 登錄 → 合成、登出再登錄、再合成一次、清掉三個資源欄；**G** 同樣；最後 **DG** 合成一次就結束。完全不用調校過的次數。想在把 `Composer move mode` 切成 `arduino` 之前確認新移動方式撐得住一整輪，就按這個。需要先開著 GEM COMPOSE 視窗並放好資源。 |
 
 ## Arduino 分頁
 
@@ -172,7 +172,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 2. **Calibrate Tuner** → **Capture 發條 window** → 拖曳三個區段 → **Check OCR**（必須讀到正確的等級、
    彈簧次數與三行屬性）→ **Save Tuner**。
 3. **Calibrate Gem** → **Capture gem window** → 點擊各點並拖曳結果框 → **Save Gem Composer** →
-   **Save Composer Moves** → 用 **Test Move** 測試一條路線。
+   **Save tuned counts** → 用 **Test tuned move** 測試一條路線。
 4. **Arduino** → **Refresh** → **Send a test click** 確認裝置。
 
 **驗證既有的校正**（不需重新擷取）

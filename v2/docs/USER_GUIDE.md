@@ -108,20 +108,20 @@ Points the composer at the gem-combine UI and stores the relative move counts.
 |---|---|
 | **Capture gem window** | Same physical-pixel grab, launcher hidden during it. |
 | Canvas | Click, in order: **N, G, DG, Register, Combine**, then the **3 resource slots**, then drag a box around the **composed result gem**. |
-| **Diagnose capture** | Reports the window's frame/client rects and the non-client offset, and saves `logs/captures/diag_capture.png` — use it to confirm the launcher isn't covering the game. |
+| **Advanced → Diagnose capture** | Reports the window's frame/client rects and the non-client offset, and saves `logs/captures/diag_capture.png` — use it to confirm the launcher isn't covering the game. |
 | **Save Gem Composer** | Writes positions, resource points and the result area to `local.yaml`. It then asks whether the result box is **empty** — answer **Yes** to sample the empty-colour reference used by empty detection, **No** to leave it off. Also saves `calib_gem.png` and the result-box crop. |
 | **Coordinates** grid + **Save Coordinates** | Type X/Y (and W/H for the result area) directly instead of re-capturing. |
-| **from / to** + **Test Click** | Moves the cursor to the selected point **and clicks it** (Arduino `C`). |
-| **Test Move (rel)** | Click `from`, send that route's raw `D dx dy`, click `to`. Confirms a composer move lands. |
+| **from / to** + **Place cursor + click** | Moves the cursor to the selected point **and clicks it** (Arduino `C`). |
+| **Test tuned move** | Click `from`, send that route's raw `D dx dy`, click `to`. Confirms a tuned move lands. |
 | **Check Result Colour** | Samples the result box now and reports its colour plus the distance to the empty reference and the empty/has-gem verdict. |
-| **Test Result Gem** | Same sample with extra detail (channel spread, dominant tone) for judging the empty-detection threshold by hand. |
-| **Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** Diagnostic only — the tools place the cursor with the Arduino, not this call. |
-| **Debug Physical** | Same, but with `SetPhysicalCursorPos`. Kept for comparing the two APIs. |
-| **Composer moves** grid | One row per route (N→Register, G→Register, DG→Register, Register→Combine, Combine→Register, Register→Resource1, Resource1→Resource2, Resource2→Resource3, Resource3→N/G/DG) with raw `dx`/`dy` and a **Test** button per row. |
-| **Save Composer Moves** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
-| **Composer move mode** | `tuned` (default) = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
-| **New Gem Composer Moves** grid | The same routes, each shown with the **point it goes to**, and a **Test** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
-| **Test Full Cycle (Arduino)** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
+| **Sample result gem** | Same sample with extra detail (channel spread, dominant tone) for judging the empty-detection threshold by hand. |
+| **Advanced → Debug Cursor (logical)** | Moves the cursor to the selected point using `SetCursorPos` on the converted coordinates and prints the computed target, whether the API accepted it, and where the cursor ended up. **No click.** Diagnostic only — the tools place the cursor with the Arduino, not this call. |
+| **Advanced → Debug Physical** | Same, but with `SetPhysicalCursorPos`. Kept for comparing the two APIs. |
+| **Moves — tuned (hand-tuned counts)** grid | One row per route (N→Register, G→Register, DG→Register, Register→Combine, Combine→Register, Register→Resource1, Resource1→Resource2, Resource2→Resource3, Resource3→N/G/DG) with raw `dx`/`dy` and a **Send** button per row that sends that exact move. |
+| **Save tuned counts** | Writes `gem.movements` to `local.yaml`. These are hand-tuned HID counts — not derived from pixels, and specific to your Arduino + pointer speed + in-game display. |
+| **Composer move mode** | Which move set the composer uses. Whichever set is **not** active is dimmed, so the two grids can't be confused. `tuned` = the composer sends the hand-tuned counts above. `arduino` = it places the cursor on each route's destination point with the Arduino, closed loop — no tuning, and it re-aims every move. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
+| **Moves — arduino (cursor placed on the point)** grid | The same routes, each shown with the **point it goes to**, and a **Run** button that clicks the source point, places the cursor on the destination point and clicks. This is what the composer does in `arduino` mode, so a route that lands here lands in the composer. |
+| **Run one full cycle** | Runs one whole composer cycle with the arduino moves: **N** select → register → combine, deregister+register, combine again, clear the three resource slots; the same for **G**; then **DG** combines once and it stops. No tuned counts anywhere. Use it to check the new set survives a real run before switching `Composer move mode` to `arduino`. Needs the GEM COMPOSE window open with the resource slots loaded. |
 
 ## Arduino tab
 

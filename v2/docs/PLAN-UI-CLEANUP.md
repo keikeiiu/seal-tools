@@ -85,7 +85,7 @@ Updated in the same commit as each tab. ✔ = done, ▸ = in progress, ☐ = not
 | 6 | `Attributes` — Dictionary card (read-only table) | ✔ | *(this commit)* |
 | 7 | `Tuner` — Goal / Timing / Filter-rules / Filter-overrides / Advanced cards | ✔ | *(this commit)* |
 | 8 | `Calibrate Tuner` — Capture / Boxes / Result cards | ✔ | *(this commit)* |
-| 9 | `Calibrate Gem` — Capture / Points / Tests / Moves / Full-run-test / Advanced | ☐ | |
+| 9 | `Calibrate Gem` — Capture / Points / Coordinates / Tests / Moves×2 / Full-run test / Advanced / Result | ✔ | *(this commit)* |
 | 10 | **Shell last**: `TabControl` → `ui:NavigationView` rail (driven via `SelectionChanged`) or a plain rail + content host | ☐ | |
 | — | ~~Shared row builder~~ — largely obsolete: `ui:` controls carry their own spacing (kept only if the move grids still need one) | – | |
 | — | Button label/weight convention — still applies, per tab as it is rebuilt | ☐ | |

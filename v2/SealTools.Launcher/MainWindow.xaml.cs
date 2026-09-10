@@ -1120,13 +1120,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private TabItem BuildGemCalibrateTab()
     {
-        var hint = new TextBlock
-        {
-            Text = "Open the gem combine window, capture, then click each button in order, and drag a box around the composed result gem.",
-            Foreground = Res("SystemFillColorCautionBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 4),
-        };
+        // The status/output line of this tab: what a test just did, where the cursor landed, whether
+        // a save worked. Mono, because most of it is coordinates and machine output.
+        var hint = Mono();
+        hint.Text = "Capture the gem window to begin.";
         _gemHint = hint;
 
         var image = new Image { Stretch = Stretch.Uniform };
@@ -1146,12 +1143,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         var capture = MakeButton("Capture gem window", ControlAppearance.Primary);
         capture.Click += (_, _) => GemCapture();
 
-        // Diagnostics: report the window rects and save a sample capture.
+        // Diagnostics: report the window rects and save a sample capture. Advanced — it is a
+        // one-off "why is the capture wrong" tool, not part of calibrating.
         var diag = MakeButton("Diagnose capture", ControlAppearance.Secondary);
         diag.Click += (_, _) => DiagnoseCapture();
         var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
         captureRow.Children.Add(capture);
-        captureRow.Children.Add(diag);
 
         var save = MakeButton("Save Gem Composer", ControlAppearance.Primary);
         save.Click += (_, _) => GemSave();
@@ -1162,13 +1159,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // with the dropdowns.
         var testBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
         var testFromBox = new ComboBox { ItemsSource = GemTestPoints, SelectedIndex = 0, MinWidth = 130 };
-        var testBtn = MakeButton("Test Click", ControlAppearance.Secondary);
+        var testBtn = MakeButton("Place cursor + click", ControlAppearance.Secondary);
         testBtn.Click += (_, _) => GemTestClick(testBox);
-        var testMoveBtn = MakeButton("Test Move (rel)", ControlAppearance.Secondary);
+        var testMoveBtn = MakeButton("Test tuned move", ControlAppearance.Secondary);
         testMoveBtn.Click += (_, _) => GemTestRelativeMove(testFromBox, testBox);
         var checkColBtn = MakeButton("Check Result Colour", ControlAppearance.Secondary);
         checkColBtn.Click += (_, _) => GemCheckResultColor();
-        var testGemBtn = MakeButton("Test Result Gem", ControlAppearance.Secondary);
+        var testGemBtn = MakeButton("Sample result gem", ControlAppearance.Secondary);
         testGemBtn.Click += (_, _) => GemTestResult();
         _gemTestPoint = testBox;
 
@@ -1192,12 +1189,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         var debugCursorBtn = MakeButton("Debug Cursor (logical)", ControlAppearance.Secondary);
         debugCursorBtn.Margin = new Thickness(6, 0, 6, 0);
         debugCursorBtn.Click += (_, _) => DebugCursorPath(testBox, physical: false);
-        resultRow.Children.Add(debugCursorBtn);
 
         var debugPhysicalBtn = MakeButton("Debug Physical", ControlAppearance.Secondary);
         debugPhysicalBtn.Margin = new Thickness(6, 0, 6, 0);
         debugPhysicalBtn.Click += (_, _) => DebugCursorPath(testBox, physical: true);
-        resultRow.Children.Add(debugPhysicalBtn);
+
+        // Advanced: the one-off diagnostics, out of the calibration path.
+        var advancedRow = new StackPanel { Orientation = Orientation.Horizontal };
+        advancedRow.Children.Add(diag);
+        advancedRow.Children.Add(debugCursorBtn);
+        advancedRow.Children.Add(debugPhysicalBtn);
 
         // Result-gem box crop preview: once the result box is dragged, show the exact region
         // being sampled for empty-detection, so the user can visually confirm it's over the
@@ -1216,20 +1217,19 @@ public partial class MainWindow : FluentWindow, IDisposable
         resultPreviewPanel.Children.Add(resultPreview);
 
         var panel = new StackPanel { Margin = new Thickness(8) };
-        panel.Children.Add(hint);
-        panel.Children.Add(captureRow);
-        panel.Children.Add(grid);
-        panel.Children.Add(save);
+
+        panel.Children.Add(Section("Capture",
+            Hint("Open the gem combine window first; the launcher hides itself for the grab so it " +
+                 "cannot cover the game. The image must show the whole window."),
+            captureRow));
+
+        panel.Children.Add(Section("Points",
+            Hint("Click each button in the captured image in order — N, G, DG, Register, Combine, " +
+                 "then the three resource slots — and finally drag a box around the composed result gem."),
+            grid));
 
         // Editable coordinate fields (positions). Prefilled from the saved config so the user can
         // fix a point directly (e.g. N/G/DG all on the same vertical level) without re-capturing.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Coordinates (edit directly, then Save Coordinates):",
-            Foreground = Res("SystemFillColorCautionBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 14, 0, 4),
-        });
 
         var cinv = System.Globalization.CultureInfo.InvariantCulture;
         var coordGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
@@ -1285,31 +1285,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (gem.ResultGemArea is { Count: 4 } a)
             AddCoordRow("Result area", "ResultArea", a[0], a[1], a[2], a[3]);
 
-        panel.Children.Add(coordGrid);
-
         var saveCoords = MakeButton("Save Coordinates", ControlAppearance.Primary);
         saveCoords.Click += (_, _) => SaveCoordinates();
-        panel.Children.Add(saveCoords);
+        panel.Children.Add(Section("Coordinates",
+            Hint("The points the clicks land on, in client-relative physical pixels. Edit a value " +
+                 "directly to nudge a point (e.g. N/G/DG on the same level) without re-capturing."),
+            coordGrid, saveCoords));
 
-        // Position/result tests belong to the "Save Gem Composer" part.
-        panel.Children.Add(pointRow);
-        panel.Children.Add(resultRow);
-        panel.Children.Add(resultPreviewPanel);
+        // Read-only checks: nothing here writes config or clicks in the game except the two move
+        // tests, which only click the buttons you picked.
+        panel.Children.Add(Section("Tests",
+            Hint("Place the cursor on a point, run a single route, or sample the result box. " +
+                 "Nothing here changes the config."),
+            pointRow, resultRow, resultPreviewPanel));
 
-        // Divider: positions part (above) vs composer-moves part (below).
-        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
-
-        // Composer move editor: one row per mandatory route on a shared Grid so the label / dx / dy /
-        // Test columns all line up. dx/dy are the RAW counts the composer sends (no computation) —
-        // they prefill from the current config, "Test" runs that exact move, and Save writes them back.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Composer moves (raw dx dy — the composer sends these exact counts):",
-            Foreground = Res("SystemFillColorCautionBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 4),
-        });
-
+        // Tuned move editor: one row per route on a shared Grid so the label / dx / dy / Test columns
+        // line up. dx/dy are the RAW counts the composer sends (no computation) — they prefill from
+        // the config, the per-row button sends that exact move, and Save writes them back.
         // One shared definition of the routes (Core/GemRoutes.cs), so the tuned editor, the arduino
         // editor below and the composer can never drift apart.
         var routes = GemRoutes.All;
@@ -1331,7 +1323,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         Place(moveGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
         Place(moveGrid, new TextBlock { Text = "dx", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
         Place(moveGrid, new TextBlock { Text = "dy", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 2);
-        Place(moveGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 3);
+        Place(moveGrid, new TextBlock { Text = "Send", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 3);
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         int moveRow = 1;
@@ -1359,8 +1351,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             var row = new GemMoveRow { Key = route.Key, From = route.From, To = route.To, Dx = dxBox, Dy = dyBox };
             _gemMoveRows.Add(row);
 
-            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            var testB = MakeButton("Send", ControlAppearance.Secondary);
             testB.Margin = new Thickness(0, 0, 0, RowGap); // align with the boxes, add only the row gap
+            System.Windows.Automation.AutomationProperties.SetName(testB, $"Send tuned move {route.Label}");
             testB.Click += (_, _) => GemTestMovement(row.From, row.To, ParseMove(row.Dx), ParseMove(row.Dy));
 
             Place(moveGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, moveRow, 0);
@@ -1369,27 +1362,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             Place(moveGrid, testB, moveRow, 3);
             moveRow++;
         }
-        panel.Children.Add(moveGrid);
-
-        // Save ONLY the composer moves (raw dx/dy), independent of the full click-point
-        // calibration that "Save Gem Composer" requires.
-        var saveMoves = MakeButton("Save Composer Moves", ControlAppearance.Primary);
+        // Save ONLY the tuned counts, independent of the full click-point calibration that
+        // "Save Gem Composer" requires.
+        var saveMoves = MakeButton("Save tuned counts", ControlAppearance.Primary);
         saveMoves.Click += (_, _) => SaveComposerMoves();
-        panel.Children.Add(saveMoves);
 
-        // The NEW move set: the same routes, but each move places the cursor on the route's
-        // destination POINT with the Arduino (closed loop) instead of sending tuned counts — the
-        // same mechanism as Test Click. Nothing above is replaced; the composer picks the set with
-        // gem.move_mode, and this section is how you try the new one on a live run first.
-        panel.Children.Add(new Separator { Margin = new Thickness(0, 16, 0, 8) });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "New Gem Composer Moves (cursor placed on the destination point — no tuned counts):",
-            Foreground = Res("SystemFillColorCautionBrush"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 4),
-        });
+        var tunedCard = Section("Moves — tuned (hand-tuned counts)",
+            Hint("What the composer sends when move mode is \"tuned\": one raw D dx dy per route, " +
+                 "tuned by hand on this PC. The per-row button sends that exact move."),
+            moveGrid, saveMoves);
+        panel.Children.Add(tunedCard);
 
+        // The other move set: the same routes, each ending on a calibrated POINT that the Arduino
+        // drives the cursor to (closed loop). Nothing above is replaced — the composer picks with
+        // gem.move_mode, and this card is how the set is tried on a live run first.
         _gemMoveMode = MakeComboBox(GemMoveModes, _service.Config.Gem.MoveMode);
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         modeRow.Children.Add(new TextBlock
@@ -1399,8 +1385,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 0, 8, 0),
         });
         modeRow.Children.Add(_gemMoveMode);
-        panel.Children.Add(modeRow);
-
         var arduinoGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) }); // route label
         arduinoGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); // destination
@@ -1410,15 +1394,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         Place(arduinoGrid, new TextBlock { Text = "Move", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 0);
         Place(arduinoGrid, new TextBlock { Text = "Goes to", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, 0, 1);
-        Place(arduinoGrid, new TextBlock { Text = "Test", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 2);
+        Place(arduinoGrid, new TextBlock { Text = "Run", FontWeight = headBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, RowGap) }, 0, 2);
 
         int arduinoRow = 1;
         foreach (var route in routes)
         {
-            var testB = MakeButton("Test", ControlAppearance.Secondary);
+            var testB = MakeButton("Run", ControlAppearance.Secondary);
             testB.Margin = new Thickness(0, 0, 0, RowGap);
-            // Distinguishable in the accessibility tree (every row's visible label is "Test").
-            System.Windows.Automation.AutomationProperties.SetName(testB, $"Test new move {route.Label}");
+            System.Windows.Automation.AutomationProperties.SetName(testB, $"Run arduino route {route.Label}");
             testB.Click += (_, _) => GemTestArduinoRoute(route.From, route.To);
 
             Place(arduinoGrid, new TextBlock { Text = route.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, ColGap, RowGap) }, arduinoRow, 0);
@@ -1426,31 +1409,42 @@ public partial class MainWindow : FluentWindow, IDisposable
             Place(arduinoGrid, testB, arduinoRow, 2);
             arduinoRow++;
         }
-        panel.Children.Add(arduinoGrid);
-        panel.Children.Add(new TextBlock
+        var arduinoCard = Section("Moves — arduino (cursor placed on the point)",
+            Hint("What the composer sends when move mode is \"arduino\": it places the cursor on the " +
+                 "route's destination point and re-aims every move, so nothing needs tuning. The " +
+                 "per-row button runs the route for real: click the source, place, click the target."),
+            modeRow, arduinoGrid);
+        panel.Children.Add(arduinoCard);
+
+        // Dim whichever set the composer is not using, so the two grids can't be confused. The mode
+        // selector is inside the arduino card, so switching is one click away.
+        void ApplyMoveMode()
         {
-            Text = "Test clicks the source point, then places the cursor on the destination point and clicks — " +
-                   "the same closed-loop move the composer makes when move mode is \"arduino\".",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            Margin = new Thickness(0, 0, 0, 6),
-        });
+            bool arduino = (_gemMoveMode?.SelectedItem as string) == "arduino";
+            arduinoCard.Opacity = arduino ? 1.0 : 0.45;
+            tunedCard.Opacity = arduino ? 0.45 : 1.0;
+            arduinoCard.IsEnabled = arduino;
+            tunedCard.IsEnabled = !arduino;
+        }
+        _gemMoveMode.SelectionChanged += (_, _) => ApplyMoveMode();
+        ApplyMoveMode();
 
         // One complete cycle, driven entirely by the arduino moves — the fastest way to see whether
         // the new set survives a real run before switching the composer over to it.
-        var cycleBtn = MakeButton("Test Full Cycle (Arduino)", ControlAppearance.Primary);
-        cycleBtn.Margin = new Thickness(0, 8, 0, 0);
+        var cycleBtn = MakeButton("Run one full cycle", ControlAppearance.Primary);
         cycleBtn.Click += (_, _) => GemTestFullCycle();
-        panel.Children.Add(cycleBtn);
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Runs one complete cycle with the arduino moves: N → register → combine, then the composer's " +
-                   "deregister+register and a second combine, clear the three resource slots; the same for G; " +
-                   "DG combines once. Stops after DG's combine.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            Margin = new Thickness(0, 4, 0, 6),
-        });
+        panel.Children.Add(Section("Full-run test",
+            Hint("Plays one whole cycle with the arduino moves — N, G and DG combined, resource slots " +
+                 "cleared in between, stopping after DG. This one really clicks in the game: 21 clicks."),
+            cycleBtn));
+
+        panel.Children.Add(Section("Advanced",
+            Hint("Input tests that compare the two cursor APIs, plus a capture diagnostic. None of " +
+                 "these calibrate anything on their own."),
+            advancedRow));
+
+        panel.Children.Add(save);
+        panel.Children.Add(Section("Result", hint));
 
         return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer
         {
