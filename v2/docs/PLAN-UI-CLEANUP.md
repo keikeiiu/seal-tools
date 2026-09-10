@@ -1,86 +1,138 @@
-# Plan — UI cleanup (tabs, buttons, text-box layout) — STUDY FIRST, not started
+# Plan — UI cleanup (tabs, buttons, text-box layout) — STUDY, not started
 
-Planning note, 2026-09-10. The goal is a launcher that reads cleanly: fewer "what does this button
-do?" moments, consistent controls, and each tab doing one job. **No code is written until the
-structure below is agreed** — layout churn is the most expensive kind of work to redo, and the current
-UI grew feature by feature.
+Planning note, 2026-09-10 (revised with the answers so far). The goal is a launcher that reads
+cleanly: each tab doing one job, controls grouped by intent, one row builder instead of hand-rolled
+grids, and buttons whose labels say what they do.
+
+## Answers so far
+
+| question | answer |
+|---|---|
+| `Settings` tab | rename to **`Hotkeys`**; `Arduino` keeps its name |
+| Advanced toggle | **decide per tab, as we work through them** — no global rule up front |
+| structure (tabs vs collapsible sections) | **pending this document** — see the grouping below |
+| XAML vs code-built | **pending** — see the trade-off section |
 
 ## What exists today (inventory)
 
-Nine tabs, built imperatively in `MainWindow.xaml.cs` (~2,700 lines, of which ~900 are UI):
+Nine tabs, all built imperatively in `MainWindow.xaml.cs` (~2,700 lines; ~900 are UI):
 
-| Tab | Holds | Notes |
-|---|---|---|
-| **Arduino** | port list + "Test Click (C)" + Refresh | diagnostics; a whole tab for one action |
-| **Setup** | display environment (scale/client), Detect, Save | fine |
-| **Tuner** | target grade, max retries, two delays, filter rules + override rules editors | two rule grids, each with an "+ Add" |
-| **Gem** | start grade, empty mode/streak, colour gap, save captures | fine, short |
-| **Spammer** | preset picker + name/rename/delete, key/cooldown grid | preset management mixed with the grid |
-| **Attributes** | OCR dictionary table + variants | fine |
-| **Calibrate Tuner** | 3-step drag flow + Save | fine |
-| **Calibrate Gem** | capture + diagnose, coordinate grid (X/Y/W/H), from/to point tests, Test Click / Test Move, result-colour + result-gem tests, two Debug Cursor buttons, **tuned moves grid (11 rows × dx/dy/Test)**, Save Composer Moves, **mode combo + New Gem Composer Moves grid (11 rows × Test)**, Test Full Cycle | the problem child — see below |
-| **Settings** | four hotkey boxes + Save | named "Settings" but only holds hotkeys |
+| Tab | Holds |
+|---|---|
+| **Arduino** | port list, expected VID/PID, Refresh, "Test Click (C)" + status light |
+| **Setup** | display environment (scale, client size), Detect, Save; client-size mismatch warning |
+| **Tuner** | target grade, require grade, max retries, two delays, save-captures, filter enable/match-mode, rules grid, override grid, Save |
+| **Gem** | start grade, on-empty-result mode, save-empty-captures, Save |
+| **Spammer** | preset picker + name/New/Rename/Delete, key/cooldown rows + Add Key, Save |
+| **Attributes** | OCR dictionary table (+ variants), Add, Save |
+| **Calibrate Tuner** | instructions, Capture, canvas, three drag steps, Save |
+| **Calibrate Gem** | capture + diagnose, coordinate grid (X/Y/W/H), from/to point tests, Test Click / Test Move, Check Result Colour, Test Result Gem, two Debug Cursor buttons, **tuned moves grid (11 rows)**, Save Composer Moves, **mode combo + arduino moves grid (11 rows)**, Test Full Cycle, Save Gem Composer |
+| **Settings** | four hotkey boxes, Save |
 
-## Concrete problems (observed, not guessed)
+## Proposed grouping, tab by tab
 
-1. **Calibrate Gem is five jobs in one scroll.** Capture/diagnose, coordinates, point tests, tuned
-   moves, arduino moves, full-cycle. Reaching the bottom means scrolling past everything else.
-2. **Two grids look identical but mean different things.** "Composer moves" (dx/dy + Test) and "New
-   Gem Composer Moves" (destination + Test) sit one above the other with the same "Test" label; only
-   the heading distinguishes them, and "New" will age badly.
-3. **Same-looking buttons, different risk.** "Test" (moves the cursor), "Save" (writes config),
-   "Test Full Cycle" (21 clicks in the game) and "Diagnose capture" (writes a PNG) all look like
-   equally weighted secondary buttons.
-4. **No grouping by intent.** Safe read-only tests, config writers, and things that act in the game
-   are interleaved.
-5. **Layout is hand-rolled.** Each grid sets its own column widths and margins (`ColGap`, `RowGap`,
-   `76 - ColGap` boxes); the same "label + box + button" pattern is rebuilt several times.
-6. **Tab names don't pair up.** `Tuner` (config) vs `Calibrate Tuner`; `Gem` (config) vs
-   `Calibrate Gem`; `Settings` holds only hotkeys; `Arduino` is really "connection status".
+Sections are collapsible groups inside the tab (implementation choice still open — see below).
+**⚑** marks a candidate for that tab's Advanced decision.
 
-## Principles to agree before writing any code
+### Arduino — *no change beyond spacing*
+1. **Connection** — port list, expected VID/PID, Refresh.
+2. **Input test** — Test Click (C), status light/text.
 
-- **One tab, one job**, and a tab's name should say which job. Candidate: rename `Tuner`/`Gem` to
-  `Tuner settings`/`Gem settings`, or merge the two calibration tabs into one `Calibrate` tab with a
-  tool selector.
-- **Group by intent, in this order**: *read-only tests* → *what this tab changes* → *actions that
-  touch the game* (with the heaviest last and visually distinct).
-- **Progressive disclosure**: advanced/diagnostic controls (Debug Cursor buttons, the tuned-move
-  editor when `move_mode` is `arduino`, the coordinate X/Y/W/H grid) sit behind an **Advanced**
-  toggle, collapsed by default.
-- **One row builder.** A single helper for `label + control(s) + optional button`, so every grid
-  shares the same column rhythm and spacing.
-- **Say what a button does.** "Test" becomes "Place cursor", "Move there", "Run one cycle"; saves say
-  what file they write.
-- **No behaviour changes.** This is layout, naming and grouping only — the wiring stays, so a diff
-  can be read as "moved" rather than "changed".
+### Hotkeys (was Settings)
+1. **Keys** — start/stop, quit, advance grade, pause; Save Hotkeys.
+2. The "hotkeys need the launcher focused" caveat becomes a hint line under the fields, not just the guide.
 
-## Open questions (need your call before coding)
+### Setup
+1. **Display environment** — scale, client size, Detect, the mismatch warning.
+2. **Save** — Save Setup.
 
-1. **Split or collapse?** Do you want more tabs (e.g. `Calibrate Gem` split into *Points* / *Moves*),
-   or fewer tabs with **Expander** sections inside?
-2. **How much behind Advanced?** Is the tuned dx/dy editor allowed to hide when the mode is
-   `arduino` (it does nothing then), or must it always be visible?
-3. **Settings naming.** Rename `Settings` → `Hotkeys`, or keep it as the home for future options?
-4. **Diagnostics.** The Arduino tab, Debug Cursor buttons, and Diagnose capture are one-off
-   diagnostics — keep them visible, hide them, or move them to a single `Diagnostics` tab?
-5. **WPF-UI components.** The app already depends on WPF-UI (FluentWindow, Button, ComboBox). Are
-   `Expander` / `Card` / `InfoBar` acceptable, or should everything stay a plain `StackPanel`?
+### Gem (settings)
+1. **Run** — start grade, on-empty-result; Save Gem Config.
+2. ⚑ **Advanced** — save-empty-captures (debug only).
 
-## Method (so the effort isn't wasted)
+### Tuner (settings)
+1. **Goal** — target grade, require grade, max retries.
+2. **Timing** — click→enter delay, OCR delay.
+3. **Filter: rules (main goal)** — enabled, match mode, rules grid, Add Rule.
+4. **Filter: overrides (stop immediately)** — override grid, Add Override.
+5. ⚑ **Advanced** — save captures.
+6. **Save** — Save Tuner (primary).
 
-1. Answer the five questions above; freeze the target structure in this doc.
-2. Do it **one tab per commit**, smallest first (`Settings`, `Arduino`, `Setup`, `Gem`), so each
-   diff is reviewable and revertable on its own.
-3. Pure moves/renames first, the row-builder refactor second, Advanced toggles last.
-4. Screenshot before/after per tab into `logs/captures/ui/` and update the relevant
-   [USER_GUIDE.md](USER_GUIDE.md) rows in the same commit — the guide's button names must match.
-5. Only after the layout is settled, revisit the deferred polish items (launcher parking, the tuned
-   editor, Test Full Cycle) so they land on the new structure rather than the old one.
+### Spammer
+1. **Preset** — picker, name box, New / Rename / Delete.
+2. **Keys** — key/cooldown rows, Add Key.
+3. **Save**.
+
+### Attributes
+1. **Dictionary** — the table + variants, Add.
+2. **Save**.
+
+### Calibrate Tuner
+1. **Capture** — Capture, canvas.
+2. **Steps** — the three drags, with the step indicator.
+3. **Save**.
+
+### Calibrate Gem — the one that needs the split
+1. **Capture** — Capture gem window. ⚑ Diagnose capture.
+2. **Points** — the coordinate grid, Save Coordinates. ⚑ the raw X/Y/W/H grid (the drag workflow sets these; typing them is the fallback).
+3. **Tests (read-only)** — from/to + Test Click, Test Move (rel), Check Result Colour, Test Result Gem. *Nothing here changes config or clicks in the game.*
+4. **Moves** — the mode combo, then the **active** set's grid (the other one collapsed under "show the other set"), and Save Composer Moves / Save Gem Composer.
+5. **Full-run test** — Test Full Cycle, visually distinct (it makes 21 clicks in the game).
+6. ⚑ **Advanced** — Debug Cursor (logical / physical), Diagnose capture, the raw coordinate grid.
+
+### Button labels and weight (applies to every tab)
+
+| today | proposed |
+|---|---|
+| `Test` (tuned move row) | `Send this move` |
+| `Test` (arduino move row) | `Run this route` |
+| `Test Click` | `Place cursor + click` |
+| `Test Move (rel)` | `Test tuned move` |
+| `Test Full Cycle (Arduino)` | `Run one full cycle` |
+| `Save Composer Moves` | `Save tuned counts` |
+
+Weight: **Primary** = the tab's save/commit action. **Secondary** = read-only tests. **Caution** =
+anything that clicks repeatedly in the game (Run one full cycle), ideally with a confirm.
+
+## XAML vs code-built — the trade-off
+
+**What XAML buys**
+
+1. **Styles and templates.** Spacing, label alignment and field widths get defined **once** in a
+   `ResourceDictionary`; today every grid sets its own `ColGap`/`RowGap`/`76 - ColGap`, which *is*
+   the inconsistency being complained about.
+2. **Bindings.** Two-way binding to config would delete most of the per-tab Save handlers (each one
+   currently reads its controls by hand and writes `AppConfig`).
+3. **Reusable controls.** One `MoveRow` control shared by both move grids, one `PointRow` for the
+   coordinate grid.
+4. **Structure is readable and diffable** without reading C#.
+
+**What it costs**
+
+1. A rewrite of ~900 lines of *working* UI, including the stateful bits (capture → drag steps → save).
+2. The dynamic parts (config-driven rows, calibration flows) stay in code — so it's two places to
+   look, not one.
+3. Bindings need view models; today the code reads/writes `AppConfig` directly. That is an MVVM
+   refactor on top of a layout change.
+4. No visual designer in this environment, so XAML's editing advantage is smaller than usual.
+
+**Conclusion: stay code-built for this cleanup**, but adopt the two ideas that actually fix the
+complaint — a **single row builder** and **shared style constants** — plus a small `Field(...)`
+helper that returns a control already wired to a config get/set, so Save handlers shrink the same way
+bindings would. XAML stays available later: a tab can be rewritten as a XAML `UserControl` hosted in
+the existing code-built shell, so this decision is not irreversible.
+
+## Method (unchanged)
+
+1. Work **one tab per commit**, smallest first — `Hotkeys`, `Arduino`, `Setup`, `Gem`, then the
+   bigger ones — so each diff is reviewable and revertable alone.
+2. Pure moves/renames first; the shared row builder second (introduced with the first tab that needs
+   it, then applied as tabs are touched); Advanced toggles last, decided per tab.
+3. Screenshot before/after per tab into `logs/captures/ui/`, and update the matching
+   [USER_GUIDE.md](USER_GUIDE.md) rows in the same commit — button names must match the guide.
+4. No behaviour changes, no config keys renamed, no calibration flow reordered.
 
 ## Non-goals
 
-- No theme/branding work, no new colours or fonts beyond what WPF-UI already provides.
-- No change to what any button does, no config keys renamed, no calibration flow reordered.
-- No new tabs for planned features (the tuner spring work has its own plan:
-  [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md)).
+- No theme/branding work, no new colours or fonts beyond WPF-UI's.
+- No new tabs for planned features ([PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md) has its own plan).
