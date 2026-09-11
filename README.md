@@ -1,4 +1,4 @@
-# Seal Tools v2.3 (C# / .NET 8 WPF)
+# Seal Tools v2.4 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -10,7 +10,8 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 | Version | File | What it is |
 |---|---|---|
-| **v2.3** (latest) | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | WPF-UI launcher, Arduino closed-loop cursor, pixel-based empty-result check; a run ends after the last grade |
+| **v2.4** (latest) | [SealTools-v2.4.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.4/SealTools-v2.4.zip) | Tuner cursor placement + mouse guard; OCR grade/drop fixes |
+| v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | WPF-UI launcher, Arduino closed-loop cursor, pixel-based empty-result check; a run ends after the last grade |
 | v2.1 | [SealTools-v2.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.1/SealTools-v2.1.zip) | Physical-pixel capture, Setup tab, spammer presets, [user guide](v2/docs/USER_GUIDE.md) |
 | v2.0 | [SealTools-v2.zip](https://github.com/keikeiiu/seal-tools/releases/download/V2.0.0/SealTools-v2.zip) | First C#/.NET release |
 

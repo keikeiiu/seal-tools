@@ -33,6 +33,9 @@ A **third drop shape** followed: a dropped *trailing* stat character (`幸運` �
 truncated form is a prefix of the correct one, a plain substring replace would corrupt correct reads,
 so `71f9672` adds a `regex` fix type (negative lookahead) for all six per-level stats.
 
+A **fourth** (`必殺技` → `必技`, middle char dropped) was the only remaining shape after a 3,189-attempt
+capture run (2 drops, ~0.06%) — fixed in `54ad743`. Merged to `main` and tagged `v2.4` (2026-09-12).
+
 ---
 
 ## 2026-09-11 — the tuner places the cursor on 發條 and guards it (branch `v2-tuner-spring`)

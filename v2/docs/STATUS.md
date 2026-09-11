@@ -1,5 +1,11 @@
 # Seal Tools v2 — Fix Execution Status (branch `v2-saving-attempt`)
 
+> **v2.4 (2026-09-12).** The tuner gains optional cursor placement (`spring_mode: hid`) with a
+> three-way mouse guard (`off`/`stop`/`recenter`), plus a batch of OCR fixes found on live runs: the
+> grade parser no longer reads `DG`/`XG`/`SG` as `G`, and the attribute matcher stops dropping lines
+> on common misreads (`每`→国/盘/地, `等級`→等, `幸運`→幸莲, `必殺技`→必毅技/必技, dropped trailing stat
+> chars). Built on branch `v2-tuner-spring`, merged to `main` and tagged `v2.4`.
+>
 > **v2.3 (2026-09-11).** The launcher adopts WPF-UI properly — card-based tabs, a collapsible
 > configuration region, pin-on-top and a mini view that shrinks to the running tool's card — plus a
 > placement that is remembered and two real bugs fixed (see Pass 5).
