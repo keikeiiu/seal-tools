@@ -335,24 +335,16 @@ public sealed class OcrEngine : IDisposable
                 if (text.StartsWith(label, StringComparison.Ordinal)) { text = text[label.Length..]; break; }
         }
 
-        // Longest-first so "DG"/"XG"/"SG" win over a bare "G" nested inside them;
-        // rightmost wins so the letter after the label is chosen.
+        // Longest-first so "DG"/"XG"/"SG" win over a bare "G" nested inside them. The
+        // array is sorted longest-first, so the first match IS the longest — a bare "G"
+        // sitting inside "DG" (at a later index) must not override it.
         string[] grades = { "SG", "XG", "DG", "G", "N" };
-        string best = "";
-        var bestIdx = -1; var bestLen = 0;
         foreach (var g in grades)
         {
-            int start = 0;
-            while ((start = text.IndexOf(g, start, StringComparison.Ordinal)) >= 0)
-            {
-                if (start > bestIdx || (start == bestIdx && g.Length > bestLen))
-                {
-                    best = g; bestIdx = start; bestLen = g.Length;
-                }
-                start += g.Length;
-            }
+            if (text.Contains(g, StringComparison.Ordinal))
+                return g;
         }
-        return best.Length > 0 ? best : null;
+        return null;
     }
 
     private Dictionary<string, int> DetectGradeColorScores(Mat img, BoxConfig ga)
