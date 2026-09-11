@@ -62,7 +62,7 @@ because it changes how something else should be done.
 
 ## 6. Code health
 
-- **`GemPointer` → `HidPointer`** (S). Already planned; it is the Arduino pointer, not a gem one.
+- ~~**`GemPointer` → `HidPointer`** (S)~~ — **done** (2026-09-11), the tuner now reuses it for spring placement.
 - **Split `WindowFinder`** (S). Window queries, cursor helpers and diagnostics in one class today.
 - **Move the static UI to XAML** (L) ⚑. The launcher builds ~900 lines of controls in code. XAML +
   bindings would let the UI cleanup land **once**; doing the cleanup first means doing it twice.

@@ -45,12 +45,14 @@ calibration, so a different machine can tell whether it must recalibrate. See `d
    keep the game visible — don't let the launcher window cover it.)
 3. Drag three boxes in order: the **grade letter**, the **3 attribute lines**, and the **spring
    count**.
-4. **Check OCR** — confirm it reads the right grade and three attribute rows. This also measures the
+4. **Click the 發條 button** in the capture to record its point (`tuner.spring_point`). This is only
+   needed if you want the tuner to place the cursor for you (`spring_mode: hid`); skip it to keep
+   moving the mouse yourself. **Test Click (發條)** moves the cursor there so you can confirm it lands.
+5. **Check OCR** — confirm it reads the right grade and three attribute rows. This also measures the
    real attribute line pitch and stores it as `row_height` (a tighter, more accurate value than the
    `attr.Height / 3` fallback used if you skip this step).
-5. **Save Tuner** — writes `tuner.ocr` (region + sub-bands + `row_height`) to `local.yaml`, refreshes
-   the in-memory config so the next run uses it immediately, and saves a reference PNG
-   (`config/calib_tuner.png`).
+6. **Save Tuner** — writes `tuner.ocr` + `tuner.spring_point` to `local.yaml`, refreshes the in-memory
+   config so the next run uses it immediately, and saves a reference PNG (`config/calib_tuner.png`).
 
 ## 3. Calibrate Gem
 

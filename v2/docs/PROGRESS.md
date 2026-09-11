@@ -9,6 +9,40 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-11 — the tuner places the cursor on 發條 and guards it (branch `v2-tuner-spring`)
+
+**Goal.** Give the Magic Tuner the composer's closed-loop cursor: put the mouse on the 發條 button
+automatically, opt-in, and stop (or re-centre) when the mouse moves away mid-run — the
+human-takes-over safety. Full design: [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+
+**What was decided, and why**
+
+- **Opt-in, mirroring `gem.move_mode`.** `tuner.spring_mode: manual | hid` (default `manual` — today's
+  behaviour unchanged); `tuner.spring_point: [x,y]` in `local.yaml`, calibrated by a 4th Calibrate Tuner
+  step (click the 發條 button) with a Test Click to verify. In `hid` mode the cursor is placed at the
+  end of the 5-second countdown; a missing point / window / failed placement stops the run and reports
+  on the card — never click blind.
+- **The guard is a three-way toggle** `tuner.mouse_guard: off | stop | recenter` (default `off`), because
+  the user wants all three: "refocus" (recenter), "take over" (stop), "leave home and let it run" (off).
+  `stop` halts on the first drift past `guard_px`; `recenter` re-places the cursor and keeps rolling
+  toward the target grade (which outranks a stray mouse), stopping only after `recenter_max` runaway
+  drifts. Checked once per attempt, before the click.
+- **`GemPointer` → `HidPointer`** (mechanical), so the tuner reusing it reads honestly.
+
+**What's left open (the data questions, still unanswered)**
+
+- **Does the game warp the cursor during a run?** Until measured, `stop` can false-trigger if the game
+  re-centres the pointer on its own — that is why the guard defaults to `off`, and why the plan's extra
+  mitigations (two-consecutive-polls, foreground-only judging) are the first thing to add after a live
+  run. **Nothing here is verified live yet** — it was built, not run against the game.
+- The guard's "once per attempt" cadence is a first cut; a live run should show whether the poll needs
+  to be more frequent (e.g. on the `SleepCheck` loop).
+
+**Commits** (branch `v2-tuner-spring`, not merged): `63ff486` rename, `d5ff0f3` config, `61bf8b9`
+4th calibrate step + Test Click, `f0de93d` placement, `8b9e2e2` guard + UI.
+
+---
+
 ## 2026-09-11 — the v2.3 zip is built; publish.bat gains a public/personal split
 
 **Goal.** Build the v2.3 distributable and close the packaging gap: `publish.bat` produced a

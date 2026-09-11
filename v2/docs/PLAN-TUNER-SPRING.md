@@ -1,7 +1,9 @@
-# Plan — Tuner spring positioning + cursor guard (NOT implemented)
+# Plan — Tuner spring positioning + cursor guard
 
-Planning note, 2026-09-10. Nothing here is built. It exists so the idea survives the session; the
-work items are mirrored in [TODO.md](TODO.md).
+Planning note, 2026-09-10. **Implemented 2026-09-11 on `v2-tuner-spring`** (features 1 + 2 below, and
+the `GemPointer → HidPointer` rename). What remains open is the two data questions at the bottom — the
+"does the game warp the cursor" measurement in particular still decides whether `stop` is safe or
+`recenter` should be the recommended guard default. Work items were mirrored in [TODO.md](TODO.md).
 
 ## Why this is possible now
 

@@ -7,11 +7,10 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
 
 ## Planned (design written, not built)
 
-- [ ] **Tuner spring positioning + cursor guard.** Place the cursor on the 發條 button with the
-  Arduino closed loop when a run starts, and a `tuner.mouse_guard` toggle that either stops the run
-  when the mouse is moved or re-centres the cursor and carries on. Full plan, including the
-  ideas this unlocks and the two questions to answer with data first:
-  [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+- [x] **Tuner spring positioning + cursor guard** — built on `v2-tuner-spring` (2026-09-11), not
+  merged. `tuner.spring_mode` (manual/hid) + `spring_point`, a 4th Calibrate Tuner step + Test Click,
+  and `tuner.mouse_guard` (off/stop/recenter). **Not verified live** — see the warp question below.
+  Plan + the two data questions: [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
 - [ ] **UI cleanup (tabs, buttons, text-box layout).** Make the launcher readable: one tab one job,
   controls grouped by intent, advanced/diagnostic bits behind a toggle, one shared row builder.
   **Study first** — the target structure has to be agreed before any code, or the layout churn gets

@@ -81,6 +81,8 @@ Filter and stop conditions for the Magic Tuner. Saved to `config/defaults.yaml` 
 | **Filter enabled** | Turns the attribute filter on/off. When off, only the grade matters. |
 | **Match mode** | `any` (one rule is enough), `all` (every rule must match), `per_attr` (each rule needs its own count of matching attributes). |
 | **Require grade** | Grade floor for a filter match; `None` means "any grade". |
+| **Spring mode** | `manual` — you put the mouse on the 發條 button yourself (the tuner only clicks + Enter). `hid` — the tuner places the cursor on the calibrated spring point at run start (see **Calibrate Tuner**). |
+| **Mouse guard** | `hid` mode only: `off` (never look at the cursor), `stop` (halt the run when the mouse drifts off the button — human takes over), `recenter` (put it back and carry on toward the target grade). |
 | **Save OCR captures** | Writes the OCR region to `logs/captures/` on every scan (debug only — it fills disk). |
 | **Rules** (under *Filter — rules (the main goal)*) | The goal list: attribute + count + min/max value, `✕` to remove, **+ Add Rule** to append. |
 | **Override rules** (under *Filter — overrides (stop immediately)*) | If any of these match, the tuner stops immediately regardless of the grade. |
@@ -129,9 +131,10 @@ Points the tuner's OCR at the 發條 (Magic Tuning) window.
 | Control | What it does |
 |---|---|
 | **Capture 發條 window** | Grabs the game window in physical pixels. The launcher hides itself for ~0.3 s so it can't cover the game — the blink is expected. The image must show the whole game. |
-| Canvas | Drag three boxes in order: **grade letter**, **the 3 attribute lines**, **spring count**. Each is colour-coded (green / blue / orange). A tiny drag is rejected. |
+| Canvas | Drag three boxes in order: **grade letter**, **the 3 attribute lines**, **spring count**. Each is colour-coded (green / blue / orange). A tiny drag is rejected. Then click the **發條 button** to record its point (a yellow dot). |
+| **Test Click (發條)** | Moves the cursor to the recorded 發條 button with the Arduino and clicks it, so you can confirm it lands (only used when **Spring mode** is `hid`). |
 | **Check OCR** | Runs the full read → match → filter pipeline on the current screen. Uses the boxes you just dragged; if you haven't dragged all three, it uses the **saved** calibration and says `(checking the saved calibration from local.yaml)`. Output: grade, spring count, the three attribute lines, `Matched:` (what the dictionary recognised) and the `Filter:` verdict. |
-| **Save Tuner** | Writes the region + sub-bands + measured row height to `config/local.yaml`, records the display environment, and saves `config/calib_tuner.png` (the screenshot with your bands drawn on it). |
+| **Save Tuner** | Writes the region + sub-bands + measured row height + spring point to `config/local.yaml`, records the display environment, and saves `config/calib_tuner.png` (the screenshot with your bands drawn on it). |
 
 ## Calibrate Gem tab
 
