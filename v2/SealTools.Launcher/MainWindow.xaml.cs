@@ -100,7 +100,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly int GemTotalSteps = GemResultBoxStep + 1;
     private bool _disposed;
 
-    // Tuner calibrator (drag three boxes: grade / attributes / remaining) state.
+    // Tuner calibrator (drag three boxes: grade / attributes / remaining, then click the spring) state.
     private Image? _tunerImage;
     private Canvas? _tunerCanvas;
     private TextBlock? _tunerHint;
@@ -109,6 +109,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Rect? _tunerGradeBox;
     private Rect? _tunerAttrBox;
     private Rect? _tunerRemainingBox;
+    // 發條 button [x, y] (client-relative physical), set by the 4th calibrate step. Only used in
+    // spring_mode: hid.
+    private Point? _tunerSpringPoint;
     // Measured attribute line pitch from the last "Check OCR", used by BuildOcrGeometry
     // to persist an accurate row_height instead of the loose attr.Height/3 guess.
     private int? _tunerAttrPitch;
@@ -1279,6 +1282,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         var check = MakeButton("Check OCR", ControlAppearance.Secondary);
         check.Click += (_, _) => CheckTunerOcr();
 
+        var springTest = MakeButton("Test Click (發條)", ControlAppearance.Secondary);
+        springTest.Click += (_, _) => TunerSpringTestClick();
+
         var top = new StackPanel { Orientation = Orientation.Horizontal };
         top.Children.Add(capture);
         top.Children.Add(check);
@@ -1294,6 +1300,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             Hint("Drag three boxes on the capture: the grade letter, the three attribute lines, and " +
                  "the spring count. They are colour-coded, and a too-small drag is ignored."),
             grid));
+        panel.Children.Add(Section("Spring (發條)",
+            Hint("Click the 發條 button in the capture to record its point, then Test Click to confirm " +
+                 "the cursor lands on it. Only used when spring_mode is \"hid\" (see the Tuner tab)."),
+            springTest));
         panel.Children.Add(Section("Result", hint));
         panel.Children.Add(save);
 
@@ -2343,16 +2353,28 @@ public partial class MainWindow : FluentWindow, IDisposable
         _tunerGradeBox = null;
         _tunerAttrBox = null;
         _tunerRemainingBox = null;
+        _tunerSpringPoint = null;
         _tunerDragStart = null;
         _tunerMarquee = null;
         _tunerCanvas!.Children.Clear();
-        _tunerHint!.Text = "Step 1/3 — drag a box around the grade letter (e.g. DG / G / N).";
+        _tunerHint!.Text = "Step 1/4 — drag a box around the grade letter (e.g. DG / G / N).";
     }
 
     private void TunerMouseDown(Canvas canvas, Point p)
     {
         if (_tunerScreenshot == null) return;
-        if (_tunerStep >= 3) return;
+
+        // Step 3 records the 發條 button with a single click (a press, not a drag).
+        if (_tunerStep == 3)
+        {
+            _tunerSpringPoint = CanvasToNatural(p, _tunerScreenshot, canvas);
+            AddDot(canvas, p);
+            _tunerStep = 4;
+            _tunerHint!.Text = "Spring point set — click Check OCR to verify, then Save Tuner.";
+            return;
+        }
+
+        if (_tunerStep >= 4) return;
         _tunerDragStart = p;
         _tunerMarquee = new Rectangle { Stroke = Brushes.LimeGreen, StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 2 } };
         Canvas.SetLeft(_tunerMarquee, p.X);
@@ -2400,17 +2422,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             case 0:
                 _tunerGradeBox = box;
                 _tunerStep = 1;
-                _tunerHint!.Text = "Step 2/3 — drag a box around the 3 attribute lines.";
+                _tunerHint!.Text = "Step 2/4 — drag a box around the 3 attribute lines.";
                 break;
             case 1:
                 _tunerAttrBox = box;
                 _tunerStep = 2;
-                _tunerHint!.Text = "Step 3/3 — drag a box around the spring count (remaining).";
+                _tunerHint!.Text = "Step 3/4 — drag a box around the spring count (remaining).";
                 break;
             default:
                 _tunerRemainingBox = box;
                 _tunerStep = 3;
-                _tunerHint!.Text = "All bands set — click Check OCR to verify, then Save Tuner.";
+                _tunerHint!.Text = "Step 4/4 — click the 發條 button to record its point.";
                 break;
         }
     }
@@ -2488,6 +2510,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
+        if (_tunerSpringPoint is { } sp)
+            local.Tuner.SpringPoint = new List<int> { (int)Math.Round(sp.X), (int)Math.Round(sp.Y) };
         if (_tunerDisplay is { } d)
         {
             local.Calibration = ToCalibration(d);
@@ -2498,9 +2522,60 @@ public partial class MainWindow : FluentWindow, IDisposable
         // startup geometry (seeded from local.yaml.example) instead of the boxes
         // just calibrated — the cause of the "Check OCR is fine, run drifts" bug.
         _service.Config.Tuner.Ocr = ocr;
+        if (_tunerSpringPoint is { } sp2)
+            _service.Config.Tuner.SpringPoint = new List<int> { (int)Math.Round(sp2.X), (int)Math.Round(sp2.Y) };
         SaveTunerCalibrationImage("calib_tuner.png");
         _tunerHint!.Text = "Tuner saved to config\\local.yaml.";
         MessageBox.Show("Tuner calibration saved.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private async void TunerSpringTestClick()
+    {
+        if (_tunerSpringPoint is not { } sp)
+        {
+            _tunerHint!.Text = "No spring point recorded — click the 發條 button in the capture first.";
+            return;
+        }
+
+        var display = HidPointer.Display(_service.Config.Window.Title);
+        if (display == null)
+        {
+            _tunerHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            _tunerHint!.Text = "Arduino not found — plug it in and retry.";
+            return;
+        }
+
+        // Same place-and-click as the gem tab's Test Click: the Arduino closed loop, one click,
+        // never click blind.
+        try
+        {
+            var target = WindowFinder.ComputeCursorTarget(display, (int)Math.Round(sp.X), (int)Math.Round(sp.Y));
+            var placed = HidPointer.To(ser, target);
+
+            if (!placed.Ok)
+            {
+                _tunerHint!.Text = $"Test click (發條): couldn't place the cursor — {placed.Error}. Nothing was clicked.";
+                LogCursorMove("spring", target, placed);
+                return;
+            }
+
+            System.Threading.Thread.Sleep(300);
+            HidPointer.Click(ser);
+            System.Threading.Thread.Sleep(200);
+
+            _tunerHint!.Text = $"Test click (發條): cursor placed at ({placed.X},{placed.Y}) in {placed.Steps} Arduino move(s), clicked via {ser.PortName}.";
+            LogCursorMove("spring", target, placed);
+        }
+        catch (Exception ex)
+        {
+            _tunerHint!.Text = $"Test click failed: {ex.Message}";
+        }
     }
 
     private static OcrGeometry BuildOcrGeometry(Rect grade, Rect attr, Rect remaining, int? rowHeight = null)
