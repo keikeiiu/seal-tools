@@ -576,7 +576,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             try
             {
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 testResult.Text = $"Sent (clicked via {ser.PortName}).";
             }
             catch (Exception ex)
@@ -1753,7 +1753,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var target = ResolveGemPoint(toName);
         if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
 
-        var display = GemPointer.Display(_service.Config.Window.Title);
+        var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
         var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
@@ -1761,18 +1761,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             // v1 single-click core: place(from) -> C -> D dx dy -> C (no focus-click).
-            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
             if (!placed.Ok)
             {
                 _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placed.Error}. Nothing was clicked.";
                 return;
             }
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
-            GemPointer.Move(ser, dx, dy);
+            HidPointer.Move(ser, dx, dy);
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(300);
 
             _gemHint!.Text = $"Test move: click \"{fromName}\" then D {dx} {dy} then click \"{toName}\". Does it land?";
@@ -1808,7 +1808,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var display = GemPointer.Display(_service.Config.Window.Title);
+        var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null)
         {
             _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
@@ -1828,7 +1828,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
-            var placed = GemPointer.To(ser, target);
+            var placed = HidPointer.To(ser, target);
 
             if (!placed.Ok)
             {
@@ -1838,7 +1838,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
 
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(200);
 
             _gemHint!.Text = $"Test click \"{name}\": cursor placed at ({placed.X},{placed.Y}) " +
@@ -1896,7 +1896,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var display = GemPointer.Display(_service.Config.Window.Title);
+        var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null)
         {
             _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
@@ -1922,18 +1922,18 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             // v1 single-click core: place(from) -> C -> D raw -> C (no focus-click, no double
             // click). Same raw movement the composer sends.
-            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
             if (!placed.Ok)
             {
                 _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placed.Error}. Nothing was clicked.";
                 return;
             }
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
-            GemPointer.Move(ser, mv[0], mv[1]);
+            HidPointer.Move(ser, mv[0], mv[1]);
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(300);
 
             _gemHint!.Text = $"Test move: click \"{fromName}\" then D {mv[0]} {mv[1]} then click \"{toName}\". Does it land?";
@@ -1955,14 +1955,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         var target = ResolveGemPoint(toName);
         if (target == null) { _gemHint!.Text = $"Target \"{toName}\" isn't calibrated yet."; return; }
 
-        var display = GemPointer.Display(_service.Config.Window.Title);
+        var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
         var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
 
         try
         {
-            var placedFrom = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
+            var placedFrom = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)from.Value.X, (int)from.Value.Y));
             if (!placedFrom.Ok)
             {
                 _gemHint!.Text = $"Couldn't place the cursor on \"{fromName}\" — {placedFrom.Error}. Nothing was clicked.";
@@ -1970,10 +1970,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(500);
 
-            var placedTo = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)target.Value.X, (int)target.Value.Y));
+            var placedTo = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)target.Value.X, (int)target.Value.Y));
             if (!placedTo.Ok)
             {
                 _gemHint!.Text = $"Couldn't place the cursor on \"{toName}\" — {placedTo.Error}. Stopped instead of clicking blind.";
@@ -1981,7 +1981,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
             System.Threading.Thread.Sleep(300);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             System.Threading.Thread.Sleep(300);
 
             _gemHint!.Text = $"New move: placed on \"{fromName}\", clicked, then placed on \"{toName}\", clicked. Does it land?";
@@ -2054,7 +2054,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 var (action, point, at) = targets[i];
                 _gemHint!.Text = $"Full cycle {i + 1}/{targets.Length}: {action} \"{point}\"…";
 
-                var display = GemPointer.Display(_service.Config.Window.Title);
+                var display = HidPointer.Display(_service.Config.Window.Title);
                 if (display == null)
                 {
                     _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — game window not found (or minimized).";
@@ -2062,7 +2062,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                     return;
                 }
 
-                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)at.X, (int)at.Y));
+                var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, (int)at.X, (int)at.Y));
                 if (!placed.Ok)
                 {
                     _gemHint!.Text = $"Full cycle stopped at {i + 1}/{targets.Length} ({action} \"{point}\") — {placed.Error}.";
@@ -2071,8 +2071,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 }
 
                 System.Threading.Thread.Sleep(300);
-                if (action == "click") GemPointer.Click(ser);
-                else GemPointer.RightClick(ser);
+                if (action == "click") HidPointer.Click(ser);
+                else HidPointer.RightClick(ser);
                 // A combine click gets longer: the game animates the result before the next step.
                 System.Threading.Thread.Sleep(point == "Combine" ? 800 : 500);
             }
@@ -2873,7 +2873,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var pt = ResolveGemPoint(name);
         if (pt == null) { _gemHint!.Text = $"\"{name}\" isn't calibrated yet."; return; }
 
-        var display = GemPointer.Display(_service.Config.Window.Title);
+        var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
 
         int x = (int)pt.Value.X, y = (int)pt.Value.Y;

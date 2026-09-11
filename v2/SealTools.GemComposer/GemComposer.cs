@@ -107,13 +107,13 @@ public sealed class GemComposer : ToolBase
                 Fail($"{what}: '{pointName}' isn't calibrated yet — open Calibrate Gem and save it.");
                 return false;
             }
-            var display = GemPointer.Display(_cfg.Window.Title);
+            var display = HidPointer.Display(_cfg.Window.Title);
             if (display == null)
             {
                 Fail("Game window not found (or minimized) — open and restore the game first.");
                 return false;
             }
-            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, p.X, p.Y));
+            var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, p.X, p.Y));
             if (!placed.Ok)
             {
                 Fail($"{what}: couldn't move the cursor to {pointName} — {placed.Error}.");
@@ -138,13 +138,13 @@ public sealed class GemComposer : ToolBase
             }
 
             if (!TryMove(what, tuned, out var dx, out var dy)) return false;
-            GemPointer.Move(ser, dx, dy);
+            HidPointer.Move(ser, dx, dy);
             return true;
         }
 
         void SelectGradeAndRegister()
         {
-            var display = GemPointer.Display(_cfg.Window.Title);
+            var display = HidPointer.Display(_cfg.Window.Title);
             if (display == null)
             {
                 Fail("Game window not found (or minimized) — open and restore the game first.");
@@ -161,19 +161,19 @@ public sealed class GemComposer : ToolBase
             //
             // A cursor that can't be placed must NOT be clicked through: the click would land
             // wherever the pointer happens to be (docs/CURSOR-INVESTIGATION.md).
-            var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+            var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
             if (!placed.Ok)
             {
                 Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
                 return;
             }
             SleepCheck(0.3);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             SleepCheck(0.5);
             if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
                     mv.RadioToRegister.GetValueOrDefault(grades[gidx]))) return;
             SleepCheck(0.3);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             SleepCheck(0.5);
         }
 
@@ -262,15 +262,15 @@ public sealed class GemComposer : ToolBase
             var mv = _cfg.Gem.Movements;
             if (!Route("Move Register → Resource1", "register_slot1", mv.RegisterSlot1)) return false;
             SleepCheck(0.2);
-            GemPointer.RightClick(ser);
+            HidPointer.RightClick(ser);
             SleepCheck(0.3);
             if (!Route("Move Resource1 → Resource2", "slot1_slot2", mv.Slot1Slot2)) return false;
             SleepCheck(0.2);
-            GemPointer.RightClick(ser);
+            HidPointer.RightClick(ser);
             SleepCheck(0.3);
             if (!Route("Move Resource2 → Resource3", "slot2_slot3", mv.Slot2Slot3)) return false;
             SleepCheck(0.2);
-            GemPointer.RightClick(ser);
+            HidPointer.RightClick(ser);
             SleepCheck(0.3);
             return true;
         }
@@ -327,27 +327,27 @@ public sealed class GemComposer : ToolBase
                 }
                 if (!Route($"Move Resource3 → {grades[gidx]}", slotKey, Slot3ToGrade(grades[gidx]))) return false;
                 SleepCheck(0.2);
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 SleepCheck(0.5);
             }
             else
             {
                 // Cursor is at Register → re-select the grade absolutely.
-                var display = GemPointer.Display(_cfg.Window.Title);
+                var display = HidPointer.Display(_cfg.Window.Title);
                 if (display == null)
                 {
                     Fail("Game window not found (or minimized) — open and restore the game first.");
                     return false;
                 }
                 if (!TryPoint("Grade position", _cfg.Gem.GradePositions, grades[gidx], out var gx, out var gy)) return false;
-                var placed = GemPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
+                var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
                 if (!placed.Ok)
                 {
                     Fail($"Couldn't move the cursor onto the {grades[gidx]} button — {placed.Error}. Stopped instead of clicking blind.");
                     return false;
                 }
                 SleepCheck(0.3);
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 SleepCheck(0.5);
             }
 
@@ -355,7 +355,7 @@ public sealed class GemComposer : ToolBase
             if (!Route($"Move {grades[gidx]} → Register", $"radio_{grades[gidx]}",
                     _cfg.Gem.Movements.RadioToRegister.GetValueOrDefault(grades[gidx]))) return false;
             SleepCheck(0.3);
-            GemPointer.Click(ser);
+            HidPointer.Click(ser);
             SleepCheck(0.5);
             return true;
         }
@@ -429,7 +429,7 @@ public sealed class GemComposer : ToolBase
                 // Combine.
                 if (!Route("Move Register → Combine", "register_combine", _cfg.Gem.Movements.RegisterCombine)) break;
                 SleepCheck(0.2);
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 SleepCheck(0.8);
 
                 // Auto-advance when the result box is empty (no gem created).
@@ -460,9 +460,9 @@ public sealed class GemComposer : ToolBase
                 }
 
                 // Normal: deregister + register.
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 SleepCheck(0.3);
-                GemPointer.Click(ser);
+                HidPointer.Click(ser);
                 SleepCheck(0.5);
 
                 if (cycle % 10 == 0) Console.WriteLine($"  Cycle: {cycle}");

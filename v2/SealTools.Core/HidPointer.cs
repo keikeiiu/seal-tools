@@ -28,7 +28,7 @@ public sealed record CursorPlacement(bool Ok, int Steps, int? X, int? Y, string?
 // focus-click): when a tool is started from the launcher the game is not the foreground window,
 // but a single click on the target button BOTH activates the game window and presses the button —
 // the same thing v1's SetCursorPos + C does. Click() is the only focus mechanism needed.
-public static class GemPointer
+public static class HidPointer
 {
     // A click target is a button tens of pixels wide, so landing within this of the calibrated
     // point is a hit. Two px also absorbs the rounding in the physical -> cursor-space conversion.
