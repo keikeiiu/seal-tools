@@ -45,6 +45,7 @@ public sealed class SealTuner : ToolBase
         bool running = false;
         int countdown = 0;
         int attempt = 0;
+        int recenterCount = 0;
         bool f12Was = Hotkeys.IsDown(_cfg.Hotkeys.Start);
         var prevSig = (Grade: (string?)null, Remaining: (int?)null, Attrs: "");
         // Repeats of the previous result; >= 2 means three identical results in a row.
@@ -119,6 +120,15 @@ public sealed class SealTuner : ToolBase
                 attempt++;
                 state.Attempt = attempt;
                 var timing = _cfg.Tuner.Timing;
+
+                // Cursor guard (spring_mode: hid only) — before each click, make sure the mouse is
+                // still on the 發條 button. "stop" halts on a drift, "recenter" puts it back.
+                if (_cfg.Tuner.SpringMode == "hid" && CheckMouseGuard(ser, state, ref recenterCount))
+                {
+                    running = false;
+                    state.Running = false;
+                    break;
+                }
 
                 // Click + Enter (Arduino C/E commands).
                 try
@@ -259,5 +269,46 @@ public sealed class SealTuner : ToolBase
         var target = WindowFinder.ComputeCursorTarget(display, spring[0], spring[1]);
         var placed = HidPointer.To(ser, target);
         return placed.Ok ? null : $"couldn't place the cursor on the spring — {placed.Error}";
+    }
+
+    // Returns true when the run must stop (guard tripped). "off" never stops; "stop" halts on the
+    // first drift; "recenter" puts the cursor back and only stops after recenter_max runaway drifts.
+    private bool CheckMouseGuard(SerialPort ser, ToolState state, ref int recenterCount)
+    {
+        var guard = _cfg.Tuner.MouseGuard;
+        if (guard == "off") return false;
+
+        var spring = _cfg.Tuner.SpringPoint;
+        if (spring is not { Count: 2 }) return false; // no point -> the guard can't judge
+
+        var display = HidPointer.Display(_cfg.Window.Title);
+        if (display == null) return false;
+
+        var cursor = WindowFinder.LogicalCursorPosition();
+        if (cursor is not { } c) return false;
+
+        var target = WindowFinder.ComputeCursorTarget(display, spring[0], spring[1]);
+        bool drifted = Math.Max(Math.Abs(c.X - target.LogicalX), Math.Abs(c.Y - target.LogicalY)) > _cfg.Tuner.GuardPx;
+
+        if (!drifted) { recenterCount = 0; return false; }
+
+        if (guard == "stop")
+        {
+            Console.WriteLine("[!] mouse moved — stopped");
+            state.Message = "mouse moved — stopped";
+            return true;
+        }
+
+        // recenter — put it back and carry on (meeting the target grade outranks a stray mouse).
+        var placed = HidPointer.To(ser, target);
+        recenterCount++;
+        if (!placed.Ok || recenterCount > _cfg.Tuner.RecenterMax)
+        {
+            Console.WriteLine("[!] cursor keeps drifting — stopped");
+            state.Message = placed.Ok ? "cursor keeps drifting — stopped" : $"cursor wouldn't re-centre — {placed.Error}";
+            return true;
+        }
+        Console.WriteLine($"[recenter #{recenterCount}] cursor drifted, placed back on the spring");
+        return false;
     }
 }

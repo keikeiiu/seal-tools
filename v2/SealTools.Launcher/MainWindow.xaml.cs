@@ -64,6 +64,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
     // The two composer move sets (Core/GemRoutes.cs): tuned counts vs closed-loop point placement.
     private static readonly string[] GemMoveModes = { "tuned", "arduino" };
+    // The tuner's cursor placement + guard modes (Core/SealTuner.cs).
+    private static readonly string[] TunerSpringModes = { "manual", "hid" };
+    private static readonly string[] TunerGuardModes = { "off", "stop", "recenter" };
     private static readonly string[] CalibResourceSteps = { "Resource1", "Resource2", "Resource3" };
     // Points offered by the gem "Test Click" move-cursor check.
     private static readonly string[] GemTestPoints =
@@ -767,6 +770,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             Hint("The run stops the moment the target grade is reached — that outranks everything below."),
             goalFields));
 
+        var springMode = MakeComboBox(TunerSpringModes, _service.Config.Tuner.SpringMode);
+        var mouseGuard = MakeComboBox(TunerGuardModes, _service.Config.Tuner.MouseGuard);
+        var springFields = new StackPanel();
+        springFields.Children.Add(LabeledField("Spring mode", springMode));
+        springFields.Children.Add(LabeledField("Mouse guard", mouseGuard));
+        panel.Children.Add(Section("Spring (發條)",
+            Hint("manual — you put the mouse on the 發條 button yourself (the tuner only clicks + Enter). " +
+                 "hid — the tuner places the cursor on the calibrated spring point at run start. The mouse " +
+                 "guard (hid mode only) stops the run when the mouse drifts off the button (stop) or " +
+                 "re-centres it and carries on (recenter)."),
+            springFields));
+
         var clickDelay = UiText(_service.Config.Tuner.Timing.ClickEnterDelay.ToString(CultureInfo.InvariantCulture));
         var ocrDelay = UiText(_service.Config.Tuner.Timing.OcrDelay.ToString(CultureInfo.InvariantCulture));
 
@@ -853,6 +868,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.Filter.Rules = ruleRows.Select(r => r.ToRule()).ToList();
             cfg.Tuner.Filter.OverrideRules = overrideRows.Select(r => r.ToRule()).ToList();
             cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
+            cfg.Tuner.SpringMode = springMode.SelectedItem?.ToString() ?? "manual";
+            cfg.Tuner.MouseGuard = mouseGuard.SelectedItem?.ToString() ?? "off";
             _service.SaveConfig();
             result.Severity = InfoBarSeverity.Success;
             result.Title = "Saved";
