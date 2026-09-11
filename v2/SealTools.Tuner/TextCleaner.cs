@@ -28,6 +28,9 @@ public sealed class TextCleaner
         foreach (var f in _fixes.Final)
             t = t.Replace(f.From, f.To);
 
+        foreach (var f in _fixes.Regex)
+            t = Regex.Replace(t, f.From, f.To);
+
         return t;
     }
 

@@ -25,6 +25,9 @@ public sealed class TextFixesConfig
     public List<TextFix> Substring { get; set; } = new();
     public List<TextFix> SimplifiedTraditional { get; set; } = new();
     public List<TextFix> Final { get; set; } = new();
+    // `from` is a .NET regex (e.g. with negative lookahead); for a dropped trailing char where a
+    // plain substring replace would corrupt the correct form (增加幸 is a prefix of 增加幸運).
+    public List<TextFix> Regex { get; set; } = new();
 }
 
 public sealed class TextFix

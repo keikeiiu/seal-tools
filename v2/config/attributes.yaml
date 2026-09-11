@@ -145,3 +145,10 @@ text_fixes:
     - {from: "副本惕窖增加", to: "副本傷害增加"}
     - {from: "副本愕窖增加", to: "副本傷害增加"}
     - {from: "配域", to: "配戴"}
+  regex:         # .NET regex — negative lookahead restores a dropped trailing stat character
+    - {from: "增加幸(?!運)", to: "增加幸運"}
+    - {from: "增加敏(?!捷)", to: "增加敏捷"}
+    - {from: "增加智(?!力)", to: "增加智力"}
+    - {from: "增加體(?!力)", to: "增加體力"}
+    - {from: "增加精(?!神)", to: "增加精神"}
+    - {from: "增加力(?!量)", to: "增加力量"}
