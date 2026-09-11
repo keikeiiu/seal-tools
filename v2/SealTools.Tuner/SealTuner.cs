@@ -93,7 +93,24 @@ public sealed class SealTuner : ToolBase
                         if (QuitPressed || ct.IsCancellationRequested) break;
                     }
                     countdown--;
-                    if (countdown == 0) { Console.WriteLine("[>] RUNNING"); Beep(1500, 150); }
+                    if (countdown == 0)
+                    {
+                        Console.WriteLine("[>] RUNNING");
+                        Beep(1500, 150);
+                        // spring_mode: hid — put the cursor on the 發條 button before the first
+                        // attempt, so the C/E click lands on it rather than wherever the mouse is.
+                        if (_cfg.Tuner.SpringMode == "hid")
+                        {
+                            var springError = PlaceOnSpring(ser);
+                            if (springError != null)
+                            {
+                                Console.WriteLine($"[!] {springError} — stopping");
+                                state.Message = springError;
+                                running = false;
+                                state.Running = false;
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -226,4 +243,21 @@ public sealed class SealTuner : ToolBase
 
     private int GradeIndex(string? grade) =>
         grade == null ? -1 : _cfg.Tuner.GradeOrder.IndexOf(grade);
+
+    // Places the cursor on the calibrated 發條 button with the Arduino closed loop. Returns a
+    // user-facing reason to stop, or null when the cursor is on the spring (never click blind).
+    private string? PlaceOnSpring(SerialPort ser)
+    {
+        var spring = _cfg.Tuner.SpringPoint;
+        if (spring is not { Count: 2 })
+            return "spring_mode is hid but tuner.spring_point isn't calibrated — click the 發條 button in Calibrate Tuner";
+
+        var display = HidPointer.Display(_cfg.Window.Title);
+        if (display == null)
+            return "game window not found — couldn't place the cursor on the spring";
+
+        var target = WindowFinder.ComputeCursorTarget(display, spring[0], spring[1]);
+        var placed = HidPointer.To(ser, target);
+        return placed.Ok ? null : $"couldn't place the cursor on the spring — {placed.Error}";
+    }
 }
