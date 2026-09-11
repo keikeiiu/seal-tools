@@ -33,8 +33,10 @@ human-takes-over safety. Full design: [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.m
 
 - **Does the game warp the cursor during a run?** Until measured, `stop` can false-trigger if the game
   re-centres the pointer on its own — that is why the guard defaults to `off`, and why the plan's extra
-  mitigations (two-consecutive-polls, foreground-only judging) are the first thing to add after a live
-  run. **Nothing here is verified live yet** — it was built, not run against the game.
+  mitigations (two-consecutive-polls, foreground-only judging) are the first thing to add if a run shows
+  one. **Verified live (2026-09-11):** `hid` + `off` (auto-place, no guard) and `hid` + `stop` (halt on a
+  drifted mouse) both behaved as intended, with no false-trigger seen in `stop` — weak evidence the game
+  does not warp the cursor, not yet a rigorous per-attempt measurement.
 - The guard's "once per attempt" cadence is a first cut; a live run should show whether the poll needs
   to be more frequent (e.g. on the `SleepCheck` loop).
 
