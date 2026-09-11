@@ -29,6 +29,10 @@ the evidence shows no `row_height` pooling — the lines are all read; the drop 
 fix is `b42247f` (grade) and `3b8023b` (attributes.yaml cleanup rules). Note the launcher caches
 `attributes.yaml` at startup, so the cleanup rules need a restart to take effect.
 
+A **third drop shape** followed: a dropped *trailing* stat character (`幸運` → `幸`). Because the
+truncated form is a prefix of the correct one, a plain substring replace would corrupt correct reads,
+so `71f9672` adds a `regex` fix type (negative lookahead) for all six per-level stats.
+
 ---
 
 ## 2026-09-11 — the tuner places the cursor on 發條 and guards it (branch `v2-tuner-spring`)
