@@ -26,6 +26,10 @@ tuner:
   max_retries: 999999
   save_captures: false
   ocr_retries: 3
+  spring_mode: manual
+  mouse_guard: off
+  guard_px: 8
+  recenter_max: 20
   models:
     detector: models/ch_PP-OCRv4_det_infer.onnx
     recognizer: models/ch_PP-OCRv4_rec_infer.onnx

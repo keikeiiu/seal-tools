@@ -109,6 +109,7 @@ public sealed class ConfigLoader
     {
         if (local.Calibration != null) defaults.Calibration = local.Calibration;
         if (local.Tuner?.Ocr != null) defaults.Tuner.Ocr = local.Tuner.Ocr;
+        if (local.Tuner?.SpringPoint != null) defaults.Tuner.SpringPoint = local.Tuner.SpringPoint;
         if (local.Gem?.GradePositions is { Count: > 0 }) defaults.Gem.GradePositions = local.Gem.GradePositions;
         if (local.Gem?.Movements != null) defaults.Gem.Movements = local.Gem.Movements;
         if (local.Gem?.ResourceGems != null) defaults.Gem.ResourceGems = local.Gem.ResourceGems;
@@ -145,6 +146,10 @@ public sealed class ConfigLoader
                 max_retries = cfg.Tuner.MaxRetries,
                 save_captures = cfg.Tuner.SaveCaptures,
                 ocr_retries = cfg.Tuner.OcrRetries,
+                spring_mode = cfg.Tuner.SpringMode,
+                mouse_guard = cfg.Tuner.MouseGuard,
+                guard_px = cfg.Tuner.GuardPx,
+                recenter_max = cfg.Tuner.RecenterMax,
                 models = cfg.Tuner.Models,
                 timing = cfg.Tuner.Timing,
                 grade_colors = cfg.Tuner.GradeColors,
@@ -188,6 +193,9 @@ public sealed class ConfigLoader
     public sealed class LocalTuner
     {
         public OcrGeometry? Ocr { get; set; }
+        /// <summary>[x, y] of the 發條 button, client-relative physical pixels. Machine-specific, so it
+        /// lives in local.yaml like the OCR geometry and gem click points.</summary>
+        public List<int>? SpringPoint { get; set; }
     }
 
     public sealed class LocalGem

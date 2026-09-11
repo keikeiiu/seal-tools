@@ -78,6 +78,29 @@ public sealed class TunerConfig
     public ModelsConfig Models { get; set; } = new();
     public FilterConfig Filter { get; set; } = new();
     public OcrGeometry Ocr { get; set; } = new();   // machine-specific; overridden by local.yaml
+
+    /// <summary>Where the tuner puts the cursor at run start: "manual" (today — you position the
+    /// mouse on the 發條 button yourself; the tuner only sends C+E) or "hid" (the tuner places it
+    /// with the Arduino closed loop and, if the guard is on, keeps it there). Mirrors gem.move_mode.</summary>
+    [AllowedValues("manual", "hid", ErrorMessage = "tuner.spring_mode must be manual|hid")]
+    public string SpringMode { get; set; } = "manual";
+
+    /// <summary>Client-relative physical pixel point [x, y] of the 發條 button (machine-specific,
+    /// written by the calibrate tab). Only read in "hid" spring_mode.</summary>
+    public List<int>? SpringPoint { get; set; }
+
+    /// <summary>Cursor guard, "hid" spring_mode only: "off" (never look at the cursor), "stop" (halt
+    /// the run when the mouse drifts off the spring — the human-takes-over case), or "recenter" (put
+    /// it back on the spring and carry on toward the target grade).</summary>
+    [AllowedValues("off", "stop", "recenter", ErrorMessage = "tuner.mouse_guard must be off|stop|recenter")]
+    public string MouseGuard { get; set; } = "off";
+
+    /// <summary>How far (px) the cursor may sit from the spring point before the guard acts.</summary>
+    public int GuardPx { get; set; } = 8;
+
+    /// <summary>Runaway guard for "recenter": if the cursor has to be re-centred more than this many
+    /// times in a row, stop rather than fight a mouse that keeps moving.</summary>
+    public int RecenterMax { get; set; } = 20;
 }
 
 public sealed class TimingConfig

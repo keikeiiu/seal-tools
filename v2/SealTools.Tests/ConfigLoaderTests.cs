@@ -82,6 +82,10 @@ public class ConfigLoaderTests
             Assert.Equal(before.Tuner.MaxRetries, after.Tuner.MaxRetries);
             Assert.Equal(before.Tuner.TargetGrade, after.Tuner.TargetGrade);
             Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(before.Tuner.SpringMode, after.Tuner.SpringMode);
+            Assert.Equal(before.Tuner.MouseGuard, after.Tuner.MouseGuard);
+            Assert.Equal(before.Tuner.GuardPx, after.Tuner.GuardPx);
+            Assert.Equal(before.Tuner.RecenterMax, after.Tuner.RecenterMax);
             Assert.Equal(before.Window.Title, after.Window.Title);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
             Assert.Equal(before.Spammer.Active, after.Spammer.Active);
