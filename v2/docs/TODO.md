@@ -42,11 +42,10 @@ needs new machinery, just a small driver per feature.
 
 ## Needs a live check before any code change
 
-- [ ] **OCR row-bucket pooling.** `BuildLines` buckets detected items by `y / row_height`, so a fixed
-  grid can pool two nearby attribute rows into one.
-  - Evidence already collected: `logs/ocr_log.jsonl` records every raw item with its `rowKey`. Collect
-    a few real unconfirmed frames, then decide whether the grid or the detector is at fault.
-  - Do **not** change the bucketing without that evidence.
+- [x] **OCR row-bucket pooling** — resolved (2026-09-11). The "one line less" symptom was **not** a
+  `row_height` pooling after all: the captures show all 3 lines are read, and the drop was in the
+  matcher (OCR character misreads breaking the dictionary match). Fixed in `3b8023b` (added `国/盘/地`→`每`,
+  `等增加`→`等級增加`, `幸莲`→`幸運`, `必毅技`→`必殺技` to `text_fixes`). No bucketing change was needed.
 
 ## Settled (measured — do not reopen)
 

@@ -9,6 +9,28 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-11 — two live-testing bugs fixed: grade parsed as G, and the matcher dropping lines
+
+Both found while the user ran the tuner against a real DG item.
+
+**Grade parsed as "G" when the item was "DG".** The OCR log proved the text was `GRADE：DG` and
+the colour score was `DG=287` (yellow) — so OCR was right and the *parser* was wrong. `DetectGradeFromLine`
+stripped the label, then a "rightmost match wins" scan let the bare `"G"` at index 1 override the longer
+`"DG"` at index 0. It stayed latent for N/G items (no nested grade letter). Now longest-first.
+
+**"One line less" — a matcher drop, not a read failure.** The user saw ~2 of 3 attribute lines.
+The captures (`logs/captures/*.png`) are decisive: every DG frame shows all 3 lines, so the OCR reads
+3 and `AttrMatcher` throws the third away when a misread character breaks the dictionary match. Four
+recurring confusions, all in `text_fixes.substring`:
+`每`→`国/盘/地`, `等級`→`等` (drops `級`), `幸運`→`幸莲`, `必殺技`→`必毅技` (`毅`≠`殺`).
+
+This **closes the open "OCR row-bucket pooling" question** ([TODO.md](TODO.md), [IDEAS.md](IDEAS.md)):
+the evidence shows no `row_height` pooling — the lines are all read; the drop was in the matcher. The
+fix is `b42247f` (grade) and `3b8023b` (attributes.yaml cleanup rules). Note the launcher caches
+`attributes.yaml` at startup, so the cleanup rules need a restart to take effect.
+
+---
+
 ## 2026-09-11 — the tuner places the cursor on 發條 and guards it (branch `v2-tuner-spring`)
 
 **Goal.** Give the Magic Tuner the composer's closed-loop cursor: put the mouse on the 發條 button
