@@ -35,6 +35,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 {
     private static readonly (string Id, string Name)[] Tools =
     {
+        ("holdspace", "Hold Space"),
         ("tuner", "Magic Tuner"),
         ("gem", "Gem Composer"),
         ("spammer", "Skill Spammer"),
@@ -57,6 +58,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     // id -> its card Border, so mini mode can show only the running tool's card.
     private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
+    // The Hold Space card's single toggle button, relabelled Hold/Stop as it runs.
+    private UiButton? _holdToggle;
     private readonly DispatcherTimer _timer;
     // Debounces the placement save while the window is being dragged or resized.
     private DispatcherTimer? _uiSaveTimer;
@@ -210,25 +213,45 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
             _statusBlocks[id] = statusText;
 
-            var startButton = MakeButton("Start", ControlAppearance.Primary);
-            startButton.Click += async (_, _) =>
-            {
-                if (!await _service.StartToolAsync(id))
-                {
-                    // Without this the click just does nothing: the tools' "Arduino not found"
-                    // message goes to a console the published WinExe doesn't have.
-                    MessageBox.Show(
-                        _service.LastArduinoError ?? "Arduino not found.",
-                        "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            };
-
-            var stopButton = MakeButton("Stop", ControlAppearance.Danger);
-            stopButton.Click += (_, _) => _service.StopTool();
-
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(startButton);
-            buttons.Children.Add(stopButton);
+
+            if (id == "holdspace")
+            {
+                // Hold Space is a pure toggle: one button that flips between Hold and Stop.
+                var toggle = MakeButton("Hold", ControlAppearance.Primary);
+                toggle.Click += async (_, _) =>
+                {
+                    if (_service.CurrentId == "holdspace" && _service.CurrentState?.Running == true)
+                        _ = _service.StopTool();
+                    else if (!await _service.StartToolAsync(id))
+                        MessageBox.Show(
+                            _service.LastArduinoError ?? "Arduino not found.",
+                            "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+                };
+                _holdToggle = toggle;
+                buttons.Children.Add(toggle);
+            }
+            else
+            {
+                var startButton = MakeButton("Start", ControlAppearance.Primary);
+                startButton.Click += async (_, _) =>
+                {
+                    if (!await _service.StartToolAsync(id))
+                    {
+                        // Without this the click just does nothing: the tools' "Arduino not found"
+                        // message goes to a console the published WinExe doesn't have.
+                        MessageBox.Show(
+                            _service.LastArduinoError ?? "Arduino not found.",
+                            "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                };
+
+                var stopButton = MakeButton("Stop", ControlAppearance.Danger);
+                stopButton.Click += (_, _) => _service.StopTool();
+
+                buttons.Children.Add(startButton);
+                buttons.Children.Add(stopButton);
+            }
 
             var left = new StackPanel();
             left.Children.Add(nameText);
@@ -287,6 +310,14 @@ public partial class MainWindow : FluentWindow, IDisposable
                 block.Text = "stopped";
                 block.Foreground = Res("SystemFillColorCriticalBrush");
             }
+        }
+
+        // Hold Space's single button flips between Hold and Stop as it runs.
+        if (_holdToggle != null)
+        {
+            bool holding = _service.CurrentId == "holdspace" && state?.Running == true;
+            _holdToggle.Content = holding ? "Stop" : "Hold";
+            _holdToggle.Appearance = holding ? ControlAppearance.Danger : ControlAppearance.Primary;
         }
     }
 
