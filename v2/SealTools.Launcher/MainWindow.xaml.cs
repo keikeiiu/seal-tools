@@ -35,7 +35,6 @@ public partial class MainWindow : FluentWindow, IDisposable
 {
     private static readonly (string Id, string Name)[] Tools =
     {
-        ("holdspace", "Hold Space"),
         ("tuner", "Magic Tuner"),
         ("gem", "Gem Composer"),
         ("spammer", "Skill Spammer"),
@@ -58,8 +57,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     // id -> its card Border, so mini mode can show only the running tool's card.
     private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
-    // The Hold Space card's single toggle button, relabelled Hold/Stop as it runs.
-    private UiButton? _holdToggle;
     private readonly DispatcherTimer _timer;
     // Debounces the placement save while the window is being dragged or resized.
     private DispatcherTimer? _uiSaveTimer;
@@ -156,6 +153,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Window layout: placement and "on top" are remembered (local.yaml), and the config region
         // starts collapsed so the window opens as just the tool cards.
         RestoreUiState();
+        HoldSpaceToggle.Click += async (_, _) =>
+        {
+            if (_service.CurrentId == "holdspace" && _service.CurrentState?.Running == true)
+                _ = _service.StopTool();
+            else if (!await _service.StartToolAsync("holdspace"))
+                MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+        };
         ConfigToggle.Click += (_, _) => SetConfigExpanded(!_configExpanded);
         PinToggle.Click += (_, _) => SetPinned(!Topmost);
         SetConfigExpanded(false);
@@ -195,12 +199,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         foreach (var (id, name) in Tools)
         {
-            bool compact = id == "holdspace";
             var nameText = new TextBlock
             {
                 Text = name,
                 Foreground = Res("TextFillColorPrimaryBrush"),
-                FontSize = compact ? 14 : 18,
+                FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
             };
 
@@ -214,45 +217,25 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
             _statusBlocks[id] = statusText;
 
+            var startButton = MakeButton("Start", ControlAppearance.Primary);
+            startButton.Click += async (_, _) =>
+            {
+                if (!await _service.StartToolAsync(id))
+                {
+                    // Without this the click just does nothing: the tools' "Arduino not found"
+                    // message goes to a console the published WinExe doesn't have.
+                    MessageBox.Show(
+                        _service.LastArduinoError ?? "Arduino not found.",
+                        "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            };
+
+            var stopButton = MakeButton("Stop", ControlAppearance.Danger);
+            stopButton.Click += (_, _) => _service.StopTool();
+
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-
-            if (id == "holdspace")
-            {
-                // Hold Space is a pure toggle: one button that flips between Hold and Stop.
-                var toggle = MakeButton("Hold", ControlAppearance.Primary);
-                toggle.Click += async (_, _) =>
-                {
-                    if (_service.CurrentId == "holdspace" && _service.CurrentState?.Running == true)
-                        _ = _service.StopTool();
-                    else if (!await _service.StartToolAsync(id))
-                        MessageBox.Show(
-                            _service.LastArduinoError ?? "Arduino not found.",
-                            "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
-                };
-                _holdToggle = toggle;
-                buttons.Children.Add(toggle);
-            }
-            else
-            {
-                var startButton = MakeButton("Start", ControlAppearance.Primary);
-                startButton.Click += async (_, _) =>
-                {
-                    if (!await _service.StartToolAsync(id))
-                    {
-                        // Without this the click just does nothing: the tools' "Arduino not found"
-                        // message goes to a console the published WinExe doesn't have.
-                        MessageBox.Show(
-                            _service.LastArduinoError ?? "Arduino not found.",
-                            "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                };
-
-                var stopButton = MakeButton("Stop", ControlAppearance.Danger);
-                stopButton.Click += (_, _) => _service.StopTool();
-
-                buttons.Children.Add(startButton);
-                buttons.Children.Add(stopButton);
-            }
+            buttons.Children.Add(startButton);
+            buttons.Children.Add(stopButton);
 
             var left = new StackPanel();
             left.Children.Add(nameText);
@@ -272,7 +255,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 CornerRadius = new CornerRadius(12),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(compact ? 12 : 20),
+                Padding = new Thickness(20),
                 Margin = new Thickness(0, 0, 0, 12),
                 Child = cardGrid,
             };
@@ -289,7 +272,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Mini mode: while a tool runs, the window shows only that tool's card so it takes a corner
         // rather than the whole left edge. Only one tool can run at a time, so nothing is hidden
         // that could be used anyway.
-        _miniToolId = state is { Running: true } ? _service.CurrentId : null;
+        // Hold Space has no card (it's a top-row button), so it doesn't shrink the window to a card.
+        _miniToolId = state is { Running: true } && _service.CurrentId != "holdspace"
+            ? _service.CurrentId : null;
         ApplyWindowLayout();
 
         foreach (var (id, _) in Tools)
@@ -313,13 +298,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         }
 
-        // Hold Space's single button flips between Hold and Stop as it runs.
-        if (_holdToggle != null)
-        {
-            bool holding = _service.CurrentId == "holdspace" && state?.Running == true;
-            _holdToggle.Content = holding ? "Stop" : "Hold";
-            _holdToggle.Appearance = holding ? ControlAppearance.Danger : ControlAppearance.Primary;
-        }
+        // Hold Space's single button flips between Hold Space and Stop Space as it runs.
+        bool holding = _service.CurrentId == "holdspace" && state?.Running == true;
+        HoldSpaceToggle.Content = holding ? "Stop Space" : "Hold Space";
+        HoldSpaceToggle.Appearance = holding ? ControlAppearance.Danger : ControlAppearance.Secondary;
     }
 
     private static string FormatStatus(ToolState state)
@@ -348,10 +330,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Measured: 320 is what it settles at — WPF will not go below the content's minimum, so a
     // smaller number here has no effect.
     private const double ConfigMiniHeight = 320;
-
-    // Hold Space's card is smaller, so its mini window can shrink further than the other tools'.
-    private static double MiniHeightFor(string? toolId) =>
-        toolId == "holdspace" ? 180 : ConfigMiniHeight;
 
     // What to restore when the region is expanded again. Zero until something shrinks the window, so
     // a fresh launch expands to the window's designed height.
@@ -451,7 +429,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var (id, card) in _toolCards)
             card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
 
-        Height = mini ? MiniHeightFor(_miniToolId)
+        Height = mini ? ConfigMiniHeight
             : _configExpanded ? (_configExpandedHeight > 0 ? _configExpandedHeight : 720)
             : ConfigCollapsedHeight;
 

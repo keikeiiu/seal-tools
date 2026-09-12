@@ -21,7 +21,9 @@
             <!-- The configuration tabs are hidden unless you are actually configuring something: the
                  window opens as just the three tool cards, and the chevron reveals the rest. -->
             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,14,0,0">
-                <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3"
+                <ui:Button x:Name="HoldSpaceToggle" Appearance="Secondary" Padding="10,3,12,3"
+                           ToolTip="Hold the spacebar to auto-pick up items"/>
+                <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
                            ToolTip="Show or hide the configuration tabs"/>
                 <ui:Button x:Name="PinToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
                            ToolTip="Keep this window above the game so the tool status stays visible while you play"/>
