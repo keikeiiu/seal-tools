@@ -93,7 +93,7 @@ public sealed class LauncherService : IDisposable
     /// instead of the click silently doing nothing.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
-        if (id is not ("tuner" or "gem" or "spammer"))
+        if (id is not ("tuner" or "gem" or "spammer" or "holdspace"))
         {
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
