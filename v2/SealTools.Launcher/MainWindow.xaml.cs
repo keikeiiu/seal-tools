@@ -1040,6 +1040,27 @@ public partial class MainWindow : FluentWindow, IDisposable
         presetName.Width = 160;
         presetName.VerticalAlignment = VerticalAlignment.Center;
 
+        // Contextual name prompt — appears only while creating or renaming a preset.
+        var promptLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var confirmBtn = MakeButton("Create", ControlAppearance.Primary);
+        var cancelBtn = MakeButton("Cancel", ControlAppearance.Secondary);
+        cancelBtn.Margin = new Thickness(8, 0, 0, 0);
+        var namePrompt = new StackPanel { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 8) };
+        namePrompt.Children.Add(promptLabel);
+        namePrompt.Children.Add(presetName);
+        namePrompt.Children.Add(confirmBtn);
+        namePrompt.Children.Add(cancelBtn);
+        string? promptMode = null; // "create" | "rename" | null
+
+        void ShowPrompt(string mode, string label, string button)
+        {
+            promptMode = mode;
+            promptLabel.Text = label;
+            confirmBtn.Content = button;
+            namePrompt.Visibility = Visibility.Visible;
+            presetName.Focus();
+        }
+
         void AddRow(string key, string delay)
         {
             var row = new SpamKeyRow();
@@ -1111,13 +1132,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (loading || presetBox.SelectedItem is not string name) return;
             if (name == AddNewMarker)
             {
-                // Snap the picker back to the real preset and open the editor for the new name.
+                // Snap the picker back to the real preset, then open the editor for the new name.
                 loading = true; presetBox.SelectedItem = current; loading = false;
                 editor.Visibility = Visibility.Visible;
                 editButton.Visibility = Visibility.Collapsed;
                 presetName.Text = "";
-                presetName.Focus();
-                status.Text = "Type a name for the new preset, then + New.";
+                ShowPrompt("create", "Create preset:", "Create");
                 return;
             }
             if (name == current) return;
@@ -1127,36 +1147,48 @@ public partial class MainWindow : FluentWindow, IDisposable
             UpdateSummary();
         };
 
-        var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
-        addPreset.Click += (_, _) =>
+        cancelBtn.Click += (_, _) => { namePrompt.Visibility = Visibility.Collapsed; promptMode = null; };
+
+        confirmBtn.Click += (_, _) =>
         {
             var name = presetName.Text.Trim();
             if (name.Length == 0) { status.Text = "Type a name first."; return; }
-            if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-            presets[current] = RowsToKeys();
-            presets[name] = new Dictionary<string, double>();
-            current = name;
-            loading = true; RefreshPresetList(name); loading = false;
-            LoadRows(name);
+            if (promptMode == "create")
+            {
+                if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
+                presets[current] = RowsToKeys();
+                presets[name] = new Dictionary<string, double>();
+                current = name;
+                loading = true; RefreshPresetList(name); loading = false;
+                LoadRows(name);
+                status.Text = $"Added preset '{name}'.";
+            }
+            else if (promptMode == "rename")
+            {
+                if (name == current) { status.Text = "That is already the name."; return; }
+                if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
+                presets[current] = RowsToKeys();
+                var keys = presets[current];
+                presets.Remove(current);
+                presets[name] = keys;
+                var old = current;
+                current = name;
+                loading = true; RefreshPresetList(name); loading = false;
+                status.Text = $"Renamed '{old}' to '{name}'.";
+            }
             presetName.Text = "";
-            status.Text = $"Added preset '{name}'.";
+            namePrompt.Visibility = Visibility.Collapsed;
+            promptMode = null;
+            UpdateSummary();
         };
+
         var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
         renamePreset.Click += (_, _) =>
         {
-            var name = presetName.Text.Trim();
-            if (name.Length == 0) { status.Text = "Type the new name first."; return; }
-            if (name == current) { status.Text = "That is already the name."; return; }
-            if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-            presets[current] = RowsToKeys();
-            var keys = presets[current];
-            presets.Remove(current);
-            presets[name] = keys;
-            var old = current;
-            current = name;
-            loading = true; RefreshPresetList(name); loading = false;
-            presetName.Text = "";
-            status.Text = $"Renamed '{old}' to '{name}'.";
+            editor.Visibility = Visibility.Visible;
+            editButton.Visibility = Visibility.Collapsed;
+            presetName.Text = current;
+            ShowPrompt("rename", "Rename to:", "Rename");
         };
         var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
         delPreset.Click += (_, _) =>
@@ -1178,17 +1210,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
         // the name field. LabeledField gives both rows the same label column.
-        foreach (var b in new[] { addPreset, renamePreset, delPreset })
+        foreach (var b in new[] { renamePreset, delPreset })
             b.Margin = new Thickness(8, 0, 0, 0);
 
         var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
         pickRow.Children.Add(presetBox);
+        pickRow.Children.Add(renamePreset);
         pickRow.Children.Add(delPreset);
-
-        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
-        nameRow.Children.Add(presetName);
-        nameRow.Children.Add(addPreset);
-        nameRow.Children.Add(renamePreset);
 
         panel.Children.Add(Section("Active",
             Hint("Which key set the spammer presses. The keys below are a read-only summary; click Edit " +
@@ -1197,7 +1225,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             keysSummary,
             editButton,
             status));
-        editor.Children.Add(nameRow);
+        editor.Children.Add(namePrompt);
         editor.Children.Add(Section("Keys",
             // Said here as well as in the tab intro: the default preset is all "*0, *1, …" rows, and
             // the one thing a reader needs to know about them is what that star means.
