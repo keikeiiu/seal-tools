@@ -23,6 +23,11 @@ public sealed class LauncherService : IDisposable
     private Task? _toolTask;
     private ToolState? _state;
     private string? _currentId;
+    /// <summary>True while StartToolAsync is between its first line and the tool actually running.</summary>
+    private bool _startInProgress;
+    /// <summary>Set by StopTool when nothing is running yet but a start is in flight, so the start
+    /// bails when it resumes rather than launching a tool the user already asked to stop.</summary>
+    private bool _startCancelled;
     private OcrEngine? _diagnosticOcr;
     private SerialPort? _arduino;
 
@@ -90,7 +95,8 @@ public sealed class LauncherService : IDisposable
 
     /// <summary>Launches a tool (stopping the current one first) and starts it rolling.
     /// Returns false when the Arduino can't be opened, so the caller can tell the user
-    /// instead of the click silently doing nothing.</summary>
+    /// instead of the click silently doing nothing. A second call while a start is already in
+    /// flight returns true without starting anything — see the guard below.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
         if (id is not ("tuner" or "gem" or "spammer" or "holdspace"))
@@ -98,7 +104,28 @@ public sealed class LauncherService : IDisposable
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
 
-        var stopped = StopTool();
+        // One start at a time. ArduinoPortAsync waits out a 2 s boot delay on a cold start, and its
+        // fast path returns an already-open port with no delay at all — so two Start clicks could
+        // both get past StopTool() while it still saw _cts == null. The second would then overwrite
+        // _cts and _toolTask and orphan the first loop, which kept writing to the shared serial port
+        // with no way to stop it while the UI showed the other tool. A click during a start is a
+        // no-op, and reports no error.
+        if (_startInProgress) return true;
+        _startInProgress = true;
+        _startCancelled = false;
+        try
+        {
+            return await StartToolCoreAsync(id);
+        }
+        finally
+        {
+            _startInProgress = false;
+        }
+    }
+
+    private async Task<bool> StartToolCoreAsync(string id)
+    {
+        var stopped = StopTool(fromStart: true);
         if (stopped != null)
         {
             // Wait for the previous tool loop to leave the shared serial port before this one
@@ -108,7 +135,9 @@ public sealed class LauncherService : IDisposable
         }
 
         var ser = await ArduinoPortAsync();
-        if (ser == null)
+        // A Stop clicked while the port was opening has nothing to cancel (no _cts yet), so it set
+        // _startCancelled instead. Honour it rather than starting the tool anyway.
+        if (ser == null || _startCancelled)
         {
             return false;
         }
@@ -150,12 +179,17 @@ public sealed class LauncherService : IDisposable
     /// <summary>Stops the current tool and releases the Arduino COM port. Returns a task that
     /// completes once the tool loop has exited and its CTS is disposed — await it before starting
     /// another tool, since all tools share one serial port. Null when nothing was running.</summary>
-    public Task? StopTool()
+    public Task? StopTool(bool fromStart = false)
     {
         var cts = _cts;
         var task = _toolTask;
         if (cts == null)
         {
+            // Nothing running, but a start may be sitting on the port wait with no tool installed
+            // yet. Flag it so the start bails on resume, instead of launching a tool the user has
+            // already asked to stop. StartToolAsync's own StopTool call passes fromStart: true, or
+            // it would cancel itself here.
+            if (_startInProgress && !fromStart) _startCancelled = true;
             return null;
         }
 
