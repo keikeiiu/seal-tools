@@ -268,10 +268,11 @@ public sealed class SpammerConfig
     /// is never serialized (SaveDefaults writes an explicit shape), so this is not written back.</summary>
     public Dictionary<string, double>? Keys { get; set; }
 
-    /// <summary>The keys of the active preset (empty when it is missing).</summary>
+    /// <summary>The keys of the active preset, empty when that preset is missing. The empty result
+    /// is deliberate: falling back to another preset would press a different rotation, silently and
+    /// with no indication which one. SkillSpammer reports the empty case on the tool card instead.</summary>
     public Dictionary<string, double> ActiveKeys =>
-        Presets.TryGetValue(Active, out var keys) ? keys
-        : Presets.Count > 0 ? Presets.Values.First() : new Dictionary<string, double>();
+        Presets.TryGetValue(Active, out var keys) ? keys : new Dictionary<string, double>();
 }
 
 public sealed class ModelsConfig

@@ -25,6 +25,20 @@ public sealed class SkillSpammer : ToolBase
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
         var cooldowns = _cfg.Spammer.ActiveKeys;
+        if (cooldowns.Count == 0)
+        {
+            // ActiveKeys no longer substitutes another preset, so an empty set means the active one
+            // is missing (or none is configured). Say which, and don't run: pressing some other
+            // rotation silently would be worse than pressing nothing.
+            var msg = _cfg.Spammer.Presets.Count == 0
+                ? "No spammer presets are configured — add one in the Spammer tab."
+                : $"The active preset '{_cfg.Spammer.Active}' was not found — pick one in the Spammer tab.";
+            Console.WriteLine("[!] " + msg);
+            state.Message = msg;
+            state.Running = false;
+            return 0;
+        }
+
         bool running = false;
         int count = 0;
         string current = "";

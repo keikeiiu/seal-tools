@@ -16,20 +16,40 @@ internal static class ConfigValidator
         ValidateObject(c, "", errors);
 
         // Relational checks DataAnnotations can't express declaratively.
+        //
+        // Every value below is read straight off the deserialised config, and YamlDotNet sets a
+        // property to null when its key is present but has no value (`grade_y:`, `grade_area:`).
+        // That beats the field initializer, so each one needs a null check: without them a
+        // hand-edited config crashed with a NullReferenceException here, which defeats the point of
+        // a validator whose whole job is to fail with a descriptive ConfigException first.
         var ocr = c.Tuner.Ocr;
-        var ga = ocr.GradeArea;
-        if (ga.X2 <= ga.X1 || ga.Y2 <= ga.Y1)
-            errors.Add("tuner.ocr.grade_area: x2/y2 must be greater than x1/y1");
-        else if (ga.X1 < 0 || ga.Y1 < 0 || ga.X2 > ocr.Region.Width || ga.Y2 > ocr.Region.Height)
-            errors.Add("tuner.ocr.grade_area must lie inside tuner.ocr.region " +
-                $"(region is {ocr.Region.Width}x{ocr.Region.Height})");
+        if (ocr == null)
+        {
+            errors.Add("tuner.ocr: missing — the tuner needs its OCR geometry (run Calibrate Tuner)");
+        }
+        else
+        {
+            var ga = ocr.GradeArea;
+            var region = ocr.Region;
 
-        // OcrEngine indexes these as [0]/[1]; a short list is an IndexOutOfRange at scan time.
-        RequireBand(errors, "tuner.ocr.grade_y", ocr.GradeY);
-        RequireBand(errors, "tuner.ocr.attr_y", ocr.AttrY);
-        RequireBand(errors, "tuner.ocr.remaining_y", ocr.RemainingY);
-        RequireOptionalBand(errors, "tuner.ocr.attr_x", ocr.AttrX);
-        RequireOptionalBand(errors, "tuner.ocr.remaining_x", ocr.RemainingX);
+            if (ga == null)
+                errors.Add("tuner.ocr.grade_area: missing — needs x1, y1, x2, y2");
+            else if (ga.X2 <= ga.X1 || ga.Y2 <= ga.Y1)
+                errors.Add("tuner.ocr.grade_area: x2/y2 must be greater than x1/y1");
+
+            if (region == null)
+                errors.Add("tuner.ocr.region: missing — needs left, top, width, height");
+            else if (ga != null && (ga.X1 < 0 || ga.Y1 < 0 || ga.X2 > region.Width || ga.Y2 > region.Height))
+                errors.Add("tuner.ocr.grade_area must lie inside tuner.ocr.region " +
+                    $"(region is {region.Width}x{region.Height})");
+
+            // OcrEngine indexes these as [0]/[1]; a short list is an IndexOutOfRange at scan time.
+            RequireBand(errors, "tuner.ocr.grade_y", ocr.GradeY);
+            RequireBand(errors, "tuner.ocr.attr_y", ocr.AttrY);
+            RequireBand(errors, "tuner.ocr.remaining_y", ocr.RemainingY);
+            RequireOptionalBand(errors, "tuner.ocr.attr_x", ocr.AttrX);
+            RequireOptionalBand(errors, "tuner.ocr.remaining_x", ocr.RemainingX);
+        }
 
         if (errors.Count > 0)
             throw new ConfigException(
@@ -69,18 +89,18 @@ internal static class ConfigValidator
     }
 
     // A required band is [top, bottom] (or [left, right]) and must be ordered.
-    private static void RequireBand(List<string> errors, string name, List<int> band)
+    private static void RequireBand(List<string> errors, string name, List<int>? band)
     {
-        if (band.Count < 2)
-            errors.Add($"{name}: needs 2 values; got {band.Count}");
+        if (band is not { Count: >= 2 })
+            errors.Add($"{name}: needs 2 values; got {band?.Count ?? 0}");
         else if (band[1] <= band[0])
             errors.Add($"{name}: the second value must be greater than the first");
     }
 
     // An optional X band may be omitted entirely, but if present it must be a complete pair.
-    private static void RequireOptionalBand(List<string> errors, string name, List<int> band)
+    private static void RequireOptionalBand(List<string> errors, string name, List<int>? band)
     {
-        if (band.Count is 1)
+        if (band is { Count: 1 })
             errors.Add($"{name}: leave it out or give 2 values; got 1");
     }
 

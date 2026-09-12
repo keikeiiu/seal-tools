@@ -379,6 +379,46 @@ public class ConfigLoaderTests
         }
     }
 
+    // ActiveKeys used to fall back to another preset when the active name was missing, so the
+    // spammer would press a different rotation with nothing indicating which. Empty is the safe
+    // answer, and SkillSpammer reports it on the card.
+    [Fact]
+    public void ActiveKeysIsEmptyWhenTheActivePresetIsMissing()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: DoesNotExist\n  presets:\n    Real:\n      '*0': 0.2\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("DoesNotExist", cfg.Spammer.Active);
+            Assert.Empty(cfg.Spammer.ActiveKeys);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // YamlDotNet sets a property to null when its key is present with no value, which beats the
+    // field initializer. The validator promises a descriptive ConfigException first, so it must not
+    // dereference that null and die with a NullReferenceException instead.
+    [Fact]
+    public void LoadRejectsAValueLessBandWithAMessageNotANullReference()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal.Replace("grade_y: [10, 40]", "grade_y:"));
+        try
+        {
+            var ex = Assert.Throws<ConfigException>(() => new ConfigLoader(dir).Load());
+            Assert.Contains("grade_y", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void LoadAttributesParsesDictionary()
     {
