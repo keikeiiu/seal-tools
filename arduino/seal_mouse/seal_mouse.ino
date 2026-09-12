@@ -156,5 +156,12 @@ void loop() {
             int ms = atoi(&buf[1]);
             if (ms > 0 && ms < 10000) delay(ms);
         }
+        // Hold space (auto-pickup): P presses and keeps it held, U releases it.
+        else if (type == 'P') {
+            Keyboard.press(' ');
+        }
+        else if (type == 'U') {
+            Keyboard.release(' ');
+        }
     }
 }
