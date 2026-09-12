@@ -26,8 +26,8 @@ tuner:
   max_retries: 999999
   save_captures: false
   ocr_retries: 3
-  spring_mode: manual
-  mouse_guard: off
+  spring_mode: hid
+  mouse_guard: stop
   guard_px: 8
   recenter_max: 20
   models:

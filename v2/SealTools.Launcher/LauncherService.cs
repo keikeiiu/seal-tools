@@ -173,6 +173,10 @@ public sealed class LauncherService : IDisposable
     /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
     public void SaveConfig() => _loader.SaveDefaults(Config);
 
+    /// <summary>Releases the spacebar directly, independent of the Hold Space tool's loop — so a stop
+    /// click can never leave the key stuck down.</summary>
+    public void ReleaseSpace() { try { _arduino?.Write("U\n"); } catch { } }
+
     /// <summary>Persists machine-specific coordinates (local.yaml) written by the calibrator.</summary>
     public void SaveLocal(ConfigLoader.LocalOverrides local) => _loader.SaveLocal(local);
 

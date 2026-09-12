@@ -156,7 +156,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         HoldSpaceToggle.Click += async (_, _) =>
         {
             if (_service.CurrentId == "holdspace" && _service.CurrentState?.Running == true)
+            {
+                _service.ReleaseSpace();
                 _ = _service.StopTool();
+            }
             else if (!await _service.StartToolAsync("holdspace"))
                 MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
         };
@@ -298,8 +301,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         }
 
-        // Hold Space's single button flips between Hold Space and Stop Space as it runs.
+        // Hold Space's small card (top-right) flips between Hold Space and Stop Space as it runs.
         bool holding = _service.CurrentId == "holdspace" && state?.Running == true;
+        HoldSpaceStatus.Text = holding ? "● holding" : "● idle";
+        HoldSpaceStatus.Foreground = holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
         HoldSpaceToggle.Content = holding ? "Stop Space" : "Hold Space";
         HoldSpaceToggle.Appearance = holding ? ControlAppearance.Danger : ControlAppearance.Secondary;
     }

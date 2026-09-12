@@ -20,14 +20,28 @@
             <StackPanel x:Name="ToolsPanel"/>
             <!-- The configuration tabs are hidden unless you are actually configuring something: the
                  window opens as just the three tool cards, and the chevron reveals the rest. -->
-            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,14,0,0">
-                <ui:Button x:Name="HoldSpaceToggle" Appearance="Secondary" Padding="10,3,12,3"
-                           ToolTip="Hold the spacebar to auto-pick up items"/>
-                <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
-                           ToolTip="Show or hide the configuration tabs"/>
-                <ui:Button x:Name="PinToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
-                           ToolTip="Keep this window above the game so the tool status stays visible while you play"/>
-            </StackPanel>
+            <Grid Grid.Row="1" Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3"
+                               ToolTip="Show or hide the configuration tabs"/>
+                    <ui:Button x:Name="PinToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
+                               ToolTip="Keep this window above the game so the tool status stays visible while you play"/>
+                </StackPanel>
+                <Border Grid.Column="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="12" Padding="10,5,10,5">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="HoldSpaceStatus" Text="● idle" VerticalAlignment="Center"
+                                   FontSize="13" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <ui:Button x:Name="HoldSpaceToggle" Appearance="Secondary" Padding="10,3,12,3"
+                                   ToolTip="Hold the spacebar to auto-pick up items"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
             <TabControl x:Name="ConfigTabs" Grid.Row="2" Margin="0,10,0,0"
                         Visibility="Collapsed"
                         Background="{DynamicResource ApplicationBackgroundBrush}"
