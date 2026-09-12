@@ -74,6 +74,10 @@ public class ConfigLoaderTests
             var before = loader.Load();
             Assert.Equal(3, before.Tuner.OcrRetries);
 
+            // Set a value that differs from the property default, or the assertions below pass even
+            // when the field is missing from the projection — which is how move_mode was lost.
+            before.Gem.MoveMode = "tuned";
+
             loader.SaveDefaults(before);
 
             var after = new ConfigLoader(dir).Load();
@@ -89,6 +93,7 @@ public class ConfigLoaderTests
             Assert.Equal(before.Window.Title, after.Window.Title);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
             // spammer is deliberately NOT in this list — see SaveDefaultsLeavesSpammerPresetsAlone.
+            Assert.Equal("tuned", after.Gem.MoveMode);
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
             Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
             Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);

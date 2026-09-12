@@ -194,7 +194,11 @@ public sealed class ConfigLoader
                 grade_colors = cfg.Tuner.GradeColors,
                 filter = cfg.Tuner.Filter,
             },
-            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
+            // move_mode belongs here (docs/MOVE-SETS.md says the composer's choice is written to
+            // defaults.yaml) but was missing from this list, so every Save silently reset it to the
+            // property default. Same shape as the ocr_retries regression; the round-trip test now
+            // covers it with a non-default value.
+            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures, move_mode = cfg.Gem.MoveMode },
             // spammer is deliberately absent: presets are personal and live in local.yaml. Leaving
             // it here would write the merged in-memory presets back out on every Save Config
             // (tuner, gem, hotkeys all call this), pushing a player's rotations into the file
