@@ -622,14 +622,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         Refresh();
 
-        return new TabItem { Header = "Arduino", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Arduino", panel);
     }
 
     // Display environment: shows what the tools measure for this machine and stores the reference
@@ -754,14 +747,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         ShowStored();
 
-        return new TabItem { Header = "Setup", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Setup", panel);
     }
 
     private TabItem BuildTunerTab()
@@ -893,14 +879,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(save);
         panel.Children.Add(result);
 
-        return new TabItem { Header = "Tuner", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Tuner", panel);
     }
 
     private TabItem BuildGemTab()
@@ -949,14 +928,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(save);
         panel.Children.Add(result);
 
-        return new TabItem { Header = "Gem", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Gem", panel);
     }
 
     // One key + cooldown row in the spammer editor.
@@ -1371,14 +1343,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         loading = false;
         UpdateSummary();
 
-        return new TabItem { Header = "Spammer", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Spammer", panel);
     }
 
     private TabItem BuildAttributesTab()
@@ -1418,14 +1383,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section($"Dictionary · {_service.Attributes.Attributes.Count} attributes", grid));
 
-        return new TabItem { Header = "Attributes", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Attributes", panel);
     }
 
     private TabItem BuildTunerCalibrateTab()
@@ -1483,14 +1441,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(Section("Result", hint));
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Calibrate Tuner", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Calibrate Tuner", panel);
     }
 
     private TabItem BuildGemCalibrateTab()
@@ -1838,14 +1789,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(Section("Result", hint));
         panel.Children.Add(save);
 
-        return new TabItem { Header = "Calibrate Gem", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Calibrate Gem", panel);
     }
 
     // Resolve a calibrated point by name, preferring the just-dragged/clicked in-session point
@@ -3346,14 +3290,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(save);
         panel.Children.Add(result);
 
-        return new TabItem { Header = "Hotkeys", Content = new ScrollViewer
-        {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            // Disabled, not Auto: with horizontal scrolling available the content is measured
-            // with infinite width, so hint paragraphs never wrap and get clipped instead.
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        } };
+        return MakeTab("Hotkeys", panel);
     }
 
     private static int ParseVk(string name)
@@ -3472,6 +3409,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         bar.IsOpen = true;
     }
+
+    /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
+    /// copied verbatim into nine Build*Tab methods, which is why the horizontal-scroll fix below had
+    /// to be made nine times.</summary>
+    private static TabItem MakeTab(string header, Panel panel) =>
+        new()
+        {
+            Header = header,
+            Content = new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                // Disabled, not Auto: with horizontal scrolling available the content is measured
+                // with infinite width, so hint paragraphs never wrap and get clipped instead.
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            },
+        };
 
     private static UiButton MakeButton(string text, ControlAppearance appearance) =>
         new()
