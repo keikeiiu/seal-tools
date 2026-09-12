@@ -3174,6 +3174,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             await WithLauncherHiddenAsync(() =>
             {
                 using var shot = ScreenCapture.CaptureScreen(client);
+                if (shot == null)
+                    throw new InvalidOperationException(
+                        "the screen grab returned nothing (locked session, or a client area with no size)");
                 shot.ImWrite(Path.Combine(dir, "diag_capture.png"));
                 return true;
             });
