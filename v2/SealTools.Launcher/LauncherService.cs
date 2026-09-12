@@ -126,9 +126,22 @@ public sealed class LauncherService : IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[!] {id} crashed: {ex.Message}");
-                try { File.AppendAllText(Path.Combine(_rootDir, "logs", "error.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}: {ex}\n\n"); } catch { }
+                // The tool card is the only place the user can see this — the published WinExe has no
+                // console — so the reason goes on the state, not just the log. Without it a crashed
+                // tool rendered as "paused" with no explanation.
+                state.Message = $"{id} stopped: {ex.Message}";
                 state.Running = false;
+                Console.WriteLine($"[!] {id} crashed: {ex}");
+                try
+                {
+                    var logDir = Path.Combine(_rootDir, "logs");
+                    // Create it here: nothing else makes this directory that early, so a crash before
+                    // the first capture or calibration used to fail the append and record nothing.
+                    Directory.CreateDirectory(logDir);
+                    File.AppendAllText(Path.Combine(logDir, "error.log"),
+                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}: {ex}\n\n");
+                }
+                catch { /* the card message above is the part that matters */ }
             }
         });
         return true;

@@ -1189,7 +1189,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             UpdateSummary();
         };
 
-        cancelBtn.Click += (_, _) => { namePrompt.Visibility = Visibility.Collapsed; promptMode = null; };
+        // Closing the prompt also restores the Edit/Done button. Rename hides it while the prompt is
+        // open, and nothing put it back — so after a single rename the editor could never be
+        // collapsed again, and if it was already collapsed it could not be reopened at all.
+        void ClosePrompt()
+        {
+            namePrompt.Visibility = Visibility.Collapsed;
+            promptMode = null;
+            editButton.Visibility = Visibility.Visible;
+        }
+
+        cancelBtn.Click += (_, _) => ClosePrompt();
 
         confirmBtn.Click += (_, _) =>
         {
@@ -1219,8 +1229,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 status.Text = $"Renamed '{old}' to '{name}'.";
             }
             presetName.Text = "";
-            namePrompt.Visibility = Visibility.Collapsed;
-            promptMode = null;
+            ClosePrompt();
             UpdateSummary();
         };
 
@@ -1228,6 +1237,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         renamePreset.Click += (_, _) =>
         {
             editor.Visibility = Visibility.Visible;
+            // The editor is open, so the button reads Done — matching the "＋ Add new…" path. It is
+            // hidden only while the name prompt is up, and ClosePrompt brings it back.
+            editButton.Content = "Done";
             editButton.Visibility = Visibility.Collapsed;
             presetName.Text = current;
             ShowPrompt("rename", "Rename to:", "Rename");
