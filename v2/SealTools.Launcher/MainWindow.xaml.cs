@@ -978,38 +978,61 @@ public partial class MainWindow : FluentWindow, IDisposable
             : presets.Keys.First();
 
         // Read-only summary of the active preset's keys, shown on the Active card so the editor
-        // only has to appear while you're actually changing something.
-        var keysSummary = new TextBlock
-        {
-            Foreground = Res("TextFillColorPrimaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 6),
-        };
+        // only has to appear while you're actually changing something. Each key is a small pill.
+        var keysSummary = new WrapPanel { Margin = new Thickness(0, 14, 0, 6) };
 
         void UpdateSummary()
         {
+            keysSummary.Children.Clear();
             if (!presets.TryGetValue(current, out var keys) || keys.Count == 0)
             {
-                keysSummary.Text = "(no keys)";
+                keysSummary.Children.Add(new TextBlock { Text = "(no keys)", Foreground = Res("TextFillColorSecondaryBrush") });
                 return;
             }
-            keysSummary.Text = string.Join("   ", keys.Select(kv =>
-                $"{kv.Key.TrimStart('*')} · {kv.Value:g}s" + (kv.Key.StartsWith('*') ? " fast" : "")));
+            foreach (var kv in keys)
+            {
+                bool fast = kv.Key.StartsWith('*');
+                var key = kv.Key.TrimStart('*');
+                var keycap = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    BorderBrush = Res("TextFillColorSecondaryBrush"),
+                    BorderThickness = new Thickness(1),
+                    MinWidth = 34,
+                    MinHeight = 30,
+                    Padding = new Thickness(6, 2, 6, 2),
+                    Child = new TextBlock
+                    {
+                        Text = key,
+                        Foreground = Res("TextFillColorPrimaryBrush"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        FontSize = 14,
+                    },
+                };
+                var cd = new TextBlock
+                {
+                    Text = $"{kv.Value:g}s" + (fast ? " ⚡" : ""),
+                    Foreground = Res("TextFillColorSecondaryBrush"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    FontSize = 11,
+                    Margin = new Thickness(0, 2, 0, 0),
+                };
+                var tile = new StackPanel { Margin = new Thickness(0, 0, 10, 6) };
+                tile.Children.Add(keycap);
+                tile.Children.Add(cd);
+                keysSummary.Children.Add(tile);
+            }
         }
 
         var editButton = MakeButton("Edit", ControlAppearance.Secondary);
-        var doneButton = MakeButton("Done", ControlAppearance.Secondary);
         var editor = new StackPanel { Visibility = Visibility.Collapsed };
         editButton.Click += (_, _) =>
         {
-            editor.Visibility = Visibility.Visible;
-            editButton.Visibility = Visibility.Collapsed;
-        };
-        doneButton.Click += (_, _) =>
-        {
-            editor.Visibility = Visibility.Collapsed;
-            editButton.Visibility = Visibility.Visible;
-            UpdateSummary();
+            bool nowEditing = editor.Visibility != Visibility.Visible;
+            editor.Visibility = nowEditing ? Visibility.Visible : Visibility.Collapsed;
+            editButton.Content = nowEditing ? "Done" : "Edit";
+            if (!nowEditing) UpdateSummary();
         };
 
         var rows = new List<SpamKeyRow>();
@@ -1135,7 +1158,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Snap the picker back to the real preset, then open the editor for the new name.
                 loading = true; presetBox.SelectedItem = current; loading = false;
                 editor.Visibility = Visibility.Visible;
-                editButton.Visibility = Visibility.Collapsed;
+                editButton.Content = "Done";
                 presetName.Text = "";
                 ShowPrompt("create", "Create preset:", "Create");
                 return;
@@ -1194,11 +1217,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         delPreset.Click += (_, _) =>
         {
             if (presets.Count <= 1) { status.Text = "The last preset cannot be deleted."; return; }
+            var confirm = MessageBox.Show(
+                $"Delete preset '{current}' and its keys?",
+                "Delete preset",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
             var gone = current;
             presets.Remove(current);
             current = presets.Keys.First();
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
+            UpdateSummary();
             status.Text = $"Deleted preset '{gone}'.";
         };
         foreach (var kv in presets[current])
@@ -1303,12 +1333,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             result.IsOpen = true;
             UpdateSummary();
         };
-        doneButton.Margin = new Thickness(8, 0, 0, 0);
-        var saveRow = new StackPanel { Orientation = Orientation.Horizontal };
-        saveRow.Children.Add(save);
-        saveRow.Children.Add(doneButton);
-        editor.Children.Add(saveRow);
-        editor.Children.Add(result);
+        panel.Children.Add(save);
+        panel.Children.Add(result);
         panel.Children.Add(editor);
 
         loading = true;
