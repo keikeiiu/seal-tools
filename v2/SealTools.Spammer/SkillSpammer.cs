@@ -85,19 +85,43 @@ public sealed class SkillSpammer : ToolBase
 
                 if (!running) continue;
 
+                bool disconnected = false;
                 double now = sw.Elapsed.TotalSeconds;
                 foreach (var (k, cd) in cooldowns)
                 {
                     if (now - last[k] >= cd)
                     {
                         current = k;
-                        SendKey(ser, k, state);
-                        last[k] = now;
+                        last[k] = now; // advance the cooldown either way, so an unusable key isn't retried every tick
+
+                        bool sent;
+                        try
+                        {
+                            sent = SendKey(ser, k, state);
+                        }
+                        catch (Exception ex)
+                        {
+                            // The port is gone — unplugged, or the handle died. Nothing this tool does
+                            // means anything now, so stop with a reason on the card rather than let the
+                            // exception unwind to the launcher's generic handler.
+                            state.Message = $"Arduino disconnected — stopped ({ex.Message})";
+                            running = false;
+                            state.Running = false;
+                            disconnected = true;
+                            break;
+                        }
+
+                        // Only count a press that actually went out. SendKey bails on a key the
+                        // firmware cannot send, and counting it made the card report a rising Cycle
+                        // and a changing Current while nothing was being pressed at all.
+                        if (!sent) continue;
+
                         count++;
                         state.Current = k;
                         state.Cycle = count;
                     }
                 }
+                if (disconnected) break;
                 if (PauseRequested)
                 {
                     Console.WriteLine("[PAUSE] graceful stop");
@@ -118,7 +142,10 @@ public sealed class SkillSpammer : ToolBase
 
     private static readonly HashSet<string> WarnedKeys = new();
 
-    private static void SendKey(SerialPort ser, string key, ToolState state)
+    /// <summary>Sends one key press. False when the key can't be sent at all — the caller must not
+    /// count that as a press. A serial write failure is deliberately left to throw, so the caller
+    /// stops the tool with a reason instead of pretending the press happened.</summary>
+    private static bool SendKey(SerialPort ser, string key, ToolState state)
     {
         bool fast = key.StartsWith('*');
         if (fast) key = key.Substring(1);
@@ -129,7 +156,7 @@ public sealed class SkillSpammer : ToolBase
             if (!int.TryParse(key.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var f) || f is < 1 or > 10)
             {
                 WarnUnsupported(key, state);
-                return;
+                return false;
             }
             cmd = (fast ? "f " : "F ") + f + "\n";
         }
@@ -140,9 +167,10 @@ public sealed class SkillSpammer : ToolBase
         else
         {
             WarnUnsupported(key, state);
-            return;
+            return false;
         }
         ser.Write(cmd);
+        return true;
     }
 
     // The Arduino firmware's K/k handler parses a digit (0–9) and its F handler supports F1–F10

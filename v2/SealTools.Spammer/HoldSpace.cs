@@ -25,8 +25,11 @@ public sealed class HoldSpace : ToolBase
         bool running = false;
         bool f12Was = Hotkeys.IsDown(_hotkeys.Start);
 
-        void Hold() { try { ser.Write("P\n"); } catch (Exception) { } }
-        void Release() { try { ser.Write("U\n"); } catch (Exception) { } }
+        // A failed release is the dangerous case: the host would be left with the spacebar down, and
+        // swallowing the error meant nobody was told. Both report on the tool card; the release
+        // message also says what to do about it.
+        void Hold() { try { ser.Write("P\n"); } catch (Exception ex) { state.Message = $"Could not hold the spacebar: {ex.Message}"; } }
+        void Release() { try { ser.Write("U\n"); } catch (Exception ex) { state.Message = $"Could not release the spacebar — tap it once in game ({ex.Message})"; } }
 
         try
         {
