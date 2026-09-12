@@ -117,6 +117,17 @@ public sealed class ConfigLoader
         if (local.Gem?.EmptySignature != null) defaults.Gem.EmptySignature = local.Gem.EmptySignature;
         if (local.Gem?.EmptyDistance != null) defaults.Gem.EmptyDistance = local.Gem.EmptyDistance.Value;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
+
+        // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
+        // calibration — not in the portable defaults.yaml that publish.bat ships. Merged per preset
+        // name rather than wholesale, so a preset added by hand to defaults.yaml would survive.
+        if (local.Spammer != null)
+        {
+            if (!string.IsNullOrEmpty(local.Spammer.Active)) defaults.Spammer.Active = local.Spammer.Active;
+            if (local.Spammer.Presets != null)
+                foreach (var (name, keys) in local.Spammer.Presets)
+                    defaults.Spammer.Presets[name] = keys;
+        }
     }
 
     // Atomic write so the launcher can save config while tools re-read it.
@@ -156,7 +167,10 @@ public sealed class ConfigLoader
                 filter = cfg.Tuner.Filter,
             },
             gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures },
-            spammer = new { active = cfg.Spammer.Active, presets = cfg.Spammer.Presets },
+            // spammer is deliberately absent: presets are personal and live in local.yaml. Leaving
+            // it here would write the merged in-memory presets back out on every Save Config
+            // (tuner, gem, hotkeys all call this), pushing a player's rotations into the file
+            // publish.bat ships. The spammer block in defaults.yaml is a static seed, not saved.
         };
 
         var path = PathOf("defaults.yaml");
@@ -174,6 +188,16 @@ public sealed class ConfigLoader
         public LocalGem? Gem { get; set; }
         public LocalArduino? Arduino { get; set; }
         public LocalUi? Ui { get; set; }
+        public LocalSpammer? Spammer { get; set; }
+    }
+
+    /// <summary>The player's own spammer rotations. Personal, not machine-specific, but it lives here
+    /// for the same reason: defaults.yaml is the template that ships, so anything a player edits
+    /// there would be published with the next release.</summary>
+    public sealed class LocalSpammer
+    {
+        public string? Active { get; set; }
+        public Dictionary<string, Dictionary<string, double>>? Presets { get; set; }
     }
 
     /// <summary>Windows-specific launcher state: where the window sits, how big it is when expanded,

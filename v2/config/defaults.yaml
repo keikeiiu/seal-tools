@@ -97,17 +97,6 @@ gem:
   empty_streak: 2
   colored_gap_min: 40
   save_empty_captures: false
-spammer:
-  active: default
-  presets:
-    default:
-      '*0': 0.2
-      '*1': 0.2
-      '*2': 0.2
-      '*3': 0.2
-      '*4': 0.2
-      '*5': 0.2
-      '*6': 0.2
-      '*7': 0.2
-      '*8': 0.2
-      '*9': 0.2
+# No spammer block: presets are the player's own rotations and live in local.yaml, which
+# publish.bat excludes. A block here would be deleted the first time any other tab saves
+# (SaveDefaults rewrites this file from an explicit field list), so it could not be a seed.

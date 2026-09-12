@@ -88,8 +88,7 @@ public class ConfigLoaderTests
             Assert.Equal(before.Tuner.RecenterMax, after.Tuner.RecenterMax);
             Assert.Equal(before.Window.Title, after.Window.Title);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
-            Assert.Equal(before.Spammer.Active, after.Spammer.Active);
-            Assert.Equal(before.Spammer.ActiveKeys, after.Spammer.ActiveKeys);
+            // spammer is deliberately NOT in this list — see SaveDefaultsLeavesSpammerPresetsAlone.
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
             Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
             Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);
@@ -202,10 +201,8 @@ public class ConfigLoaderTests
         try
         {
             var path = Path.Combine(dir, "defaults.yaml");
-            var text = File.ReadAllText(path);
-            var spammerAt = text.IndexOf("spammer:", StringComparison.Ordinal);
-            Assert.True(spammerAt > 0, "defaults.yaml should end with the spammer block");
-            File.WriteAllText(path, text[..spammerAt] + "spammer:\n  keys:\n    '*0': 0.25\n    'F1': 5.0\n");
+            // defaults.yaml has no spammer block any more, so the legacy one is simply appended.
+            File.AppendAllText(path, "spammer:\n  keys:\n    '*0': 0.25\n    'F1': 5.0\n");
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -226,6 +223,94 @@ public class ConfigLoaderTests
         try
         {
             Assert.Throws<ConfigException>(() => new ConfigLoader(dir).Load());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Spammer presets are the player's own rotations, so they live in local.yaml rather than the
+    // template defaults.yaml that publish.bat ships. Every preset comes from there, and `active`
+    // picks which one runs.
+    [Fact]
+    public void LocalYamlSuppliesTheSpammerPresets()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '*0': 0.2\n      F1: 1.5\n" +
+            "    Boss:\n      F2: 9.0\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("Knight0-9", cfg.Spammer.Active);
+            Assert.Equal(0.2, cfg.Spammer.ActiveKeys["*0"]);
+            Assert.Equal(1.5, cfg.Spammer.ActiveKeys["F1"]);
+            Assert.Equal(2, cfg.Spammer.Presets.Count);
+            Assert.True(cfg.Spammer.Presets.ContainsKey("Boss"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // SaveDefaults serialises the MERGED in-memory config and is called by the tuner, gem and
+    // hotkeys tabs. If spammer were in its field list, saving any of those would push the player's
+    // personal rotations into the defaults.yaml that ships.
+    [Fact]
+    public void SaveDefaultsLeavesSpammerPresetsAlone()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Personal\n  presets:\n    Personal:\n      '*0': 0.2\n");
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            Assert.Equal("Personal", cfg.Spammer.Active);
+
+            loader.SaveDefaults(cfg);
+
+            // Assert on the file itself, not a reload: loading merges local.yaml back on top, so a
+            // reloaded Active is "Personal" again by design. The leak this guards against is
+            // "Personal" reaching the shipped defaults.yaml on disk.
+            var written = File.ReadAllText(Path.Combine(dir, "defaults.yaml"));
+            Assert.DoesNotContain("Personal", written);
+            Assert.DoesNotContain("spammer", written);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveLocalPersistsSpammerPresets()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal()!;
+            local.Spammer = new ConfigLoader.LocalSpammer
+            {
+                Active = "Knight0-9",
+                Presets = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, double>>
+                {
+                    ["Knight0-9"] = new System.Collections.Generic.Dictionary<string, double>
+                    {
+                        ["*0"] = 0.2,
+                        ["F1"] = 1.5,
+                    },
+                },
+            };
+            loader.SaveLocal(local);
+
+            var reloaded = new ConfigLoader(dir).Load();
+            Assert.Equal("Knight0-9", reloaded.Spammer.Active);
+            Assert.Equal(1.5, reloaded.Spammer.ActiveKeys["F1"]);
         }
         finally
         {

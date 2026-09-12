@@ -1340,15 +1340,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         var result = new InfoBar { IsOpen = false, IsClosable = true };
-        var save = MakeButton("Save Spammer Config", ControlAppearance.Primary);
+        var save = MakeButton("Save Preset", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             presets[current] = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
             _service.Config.Spammer.Active = current;
-            _service.SaveConfig();
+            // Presets are the player's own rotations, so they go to local.yaml with the calibration.
+            // defaults.yaml is the template publish.bat ships, so a preset saved there would be
+            // published with the next release. The in-memory config is already correct: `presets`
+            // is the same dictionary the spammer tool reads.
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Spammer = new ConfigLoader.LocalSpammer
+            {
+                Active = current,
+                Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
+            };
+            _service.SaveLocal(local);
             result.Severity = InfoBarSeverity.Success;
             result.Title = "Saved";
-            result.Message = $"Preset '{current}' written to defaults.yaml ({presets[current].Count} key(s)).";
+            result.Message = $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).";
             result.IsOpen = true;
             UpdateSummary();
         };

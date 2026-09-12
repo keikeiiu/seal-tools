@@ -9,6 +9,40 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-13 — spammer presets move to local.yaml; Hold Space releases the key on stop
+
+**Spammer presets were being published.** The "Save Spammer Config" button wrote every preset and
+`active` into `defaults.yaml` via `SaveDefaults` — the one file `publish.bat` copies into the public
+zip. So a player's personal rotations shipped with every release; the `Knight0-9` rename sitting in
+the working tree was the symptom, not the cause. Spammer was the last personal setting with no
+`local.yaml` home: calibration, tuner geometry, spring point, gem moves and UI placement all had one,
+but `LocalOverrides` had no `Spammer` field at all.
+
+Fix: `LocalOverrides` gains `LocalSpammer { Active, Presets }`, merged per preset *name* in
+`ApplyOverrides`. The spammer tab now saves through `SaveLocal` (same shape as the tuner tab) and
+says so in its InfoBar; the button is "Save Preset", not "Save Spammer Config".
+
+**The seed had to go, and that decided the design.** `SaveDefaults` rewrites `defaults.yaml` from an
+explicit field list, so removing spammer from that list would silently delete the block the first
+time any *other* tab saved (tuner, gem and hotkeys all call it) — a seed that vanishes on first use
+is worse than none. So `defaults.yaml` now carries no spammer block at all and `local.yaml` is the
+single source of truth; `BuildSpammerTab` already creates an empty `default` preset when none exist,
+so a fresh install still opens on a usable editor.
+
+Guarded by three tests: presets load from `local.yaml`, `SaveDefaults` leaves no preset names in the
+written `defaults.yaml`, and `SaveLocal` round-trips them. The first version of the no-leak test
+asserted on a *reloaded* config and failed — reloading merges `local.yaml` back on top, so `Active`
+is correctly the personal one again. It now reads the file on disk, which is where the leak would be.
+
+**Hold Space could leave the spacebar down** (`d28a63a`). Stop clicked mid-loop skipped the release,
+so the key stayed held. `LauncherService.ReleaseSpace()` writes `U` directly, independent of the
+tool's loop, and the stop path calls it first. The top-right card also gained an idle/holding dot.
+
+**Left open:** `local.yaml` has no spammer block for an existing install until the first Save —
+`LoadLocal` returns it fine, but nothing migrates presets out of a `defaults.yaml` that already has
+them. Worth a one-shot migration if anyone else ever ran this build. The log also has a two-day gap
+before this entry (`1b85c59`, the Hold Space commits, and the composer move set all landed unlogged).
+
 ## 2026-09-11 — two live-testing bugs fixed: grade parsed as G, and the matcher dropping lines
 
 Both found while the user ran the tuner against a real DG item.
