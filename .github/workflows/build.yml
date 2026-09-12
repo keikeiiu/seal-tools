@@ -1,0 +1,33 @@
+name: build
+
+# The launcher is a WPF app (net8.0-windows), so this has to run on Windows — and it is worth
+# running, because the solution builds with TreatWarningsAsErrors and AnalysisMode=Recommended:
+# an unused symbol or an unreachable branch fails the build here rather than on a release.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Restore is separate so a NuGet failure is reported as itself rather than as a compile error.
+      - name: Restore
+        run: dotnet restore v2/SealTools.sln
+
+      - name: Build
+        run: dotnet build v2/SealTools.sln --no-restore --nologo
+
+      # ConfigLoaderTests walks up from the test output directory to find v2/config, which is
+      # committed, so the suite runs on a clean checkout.
+      - name: Test
+        run: dotnet test v2/SealTools.Tests/SealTools.Tests.csproj --no-build --nologo
