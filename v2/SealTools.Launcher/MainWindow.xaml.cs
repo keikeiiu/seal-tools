@@ -997,6 +997,21 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"{kv.Key.TrimStart('*')} · {kv.Value:g}s" + (kv.Key.StartsWith('*') ? " fast" : "")));
         }
 
+        var editButton = MakeButton("Edit", ControlAppearance.Secondary);
+        var doneButton = MakeButton("Done", ControlAppearance.Secondary);
+        var editor = new StackPanel { Visibility = Visibility.Collapsed };
+        editButton.Click += (_, _) =>
+        {
+            editor.Visibility = Visibility.Visible;
+            editButton.Visibility = Visibility.Collapsed;
+        };
+        doneButton.Click += (_, _) =>
+        {
+            editor.Visibility = Visibility.Collapsed;
+            editButton.Visibility = Visibility.Visible;
+            UpdateSummary();
+        };
+
         var rows = new List<SpamKeyRow>();
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
         // noise. One header, then bare boxes lined up underneath it.
@@ -1073,27 +1088,43 @@ public partial class MainWindow : FluentWindow, IDisposable
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
         }
 
+        const string AddNewMarker = "＋ Add new…";
+
         void RefreshPresetList(string select)
         {
-            presetBox.ItemsSource = presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+            var names = presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+            names.Add(AddNewMarker);
+            presetBox.ItemsSource = names;
             presetBox.SelectedItem = select;
         }
-
-        bool loading = false;
-        presetBox.SelectionChanged += (_, _) =>
-        {
-            if (loading || presetBox.SelectedItem is not string name || name == current) return;
-            presets[current] = RowsToKeys(); // keep unsaved edits when switching
-            current = name;
-            LoadRows(name);
-            UpdateSummary();
-        };
 
         var status = new TextBlock
         {
             Foreground = Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        bool loading = false;
+        presetBox.SelectionChanged += (_, _) =>
+        {
+            if (loading || presetBox.SelectedItem is not string name) return;
+            if (name == AddNewMarker)
+            {
+                // Snap the picker back to the real preset and open the editor for the new name.
+                loading = true; presetBox.SelectedItem = current; loading = false;
+                editor.Visibility = Visibility.Visible;
+                editButton.Visibility = Visibility.Collapsed;
+                presetName.Text = "";
+                presetName.Focus();
+                status.Text = "Type a name for the new preset, then + New.";
+                return;
+            }
+            if (name == current) return;
+            presets[current] = RowsToKeys(); // keep unsaved edits when switching
+            current = name;
+            LoadRows(name);
+            UpdateSummary();
         };
 
         var addPreset = MakeButton("+ New", ControlAppearance.Secondary);
@@ -1143,21 +1174,6 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => AddRow("", "0.2");
-
-        var editButton = MakeButton("Edit", ControlAppearance.Secondary);
-        var doneButton = MakeButton("Done", ControlAppearance.Secondary);
-        var editor = new StackPanel { Visibility = Visibility.Collapsed };
-        editButton.Click += (_, _) =>
-        {
-            editor.Visibility = Visibility.Visible;
-            editButton.Visibility = Visibility.Collapsed;
-        };
-        doneButton.Click += (_, _) =>
-        {
-            editor.Visibility = Visibility.Collapsed;
-            editButton.Visibility = Visibility.Visible;
-            UpdateSummary();
-        };
 
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
