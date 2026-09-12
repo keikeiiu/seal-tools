@@ -41,33 +41,61 @@ public sealed class ConfigLoader
                 File.Copy(examplePath, localPath);
         }
 
-        if (File.Exists(localPath))
-        {
-            var local = Deserialize<LocalOverrides>("local.yaml");
-            ApplyOverrides(defaults, local);
-        }
-        else
+        if (!File.Exists(localPath))
         {
             throw new ConfigException(
                 "config/local.yaml not found and config/local.yaml.example is missing, so it cannot be created.");
         }
 
+        var local = Deserialize<LocalOverrides>("local.yaml");
+
+        // Order matters: legacy keys become a preset in memory, adoption copies whatever presets are
+        // left into local.yaml, and only then does local.yaml override the result.
         MigrateSpammerPresets(defaults);
+        AdoptSpammerPresetsIntoLocal(defaults, local);
+        ApplyOverrides(defaults, local);
+
         ConfigValidator.Validate(defaults);
         return defaults;
     }
 
     // A config written before presets existed has a flat `spammer.keys` list. Move it into a preset
     // named "default" so the rest of the app only deals with presets.
+    //
+    // This has to run before ApplyOverrides merges local.yaml in. It used to run after, and then a
+    // local.yaml that supplied any preset at all made Presets.Count non-zero, so a pre-presets
+    // config never converted and its keys were dropped silently.
     private static void MigrateSpammerPresets(AppConfig cfg)
     {
         var sp = cfg.Spammer;
-        if (sp.Presets.Count == 0 && sp.Keys is { Count: > 0 } legacy)
+        if (sp.Presets is not { Count: > 0 } && sp.Keys is { Count: > 0 } legacy)
         {
+            sp.Presets ??= new();
             sp.Presets["default"] = legacy;
             sp.Active = "default";
         }
         sp.Keys = null;
+    }
+
+    // Presets used to be saved into defaults.yaml — the file publish.bat copies into the public zip.
+    // SaveDefaults no longer writes them, so the first Save on ANY other tab (tuner, gem and hotkeys
+    // all call it) rewrites defaults.yaml without a spammer block. On a machine that only ever ran
+    // the older build those presets existed nowhere else, so that Save deleted them outright and the
+    // next launch quietly created a blank "default". Adopt them into local.yaml before that can
+    // happen.
+    //
+    // Runs at most once per install: local.Spammer is non-null afterwards, including on a first run
+    // where local.yaml was just seeded from the example (which carries no spammer block).
+    private void AdoptSpammerPresetsIntoLocal(AppConfig defaults, LocalOverrides local)
+    {
+        if (local.Spammer != null || defaults.Spammer.Presets is not { Count: > 0 }) return;
+
+        local.Spammer = new LocalSpammer
+        {
+            Active = defaults.Spammer.Active,
+            Presets = defaults.Spammer.Presets,
+        };
+        SaveLocal(local);
     }
 
     public AttributesConfig LoadAttributes() => Deserialize<AttributesConfig>("attributes.yaml");

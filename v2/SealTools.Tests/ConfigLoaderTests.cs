@@ -286,6 +286,62 @@ public class ConfigLoaderTests
         }
     }
 
+    // Presets used to live in defaults.yaml. SaveDefaults no longer writes them, so the first Save
+    // on any other tab rewrites that file without a spammer block — and on a machine that only ever
+    // ran the older build, that deleted the player's only copy. Load() adopts them into local.yaml
+    // first. The SaveDefaults + reload at the end is the assertion that actually catches the loss.
+    [Fact]
+    public void LoadAdoptsSpammerPresetsLeftInDefaultsIntoLocalYaml()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            File.AppendAllText(Path.Combine(dir, "defaults.yaml"),
+                "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '*0': 0.2\n");
+
+            var cfg = new ConfigLoader(dir).Load();
+            Assert.Equal("Knight0-9", cfg.Spammer.Active);
+            Assert.Equal(0.2, cfg.Spammer.ActiveKeys["*0"]);
+
+            var adopted = new ConfigLoader(dir).LoadLocal()!;
+            Assert.NotNull(adopted.Spammer);
+            Assert.Equal("Knight0-9", adopted.Spammer!.Active);
+            Assert.Equal(0.2, adopted.Spammer.Presets!["Knight0-9"]["*0"]);
+
+            new ConfigLoader(dir).SaveDefaults(cfg);
+            var reloaded = new ConfigLoader(dir).Load();
+            Assert.Equal("Knight0-9", reloaded.Spammer.Active);
+            Assert.Equal(0.2, reloaded.Spammer.ActiveKeys["*0"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // The legacy flat-keys migration has to run before adoption reads the preset set. After the
+    // merge it used to see Count != 0 whenever local.yaml supplied a preset and skip, dropping the
+    // keys silently; before it, they become a preset and reach local.yaml.
+    [Fact]
+    public void LegacyFlatKeysReachLocalYamlThroughAdoption()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            File.AppendAllText(Path.Combine(dir, "defaults.yaml"), "spammer:\n  keys:\n    '*0': 0.25\n");
+
+            var cfg = new ConfigLoader(dir).Load();
+            Assert.Equal(0.25, cfg.Spammer.ActiveKeys["*0"]);
+
+            var adopted = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(0.25, adopted.Spammer!.Presets!["default"]["*0"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void SaveLocalPersistsSpammerPresets()
     {

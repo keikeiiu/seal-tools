@@ -9,6 +9,37 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-13 (2) — presets left in defaults.yaml are adopted into local.yaml, not deleted
+
+Follow-up to the entry below, which fixed the leak but opened a data-loss path. On a machine that
+only ever ran the older build the presets lived in `defaults.yaml` alone. The first Save on *any*
+tab rewrites that file without a spammer block (tuner, gem and hotkeys all call `SaveDefaults`), so
+that Save deleted the player's only copy, and the next launch found no presets and quietly created a
+blank `default`. The entry below called these presets "stranded" — they were deleted on first save.
+
+`Load()` now adopts them before anything can rewrite the file. `AdoptSpammerPresetsIntoLocal` fires
+when `local.Spammer` is null and `defaults.yaml` still carries presets, writes them through
+`SaveLocal`, and never fires again because `local.Spammer` is set afterwards. A first run seeded from
+`local.yaml.example` carries no spammer block, so it does not fire there either.
+
+**`MigrateSpammerPresets` had to move above `ApplyOverrides`, and that is a fix in its own right.**
+It converts a pre-presets flat `spammer.keys` list into a preset named `default`. Running after the
+merge, it saw `Presets.Count != 0` whenever `local.yaml` supplied any preset at all, skipped the
+conversion, and the legacy keys were dropped without a word. Before the merge they become a preset,
+are adopted, and survive in `local.yaml`. Both `Presets` reads now use `is { Count: > 0 }`: an
+explicitly empty `presets:` key deserialises to null and `.Count` threw.
+
+Tests: `LoadAdoptsSpammerPresetsLeftInDefaultsIntoLocalYaml` checks the presets reach `local.yaml`
+and survive a `SaveDefaults` + reload — the assertion that actually catches the loss —
+and `LegacyFlatKeysReachLocalYamlThroughAdoption` covers the ordering. Both were verified to fail
+against a deliberately inverted adoption guard, so neither passes vacuously.
+
+**Left open.** `defaults.yaml` keeps its stale block until the next Save, so on an affected machine
+a preset deleted in the UI would resurrect once from it before the block goes. Self-healing after
+one Save; stripping it during `Load()` would mean rewriting `defaults.yaml` (reformatting, losing
+its comments) on every affected machine. Also unguarded: `publish.bat` public mode does not check
+that `defaults.yaml` is free of a `spammer:` block before shipping it.
+
 ## 2026-09-13 — spammer presets move to local.yaml; Hold Space releases the key on stop
 
 **Spammer presets were being published.** The "Save Spammer Config" button wrote every preset and
@@ -38,10 +69,9 @@ is correctly the personal one again. It now reads the file on disk, which is whe
 so the key stayed held. `LauncherService.ReleaseSpace()` writes `U` directly, independent of the
 tool's loop, and the stop path calls it first. The top-right card also gained an idle/holding dot.
 
-**Left open:** `local.yaml` has no spammer block for an existing install until the first Save —
-`LoadLocal` returns it fine, but nothing migrates presets out of a `defaults.yaml` that already has
-them. Worth a one-shot migration if anyone else ever ran this build. The log also has a two-day gap
-before this entry (`1b85c59`, the Hold Space commits, and the composer move set all landed unlogged).
+**Left open:** the log has a two-day gap before this entry (`1b85c59`, the Hold Space commits, and
+the composer move set all landed unlogged). The preset migration this entry flagged turned out to be
+a data-loss bug rather than a tidiness one — see the entry above.
 
 ## 2026-09-11 — two live-testing bugs fixed: grade parsed as G, and the matcher dropping lines
 
