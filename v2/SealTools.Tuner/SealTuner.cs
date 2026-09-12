@@ -168,6 +168,18 @@ public sealed class SealTuner : ToolBase
                 runTxt.WriteLine($"{attempt:000} {grade ?? "?"} {(remaining.HasValue ? remaining.Value.ToString(CultureInfo.InvariantCulture) : "?")} | " +
                     string.Join(" | ", matched.Select(m => $"{m.Name}={m.Value}")));
 
+                // A scan that recognised nothing at all is a failure, not a result to compare. Stop
+                // rather than let it into the repeat counter: a total failure produces exactly the
+                // empty signature prevSig starts as, so it would otherwise count as the first repeat
+                // and trip "same result x3" after only two failed reads.
+                if (grade == null && remaining == null && matched.Count == 0)
+                {
+                    Console.WriteLine(">>> READ FAILED — grade, remaining and attributes were all empty <<<");
+                    state.Message = "Read failed — nothing recognised in the OCR region.";
+                    running = false; state.Running = false;
+                    break;
+                }
+
                 var sig = (grade, remaining, string.Join("|", matched.Select(m => m.Name + "=" + m.Value)));
                 if (sig == prevSig) consecutiveRepeats++;
                 else consecutiveRepeats = 0;
@@ -203,7 +215,11 @@ public sealed class SealTuner : ToolBase
                     BeepMany();
                     break;
                 }
-                else if (requireGrade == null && filterPass)
+                // filterPass is forced true when the filter is off (CheckFilter returns
+                // Passed/": filter disabled"), so without the Enabled guard this branch stopped the
+                // run on the first item of ANY grade — below target_grade — and reported it as a
+                // filter match that was never evaluated.
+                else if (filter.Enabled && requireGrade == null && filterPass)
                 {
                     Console.WriteLine($">>> FILTER MATCHED at grade {grade} (no grade requirement) <<<");
                     running = false; state.Running = false;
