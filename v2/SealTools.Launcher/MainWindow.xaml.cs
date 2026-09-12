@@ -977,6 +977,26 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? _service.Config.Spammer.Active
             : presets.Keys.First();
 
+        // Read-only summary of the active preset's keys, shown on the Active card so the editor
+        // only has to appear while you're actually changing something.
+        var keysSummary = new TextBlock
+        {
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 6, 0, 6),
+        };
+
+        void UpdateSummary()
+        {
+            if (!presets.TryGetValue(current, out var keys) || keys.Count == 0)
+            {
+                keysSummary.Text = "(no keys)";
+                return;
+            }
+            keysSummary.Text = string.Join("   ", keys.Select(kv =>
+                $"{kv.Key.TrimStart('*')} · {kv.Value:g}s" + (kv.Key.StartsWith('*') ? " fast" : "")));
+        }
+
         var rows = new List<SpamKeyRow>();
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
         // noise. One header, then bare boxes lined up underneath it.
@@ -1066,6 +1086,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             presets[current] = RowsToKeys(); // keep unsaved edits when switching
             current = name;
             LoadRows(name);
+            UpdateSummary();
         };
 
         var status = new TextBlock
@@ -1123,6 +1144,21 @@ public partial class MainWindow : FluentWindow, IDisposable
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => AddRow("", "0.2");
 
+        var editButton = MakeButton("Edit", ControlAppearance.Secondary);
+        var doneButton = MakeButton("Done", ControlAppearance.Secondary);
+        var editor = new StackPanel { Visibility = Visibility.Collapsed };
+        editButton.Click += (_, _) =>
+        {
+            editor.Visibility = Visibility.Visible;
+            editButton.Visibility = Visibility.Collapsed;
+        };
+        doneButton.Click += (_, _) =>
+        {
+            editor.Visibility = Visibility.Collapsed;
+            editButton.Visibility = Visibility.Visible;
+            UpdateSummary();
+        };
+
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
         // the name field. LabeledField gives both rows the same label column.
@@ -1138,13 +1174,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         nameRow.Children.Add(addPreset);
         nameRow.Children.Add(renamePreset);
 
-        panel.Children.Add(Section("Preset",
-            Hint("Which key set the spammer presses. Type a name below, then + New makes a preset with " +
-                 "it or Rename moves the current one to it; the last preset can't be deleted."),
+        panel.Children.Add(Section("Active",
+            Hint("Which key set the spammer presses. The keys below are a read-only summary; click Edit " +
+                 "to change them. Switching the preset is not saved until Save Spammer Config."),
             LabeledField("Preset", pickRow),
-            LabeledField("Name", nameRow),
+            keysSummary,
+            editButton,
             status));
-        panel.Children.Add(Section("Keys",
+        editor.Children.Add(nameRow);
+        editor.Children.Add(Section("Keys",
             // Said here as well as in the tab intro: the default preset is all "*0, *1, …" rows, and
             // the one thing a reader needs to know about them is what that star means.
             Hint("* is a fast tap — the key is held about 10 ms instead of the normal 30–80 ms. " +
@@ -1192,7 +1230,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
         rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
-        panel.Children.Add(Section("Advanced",
+        editor.Children.Add(Section("Advanced",
             Hint("The same data as raw key:seconds lines, for setups the rows above can't express. " +
                  "Tick the box to edit it; unticking rebuilds the rows from your text."),
             advanced, rawPanel));
@@ -1219,13 +1257,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             result.Title = "Saved";
             result.Message = $"Preset '{current}' written to defaults.yaml ({presets[current].Count} key(s)).";
             result.IsOpen = true;
+            UpdateSummary();
         };
-        panel.Children.Add(save);
-        panel.Children.Add(result);
+        doneButton.Margin = new Thickness(8, 0, 0, 0);
+        var saveRow = new StackPanel { Orientation = Orientation.Horizontal };
+        saveRow.Children.Add(save);
+        saveRow.Children.Add(doneButton);
+        editor.Children.Add(saveRow);
+        editor.Children.Add(result);
+        panel.Children.Add(editor);
 
         loading = true;
         RefreshPresetList(current);
         loading = false;
+        UpdateSummary();
 
         return new TabItem { Header = "Spammer", Content = new ScrollViewer
         {
