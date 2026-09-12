@@ -15,6 +15,13 @@ public sealed record ArduinoDevice(string Port, string PnpId, string Name, bool 
 public static class Arduino
 {
     // Find by USB VID/PID via WMI (equivalent to Python serial.tools.list_ports.comports).
+    //
+    // Deliberately NOT implemented on top of Diagnose, even though both format the VID/PID hex and
+    // run the same WMI query and Diagnose already computes the flag this wants. This one falls back
+    // to matching a port whose device NAME mentions Arduino when the VID/PID lookup finds nothing;
+    // Diagnose has no such fallback. Rewriting this as Diagnose(...).FirstOrDefault(d => d.IsMatch)
+    // would silently delete that fallback — the case it exists for is precisely a machine whose
+    // VID/PID is not being reported correctly, which is when you least want to lose it.
     public static string? Find(int vid, IEnumerable<int> pids)
     {
         var vidHex = vid.ToString("X4", CultureInfo.InvariantCulture);

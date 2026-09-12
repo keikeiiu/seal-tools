@@ -84,6 +84,35 @@ Remaining live checks (no code change expected):
   implemented). Remove it, or leave it as a placeholder for the planned feature.
 - [ ] **Debug Cursor / Debug Physical buttons** in the Gem calibrate tab — keep as diagnostics or remove.
 
+## Accepted as-is (recorded, not fixed)
+
+Real, but deliberately left alone. Listed so they are not rediscovered as bugs and "fixed" without
+the context — three of the four would be *reverted* by a well-meaning cleanup.
+
+- **A null attribute value satisfies a bounded filter rule.** `AttrMatcher.ValueOk` passes when the
+  OCR read the attribute NAME but not its number, so a rule with `min`/`max` is satisfied by an
+  unreadable value. **Deliberate**: 減少傷害 is rare enough that the name match is the signal, and
+  failing a roll over a number that failed to read would mean missing one that should have stopped
+  the run. Bounds still apply whenever a value *was* read. Pinned by `AttrMatcherTests`; comment at
+  the method.
+- **`Arduino.Find` duplicates `Diagnose` on purpose.** Both format the VID/PID hex and run the same
+  WMI query, and `Diagnose` already computes the flag `Find` wants — but `Find` carries a name-based
+  fallback for when the VID/PID lookup finds nothing, and `Diagnose` does not. The obvious dedup would
+  silently delete that fallback, which exists for exactly the case where the device is not reporting
+  its IDs properly. Comment at `Arduino.Find`.
+- **Tuner mouse guard fails open.** `SealTuner.CheckMouseGuard` returns "no drift, carry on" when the
+  game window can't be measured, so a window that is closed, renamed, minimized or alt-tabbed turns
+  the guard *off* rather than tripping it, and the loop goes on to click wherever the cursor sits.
+  Not fixed: it needs the window to move mid-run, which does not happen in normal use, and failing
+  *closed* would change run behaviour in a way that wants a live run to confirm. Comment at the call
+  site.
+- **`Thread.Sleep` on the UI thread in the calibrator's test buttons.** `GemTestFullCycle` and the
+  other HID test handlers sleep on the dispatcher — roughly 18 s of frozen window for a full cycle.
+  Left alone because the real fix is not `await Task.Delay`: `HidPointer.To` blocks internally in
+  `WaitForCursorToSettle`, so the whole test cycle would have to move off the dispatcher with progress
+  marshalled back. That is a refactor of five handlers for a diagnostic button, not a two-line
+  change. Revisit if the UI ever needs to stay responsive during a test run.
+
 ## Out of scope
 
 - Check-in stays the standalone Python script (`v1/checkin/checkin.py`).

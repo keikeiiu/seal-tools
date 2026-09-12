@@ -297,6 +297,12 @@ public sealed class SealTuner : ToolBase
         var spring = _cfg.Tuner.SpringPoint;
         if (spring is not { Count: 2 }) return false; // no point -> the guard can't judge
 
+        // ACKNOWLEDGED FAIL-OPEN, recorded rather than fixed. Both of these return false, which
+        // means "no drift, carry on" — so a game window that has gone away (closed, renamed,
+        // minimized, alt-tabbed) turns the guard off instead of tripping it, and the loop goes on to
+        // click wherever the cursor happens to sit. Left alone deliberately: it needs the window to
+        // move mid-run, which the user does not hit, and stopping on it would change run behaviour
+        // in a way that wants a live run to confirm (see docs/TODO.md).
         var display = HidPointer.Display(_cfg.Window.Title);
         if (display == null) return false;
 

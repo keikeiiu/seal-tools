@@ -116,7 +116,7 @@ skipped and reported as a `⚠` on the tool card.
 | Key rows | One row per key under the **Key** / **Delay (s)** / **Fast** headings; `✕` removes it. |
 | **+ Add Key** | Adds an empty row. |
 | **Advanced** | Reveals the raw `key:seconds` list for the current preset (a `*` prefix there still means a fast tap). Ticking it fills the text from the rows; unticking rebuilds the rows. |
-| **Save Spammer Config** | Writes the active preset and all presets to `defaults.yaml`. |
+| **Save Preset** | Writes the active preset and all presets to `local.yaml`. Presets are yours, so they stay out of the `defaults.yaml` that `publish.bat` ships — see [CONFIG.md](CONFIG.md). |
 
 ## Attributes tab
 

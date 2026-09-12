@@ -99,7 +99,7 @@ Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
 
 ## Spammer 分頁
 
-Skill Spammer 的按鍵輪替設定。儲存到 `config/defaults.yaml`。
+Skill Spammer 的按鍵輪替設定。儲存到 `config/local.yaml`（屬於個人設定，不會進到 `publish.bat` 發佈的 `defaults.yaml`；詳見 [CONFIG.md](CONFIG.md)）。
 
 Arduino 支援數字 **0–9** 與 **F1–F10**；在鍵前面加 `*` 表示快速按住。其他按鍵會被忽略，並在工具卡片上
 顯示 `⚠`。
@@ -113,7 +113,7 @@ Arduino 支援數字 **0–9** 與 **F1–F10**；在鍵前面加 `*` 表示快�
 | 按鍵列 | 每個按鍵一列，欄位標題為 **Key** / **Delay (s)**；`✕` 可移除。 |
 | **+ Add Key** | 新增一個空白列。 |
 | **Advanced** | 顯示目前組合的原始 `key:seconds` 清單。勾選時會把列內容填入文字框；取消勾選時會用文字框內容重建列。 |
-| **Save Spammer Config** | 儲存目前組合，並將它設為使用中的組合。 |
+| **Save Preset** | 儲存目前組合，並將它設為使用中的組合（寫入 `local.yaml`）。 |
 
 ## Attributes 分頁
 

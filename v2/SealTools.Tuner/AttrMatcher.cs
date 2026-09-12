@@ -307,6 +307,11 @@ public sealed class AttrMatcher
         return n;
     }
 
+    // A null value — the OCR read the attribute NAME but not its number — DELIBERATELY satisfies the
+    // bounds. For a rare attribute like 減少傷害 the name match is the signal, and disqualifying a
+    // roll over a number that failed to read would mean missing one that should have stopped the run.
+    // The bounds do apply whenever a value was actually read. Intentional, pinned by
+    // AttrMatcherTests.AnUnreadableValueStillSatisfiesABoundedRule — not a bug to "fix".
     private static bool ValueOk(int? value, FilterRule rule)
     {
         if (rule.Min != null && value != null && value < rule.Min) return false;

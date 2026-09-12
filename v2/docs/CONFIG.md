@@ -18,6 +18,7 @@ Settings that are **the same on every machine and every user**. This file is che
   - `gem.start_grade`
   - `gem.empty_mode` — `"stop"` | `"advance_grade"` | `"advance_grade_clear"`
   - `gem.empty_streak` — consecutive empties before acting
+  - `gem.move_mode` — `"tuned"` | `"arduino"`, which move set the composer uses (see MOVE-SETS.md)
 
 ### 2. `config/local.yaml` — machine-specific (gitignored)
 
@@ -30,6 +31,9 @@ overlay created from `local.yaml.example`).
 - `gem.empty_signature` — the sampled empty-box colour (filled by the calibrator)
 - `gem.empty_distance` — colour-distance threshold tuned against the empty signature
 - `arduino.port` (optional override)
+- `spammer.active` + `spammer.presets.*` — **your own** key rotations. Not machine-specific, but
+  personal: `defaults.yaml` is the file `publish.bat public` copies into the release, so a preset
+  written there would ship with the next zip. See the note under "Why the split?" below.
 
 ### 3. In-memory only (never written to disk)
 
@@ -44,8 +48,13 @@ Transient runtime state that must not survive a restart.
 | layer | rule of thumb | committed? |
 |---|---|---|
 | `defaults.yaml` | "what's true for everyone" | yes |
-| `local.yaml` | "what's specific to this machine" | no |
+| `local.yaml` | "what's specific to this machine — or to you" | no |
 | in-memory | "transient state, discard on restart" | n/a |
+
+`local.yaml` holds two kinds of thing that are not the shared template: values measured on **this
+machine** (calibration, coordinates, port) and values that are simply **yours** (spammer presets).
+Both live there for the same reason — `publish.bat public` excludes the file, so neither leaks into
+someone else's install. A setting that is personal but not machine-specific has no third home.
 
 ## How saves work
 
@@ -55,6 +64,11 @@ Transient runtime state that must not survive a restart.
   `empty_signature` / `empty_distance` to `local.yaml`. **Save Composer Moves** writes
   `gem.movements` separately, and **Save Coordinates** writes the typed-in positions. `empty_mode` /
   `empty_streak` live in `defaults.yaml`.
+- The spammer tab's **Save Preset** writes `spammer.active` + `spammer.presets` to `local.yaml`.
+  There is no `spammer` block in `defaults.yaml` on purpose: `SaveDefaults` rewrites that file from an
+  explicit field list, so a seed preset put there would be deleted the first time any *other* tab
+  saved — and an install whose presets lived only there would lose them silently. On load,
+  `ConfigLoader` adopts any presets it still finds in `defaults.yaml` into `local.yaml`.
 
 ## The empty-detection fields (gem)
 
