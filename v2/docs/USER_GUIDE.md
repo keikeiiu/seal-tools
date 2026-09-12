@@ -104,19 +104,19 @@ Behaviour of the Gem Composer. Saved to `config/defaults.yaml`.
 
 Key rotation for the Skill Spammer. Saved to `config/defaults.yaml`.
 
-The Arduino supports digits **0–9** and **F1–F10**; prefix a key with `*` for the fast hold. Anything
-else is skipped and reported as a `⚠` on the tool card.
+The Arduino supports digits **0–9** and **F1–F10**. The **Fast** checkbox is a fast tap (held ~10 ms
+instead of the normal 30–80 ms) — leave it off for a held skill. Anything the Arduino can't send is
+skipped and reported as a `⚠` on the tool card.
 
 | Control | Meaning |
 |---|---|
-| **Preset** dropdown | Which named key set the spammer presses. Switching keeps unsaved edits in memory. |
-| **name** box + **+ New** | Create a new empty preset with the name you type. |
-| **Rename** | Move the current preset's keys to the typed name. |
-| **Delete** | Remove the current preset (the last one can't be deleted). |
-| Key rows | One row per key, listed under the **Key** / **Delay (s)** headings; `✕` removes it. |
+| **Active — Preset** dropdown | Which named key set the spammer presses. The keys are shown below as a read-only summary. The dropdown ends with **＋ Add new…**. |
+| **Active — Rename / Delete** | Rename or remove the current preset (the last one can't be deleted). |
+| **Edit** | Reveals the editor: the key rows, Advanced, and Save. |
+| Key rows | One row per key under the **Key** / **Delay (s)** / **Fast** headings; `✕` removes it. |
 | **+ Add Key** | Adds an empty row. |
-| **Advanced** | Reveals the raw `key:seconds` list for the current preset. Ticking it fills the text from the rows; unticking rebuilds the rows from the text. |
-| **Save Spammer Config** | Writes the current preset and marks it active. |
+| **Advanced** | Reveals the raw `key:seconds` list for the current preset (a `*` prefix there still means a fast tap). Ticking it fills the text from the rows; unticking rebuilds the rows. |
+| **Save Spammer Config** | Writes the active preset and all presets to `defaults.yaml`. |
 
 ## Attributes tab
 
