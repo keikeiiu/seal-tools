@@ -9,6 +9,15 @@
 #define HOLD_NORMAL_MAX  80
 #define HOLD_FAST        10
 
+// ── Held-key failsafe ────────────────────────
+// 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held
+// — the launcher crashed or was killed — nothing would ever send that 'U' and the key would stay
+// down on the host until the device is unplugged. `Serial` is false once the host closes the port
+// (the same signal the usual `while (!Serial)` wait uses), so the loop releases everything when
+// that happens. The app holds the port open for its whole lifetime, so this only fires when it is
+// genuinely gone.
+static bool spaceHeld = false;
+
 // ── Bezier human-like mouse movement ─────────
 float cubicBezier(float p0, float p1, float p2, float p3, float t) {
     float u = 1.0f - t;
@@ -64,6 +73,13 @@ void setup() {
 // ── Loop ─────────────────────────────────────
 void loop() {
     static char buf[32];  // fixed buffer — no heap allocation (avoids String fragmentation)
+
+    // Host gone while a key is being held: release it rather than leave it stuck down.
+    if (!Serial && spaceHeld) {
+        Keyboard.releaseAll();
+        spaceHeld = false;
+    }
+
     if (Serial.available() > 0) {
         size_t n = Serial.readBytesUntil('\n', buf, sizeof(buf) - 1);
         buf[n] = '\0';
@@ -127,11 +143,17 @@ void loop() {
         // K/F = normal hold, k/f = fast hold
         else if (type == 'K' || type == 'k') {
             int n = atoi(&buf[1]);
-            char key = '0' + (n % 10);
-            int hold = (type == 'k') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
-            Keyboard.press(key);
-            delay(hold);
-            Keyboard.release(key);
+            // Digits 0-9 only. `n % 10` used to fold anything else onto a digit, so a malformed or
+            // letter key silently pressed '0'. The launcher validates before sending, so this is the
+            // second line of defence: an unusable frame does nothing rather than pressing a key.
+            // buf[1] != '\0' rejects a bare "K", which atoi would read as 0.
+            if (n >= 0 && n <= 9 && buf[1] != '\0') {
+                char key = '0' + n;
+                int hold = (type == 'k') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
+                Keyboard.press(key);
+                delay(hold);
+                Keyboard.release(key);
+            }
         }
         else if (type == 'F' || type == 'f') {
             int n = atoi(&buf[1]);
@@ -159,9 +181,11 @@ void loop() {
         // Hold space (auto-pickup): P presses and keeps it held, U releases it.
         else if (type == 'P') {
             Keyboard.press(' ');
+            spaceHeld = true;
         }
         else if (type == 'U') {
             Keyboard.release(' ');
+            spaceHeld = false;
         }
     }
 }
