@@ -2237,16 +2237,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             targets[i] = (steps[i].Action, steps[i].Point, pt.Value);
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
-        {
-            _gemHint!.Text = "Arduino not found — plug it in and retry.";
-            return;
-        }
-
+        // Claim the guard BEFORE the first await. ArduinoPortAsync waits out a 2 s boot delay on a
+        // cold start, and a second click used to pass the check at the top of this method while the
+        // first was still suspended — two cycles then drove the game at the same time.
         _cycleRunning = true;
         try
         {
+            var ser = await _service.ArduinoPortAsync();
+            if (ser == null)
+            {
+                _gemHint!.Text = "Arduino not found — plug it in and retry.";
+                return;
+            }
+
             for (int i = 0; i < targets.Length; i++)
             {
                 var (action, point, at) = targets[i];
