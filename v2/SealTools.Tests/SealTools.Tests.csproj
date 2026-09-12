@@ -20,8 +20,14 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Core alone left the tool logic unreachable: AttrMatcher, the composer and the spammer loop
+       could not be tested at all, however many tests were written. These three are plain net8.0
+       libraries, so they can be referenced directly. The Launcher is net8.0-windows and stays out. -->
   <ItemGroup>
     <ProjectReference Include="..\SealTools.Core\SealTools.Core.csproj" />
+    <ProjectReference Include="..\SealTools.Tuner\SealTools.Tuner.csproj" />
+    <ProjectReference Include="..\SealTools.Spammer\SealTools.Spammer.csproj" />
+    <ProjectReference Include="..\SealTools.GemComposer\SealTools.GemComposer.csproj" />
   </ItemGroup>
 
 </Project>
