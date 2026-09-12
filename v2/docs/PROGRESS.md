@@ -9,6 +9,46 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-13 (3) — review sweep: 19 fixes, 4 recorded as deliberate
+
+A full review of v2 in three passes (Core, launcher, tools), then the fixes. Every candidate was
+verified by reading the code before anything was written, and that rule earned its place immediately:
+one item handed over as a bug — the composer's empty-check gate — turned out to be a load-bearing
+arming flag, and "fixing" it would have re-enabled auto-advance for a user who had explicitly
+declined it. It was retracted rather than changed.
+
+What mattered most:
+
+- **`gem.move_mode` was deleted by every launcher save.** `SaveDefaults` serialises an explicit field
+  list and the gem projection omitted it, so choosing `tuned` could not be persisted and the next
+  launch fell back to `arduino`. The round-trip test that exists to catch exactly this compared the
+  property default to itself, so it passed either way. It now sets a non-default value and is
+  mutation-tested. Same shape as the `ocr_retries` regression that test was written for.
+- **Two Start clicks could orphan a tool loop** on the shared serial port: unreachable by Stop, still
+  writing, still driving the game. Guarded — plus the matching hole where a Stop during a cold start
+  silently did nothing and the tool started anyway.
+- **The tuner could stop below the target grade** (a stop branch missing `filter.Enabled`) and
+  **treat a failed OCR read as a repeat**, ending a run after two bad reads behind a message claiming
+  "x3". A read that recognises nothing now stops immediately and says so.
+- **`CaptureScreen` threw instead of returning the null its callers were already written against**, so
+  a locked session or a zero-sized region took down the tool rather than being handled.
+
+Four items were deliberately **not** changed, and are recorded in [TODO.md](TODO.md) with their
+reasoning because three would be reverted by a well-meaning cleanup: the null attribute value that
+intentionally satisfies a bounded filter rule (`減少傷害` is rare enough that the name match is the
+signal), `Arduino.Find`'s duplicated WMI query — which carries a name-based fallback `Diagnose` does
+not have, the tuner's fail-open mouse guard, and the dispatcher sleeps in the calibrator's test
+buttons, where the real fix is a five-handler refactor rather than `await Task.Delay`.
+
+Also landed: spammer presets moved to `local.yaml` so they stop shipping, with adoption for any
+already stranded in `defaults.yaml`; the test project can finally reach `AttrMatcher` and the other
+tool logic (23 → 30 tests); and a CI workflow.
+
+**Needs a live run** — in-loop behaviour the test project cannot reach: the tuner's failed-read stop,
+the `filter.Enabled` guard, and the spammer's disconnect message. **Needs a flashed board**: the
+firmware's host-gone key release (hold space, kill the launcher, confirm release). **Not yet run**:
+the CI workflow's build step, which needs a push — the running launcher held a file lock locally.
+
 ## 2026-09-13 (2) — presets left in defaults.yaml are adopted into local.yaml, not deleted
 
 Follow-up to the entry below, which fixed the leak but opened a data-loss path. On a machine that

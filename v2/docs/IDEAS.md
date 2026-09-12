@@ -64,6 +64,14 @@ because it changes how something else should be done.
 
 - ~~**`GemPointer` → `HidPointer`** (S)~~ — **done** (2026-09-11), the tuner now reuses it for spring placement.
 - **Split `WindowFinder`** (S). Window queries, cursor helpers and diagnostics in one class today.
+- **Split the calibrator out of `MainWindow`** (M). `MainWindow.xaml.cs` is ~3 550 lines, and the
+  calibrator's state is already grouped by comment — "Tuner calibrator" and "Gem calibrator" fields
+  at `MainWindow.xaml.cs:106-142`, then the preview/drag/save methods further down. A `partial class
+  MainWindow.Calibration.cs` would be a pure file move (the compiler verifies it completely) and
+  takes roughly 40% out of the file. **Assessed 2026-09-13 and deliberately deferred**: it is
+  organisational only, the diff is ~1 400 moved lines that are hard to review, and it cannot be
+  verified behaviourally without a live game — so it wants doing on a day with time to run a full
+  calibrate, and ideally together with the XAML move below so the churn happens once.
 - **Move the static UI to XAML** (L) ⚑. The launcher builds ~900 lines of controls in code. XAML +
   bindings would let the UI cleanup land **once**; doing the cleanup first means doing it twice.
 - **More tests** (M). Config round-trips for the new fields, route resolution, the empty metric.
