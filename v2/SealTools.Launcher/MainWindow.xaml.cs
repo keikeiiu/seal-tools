@@ -195,11 +195,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         foreach (var (id, name) in Tools)
         {
+            bool compact = id == "holdspace";
             var nameText = new TextBlock
             {
                 Text = name,
                 Foreground = Res("TextFillColorPrimaryBrush"),
-                FontSize = 18,
+                FontSize = compact ? 14 : 18,
                 FontWeight = FontWeights.SemiBold,
             };
 
@@ -271,7 +272,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 CornerRadius = new CornerRadius(12),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(20),
+                Padding = new Thickness(compact ? 12 : 20),
                 Margin = new Thickness(0, 0, 0, 12),
                 Child = cardGrid,
             };
@@ -347,6 +348,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Measured: 320 is what it settles at — WPF will not go below the content's minimum, so a
     // smaller number here has no effect.
     private const double ConfigMiniHeight = 320;
+
+    // Hold Space's card is smaller, so its mini window can shrink further than the other tools'.
+    private static double MiniHeightFor(string? toolId) =>
+        toolId == "holdspace" ? 180 : ConfigMiniHeight;
 
     // What to restore when the region is expanded again. Zero until something shrinks the window, so
     // a fresh launch expands to the window's designed height.
@@ -446,7 +451,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var (id, card) in _toolCards)
             card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
 
-        Height = mini ? ConfigMiniHeight
+        Height = mini ? MiniHeightFor(_miniToolId)
             : _configExpanded ? (_configExpandedHeight > 0 ? _configExpandedHeight : 720)
             : ConfigCollapsedHeight;
 
