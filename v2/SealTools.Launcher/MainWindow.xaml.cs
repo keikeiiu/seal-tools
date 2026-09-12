@@ -734,12 +734,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
             local.Calibration = cal;
-            _service.SaveLocal(local);
+            SaveReport(() => _service.SaveLocal(local), result,
+                $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.");
             ShowStored();
-            result.Severity = InfoBarSeverity.Success;
-            result.Title = "Saved";
-            result.Message = $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.";
-            result.IsOpen = true;
         };
 
         panel.Children.Add(save);
@@ -889,12 +886,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.SaveCaptures = saveCaptures.IsChecked ?? false;
             cfg.Tuner.SpringMode = springMode.SelectedItem?.ToString() ?? "manual";
             cfg.Tuner.MouseGuard = mouseGuard.SelectedItem?.ToString() ?? "off";
-            _service.SaveConfig();
-            result.Severity = InfoBarSeverity.Success;
-            result.Title = "Saved";
-            result.Message = $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
-                             $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).";
-            result.IsOpen = true;
+            SaveReport(() => _service.SaveConfig(), result,
+                $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
+                $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -949,11 +943,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             var mode = GemEmptyModes.First(m => m.Label == emptyMode.SelectedItem?.ToString());
             _service.Config.Gem.EmptyMode = mode.Value;
             _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
-            _service.SaveConfig();
-            result.Severity = InfoBarSeverity.Success;
-            result.Title = "Saved";
-            result.Message = $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.";
-            result.IsOpen = true;
+            SaveReport(() => _service.SaveConfig(), result,
+                $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -1367,11 +1358,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 Active = current,
                 Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
             };
-            _service.SaveLocal(local);
-            result.Severity = InfoBarSeverity.Success;
-            result.Title = "Saved";
-            result.Message = $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).";
-            result.IsOpen = true;
+            SaveReport(() => _service.SaveLocal(local), result,
+                $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).");
             UpdateSummary();
         };
         panel.Children.Add(save);
@@ -2708,7 +2696,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             local.Calibration = ToCalibration(d);
             _service.Config.Calibration = local.Calibration;
         }
-        _service.SaveLocal(local);
+        if (!TrySaveCalibration(() => _service.SaveLocal(local), _tunerHint!,
+                "Tuner saved to config\\local.yaml."))
+            return;
         // Refresh the in-memory config too, or the next tuner run still uses the
         // startup geometry (seeded from local.yaml.example) instead of the boxes
         // just calibrated — the cause of the "Check OCR is fine, run drifts" bug.
@@ -3021,11 +3011,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             local.Calibration = ToCalibration(d);
             _service.Config.Calibration = local.Calibration;
         }
-        _service.SaveLocal(local);
         // Which move set the composer uses is a preference, not a coordinate — it lives in the
-        // portable config (defaults.yaml) like gem.start_grade/empty_mode.
+        // portable config (defaults.yaml) like gem.start_grade/empty_mode. Both files are written
+        // here, so a failure in either must stop before the "saved" dialog below claims success.
         _service.Config.Gem.MoveMode = _gemMoveMode?.SelectedItem as string ?? "tuned";
-        _service.SaveConfig();
+        if (!TrySaveCalibration(() => { _service.SaveLocal(local); _service.SaveConfig(); }, _gemHint!,
+                "Gem Composer saved to config\\local.yaml."))
+            return;
         // Refresh in-memory config so the next gem run uses the just-calibrated
         // click points rather than the startup (example-seeded) ones.
         _service.Config.Gem.GradePositions = positions;
@@ -3107,9 +3099,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         lg.ResourceGems = gem.ResourceGems;
         lg.ResultGemArea = gem.ResultGemArea;
         local.Gem = lg;
-        _service.SaveLocal(local);
-
-        _gemHint!.Text = "Coordinates saved to config\\local.yaml.";
+        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+            "Coordinates saved to config\\local.yaml.");
     }
 
     // Save ONLY the composer moves (raw dx/dy) from the move-editor boxes. Unlike GemSave, this
@@ -3123,9 +3114,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var gem = local.Gem ?? new ConfigLoader.LocalGem();
         gem.Movements = _service.Config.Gem.Movements;
         local.Gem = gem;
-        _service.SaveLocal(local);
-
-        _gemHint!.Text = "Composer moves saved to config\\local.yaml.";
+        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+            "Composer moves saved to config\\local.yaml.");
     }
 
     // Diagnostic: move the cursor to the SELECTED point using one specific API, so the two paths can
@@ -3351,11 +3341,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.Quit = q;
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
-            _service.SaveConfig();
-            result.Severity = InfoBarSeverity.Success;
-            result.Title = "Saved";
-            result.Message = "Hotkeys written to defaults.yaml.";
-            result.IsOpen = true;
+            SaveReport(() => _service.SaveConfig(), result, "Hotkeys written to defaults.yaml.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -3445,6 +3431,47 @@ public partial class MainWindow : FluentWindow, IDisposable
     // "None" means no grade floor; the code also treats null/"false" as unset.
     private static string GradeOrNone(string? g) =>
         string.IsNullOrWhiteSpace(g) || g.Equals("false", StringComparison.OrdinalIgnoreCase) ? "None" : g;
+
+    /// <summary>The calibrator tabs' equivalent of <see cref="SaveReport"/>: they report through a
+    /// hint line and a confirmation dialog rather than an InfoBar, and the dialog used to be raised
+    /// after the write — so a failed save both left the click looking inert and, had it got that far,
+    /// claimed success. False means the write failed and the caller must not announce success.</summary>
+    private static bool TrySaveCalibration(Action save, TextBlock hint, string successMessage)
+    {
+        try
+        {
+            save();
+            hint.Text = successMessage;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            hint.Text = $"Save failed: {ex.Message} — nothing was written.";
+            return false;
+        }
+    }
+
+    /// <summary>Runs a config save and reports the outcome on a tab's InfoBar. SaveLocal/SaveDefaults
+    /// write files and throw on I/O failure, and the success bar used to be raised after the call —
+    /// so a read-only config directory or a full disk made Save look like it did nothing at all,
+    /// with the exception absorbed by the app-level handler and only a log line to show for it.</summary>
+    private static void SaveReport(Action save, InfoBar bar, string successMessage)
+    {
+        try
+        {
+            save();
+            bar.Severity = InfoBarSeverity.Success;
+            bar.Title = "Saved";
+            bar.Message = successMessage;
+        }
+        catch (Exception ex)
+        {
+            bar.Severity = InfoBarSeverity.Error;
+            bar.Title = "Save failed";
+            bar.Message = $"{ex.Message} — nothing was written.";
+        }
+        bar.IsOpen = true;
+    }
 
     private static UiButton MakeButton(string text, ControlAppearance appearance) =>
         new()
