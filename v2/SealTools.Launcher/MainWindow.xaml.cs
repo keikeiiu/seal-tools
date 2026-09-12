@@ -956,6 +956,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         // boxes are shorter and sat on a different baseline. No clear button: these are 88px wide.
         public Wpf.Ui.Controls.TextBox Key { get; } = UiText("", null, clearButton: false);
         public Wpf.Ui.Controls.TextBox Delay { get; } = UiText("", null, clearButton: false);
+        // "fast" is the friendly face of the leading '*' on the key; the config still stores '*key'.
+        public CheckBox Fast { get; } = new() { VerticalAlignment = VerticalAlignment.Center };
     }
 
     private TabItem BuildSpammerTab()
@@ -981,18 +983,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         var rowsPanel = new Grid();
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var keyHeader = new Grid { Margin = new Thickness(0, 0, 0, 2) };
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var keyHeaderLabel = new TextBlock { Text = "Key", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
         var delayHeaderLabel = new TextBlock { Text = "Delay (s)", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
+        var fastHeaderLabel = new TextBlock { Text = "Fast", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
         Grid.SetColumn(keyHeaderLabel, 0);
         Grid.SetColumn(delayHeaderLabel, 1);
+        Grid.SetColumn(fastHeaderLabel, 2);
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
+        keyHeader.Children.Add(fastHeaderLabel);
         var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
         var presetName = UiText("");
         presetName.Width = 160;
@@ -1001,12 +1008,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         void AddRow(string key, string delay)
         {
             var row = new SpamKeyRow();
+            bool fast = key.StartsWith('*');
+            if (fast) key = key[1..];
             row.Key.Text = key;
             row.Key.Width = 88;
             row.Delay.Text = delay;
             row.Delay.Width = 88;
+            row.Fast.IsChecked = fast;
             row.Key.Margin = new Thickness(0, 2, 8, 2);
             row.Delay.Margin = new Thickness(0, 2, 8, 2);
+            row.Fast.Margin = new Thickness(0, 2, 8, 2);
 
             int r = rowsPanel.RowDefinitions.Count;
             rowsPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1016,15 +1027,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 rowsPanel.Children.Remove(row.Key);
                 rowsPanel.Children.Remove(row.Delay);
+                rowsPanel.Children.Remove(row.Fast);
                 rowsPanel.Children.Remove(del);
                 rows.Remove(row);
             };
 
             Grid.SetRow(row.Key, r); Grid.SetColumn(row.Key, 0);
             Grid.SetRow(row.Delay, r); Grid.SetColumn(row.Delay, 1);
-            Grid.SetRow(del, r); Grid.SetColumn(del, 2);
+            Grid.SetRow(row.Fast, r); Grid.SetColumn(row.Fast, 2);
+            Grid.SetRow(del, r); Grid.SetColumn(del, 3);
             rowsPanel.Children.Add(row.Key);
             rowsPanel.Children.Add(row.Delay);
+            rowsPanel.Children.Add(row.Fast);
             rowsPanel.Children.Add(del);
             rows.Add(row);
         }
@@ -1145,6 +1159,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 var k = r.Key.Text.Trim();
                 if (k.Length == 0) continue;
+                if (r.Fast.IsChecked == true) k = "*" + k;
                 if (double.TryParse(r.Delay.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
                     result[k] = d;
             }
