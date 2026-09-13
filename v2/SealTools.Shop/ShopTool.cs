@@ -248,16 +248,16 @@ public sealed class ShopTool : ToolBase
     private static void Scroll(SerialPort ser, int notches, bool down)
         => ser.Write((down ? "Z " : "Q ") + notches.ToString(CultureInfo.InvariantCulture) + "\n");
 
-    /// <summary>Puts the cursor over the list and applies the preset's scroll.
+    /// <summary>Focuses the game, then applies the preset's scroll. Called ONCE at the start of a buy
+    /// run — the purchases that follow just return to the same row and click, so nothing scrolls again.
     ///
-    /// There is deliberately NO scroll-to-top here. The list is expected to already BE at the top when
-    /// a run starts — putting it there is the user's setup, not the tool's job. Doing it here would
-    /// mean scrolling the length of the whole list on every run, which is ten seconds of the board
-    /// being unable to read serial, and it made the firmware's per-command ceiling load-bearing: the
-    /// cap was the reach, so a list longer than the cap left every preset measured from the wrong
-    /// origin.
+    /// The click is required. The wheel needs the game focused, and starting the tool means clicking
+    /// the launcher, which takes focus away — so without this the first scroll arrives at an unfocused
+    /// game and is silently ignored. It also means THE SCROLL POINT SHOULD BE SOMEWHERE INERT: this
+    /// left-clicks it, so a point over a list row would select or buy that row.
     ///
-    /// The cursor is moved but never pressed, so this cannot select or buy anything by accident.</summary>
+    /// There is deliberately no scroll-to-top: the list is expected to already BE at the top, and
+    /// putting it there would be the length of the whole list on every run.</summary>
     private bool ScrollFromTop(SerialPort ser, ToolState state, int notches)
     {
         var point = _cfg.BuySell.ScrollPoint!;
@@ -267,6 +267,10 @@ public sealed class ShopTool : ToolBase
             return false;
         }
         SleepCheck(ClickWait);
+
+        // Focus the game. See above for why this has to be here and why the point must be inert.
+        HidPointer.Click(ser);
+        SleepCheck(DialogWait);
 
         if (notches > 0)
         {

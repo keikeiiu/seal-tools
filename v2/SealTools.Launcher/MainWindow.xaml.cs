@@ -3991,7 +3991,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         _bsPointTarget = which;
         _buySellHint!.Text = which switch
         {
-            "scroll" => "Click a spot over the shop list — the cursor parks here so the wheel scrolls it.",
+            "scroll" => "Click a spot in the game that is SAFE TO LEFT-CLICK — the run clicks here to " +
+                        "give the game focus before scrolling, so NOT over a shop row. Empty panel space " +
+                        "or the shop window's title bar. The wheel works anywhere in the focused window, " +
+                        "so its exact position does not matter, only that clicking it does nothing.",
             _ => "Click the MAX button in the count dialog.",
         };
     }
