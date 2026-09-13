@@ -365,7 +365,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The firmware's per-command scroll ceiling, kept in step with WHEEL_MAX_NOTCHES in
     /// seal_mouse.ino. It was 30, which reached only halfway down a real shop list — so "scroll to
     /// the top", which every preset's scroll amount is measured from, was not reaching the top.</summary>
-    private const int WheelMaxNotches = 200;
+    private const int WheelMaxNotches = 400;
 
     /// <summary>What the cards-only height actually measured last layout pass. The "remember the
     /// user's expanded height" checks compare against this rather than the constant above, so they

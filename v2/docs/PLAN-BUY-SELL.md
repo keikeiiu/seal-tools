@@ -152,17 +152,24 @@ Required before it runs live:
 
 ### The wheel cap is load-bearing, not just a guard
 
-`Q n` / `Z n` clamp at **200 notches** in the firmware (`WHEEL_MAX_NOTCHES`), and "scroll to the top"
+`Q n` / `Z n` clamp at **400 notches** in the firmware (`WHEEL_MAX_NOTCHES`), and "scroll to the top"
 is sent as **one command at that maximum**. So the cap is not only a guard against a malformed frame —
 it is also *how far the tool can scroll in a single go*. A shop list longer than the cap leaves the
 run starting from somewhere other than the top, and every preset's scroll amount is measured from that
 origin, so items would land progressively further off the further they sit from the shortfall.
 
-It was 30, which reached only **halfway** down a real list — measured on the live game. The number
-appears in three places that must stay in step: the firmware define, `ShopTool.WheelMax`, and the
-calibrator's own copy. The tab states the value so it is visible where it is used.
+It was 30, which reached only **halfway** down a real list — measured on the live game, putting that
+list at roughly 60 notches end to end. The ceiling is set at about ten seconds of scrolling, which is
+the worst case if a malformed frame arrives: the board cannot read serial while it is looping, so this
+bounds how long it can be out of touch.
 
-If a future shop has a longer list, this is the number to raise — and it needs a reflash.
+It is **coupled to the notch gap** (`WHEEL_NOTCH_GAP_MS`, 25ms): "ten seconds" is only 400 notches at
+that gap. Lengthen the gap — which is what you would do if the game turned out to be coalescing fast
+wheel events — and the same ceiling buys proportionally fewer.
+
+The number appears in three places that must stay in step: the firmware define, `ShopTool.WheelMax`,
+and the calibrator's own copy. The tab states it, interpolated from the constant, so it cannot drift
+from what is enforced.
 
 ### Scrolling — a per-item amount, set in dry run
 

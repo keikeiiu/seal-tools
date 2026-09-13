@@ -17,7 +17,7 @@
 //   F n / f n    F1-F12, normal / fast hold
 //   X            Alt+Tab
 //   W ms         wait ms (1-9999)
-//   Q n / Z n    mouse wheel up / down, n notches (1-200)
+//   Q n / Z n    mouse wheel up / down, n notches (1-400)
 //   P / U        hold / release the spacebar (auto-pickup)
 //
 // An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
@@ -37,9 +37,13 @@
 // Ceiling for a single scroll command, and — because "scroll to the top" is sent as ONE command at
 // this maximum — also how far the tool can scroll in a single go. A list longer than this leaves the
 // origin short of the top, and every stored scroll amount is measured from that origin, so the value
-// is load-bearing rather than just a guard. 200 notches at the gap below is about five seconds.
-// Lower it only if the guard matters more than the reach.
-#define WHEEL_MAX_NOTCHES  200
+// is load-bearing rather than just a guard. 400 notches at the gap below is about TEN SECONDS, which
+// is the worst case if a malformed frame ever arrives — the board cannot read serial while looping,
+// so this bounds how long it can be out of touch. A real shop list needs ~60.
+//
+// NOTE: this and WHEEL_NOTCH_GAP_MS are coupled. "Ten seconds" is only 400 notches AT 25ms; lengthen
+// the gap to stop a game coalescing fast events and the same ceiling buys proportionally fewer.
+#define WHEEL_MAX_NOTCHES  400
 
 // ── Held-key failsafe ────────────────────────
 // 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held
