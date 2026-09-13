@@ -122,33 +122,28 @@ Required before it runs live:
 - a **dry-run mode** that highlights the slots it would click and sells nothing
 - the grid overlay above as the calibration gate
 
-### Scrolling — the calibration problem, and a way out
+### Scrolling — a per-item amount, set in dry run
 
-You're right that this is the awkward part, and the reason is worth stating plainly: **a scroll
-position is unobservable after the fact.** Once you've scrolled, nothing on screen records how far.
-So "scroll until the item is visible, then click it in a capture" cannot work — the click gives us the
-row, but nothing gives us how you got there.
+Each buy item stores its own **scroll amount**: how many wheel notches to apply after scrolling to the
+top. It is a plain number on the item preset, and you set it by trial in **dry run** — pick the item,
+run the dry run, and the tool scrolls to the top, applies the stored amount, and moves the cursor onto
+the row it would click. **It does not click.** You look at where the pointer landed and adjust the
+number until it sits on the item you want, then save.
 
-The way out is to stop trying to *measure* the scroll and instead **do the scrolling ourselves during
-calibration**, so the count is known by construction rather than inferred:
+That keeps it one number you own, rather than a measurement the tool tries to infer — and the dry run
+is what makes the number trustworthy, because it shows the result on the live game without spending a
+click. A no-scroll item is simply one whose amount is 0, so there is no separate "needs scrolling"
+flag.
 
-> A **nudge control** in the Buy screen — ▲ / ▼ buttons (by 1 and by 5 notches) that send real wheel
-> commands to the game, with a running count displayed. You press them until the item you want sits
-> where you want it. **That count is the item's scroll amount.**
-
-No arithmetic and no guessing: you nudge until it looks right, which is the one thing that *is*
-judgeable by eye, and the tool records exactly what it sent. Then you click the item's row in the
-capture for its row index, and the pair saves into that item's preset.
-
-At runtime: scroll to the top first (send the wheel-up maximum, which clamps at the top and so gives a
-known origin), apply the stored notches, click the stored row. Deterministic, because the listing is
-stable.
-
-That also retires your fallback: a **"needs scrolling" checkbox becomes unnecessary** — a no-scroll
-item is simply one whose nudge count is 0. One mechanism instead of a flag plus a number.
+**Scroll to the top first, on every run.** Send the wheel-up maximum and let it clamp, which gives a
+known origin so the stored amount always means the same thing. Without that, the amount would depend
+on wherever the list happened to be left.
 
 The wheel scrolls **whatever is under the cursor**, so placing the cursor over the list is one more
 calibration point.
+
+Nothing here needs a new control: the number is a field on the preset, and the dry run is a button
+next to it.
 
 ### Buying items are presets
 
@@ -193,9 +188,9 @@ has the plumbing.
    yet known is whether it appears for *every* sale or only above some value. If it is conditional,
    sending Enter when no dialog is up must be harmless — otherwise the per-item config needs a
    "confirms" flag. One deliberate sale of a cheap stack answers it.
-3. **How many notches equal one row?** No longer needed as a *number to enter* — the nudge control
-   records whatever count reaches the item. It is still worth knowing roughly, so the ▲/▼ steps can
-   be sized sensibly (1 and 5, or 1 and 10). One press of ▼ tells you.
+3. **Roughly how many notches equal one row?** Now only a starting guess — the per-item amount is
+   tuned in dry run regardless. Knowing it means the first attempt lands close instead of far off,
+   which saves a few dry runs. A single Test Scroll answers it.
 4. **A capture of the shop open with the dialog open**, in the same frame — that is what the Buy
    screen calibrates against, and the earlier frames had only one or the other.
 
@@ -204,9 +199,9 @@ has the plumbing.
 ## Phasing
 
 1. ~~Firmware: wheel + full keyboard~~ — landed 2026-09-13, **not compile-checked and not flashed**.
-2. **The nudge control on its own** — ▲/▼ buttons in a new tab that send real wheel commands and show
-   a running count. It is the smallest thing that makes the reflashed firmware *verifiable*, and it is
-   the same control the Buy calibration ends up needing, so nothing built here is thrown away.
+2. **A "Test Scroll" button on its own** — enter a number of notches, send it, watch the list move.
+   The smallest thing that makes the reflashed firmware *verifiable*, and the dry run's first half, so
+   nothing built here is thrown away.
 3. **Sell screen calibration** — grid drag-select, the two-box consistency check, and the 64-centre
    overlay. Pure calibration: no game actions, and self-verifying by looking at it.
 4. **Sell path** — dry-run first, then live with the cap enforced. Selling is the simpler half
