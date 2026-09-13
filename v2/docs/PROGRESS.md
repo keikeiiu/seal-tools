@@ -9,6 +9,50 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-14 (4) — v2.9 packaged, and the firmware had never shipped at all
+
+**The release.** `v2.9` is tagged on `main` (the branch fast-forwarded, 32 commits, 0 behind), with
+three assets in `dist\`:
+
+| Asset | Size | Contents |
+|---|---|---|
+| `SealTools-v2.9.zip` | 137.8 MiB | exe, 10 native DLLs, 3 models, template config only |
+| `SealTools-v2.9-local.zip` | 149.9 MiB | the same plus the full `config\` (live `local.yaml` + 3 screenshots) |
+| `SealTools-v2.9-firmware.zip` | 3.6 KiB | `seal_mouse\seal_mouse.ino` |
+
+Verified by **diffing the public zip's file list against v2.6**, which is the check that caught the
+incremental-publish trap last time: the lists are **identical**, and the DLL count is 10 in both. All
+10 errors in the first build attempt were `MSB3027`/`MSB3021` copy failures against the running
+launcher, not compile errors.
+
+**The firmware had never been in a release.** `publish.bat` copied `models\` and `config\` and
+mentioned the sketch nowhere, so every zip back to v2.1 shipped an app that drives a board and no way
+to flash one — the `.ino` was reachable only from the repo. It is now a **separate** zip rather than a
+folder inside the app zip, on the reasoning that it is not part of the runtime install (nothing
+extracts it) and a player with an already-flashed board never needs it. `Compress-Archive -Path
+'..\arduino\seal_mouse'` keeps the sketch in a folder of its own name, which is what the Arduino IDE
+requires to open it.
+
+**Two things found while packaging, both by looking rather than reasoning:**
+
+- The local zip was shipping `local.yaml.corrupt-backup` (present since v2.4, nobody had looked) and
+  would have shipped the fresh dated backup taken this session. `xcopy` has no name-pattern exclude,
+  so both are deleted from the publish folder after the copy. A release should not carry backups.
+- The `public` copy has no such problem and is confirmed clean: it carries `attributes.yaml`,
+  `defaults.yaml` and `local.yaml.example`, and no real `local.yaml`. The zipped local zip's
+  `local.yaml` was diffed against the live one and is byte-identical.
+
+**Verified live:** the Buy tab's row picker — a dropdown reading "Row 1" … "Row 10", with `Springs`
+landing on Row 9 and `HighPet` on Row 8. Both halves of the buy/sell tool are now live-verified.
+
+**Left open:** the spammer preset. `v2/config/local.yaml`'s `spammer:` key is empty and no copy of a
+personal preset exists — every `spammer:` block in every zip in `dist\` is the shipped `*0`–`*9`
+template, and `config/local.yaml` is gitignored so git never had it. Almost certainly the
+`519fad6`-to-`a575928` window: that build deleted the block from the template without yet adopting it
+into `local.yaml`, so the first save from any other tab destroyed it. Unrecoverable here; the fix is
+to re-enter the rotations. **The durability hole itself is still untested** — no test asserts that a
+`SaveDefaults` from one tab cannot drop a section belonging to another.
+
 ## 2026-09-14 (3) — the Buy row field became a picker, so the off-by-one can't be typed
 
 **Goal.** Close the last open item on the buy/sell tool. A preset's row was a free-text **0-based**

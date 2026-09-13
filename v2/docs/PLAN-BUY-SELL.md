@@ -1,9 +1,9 @@
 # Buy / Sell tool — plan
 
-Status: **the buy path is built and verified on the live game** (2026-09-14). Selling is built but
-not yet tested. This document began as a design record and some sections still read as forward-looking
-— the flow descriptions are accurate, the open questions are not all still open. See
-[PROGRESS.md](PROGRESS.md) for what has actually been done.
+Status: **built, and both halves verified on the live game** (2026-09-14), shipped in v2.9. This
+document began as a design record and some sections still read as forward-looking — the flow
+descriptions are accurate, the open questions are not all still open. See [PROGRESS.md](PROGRESS.md)
+for what has actually been done.
 
 Goal: bulk-buy the items you re-buy constantly, and bulk-sell what you don't keep, without repeating
 the clicks by hand.
@@ -203,9 +203,9 @@ same shape as the spammer's — a named list you pick from, with add / rename / 
 | Field | From |
 |---|---|
 | name | you type it |
-| shop row index | clicked in the Buy capture |
+| shop row | picked from a dropdown of the visible rows, labelled from 1 |
 | scroll notches | the nudge count |
-| buy count | how many to buy this run |
+| buy count | how many to buy this run (the card seeds its count from this) |
 
 Adding a new item is: open the shop, capture, nudge to the item, click its row, name it, save. After
 that it is one click to buy.
