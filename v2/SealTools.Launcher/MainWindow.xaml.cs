@@ -3746,6 +3746,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         return true;
     }
 
+    /// <summary>How long the firmware needs to walk a scroll out: one gap per notch, plus slack for
+    /// the serial round trip. Waiting less means reading a list that is still moving — which shows up
+    /// as a cursor placed on the wrong row, not as an obvious error.</summary>
+    private static int ScrollSettleMs(int notches) => notches * 30 + 400;
+
     private async Task BuyDryRun()
     {
         var bs = _service.Config.BuySell;
@@ -3767,18 +3772,27 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var ser = await _service.ArduinoPortAsync();
         if (ser == null) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        // Click the scroll point FIRST. The dry run is a calibration action — you have just been
+        // clicking this window — so the game is unfocused and the wheel goes nowhere. A real run
+        // needs no such click: there the mouse is already in the game.
         if (!TryPlace(ser, scroll[0], scroll[1], out var err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
+        HidPointer.Click(ser);
+        await Task.Delay(500);
 
         try
         {
             // Same origin the real run uses: wheel-up to the maximum and let it clamp, then down by
             // the stored amount. If this lands wrong, so would the run.
-            ser.Write("Q 30\n");
-            await Task.Delay(600);
+            // The ceiling the firmware actually enforces, not a copy — this said 30, which was two
+            // cap changes stale. The wait is the firmware's walking time rather than a guess: it
+            // sends the notches out one at a time with a gap, and reading the list before it finishes
+            // puts the cursor on a stale row.
+            ser.Write($"Q {WheelMaxNotches}\n");
+            await Task.Delay(ScrollSettleMs(WheelMaxNotches));
             if (preset.Scroll > 0)
             {
                 ser.Write($"Z {preset.Scroll}\n");
-                await Task.Delay(600);
+                await Task.Delay(ScrollSettleMs(preset.Scroll));
             }
         }
         catch (Exception ex) { _buyHint!.Text = "Scroll failed: " + ex.Message; return; }
