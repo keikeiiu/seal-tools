@@ -362,10 +362,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     // that silently rots when a tool is added is not worth keeping.
     private const double ConfigCollapsedHeight = 430;
 
-    /// <summary>The firmware's per-command scroll ceiling, kept in step with WHEEL_MAX_NOTCHES in
-    /// seal_mouse.ino. It was 30, which reached only halfway down a real shop list — so "scroll to
-    /// the top", which every preset's scroll amount is measured from, was not reaching the top.</summary>
-    private const int WheelMaxNotches = 400;
+    /// <summary>The firmware's per-command scroll ceiling. Shared with the tool rather than copied:
+    /// this and ShopTool.WheelMax were separate constants, and the preset validation had its own
+    /// literal 30 that stayed behind when the ceiling moved. One place now.</summary>
+    private const int WheelMaxNotches = ShopGeometry.MaxScrollNotches;
 
     /// <summary>What the cards-only height actually measured last layout pass. The "remember the
     /// user's expanded height" checks compare against this rather than the constant above, so they
@@ -3665,7 +3665,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (key.Length == 0) { _buyHint!.Text = "Give the item a name first."; return; }
         if (!int.TryParse(row.Text.Trim(), out var r) || r < 0) { _buyHint!.Text = "Row must be 0 or more."; return; }
         if (!int.TryParse(scroll.Text.Trim(), out var sc) || sc < 0) { _buyHint!.Text = "Scroll notches must be 0 or more."; return; }
-        if (sc > 30) { _buyHint!.Text = "The firmware caps one scroll at 30 notches."; return; }
+        // Against the SAME constant the firmware is built from, not a copy. This said "30" for
+        // several cap changes after the firmware moved on, which is the whole reason the number is
+        // interpolated everywhere else.
+        if (sc > WheelMaxNotches)
+        {
+            _buyHint!.Text = $"The firmware caps one scroll at {WheelMaxNotches} notches.";
+            return;
+        }
         if (!int.TryParse(count.Text.Trim(), out var n) || n < 1) { _buyHint!.Text = "Buy count must be 1 or more."; return; }
         if (!ShopRowOk(r)) return;
 

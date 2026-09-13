@@ -295,10 +295,10 @@ public sealed class ShopTool : ToolBase
         return true;
     }
 
-    /// <summary>The firmware's per-command ceiling, and what "go to the top" is sent as. It used to
-    /// be 30, which reached only halfway down a real shop list — so the "known origin" every preset
-    /// is measured from was not the top at all. Sized to over-reach rather than to fit.</summary>
-    private const int WheelMax = 400;
+    /// <summary>What "go to the top" is sent as. It used to be its own copy of 30, which reached only
+    /// halfway down a real shop list — so the "known origin" every preset is measured from was not
+    /// the top at all. Now shared with the calibrator instead of duplicated.</summary>
+    private const int WheelMax = ShopGeometry.MaxScrollNotches;
 
     private static void Stop(ToolState state, string reason)
     {

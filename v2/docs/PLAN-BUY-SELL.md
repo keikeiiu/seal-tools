@@ -167,9 +167,12 @@ It is **coupled to the notch gap** (`WHEEL_NOTCH_GAP_MS`, 25ms): "ten seconds" i
 that gap. Lengthen the gap — which is what you would do if the game turned out to be coalescing fast
 wheel events — and the same ceiling buys proportionally fewer.
 
-The number appears in three places that must stay in step: the firmware define, `ShopTool.WheelMax`,
-and the calibrator's own copy. The tab states it, interpolated from the constant, so it cannot drift
-from what is enforced.
+It has **one home in C#** — `ShopGeometry.MaxScrollNotches` — shared by the tool and the calibrator,
+which previously had a constant each; the preset validation made a third, and it was that literal
+copy which stayed at 30 through two cap changes and rejected valid presets. The firmware's define is
+the one genuine duplicate, since it is a different language; keep the two in step by hand.
+
+The UI states the value, interpolated from the constant, so what you read is what is enforced.
 
 ### Scrolling — a per-item amount, set in dry run
 

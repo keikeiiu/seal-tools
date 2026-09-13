@@ -25,6 +25,17 @@ public static class ShopGeometry
     /// every derived row.</summary>
     public const int DefaultRows = 10;
 
+    /// <summary>The most notches one scroll command may carry — the firmware's WHEEL_MAX_NOTCHES,
+    /// mirrored here so the tool and the calibrator have ONE number between them rather than a copy
+    /// each. It is also what "scroll to the top" sends, so it doubles as the reach: a list longer
+    /// than this leaves the run starting short of the top, and every preset's scroll amount is
+    /// measured from that origin.
+    ///
+    /// Cannot be shared with the firmware itself — different language — so seal_mouse.ino's define
+    /// is the one genuine duplicate. It changes when the game's list outgrows it, or when the notch
+    /// gap changes, since the two are coupled.</summary>
+    public const int MaxScrollNotches = 400;
+
     public static bool IsValidRegion(IReadOnlyList<int>? region) => BagGrid.IsValidRect(region);
 
     /// <summary>Centre-to-centre row spacing implied by the region and the row count.</summary>
