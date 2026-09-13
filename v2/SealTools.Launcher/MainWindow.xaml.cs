@@ -3871,6 +3871,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         canvas.MouseDown += (_, e) => BsMouseDown(canvas, e.GetPosition(canvas));
         canvas.MouseMove += (_, e) => BsMouseMove(canvas, e.GetPosition(canvas));
         canvas.MouseUp += (_, e) => BsMouseUp(canvas, e.GetPosition(canvas));
+        // The markers are positioned absolutely, while the Image rescales to fit — so anything that
+        // changes the canvas size (a scrollbar appearing, the window resizing) moves the image out
+        // from under them. Redrawing on resize is what keeps the overlay on the thing it marks.
+        canvas.SizeChanged += (_, _) => BsRedrawOverlay();
 
         var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
         grid.Children.Add(image);
@@ -4183,6 +4187,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>A calibrated rectangle as an outline on the capture, used for the shop list region.</summary>
     private void Box(List<int> rect)
     {
+        if (!CanvasReady()) return;
         var a = NaturalToCanvas(new Point(rect[0], rect[1]), _bsScreenshot!, _bsCanvas!);
         var b = NaturalToCanvas(new Point(rect[0] + rect[2], rect[1] + rect[3]), _bsScreenshot!, _bsCanvas!);
         var box = new Rectangle
@@ -4200,8 +4205,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>One marker, at a natural (image) coordinate. Local because the canvas shows the
     /// screenshot scaled to fit, so a computed coordinate has to be mapped forward first.</summary>
+    /// <summary>False until the canvas has been laid out. Drawing before that would place markers as
+    /// if the scale were 1, i.e. silently in the wrong spot — better to draw nothing and let the
+    /// resize handler do it once the size is known.</summary>
+    private bool CanvasReady() => _bsScreenshot != null && _bsCanvas is { ActualWidth: > 0, ActualHeight: > 0 };
+
     private void Dot(Point natural, Brush stroke, double size)
     {
+        if (!CanvasReady()) return;
         var dot = new Ellipse
         {
             Width = size,
