@@ -1,7 +1,9 @@
 # Buy / Sell tool — plan
 
-Status: **design only, nothing built.** The firmware prerequisites landed on 2026-09-13 (see
-[PROGRESS.md](PROGRESS.md)); everything below is pending measurements from the live game.
+Status: **the buy path is built and verified on the live game** (2026-09-14). Selling is built but
+not yet tested. This document began as a design record and some sections still read as forward-looking
+— the flow descriptions are accurate, the open questions are not all still open. See
+[PROGRESS.md](PROGRESS.md) for what has actually been done.
 
 Goal: bulk-buy the items you re-buy constantly, and bulk-sell what you don't keep, without repeating
 the clicks by hand.

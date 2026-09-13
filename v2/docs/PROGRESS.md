@@ -9,6 +9,41 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-14 — the buy path works on the live game; and what first-contact cost
+
+**Verified:** a real buy run lands on the shop row and completes — right-click the row, MAX,
+Enter, Enter, for the count set on the preset. Selling is not yet tested.
+
+Getting there took a run of failures that were all the same *kind* of failure, which is the part
+worth keeping. The whole transaction is fire-and-forget: the board sends a click or a wheel notch,
+nothing reports back, and the run has no way to tell a command that worked from one the game ignored.
+So every distinct cause below presented identically — the cursor moved to the right place and then
+nothing happened:
+
+- **The wheel needs the game FOCUSED.** Not hovered, focused. Starting the tool means clicking the
+  launcher, which takes focus away, so the run's first scroll was ignored. Fixed by clicking the
+  scroll point first — which flipped that mark's requirement from "somewhere in the game" to
+  "somewhere INERT", because the run now left-clicks it.
+- **A left-click on a shop row does nothing.** Buying opens the count dialog with a RIGHT-click, the
+  same gesture as selling. It was left-clicking, so the click landed perfectly and was ignored — and
+  it was chased as a positioning bug (icon versus name) before being found as a button bug.
+- **The firmware's scroll ceiling was load-bearing.** "Scroll to the top" was sent as one command at
+  the maximum, so the cap *was* the reach: a list longer than it left every preset measured from the
+  wrong origin. 30 reached halfway down the real list; 200 looked equally broken. Removed entirely —
+  the list is expected to be at the top already, which is setup rather than a scroll the tool sends.
+- **The run's post-scroll wait was 0.45s** against a board that was still scrolling. The cursor
+  placement that follows is a closed loop reading `GetCursorPos`, so it ran against a stale position
+  and kept correcting. Would have clicked in the wrong place.
+
+Also found by measurement rather than reasoning: `Mouse.move`'s wheel argument is a `signed char`,
+which limits one *call* to ±127 — irrelevant, since each notch is its own call. There is no
+hardware or OS ceiling; the number in the firmware is purely a guard against a malformed value
+wedging a board that cannot read serial while it loops.
+
+**The recurring lesson, stated three times in this file already:** every number picked by reasoning
+was wrong (30, then 200), and every one found by measurement was right. The cap is 400 notches now
+because "ten seconds is an acceptable worst case" is a *decision*; 30 was a guess dressed as one.
+
 ## 2026-09-13 (3) — review sweep: 19 fixes, 4 recorded as deliberate
 
 A full review of v2 in three passes (Core, launcher, tools), then the fixes. Every candidate was
