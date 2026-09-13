@@ -153,7 +153,6 @@ public sealed class ConfigLoader
             if (BagGrid.IsValidRect(bs.ShopRegion)) defaults.BuySell.ShopRegion = bs.ShopRegion;
             if (IsPoint(bs.ScrollPoint)) defaults.BuySell.ScrollPoint = bs.ScrollPoint;
             if (IsPoint(bs.MaxButton)) defaults.BuySell.MaxButton = bs.MaxButton;
-            if (bs.SellSlots is { Count: > 0 }) defaults.BuySell.SellSlots = bs.SellSlots;
             if (bs.SellCap is > 0) defaults.BuySell.SellCap = bs.SellCap.Value;
 
             // Merged per name, like the spammer presets, so a preset added by hand in defaults.yaml

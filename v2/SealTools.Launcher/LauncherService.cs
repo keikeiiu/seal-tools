@@ -33,6 +33,11 @@ public sealed class LauncherService : IDisposable
     /// <summary>The buy preset the next buy run uses. The Buy tab sets it when Start is pressed;
     /// RunTool only receives a tool id, so the choice has to arrive some other way.</summary>
     public string? PendingBuyPreset { get; set; }
+
+    /// <summary>How many to buy this run. Separate from the preset because the preset's own count is
+    /// only its usual amount — sometimes you want a different number, and that should not mean editing
+    /// the item. Set from the card at Start.</summary>
+    public int PendingBuyCount { get; set; } = 1;
     private OcrEngine? _diagnosticOcr;
     private SerialPort? _arduino;
 
@@ -270,7 +275,7 @@ public sealed class LauncherService : IDisposable
     private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct) => id switch
     {
         "holdspace" => new HoldSpace(Config).Run(ser, state, ct),
-        "buy" => new ShopTool(Config, ShopMode.Buy, PendingBuyPreset).Run(ser, state, ct),
+        "buy" => new ShopTool(Config, ShopMode.Buy, PendingBuyPreset, PendingBuyCount).Run(ser, state, ct),
         "sell" => new ShopTool(Config, ShopMode.Sell, null).Run(ser, state, ct),
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),

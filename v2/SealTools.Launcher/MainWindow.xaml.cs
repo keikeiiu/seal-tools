@@ -162,6 +162,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
+    /// <summary>The same preset picker on the Buy card, so a run can be set up without opening
+    /// Configuration. Both mirrors of one choice — see OnBuyPresetChanged.</summary>
+    private ComboBox? _buyPresetCard;
+    private Wpf.Ui.Controls.TextBox? _buyCountCard;
+    /// <summary>The item currently chosen on either picker. One value behind two controls.</summary>
+    private string? _activeBuyPreset;
+    /// <summary>True while the two pickers are being synchronised, so their events don't recurse.</summary>
+    private bool _syncingBuy;
     private TextBlock? _buyHint;
     private readonly Dictionary<int, Border> _sellSlotBoxes = new();
     private TextBlock? _sellHint;
@@ -251,7 +259,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Which item to buy is chosen on the Buy tab, but a tool start only carries an id —
                 // so the choice is handed over here, just before the run that will read it.
                 if (id == "buy")
-                    _service.PendingBuyPreset = _buyPreset?.SelectedItem as string;
+                {
+                    _service.PendingBuyPreset = _activeBuyPreset;
+                    _service.PendingBuyCount = BuyRunCountFromCard();
+                }
 
                 if (!await _service.StartToolAsync(id))
                 {
@@ -274,13 +285,48 @@ public partial class MainWindow : FluentWindow, IDisposable
             left.Children.Add(nameText);
             left.Children.Add(statusText);
 
+            // Everything the Buy tool needs to be started without opening Configuration: which item,
+            // and how many. The preset picker appears on the tab as well — it is the same choice, so
+            // the two are kept in step rather than being one-looking control with two states.
+            var right = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            if (id == "buy")
+            {
+                _buyPresetCard = new ComboBox { MinWidth = 150, VerticalAlignment = VerticalAlignment.Center };
+                _buyPresetCard.SelectionChanged += (_, _) => OnBuyPresetChanged(fromCard: true);
+
+                _buyCountCard = UiText("1");
+                _buyCountCard.Width = 48;
+                var minus = MakeButton("−", ControlAppearance.Secondary);
+                minus.Click += (_, _) => BumpBuyCount(-1);
+                var plus = MakeButton("+", ControlAppearance.Secondary);
+                plus.Click += (_, _) => BumpBuyCount(+1);
+
+                var countRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 6, 0, 0),
+                };
+                countRow.Children.Add(minus);
+                countRow.Children.Add(_buyCountCard);
+                countRow.Children.Add(plus);
+
+                right.Children.Add(_buyPresetCard);
+                right.Children.Add(countRow);
+            }
+            right.Children.Add(buttons);
+
             var cardGrid = new Grid();
             cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Grid.SetColumn(left, 0);
-            Grid.SetColumn(buttons, 1);
+            Grid.SetColumn(right, 1);
             cardGrid.Children.Add(left);
-            cardGrid.Children.Add(buttons);
+            cardGrid.Children.Add(right);
 
             var card = new Border
             {
@@ -3542,7 +3588,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
             _service.Config.BuySell.SellCap = n;
-            SaveBuySell(hint, "Sell selection and cap saved to config\\local.yaml.");
+            SaveBuySell(hint, "Cap saved to config\\local.yaml. (The slot selection is never saved — " +
+                "it is chosen fresh each time, on purpose.)");
         };
 
         var capRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -3615,6 +3662,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         _buyPreset.SelectionChanged += (_, _) =>
         {
+            OnBuyPresetChanged(fromCard: false);
             if (_buyPreset.SelectedItem is not string name) return;
             if (!_service.Config.BuySell.Presets.TryGetValue(name, out var p)) return;
             nameBox.Text = name;
@@ -3627,7 +3675,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         fields.Children.Add(LabeledField("Name", nameBox));
         fields.Children.Add(LabeledField("Row (0 = top)", rowBox));
         fields.Children.Add(LabeledField("Scroll notches", scrollBox));
-        fields.Children.Add(LabeledField("Buy count", countBox));
+        fields.Children.Add(LabeledField("Usual count", countBox));
 
         panel.Children.Add(Section("Item",
             Hint("Pick the item the Buy card's Start will buy. The dropdown is what the tool reads — " +
@@ -3649,14 +3697,67 @@ public partial class MainWindow : FluentWindow, IDisposable
         return MakeTab("Buy", panel);
     }
 
+    /// <summary>Repopulates both preset pickers and leaves them on the same item. There are two
+    /// because the choice genuinely belongs in both places — on the tab, where the items are defined,
+    /// and on the card, where a run is started — but it is ONE choice, so they mirror rather than
+    /// drift.</summary>
     private void RefreshBuyPresets()
     {
-        if (_buyPreset == null) return;
-        var names = _service.Config.BuySell.Presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
-        var previous = _buyPreset.SelectedItem as string;
-        _buyPreset.ItemsSource = names;
-        _buyPreset.SelectedItem = previous != null && names.Contains(previous) ? previous : names.FirstOrDefault();
+        var names = _service.Config.BuySell.Presets.Keys
+            .OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+        if (_activeBuyPreset == null || !names.Contains(_activeBuyPreset))
+            _activeBuyPreset = names.FirstOrDefault();
+
+        _syncingBuy = true;
+        try
+        {
+            if (_buyPreset != null) { _buyPreset.ItemsSource = names; _buyPreset.SelectedItem = _activeBuyPreset; }
+            if (_buyPresetCard != null) { _buyPresetCard.ItemsSource = names; _buyPresetCard.SelectedItem = _activeBuyPreset; }
+        }
+        finally { _syncingBuy = false; }
+
+        SyncBuyCountFromPreset();
     }
+
+    private void OnBuyPresetChanged(bool fromCard)
+    {
+        if (_syncingBuy) return;
+
+        var chosen = (fromCard ? _buyPresetCard?.SelectedItem : _buyPreset?.SelectedItem) as string;
+        _activeBuyPreset = chosen;
+
+        _syncingBuy = true;
+        try
+        {
+            if (fromCard && _buyPreset != null) _buyPreset.SelectedItem = chosen;
+            if (!fromCard && _buyPresetCard != null) _buyPresetCard.SelectedItem = chosen;
+        }
+        finally { _syncingBuy = false; }
+
+        SyncBuyCountFromPreset();
+    }
+
+    /// <summary>Seeds the run count from the preset's own count — its usual amount — which the card
+    /// then lets you change for this run without editing the item.</summary>
+    private void SyncBuyCountFromPreset()
+    {
+        if (_buyCountCard == null || _activeBuyPreset == null) return;
+        if (!_service.Config.BuySell.Presets.TryGetValue(_activeBuyPreset, out var p)) return;
+        _buyCountCard.Text = p.Count.ToString(CultureInfo.InvariantCulture);
+        _service.PendingBuyCount = p.Count;
+    }
+
+    private void BumpBuyCount(int delta)
+    {
+        if (_buyCountCard == null) return;
+        var n = Math.Max(1, BuyRunCountFromCard() + delta);
+        _buyCountCard.Text = n.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The count as the card currently reads it. Free text with +/- beside it, so anything
+    /// unparseable falls back to 1 rather than refusing to start.</summary>
+    private int BuyRunCountFromCard()
+        => _buyCountCard != null && int.TryParse(_buyCountCard.Text.Trim(), out var n) && n >= 1 ? n : 1;
 
     private void SaveBuyPreset(Wpf.Ui.Controls.TextBox name, Wpf.Ui.Controls.TextBox row,
                                Wpf.Ui.Controls.TextBox scroll, Wpf.Ui.Controls.TextBox count)
@@ -3727,7 +3828,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             ScrollPoint = bs.ScrollPoint,
             MaxButton = bs.MaxButton,
             Presets = bs.Presets,
-            SellSlots = bs.SellSlots,
             SellCap = bs.SellCap,
         };
         TrySaveCalibration(() => _service.SaveLocal(local), hint, success);

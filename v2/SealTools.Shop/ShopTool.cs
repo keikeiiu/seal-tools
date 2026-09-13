@@ -30,13 +30,17 @@ public sealed class ShopTool : ToolBase
     private readonly AppConfig _cfg;
     private readonly ShopMode _mode;
     private readonly string? _presetName;
+    private readonly int _count;
 
-    public ShopTool(AppConfig cfg, ShopMode mode, string? presetName)
+    /// <param name="count">How many to buy. Comes from the run, not the preset: the preset's own
+    /// count is its usual amount, and asking for a different number should not mean editing it.</param>
+    public ShopTool(AppConfig cfg, ShopMode mode, string? presetName, int count = 1)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
         _mode = mode;
         _presetName = presetName;
+        _count = Math.Max(1, count);
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -133,7 +137,6 @@ public sealed class ShopTool : ToolBase
         if (rowProblem != null) return "Shop rows aren't calibrated — " + rowProblem + ".";
         if (!IsPoint(bs.ScrollPoint)) return "The scroll point isn't calibrated — Calibrate Buy/Sell.";
         if (!IsPoint(bs.MaxButton)) return "The MAX button isn't calibrated — Calibrate Buy/Sell.";
-        if (preset.Count < 1) return $"Preset '{_presetName}' is set to buy 0.";
         return null;
     }
 
@@ -157,12 +160,12 @@ public sealed class ShopTool : ToolBase
             return;
         }
 
-        for (int i = 0; i < preset.Count; i++)
+        for (int i = 0; i < _count; i++)
         {
             if (QuitPressed || ct.IsCancellationRequested) return;
 
             state.Cycle = i + 1;
-            state.Current = $"{_presetName} {i + 1}/{preset.Count}";
+            state.Current = $"{_presetName} {i + 1}/{_count}";
 
             // RIGHT click, like selling. The shop row takes a right-click to open the count dialog —
             // a left click does nothing, which is what made the first live buy silently no-op.
@@ -178,7 +181,7 @@ public sealed class ShopTool : ToolBase
             }
         }
 
-        state.Message = $"Bought {preset.Count}x '{_presetName}'.";
+        state.Message = $"Bought {_count}x '{_presetName}'.";
     }
 
     // ── Sell ─────────────────────────────────────────────────────────────────

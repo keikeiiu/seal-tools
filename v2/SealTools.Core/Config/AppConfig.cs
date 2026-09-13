@@ -56,8 +56,10 @@ public sealed class BuySellConfig
     /// they describe positions, so they live in local.yaml with the geometry.</summary>
     public Dictionary<string, BuyPreset> Presets { get; set; } = new();
 
-    /// <summary>Bag slot indices (0 = top-left) selected for selling. Stored so the picker reopens on
-    /// what you last chose.</summary>
+    /// <summary>Bag slot indices (0 = top-left) selected for selling. Deliberately NOT persisted:
+    /// what you are selling is decided fresh each time, and a selection carried over from a previous
+    /// session is a selection nobody re-checked. Selling is the one irreversible thing here, so it
+    /// starts from an empty grid every launch and reads only what is ticked now.</summary>
     public List<int> SellSlots { get; set; } = new();
 
     /// <summary>Hard ceiling on slots sold in one run. Enforced in the loop, not advisory — selling
