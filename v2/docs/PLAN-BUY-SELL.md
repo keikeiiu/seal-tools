@@ -34,6 +34,22 @@ live game, not from these.
 
 ---
 
+## The tool's shape
+
+Three tabs, because the jobs are genuinely different:
+
+| Tab | What it does |
+|---|---|
+| **Buy** | Pick a preset — Springs, Pet Food, … — set how many, start. |
+| **Sell** | Click the slots to sell on an 8×8 grid, then Dry run or Sell. |
+| **Calibrate** | The bag grid, the shop row, MAX, and each buy item's row and scroll amount. |
+
+**First release: springs and pet food only.** Those two are what actually gets re-bought, and between
+them they cover the cases that matter — a plain item, and one expensive enough to raise the second
+confirmation. But the machinery is generic from the start: the preset list, the row picker and the
+scroll field know nothing about springs. A third item is a preset you add, not a code change; only the
+two seeds are specific.
+
 ## Design
 
 ### Calibration is the gate
@@ -84,10 +100,17 @@ Selling reuses the buying UI — right-clicking an item opens the same COUNTER d
 there is **one** click sequence, driven twice:
 
 1. Open the dialog: left-click the shop row (buy) or right-click the bag slot (sell).
-2. Click **MAX** — the only click in the sequence that has no keyboard equivalent.
-3. **Enter.** This is taken by the COUNTER's confirm button.
-4. **Buying stops here — there is no confirmation.** Selling has one more step: a modal asking
-   "確定要將 … 出售嗎?". **That one is also taken by Enter**, so step 4 is a second `E`.
+2. Click **MAX** — the only click in the sequence with no keyboard equivalent.
+3. **Enter** — the COUNTER's confirm button.
+4. **Enter again** — a second confirmation.
+
+Selling always shows the second one ("確定要將 … 出售嗎?"). Buying shows it when the item is
+expensive, and **both items wanted here qualify** — springs and pet food. So the two flows are the
+same shape after all: *click, click, Enter, Enter*.
+
+Open question kept in mind: if a cheaper item does **not** confirm, that second Enter lands with no
+dialog up. Expected to be harmless, but it wants one deliberate test before the buy path is trusted
+with anything that matters.
 
 The whole sequence therefore needs exactly **four** calibrated things — the bag grid's two corners,
 the shop row, and MAX — plus firmware commands that already exist (`C`, `R`, `E`, `Q`/`Z`). Neither
@@ -108,9 +131,14 @@ Buying is the safe half: worst case is spending gold.
 
 ### Selling — which slots
 
-You say how much to sell, not the tool: **a number of slots**, or **a full page** (64). Whatever sits
-in those slots is what goes, and the decision of what is in them stays with you. No rule engine, no
-OCR of the bag.
+You say which slots, not the tool. The Sell screen shows a **clickable 8×8 grid** standing in for the
+bag — you click the slots to sell, they light up, and those are what go. A full page is one click on
+"select all" rather than a number you type.
+
+An explicit selection rather than a count is the right call here specifically because selling is
+destructive: "the first 40 slots" is a guess about what is in them, while lighting up 40 boxes shows
+you exactly what you are about to lose. No rule engine, no OCR of the bag — the decision stays yours
+and stays visible.
 
 Worth being blunt about the rest: this is the only destructive action in the suite. A mis-aimed click
 sells the wrong stack and it is gone — every other tool here is recoverable, a bad roll just costs
