@@ -99,7 +99,9 @@ actually click in.
 Selling reuses the buying UI — right-clicking an item opens the same COUNTER dialog a shop does. So
 there is **one** click sequence, driven twice:
 
-1. Open the dialog: left-click the shop row (buy) or right-click the bag slot (sell).
+1. Open the dialog: **right-click the item** — a shop row to buy, a bag slot to sell. (It is a
+   right-click for both. A left click on a shop row does nothing, which is what made the first live
+   buy silently no-op — it looked like a positioning failure and was a button failure.)
 2. Click **MAX** — the only click in the sequence with no keyboard equivalent.
 3. **Enter** — the COUNTER's confirm button.
 4. **Enter again** — a second confirmation.

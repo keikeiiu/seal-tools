@@ -11,9 +11,9 @@ namespace SealTools.Shop;
 
 public enum ShopMode { Buy, Sell }
 
-// Bulk buying and selling through the shop and bag windows. Both are the same transaction: open the
-// count dialog, press MAX, Enter, Enter. Buying opens it by left-clicking a shop row, selling by
-// right-clicking a bag slot — everything after that is identical, which is why one class does both.
+// Bulk buying and selling through the shop and bag windows. Both are the same transaction, and now
+// the same gesture too: RIGHT-click the item — a shop row to buy, a bag slot to sell — then MAX,
+// Enter, Enter. Everything after the first click is identical, which is why one class does both.
 //
 // Selling is the only irreversible thing in this suite: a mis-aimed click sells the wrong stack and
 // it is gone. Two consequences, both enforced here rather than left to the caller:
@@ -161,7 +161,9 @@ public sealed class ShopTool : ToolBase
             state.Cycle = i + 1;
             state.Current = $"{_presetName} {i + 1}/{preset.Count}";
 
-            if (!ClickAt(ser, target.X, target.Y, right: false, out var error))
+            // RIGHT click, like selling. The shop row takes a right-click to open the count dialog —
+            // a left click does nothing, which is what made the first live buy silently no-op.
+            if (!ClickAt(ser, target.X, target.Y, right: true, out var error))
             {
                 Stop(state, error);
                 return;
