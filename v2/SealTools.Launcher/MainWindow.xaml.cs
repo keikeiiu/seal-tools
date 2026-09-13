@@ -3863,13 +3863,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         drawGrid.Click += (_, _) => ArmDrag("grid");
         var drawSlot = MakeButton("Draw one slot", ControlAppearance.Secondary);
         drawSlot.Click += (_, _) => ArmDrag("slot");
+        var drawList = MakeButton("Draw shop list", ControlAppearance.Secondary);
+        drawList.Click += (_, _) => ArmDrag("list");
         var showCentres = MakeButton("Show 64 centres", ControlAppearance.Secondary);
         showCentres.Click += (_, _) => BsShowCentres();
         var save = MakeButton("Save Bag Grid", ControlAppearance.Primary);
         save.Click += (_, _) => BsSave();
 
         var drawRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawGrid, drawSlot, showCentres })
+        foreach (var b in new UiButton[] { drawGrid, drawSlot, drawList, showCentres })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             drawRow.Children.Add(b);
@@ -4000,9 +4002,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
         _bsDragTarget = target;
-        _buySellHint!.Text = target == "grid"
-            ? "Drag a box around the WHOLE 8x8 bag grid."
-            : "Drag a box around ONE slot.";
+        _buySellHint!.Text = target switch
+        {
+            "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
+            "list" => "Drag a box around the shop's item LIST (the scrolling panel, not the whole window).",
+            _ => "Drag a box around ONE slot.",
+        };
     }
 
     private async void BsCapture()
@@ -4098,6 +4103,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             _bsDragTarget = "slot";
             _buySellHint!.Text = $"Grid area {rect[2]}x{rect[3]}. Now drag a box around ONE slot.";
         }
+        else if (_bsDragTarget == "list")
+        {
+            cfg.ShopList = rect;
+            _bsDragTarget = null;
+            BsRedrawOverlay();
+            _buySellHint!.Text = $"Shop list region {rect[2]}x{rect[3]}. Now mark the rows, the scroll " +
+                "point and MAX, then Save Marks.";
+        }
         else
         {
             cfg.BagSlot = rect;
@@ -4107,6 +4120,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _buySellHint!.Text = $"Slot {rect[2]}x{rect[3]}, implying a {Math.Round(gap)} px gap between " +
                 "slots. " + (_service.GridCheck() ?? "Press Show 64 centres to check.");
         }
+        RefreshCalibChecklist();
     }
 
     /// <summary>Redraws every marker on the capture from the current config: the 64 slot centres the
@@ -4130,9 +4144,30 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (bs.ShopFirstRow is { Count: 2 } f1) Dot(new Point(f1[0], f1[1]), Brushes.LimeGreen, 14);
         if (bs.ShopSecondRow is { Count: 2 } f2) Dot(new Point(f2[0], f2[1]), Brushes.Cyan, 14);
         if (bs.ScrollPoint is { Count: 2 } sp) Dot(new Point(sp[0], sp[1]), Brushes.Yellow, 14);
+        // The list region as an outline, drawn before the dots so the marks stay readable on top.
+        if (BagGrid.IsValidRect(bs.ShopList)) Box(bs.ShopList!);
+
         if (bs.MaxButton is { Count: 2 } mb) Dot(new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
 
         RefreshCalibChecklist();
+    }
+
+    /// <summary>A calibrated rectangle as an outline on the capture, used for the shop list region.</summary>
+    private void Box(List<int> rect)
+    {
+        var a = NaturalToCanvas(new Point(rect[0], rect[1]), _bsScreenshot!, _bsCanvas!);
+        var b = NaturalToCanvas(new Point(rect[0] + rect[2], rect[1] + rect[3]), _bsScreenshot!, _bsCanvas!);
+        var box = new Rectangle
+        {
+            Width = Math.Max(1, b.X - a.X),
+            Height = Math.Max(1, b.Y - a.Y),
+            Stroke = Brushes.DeepSkyBlue,
+            StrokeThickness = 2,
+            Fill = Brushes.Transparent,
+        };
+        Canvas.SetLeft(box, a.X);
+        Canvas.SetTop(box, a.Y);
+        _bsCanvas!.Children.Add(box);
     }
 
     /// <summary>One marker, at a natural (image) coordinate. Local because the canvas shows the
@@ -4166,6 +4201,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Mark(BagGrid.IsValidRect(bs.BagGrid), "bag grid area      (drag)"),
             Mark(BagGrid.IsValidRect(bs.BagSlot), "one bag slot       (drag)"),
+            Mark(BagGrid.IsValidRect(bs.ShopList), "shop list region   (drag)"),
             Mark(ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) == null, "shop rows          (two clicks)"),
             Mark(bs.ScrollPoint is { Count: 2 }, "scroll point       (click)"),
             Mark(bs.MaxButton is { Count: 2 }, "MAX button         (click)"),
