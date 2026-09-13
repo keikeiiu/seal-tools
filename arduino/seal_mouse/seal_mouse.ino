@@ -3,11 +3,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// ── Serial protocol ──────────────────────────
+// One command per line, '\n'-terminated, 115200 baud. The first character selects the command.
+//
+//   C            left click (hold 50-150 ms)
+//   R            right click
+//   D dx dy      relative move — RAW HID counts, walked out in 10-px chunks. Never DPI-scaled.
+//   H dx dy ms   Bezier human-like move (v2 does not use it)
+//   E            Enter
+//   T            Tab
+//   S            Space (tap: press, hold, release)
+//   K n / k n    digit 0-9, normal / fast hold
+//   F n / f n    F1-F10, normal / fast hold
+//   X            Alt+Tab
+//   W ms         wait ms (1-9999)
+//   Q n / Z n    mouse wheel up / down, n notches (1-30)
+//   P / U        hold / release the spacebar (auto-pickup)
+//
+// An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
+// nothing is guessed at. The launcher validates before sending; this is the second line of defence.
+
 // ── Key hold durations (ms) ──────────────────
 // Uppercase K/F = human-like hold (30-80ms), lowercase k/f = fast hold.
 #define HOLD_NORMAL_MIN  30
 #define HOLD_NORMAL_MAX  80
 #define HOLD_FAST        10
+
+// ── Mouse wheel ──────────────────────────────
+// Games read the wheel as DISCRETE notches, so a scroll of n is n separate Mouse.move events with a
+// gap between them — one Mouse.move(0, 0, n) usually registers as a single notch. The gap is what
+// makes a multi-notch scroll land; too fast and the game coalesces or drops them.
+#define WHEEL_NOTCH_GAP_MS 25
+// A scroll longer than this is almost certainly a malformed frame rather than intent.
+#define WHEEL_MAX_NOTCHES  30
 
 // ── Held-key failsafe ────────────────────────
 // 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held
@@ -177,6 +205,18 @@ void loop() {
         else if (type == 'W') {
             int ms = atoi(&buf[1]);
             if (ms > 0 && ms < 10000) delay(ms);
+        }
+        // Mouse wheel — "Q n" scrolls up n notches, "Z n" scrolls down n. One Mouse.move per notch,
+        // with a gap, because games count discrete wheel events (see the defines above).
+        else if (type == 'Q' || type == 'Z') {
+            int n = atoi(&buf[1]);
+            if (n < 1) n = 1;
+            if (n > WHEEL_MAX_NOTCHES) n = WHEEL_MAX_NOTCHES;
+            int notch = (type == 'Q') ? 1 : -1;
+            for (int i = 0; i < n; i++) {
+                Mouse.move(0, 0, notch);
+                delay(WHEEL_NOTCH_GAP_MS);
+            }
         }
         // Hold space (auto-pickup): P presses and keeps it held, U releases it.
         else if (type == 'P') {
