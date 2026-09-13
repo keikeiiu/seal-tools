@@ -365,7 +365,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The firmware's per-command scroll ceiling, kept in step with WHEEL_MAX_NOTCHES in
     /// seal_mouse.ino. It was 30, which reached only halfway down a real shop list — so "scroll to
     /// the top", which every preset's scroll amount is measured from, was not reaching the top.</summary>
-    private const int WheelMaxNotches = 127;
+    private const int WheelMaxNotches = 200;
 
     /// <summary>What the cards-only height actually measured last layout pass. The "remember the
     /// user's expanded height" checks compare against this rather than the constant above, so they
@@ -3635,9 +3635,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Preset", pickRow)));
 
         panel.Children.Add(Section("Position",
-            Hint("Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs from " +
-                 "the top of the list, so the same number always lands in the same place. Set scroll " +
-                 "by trial with Dry run below — it scrolls and moves the cursor but never clicks."),
+            Hint($"Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs from " +
+                 $"the top of the list, so the same number always lands in the same place — up to " +
+                 $"{WheelMaxNotches} per run, which is what the firmware can carry in one command. Set " +
+                 "the number by trial with Dry run below: it scrolls and moves the cursor but never " +
+                 "clicks, so a wrong guess costs nothing."),
             fields,
             actRow));
 
@@ -3944,9 +3946,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         scrollRow.Children.Add(down);
 
         panel.Children.Add(Section("Test scroll (wheel)",
-            Hint("Sends real wheel notches to the game through the Arduino, so you can see how far one " +
-                 "notch moves the shop list — the number that sets every buy item's scroll amount. " +
-                 "Requires the firmware with the Q/Z commands flashed; without it, nothing happens."),
+            Hint($"Sends real wheel notches to the game through the Arduino, so you can see how far one " +
+                 $"notch moves the shop list — the number that sets every buy item's scroll amount. " +
+                 $"ONE COMMAND CARRIES AT MOST {WheelMaxNotches} NOTCHES, and scrolling to the top uses " +
+                 $"that whole amount at the start of every buy run: a shop list longer than " +
+                 $"{WheelMaxNotches} notches would leave the run starting from somewhere other than the " +
+                 "top, and every scroll amount is measured from there. Raise it in the firmware if that " +
+                 "ever happens. Needs the Q/Z commands flashed; without them nothing moves."),
             LabeledField("Notches", scrollRow)));
 
         RefreshCalibChecklist();
