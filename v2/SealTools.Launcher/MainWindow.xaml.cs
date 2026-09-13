@@ -362,6 +362,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     // that silently rots when a tool is added is not worth keeping.
     private const double ConfigCollapsedHeight = 430;
 
+    /// <summary>The firmware's per-command scroll ceiling, kept in step with WHEEL_MAX_NOTCHES in
+    /// seal_mouse.ino. It was 30, which reached only halfway down a real shop list — so "scroll to
+    /// the top", which every preset's scroll amount is measured from, was not reaching the top.</summary>
+    private const int WheelMaxNotches = 127;
+
     /// <summary>What the cards-only height actually measured last layout pass. The "remember the
     /// user's expanded height" checks compare against this rather than the constant above, so they
     /// still mean "bigger than the collapsed window" now that the collapsed window is taller.</summary>
@@ -4262,10 +4267,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             _buySellHint!.Text = "Enter how many notches to send (1 or more).";
             return;
         }
-        if (n > 30)
+        if (n > WheelMaxNotches)
         {
-            // The firmware clamps to 30; say so rather than let the number silently shrink.
-            _buySellHint!.Text = "The firmware caps a single scroll at 30 notches.";
+            // It is clamped, not queued — say so rather than let the number silently shrink.
+            _buySellHint!.Text = $"The firmware caps a single scroll at {WheelMaxNotches} notches. " +
+                "Send it twice if the list is longer.";
             return;
         }
 

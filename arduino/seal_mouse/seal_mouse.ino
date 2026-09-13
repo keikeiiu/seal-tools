@@ -17,7 +17,7 @@
 //   F n / f n    F1-F12, normal / fast hold
 //   X            Alt+Tab
 //   W ms         wait ms (1-9999)
-//   Q n / Z n    mouse wheel up / down, n notches (1-30)
+//   Q n / Z n    mouse wheel up / down, n notches (1-127)
 //   P / U        hold / release the spacebar (auto-pickup)
 //
 // An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
@@ -34,8 +34,12 @@
 // gap between them — one Mouse.move(0, 0, n) usually registers as a single notch. The gap is what
 // makes a multi-notch scroll land; too fast and the game coalesces or drops them.
 #define WHEEL_NOTCH_GAP_MS 25
-// A scroll longer than this is almost certainly a malformed frame rather than intent.
-#define WHEEL_MAX_NOTCHES  30
+// Ceiling for a single scroll command. Generous on purpose: "scroll to the top" is sent as one
+// command at this maximum, and a list longer than it would leave the origin short of the top —
+// which every stored scroll amount is measured from. 127 notches at the gap below is about three
+// seconds, which is the cost of being sure. Lower this only if the guard is needed more than the
+// reach.
+#define WHEEL_MAX_NOTCHES  127
 
 // ── Held-key failsafe ────────────────────────
 // 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held

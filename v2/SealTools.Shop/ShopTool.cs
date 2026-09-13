@@ -295,8 +295,10 @@ public sealed class ShopTool : ToolBase
         return true;
     }
 
-    /// <summary>The firmware clamps a scroll to 30; sending that is "go to the top".</summary>
-    private const int WheelMax = 30;
+    /// <summary>The firmware's per-command ceiling, and what "go to the top" is sent as. It used to
+    /// be 30, which reached only halfway down a real shop list — so the "known origin" every preset
+    /// is measured from was not the top at all. Sized to over-reach rather than to fit.</summary>
+    private const int WheelMax = 127;
 
     private static void Stop(ToolState state, string reason)
     {
