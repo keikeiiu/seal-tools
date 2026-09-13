@@ -80,13 +80,25 @@ public class BagGridTests
         Assert.Null(BagGrid.Disagreement(Grid(), new List<int> { 110, 210, 51, 51 }));
     }
 
+    // The case that shipped broken. A slot is naturally SMALLER than the pitch, because the pitch is
+    // centre-to-centre and counts the gap between slots while the slot box measures the slot itself.
+    // An earlier exact-match tolerance read a perfectly good 47px slot as 4px wrong and refused to
+    // save, which is worse than no check at all.
     [Fact]
-    public void ASlotThatContradictsThePitchIsReported()
+    public void ASlotSmallerThanThePitchByAGapIsAccepted()
     {
-        var problem = BagGrid.Disagreement(Grid(), new List<int> { 110, 210, 60, 40 });
+        Assert.Null(BagGrid.Disagreement(Grid(), new List<int> { 110, 210, 47, 47 }));
+        Assert.Equal(4.0, BagGrid.ImpliedGap(Grid(), new List<int> { 110, 210, 47, 47 }));
+    }
+
+    [Fact]
+    public void AGrosslyWrongSlotIsReported()
+    {
+        // Two slots dragged as one, or the icon only — the kind of error the check is actually for.
+        var problem = BagGrid.Disagreement(Grid(), new List<int> { 110, 210, 95, 20 });
 
         Assert.NotNull(problem);
-        Assert.Contains("60x40", problem);
+        Assert.Contains("95x20", problem);
         Assert.Contains("per slot", problem);
     }
 

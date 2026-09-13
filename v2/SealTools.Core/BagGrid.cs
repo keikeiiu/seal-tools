@@ -48,20 +48,36 @@ public static class BagGrid
         return centres;
     }
 
-    /// <summary>Where the single calibrated slot disagrees with the pitch the whole-grid rectangle
-    /// implies, as a human-readable reason — or null when they agree. Returned rather than thrown so
-    /// the calibrator can show it while the user is still dragging.</summary>
-    public static string? Disagreement(IReadOnlyList<int> grid, IReadOnlyList<int> slot, int tolerancePx = 3)
+    // A slot is naturally SMALLER than the pitch — the pitch is centre-to-centre and includes the gap
+    // between slots, while the slot box measures the slot itself. So an exact match is the wrong
+    // expectation, and a tight tolerance rejects good calibrations. This allows a gap of up to a
+    // quarter of a cell and still catches the thing the check exists for: a gross mis-drag, like a
+    // slot box drawn around two slots or the grid box around half the bag.
+    private const double SlotToleranceFraction = 0.25;
+    private const double MinTolerancePx = 5;
+
+    /// <summary>Where the single calibrated slot is too far from the pitch the whole-grid rectangle
+    /// implies, as a human-readable reason — or null when it is plausible. Returned rather than thrown
+    /// so the calibrator can show it while the user is still dragging.</summary>
+    public static string? Disagreement(IReadOnlyList<int> grid, IReadOnlyList<int> slot)
     {
         if (!IsValidRect(grid)) return "the grid area isn't set";
         if (!IsValidRect(slot)) return "the slot box isn't set";
 
         double px = PitchX(grid), py = PitchY(grid);
         double dx = Math.Abs(slot[2] - px), dy = Math.Abs(slot[3] - py);
-        if (dx <= tolerancePx && dy <= tolerancePx) return null;
+        if (dx <= Math.Max(MinTolerancePx, px * SlotToleranceFraction) &&
+            dy <= Math.Max(MinTolerancePx, py * SlotToleranceFraction))
+            return null;
 
-        return $"the slot box is {slot[2]}x{slot[3]} but the grid implies {Math.Round(px)}x{Math.Round(py)} " +
-               $"per slot (off by {Math.Round(dx)}x{Math.Round(dy)} px). One of the two drags is wrong — " +
-               "re-drag the one that looks off.";
+        return $"the slot box is {slot[2]}x{slot[3]} but the grid works out to {Math.Round(px)}x" +
+               $"{Math.Round(py)} per slot. A slot is normally a little smaller than that — the " +
+               "difference is the gap between slots — so this is too far apart to be a gap. One of " +
+               "the two drags is wrong; re-drag the one that looks off.";
     }
+
+    /// <summary>The gap between slots implied by the two rectangles, for display. Not used in the
+    /// derivation — the slot box is evidence, not a second source of truth.</summary>
+    public static double ImpliedGap(IReadOnlyList<int> grid, IReadOnlyList<int> slot)
+        => IsValidRect(grid) && IsValidRect(slot) ? PitchX(grid) - slot[2] : 0;
 }

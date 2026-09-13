@@ -4076,7 +4076,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.BagSlot = rect;
             _bsDragTarget = null;
             BsRedrawOverlay();
-            _buySellHint!.Text = $"Slot {rect[2]}x{rect[3]}. " + (_service.GridCheck() ?? "Press Show 64 centres to check.");
+            var gap = BagGrid.ImpliedGap(cfg.BagGrid ?? new List<int>(), rect);
+            _buySellHint!.Text = $"Slot {rect[2]}x{rect[3]}, implying a {Math.Round(gap)} px gap between " +
+                "slots. " + (_service.GridCheck() ?? "Press Show 64 centres to check.");
         }
     }
 
