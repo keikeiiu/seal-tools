@@ -162,6 +162,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
+    /// <summary>The row picker on the Buy tab, kept as a field because RefreshBuyPresets fills it —
+    /// including when no preset is selected, which is the state a brand-new install starts in and
+    /// cannot create its first item without.</summary>
+    private ComboBox? _buyRowBox;
     /// <summary>The same preset picker on the Buy card, so a run can be set up without opening
     /// Configuration. Both mirrors of one choice — see OnBuyPresetChanged.</summary>
     private ComboBox? _buyPresetCard;
@@ -3709,10 +3713,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         pickRow.Children.Add(reload);
 
         var nameBox = UiText("", "e.g. Springs");
-        var rowBox = UiText("0");
+        _buyRowBox = BuyRowPicker();
+        var rowBox = _buyRowBox;
         var scrollBox = UiText("0");
         var countBox = UiText("1");
-        foreach (var b in new[] { nameBox, rowBox, scrollBox, countBox }) b.Width = 90;
+        foreach (var b in new[] { nameBox, scrollBox, countBox }) b.Width = 90;
         nameBox.Width = 160;
 
         var save = MakeButton("Save item", ControlAppearance.Primary);
@@ -3733,28 +3738,28 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (_buyPreset.SelectedItem is not string name) return;
             if (!_service.Config.BuySell.Presets.TryGetValue(name, out var p)) return;
             nameBox.Text = name;
-            rowBox.Text = p.Row.ToString(CultureInfo.InvariantCulture);
+            SyncBuyRowPicker(rowBox, p.Row);
             scrollBox.Text = p.Scroll.ToString(CultureInfo.InvariantCulture);
             countBox.Text = p.Count.ToString(CultureInfo.InvariantCulture);
         };
 
         var fields = new StackPanel();
         fields.Children.Add(LabeledField("Name", nameBox));
-        fields.Children.Add(LabeledField("Row (0 = top)", rowBox));
+        fields.Children.Add(LabeledField("Row", rowBox));
         fields.Children.Add(LabeledField("Scroll notches", scrollBox));
         fields.Children.Add(LabeledField("Usual count", countBox));
 
         panel.Children.Add(Section("Item",
             Hint("Pick the item the Buy card's Start will buy. The dropdown is what the tool reads — " +
-                 "editing the numbers below does nothing until you save them onto a name."),
+                 "editing the fields below does nothing until you save them onto a name."),
             LabeledField("Preset", pickRow)));
 
         panel.Children.Add(Section("Position",
-            Hint("Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs FROM THE " +
-                 "TOP of the list, so the number only means anything while the list is actually at the " +
-                 "top — scroll it there yourself before a run or a dry run; the tool does not do it for " +
-                 "you. Set the number by trial with Dry run below: it scrolls and moves the cursor but " +
-                 "never clicks, so a wrong guess costs nothing."),
+            Hint("Row 1 is the top visible row after scrolling; the list drops down from there. Scroll " +
+                 "notches are wheel-downs FROM THE TOP of the list, so the number only means anything " +
+                 "while the list is actually at the top — scroll it there yourself before a run or a dry " +
+                 "run; the tool does not do it for you. Set the number by trial with Dry run below: it " +
+                 "scrolls and moves the cursor but never clicks, so a wrong guess costs nothing."),
             fields,
             actRow));
 
@@ -3762,6 +3767,39 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         RefreshBuyPresets();
         return MakeTab("Buy", panel);
+    }
+
+    /// <summary>The Buy tab's row field, as a picker rather than a text box. It used to be a free-text
+    /// 0-based index with "0 = top row" in the label, which is invisible at the point of use: a 1 there
+    /// bought the second item down, and nothing on screen said so. A labelled entry cannot be off by
+    /// one, because there is no number to get wrong — and the value stored is still the 0-based index
+    /// the geometry works in.
+    ///
+    /// Its own helper rather than an inline ComboBox so the one place that knows how a row becomes a
+    /// label is also the one place that turns it back.</summary>
+    private static ComboBox BuyRowPicker() => new()
+    {
+        Width = 160,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// <summary>Points the row picker at <paramref name="row"/> (0-based), rebuilding its entries from
+    /// the configured visible-row count first — the count is a config value, so a picker built once at
+    /// startup could offer a row this shop's list does not have.
+    ///
+    /// A preset saved while the count was larger is still representable: its row gets an entry of its
+    /// own, marked rather than dropped. Dropping it would blank the field, and the next Save would
+    /// write the wrong row — trading a clear message for a silent one. Selecting that entry leaves
+    /// <c>SelectedIndex</c> past the bottom of the list, which is exactly what the save-time check
+    /// reports.</summary>
+    private void SyncBuyRowPicker(ComboBox picker, int row)
+    {
+        var rows = Math.Max(1, _service.Config.BuySell.ShopRows);
+        var items = new List<string>(rows + 1);
+        for (int i = 0; i < rows; i++) items.Add($"Row {i + 1}");
+        if (row >= rows) items.Add($"Row {row + 1} — past the bottom of the list");
+        picker.ItemsSource = items;
+        picker.SelectedIndex = row >= rows ? rows : Math.Max(0, row);
     }
 
     /// <summary>Repopulates both preset pickers and leaves them on the same item. There are two
@@ -3784,6 +3822,19 @@ public partial class MainWindow : FluentWindow, IDisposable
         finally { _syncingBuy = false; }
 
         SyncBuyCountFromPreset();
+        // Filled here as well as from the picker's own SelectionChanged, because that event does not
+        // fire when nothing is selected — and "nothing selected" is exactly the fresh install that has
+        // to pick a row to create its first item.
+        if (_buyRowBox is { } picker)
+        {
+            var row = _activeBuyPreset != null &&
+                      _service.Config.BuySell.Presets.TryGetValue(_activeBuyPreset, out var active)
+                ? active.Row
+                // No preset yet, so there is no stored row to show. Top row is the default the old
+                // text box started on, and the picker has to start somewhere to be usable at all.
+                : 0;
+            SyncBuyRowPicker(picker, row);
+        }
     }
 
     private void OnBuyPresetChanged(bool fromCard)
@@ -3826,12 +3877,15 @@ public partial class MainWindow : FluentWindow, IDisposable
     private int BuyRunCountFromCard()
         => _buyCountCard != null && int.TryParse(_buyCountCard.Text.Trim(), out var n) && n >= 1 ? n : 1;
 
-    private void SaveBuyPreset(Wpf.Ui.Controls.TextBox name, Wpf.Ui.Controls.TextBox row,
+    private void SaveBuyPreset(Wpf.Ui.Controls.TextBox name, ComboBox row,
                                Wpf.Ui.Controls.TextBox scroll, Wpf.Ui.Controls.TextBox count)
     {
         var key = name.Text.Trim();
         if (key.Length == 0) { _buyHint!.Text = "Give the item a name first."; return; }
-        if (!int.TryParse(row.Text.Trim(), out var r) || r < 0) { _buyHint!.Text = "Row must be 0 or more."; return; }
+        // The picker's index IS the 0-based row the geometry wants, so there is no number to parse
+        // and no off-by-one to make — see BuyRowPicker.
+        if (row.SelectedIndex < 0) { _buyHint!.Text = "Pick the row this item sits on."; return; }
+        var r = row.SelectedIndex;
         if (!int.TryParse(scroll.Text.Trim(), out var sc) || sc < 0) { _buyHint!.Text = "Scroll notches must be 0 or more."; return; }
         // Against the SAME constant the firmware is built from, not a copy. This said "30" for
         // several cap changes after the firmware moved on, which is the whole reason the number is
@@ -3847,7 +3901,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _service.Config.BuySell.Presets[key] = new BuyPreset { Row = r, Scroll = sc, Count = n };
         RefreshBuyPresets();
         _buyPreset!.SelectedItem = key;
-        SaveBuySell(_buyHint!, $"Item '{key}' saved (row {r}, scroll {sc}, count {n}).");
+        SaveBuySell(_buyHint!, $"Item '{key}' saved (row {r + 1}, scroll {sc}, count {n}).");
     }
 
     private void DeleteBuyPreset()
@@ -3872,9 +3926,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         // window, which is not a thing anyone wants a buying tool to do.
         if (row >= bs.ShopRows)
         {
-            _buyHint!.Text = $"Row {row} is past the bottom of the list — only {bs.ShopRows} rows are " +
-                "visible at once. Scroll further and pick a lower row, or raise the visible-row count " +
-                "on the Buy / Sell tab.";
+            // Numbered as the picker numbers it, not as the index it stores: this message is read
+            // next to a control that says "Row 4", and "Row 3" there would be the off-by-one again.
+            _buyHint!.Text = $"Row {row + 1} is past the bottom of the list — only {bs.ShopRows} rows " +
+                "are visible at once. Scroll further and pick a lower row.";
             return false;
         }
         return true;

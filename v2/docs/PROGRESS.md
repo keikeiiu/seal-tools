@@ -9,6 +9,46 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-14 (3) — the Buy row field became a picker, so the off-by-one can't be typed
+
+**Goal.** Close the last open item on the buy/sell tool. A preset's row was a free-text **0-based**
+index with "0 = top row" in the label — a number that is wrong one way round and labelled the other,
+which is the worst possible pairing. Typing `1` bought the *second* item down and nothing on screen
+said so; the label was the only clue and it had to be read every time.
+
+**What changed.** The field is now a dropdown listing the rows as **"Row 1" … "Row N"**, filled from
+the configured `ShopRows`. The stored value is still the 0-based index the geometry uses — only the
+labeling changed, so nothing downstream moves. `SelectedIndex` *is* the row, so there is no number to
+parse and no fencepost to get wrong.
+
+Three details that are the whole change:
+
+- **The save-time check is numbered the same way.** `ShopRowOk` printed `Row {row}` with the raw index,
+  so a rejected "Row 4" pick would have been answered with "Row 3 is past the bottom" — the off-by-one,
+  reintroduced by the error message that exists to explain it. It now reports `row + 1`, and the
+  saved-item confirmation likewise.
+- **The picker is refilled, not built once.** `ShopRows` is a config value; a picker built at startup
+  could offer a row this shop's list does not have. It is rebuilt by `SyncBuyRowPicker` alongside
+  every preset refresh.
+- **A preset saved under a larger row count stays representable.** Its row gets an entry of its own
+  ("Row 11 — past the bottom of the list") rather than being dropped. Dropping it would blank the
+  field, and the next Save would then write the wrong row — trading a clear message for a silent one.
+  Selecting it leaves `SelectedIndex` past the bottom, which is exactly what `ShopRowOk` reports.
+
+**Also fixed, because it was the same bug wearing a different hat:** the picker is filled from
+`RefreshBuyPresets`, not only from the preset picker's `SelectionChanged`. That event does not fire
+when nothing is selected — which is precisely the fresh install that has to pick a row to create its
+first item. Without this the dropdown came up empty and no item could be created at all.
+
+**Verified:** builds clean, 45/45 tests pass. **Not verified:** the tests do not reach `MainWindow`, so
+that is a compile check — nothing has exercised the control. The layout is the one thing that wants a
+live look: the picker is `Width = 160`, matching the Name field beside it, but a WPF-UI `ComboBox`'s
+height and padding are not a `TextBox`'s and the Position rows are independent grids, so nothing forces
+them to agree. A DPI-aware capture of the Buy tab is the check.
+
+**Left open, unchanged:** the count seeding from the preset's usual count, and the sell selection
+never being persisted. Both were reviewed and both stay as they are.
+
 ## 2026-09-14 (2) — the buy/sell tool, and four lessons that cost real time
 
 **Selling verified too.** Both halves work on the live game. Selling takes a set of bag slots, picks

@@ -1,5 +1,9 @@
 # Machine-specific calibration — never commit
 config/local.yaml
+# Backups taken beside the live one. Named with a date suffix so a copy keeps the live file
+# untouched, which means they need their own rule — the exact-path rule above does not match them,
+# and a stray `git add -A` would otherwise publish a full personal calibration.
+config/local.yaml.backup-*
 # Backup of the corrupted local.yaml kept beside the live one (local repair, 2026-09-09)
 config/local.yaml.corrupt-backup
 
