@@ -141,9 +141,16 @@ public partial class MainWindow : FluentWindow, IDisposable
     private bool _cycleRunning;
     private System.Windows.Controls.Image? _gemResultPreview;
 
-    // Buy/Sell calibrator state. Only the scroll test exists so far — the bag grid and the shop
-    // rows come next, so this holds a hint line and nothing else yet.
+    // Buy/Sell calibrator state.
     private TextBlock? _buySellHint;
+    private Image? _bsImage;
+    private Canvas? _bsCanvas;
+    private BitmapSource? _bsScreenshot;
+    private DisplayInfo? _bsDisplay;
+    /// <summary>Dragging a box on the capture: which of the two rectangles the next drag fills.</summary>
+    private string? _bsDragTarget;
+    private Point? _bsDragStart;
+    private Rectangle? _bsMarquee;
 
     public MainWindow()
     {
@@ -3199,6 +3206,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         return new Point((p.X - offX) / scale, (p.Y - offY) / scale);
     }
 
+    /// <summary>The inverse of <see cref="CanvasToNatural"/>: an image (natural) pixel to where the
+    /// canvas shows it. Needed to draw a marker AT a computed coordinate rather than read one back
+    /// from a click — the bag-grid overlay is the one place a coordinate travels that way.</summary>
+    private static Point NaturalToCanvas(Point p, BitmapSource screenshot, Canvas canvas)
+    {
+        var w = screenshot.PixelWidth;
+        var h = screenshot.PixelHeight;
+        var availW = canvas.ActualWidth;
+        var availH = canvas.ActualHeight;
+        if (w == 0 || h == 0 || availW <= 0 || availH <= 0) return p;
+
+        var scale = Math.Min(availW / w, availH / h);
+        return new Point(p.X * scale + (availW - w * scale) / 2,
+                         p.Y * scale + (availH - h * scale) / 2);
+    }
+
     private static void AddDot(Canvas canvas, Point p)
     {
         var dot = new Ellipse
@@ -3418,21 +3441,61 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
     /// copied verbatim into nine Build*Tab methods, which is why the horizontal-scroll fix below had
     /// to be made nine times.</summary>
-    /// <summary>Buy / Sell calibration. Only the scroll test is here so far: the rest of this tab —
-    /// dragging the bag grid, picking shop rows, marking MAX — lands with the tool itself. This much
-    /// exists now because it is what proves the reflashed firmware's wheel works, and until that is
-    /// confirmed there is no point building anything on top of it.</summary>
+    /// <summary>Buy / Sell calibration: the bag grid, and the scroll test that proves the firmware's
+    /// wheel works. The shop-row picker and the MAX point land with the tool itself — what is here is
+    /// everything that can be built and checked without the buy flow existing yet.</summary>
     private TabItem BuildBuySellCalibrateTab()
     {
         var panel = new StackPanel();
 
-        _buySellHint = new TextBlock
+        var hint = Mono();
+        hint.Text = "Capture the game with the BAG OPEN to begin.";
+        _buySellHint = hint;
+
+        var image = new Image { Stretch = Stretch.Uniform };
+        var canvas = new Canvas { Background = Brushes.Transparent, MinHeight = 300 };
+        _bsImage = image;
+        _bsCanvas = canvas;
+        canvas.MouseDown += (_, e) => BsMouseDown(canvas, e.GetPosition(canvas));
+        canvas.MouseMove += (_, e) => BsMouseMove(canvas, e.GetPosition(canvas));
+        canvas.MouseUp += (_, e) => BsMouseUp(canvas, e.GetPosition(canvas));
+
+        var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
+        grid.Children.Add(image);
+        grid.Children.Add(canvas);
+
+        var capture = MakeButton("Capture bag window", ControlAppearance.Primary);
+        capture.Click += (_, _) => BsCapture();
+
+        var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
+        drawGrid.Click += (_, _) => ArmDrag("grid");
+        var drawSlot = MakeButton("Draw one slot", ControlAppearance.Secondary);
+        drawSlot.Click += (_, _) => ArmDrag("slot");
+        var showCentres = MakeButton("Show 64 centres", ControlAppearance.Secondary);
+        showCentres.Click += (_, _) => BsShowCentres();
+        var save = MakeButton("Save Bag Grid", ControlAppearance.Primary);
+        save.Click += (_, _) => BsSave();
+
+        var drawRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { drawGrid, drawSlot, showCentres })
         {
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 8, 0, 0),
-            Text = "Put the mouse over the shop list first — the wheel scrolls whatever is under the cursor.",
-        };
+            b.Margin = new Thickness(0, 0, 6, 0);
+            drawRow.Children.Add(b);
+        }
+        var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
+        captureRow.Children.Add(capture);
+
+        panel.Children.Add(Section("Bag grid",
+            Hint("Drag a box around the WHOLE 8x8 bag, then a second box around ONE slot. Both are " +
+                 "needed: the whole grid gives the pitch, and the single slot is the check that the " +
+                 "grid really is uniform. If the two disagree the tab says so rather than averaging " +
+                 "them. \"Show 64 centres\" draws where the tool would click — if the dots don't sit " +
+                 "on the slots, the drag is wrong."),
+            captureRow,
+            LabeledField("Draw", drawRow),
+            grid,
+            save));
+        panel.Children.Add(Section("Result", hint));
 
         var notches = UiText("3");
         notches.Width = 60;
@@ -3442,19 +3505,181 @@ public partial class MainWindow : FluentWindow, IDisposable
         up.Click += async (_, _) => await BuySellTestScroll(notches, upwards: true);
         down.Click += async (_, _) => await BuySellTestScroll(notches, upwards: false);
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(notches);
-        row.Children.Add(up);
-        row.Children.Add(down);
+        var scrollRow = new StackPanel { Orientation = Orientation.Horizontal };
+        scrollRow.Children.Add(notches);
+        scrollRow.Children.Add(up);
+        scrollRow.Children.Add(down);
 
         panel.Children.Add(Section("Test scroll (wheel)",
             Hint("Sends real wheel notches to the game through the Arduino, so you can see how far one " +
                  "notch moves the shop list — the number that sets every buy item's scroll amount. " +
                  "Requires the firmware with the Q/Z commands flashed; without it, nothing happens."),
-            LabeledField("Notches", row),
-            _buySellHint));
+            LabeledField("Notches", scrollRow)));
 
         return MakeTab("Buy / Sell", panel);
+    }
+
+    private void ArmDrag(string target)
+    {
+        if (_bsScreenshot == null)
+        {
+            _buySellHint!.Text = "Capture the bag window first.";
+            return;
+        }
+        _bsDragTarget = target;
+        _buySellHint!.Text = target == "grid"
+            ? "Drag a box around the WHOLE 8x8 bag grid."
+            : "Drag a box around ONE slot.";
+    }
+
+    private async void BsCapture()
+    {
+        var shot = await CaptureScreenshotAsync();
+        if (shot == null)
+        {
+            _buySellHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        _bsDisplay = shot.Value.Display;
+        _bsScreenshot = shot.Value.Image;
+        _bsImage!.Source = shot.Value.Image;
+        _bsDragTarget = null;
+        _bsDragStart = null;
+        _bsMarquee = null;
+        _bsCanvas!.Children.Clear();
+        _buySellHint!.Text = "Captured. Open the bag, then draw the grid area followed by one slot. " +
+            "(If the bag isn't open in the capture, capture again.)";
+    }
+
+    private void BsMouseDown(Canvas canvas, Point p)
+    {
+        if (_bsScreenshot == null || _bsDragTarget == null) return;
+        _bsDragStart = p;
+        _bsMarquee = new Rectangle
+        {
+            Stroke = Brushes.Magenta,
+            StrokeThickness = 2,
+            StrokeDashArray = new DoubleCollection { 4, 2 },
+        };
+        Canvas.SetLeft(_bsMarquee, p.X);
+        Canvas.SetTop(_bsMarquee, p.Y);
+        canvas.Children.Add(_bsMarquee);
+    }
+
+    private void BsMouseMove(Canvas canvas, Point p)
+    {
+        if (_bsMarquee == null || _bsDragStart == null) return;
+        Canvas.SetLeft(_bsMarquee, Math.Min(_bsDragStart.Value.X, p.X));
+        Canvas.SetTop(_bsMarquee, Math.Min(_bsDragStart.Value.Y, p.Y));
+        _bsMarquee.Width = Math.Abs(p.X - _bsDragStart.Value.X);
+        _bsMarquee.Height = Math.Abs(p.Y - _bsDragStart.Value.Y);
+    }
+
+    private void BsMouseUp(Canvas canvas, Point p)
+    {
+        if (_bsMarquee == null || _bsDragStart == null || _bsScreenshot == null || _bsCanvas == null) return;
+
+        var a = CanvasToNatural(_bsDragStart.Value, _bsScreenshot, _bsCanvas);
+        var b = CanvasToNatural(p, _bsScreenshot, _bsCanvas);
+        var rect = new List<int>
+        {
+            (int)Math.Round(Math.Min(a.X, b.X)),
+            (int)Math.Round(Math.Min(a.Y, b.Y)),
+            (int)Math.Round(Math.Abs(b.X - a.X)),
+            (int)Math.Round(Math.Abs(b.Y - a.Y)),
+        };
+
+        canvas.Children.Remove(_bsMarquee);
+        _bsMarquee = null;
+        _bsDragStart = null;
+
+        // A slip of the mouse shouldn't silently become a 3-pixel grid. Same guard the tuner and gem
+        // calibrators use, for the same reason.
+        if (rect[2] < 20 || rect[3] < 20)
+        {
+            _buySellHint!.Text = $"That box is only {rect[2]}x{rect[3]} px — too small, drag again.";
+            return;
+        }
+
+        var cfg = _service.Config.BuySell;
+        if (_bsDragTarget == "grid")
+        {
+            cfg.BagGrid = rect;
+            _bsDragTarget = "slot";
+            _buySellHint!.Text = $"Grid area {rect[2]}x{rect[3]}. Now drag a box around ONE slot.";
+        }
+        else
+        {
+            cfg.BagSlot = rect;
+            _bsDragTarget = null;
+            _buySellHint!.Text = $"Slot {rect[2]}x{rect[3]}. " + (_service.GridCheck() ?? "Press Show 64 centres to check.");
+        }
+    }
+
+    /// <summary>Draws every slot centre the current grid implies, over the capture. This is the whole
+    /// verification step: the derivation assumes the grid is uniform, and 64 dots at once is the only
+    /// way to see whether it is, on this render.</summary>
+    private void BsShowCentres()
+    {
+        if (_bsScreenshot == null || _bsCanvas == null)
+        {
+            _buySellHint!.Text = "Capture the bag window first.";
+            return;
+        }
+        var gridRect = _service.Config.BuySell.BagGrid;
+        if (!BagGrid.IsValidRect(gridRect))
+        {
+            _buySellHint!.Text = "Draw the grid area first.";
+            return;
+        }
+
+        // Clear the drag markers but keep the image.
+        _bsCanvas.Children.Clear();
+        var centres = BagGrid.Centres(gridRect!);
+        foreach (var (x, y) in centres)
+        {
+            var dot = new Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Stroke = Brushes.Magenta,
+                StrokeThickness = 2,
+                Fill = Brushes.Transparent,
+            };
+            // Centres are in image (natural) pixels; the canvas shows the image scaled to fit.
+            var p = NaturalToCanvas(new Point(x, y), _bsScreenshot, _bsCanvas);
+            Canvas.SetLeft(dot, p.X - 4);
+            Canvas.SetTop(dot, p.Y - 4);
+            _bsCanvas.Children.Add(dot);
+        }
+
+        _buySellHint!.Text = $"Drew {centres.Count} slot centres. If they don't sit on the slots, " +
+            "re-drag the grid area. " + (_service.GridCheck() ?? "Grid and slot box agree.");
+    }
+
+    private void BsSave()
+    {
+        var cfg = _service.Config.BuySell;
+        if (!BagGrid.IsValidRect(cfg.BagGrid) || !BagGrid.IsValidRect(cfg.BagSlot))
+        {
+            _buySellHint!.Text = "Draw both boxes first — the grid area and one slot.";
+            return;
+        }
+        if (_service.GridCheck() is { } problem)
+        {
+            _buySellHint!.Text = "Not saved: " + problem;
+            return;
+        }
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.BuySell = new ConfigLoader.LocalBuySell { BagGrid = cfg.BagGrid, BagSlot = cfg.BagSlot };
+        if (!TrySaveCalibration(() => _service.SaveLocal(local), _buySellHint!,
+                "Bag grid saved to config\\local.yaml."))
+            return;
+
+        var pitch = BagGrid.PitchX(cfg.BagGrid!);
+        _buySellHint!.Text += $" Slot pitch {Math.Round(pitch, 1)} px.";
     }
 
     /// <summary>One wheel nudge, for calibrating how far a notch moves the list. Sends and reports;

@@ -17,6 +17,21 @@ public sealed class AppConfig
     public TunerConfig Tuner { get; set; } = new();
     public GemConfig Gem { get; set; } = new();
     public SpammerConfig Spammer { get; set; } = new();
+    public BuySellConfig BuySell { get; set; } = new();
+}
+
+/// <summary>Bag geometry for the buy/sell tool. Machine-specific — a different PC, resolution or bag
+/// skin moves it — so it lives in local.yaml beside the gem positions. Two rectangles rather than 64
+/// points: see <see cref="SealTools.Core.BagGrid"/> for why that is enough, and what the second one
+/// is actually for.</summary>
+public sealed class BuySellConfig
+{
+    /// <summary>Whole bag grid region, client-relative physical [x, y, w, h].</summary>
+    public List<int>? BagGrid { get; set; }
+
+    /// <summary>One bag slot in the same space. The uniformity check on <see cref="BagGrid"/>, not a
+    /// second source of truth.</summary>
+    public List<int>? BagSlot { get; set; }
 }
 
 public sealed class WindowConfig

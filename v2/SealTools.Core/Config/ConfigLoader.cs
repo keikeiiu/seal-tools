@@ -145,6 +145,8 @@ public sealed class ConfigLoader
         if (local.Gem?.EmptySignature != null) defaults.Gem.EmptySignature = local.Gem.EmptySignature;
         if (local.Gem?.EmptyDistance != null) defaults.Gem.EmptyDistance = local.Gem.EmptyDistance.Value;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
+        if (BagGrid.IsValidRect(local.BuySell?.BagGrid)) defaults.BuySell.BagGrid = local.BuySell!.BagGrid;
+        if (BagGrid.IsValidRect(local.BuySell?.BagSlot)) defaults.BuySell.BagSlot = local.BuySell!.BagSlot;
 
         // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
         // calibration — not in the portable defaults.yaml that publish.bat ships. Merged per preset
@@ -221,6 +223,18 @@ public sealed class ConfigLoader
         public LocalArduino? Arduino { get; set; }
         public LocalUi? Ui { get; set; }
         public LocalSpammer? Spammer { get; set; }
+        public LocalBuySell? BuySell { get; set; }
+    }
+
+    /// <summary>The buy/sell calibrator's bag geometry. Machine-specific like the gem positions.
+    /// Written by the calibrator, read by the tool.</summary>
+    public sealed class LocalBuySell
+    {
+        /// <summary>Whole bag grid, client-relative physical [x, y, w, h].</summary>
+        public List<int>? BagGrid { get; set; }
+
+        /// <summary>One bag slot in the same space, kept as the uniformity check.</summary>
+        public List<int>? BagSlot { get; set; }
     }
 
     /// <summary>The player's own spammer rotations. Personal, not machine-specific, but it lives here

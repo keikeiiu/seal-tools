@@ -220,6 +220,18 @@ public sealed class LauncherService : IDisposable
     /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
     public void SaveConfig() => _loader.SaveDefaults(Config);
 
+    /// <summary>Why the calibrated bag grid and its single-slot box disagree, or null when they
+    /// agree. The calibrator shows this while dragging, and refuses to save on it — the whole grid
+    /// derivation assumes the slots are uniform, and the single slot is the only evidence that they
+    /// are. Null also means "both are set and consistent".</summary>
+    public string? GridCheck()
+    {
+        var bs = Config.BuySell;
+        if (!Core.BagGrid.IsValidRect(bs.BagGrid)) return "the grid area isn't set";
+        if (!Core.BagGrid.IsValidRect(bs.BagSlot)) return "the slot box isn't set";
+        return Core.BagGrid.Disagreement(bs.BagGrid!, bs.BagSlot!);
+    }
+
     /// <summary>Releases the spacebar directly, independent of the Hold Space tool's loop — so a stop
     /// click can never leave the key stuck down.</summary>
     public void ReleaseSpace() { try { _arduino?.Write("U\n"); } catch { } }
