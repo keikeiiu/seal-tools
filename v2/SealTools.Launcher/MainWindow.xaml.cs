@@ -157,6 +157,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Which of the single points the calibrator is waiting for, if any: "first", "second",
     /// "scroll" or "max". Set by the matching button, cleared by the click that fills it.</summary>
     private string? _bsPointTarget;
+    /// <summary>The "what is set so far" list on the Buy/Sell calibrate tab.</summary>
+    private TextBlock? _bsChecklist;
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -3887,6 +3889,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Mark", markRow),
             saveShop));
 
+        // What is set and what is not, so a save with a gap doesn't leave the tool refusing to run
+        // for a reason this tab never showed.
+        _bsChecklist = Mono();
+        _bsChecklist.Text = "nothing captured yet";
+        panel.Children.Add(Section("Setup so far",
+            Hint("Filled in as you mark things. Saving with a gap is allowed — the tool says what is " +
+                 "missing when you press Start, rather than clicking into empty screen."),
+            _bsChecklist));
+
         panel.Children.Add(Section("Result", hint));
 
         var notches = UiText("3");
@@ -3908,6 +3919,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "Requires the firmware with the Q/Z commands flashed; without it, nothing happens."),
             LabeledField("Notches", scrollRow)));
 
+        RefreshCalibChecklist();
         return MakeTab("Buy / Sell", panel);
     }
 
@@ -3941,6 +3953,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             default: bs.MaxButton = point; break;
         }
 
+        BsRedrawOverlay();
         var pitch = ShopGeometry.RowPitch(bs.ShopFirstRow, bs.ShopSecondRow);
         _buySellHint!.Text = which switch
         {
@@ -3981,8 +3994,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         _bsDragStart = null;
         _bsMarquee = null;
         _bsCanvas!.Children.Clear();
-        _buySellHint!.Text = "Captured. Open the bag, then draw the grid area followed by one slot. " +
-            "(If the bag isn't open in the capture, capture again.)";
+        RefreshCalibChecklist();
+        _buySellHint!.Text = "Captured. Draw the grid area and one slot, then mark the shop rows, " +
+            "the scroll point and MAX. (If the shop or bag isn't open in the capture, capture again.)";
     }
 
     private void BsMouseDown(Canvas canvas, Point p)
@@ -4061,49 +4075,96 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             cfg.BagSlot = rect;
             _bsDragTarget = null;
+            BsRedrawOverlay();
             _buySellHint!.Text = $"Slot {rect[2]}x{rect[3]}. " + (_service.GridCheck() ?? "Press Show 64 centres to check.");
         }
     }
 
-    /// <summary>Draws every slot centre the current grid implies, over the capture. This is the whole
-    /// verification step: the derivation assumes the grid is uniform, and 64 dots at once is the only
-    /// way to see whether it is, on this render.</summary>
+    /// <summary>Redraws every marker on the capture from the current config: the 64 slot centres the
+    /// grid implies, and the four shop marks. Called after each mark, so a click that registered is
+    /// visible immediately — without it a click looks like it did nothing, which is exactly how the
+    /// shop marks felt.</summary>
+    private void BsRedrawOverlay()
+    {
+        if (_bsScreenshot == null || _bsCanvas == null) return;
+
+        _bsCanvas.Children.Clear();
+        var bs = _service.Config.BuySell;
+
+        if (BagGrid.IsValidRect(bs.BagGrid))
+        {
+            foreach (var (x, y) in BagGrid.Centres(bs.BagGrid!))
+                Dot(new Point(x, y), Brushes.Magenta, 8);
+        }
+
+        // Distinct colours so it is obvious which mark is which on a busy capture.
+        if (bs.ShopFirstRow is { Count: 2 } f1) Dot(new Point(f1[0], f1[1]), Brushes.LimeGreen, 14);
+        if (bs.ShopSecondRow is { Count: 2 } f2) Dot(new Point(f2[0], f2[1]), Brushes.Cyan, 14);
+        if (bs.ScrollPoint is { Count: 2 } sp) Dot(new Point(sp[0], sp[1]), Brushes.Yellow, 14);
+        if (bs.MaxButton is { Count: 2 } mb) Dot(new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
+
+        RefreshCalibChecklist();
+    }
+
+    /// <summary>One marker, at a natural (image) coordinate. Local because the canvas shows the
+    /// screenshot scaled to fit, so a computed coordinate has to be mapped forward first.</summary>
+    private void Dot(Point natural, Brush stroke, double size)
+    {
+        var dot = new Ellipse
+        {
+            Width = size,
+            Height = size,
+            Stroke = stroke,
+            StrokeThickness = 2,
+            Fill = Brushes.Transparent,
+        };
+        var p = NaturalToCanvas(natural, _bsScreenshot!, _bsCanvas!);
+        Canvas.SetLeft(dot, p.X - size / 2);
+        Canvas.SetTop(dot, p.Y - size / 2);
+        _bsCanvas!.Children.Add(dot);
+    }
+
+    /// <summary>Which marks are set and which are missing. Saving with a gap leaves the tool refusing
+    /// to run for a reason the tab never showed, so the gap is listed here instead.</summary>
+    private void RefreshCalibChecklist()
+    {
+        if (_bsChecklist == null) return;
+        var bs = _service.Config.BuySell;
+
+        string Mark(bool ok, string label) => (ok ? "  ok   " : "  --   ") + label;
+
+        var lines = new List<string>
+        {
+            Mark(BagGrid.IsValidRect(bs.BagGrid), "bag grid area      (drag)"),
+            Mark(BagGrid.IsValidRect(bs.BagSlot), "one bag slot       (drag)"),
+            Mark(ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) == null, "shop rows          (two clicks)"),
+            Mark(bs.ScrollPoint is { Count: 2 }, "scroll point       (click)"),
+            Mark(bs.MaxButton is { Count: 2 }, "MAX button         (click)"),
+        };
+        if (bs.Presets.Count > 0) lines.Add("  " + bs.Presets.Count + " buy item(s)      (Buy tab)");
+        if (bs.SellSlots.Count > 0) lines.Add("  " + bs.SellSlots.Count + " slot(s) to sell (Sell tab)");
+
+        _bsChecklist.Text = string.Join("\n", lines);
+    }
+
+    /// <summary>Draws every slot centre the grid implies. The whole verification step: the derivation
+    /// assumes the grid is uniform, and 64 dots at once is the only way to see whether it is.</summary>
     private void BsShowCentres()
     {
-        if (_bsScreenshot == null || _bsCanvas == null)
+        if (_bsScreenshot == null)
         {
-            _buySellHint!.Text = "Capture the bag window first.";
+            _buySellHint!.Text = "Capture the game first.";
             return;
         }
-        var gridRect = _service.Config.BuySell.BagGrid;
-        if (!BagGrid.IsValidRect(gridRect))
+        if (!BagGrid.IsValidRect(_service.Config.BuySell.BagGrid))
         {
             _buySellHint!.Text = "Draw the grid area first.";
             return;
         }
 
-        // Clear the drag markers but keep the image.
-        _bsCanvas.Children.Clear();
-        var centres = BagGrid.Centres(gridRect!);
-        foreach (var (x, y) in centres)
-        {
-            var dot = new Ellipse
-            {
-                Width = 8,
-                Height = 8,
-                Stroke = Brushes.Magenta,
-                StrokeThickness = 2,
-                Fill = Brushes.Transparent,
-            };
-            // Centres are in image (natural) pixels; the canvas shows the image scaled to fit.
-            var p = NaturalToCanvas(new Point(x, y), _bsScreenshot, _bsCanvas);
-            Canvas.SetLeft(dot, p.X - 4);
-            Canvas.SetTop(dot, p.Y - 4);
-            _bsCanvas.Children.Add(dot);
-        }
-
-        _buySellHint!.Text = $"Drew {centres.Count} slot centres. If they don't sit on the slots, " +
-            "re-drag the grid area. " + (_service.GridCheck() ?? "Grid and slot box agree.");
+        BsRedrawOverlay();
+        _buySellHint!.Text = "Drew the slot centres and your marks. If the magenta dots don't sit on the " +
+            "slots, re-drag the grid area. " + (_service.GridCheck() ?? "Grid and slot box agree.");
     }
 
     private void BsSave()
@@ -4124,8 +4185,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             $"Saved to config\\local.yaml — slot pitch {Math.Round(BagGrid.PitchX(cfg.BagGrid!), 1)} px.");
     }
 
-    /// <summary>One wheel nudge, for calibrating how far a notch moves the list. Sends and reports;
-    /// it does not touch the cursor, so whatever is under it is what scrolls.</summary>
+    /// <summary>One wheel nudge, for calibrating how far a notch moves the list.</summary>
     private async Task BuySellTestScroll(Wpf.Ui.Controls.TextBox notches, bool upwards)
     {
         if (!int.TryParse(notches.Text.Trim(), out var n) || n < 1)
@@ -4133,10 +4193,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             _buySellHint!.Text = "Enter how many notches to send (1 or more).";
             return;
         }
-        if (n > 127)
+        if (n > 30)
         {
             // The firmware clamps to 30; say so rather than let the number silently shrink.
             _buySellHint!.Text = "The firmware caps a single scroll at 30 notches.";
+            return;
+        }
+
+        if (_service.Config.BuySell.ScrollPoint is not { Count: 2 } point)
+        {
+            _buySellHint!.Text = "Mark the scroll point first. The wheel acts on whatever is under the " +
+                "cursor, so the cursor has to be put over the shop list before scrolling means anything.";
             return;
         }
 
@@ -4147,10 +4214,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
+        // Put the cursor over the list with the Arduino FIRST. Without this the wheel scrolls
+        // whatever the desktop cursor happens to be over — usually the launcher — so the list does
+        // not move, which looks exactly like firmware that does not work.
+        if (!TryPlace(ser, point[0], point[1], out var err))
+        {
+            _buySellHint!.Text = "Couldn't move the cursor to the scroll point: " + err;
+            return;
+        }
+
         try
         {
             ser.Write((upwards ? "Q " : "Z ") + n + "\n");
-            _buySellHint!.Text = $"Sent {n} notch(es) {(upwards ? "up" : "down")} — did the list move?";
+            _buySellHint!.Text = $"Moved the cursor onto the list, then sent {n} notch(es) " +
+                $"{(upwards ? "up" : "down")} — did the list move?";
         }
         catch (Exception ex)
         {
