@@ -4,70 +4,77 @@ using Xunit;
 
 namespace SealTools.Tests;
 
-// A buy preset says "row N", and the row's position is the first marked row plus N pitches. The
-// pitch comes from two adjacent marks rather than an assumed row height, because nine rows of drift
-// would put the click on a different item — and buying the wrong thing costs gold.
+// A buy preset says "row N". Row positions are derived from one dragged region rather than marked by
+// hand, because two hand-clicked rows can disagree with each other and a single region cannot. The
+// arithmetic is therefore the part that has to be right — it is what the whole buy path clicks
+// against, and a pitch that drifts puts the click on the wrong item.
 public class ShopGeometryTests
 {
-    private static List<int> First() => new() { 400, 300 };
-    private static List<int> Second() => new() { 400, 347 };
+    // 10 rows in a 470px tall region gives a clean 47px pitch.
+    private static List<int> Region() => new() { 100, 300, 400, 470 };
 
     [Fact]
-    public void PitchComesFromTheTwoMarks()
+    public void PitchIsTheRegionDividedByTheRowCount()
     {
-        Assert.Equal(47, ShopGeometry.RowPitch(First(), Second()));
+        Assert.Equal(47.0, ShopGeometry.RowPitch(Region(), 10));
+        Assert.Equal(10, ShopGeometry.DefaultRows);
     }
 
     [Fact]
-    public void RowZeroIsTheFirstMark()
+    public void RowZeroIsHalfAPitchDownFromTheTop()
     {
-        var c = ShopGeometry.RowCentre(First(), Second(), 0);
+        var c = ShopGeometry.RowCentre(Region(), 10, 0);
 
         Assert.NotNull(c);
-        Assert.Equal(400, c!.Value.X);
-        Assert.Equal(300, c.Value.Y);
+        Assert.Equal(100 + 400 / 2, c!.Value.X);   // horizontally centred in the region
+        Assert.InRange(c.Value.Y, 323, 324);        // half of 47 is 23.5; either rounding is fine
     }
 
     [Fact]
-    public void EachRowIsOnePitchFurtherDown()
+    public void TheLastRowStaysOnThePitch()
     {
-        // Row 9 is the last of the ten visible rows in the captured shop list — it must stay on the
-        // pitch, not merely near it, or the click lands between two items.
-        var c = ShopGeometry.RowCentre(First(), Second(), 9);
+        // The row that matters most: nine pitches down, still on the region rather than past it.
+        var c = ShopGeometry.RowCentre(Region(), 10, 9);
 
         Assert.NotNull(c);
-        Assert.Equal(300 + 9 * 47, c!.Value.Y);
-    }
-
-    // A second mark above the first is a mis-click, not a pitch of zero. Returning 0 keeps it out of
-    // the arithmetic; Problem() is what tells the user.
-    [Fact]
-    public void ASecondMarkAboveTheFirstIsNotUsable()
-    {
-        var above = new List<int> { 400, 250 };
-
-        Assert.Equal(0, ShopGeometry.RowPitch(First(), above));
-        Assert.Null(ShopGeometry.RowCentre(First(), above, 3));
-        Assert.NotNull(ShopGeometry.Problem(First(), above));
+        Assert.Equal(300 + (int)System.Math.Round(9.5 * 47), c!.Value.Y);
+        Assert.True(c.Value.Y < 300 + 470);
     }
 
     [Fact]
-    public void HalfMarkedRowsAreRefusedNotGuessed()
+    public void EveryRowIsOnePitchApart()
     {
-        Assert.NotNull(ShopGeometry.Problem(First(), null));
-        Assert.NotNull(ShopGeometry.Problem(null, Second()));
+        var centres = ShopGeometry.RowCentres(Region(), 10);
+
+        Assert.Equal(10, centres.Count);
+        for (int i = 1; i < centres.Count; i++)
+            Assert.InRange(centres[i].Y - centres[i - 1].Y, 46, 48);
     }
 
     [Fact]
-    public void FullyMarkedRowsReportNoProblem()
+    public void ADifferentRowCountChangesThePitch()
     {
-        Assert.Null(ShopGeometry.Problem(First(), Second()));
-        Assert.Null(ShopGeometry.Problem(new List<int> { 1, 2 }, new List<int> { 1, 30 }));
+        // The row count is a property of the game, not of the setup — if a game update changes it,
+        // every row moves, which is exactly why it is config rather than a constant.
+        Assert.Equal(470 / 10.0, ShopGeometry.RowPitch(Region(), 10));
+        Assert.Equal(470 / 5.0, ShopGeometry.RowPitch(Region(), 5));
+    }
+
+    [Fact]
+    public void AnUndrawnRegionIsRefusedNotGuessed()
+    {
+        Assert.NotNull(ShopGeometry.Problem(null, 10));
+        Assert.NotNull(ShopGeometry.Problem(new List<int>(), 10));
+        Assert.NotNull(ShopGeometry.Problem(Region(), 0));
+        Assert.Null(ShopGeometry.Problem(Region(), 10));
+
+        Assert.Null(ShopGeometry.RowCentre(null, 10, 0));
+        Assert.Empty(ShopGeometry.RowCentres(null, 10));
     }
 
     [Fact]
     public void ANegativeRowIsRefused()
     {
-        Assert.Null(ShopGeometry.RowCentre(First(), Second(), -1));
+        Assert.Null(ShopGeometry.RowCentre(Region(), 10, -1));
     }
 }

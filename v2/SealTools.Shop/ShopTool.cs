@@ -126,7 +126,7 @@ public sealed class ShopTool : ToolBase
         if (!bs.Presets.TryGetValue(_presetName, out var preset))
             return $"Buy preset '{_presetName}' no longer exists.";
 
-        var rowProblem = ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow);
+        var rowProblem = ShopGeometry.Problem(bs.ShopRegion, bs.ShopRows);
         if (rowProblem != null) return "Shop rows aren't calibrated — " + rowProblem + ".";
         if (!IsPoint(bs.ScrollPoint)) return "The scroll point isn't calibrated — Calibrate Buy/Sell.";
         if (!IsPoint(bs.MaxButton)) return "The MAX button isn't calibrated — Calibrate Buy/Sell.";
@@ -152,7 +152,7 @@ public sealed class ShopTool : ToolBase
             SleepCheck(DialogWait);
         }
 
-        var row = ShopGeometry.RowCentre(bs.ShopFirstRow, bs.ShopSecondRow, preset.Row);
+        var row = ShopGeometry.RowCentre(bs.ShopRegion, bs.ShopRows, preset.Row);
         if (row is not { } target)
         {
             state.Message = "Couldn't work out the shop row — recalibrate the two row marks.";

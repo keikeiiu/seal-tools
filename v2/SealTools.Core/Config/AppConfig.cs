@@ -33,18 +33,15 @@ public sealed class BuySellConfig
     /// second source of truth.</summary>
     public List<int>? BagSlot { get; set; }
 
-    /// <summary>How many rows of the shop list are visible at once. Only used to warn when a preset's
-    /// row index falls below the list — a click there would land on whatever is under the shop window.
-    /// A count rather than a dragged region: the same information for a fraction of the setup.</summary>
-    public int ShopRows { get; set; } = 10;
+    /// <summary>Rows the filter list shows at once. A property of the GAME rather than of anyone's
+    /// setup, which is why it is not exposed in the UI — but a config value rather than a constant so
+    /// a game update that changes it does not need a code change.</summary>
+    public int ShopRows { get; set; } = ShopGeometry.DefaultRows;
 
-    /// <summary>Centre of the list's FIRST visible row, client-relative physical [x, y]. A buy
-    /// preset's row index is measured from here.</summary>
-    public List<int>? ShopFirstRow { get; set; }
-
-    /// <summary>Centre of the row directly below the first. Two adjacent clicks give the pitch
-    /// exactly, where one click and a guess would drift over nine rows.</summary>
-    public List<int>? ShopSecondRow { get; set; }
+    /// <summary>The visible part of the shop list, client-relative physical [x, y, w, h]. Dragged
+    /// around exactly the rows the list shows. Every row centre is derived from this — see
+    /// <see cref="SealTools.Core.ShopGeometry"/> for why one region beats two clicked rows.</summary>
+    public List<int>? ShopRegion { get; set; }
 
     /// <summary>Where the cursor is parked so the wheel scrolls the LIST. The wheel acts on whatever
     /// is under the cursor, so this is not optional.</summary>

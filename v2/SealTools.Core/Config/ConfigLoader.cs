@@ -150,8 +150,7 @@ public sealed class ConfigLoader
             if (BagGrid.IsValidRect(bs.BagGrid)) defaults.BuySell.BagGrid = bs.BagGrid;
             if (BagGrid.IsValidRect(bs.BagSlot)) defaults.BuySell.BagSlot = bs.BagSlot;
             if (bs.ShopRows is > 0) defaults.BuySell.ShopRows = bs.ShopRows.Value;
-            if (IsPoint(bs.ShopFirstRow)) defaults.BuySell.ShopFirstRow = bs.ShopFirstRow;
-            if (IsPoint(bs.ShopSecondRow)) defaults.BuySell.ShopSecondRow = bs.ShopSecondRow;
+            if (BagGrid.IsValidRect(bs.ShopRegion)) defaults.BuySell.ShopRegion = bs.ShopRegion;
             if (IsPoint(bs.ScrollPoint)) defaults.BuySell.ScrollPoint = bs.ScrollPoint;
             if (IsPoint(bs.MaxButton)) defaults.BuySell.MaxButton = bs.MaxButton;
             if (bs.SellSlots is { Count: > 0 }) defaults.BuySell.SellSlots = bs.SellSlots;
@@ -255,11 +254,8 @@ public sealed class ConfigLoader
         /// <summary>Rows of the shop list visible at once.</summary>
         public int? ShopRows { get; set; }
 
-        /// <summary>First visible row's centre [x, y].</summary>
-        public List<int>? ShopFirstRow { get; set; }
-
-        /// <summary>The row directly below it — two clicks give the pitch exactly.</summary>
-        public List<int>? ShopSecondRow { get; set; }
+        /// <summary>The visible shop list region [x, y, w, h].</summary>
+        public List<int>? ShopRegion { get; set; }
 
         /// <summary>Where the cursor parks so the wheel scrolls the list.</summary>
         public List<int>? ScrollPoint { get; set; }
