@@ -26,14 +26,17 @@ public static class ShopGeometry
     public const int DefaultRows = 10;
 
     /// <summary>The most notches one scroll command may carry — the firmware's WHEEL_MAX_NOTCHES,
-    /// mirrored here so the tool and the calibrator have ONE number between them rather than a copy
-    /// each. It is also what "scroll to the top" sends, so it doubles as the reach: a list longer
-    /// than this leaves the run starting short of the top, and every preset's scroll amount is
-    /// measured from that origin.
+    /// mirrored here so the tool and the calibrator share ONE number rather than keeping a copy each.
+    /// (Three copies previously drifted apart, and the stale one silently rejected valid setups.)
     ///
-    /// Cannot be shared with the firmware itself — different language — so seal_mouse.ino's define
-    /// is the one genuine duplicate. It changes when the game's list outgrows it, or when the notch
-    /// gap changes, since the two are coupled.</summary>
+    /// It is a guard and nothing more: it stops a malformed value wedging the board, which cannot
+    /// read serial while it loops. It is NOT the reach — a preset's scroll is applied from wherever
+    /// the list already is, and putting the list at the top is the user's setup rather than a scroll
+    /// the tool sends. An earlier design did scroll to the top, which made this ceiling
+    /// load-bearing; that is gone.
+    ///
+    /// Cannot be shared with the firmware itself — different language — so seal_mouse.ino's define is
+    /// the one genuine duplicate.</summary>
     public const int MaxScrollNotches = 400;
 
     public static bool IsValidRegion(IReadOnlyList<int>? region) => BagGrid.IsValidRect(region);

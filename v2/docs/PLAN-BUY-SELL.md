@@ -150,29 +150,23 @@ Required before it runs live:
 - a **dry-run mode** that highlights the slots it would click and sells nothing
 - the grid overlay above as the calibration gate
 
-### The wheel cap is load-bearing, not just a guard
+### The list starts at the top — that is the user's setup, not the tool's
 
-`Q n` / `Z n` clamp at **400 notches** in the firmware (`WHEEL_MAX_NOTCHES`), and "scroll to the top"
-is sent as **one command at that maximum**. So the cap is not only a guard against a malformed frame —
-it is also *how far the tool can scroll in a single go*. A shop list longer than the cap leaves the
-run starting from somewhere other than the top, and every preset's scroll amount is measured from that
-origin, so items would land progressively further off the further they sit from the shortfall.
+A preset's scroll amount means "notches down from the top", so the list has to *be* at the top when a
+run starts. The tool does not put it there. **Scrolling it there is yours to do before starting.**
 
-It was 30, which reached only **halfway** down a real list — measured on the live game, putting that
-list at roughly 60 notches end to end. The ceiling is set at about ten seconds of scrolling, which is
-the worst case if a malformed frame arrives: the board cannot read serial while it is looping, so this
-bounds how long it can be out of touch.
+That is a deliberate reversal. An earlier design sent "scroll to the top" as one command at the
+firmware's maximum, which had two bad consequences: it made the firmware's per-command ceiling
+*load-bearing* — the cap was the reach, so a list longer than the cap left every preset measured from
+the wrong origin — and it cost ten seconds of the board being unable to read serial, on every run.
 
-It is **coupled to the notch gap** (`WHEEL_NOTCH_GAP_MS`, 25ms): "ten seconds" is only 400 notches at
-that gap. Lengthen the gap — which is what you would do if the game turned out to be coalescing fast
-wheel events — and the same ceiling buys proportionally fewer.
+The ceiling is now only a guard against a malformed value wedging the board, which is all it was ever
+meant to be. It sits in `ShopGeometry.MaxScrollNotches`, shared by the tool and the calibrator; the
+firmware's `WHEEL_MAX_NOTCHES` is the one duplicate that cannot be merged, being a different language.
 
-It has **one home in C#** — `ShopGeometry.MaxScrollNotches` — shared by the tool and the calibrator,
-which previously had a constant each; the preset validation made a third, and it was that literal
-copy which stayed at 30 through two cap changes and rejected valid presets. The firmware's define is
-the one genuine duplicate, since it is a different language; keep the two in step by hand.
-
-The UI states the value, interpolated from the constant, so what you read is what is enforced.
+**The cost of the reversal:** if the list is not at the top when a run starts, every click lands
+further off the further the item sits from where the list actually was. Nothing detects that, so it is
+worth glancing at the list before starting.
 
 ### Scrolling — a per-item amount, set in dry run
 

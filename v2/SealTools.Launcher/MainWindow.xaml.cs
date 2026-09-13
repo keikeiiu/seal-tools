@@ -3635,11 +3635,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Preset", pickRow)));
 
         panel.Children.Add(Section("Position",
-            Hint($"Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs from " +
-                 $"the top of the list, so the same number always lands in the same place — up to " +
-                 $"{WheelMaxNotches} per run, which is what the firmware can carry in one command. Set " +
-                 "the number by trial with Dry run below: it scrolls and moves the cursor but never " +
-                 "clicks, so a wrong guess costs nothing."),
+            Hint("Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs FROM THE " +
+                 "TOP of the list, so the number only means anything while the list is actually at the " +
+                 "top — scroll it there yourself before a run or a dry run; the tool does not do it for " +
+                 "you. Set the number by trial with Dry run below: it scrolls and moves the cursor but " +
+                 "never clicks, so a wrong guess costs nothing."),
             fields,
             actRow));
 
@@ -3783,12 +3783,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             // Same origin the real run uses: wheel-up to the maximum and let it clamp, then down by
             // the stored amount. If this lands wrong, so would the run.
-            // The ceiling the firmware actually enforces, not a copy — this said 30, which was two
-            // cap changes stale. The wait is the firmware's walking time rather than a guess: it
-            // sends the notches out one at a time with a gap, and reading the list before it finishes
-            // puts the cursor on a stale row.
-            ser.Write($"Q {WheelMaxNotches}\n");
-            await Task.Delay(ScrollSettleMs(WheelMaxNotches));
+            // No scroll-to-top. The list is expected to already BE at the top, which is your setup
+            // rather than the tool's job — scrolling it there would be the length of the whole list
+            // on every attempt. The wait is the firmware's walking time rather than a guess: it sends
+            // the notches out one at a time with a gap, and reading mid-scroll puts the cursor on a
+            // stale row.
             if (preset.Scroll > 0)
             {
                 ser.Write($"Z {preset.Scroll}\n");
@@ -3801,9 +3800,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (row is not { } target) { _buyHint!.Text = "Couldn't work out the row."; return; }
         if (!TryPlace(ser, target.X, target.Y, out err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
 
-        _buyHint!.Text = $"Dry run: scrolled {preset.Scroll} notch(es) down from the top and parked the " +
-                         $"cursor on row {preset.Row}. Nothing was clicked. If the pointer isn't on " +
-                         "'" + name + "', change the scroll amount and run this again.";
+        _buyHint!.Text = $"Dry run: scrolled {preset.Scroll} notch(es) down from where the list was and " +
+                         $"parked the cursor on row {preset.Row}. Nothing was clicked. It assumes the " +
+                         "list is already at the TOP — scroll it there yourself first. If the pointer " +
+                         $"isn't on '{name}', change the scroll amount and run this again.";
     }
 
     private async Task SellDryRun()
@@ -3968,12 +3968,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Test scroll (wheel)",
             Hint($"Sends real wheel notches to the game through the Arduino, so you can see how far one " +
-                 $"notch moves the shop list — the number that sets every buy item's scroll amount. " +
-                 $"ONE COMMAND CARRIES AT MOST {WheelMaxNotches} NOTCHES, and scrolling to the top uses " +
-                 $"that whole amount at the start of every buy run: a shop list longer than " +
-                 $"{WheelMaxNotches} notches would leave the run starting from somewhere other than the " +
-                 "top, and every scroll amount is measured from there. Raise it in the firmware if that " +
-                 "ever happens. Needs the Q/Z commands flashed; without them nothing moves."),
+                 $"notch moves the shop list — the number that sets every buy item's scroll amount. One " +
+                 $"command carries at most {WheelMaxNotches} notches; that is a guard against a malformed " +
+                 "value wedging the board, not a limit you should meet in normal use. The game must be " +
+                 "FOCUSED and the cursor over the list, which is why this clicks the scroll point first " +
+                 "— you have just been clicking the launcher. Needs the Q/Z commands flashed."),
             LabeledField("Notches", scrollRow)));
 
         RefreshCalibChecklist();

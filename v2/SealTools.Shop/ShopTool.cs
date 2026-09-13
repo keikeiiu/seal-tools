@@ -143,14 +143,9 @@ public sealed class ShopTool : ToolBase
         var bs = _cfg.BuySell;
         var preset = bs.Presets[_presetName!];
 
-        // Scroll to the top first, always. The stored amount is "notches down from the top", so
-        // without a known origin it would mean something different every run.
-        if (!ScrollToTop(ser, state)) return;
-        if (preset.Scroll > 0)
-        {
-            Scroll(ser, preset.Scroll, down: true);
-            SleepCheck(DialogWait);
-        }
+        // From wherever the list is — which must be the top, because the preset's amount is measured
+        // from there. Left at the top by the user; see ScrollFromTop.
+        if (!ScrollFromTop(ser, state, preset.Scroll)) return;
 
         var row = ShopGeometry.RowCentre(bs.ShopRegion, bs.ShopRows, preset.Row);
         if (row is not { } target)
@@ -241,17 +236,29 @@ public sealed class ShopTool : ToolBase
 
     private static void Enter(SerialPort ser) => ser.Write("E\n");
 
+    /// <summary>How long the firmware needs to walk a scroll out: one gap per notch plus slack. A
+    /// short wait is worse than a long one here — the HID moves that follow queue behind the scroll
+    /// on the board, so placing the cursor too early reads a cursor that has not moved yet and keeps
+    /// correcting against a stale position.</summary>
+    private static double ScrollSettle(int notches) => notches * WheelGapSeconds + 0.4;
+
+    /// <summary>Must match WHEEL_NOTCH_GAP_MS in seal_mouse.ino.</summary>
+    private const double WheelGapSeconds = 0.025;
+
     private static void Scroll(SerialPort ser, int notches, bool down)
         => ser.Write((down ? "Z " : "Q ") + notches.ToString(CultureInfo.InvariantCulture) + "\n");
 
-    /// <summary>Wheels to the top of the list at the firmware's maximum and lets it clamp — the known
-    /// origin every preset's scroll amount is measured from.
+    /// <summary>Puts the cursor over the list and applies the preset's scroll.
     ///
-    /// Deliberately no click. The wheel needs the game focused, but during a real run the mouse is
-    /// already in the game window, so it is focused already — and this is the one place a stray click
-    /// could land on a list row and buy something nobody asked for. The cursor is only moved, never
-    /// pressed.</summary>
-    private bool ScrollToTop(SerialPort ser, ToolState state)
+    /// There is deliberately NO scroll-to-top here. The list is expected to already BE at the top when
+    /// a run starts — putting it there is the user's setup, not the tool's job. Doing it here would
+    /// mean scrolling the length of the whole list on every run, which is ten seconds of the board
+    /// being unable to read serial, and it made the firmware's per-command ceiling load-bearing: the
+    /// cap was the reach, so a list longer than the cap left every preset measured from the wrong
+    /// origin.
+    ///
+    /// The cursor is moved but never pressed, so this cannot select or buy anything by accident.</summary>
+    private bool ScrollFromTop(SerialPort ser, ToolState state, int notches)
     {
         var point = _cfg.BuySell.ScrollPoint!;
         if (!PlaceOn(ser, point[0], point[1], out var error))
@@ -261,8 +268,11 @@ public sealed class ShopTool : ToolBase
         }
         SleepCheck(ClickWait);
 
-        Scroll(ser, WheelMax, down: false);
-        SleepCheck(DialogWait);
+        if (notches > 0)
+        {
+            Scroll(ser, notches, down: true);
+            SleepCheck(ScrollSettle(notches));
+        }
         return true;
     }
 
@@ -294,11 +304,6 @@ public sealed class ShopTool : ToolBase
         }
         return true;
     }
-
-    /// <summary>What "go to the top" is sent as. It used to be its own copy of 30, which reached only
-    /// halfway down a real shop list — so the "known origin" every preset is measured from was not
-    /// the top at all. Now shared with the calibrator instead of duplicated.</summary>
-    private const int WheelMax = ShopGeometry.MaxScrollNotches;
 
     private static void Stop(ToolState state, string reason)
     {
