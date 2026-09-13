@@ -42,20 +42,41 @@ Nothing here may run live until calibration is done and *visibly verified*. The 
 the existing calibrator: drag/click points on a screenshot, persist to `local.yaml`, with a **Test**
 button per action so the result can be seen before it is trusted.
 
-To capture:
+Its own tab, with **two screens** — buying and selling need different things measured, and neither
+needs the other's.
 
-| What | How | Why |
-|---|---|---|
-| Bag grid, slot (0,0) and slot (7,7) | two clicks | pitch = (br − tl) / 7, per axis |
-| Shop list region | a box | bounds the OCR/scroll area |
-| Shop list, first row centre | one click | row origin |
-| COUNTER: MAX button | one click | sets the quantity |
-| COUNTER: confirm button | one click | commits |
-| Bag + shop panel edges | boxes | sanity bounds; refuse to click outside |
+### Sell screen — the bag grid
 
-Then a **"Test grid"** button that overlays all 64 computed centres on a screenshot. This is not
-decoration: the whole design rests on the grid being linear, and the only way to know that for *your*
-render is to look at 64 dots at once. If the fit is wrong it will be obvious there and nowhere else.
+Drag a box around the **whole 8×8 grid**, then a second box around **one slot**. Drag-select rather
+than clicking points: each is four coordinates, and a bad drag is corrected by dragging again instead
+of starting over.
+
+Both boxes, because they check each other:
+
+- the whole-grid box gives the pitch, `gridWidth / 8` — the value that actually matters, since one
+  slot's width is only as good as that one drag
+- the single-slot box gives the real size and origin of a slot, so the tool can *verify* the grid is
+  uniform rather than assume it
+
+If the two disagree by more than a pixel or two, the calibration is wrong and says so rather than
+quietly using the average. Then a **grid overlay** draws all 64 computed centres on the capture —
+the design rests on the grid being uniform, and that is the only way to see it is, on your render.
+
+Plus **MAX** (one click), shared with buying.
+
+### Buy screen — the shop list
+
+One capture with **the shop open and the dialog open**, so the list and the dialog are measured from
+the same frame: the list region (drag a box), the first row (one click), and MAX. Where each item
+sits is per-item — see below.
+
+### Why calibrate instead of using the captures
+
+The frames I was given are ad-hoc screen captures and are not one coordinate space: 2864×1832,
+2866×1791 and 2868×1789, the first including the Windows title bar. They were good enough to learn
+the *shape* of the problem — 8×8, uniform, two-line shop rows — and nowhere near good enough to
+hardcode a coordinate. Everything the tool uses is measured in-app, in the client space the tools
+actually click in.
 
 ### Buying and selling share one flow
 
@@ -101,17 +122,52 @@ Required before it runs live:
 - a **dry-run mode** that highlights the slots it would click and sells nothing
 - the grid overlay above as the calibration gate
 
-### Scrolling
+### Scrolling — the calibration problem, and a way out
 
-Firmware has `Q n` / `Z n` (wheel up/down, n notches). Two things to know:
+You're right that this is the awkward part, and the reason is worth stating plainly: **a scroll
+position is unobservable after the fact.** Once you've scrolled, nothing on screen records how far.
+So "scroll until the item is visible, then click it in a capture" cannot work — the click gives us the
+row, but nothing gives us how you got there.
 
-- The wheel scrolls **whatever is under the cursor**, so the tool must place the cursor over the list
-  before scrolling — a calibration point, not a firmware concern.
-- Because a shop's listing is stable, an item's scroll amount is a **fixed constant per item**, not
-  something searched for at runtime. So the per-item config is just {scroll notches, row index}, and
-  the tool scrolls to the top first to have a known origin.
+The way out is to stop trying to *measure* the scroll and instead **do the scrolling ourselves during
+calibration**, so the count is known by construction rather than inferred:
 
-The one number still needed is **notches per row**, which a Test Scroll button measures in a minute.
+> A **nudge control** in the Buy screen — ▲ / ▼ buttons (by 1 and by 5 notches) that send real wheel
+> commands to the game, with a running count displayed. You press them until the item you want sits
+> where you want it. **That count is the item's scroll amount.**
+
+No arithmetic and no guessing: you nudge until it looks right, which is the one thing that *is*
+judgeable by eye, and the tool records exactly what it sent. Then you click the item's row in the
+capture for its row index, and the pair saves into that item's preset.
+
+At runtime: scroll to the top first (send the wheel-up maximum, which clamps at the top and so gives a
+known origin), apply the stored notches, click the stored row. Deterministic, because the listing is
+stable.
+
+That also retires your fallback: a **"needs scrolling" checkbox becomes unnecessary** — a no-scroll
+item is simply one whose nudge count is 0. One mechanism instead of a flag plus a number.
+
+The wheel scrolls **whatever is under the cursor**, so placing the cursor over the list is one more
+calibration point.
+
+### Buying items are presets
+
+You re-buy the same few things (springs, potions, pet food), so each becomes a **named preset**, the
+same shape as the spammer's — a named list you pick from, with add / rename / delete. A preset holds:
+
+| Field | From |
+|---|---|
+| name | you type it |
+| shop row index | clicked in the Buy capture |
+| scroll notches | the nudge count |
+| buy count | how many to buy this run |
+
+Adding a new item is: open the shop, capture, nudge to the item, click its row, name it, save. After
+that it is one click to buy.
+
+Where they live is already decided by earlier work: **presets are personal, so `local.yaml`**, not the
+`defaults.yaml` that ships — the same rule the spammer presets now follow, and `ConfigLoader` already
+has the plumbing.
 
 ---
 
@@ -137,16 +193,24 @@ The one number still needed is **notches per row**, which a Test Scroll button m
    yet known is whether it appears for *every* sale or only above some value. If it is conditional,
    sending Enter when no dialog is up must be harmless — otherwise the per-item config needs a
    "confirms" flag. One deliberate sale of a cheap stack answers it.
-3. **How many notches equal one row?** Measurable with a Test Scroll button, and it makes the
-   per-item scroll amounts calibratable rather than guessed.
-4. **A capture of the COUNTER dialog**, so MAX and confirm can be measured.
+3. **How many notches equal one row?** No longer needed as a *number to enter* — the nudge control
+   records whatever count reaches the item. It is still worth knowing roughly, so the ▲/▼ steps can
+   be sized sensibly (1 and 5, or 1 and 10). One press of ▼ tells you.
+4. **A capture of the shop open with the dialog open**, in the same frame — that is what the Buy
+   screen calibrates against, and the earlier frames had only one or the other.
 
 ---
 
 ## Phasing
 
 1. ~~Firmware: wheel + full keyboard~~ — landed 2026-09-13, **not compile-checked and not flashed**.
-2. **Test Scroll button** — smallest thing that makes the wheel verifiable. Do this before any tool.
-3. **Grid calibration + Test grid overlay** — pure calibration, no game actions, self-verifying.
-4. **Buy path** — the safe half, end to end, with a per-run cap.
-5. **Sell path** — dry-run first, cap enforced, live only after the overlay is trusted.
+2. **The nudge control on its own** — ▲/▼ buttons in a new tab that send real wheel commands and show
+   a running count. It is the smallest thing that makes the reflashed firmware *verifiable*, and it is
+   the same control the Buy calibration ends up needing, so nothing built here is thrown away.
+3. **Sell screen calibration** — grid drag-select, the two-box consistency check, and the 64-centre
+   overlay. Pure calibration: no game actions, and self-verifying by looking at it.
+4. **Sell path** — dry-run first, then live with the cap enforced. Selling is the simpler half
+   because the only config it needs is the grid, which step 3 has just produced.
+5. **Buy screen calibration** — list region, first row, MAX, and the per-item row picker.
+6. **Buy presets and path** — named items, scroll notches carried over from the nudge, buy count per
+   item, per-run cap.
