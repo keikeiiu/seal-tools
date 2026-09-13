@@ -3624,7 +3624,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var cap = UiText(_service.Config.BuySell.SellCap.ToString(CultureInfo.InvariantCulture));
         cap.Width = 60;
-        var saveCap = MakeButton("Save", ControlAppearance.Secondary);
+        var saveCap = MakeInlineButton("Save", ControlAppearance.Secondary);
         saveCap.Click += (_, _) =>
         {
             if (!int.TryParse(cap.Text.Trim(), out var n) || n < 1)
@@ -3680,7 +3680,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _buyHint = hint;
 
         _buyPreset = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
-        var reload = MakeButton("Reload", ControlAppearance.Secondary);
+        var reload = MakeInlineButton("Reload", ControlAppearance.Secondary);
         reload.Click += (_, _) => RefreshBuyPresets();
         var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
         pickRow.Children.Add(_buyPreset);
@@ -4101,8 +4101,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var notches = UiText("3");
         notches.Width = 60;
         notches.VerticalAlignment = VerticalAlignment.Center;
-        var up = MakeButton("Scroll up", ControlAppearance.Secondary);
-        var down = MakeButton("Scroll down", ControlAppearance.Secondary);
+        var up = MakeInlineButton("Scroll up", ControlAppearance.Secondary);
+        var down = MakeInlineButton("Scroll down", ControlAppearance.Secondary);
         up.Click += async (_, _) => await BuySellTestScroll(notches, upwards: true);
         down.Click += async (_, _) => await BuySellTestScroll(notches, upwards: false);
 
@@ -4505,6 +4505,17 @@ public partial class MainWindow : FluentWindow, IDisposable
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             },
         };
+
+    /// <summary>A button made to sit in a row WITH a text field. MakeButton carries a 10px top margin
+    /// — right for a button stacking under a card's heading, wrong beside a field, where it drops the
+    /// button 10px below the box it belongs to. This keeps the left gap and drops the top. The gem
+    /// calibrator was already working around this by hand; now it has a name.</summary>
+    private static UiButton MakeInlineButton(string text, ControlAppearance appearance)
+    {
+        var button = MakeButton(text, appearance);
+        button.Margin = new Thickness(6, 0, 0, 0);
+        return button;
+    }
 
     /// <summary>A small +/- button for a stepper. Separate from <see cref="MakeButton"/> because that
     /// one is sized for "Start"/"Save" and sets MinWidth 84 — which made a "−" 84 pixels wide.</summary>
