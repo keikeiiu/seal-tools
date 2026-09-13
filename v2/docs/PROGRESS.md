@@ -9,6 +9,48 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-14 (2) — the buy/sell tool, and four lessons that cost real time
+
+**Selling verified too.** Both halves work on the live game. Selling takes a set of bag slots, picks
+them on an 8×8 grid standing in for the bag, and sells **highest slot first** — chosen so it is correct
+whether or not the bag closes the gap after a sale, without needing to know which. Cap enforced.
+
+Added since: a per-row select button in the sell grid (one click for a row of eight), the Buy card
+carrying its own preset picker and count so a run needs no Configuration at all, and the count moved
+out of the item — a preset is now the item's *identity* (row, scroll) plus a usual amount, and the run
+decides the rest.
+
+### What the layout work taught
+
+Every misalignment traced to **a control inheriting a default meant for a different context**, and each
+had to be found by measuring because the eye cannot tell 6px from 0px in a screenshot:
+
+- A stepper built with `MakeButton` — sized for "Start", `MinWidth 84` — so "−" and "+" were each 84
+  pixels wide.
+- A vertical StackPanel stretches children to the column width, and that column is as wide as its
+  widest row. So the Buy card's Start/Stop were stretched to the width of the preset row above and laid
+  out from *its* left edge, sitting 50px left of every other card.
+- `MakeButton`'s 6px right margin put `Stop` 6px inside the column edge while the marginless steppers
+  ran to it — so the "+" overhung by exactly 6. The *buttons* were already pixel-perfect across all
+  five cards; the row above them was not.
+- `MakeButton`'s 10px top margin drops a button below any text field it sits beside. **The gem
+  calibrator had already patched this by hand with a comment explaining why** — the reason existed and
+  was rediscovered anyway. It is `MakeInlineButton` now.
+
+**Every one of these was fixed by measuring, and every guess I made instead was wrong.** The
+`FontSize` case is the sharpest: I assumed the WPF-UI template overrode it and tried growing the row
+height, which does nothing — the text stays centred and clipped whatever the box height. A deliberately
+absurd size of 9 settled it in one cycle. A change small enough to be indistinguishable from no change
+is not a test.
+
+### And one about my own tooling
+
+Three of my screen captures were taken by a **DPI-unaware process**, which scaled the desktop and
+cropped the launcher's left column out of the image. I reported the card names as missing and the
+Start/Stop buttons as absent. Neither was true. Making the capture DPI-aware — the user's suggestion —
+produced the first trustworthy picture of the session. Before that I had twice reported bugs that were
+artifacts of my own measurement, which is worse than not looking at all.
+
 ## 2026-09-14 — the buy path works on the live game; and what first-contact cost
 
 **Verified:** a real buy run lands on the shop row and completes — right-click the row, MAX,

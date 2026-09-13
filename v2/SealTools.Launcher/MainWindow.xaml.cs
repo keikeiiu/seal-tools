@@ -3607,6 +3607,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         for (int r = 0; r < BagGrid.Rows; r++)
             slots.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34) });
 
+        // One extra column for a per-row button. Selling a row's worth is the common case, and
+        // eight clicks where one will do is the kind of thing that gets a tool abandoned.
+        slots.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        for (int r = 0; r < BagGrid.Rows; r++)
+        {
+            int row = r;
+            var rowButton = MakeRowButton($"row {r + 1}");
+            rowButton.ToolTip = $"Select or clear all 8 slots of bag row {r + 1}";
+            rowButton.Click += (_, _) => ToggleSellRow(row);
+            Grid.SetRow(rowButton, r);
+            Grid.SetColumn(rowButton, BagGrid.Cols);
+            slots.Children.Add(rowButton);
+        }
+
         _sellSlotBoxes.Clear();
         for (int i = 0; i < BagGrid.SlotCount; i++)
         {
@@ -3983,6 +3997,22 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         _sellHint!.Text = $"Dry run done: {ordered.Count} slot(s) would be sold, highest number first. " +
                           "Nothing was clicked.";
+    }
+
+    /// <summary>Selects or clears a whole bag row: all eight if any are off, none if all are on. One
+    /// click instead of eight, and it can't leave a row half-selected by mistake.</summary>
+    private void ToggleSellRow(int row)
+    {
+        var slots = _service.Config.BuySell.SellSlots;
+        var indices = Enumerable.Range(row * BagGrid.Cols, BagGrid.Cols).ToList();
+        bool allOn = indices.All(slots.Contains);
+
+        foreach (var i in indices)
+        {
+            if (allOn) slots.Remove(i);
+            else if (!slots.Contains(i)) slots.Add(i);
+        }
+        PaintSellSlots();
     }
 
     private void ToggleSellSlot(int index)
@@ -4524,6 +4554,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         button.Margin = new Thickness(6, 0, 0, 0);
         return button;
     }
+
+    /// <summary>A per-row button in the sell grid. Small, but sized for a word rather than a symbol.</summary>
+    private static UiButton MakeRowButton(string text) => new()
+    {
+        Content = text,
+        Appearance = ControlAppearance.Secondary,
+        Height = 32,
+        Padding = new Thickness(8, 0, 8, 0),
+        Margin = new Thickness(6, 1, 0, 1),
+    };
 
     /// <summary>A small +/- button for a stepper. Separate from <see cref="MakeButton"/> because that
     /// one is sized for "Start"/"Save" and sets MinWidth 84 — which made a "−" 84 pixels wide.</summary>
