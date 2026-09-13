@@ -312,17 +312,25 @@ public partial class MainWindow : FluentWindow, IDisposable
                 const double PresetWidth = 150;   // fixed, so a long preset name does not clip
                 const double GapRow = 8;          // preset -> stepper
                 const double GapInner = 4;        // stepper -> box -> stepper
+                const double InlineFontSize = 12;  // the control's default is too large for this row height:
+                                       // descenders (the "g" in Springs) were clipped by the box
 
                 _buyPresetCard = new ComboBox
                 {
                     Width = PresetWidth,
                     Height = RowHeight,
+                    // Smaller than the control's default: at the inherited size the text did not fit
+                    // the row height and its descenders were clipped by the box's lower edge. Height
+                    // cannot grow to suit it, because the row is tied to the Start/Stop buttons
+                    // beside it — so the text shrinks instead.
+                    FontSize = InlineFontSize,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, GapRow, 0),
                 };
                 _buyPresetCard.SelectionChanged += (_, _) => OnBuyPresetChanged(fromCard: true);
 
                 _buyCountCard = UiText("1");
+                _buyCountCard.FontSize = InlineFontSize;
                 _buyCountCard.Width = CountWidth;
                 _buyCountCard.Height = RowHeight;
                 _buyCountCard.Margin = new Thickness(GapInner, 0, GapInner, 0);
