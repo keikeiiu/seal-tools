@@ -104,7 +104,7 @@ Behaviour of the Gem Composer. Saved to `config/defaults.yaml`.
 
 Key rotation for the Skill Spammer. Saved to `config/defaults.yaml`.
 
-The Arduino supports digits **0–9** and **F1–F10**. The **Fast** checkbox is a fast tap (held ~10 ms
+The Arduino supports any single letter or digit, plus **F1–F12**. The **Fast** checkbox is a fast tap (held ~10 ms
 instead of the normal 30–80 ms) — leave it off for a held skill. Anything the Arduino can't send is
 skipped and reported as a `⚠` on the tool card.
 
@@ -235,5 +235,5 @@ letter/digit.
 | Check OCR reads the wrong text | The tuning window moved, or another in-game window covers it. Re-capture and re-drag. |
 | Composer clicks drift | "Enhance pointer precision" is on, or the Arduino/pointer speed changed — re-tune `gem.movements` with **Test Move**. |
 | Everything is off after moving to a new monitor/resolution | Open **Setup**: if the scale or client size differs, recalibrate. |
-| Spammer never presses a key | The key isn't a digit or F1–F10 — the card shows a `⚠`. |
+| Spammer never presses a key | The key isn't a single letter/digit or F1–F12 — the card shows a `⚠`. |
 | Hotkeys dead while playing | Expected: focus the launcher first (see Hotkeys). |

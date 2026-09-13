@@ -13,8 +13,8 @@
 //   E            Enter
 //   T            Tab
 //   S            Space (tap: press, hold, release)
-//   K n / k n    digit 0-9, normal / fast hold
-//   F n / f n    F1-F10, normal / fast hold
+//   K c / k c    one printable character (letter or digit), normal / fast hold
+//   F n / f n    F1-F12, normal / fast hold
 //   X            Alt+Tab
 //   W ms         wait ms (1-9999)
 //   Q n / Z n    mouse wheel up / down, n notches (1-30)
@@ -169,14 +169,13 @@ void loop() {
             Keyboard.release(' ');
         }
         // K/F = normal hold, k/f = fast hold
+        // "K c" / "k c" — press ONE printable character, normal / fast hold. c is any byte in
+        // 0x20-0x7E, so letters work as well as digits. This replaces the old digit index, and is
+        // behaviour-compatible with it: "K 5" presses '5' exactly as before, because '0' + 5 was
+        // also '5'. Both "K c" and "Kc" parse, so a space separator is optional.
         else if (type == 'K' || type == 'k') {
-            int n = atoi(&buf[1]);
-            // Digits 0-9 only. `n % 10` used to fold anything else onto a digit, so a malformed or
-            // letter key silently pressed '0'. The launcher validates before sending, so this is the
-            // second line of defence: an unusable frame does nothing rather than pressing a key.
-            // buf[1] != '\0' rejects a bare "K", which atoi would read as 0.
-            if (n >= 0 && n <= 9 && buf[1] != '\0') {
-                char key = '0' + n;
+            char key = (buf[1] == ' ') ? buf[2] : buf[1];
+            if (key >= 0x20 && key <= 0x7E) {
                 int hold = (type == 'k') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
                 Keyboard.press(key);
                 delay(hold);
@@ -186,8 +185,8 @@ void loop() {
         else if (type == 'F' || type == 'f') {
             int n = atoi(&buf[1]);
             uint8_t fkeys[] = {0, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5,
-                               KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10};
-            if (n >= 1 && n <= 10) {
+                               KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12};
+            if (n >= 1 && n <= 12) {
                 int hold = (type == 'f') ? HOLD_FAST : random(HOLD_NORMAL_MIN, HOLD_NORMAL_MAX);
                 Keyboard.press(fkeys[n]);
                 delay(hold);

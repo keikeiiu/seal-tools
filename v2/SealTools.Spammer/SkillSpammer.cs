@@ -167,15 +167,20 @@ public sealed class SkillSpammer : ToolBase
         string cmd;
         if (key.StartsWith('F'))
         {
-            if (!int.TryParse(key.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var f) || f is < 1 or > 10)
+            // F1-F12: the firmware's table goes to twelve. ParseVk accepts F1-F24 elsewhere, so
+            // anything above twelve is refused here rather than sent and silently ignored on board.
+            if (!int.TryParse(key.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var f) || f is < 1 or > 12)
             {
                 WarnUnsupported(key, state);
                 return false;
             }
             cmd = (fast ? "f " : "F ") + f + "\n";
         }
-        else if (key.Length == 1 && key[0] is >= '0' and <= '9')
+        else if (key.Length == 1 && key[0] >= 0x20 && key[0] <= 0x7E)
         {
+            // Any printable ASCII — the firmware's K handler presses one character, so letters work
+            // as well as digits. Sending the character through unchanged is what makes "K 5" and
+            // "K q" the same shape of command.
             cmd = (fast ? "k " : "K ") + key + "\n";
         }
         else
@@ -187,14 +192,14 @@ public sealed class SkillSpammer : ToolBase
         return true;
     }
 
-    // The Arduino firmware's K/k handler parses a digit (0–9) and its F handler supports F1–F10
-    // only — a letter key would otherwise be silently pressed as '0'. Warn once per bad key, on
-    // the launcher card as well as the console (which the published WinExe doesn't have).
+    // The firmware presses one printable character (K/k) or one function key up to F12. Anything
+    // else is refused here rather than sent and dropped on the board. Warn once per bad key, on the
+    // launcher card as well as the console (which the published WinExe doesn't have).
     private static void WarnUnsupported(string key, ToolState state)
     {
         if (WarnedKeys.Add(key))
         {
-            var msg = $"Spammer key '{key}' unsupported — only digits 0–9 and F1–F10 are sent.";
+            var msg = $"Spammer key '{key}' unsupported — use one letter or digit, or F1–F12.";
             Console.WriteLine("[!] " + msg);
             state.Message = msg;
         }

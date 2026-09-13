@@ -101,7 +101,7 @@ Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
 
 Skill Spammer 的按鍵輪替設定。儲存到 `config/local.yaml`（屬於個人設定，不會進到 `publish.bat` 發佈的 `defaults.yaml`；詳見 [CONFIG.md](CONFIG.md)）。
 
-Arduino 支援數字 **0–9** 與 **F1–F10**；在鍵前面加 `*` 表示快速按住。其他按鍵會被忽略，並在工具卡片上
+Arduino 支援任何單一字母或數字，以及 **F1–F12**；在鍵前面加 `*` 表示快速按住。其他按鍵會被忽略，並在工具卡片上
 顯示 `⚠`。
 
 | 控制項 | 說明 |
@@ -226,5 +226,5 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 | Check OCR 讀到錯誤的文字 | 發條視窗移動了，或被其他遊戲內視窗遮住。請重新擷取並重新拖曳。 |
 | 合成器點擊會偏移 | 開啟了「增強指標精確度」，或 Arduino／滑鼠速度改變 — 用 **Test Move** 重新調校 `gem.movements`。 |
 | 換螢幕或改解析度後全部偏移 | 打開 **Setup**：若縮放比例或客戶區尺寸不同，請重新校正。 |
-| Spammer 完全沒按鍵 | 該按鍵不是數字或 F1–F10 — 卡片會顯示 `⚠`。 |
+| Spammer 完全沒按鍵 | 該按鍵不是單一字母/數字或 F1–F12 — 卡片會顯示 `⚠`。 |
 | 遊戲中熱鍵沒反應 | 這是預期行為：請先讓啟動器取得焦點（見 Hotkeys）。 |

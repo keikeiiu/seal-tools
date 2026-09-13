@@ -1255,7 +1255,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // the one thing a reader needs to know about them is what that star means.
             Hint("* is a fast tap — the key is held about 10 ms instead of the normal 30–80 ms. " +
                  "Without it the press is longer, which is what most games want for a held skill. " +
-                 "Only digits 0–9 and F1–F10 are supported."),
+                 "Any single letter or digit works, plus F1–F12."),
             keyHeader, rowsPanel, addButton));
 
         Dictionary<string, double> RowsToKeys()

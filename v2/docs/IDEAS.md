@@ -96,9 +96,10 @@ in the preset, and have it light up (or flash) while the spammer is pressing it.
 - The spammer already publishes the key it is firing — `SkillSpammer.cs:97` sets
   `State.Current = k`, which the tool card prints as `Current:`. The highlight needs a faster poll
   than the card's 750 ms, nothing else.
-- The Arduino accepts exactly 20 keys (digits `0–9`, `F1–F10`), so the pad can show *every* key the
-  tool can send — no invented layout, and unsupported keys stop being typeable rather than being
-  rejected at runtime.
+- The Arduino now presses any printable character plus `F1–F12`, so the pad can show a real keyboard
+  layout — letters and digits as themselves, with the function keys separate. Unsupported keys stop
+  being typeable rather than being rejected at runtime. (Before 2026-09-13 this was a fixed 20 keys,
+  digits `0–9` and `F1–F10`; the pad is easier to design now that it is a keyboard.)
 
 **Sketch**
 
