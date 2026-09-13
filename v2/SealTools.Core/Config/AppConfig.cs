@@ -52,11 +52,6 @@ public sealed class BuySellConfig
     /// keyboard equivalent — everything else is Enter.</summary>
     public List<int>? MaxButton { get; set; }
 
-    /// <summary>A spot inside the game that is SAFE to click purely to give it keyboard/mouse focus.
-    /// The wheel needs the game focused, unlike the HID clicks which work unfocused — so a run that
-    /// scrolls has to click somewhere first, and somewhere means somewhere that does not buy, sell or
-    /// move anything. The shop window's own title bar is the usual answer.</summary>
-    public List<int>? FocusPoint { get; set; }
 
     /// <summary>Named buy items (springs, pet food, …). Personal rather than machine-specific, but
     /// they describe positions, so they live in local.yaml with the geometry.</summary>

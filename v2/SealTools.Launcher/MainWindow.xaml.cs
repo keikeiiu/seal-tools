@@ -3714,7 +3714,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             ShopSecondRow = bs.ShopSecondRow,
             ScrollPoint = bs.ScrollPoint,
             MaxButton = bs.MaxButton,
-            FocusPoint = bs.FocusPoint,
             Presets = bs.Presets,
             SellSlots = bs.SellSlots,
             SellCap = bs.SellCap,
@@ -3732,25 +3731,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (display == null) { error = "Game window not found (or minimized)."; return false; }
         var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, x, y));
         if (!placed.Ok) { error = placed.Error ?? $"couldn't place the cursor at ({x},{y})"; return false; }
-        return true;
-    }
-
-    /// <summary>Gives the game focus by clicking a calibrated harmless spot. Needed before any
-    /// scrolling: the wheel is delivered to whatever is under the cursor, but the game only acts on it
-    /// while focused — unlike the HID clicks, which work unfocused because the first one focuses as it
-    /// presses. So a scroll has to click something first, and something means somewhere that buys,
-    /// sells or moves nothing.</summary>
-    private bool TryFocusGame(SerialPort ser, out string error)
-    {
-        error = "";
-        if (_service.Config.BuySell.FocusPoint is not { Count: 2 } fp)
-        {
-            error = "the focus point isn't marked — mark a harmless spot in the game first. " +
-                "The wheel needs the game focused, which a click is what gives it.";
-            return false;
-        }
-        if (!TryPlace(ser, fp[0], fp[1], out error)) return false;
-        HidPointer.Click(ser);
         return true;
     }
 
@@ -3922,11 +3902,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         markScroll.Click += (_, _) => ArmPoint("scroll");
         var markMax = MakeButton("Mark MAX button", ControlAppearance.Secondary);
         markMax.Click += (_, _) => ArmPoint("max");
-        var markFocus = MakeButton("Mark focus point", ControlAppearance.Secondary);
-        markFocus.Click += (_, _) => ArmPoint("focus");
 
         var markRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { markFirst, markSecond, markScroll, markMax, markFocus })
+        foreach (var b in new UiButton[] { markFirst, markSecond, markScroll, markMax })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             markRow.Children.Add(b);
@@ -3993,8 +3971,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             "first" => "Click the FIRST row of the shop list.",
             "second" => "Click the row directly BELOW the first one.",
             "scroll" => "Click a spot over the shop list — the cursor parks here so the wheel scrolls it.",
-            "focus" => "Click somewhere in the GAME that is safe to click — the shop window's own title " +
-                       "bar is the usual answer. It is clicked before scrolling, to give the game focus.",
             _ => "Click the MAX button in the count dialog.",
         };
     }
@@ -4007,7 +3983,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             case "first": bs.ShopFirstRow = point; break;
             case "second": bs.ShopSecondRow = point; break;
             case "scroll": bs.ScrollPoint = point; break;
-            case "focus": bs.FocusPoint = point; break;
             default: bs.MaxButton = point; break;
         }
 
@@ -4019,8 +3994,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             "second" => $"Second row at ({point[0]},{point[1]}). " +
                         (pitch > 0 ? $"Row pitch {pitch} px." : ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow)),
             "scroll" => $"Scroll point at ({point[0]},{point[1]}) — the wheel acts on what is under it.",
-            "focus" => $"Focus point at ({point[0]},{point[1]}). The game is clicked here before any " +
-                       "scrolling, because the wheel needs it focused — so pick somewhere harmless.",
             _ => $"MAX button at ({point[0]},{point[1]}).",
         };
     }
@@ -4179,7 +4152,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (BagGrid.IsValidRect(bs.ShopList)) Box(bs.ShopList!);
 
         if (bs.MaxButton is { Count: 2 } mb) Dot(new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
-        if (bs.FocusPoint is { Count: 2 } fp) Dot(new Point(fp[0], fp[1]), Brushes.White, 14);
 
         RefreshCalibChecklist();
     }
@@ -4244,7 +4216,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) == null, "shop rows          (two clicks)"),
             Mark(bs.ScrollPoint is { Count: 2 }, "scroll point       (click)"),
             Mark(bs.MaxButton is { Count: 2 }, "MAX button         (click)"),
-            Mark(bs.FocusPoint is { Count: 2 }, "focus point        (click)"),
         };
         if (bs.Presets.Count > 0) lines.Add("  " + bs.Presets.Count + " buy item(s)      (Buy tab)");
         if (bs.SellSlots.Count > 0) lines.Add("  " + bs.SellSlots.Count + " slot(s) to sell (Sell tab)");
@@ -4319,28 +4290,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        // Two things have to be true before a wheel notch means anything: the cursor must be OVER
-        // the list (the wheel goes to whatever is under it), and the game must be FOCUSED (it ignores
-        // the wheel otherwise). Miss either and the list does not move, which looks exactly like
-        // firmware that does not work — so both failures are reported as themselves.
-        if (!TryFocusGame(ser, out var focusErr))
-        {
-            _buySellHint!.Text = "Can't scroll yet: " + focusErr;
-            return;
-        }
-        await Task.Delay(400);
-
+        // One click does both jobs. The cursor has to be OVER the list because that is where the
+        // wheel goes, and the game has to be FOCUSED because it ignores the wheel otherwise — unlike
+        // the HID clicks, which work unfocused because the first one focuses as it presses. Clicking
+        // the scroll point achieves both, which is why there is no separate focus mark to calibrate.
         if (!TryPlace(ser, point[0], point[1], out var err))
         {
             _buySellHint!.Text = "Couldn't move the cursor to the scroll point: " + err;
             return;
         }
-        await Task.Delay(200);
+        HidPointer.Click(ser);
+        await Task.Delay(500);
 
         try
         {
             ser.Write((upwards ? "Q " : "Z ") + n + "\n");
-            _buySellHint!.Text = $"Focused the game, moved the cursor onto the list, then sent {n} " +
+            _buySellHint!.Text = $"Clicked the list to focus and park the cursor, then sent {n} " +
                 $"notch(es) {(upwards ? "up" : "down")} — did the list move?";
         }
         catch (Exception ex)

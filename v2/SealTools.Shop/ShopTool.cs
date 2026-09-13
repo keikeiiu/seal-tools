@@ -129,8 +129,6 @@ public sealed class ShopTool : ToolBase
         var rowProblem = ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow);
         if (rowProblem != null) return "Shop rows aren't calibrated — " + rowProblem + ".";
         if (!IsPoint(bs.ScrollPoint)) return "The scroll point isn't calibrated — Calibrate Buy/Sell.";
-        if (!IsPoint(bs.FocusPoint)) return "The focus point isn't calibrated — Calibrate Buy/Sell. " +
-            "The wheel needs the game focused, so a run clicks a harmless spot first.";
         if (!IsPoint(bs.MaxButton)) return "The MAX button isn't calibrated — Calibrate Buy/Sell.";
         if (preset.Count < 1) return $"Preset '{_presetName}' is set to buy 0.";
         return null;
@@ -246,36 +244,23 @@ public sealed class ShopTool : ToolBase
     private static void Scroll(SerialPort ser, int notches, bool down)
         => ser.Write((down ? "Z " : "Q ") + notches.ToString(CultureInfo.InvariantCulture) + "\n");
 
-    /// <summary>Gives the game focus, then wheels to the top of the list at the firmware's maximum and
-    /// lets it clamp — the known origin every preset's scroll amount is measured from.
+    /// <summary>Wheels to the top of the list at the firmware's maximum and lets it clamp — the known
+    /// origin every preset's scroll amount is measured from.
     ///
-    /// The focus click is not optional. The wheel is delivered to whatever is under the cursor, but
-    /// the game only acts on it while focused — unlike the HID clicks, which work unfocused because
-    /// the first one focuses as it presses. So a scrolling run has to click something harmless first,
-    /// and that spot is calibrated rather than guessed.</summary>
+    /// Deliberately no click. The wheel needs the game focused, but during a real run the mouse is
+    /// already in the game window, so it is focused already — and this is the one place a stray click
+    /// could land on a list row and buy something nobody asked for. The cursor is only moved, never
+    /// pressed.</summary>
     private bool ScrollToTop(SerialPort ser, ToolState state)
     {
-        if (_cfg.BuySell.FocusPoint is not { Count: 2 } focus)
-        {
-            Stop(state, "The focus point isn't calibrated, and the wheel needs the game focused. " +
-                        "Mark one in Calibrate Buy / Sell — somewhere harmless to click.");
-            return false;
-        }
-        if (!PlaceOn(ser, focus[0], focus[1], out var error))
+        var point = _cfg.BuySell.ScrollPoint!;
+        if (!PlaceOn(ser, point[0], point[1], out var error))
         {
             Stop(state, error);
             return false;
         }
         SleepCheck(ClickWait);
-        HidPointer.Click(ser);
-        SleepCheck(DialogWait);
 
-        var point = _cfg.BuySell.ScrollPoint!;
-        if (!PlaceOn(ser, point[0], point[1], out error))
-        {
-            Stop(state, error);
-            return false;
-        }
         Scroll(ser, WheelMax, down: false);
         SleepCheck(DialogWait);
         return true;

@@ -154,7 +154,6 @@ public sealed class ConfigLoader
             if (IsPoint(bs.ShopSecondRow)) defaults.BuySell.ShopSecondRow = bs.ShopSecondRow;
             if (IsPoint(bs.ScrollPoint)) defaults.BuySell.ScrollPoint = bs.ScrollPoint;
             if (IsPoint(bs.MaxButton)) defaults.BuySell.MaxButton = bs.MaxButton;
-            if (IsPoint(bs.FocusPoint)) defaults.BuySell.FocusPoint = bs.FocusPoint;
             if (bs.SellSlots is { Count: > 0 }) defaults.BuySell.SellSlots = bs.SellSlots;
             if (bs.SellCap is > 0) defaults.BuySell.SellCap = bs.SellCap.Value;
 
@@ -267,9 +266,6 @@ public sealed class ConfigLoader
 
         /// <summary>MAX button centre in the count dialog.</summary>
         public List<int>? MaxButton { get; set; }
-
-        /// <summary>A spot that is safe to click just to give the game focus, which the wheel needs.</summary>
-        public List<int>? FocusPoint { get; set; }
 
         /// <summary>Named buy items. Personal, so they stay out of the shipped defaults.yaml.</summary>
         public Dictionary<string, BuyPreset>? Presets { get; set; }
