@@ -355,16 +355,27 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Config tabs ─────────────────────────────────────────────────────────
 
-    // Height of the window with the tool cards only — title bar, three cards, and the chevron below
-    // them. Measured by hand: at 350 the chevron was clipped by the window edge, so this leaves it
-    // room rather than sitting exactly on the boundary.
+    // Fallback height for the cards-only window, used only before the first layout pass has run.
+    // The real value is measured from the cards — see MeasureCardsHeight. This constant was 430 and
+    // documented as "three cards": adding Buy and Sell made it five, and because the cards sit in an
+    // Auto row with no ScrollViewer they were CLIPPED rather than scrolled. A hand-measured number
+    // that silently rots when a tool is added is not worth keeping.
     private const double ConfigCollapsedHeight = 430;
 
-    // While a tool runs the window shrinks to that tool's card alone (only one tool can run at a
-    // time), so the status can sit in a corner of the screen over the game without covering much.
-    // Measured: 320 is what it settles at — WPF will not go below the content's minimum, so a
-    // smaller number here has no effect.
-    private const double ConfigMiniHeight = 320;
+    /// <summary>What the cards-only height actually measured last layout pass. The "remember the
+    /// user's expanded height" checks compare against this rather than the constant above, so they
+    /// still mean "bigger than the collapsed window" now that the collapsed window is taller.</summary>
+    private double _collapsedHeight = ConfigCollapsedHeight;
+
+    // Everything in the collapsed window that is NOT the cards: title bar, window margins, and the
+    // row holding the config chevron and the Hold Space toggle. Fixed — it does not change with the
+    // number of tools, which is why only the card half is measured.
+    private const double WindowChrome = 136;
+
+    // Mini mode — the window shrinking to the running tool's card alone — used to have its own
+    // hand-measured constant here. It does not any more: mini mode sizes from the same measurement
+    // as the normal view, because the cards are not all the same height (a long status line wraps)
+    // and a constant was wrong for whichever tool was not the one it was measured on.
 
     // What to restore when the region is expanded again. Zero until something shrinks the window, so
     // a fresh launch expands to the window's designed height.
@@ -430,7 +441,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             if (WindowState != WindowState.Normal) return; // maximized/minimized: keep the last real size
-            if (_configExpanded && _miniToolId == null && Height > ConfigCollapsedHeight)
+            if (_configExpanded && _miniToolId == null && Height > _collapsedHeight)
                 _configExpandedHeight = Height;
 
             var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
@@ -455,7 +466,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded) return;
 
         // Remember the height the user was working with before anything shrinks it.
-        if (_layoutApplied && _appliedExpanded && !_appliedMini && Height > ConfigCollapsedHeight)
+        if (_layoutApplied && _appliedExpanded && !_appliedMini && Height > _collapsedHeight)
             _configExpandedHeight = Height;
 
         ConfigTabs.Visibility = _configExpanded ? Visibility.Visible : Visibility.Collapsed;
@@ -464,13 +475,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var (id, card) in _toolCards)
             card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
 
-        Height = mini ? ConfigMiniHeight
+        // Measured AFTER the visibility change, so this is the height of the cards actually on
+        // screen — all of them normally, one of them in mini mode.
+        double collapsed = MeasureCardsHeight();
+        _collapsedHeight = collapsed;
+
+        Height = mini ? collapsed
             : _configExpanded ? (_configExpandedHeight > 0 ? _configExpandedHeight : 720)
-            : ConfigCollapsedHeight;
+            : collapsed;
 
         _layoutApplied = true;
         _appliedExpanded = _configExpanded;
         _appliedMini = mini;
+    }
+
+    /// <summary>Height the window needs for the tool cards that are currently visible, plus the fixed
+    /// chrome. Measured with an unbounded height so the answer does not depend on the window's present
+    /// size — working out how tall it must BE is the whole point. WPF ignores collapsed children, so
+    /// the same call sizes both the normal view (every card) and mini mode (the running tool's only).</summary>
+    private double MeasureCardsHeight()
+    {
+        ToolsPanel.Measure(new Size(Math.Max(320, Width - 40), double.PositiveInfinity));
+        var cards = ToolsPanel.DesiredSize.Height;
+        return cards <= 0 ? ConfigCollapsedHeight : cards + WindowChrome;
     }
 
     private void BuildConfigTabs()
