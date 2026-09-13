@@ -41,8 +41,13 @@ public static class GemColorAnalyzer
         var idx = typed.GetIndexer();
         double sumV = 0, sumSat = 0, sumR = 0, sumG = 0, sumB = 0, colored = 0;
 
-        for (int y = 0; y < img.Height; y++)
-            for (int x = 0; x < img.Width; x++)
+        // Mat.Height/Width are P/Invokes, so reading them in the loop condition is a native call per
+        // pixel (OCVS002) — cache once. This was latent for a long time because it only fails a clean
+        // build: an incremental one never re-runs the analyzer over an untouched file.
+        int height = img.Height, width = img.Width;
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
             {
                 var px = idx[y, x];
                 int B = px.Item0, G = px.Item1, R = px.Item2;
@@ -119,8 +124,10 @@ public static class GemColorAnalyzer
         var b = refPx.GetIndexer();
         int differing = 0;
         int compared = 0;
-        for (int y = inset; y < live.Height - inset; y++)
-            for (int x = inset; x < live.Width - inset; x++)
+        // Cached for the same reason as Analyze: a P/Invoke per pixel otherwise (OCVS002).
+        int height = live.Height, width = live.Width;
+        for (int y = inset; y < height - inset; y++)
+            for (int x = inset; x < width - inset; x++)
             {
                 var pa = a[y, x];
                 var pb = b[y, x];
