@@ -115,6 +115,9 @@ public sealed class ShopTool : ToolBase
         {
             if (!BagGrid.IsValidRect(bs.BagGrid)) return "The bag grid isn't calibrated — Calibrate Buy/Sell.";
             if (!IsPoint(bs.MaxButton)) return "The MAX button isn't calibrated — Calibrate Buy/Sell.";
+            if (!IsPoint(bs.ScrollPoint)) return "The focus point isn't calibrated — Calibrate Buy/Sell. " +
+                "The game ignores a click while it is unfocused, and it is unfocused because you just " +
+                "clicked this window to start the run.";
             if (bs.SellSlots.Count == 0) return "No slots are selected to sell.";
             if (bs.SellSlots.Count > bs.SellCap)
                 return $"{bs.SellSlots.Count} slots selected but the per-run cap is {bs.SellCap}. " +
@@ -193,6 +196,10 @@ public sealed class ShopTool : ToolBase
                               .Take(bs.SellCap)
                               .ToList();
 
+        // Focus before the first right-click. Without it the first sale does nothing, and because
+        // nothing reports back that looks exactly like a wrong coordinate.
+        if (!FocusGame(ser, state)) return;
+
         for (int n = 0; n < slots.Count; n++)
         {
             if (QuitPressed || ct.IsCancellationRequested) return;
@@ -260,19 +267,35 @@ public sealed class ShopTool : ToolBase
     ///
     /// There is deliberately no scroll-to-top: the list is expected to already BE at the top, and
     /// putting it there would be the length of the whole list on every run.</summary>
-    private bool ScrollFromTop(SerialPort ser, ToolState state, int notches)
+    /// <summary>Left-clicks the calibrated point to give the game focus. BOTH flows need this, for
+    /// the same reason: starting a tool means clicking the launcher, and that takes focus away — after
+    /// which the game ignores a wheel notch, and ignores a right-click. So it must be a real click,
+    /// which is why the point has to be somewhere inert.
+    ///
+    /// It is the mark the Buy tab calls the "scroll point": buying also scrolls from here, since the
+    /// wheel acts anywhere in the focused window and so the two jobs can share one point.</summary>
+    private bool FocusGame(SerialPort ser, ToolState state)
     {
-        var point = _cfg.BuySell.ScrollPoint!;
+        if (_cfg.BuySell.ScrollPoint is not { Count: 2 } point)
+        {
+            Stop(state, "The focus point isn't calibrated — the game has to be focused before it will " +
+                        "take a click or a wheel notch. Mark it in Calibrate Buy / Sell.");
+            return false;
+        }
         if (!PlaceOn(ser, point[0], point[1], out var error))
         {
             Stop(state, error);
             return false;
         }
         SleepCheck(ClickWait);
-
-        // Focus the game. See above for why this has to be here and why the point must be inert.
         HidPointer.Click(ser);
         SleepCheck(DialogWait);
+        return true;
+    }
+
+    private bool ScrollFromTop(SerialPort ser, ToolState state, int notches)
+    {
+        if (!FocusGame(ser, state)) return false;
 
         if (notches > 0)
         {

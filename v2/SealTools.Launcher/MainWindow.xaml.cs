@@ -3916,7 +3916,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var drawList = MakeButton("Draw list region", ControlAppearance.Secondary);
         drawList.Click += (_, _) => ArmDrag("list");
-        var markScroll = MakeButton("Mark scroll point", ControlAppearance.Secondary);
+        var markScroll = MakeButton("Mark focus point", ControlAppearance.Secondary);
         markScroll.Click += (_, _) => ArmPoint("scroll");
         var markMax = MakeButton("Mark MAX button", ControlAppearance.Secondary);
         markMax.Click += (_, _) => ArmPoint("max");
@@ -3991,10 +3991,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         _bsPointTarget = which;
         _buySellHint!.Text = which switch
         {
-            "scroll" => "Click a spot in the game that is SAFE TO LEFT-CLICK — the run clicks here to " +
-                        "give the game focus before scrolling, so NOT over a shop row. Empty panel space " +
-                        "or the shop window's title bar. The wheel works anywhere in the focused window, " +
-                        "so its exact position does not matter, only that clicking it does nothing.",
+            "scroll" => "Click a spot in the game that is SAFE TO LEFT-CLICK. Both tools click here " +
+                        "first, because starting a run means clicking the launcher and that leaves the " +
+                        "game unfocused — a state in which it ignores both the wheel and a right-click. " +
+                        "So NOT over a shop row or a bag slot: clicking it must do nothing. Empty panel " +
+                        "space or the shop window's title bar. Buying also scrolls from here, which is " +
+                        "fine because the wheel acts anywhere in the focused window.",
             _ => "Click the MAX button in the count dialog.",
         };
     }
@@ -4011,7 +4013,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         BsRedrawOverlay();
         _buySellHint!.Text = which switch
         {
-            "scroll" => $"Scroll point at ({point[0]},{point[1]}) — the wheel acts on what is under it.",
+            "scroll" => $"Focus point at ({point[0]},{point[1]}) — both tools left-click here first to " +
+                        "focus the game.",
             _ => $"MAX button at ({point[0]},{point[1]}).",
         };
     }
@@ -4052,7 +4055,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         _bsCanvas!.Children.Clear();
         RefreshCalibChecklist();
         _buySellHint!.Text = "Captured. Draw the grid area and one slot, then mark the shop rows, " +
-            "the scroll point and MAX. (If the shop or bag isn't open in the capture, capture again.)";
+            "the focus point and MAX. (If the shop or bag isn't open in the capture, capture again.) " +
+            "BOTH TOOLS LEFT-CLICK THE FOCUS POINT at the start of a run — that is what gives the game " +
+            "focus — so put it somewhere inert, never over a list row or a bag slot.";
     }
 
     private void BsMouseDown(Canvas canvas, Point p)
@@ -4238,7 +4243,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(BagGrid.IsValidRect(bs.BagGrid), "bag grid area      (drag)"),
             Mark(BagGrid.IsValidRect(bs.BagSlot), "one bag slot       (drag)"),
             Mark(ShopGeometry.Problem(bs.ShopRegion, bs.ShopRows) == null, "shop list region   (drag)"),
-            Mark(bs.ScrollPoint is { Count: 2 }, "scroll point       (click)"),
+            Mark(bs.ScrollPoint is { Count: 2 }, "focus point        (click)"),
             Mark(bs.MaxButton is { Count: 2 }, "MAX button         (click)"),
         };
         if (bs.Presets.Count > 0) lines.Add("  " + bs.Presets.Count + " buy item(s)      (Buy tab)");
