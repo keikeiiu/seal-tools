@@ -55,7 +55,8 @@ v2/
   SealTools.Tests/       # xUnit tests (config loader)
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
-  docs/USER_GUIDE.md     # every tab and button explained
+  docs/INSTALL.md        # install: board, firmware, app, first calibration, updating
+  docs/USER_GUIDE.md     # every card, tab and button explained
   docs/CURSOR-INVESTIGATION.md  # why the cursor is placed with the Arduino, not SetCursorPos
   docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
   docs/PROGRESS.md       # dated log of what was done and why (append per session)

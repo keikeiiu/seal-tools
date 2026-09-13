@@ -3,7 +3,7 @@
 The tools locate things on screen by **pixel coordinates** that depend on the monitor resolution,
 Windows display scale, the game window size, and where the window sits. **They are not automatic** —
 each machine must be calibrated once. v2 keeps every machine-specific value in a single file,
-`config/local.yaml` (gitignored), written by the launcher's two calibration tabs.
+`config/local.yaml` (gitignored), written by the launcher's three calibration tabs.
 
 Everything else (the `.exe`, models, behavior flags) is portable.
 
@@ -27,7 +27,7 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 
 1. If `config/local.yaml` is missing, `ConfigLoader` seeds it from `config/local.yaml.example`
    automatically. (You can also copy it by hand.)
-2. Open the launcher and go to the **Calibrate Tuner** and **Calibrate Gem** tabs.
+2. Open the launcher and go to the **Calibrate Tuner**, **Calibrate Gem** and **Buy / Sell** tabs.
 
 > The seeded values are v1 window-relative measurements. They are a starting point only and **will
 > be off** until you recalibrate — expect to do both tabs once per machine.
@@ -65,22 +65,80 @@ calibration, so a different machine can tell whether it must recalibrate. See `d
    answer **Yes** to sample the empty-box colour reference (`gem.empty_signature`), which is what
    empty-result detection compares against. Answer No and empty detection stays off until you re-save
    with the box empty.
-5. **Composer moves are saved separately.** The **Composer moves** grid holds the raw `dx`/`dy`
-   counts the composer sends for each route (grade → Register, Register → Combine, and so on). Edit
-   them and press **Save Composer Moves** to write `gem.movements` to `local.yaml`. *Save Gem
-   Composer* does not touch them.
+5. **Composer moves are saved separately.** The **Moves — tuned (hand-tuned counts)** grid holds the
+   raw `dx`/`dy` counts the composer sends for each route (grade → Register, Register → Combine, and
+   so on). Edit them and press **Save tuned counts** to write `gem.movements` to `local.yaml`.
+   *Save Gem Composer* does not touch them.
 6. **Coordinates can also be typed directly.** The **Coordinates** grid (N/G/DG/Register/Combine,
    Resource1-3, result area) accepts edits — press **Save Coordinates** to persist them.
+7. **Which move set the composer uses** is **Composer move mode** on the **Move set** card:
+   `tuned` (the counts above) or `arduino` (the cursor is placed on each route's destination point,
+   closed loop, so nothing needs tuning). Whichever set is not active is dimmed. See
+   [MOVE-SETS.md](MOVE-SETS.md).
 
 ### Verifying without running a full cycle
 
-- **Test Click** — moves the cursor to the selected point and clicks it.
-- **Test Move (rel)** — clicks the `from` point, sends that route's raw `D dx dy`, then clicks the
+- **Place cursor + click** — moves the cursor to the selected point and clicks it.
+- **Test tuned move** — clicks the `from` point, sends that route's raw `D dx dy`, then clicks the
   `to` point. If it lands, the composer's move for that route is correct.
-- **Check Result Colour** / **Test Result Gem** — sample the result box and report its colour
+- **Run** in the *Moves — arduino* grid — the same for the other move set: click the source, place
+  the cursor on the destination, click.
+- **Check Result Colour** / **Sample result gem** — sample the result box and report its colour
   composition, the distance to the empty reference, and the empty/has-gem verdict.
+- **Run one full cycle** — one whole composer cycle using the arduino moves; 21 real clicks. Use it to
+  check that move set survives a real run before switching the composer over to it.
 
-## 4. Prerequisite: fixed Windows pointer precision (Gem Composer)
+## 4. Calibrate Buy / Sell
+
+Two activities that share one tab, because they are measured from the same frame: **capture with the
+shop open, the bag open, and the count dialog showing.**
+
+### Sell side — the bag grid
+
+1. **Capture bag window.**
+2. **Draw grid area** — drag a box around the **whole 8 × 8 bag**.
+3. **Draw one slot** — then drag a box around **one slot**.
+4. **Show 64 centres** — check the magenta dots sit on the slots. This is the verification step: the
+   tool derives all 64 click points from a single uniform pitch, and 64 dots at once is the only way
+   to see whether the grid really is uniform.
+
+   Both boxes are required, and they check each other: the whole grid gives the pitch
+   (`gridWidth / 8`), and the single slot is the independent measurement. **If they disagree by more
+   than a little, the tab refuses to save** rather than averaging two numbers that cannot both be
+   right — that disagreement is a bad drag, not something to split.
+
+### Buy side — the shop list, the focus point and MAX
+
+5. **Draw list region** — drag a box around **exactly the visible rows of the shop list**, from the
+   first row's top to the last row's bottom. There is a real boundary to aim at, and every derived
+   row is only as good as this drag.
+6. **Mark focus point** — click a spot in the capture, then **click that spot** in the capture.
+   **It must be somewhere inert** — empty panel space or a window title bar. This is not a marker:
+   **both tools left-click it at the start of every run**, because starting a tool means clicking the
+   launcher, and that leaves the game unfocused — a state in which it ignores both the wheel and a
+   right-click. So it must not be over a shop row or a bag slot, where a left-click selects or buys.
+7. **Mark MAX button** — click the **MAX** button in the count dialog.
+8. **Save Calibration** — writes the grid, the slot box, the list region, the focus point and MAX to
+   `local.yaml`. The **Setup so far** checklist shows what is set and what is still missing; saving
+   with a gap is allowed, and the tool says what is missing when you press Start rather than clicking
+   into empty screen.
+
+### Verifying
+
+- **Show 64 centres** — the dots must sit on the bag slots, and the green row dots on the shop rows.
+  If the magenta dots are off, re-drag the grid area; if the green ones are, re-drag the list region.
+- **Test scroll (wheel)** — sends real wheel notches so you can see how far one notch moves the list.
+  The game must be **focused** and the cursor over the list, which is why the button clicks the focus
+  point first. The number you learn here is what a buy item's **Scroll notches** is set from.
+- **Sell** tab → **Dry run** — walks the cursor through the selected slots **in the order the real run
+  would sell them**, and clicks nothing.
+- **Buy** tab → **Dry run** — scrolls and parks the cursor on the item's row, and clicks nothing.
+
+> **The shop list must be at the top before a buy run**, and that is your setup rather than the tool's
+> job. A preset's scroll means "notches down from the top", so a list left part-way down puts the item
+> that much further off, and nothing detects it. Scroll it there yourself before a run or a dry run.
+
+## 5. Prerequisite: fixed Windows pointer precision (Gem Composer)
 
 The game is an OS-cursor title (early Windows, not raw-input), so the on-screen distance a relative
 `D dx dy` travels depends on the Windows pointer-precision mapping. With "Enhance pointer precision"
@@ -134,16 +192,19 @@ averages the whole box and is the weaker test. With `gem.save_empty_captures: tr
 writes the crop plus a line to `<bin>\logs\empty_check.txt` (`diff=0.000 threshold=0.01 empty=True`)
 — that is the number to look at if detection ever misbehaves.
 
-## 5. Files written by calibration
+## 6. Files written by calibration
 
 | File | Written by |
 |------|-----------|
-| `config/local.yaml` | Save Tuner / Save Gem Composer / Save Coordinates / Save Composer Moves |
+| `config/local.yaml` | Save Tuner / Save Gem Composer / Save Coordinates / **Save tuned counts** / Save Calibration (Buy·Sell) / Save Preset (spammer) / Save Setup |
 | `config/calib_tuner.png` | Save Tuner (reference screenshot with the bands drawn on it) |
 | `config/calib_gem.png` | Save Gem Composer (reference screenshot with the click points + result box) |
 | `config/calib_gem_result.png` | Save Gem Composer (crop of the result-gem area) |
 
-## 6. Removed v1 mechanisms (do not look for them)
+The Buy / Sell tab writes **only** `local.yaml` — it saves no screenshot. Every mark it records is
+verifiable on screen instead, by the 64 slot centres and the derived shop rows.
+
+## 7. Removed v1 mechanisms (do not look for them)
 
 The old Python build's calibration aids no longer exist in v2, and older copies of this document
 described them:

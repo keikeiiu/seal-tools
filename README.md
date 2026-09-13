@@ -50,7 +50,8 @@ Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 
 ## Full docs
 
-- **[v2/docs/USER_GUIDE.md](v2/docs/USER_GUIDE.md)** — every tab and button explained.
+- **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)** — board, app, first calibration, updating.
+- **[v2/docs/USER_GUIDE.md](v2/docs/USER_GUIDE.md)** — every card, tab and button explained.
 - **[v2/docs/CALIBRATION.md](v2/docs/CALIBRATION.md)** — per-machine calibration walkthrough.
 - **[v2/docs/MOVE-SETS.md](v2/docs/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
 - **[v2/docs/PROGRESS.md](v2/docs/PROGRESS.md)** — dated log of what was done and why.

@@ -34,12 +34,15 @@
 // gap between them — one Mouse.move(0, 0, n) usually registers as a single notch. The gap is what
 // makes a multi-notch scroll land; too fast and the game coalesces or drops them.
 #define WHEEL_NOTCH_GAP_MS 25
-// Ceiling for a single scroll command, and — because "scroll to the top" is sent as ONE command at
-// this maximum — also how far the tool can scroll in a single go. A list longer than this leaves the
-// origin short of the top, and every stored scroll amount is measured from that origin, so the value
-// is load-bearing rather than just a guard. 400 notches at the gap below is about TEN SECONDS, which
-// is the worst case if a malformed frame ever arrives — the board cannot read serial while looping,
-// so this bounds how long it can be out of touch. A real shop list needs ~60.
+// Ceiling for a single scroll command. 400 notches at the gap below is about TEN SECONDS, which is
+// the worst case if a malformed frame ever arrives — the board cannot read serial while looping, so
+// this bounds how long it can be out of touch. A real shop list needs ~60.
+//
+// It is a GUARD and nothing more. An earlier design sent "scroll to the top" as one command at this
+// maximum, which made the ceiling the tool's reach — a list longer than the cap left every preset
+// measured from the wrong origin, and it cost ten seconds of the board not reading serial on every
+// run. That is gone: the list is expected to already BE at the top, which is the user's setup rather
+// than a scroll the tool sends. Do not reintroduce a caller that treats this as how far it can go.
 //
 // NOTE: this and WHEEL_NOTCH_GAP_MS are coupled. "Ten seconds" is only 400 notches AT 25ms; lengthen
 // the gap to stop a game coalescing fast events and the same ceiling buys proportionally fewer.

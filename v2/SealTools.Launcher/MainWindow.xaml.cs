@@ -4170,13 +4170,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         saveShop.Click += (_, _) => BsSave();
 
         panel.Children.Add(Section("Shop (buying)",
-            Hint("Mark the first list row and the row directly below it — two clicks give the row " +
-                 "pitch exactly, where one click and an assumed height would drift by the ninth row. " +
-                 "The scroll point only has to be SOMEWHERE inside the game: the wheel works anywhere " +
-                 "in the focused window, so its exact position does not matter, only that it drags the " +
-                 "cursor in from wherever it was. MAX is the count dialog's MAX button. Visible rows " +
-                 "is how many rows the list shows at once — it is only used to warn when a preset " +
-                 "points below the bottom of the list."),
+            Hint("Drag a box around EXACTLY the visible rows of the list — the first row's top to the " +
+                 "last row's bottom. Every row is derived from that one region, so the rows are only " +
+                 "as good as this drag; there is a real boundary to aim at. The focus point only has " +
+                 "to be SOMEWHERE inside the game: the wheel works anywhere in the focused window, so " +
+                 "its exact position does not matter. It must be somewhere INERT — both tools " +
+                 "left-click it at the start of a run to give the game focus, so a point over a list " +
+                 "row would select or buy that row. MAX is the count dialog's MAX button."),
             LabeledField("Mark", markRow),
             saveShop));
 
