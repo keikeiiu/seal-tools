@@ -3686,15 +3686,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             _buyHint!.Text = "Shop rows aren't calibrated — " + problem + ".";
             return false;
         }
-        var list = bs.ShopList;
-        if (BagGrid.IsValidRect(list))
+        // A row past the bottom of the visible list would click whatever is underneath the shop
+        // window, which is not a thing anyone wants a buying tool to do.
+        if (row >= bs.ShopRows)
         {
-            var centre = ShopGeometry.RowCentre(bs.ShopFirstRow, bs.ShopSecondRow, row);
-            if (centre is { } c && c.Y > list![1] + list[3])
-            {
-                _buyHint!.Text = $"Row {row} is below the calibrated list — check the scroll amount.";
-                return false;
-            }
+            _buyHint!.Text = $"Row {row} is past the bottom of the list — only {bs.ShopRows} rows are " +
+                "visible at once. Scroll further and pick a lower row, or raise the visible-row count " +
+                "on the Buy / Sell tab.";
+            return false;
         }
         return true;
     }
@@ -3709,7 +3708,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             BagGrid = bs.BagGrid,
             BagSlot = bs.BagSlot,
-            ShopList = bs.ShopList,
+            ShopRows = bs.ShopRows,
             ShopFirstRow = bs.ShopFirstRow,
             ShopSecondRow = bs.ShopSecondRow,
             ScrollPoint = bs.ScrollPoint,
@@ -3867,15 +3866,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         drawGrid.Click += (_, _) => ArmDrag("grid");
         var drawSlot = MakeButton("Draw one slot", ControlAppearance.Secondary);
         drawSlot.Click += (_, _) => ArmDrag("slot");
-        var drawList = MakeButton("Draw shop list", ControlAppearance.Secondary);
-        drawList.Click += (_, _) => ArmDrag("list");
         var showCentres = MakeButton("Show 64 centres", ControlAppearance.Secondary);
         showCentres.Click += (_, _) => BsShowCentres();
-        var save = MakeButton("Save Bag Grid", ControlAppearance.Primary);
-        save.Click += (_, _) => BsSave();
-
         var drawRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawGrid, drawSlot, drawList, showCentres })
+        foreach (var b in new UiButton[] { drawGrid, drawSlot, showCentres })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             drawRow.Children.Add(b);
@@ -3891,8 +3885,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "on the slots, the drag is wrong."),
             captureRow,
             LabeledField("Draw", drawRow),
-            grid,
-            save));
+            grid));
 
         var markFirst = MakeButton("Mark first row", ControlAppearance.Secondary);
         markFirst.Click += (_, _) => ArmPoint("first");
@@ -3910,15 +3903,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             markRow.Children.Add(b);
         }
 
-        var saveShop = MakeButton("Save Shop Marks", ControlAppearance.Primary);
-        saveShop.Click += (_, _) => BsSave();
+        var rowsBox = UiText(_service.Config.BuySell.ShopRows.ToString(CultureInfo.InvariantCulture));
+        rowsBox.Width = 60;
+        var saveShop = MakeButton("Save Calibration", ControlAppearance.Primary);
+        saveShop.Click += (_, _) => BsSave(rowsBox);
 
         panel.Children.Add(Section("Shop (buying)",
             Hint("Mark the first list row and the row directly below it — two clicks give the row " +
                  "pitch exactly, where one click and an assumed height would drift by the ninth row. " +
-                 "The scroll point is where the cursor parks so the wheel scrolls the list (the wheel " +
-                 "acts on whatever is under it). MAX is the count dialog's MAX button. All of these " +
-                 "need the shop open in the capture."),
+                 "The scroll point only has to be SOMEWHERE inside the game: the wheel works anywhere " +
+                 "in the focused window, so its exact position does not matter, only that it drags the " +
+                 "cursor in from wherever it was. MAX is the count dialog's MAX button. Visible rows " +
+                 "is how many rows the list shows at once — it is only used to warn when a preset " +
+                 "points below the bottom of the list."),
+            LabeledField("Visible rows", rowsBox),
             LabeledField("Mark", markRow),
             saveShop));
 
@@ -4009,7 +4007,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         _buySellHint!.Text = target switch
         {
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
-            "list" => "Drag a box around the shop's item LIST (the scrolling panel, not the whole window).",
             _ => "Drag a box around ONE slot.",
         };
     }
@@ -4107,14 +4104,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             _bsDragTarget = "slot";
             _buySellHint!.Text = $"Grid area {rect[2]}x{rect[3]}. Now drag a box around ONE slot.";
         }
-        else if (_bsDragTarget == "list")
-        {
-            cfg.ShopList = rect;
-            _bsDragTarget = null;
-            BsRedrawOverlay();
-            _buySellHint!.Text = $"Shop list region {rect[2]}x{rect[3]}. Now mark the rows, the scroll " +
-                "point and MAX, then Save Marks.";
-        }
         else
         {
             cfg.BagSlot = rect;
@@ -4148,31 +4137,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (bs.ShopFirstRow is { Count: 2 } f1) Dot(new Point(f1[0], f1[1]), Brushes.LimeGreen, 14);
         if (bs.ShopSecondRow is { Count: 2 } f2) Dot(new Point(f2[0], f2[1]), Brushes.Cyan, 14);
         if (bs.ScrollPoint is { Count: 2 } sp) Dot(new Point(sp[0], sp[1]), Brushes.Yellow, 14);
-        // The list region as an outline, drawn before the dots so the marks stay readable on top.
-        if (BagGrid.IsValidRect(bs.ShopList)) Box(bs.ShopList!);
-
         if (bs.MaxButton is { Count: 2 } mb) Dot(new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
 
         RefreshCalibChecklist();
-    }
-
-    /// <summary>A calibrated rectangle as an outline on the capture, used for the shop list region.</summary>
-    private void Box(List<int> rect)
-    {
-        if (!CanvasReady()) return;
-        var a = NaturalToCanvas(new Point(rect[0], rect[1]), _bsScreenshot!, _bsCanvas!);
-        var b = NaturalToCanvas(new Point(rect[0] + rect[2], rect[1] + rect[3]), _bsScreenshot!, _bsCanvas!);
-        var box = new Rectangle
-        {
-            Width = Math.Max(1, b.X - a.X),
-            Height = Math.Max(1, b.Y - a.Y),
-            Stroke = Brushes.DeepSkyBlue,
-            StrokeThickness = 2,
-            Fill = Brushes.Transparent,
-        };
-        Canvas.SetLeft(box, a.X);
-        Canvas.SetTop(box, a.Y);
-        _bsCanvas!.Children.Add(box);
     }
 
     /// <summary>One marker, at a natural (image) coordinate. Local because the canvas shows the
@@ -4212,7 +4179,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Mark(BagGrid.IsValidRect(bs.BagGrid), "bag grid area      (drag)"),
             Mark(BagGrid.IsValidRect(bs.BagSlot), "one bag slot       (drag)"),
-            Mark(BagGrid.IsValidRect(bs.ShopList), "shop list region   (drag)"),
             Mark(ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) == null, "shop rows          (two clicks)"),
             Mark(bs.ScrollPoint is { Count: 2 }, "scroll point       (click)"),
             Mark(bs.MaxButton is { Count: 2 }, "MAX button         (click)"),
@@ -4243,9 +4209,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             "slots, re-drag the grid area. " + (_service.GridCheck() ?? "Grid and slot box agree.");
     }
 
-    private void BsSave()
+    private void BsSave(Wpf.Ui.Controls.TextBox rowsBox)
     {
         var cfg = _service.Config.BuySell;
+
+        if (!int.TryParse(rowsBox.Text.Trim(), out var rows) || rows < 1)
+        {
+            _buySellHint!.Text = "Visible rows must be 1 or more.";
+            return;
+        }
+        cfg.ShopRows = rows;
+
         if (!BagGrid.IsValidRect(cfg.BagGrid) || !BagGrid.IsValidRect(cfg.BagSlot))
         {
             _buySellHint!.Text = "Draw both boxes first — the grid area and one slot.";

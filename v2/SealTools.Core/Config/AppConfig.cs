@@ -33,8 +33,10 @@ public sealed class BuySellConfig
     /// second source of truth.</summary>
     public List<int>? BagSlot { get; set; }
 
-    /// <summary>Shop list region [x, y, w, h]. Bounds the list; also the sanity area for clicks.</summary>
-    public List<int>? ShopList { get; set; }
+    /// <summary>How many rows of the shop list are visible at once. Only used to warn when a preset's
+    /// row index falls below the list — a click there would land on whatever is under the shop window.
+    /// A count rather than a dragged region: the same information for a fraction of the setup.</summary>
+    public int ShopRows { get; set; } = 10;
 
     /// <summary>Centre of the list's FIRST visible row, client-relative physical [x, y]. A buy
     /// preset's row index is measured from here.</summary>
