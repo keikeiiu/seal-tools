@@ -365,8 +365,11 @@ public sealed class OcrEngine : IDisposable
 
         using var typed = new Mat<Vec3b>(crop);
         var idx = typed.GetIndexer();
-        for (int y = 0; y < crop.Height; y++)
-            for (int x = 0; x < crop.Width; x++)
+        // Mat.Height/Width are P/Invokes, so reading them in the loop condition is a native call per
+        // pixel (OCVS002) — cache once.
+        int cropHeight = crop.Height, cropWidth = crop.Width;
+        for (int y = 0; y < cropHeight; y++)
+            for (int x = 0; x < cropWidth; x++)
             {
                 var px = idx[y, x];
                 int B = px.Item0, G = px.Item1, R = px.Item2;
