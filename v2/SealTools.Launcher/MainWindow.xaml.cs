@@ -295,28 +295,46 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
             if (id == "buy")
             {
-                _buyPresetCard = new ComboBox { MinWidth = 150, VerticalAlignment = VerticalAlignment.Center };
+                _buyPresetCard = new ComboBox
+                {
+                    MinWidth = 130,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
                 _buyPresetCard.SelectionChanged += (_, _) => OnBuyPresetChanged(fromCard: true);
 
                 _buyCountCard = UiText("1");
-                _buyCountCard.Width = 48;
-                var minus = MakeButton("−", ControlAppearance.Secondary);
+                _buyCountCard.Width = 44;
+                _buyCountCard.Margin = new Thickness(4, 0, 4, 0);
+                _buyCountCard.VerticalAlignment = VerticalAlignment.Center;
+
+                // NOT MakeButton: that one is sized for "Start"/"Save" and sets MinWidth 84, so "−"
+                // and "+" came out 84 pixels wide each, flanking a 48px box. Its 10px top margin also
+                // sat them lower than the box they flank.
+                var minus = MakeStepperButton("−");
                 minus.Click += (_, _) => BumpBuyCount(-1);
-                var plus = MakeButton("+", ControlAppearance.Secondary);
+                var plus = MakeStepperButton("+");
                 plus.Click += (_, _) => BumpBuyCount(+1);
 
                 var countRow = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin = new Thickness(0, 6, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
                 };
                 countRow.Children.Add(minus);
                 countRow.Children.Add(_buyCountCard);
                 countRow.Children.Add(plus);
 
-                right.Children.Add(_buyPresetCard);
-                right.Children.Add(countRow);
+                // Item on the left, count on the right, Start/Stop below both — one row of controls
+                // rather than three ragged ones, so the edges line up down the card.
+                var runnerGrid = new Grid();
+                runnerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                runnerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(_buyPresetCard, 0);
+                Grid.SetColumn(countRow, 1);
+                runnerGrid.Children.Add(_buyPresetCard);
+                runnerGrid.Children.Add(countRow);
+
+                right.Children.Add(runnerGrid);
             }
             right.Children.Add(buttons);
 
@@ -4460,6 +4478,17 @@ public partial class MainWindow : FluentWindow, IDisposable
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             },
         };
+
+    /// <summary>A small +/- button for a stepper. Separate from <see cref="MakeButton"/> because that
+    /// one is sized for "Start"/"Save" and sets MinWidth 84 — which made a "−" 84 pixels wide.</summary>
+    private static UiButton MakeStepperButton(string text) => new()
+    {
+        Content = text,
+        Appearance = ControlAppearance.Secondary,
+        MinWidth = 30,
+        Padding = new Thickness(0, 2, 0, 2),
+        Margin = new Thickness(0),
+    };
 
     private static UiButton MakeButton(string text, ControlAppearance appearance) =>
         new()
