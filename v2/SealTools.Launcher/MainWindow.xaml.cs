@@ -303,17 +303,31 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
             if (id == "buy")
             {
+                // One height for every control in this row, and gaps the same either side of the
+                // box. Measured before this: the combo and the "-" were TOUCHING (no gap at all),
+                // the other gaps were 4, and the three elements had three different heights — 34,
+                // 32 and 25. Nothing lined up because nothing was actually set.
+                const double RowHeight = 32;      // matches the Start/Stop buttons beside it
+                const double CountWidth = 44;
+                const double PresetWidth = 150;   // fixed, so a long preset name does not clip
+                const double GapRow = 8;          // preset -> stepper
+                const double GapInner = 4;        // stepper -> box -> stepper
+
                 _buyPresetCard = new ComboBox
                 {
-                    MinWidth = 130,
+                    Width = PresetWidth,
+                    Height = RowHeight,
                     VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, GapRow, 0),
                 };
                 _buyPresetCard.SelectionChanged += (_, _) => OnBuyPresetChanged(fromCard: true);
 
                 _buyCountCard = UiText("1");
-                _buyCountCard.Width = 44;
-                _buyCountCard.Margin = new Thickness(4, 0, 4, 0);
+                _buyCountCard.Width = CountWidth;
+                _buyCountCard.Height = RowHeight;
+                _buyCountCard.Margin = new Thickness(GapInner, 0, GapInner, 0);
                 _buyCountCard.VerticalAlignment = VerticalAlignment.Center;
+                _buyCountCard.HorizontalContentAlignment = HorizontalAlignment.Center;
 
                 // NOT MakeButton: that one is sized for "Start"/"Save" and sets MinWidth 84, so "−"
                 // and "+" came out 84 pixels wide each, flanking a 48px box. Its 10px top margin also
@@ -4498,8 +4512,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         Content = text,
         Appearance = ControlAppearance.Secondary,
-        MinWidth = 30,
-        Padding = new Thickness(0, 2, 0, 2),
+        Width = 32,
+        Height = 32,
+        Padding = new Thickness(0),
         Margin = new Thickness(0),
     };
 
