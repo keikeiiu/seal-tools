@@ -13,7 +13,7 @@ echo [!] Unknown mode "%MODE%". Usage: publish.bat [public^|local]
 exit /b 1
 :mode_ok
 
-set RELTAG=v2.4
+set RELTAG=v2.6
 set PUB=SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish
 if /i "%MODE%"=="public" (set ZIPNAME=SealTools-%RELTAG%.zip) else (set ZIPNAME=SealTools-%RELTAG%-local.zip)
 set ZIP=dist\%ZIPNAME%
