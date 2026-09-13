@@ -18,31 +18,32 @@ the way they do, see [COORDINATES.md](COORDINATES.md); for the step-by-step cali
 The launcher opens as just the tool cards. The configuration tabs stay out of the way until you need
 them:
 
-```
-┌─ Tool cards ────────────────────────────────────────┐
-│  Magic Tuner                       [Start] [Stop]   │
-│  ● RUNNING / stopped  + live status                 │
-│  Gem Composer                      [Start] [Stop]   │
-│  Skill Spammer                     [Start] [Stop]   │
-│  Buy Items                                          │
-│    [Springs ▾]            [−] [ 2 ] [+]             │
-│                                    [Start] [Stop]   │
-│  Sell Items                        [Start] [Stop]   │
-│                                                     │
-│  ▸ Configuration          [Hold Space] [Pin on top] │
-└─────────────────────────────────────────────────────┘
-```
+![The launcher as it opens: five tool cards, a Configuration chevron, and the Hold Space and pin
+buttons](images/launcher-cards.png)
 
-Buy Items is the only card taller than the rest: its item and count sit **above** Start/Stop, because
-they have to be set before the run rather than during it.
+Each card is one tool: its name, its live status, and **Start** / **Stop**. Buy Items is the only card
+taller than the rest — its item and count sit **above** Start/Stop, because they have to be set before
+the run rather than during it. Below the cards are **▸ Configuration** on the left, and **Hold Space**
+and the pin on the right.
 
 **▸ Configuration** expands every tab and grows the window to fit. Clicking it again collapses them
-and returns the window to the size it had before. The tabs, left to right:
+and returns the window to the size it had before.
 
-```
-Tuner | Gem | Spammer | Buy | Sell | Attributes |
-Calibrate Tuner | Calibrate Gem | Buy / Sell | Arduino | Setup | Hotkeys
-```
+![The same window with Configuration expanded: five cards, both rows of tabs, and the Tuner tab's
+Goal card below](images/launcher-expanded.png)
+
+At the default window width the twelve tabs **wrap onto two rows**, and they do not wrap in reading
+order — `Tuner` sits on the *second* row, with the calibration and config tabs above it. Measured at
+a window `619` logical px wide (which is `929` physical at 150 % scaling):
+
+| | |
+|---|---|
+| Row 1 | Calibrate Tuner · Calibrate Gem · Buy / Sell · Arduino · Setup · Hotkeys |
+| Row 2 | Tuner · Gem · Spammer · Buy · Sell · Attributes |
+
+That is only how they are *drawn*. The tabs are **defined** in the order Tuner, Gem, Spammer, Buy,
+Sell, Attributes, Calibrate Tuner, Calibrate Gem, Buy / Sell, Arduino, Setup, Hotkeys — which is also
+the order they are listed in this document. Widen the window and the wrapping changes.
 
 ### The window chrome
 
@@ -69,6 +70,9 @@ Only one tool can run at a time, so while one is running the window shows **just
 │  ▸ Configuration              [Pinned on top]       │
 └─────────────────────────────────────────────────────┘
 ```
+
+*(A drawing, not a capture: the only way to photograph this state is to start a tool, which clicks in
+the game.)*
 
 The other cards come back when it stops. With **Pin on top**, that gives a small always-visible status
 strip you can park in a screen corner over the game. Hold Space is the exception — it has no card, so

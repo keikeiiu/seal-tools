@@ -101,6 +101,8 @@ those two look identical later.
 The launcher opens as five tool cards with **▸ Configuration** below them. The config tabs are
 hidden until you need them.
 
+![The launcher on first run](images/launcher-cards.png)
+
 ### First run creates your config
 
 The zip ships `config\defaults.yaml`, `config\attributes.yaml` and `config\local.yaml.example`. On

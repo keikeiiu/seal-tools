@@ -23,6 +23,9 @@ slot_captures/
 *.png
 *.jpg
 *.jpeg
+# Documentation screenshots ARE committed — the rule above exists to keep runtime captures and
+# calibration images out, and docs/images holds neither. Needs to come after *.png to take effect.
+!v2/docs/images/*.png
 
 # ── Build artifacts ────────────────────────────────────
 __pycache__/
