@@ -63,10 +63,20 @@ Selling reuses the buying UI — right-clicking an item opens the same COUNTER d
 there is **one** click sequence, driven twice:
 
 1. Open the dialog: left-click the shop row (buy) or right-click the bag slot (sell).
-2. Click **MAX**.
-3. Click confirm.
-4. An extra confirmation may follow on valuable items — see the open questions. Treated as a
-   separate, optional step rather than assumed either way.
+2. Click **MAX** — the only click in the sequence that has no keyboard equivalent.
+3. **Enter.** This is taken by the COUNTER's confirm button.
+4. **Buying stops here — there is no confirmation.** Selling has one more step: a modal asking
+   "確定要將 … 出售嗎?". **That one is also taken by Enter**, so step 4 is a second `E`.
+
+The whole sequence therefore needs exactly **four** calibrated things — the bag grid's two corners,
+the shop row, and MAX — plus firmware commands that already exist (`C`, `R`, `E`, `Q`/`Z`). Neither
+the COUNTER's confirm nor the sell dialog's O needs a point, because Enter reaches both. That is fewer
+moving parts than this design started with, and every one removed is a point that can't drift.
+
+Measured from the capture anyway, as a fallback if Enter ever fails to take: the sell dialog is
+centred in the game window (its O glyph at x≈1430 against an image centre of 1432.5), with X about
+77 px to its right, around y≈958 in a 1788-tall client. Clicking O instead of pressing Enter is a
+fallback that needs one calibrated point, not a redesign.
 
 **Quantity is always MAX.** The game caps a stack at 300 (it occasionally shows 301, which is a game
 bug). MAX takes whatever is there, so the tool never needs to know or type a number — which is also
@@ -123,10 +133,10 @@ The one number still needed is **notches per row**, which a Test Scroll button m
    whole job is clicking slot 0 N times — much simpler and much safer than stepping through slots.
    If slots are vacated in place, the tool walks 0..N-1. This changes the loop, so it wants one
    deliberate test.
-2. **The extra confirmation.** Some items confirm and some do not, apparently by value. Is it a
-   dialog with a button, or does it take Enter? That decides whether the step is another calibrated
-   point or the firmware's existing `E`. If it varies by item, it probably wants a per-item
-   "confirms" flag rather than a guess.
+2. **The sell confirmation is answered** — a modal, taken by Enter, and buying has none. What is not
+   yet known is whether it appears for *every* sale or only above some value. If it is conditional,
+   sending Enter when no dialog is up must be harmless — otherwise the per-item config needs a
+   "confirms" flag. One deliberate sale of a cheap stack answers it.
 3. **How many notches equal one row?** Measurable with a Test Scroll button, and it makes the
    per-item scroll amounts calibratable rather than guessed.
 4. **A capture of the COUNTER dialog**, so MAX and confirm can be measured.
