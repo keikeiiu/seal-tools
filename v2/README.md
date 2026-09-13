@@ -187,8 +187,9 @@ dotnet test
 dotnet run --project SealTools.Launcher
 
 :: publish a self-contained single-file exe (+ config + models)
-publish.bat          :: public build  -> dist\SealTools-v2.3.zip        (template config only)
-publish.bat local    :: personal build -> dist\SealTools-v2.3-local.zip (your full calibration)
+publish.bat          :: public build  -> dist\SealTools-v<version>.zip        (template config only)
+publish.bat local    :: personal build -> dist\SealTools-v<version>-local.zip (your full calibration)
+:: both modes also write dist\SealTools-v<version>-firmware.zip (the Arduino sketch)
 :: output also left in SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish\
 ```
 
