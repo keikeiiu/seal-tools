@@ -145,8 +145,24 @@ public sealed class ConfigLoader
         if (local.Gem?.EmptySignature != null) defaults.Gem.EmptySignature = local.Gem.EmptySignature;
         if (local.Gem?.EmptyDistance != null) defaults.Gem.EmptyDistance = local.Gem.EmptyDistance.Value;
         if (!string.IsNullOrEmpty(local.Arduino?.Port)) defaults.Arduino.Port = local.Arduino.Port;
-        if (BagGrid.IsValidRect(local.BuySell?.BagGrid)) defaults.BuySell.BagGrid = local.BuySell!.BagGrid;
-        if (BagGrid.IsValidRect(local.BuySell?.BagSlot)) defaults.BuySell.BagSlot = local.BuySell!.BagSlot;
+        if (local.BuySell is { } bs)
+        {
+            if (BagGrid.IsValidRect(bs.BagGrid)) defaults.BuySell.BagGrid = bs.BagGrid;
+            if (BagGrid.IsValidRect(bs.BagSlot)) defaults.BuySell.BagSlot = bs.BagSlot;
+            if (BagGrid.IsValidRect(bs.ShopList)) defaults.BuySell.ShopList = bs.ShopList;
+            if (IsPoint(bs.ShopFirstRow)) defaults.BuySell.ShopFirstRow = bs.ShopFirstRow;
+            if (IsPoint(bs.ShopSecondRow)) defaults.BuySell.ShopSecondRow = bs.ShopSecondRow;
+            if (IsPoint(bs.ScrollPoint)) defaults.BuySell.ScrollPoint = bs.ScrollPoint;
+            if (IsPoint(bs.MaxButton)) defaults.BuySell.MaxButton = bs.MaxButton;
+            if (bs.SellSlots is { Count: > 0 }) defaults.BuySell.SellSlots = bs.SellSlots;
+            if (bs.SellCap is > 0) defaults.BuySell.SellCap = bs.SellCap.Value;
+
+            // Merged per name, like the spammer presets, so a preset added by hand in defaults.yaml
+            // would survive beside the player's own.
+            if (bs.Presets is { Count: > 0 })
+                foreach (var (name, preset) in bs.Presets)
+                    defaults.BuySell.Presets[name] = preset;
+        }
 
         // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
         // calibration — not in the portable defaults.yaml that publish.bat ships. Merged per preset
@@ -226,8 +242,8 @@ public sealed class ConfigLoader
         public LocalBuySell? BuySell { get; set; }
     }
 
-    /// <summary>The buy/sell calibrator's bag geometry. Machine-specific like the gem positions.
-    /// Written by the calibrator, read by the tool.</summary>
+    /// <summary>The buy/sell tool's geometry and presets. Machine-specific like the gem positions —
+    /// written by the calibrator, read by the tool.</summary>
     public sealed class LocalBuySell
     {
         /// <summary>Whole bag grid, client-relative physical [x, y, w, h].</summary>
@@ -235,7 +251,33 @@ public sealed class ConfigLoader
 
         /// <summary>One bag slot in the same space, kept as the uniformity check.</summary>
         public List<int>? BagSlot { get; set; }
+
+        /// <summary>Shop list region [x, y, w, h].</summary>
+        public List<int>? ShopList { get; set; }
+
+        /// <summary>First visible row's centre [x, y].</summary>
+        public List<int>? ShopFirstRow { get; set; }
+
+        /// <summary>The row directly below it — two clicks give the pitch exactly.</summary>
+        public List<int>? ShopSecondRow { get; set; }
+
+        /// <summary>Where the cursor parks so the wheel scrolls the list.</summary>
+        public List<int>? ScrollPoint { get; set; }
+
+        /// <summary>MAX button centre in the count dialog.</summary>
+        public List<int>? MaxButton { get; set; }
+
+        /// <summary>Named buy items. Personal, so they stay out of the shipped defaults.yaml.</summary>
+        public Dictionary<string, BuyPreset>? Presets { get; set; }
+
+        /// <summary>Bag slots selected for selling (0 = top-left).</summary>
+        public List<int>? SellSlots { get; set; }
+
+        /// <summary>Hard per-run ceiling on slots sold.</summary>
+        public int? SellCap { get; set; }
     }
+
+    private static bool IsPoint(List<int>? p) => p is { Count: 2 };
 
     /// <summary>The player's own spammer rotations. Personal, not machine-specific, but it lives here
     /// for the same reason: defaults.yaml is the template that ships, so anything a player edits

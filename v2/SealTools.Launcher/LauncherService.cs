@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SealTools.Core;
 using SealTools.Core.Config;
+using SealTools.Shop;
 using SealTools.Spammer;
 using SealTools.Tuner;
 using GemComposerTool = SealTools.GemComposer.GemComposer;
@@ -28,6 +29,10 @@ public sealed class LauncherService : IDisposable
     /// <summary>Set by StopTool when nothing is running yet but a start is in flight, so the start
     /// bails when it resumes rather than launching a tool the user already asked to stop.</summary>
     private bool _startCancelled;
+
+    /// <summary>The buy preset the next buy run uses. The Buy tab sets it when Start is pressed;
+    /// RunTool only receives a tool id, so the choice has to arrive some other way.</summary>
+    public string? PendingBuyPreset { get; set; }
     private OcrEngine? _diagnosticOcr;
     private SerialPort? _arduino;
 
@@ -99,7 +104,7 @@ public sealed class LauncherService : IDisposable
     /// flight returns true without starting anything — see the guard below.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
-        if (id is not ("tuner" or "gem" or "spammer" or "holdspace"))
+        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell"))
         {
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
@@ -265,6 +270,8 @@ public sealed class LauncherService : IDisposable
     private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct) => id switch
     {
         "holdspace" => new HoldSpace(Config).Run(ser, state, ct),
+        "buy" => new ShopTool(Config, ShopMode.Buy, PendingBuyPreset).Run(ser, state, ct),
+        "sell" => new ShopTool(Config, ShopMode.Sell, null).Run(ser, state, ct),
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),

@@ -20,10 +20,10 @@ public sealed class AppConfig
     public BuySellConfig BuySell { get; set; } = new();
 }
 
-/// <summary>Bag geometry for the buy/sell tool. Machine-specific — a different PC, resolution or bag
-/// skin moves it — so it lives in local.yaml beside the gem positions. Two rectangles rather than 64
-/// points: see <see cref="SealTools.Core.BagGrid"/> for why that is enough, and what the second one
-/// is actually for.</summary>
+/// <summary>Geometry and presets for the buy/sell tool. The rectangles are machine-specific — a
+/// different PC, resolution or UI skin moves them — so they live in local.yaml beside the gem
+/// positions. Two grid rectangles rather than 64 points: see <see cref="SealTools.Core.BagGrid"/>
+/// for why that is enough and what the second one is for.</summary>
 public sealed class BuySellConfig
 {
     /// <summary>Whole bag grid region, client-relative physical [x, y, w, h].</summary>
@@ -32,6 +32,53 @@ public sealed class BuySellConfig
     /// <summary>One bag slot in the same space. The uniformity check on <see cref="BagGrid"/>, not a
     /// second source of truth.</summary>
     public List<int>? BagSlot { get; set; }
+
+    /// <summary>Shop list region [x, y, w, h]. Bounds the list; also the sanity area for clicks.</summary>
+    public List<int>? ShopList { get; set; }
+
+    /// <summary>Centre of the list's FIRST visible row, client-relative physical [x, y]. A buy
+    /// preset's row index is measured from here.</summary>
+    public List<int>? ShopFirstRow { get; set; }
+
+    /// <summary>Centre of the row directly below the first. Two adjacent clicks give the pitch
+    /// exactly, where one click and a guess would drift over nine rows.</summary>
+    public List<int>? ShopSecondRow { get; set; }
+
+    /// <summary>Where the cursor is parked so the wheel scrolls the LIST. The wheel acts on whatever
+    /// is under the cursor, so this is not optional.</summary>
+    public List<int>? ScrollPoint { get; set; }
+
+    /// <summary>Centre of the MAX button in the count dialog. The only click in a transaction with no
+    /// keyboard equivalent — everything else is Enter.</summary>
+    public List<int>? MaxButton { get; set; }
+
+    /// <summary>Named buy items (springs, pet food, …). Personal rather than machine-specific, but
+    /// they describe positions, so they live in local.yaml with the geometry.</summary>
+    public Dictionary<string, BuyPreset> Presets { get; set; } = new();
+
+    /// <summary>Bag slot indices (0 = top-left) selected for selling. Stored so the picker reopens on
+    /// what you last chose.</summary>
+    public List<int> SellSlots { get; set; } = new();
+
+    /// <summary>Hard ceiling on slots sold in one run. Enforced in the loop, not advisory — selling
+    /// is the one irreversible thing this suite does.</summary>
+    public int SellCap { get; set; } = 16;
+}
+
+/// <summary>One named thing to buy. Position is (scroll, then row), because the list scrolls and a
+/// row index alone would mean nothing.</summary>
+public sealed class BuyPreset
+{
+    /// <summary>Wheel notches down from the top of the list before clicking. 0 = no scrolling.
+    /// Tuned by watching a dry run rather than computed, because a scroll position cannot be
+    /// observed after the fact.</summary>
+    public int Scroll { get; set; }
+
+    /// <summary>Row index within the visible list after scrolling. 0 = the top row.</summary>
+    public int Row { get; set; }
+
+    /// <summary>How many to buy per run.</summary>
+    public int Count { get; set; } = 1;
 }
 
 public sealed class WindowConfig

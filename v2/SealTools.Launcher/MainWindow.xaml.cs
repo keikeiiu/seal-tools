@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Ports;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -38,6 +39,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         ("tuner", "Magic Tuner"),
         ("gem", "Gem Composer"),
         ("spammer", "Skill Spammer"),
+        ("buy", "Buy Items"),
+        ("sell", "Sell Items"),
     };
 
     private static readonly string[] Grades = { "N", "G", "DG", "XG", "SG" };
@@ -151,6 +154,15 @@ public partial class MainWindow : FluentWindow, IDisposable
     private string? _bsDragTarget;
     private Point? _bsDragStart;
     private Rectangle? _bsMarquee;
+    /// <summary>Which of the single points the calibrator is waiting for, if any: "first", "second",
+    /// "scroll" or "max". Set by the matching button, cleared by the click that fills it.</summary>
+    private string? _bsPointTarget;
+
+    // Buy tab / Sell tab state.
+    private System.Windows.Controls.ComboBox? _buyPreset;
+    private TextBlock? _buyHint;
+    private readonly Dictionary<int, Border> _sellSlotBoxes = new();
+    private TextBlock? _sellHint;
 
     public MainWindow()
     {
@@ -234,6 +246,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             var startButton = MakeButton("Start", ControlAppearance.Primary);
             startButton.Click += async (_, _) =>
             {
+                // Which item to buy is chosen on the Buy tab, but a tool start only carries an id —
+                // so the choice is handed over here, just before the run that will read it.
+                if (id == "buy")
+                    _service.PendingBuyPreset = _buyPreset?.SelectedItem as string;
+
                 if (!await _service.StartToolAsync(id))
                 {
                     // Without this the click just does nothing: the tools' "Arduino not found"
@@ -459,6 +476,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildTunerTab());
         ConfigTabs.Items.Add(BuildGemTab());
         ConfigTabs.Items.Add(BuildSpammerTab());
+        ConfigTabs.Items.Add(BuildBuyTab());
+        ConfigTabs.Items.Add(BuildSellTab());
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
@@ -3441,6 +3460,349 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
     /// copied verbatim into nine Build*Tab methods, which is why the horizontal-scroll fix below had
     /// to be made nine times.</summary>
+    /// <summary>The Sell tab. All this needs is WHICH slots — the geometry is the calibrated grid and
+    /// the shared transaction, so there is nothing else to configure here.</summary>
+    private TabItem BuildSellTab()
+    {
+        var panel = new StackPanel();
+        var hint = Mono();
+        _sellHint = hint;
+
+        var slots = new Grid { Margin = new Thickness(0, 8, 0, 8), HorizontalAlignment = HorizontalAlignment.Left };
+        for (int c = 0; c < BagGrid.Cols; c++)
+            slots.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+        for (int r = 0; r < BagGrid.Rows; r++)
+            slots.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34) });
+
+        _sellSlotBoxes.Clear();
+        for (int i = 0; i < BagGrid.SlotCount; i++)
+        {
+            int index = i;
+            var cell = new Border
+            {
+                Margin = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+                ToolTip = $"Bag slot {index + 1}",
+            };
+            cell.MouseLeftButtonDown += (_, _) => ToggleSellSlot(index);
+            Grid.SetRow(cell, index / BagGrid.Cols);
+            Grid.SetColumn(cell, index % BagGrid.Cols);
+            slots.Children.Add(cell);
+            _sellSlotBoxes[index] = cell;
+        }
+
+        var all = MakeButton("Select all", ControlAppearance.Secondary);
+        all.Click += (_, _) => { _service.Config.BuySell.SellSlots = Enumerable.Range(0, BagGrid.SlotCount).ToList(); PaintSellSlots(); };
+        var none = MakeButton("Clear", ControlAppearance.Secondary);
+        none.Click += (_, _) => { _service.Config.BuySell.SellSlots.Clear(); PaintSellSlots(); };
+
+        var cap = UiText(_service.Config.BuySell.SellCap.ToString(CultureInfo.InvariantCulture));
+        cap.Width = 60;
+        var saveCap = MakeButton("Save", ControlAppearance.Secondary);
+        saveCap.Click += (_, _) =>
+        {
+            if (!int.TryParse(cap.Text.Trim(), out var n) || n < 1)
+            {
+                hint.Text = "The cap must be a positive number.";
+                return;
+            }
+            _service.Config.BuySell.SellCap = n;
+            SaveBuySell(hint, "Sell selection and cap saved to config\\local.yaml.");
+        };
+
+        var capRow = new StackPanel { Orientation = Orientation.Horizontal };
+        capRow.Children.Add(cap);
+        capRow.Children.Add(saveCap);
+
+        var sellDry = MakeButton("Dry run", ControlAppearance.Secondary);
+        sellDry.Click += async (_, _) => await SellDryRun();
+
+        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        pickRow.Children.Add(all);
+        pickRow.Children.Add(none);
+        pickRow.Children.Add(sellDry);
+
+        panel.Children.Add(Section("Slots to sell",
+            Hint("Click the slots to sell. The grid mirrors the bag — slot 1 top-left, slot 64 " +
+                 "bottom-right — so lighting them up shows exactly what is about to go. Selling runs " +
+                 "from the highest slot number down, which stays correct whether or not the bag " +
+                 "closes the gap after each sale."),
+            pickRow));
+
+        panel.Children.Add(Section("Grid", slots));
+
+        panel.Children.Add(Section("Safety",
+            Hint("A hard ceiling on how many slots one run may sell. It is enforced in the loop, not " +
+                 "advice — selling is the one thing here that cannot be undone."),
+            LabeledField("Max slots per run", capRow)));
+
+        panel.Children.Add(Section("Status", hint));
+
+        PaintSellSlots();
+        return MakeTab("Sell", panel);
+    }
+
+    /// <summary>The Buy tab: pick one of your named items, set how many, and the card's Start runs it.
+    /// Presets live here rather than in the calibrator because the geometry — rows, scroll point, MAX
+    /// — is shared by every item, while only the row and the scroll distance differ between them.</summary>
+    private TabItem BuildBuyTab()
+    {
+        var panel = new StackPanel();
+        var hint = Mono();
+        hint.Text = "Calibrate Buy / Sell first, then add the items you re-buy here.";
+        _buyHint = hint;
+
+        _buyPreset = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
+        var reload = MakeButton("Reload", ControlAppearance.Secondary);
+        reload.Click += (_, _) => RefreshBuyPresets();
+        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        pickRow.Children.Add(_buyPreset);
+        pickRow.Children.Add(reload);
+
+        var nameBox = UiText("", "e.g. Springs");
+        var rowBox = UiText("0");
+        var scrollBox = UiText("0");
+        var countBox = UiText("1");
+        foreach (var b in new[] { nameBox, rowBox, scrollBox, countBox }) b.Width = 90;
+        nameBox.Width = 160;
+
+        var save = MakeButton("Save item", ControlAppearance.Primary);
+        save.Click += (_, _) => SaveBuyPreset(nameBox, rowBox, scrollBox, countBox);
+        var del = MakeButton("Delete item", ControlAppearance.Secondary);
+        del.Click += (_, _) => DeleteBuyPreset();
+        var dryRun = MakeButton("Dry run", ControlAppearance.Secondary);
+        dryRun.Click += async (_, _) => await BuyDryRun();
+
+        var actRow = new StackPanel { Orientation = Orientation.Horizontal };
+        actRow.Children.Add(save);
+        actRow.Children.Add(del);
+        actRow.Children.Add(dryRun);
+
+        _buyPreset.SelectionChanged += (_, _) =>
+        {
+            if (_buyPreset.SelectedItem is not string name) return;
+            if (!_service.Config.BuySell.Presets.TryGetValue(name, out var p)) return;
+            nameBox.Text = name;
+            rowBox.Text = p.Row.ToString(CultureInfo.InvariantCulture);
+            scrollBox.Text = p.Scroll.ToString(CultureInfo.InvariantCulture);
+            countBox.Text = p.Count.ToString(CultureInfo.InvariantCulture);
+        };
+
+        var fields = new StackPanel();
+        fields.Children.Add(LabeledField("Name", nameBox));
+        fields.Children.Add(LabeledField("Row (0 = top)", rowBox));
+        fields.Children.Add(LabeledField("Scroll notches", scrollBox));
+        fields.Children.Add(LabeledField("Buy count", countBox));
+
+        panel.Children.Add(Section("Item",
+            Hint("Pick the item the Buy card's Start will buy. The dropdown is what the tool reads — " +
+                 "editing the numbers below does nothing until you save them onto a name."),
+            LabeledField("Preset", pickRow)));
+
+        panel.Children.Add(Section("Position",
+            Hint("Row 0 is the top visible row after scrolling. Scroll notches are wheel-downs from " +
+                 "the top of the list, so the same number always lands in the same place. Set scroll " +
+                 "by trial with Dry run below — it scrolls and moves the cursor but never clicks."),
+            fields,
+            actRow));
+
+        panel.Children.Add(Section("Status", hint));
+
+        RefreshBuyPresets();
+        return MakeTab("Buy", panel);
+    }
+
+    private void RefreshBuyPresets()
+    {
+        if (_buyPreset == null) return;
+        var names = _service.Config.BuySell.Presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+        var previous = _buyPreset.SelectedItem as string;
+        _buyPreset.ItemsSource = names;
+        _buyPreset.SelectedItem = previous != null && names.Contains(previous) ? previous : names.FirstOrDefault();
+    }
+
+    private void SaveBuyPreset(Wpf.Ui.Controls.TextBox name, Wpf.Ui.Controls.TextBox row,
+                               Wpf.Ui.Controls.TextBox scroll, Wpf.Ui.Controls.TextBox count)
+    {
+        var key = name.Text.Trim();
+        if (key.Length == 0) { _buyHint!.Text = "Give the item a name first."; return; }
+        if (!int.TryParse(row.Text.Trim(), out var r) || r < 0) { _buyHint!.Text = "Row must be 0 or more."; return; }
+        if (!int.TryParse(scroll.Text.Trim(), out var sc) || sc < 0) { _buyHint!.Text = "Scroll notches must be 0 or more."; return; }
+        if (sc > 30) { _buyHint!.Text = "The firmware caps one scroll at 30 notches."; return; }
+        if (!int.TryParse(count.Text.Trim(), out var n) || n < 1) { _buyHint!.Text = "Buy count must be 1 or more."; return; }
+        if (!ShopRowOk(r)) return;
+
+        _service.Config.BuySell.Presets[key] = new BuyPreset { Row = r, Scroll = sc, Count = n };
+        RefreshBuyPresets();
+        _buyPreset!.SelectedItem = key;
+        SaveBuySell(_buyHint!, $"Item '{key}' saved (row {r}, scroll {sc}, count {n}).");
+    }
+
+    private void DeleteBuyPreset()
+    {
+        if (_buyPreset?.SelectedItem is not string key) { _buyHint!.Text = "Pick an item to delete."; return; }
+        if (!_service.Config.BuySell.Presets.Remove(key)) { _buyHint!.Text = $"'{key}' isn't there any more."; return; }
+        RefreshBuyPresets();
+        SaveBuySell(_buyHint!, $"Item '{key}' deleted.");
+    }
+
+    /// <summary>Warns when a row index would land outside the calibrated list, rather than letting the
+    /// run click past the bottom of it.</summary>
+    private bool ShopRowOk(int row)
+    {
+        var bs = _service.Config.BuySell;
+        if (ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) is { } problem)
+        {
+            _buyHint!.Text = "Shop rows aren't calibrated — " + problem + ".";
+            return false;
+        }
+        var list = bs.ShopList;
+        if (BagGrid.IsValidRect(list))
+        {
+            var centre = ShopGeometry.RowCentre(bs.ShopFirstRow, bs.ShopSecondRow, row);
+            if (centre is { } c && c.Y > list![1] + list[3])
+            {
+                _buyHint!.Text = $"Row {row} is below the calibrated list — check the scroll amount.";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>Persists the whole buy/sell section — geometry and presets together, so a save from
+    /// any of the three tabs can't drop what another one set.</summary>
+    private void SaveBuySell(TextBlock hint, string success)
+    {
+        var bs = _service.Config.BuySell;
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.BuySell = new ConfigLoader.LocalBuySell
+        {
+            BagGrid = bs.BagGrid,
+            BagSlot = bs.BagSlot,
+            ShopList = bs.ShopList,
+            ShopFirstRow = bs.ShopFirstRow,
+            ShopSecondRow = bs.ShopSecondRow,
+            ScrollPoint = bs.ScrollPoint,
+            MaxButton = bs.MaxButton,
+            Presets = bs.Presets,
+            SellSlots = bs.SellSlots,
+            SellCap = bs.SellCap,
+        };
+        TrySaveCalibration(() => _service.SaveLocal(local), hint, success);
+    }
+
+    /// <summary>Where a run would put the cursor, without clicking. The buy dry run's whole point:
+    /// it scrolls and parks the pointer so the stored scroll amount can be judged by eye and adjusted
+    /// — which is the only way to set it, since a scroll position can't be measured after the fact.</summary>
+    private bool TryPlace(SerialPort ser, int x, int y, out string error)
+    {
+        error = "";
+        var display = HidPointer.Display(_service.Config.Window.Title);
+        if (display == null) { error = "Game window not found (or minimized)."; return false; }
+        var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, x, y));
+        if (!placed.Ok) { error = placed.Error ?? $"couldn't place the cursor at ({x},{y})"; return false; }
+        return true;
+    }
+
+    private async Task BuyDryRun()
+    {
+        var bs = _service.Config.BuySell;
+        if (_buyPreset?.SelectedItem is not string name || !bs.Presets.TryGetValue(name, out var preset))
+        {
+            _buyHint!.Text = "Pick an item first.";
+            return;
+        }
+        if (ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow) is { } problem)
+        {
+            _buyHint!.Text = "Shop rows aren't calibrated — " + problem + ".";
+            return;
+        }
+        if (bs.ScrollPoint is not { Count: 2 } scroll)
+        {
+            _buyHint!.Text = "The scroll point isn't calibrated.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        if (!TryPlace(ser, scroll[0], scroll[1], out var err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
+
+        try
+        {
+            // Same origin the real run uses: wheel-up to the maximum and let it clamp, then down by
+            // the stored amount. If this lands wrong, so would the run.
+            ser.Write("Q 30\n");
+            await Task.Delay(600);
+            if (preset.Scroll > 0)
+            {
+                ser.Write($"Z {preset.Scroll}\n");
+                await Task.Delay(600);
+            }
+        }
+        catch (Exception ex) { _buyHint!.Text = "Scroll failed: " + ex.Message; return; }
+
+        var row = ShopGeometry.RowCentre(bs.ShopFirstRow, bs.ShopSecondRow, preset.Row);
+        if (row is not { } target) { _buyHint!.Text = "Couldn't work out the row."; return; }
+        if (!TryPlace(ser, target.X, target.Y, out err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
+
+        _buyHint!.Text = $"Dry run: scrolled {preset.Scroll} notch(es) down from the top and parked the " +
+                         $"cursor on row {preset.Row}. Nothing was clicked. If the pointer isn't on " +
+                         "'" + name + "', change the scroll amount and run this again.";
+    }
+
+    private async Task SellDryRun()
+    {
+        var bs = _service.Config.BuySell;
+        if (!BagGrid.IsValidRect(bs.BagGrid)) { _sellHint!.Text = "Calibrate the bag grid first."; return; }
+        if (bs.SellSlots.Count == 0) { _sellHint!.Text = "Click some slots first."; return; }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { _sellHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+
+        // Same descending order the real run uses, so the dry run shows the actual sequence.
+        var centres = BagGrid.Centres(bs.BagGrid!);
+        var ordered = bs.SellSlots.Where(i => i >= 0 && i < centres.Count)
+                                  .Distinct().OrderByDescending(i => i).ToList();
+
+        for (int n = 0; n < ordered.Count; n++)
+        {
+            var c = centres[ordered[n]];
+            if (!TryPlace(ser, c.X, c.Y, out var err)) { _sellHint!.Text = "Dry run stopped: " + err; return; }
+            _sellHint!.Text = $"Would sell slot {ordered[n] + 1} ({n + 1}/{ordered.Count}) — no click.";
+            await Task.Delay(220);
+        }
+
+        _sellHint!.Text = $"Dry run done: {ordered.Count} slot(s) would be sold, highest number first. " +
+                          "Nothing was clicked.";
+    }
+
+    private void ToggleSellSlot(int index)
+    {
+        var slots = _service.Config.BuySell.SellSlots;
+        if (!slots.Remove(index)) slots.Add(index);
+        PaintSellSlots();
+    }
+
+    private void PaintSellSlots()
+    {
+        if (_sellHint == null) return;
+        var bs = _service.Config.BuySell;
+        foreach (var (index, cell) in _sellSlotBoxes)
+        {
+            bool on = bs.SellSlots.Contains(index);
+            cell.Background = on ? Res("SystemFillColorSuccessBrush") : Res("CardBackgroundFillColorDefaultBrush");
+            cell.BorderBrush = on ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
+        }
+
+        _sellHint.Text = bs.SellSlots.Count == 0
+            ? "No slots selected — click the grid to choose what to sell."
+            : bs.SellSlots.Count > bs.SellCap
+                ? $"{bs.SellSlots.Count} slots selected, which is over the cap of {bs.SellCap}. " +
+                  "Raise the cap on purpose, or narrow the selection — the run refuses either way."
+                : $"{bs.SellSlots.Count} slot(s) selected (cap {bs.SellCap}).";
+    }
+
     /// <summary>Buy / Sell calibration: the bag grid, and the scroll test that proves the firmware's
     /// wheel works. The shop-row picker and the MAX point land with the tool itself — what is here is
     /// everything that can be built and checked without the buy flow existing yet.</summary>
@@ -3449,7 +3811,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var panel = new StackPanel();
 
         var hint = Mono();
-        hint.Text = "Capture the game with the BAG OPEN to begin.";
+        hint.Text = "Capture with the SHOP open, the BAG open, and the count dialog showing — one " +
+                    "frame then covers every mark on this tab.";
         _buySellHint = hint;
 
         var image = new Image { Stretch = Stretch.Uniform };
@@ -3495,6 +3858,35 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Draw", drawRow),
             grid,
             save));
+
+        var markFirst = MakeButton("Mark first row", ControlAppearance.Secondary);
+        markFirst.Click += (_, _) => ArmPoint("first");
+        var markSecond = MakeButton("Mark second row", ControlAppearance.Secondary);
+        markSecond.Click += (_, _) => ArmPoint("second");
+        var markScroll = MakeButton("Mark scroll point", ControlAppearance.Secondary);
+        markScroll.Click += (_, _) => ArmPoint("scroll");
+        var markMax = MakeButton("Mark MAX button", ControlAppearance.Secondary);
+        markMax.Click += (_, _) => ArmPoint("max");
+
+        var markRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { markFirst, markSecond, markScroll, markMax })
+        {
+            b.Margin = new Thickness(0, 0, 6, 0);
+            markRow.Children.Add(b);
+        }
+
+        var saveShop = MakeButton("Save Shop Marks", ControlAppearance.Primary);
+        saveShop.Click += (_, _) => BsSave();
+
+        panel.Children.Add(Section("Shop (buying)",
+            Hint("Mark the first list row and the row directly below it — two clicks give the row " +
+                 "pitch exactly, where one click and an assumed height would drift by the ninth row. " +
+                 "The scroll point is where the cursor parks so the wheel scrolls the list (the wheel " +
+                 "acts on whatever is under it). MAX is the count dialog's MAX button. All of these " +
+                 "need the shop open in the capture."),
+            LabeledField("Mark", markRow),
+            saveShop));
+
         panel.Children.Add(Section("Result", hint));
 
         var notches = UiText("3");
@@ -3517,6 +3909,47 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Notches", scrollRow)));
 
         return MakeTab("Buy / Sell", panel);
+    }
+
+    /// <summary>Arms one of the four single-point marks — they are one click each, and the next click
+    /// on the capture fills whichever is armed.</summary>
+    private void ArmPoint(string which)
+    {
+        if (_bsScreenshot == null)
+        {
+            _buySellHint!.Text = "Capture the game first.";
+            return;
+        }
+        _bsPointTarget = which;
+        _buySellHint!.Text = which switch
+        {
+            "first" => "Click the FIRST row of the shop list.",
+            "second" => "Click the row directly BELOW the first one.",
+            "scroll" => "Click a spot over the shop list — the cursor parks here so the wheel scrolls it.",
+            _ => "Click the MAX button in the count dialog.",
+        };
+    }
+
+    private void SetShopPoint(string which, List<int> point)
+    {
+        var bs = _service.Config.BuySell;
+        switch (which)
+        {
+            case "first": bs.ShopFirstRow = point; break;
+            case "second": bs.ShopSecondRow = point; break;
+            case "scroll": bs.ScrollPoint = point; break;
+            default: bs.MaxButton = point; break;
+        }
+
+        var pitch = ShopGeometry.RowPitch(bs.ShopFirstRow, bs.ShopSecondRow);
+        _buySellHint!.Text = which switch
+        {
+            "first" => $"First row at ({point[0]},{point[1]}). Now mark the row directly below it.",
+            "second" => $"Second row at ({point[0]},{point[1]}). " +
+                        (pitch > 0 ? $"Row pitch {pitch} px." : ShopGeometry.Problem(bs.ShopFirstRow, bs.ShopSecondRow)),
+            "scroll" => $"Scroll point at ({point[0]},{point[1]}) — the wheel acts on what is under it.",
+            _ => $"MAX button at ({point[0]},{point[1]}).",
+        };
     }
 
     private void ArmDrag(string target)
@@ -3554,7 +3987,22 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void BsMouseDown(Canvas canvas, Point p)
     {
-        if (_bsScreenshot == null || _bsDragTarget == null) return;
+        if (_bsScreenshot == null) return;
+
+        // A single-point mark is finished by the click itself, unlike a box which needs the drag to
+        // end before it means anything.
+        if (_bsPointTarget != null)
+        {
+            var natural = CanvasToNatural(p, _bsScreenshot, _bsCanvas!);
+            SetShopPoint(_bsPointTarget, new List<int>
+            {
+                (int)Math.Round(natural.X), (int)Math.Round(natural.Y),
+            });
+            _bsPointTarget = null;
+            return;
+        }
+
+        if (_bsDragTarget == null) return;
         _bsDragStart = p;
         _bsMarquee = new Rectangle
         {
@@ -3672,14 +4120,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.BuySell = new ConfigLoader.LocalBuySell { BagGrid = cfg.BagGrid, BagSlot = cfg.BagSlot };
-        if (!TrySaveCalibration(() => _service.SaveLocal(local), _buySellHint!,
-                "Bag grid saved to config\\local.yaml."))
-            return;
-
-        var pitch = BagGrid.PitchX(cfg.BagGrid!);
-        _buySellHint!.Text += $" Slot pitch {Math.Round(pitch, 1)} px.";
+        SaveBuySell(_buySellHint!,
+            $"Saved to config\\local.yaml — slot pitch {Math.Round(BagGrid.PitchX(cfg.BagGrid!), 1)} px.");
     }
 
     /// <summary>One wheel nudge, for calibrating how far a notch moves the list. Sends and reports;
