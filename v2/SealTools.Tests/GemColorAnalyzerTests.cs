@@ -38,8 +38,9 @@ public class GemColorAnalyzerTests
         // 4x4 = 16 px: 4 differ by 10 (below tolerance), 4 by 200 (above), 8 identical.
         using var a = Solid(4, 4, 100, 100, 100);
         using var b = Solid(4, 4, 100, 100, 100);
-        b.Row(0).SetTo(new Scalar(110, 100, 100));   // +10 on B -> below tolerance
-        b.Row(1).SetTo(new Scalar(100, 100, 255));   // +155 on R -> above tolerance
+        // Mat.Row() hands back a submatrix that owns a handle — dispose it (OCVS004).
+        using (var row = b.Row(0)) row.SetTo(new Scalar(110, 100, 100));   // +10 on B -> below tolerance
+        using (var row = b.Row(1)) row.SetTo(new Scalar(100, 100, 255));   // +155 on R -> above tolerance
 
         Assert.Equal(4 / 16.0, GemColorAnalyzer.DiffFraction(a, b, 30));
     }
@@ -51,8 +52,8 @@ public class GemColorAnalyzerTests
         // identical. With inset 0 every pixel of those rows counts; with inset 2 none of them do.
         using var reference = Solid(20, 20, 100, 100, 100);
         using var live = Solid(20, 20, 100, 100, 100);
-        live.Row(0).SetTo(new Scalar(0, 0, 255));
-        live.Row(19).SetTo(new Scalar(0, 0, 255));
+        using (var row = live.Row(0)) row.SetTo(new Scalar(0, 0, 255));
+        using (var row = live.Row(19)) row.SetTo(new Scalar(0, 0, 255));
 
         Assert.Equal(40 / 400.0, GemColorAnalyzer.DiffFraction(live, reference, 30));
         Assert.Equal(0.0, GemColorAnalyzer.DiffFraction(live, reference, 30, inset: 2));
