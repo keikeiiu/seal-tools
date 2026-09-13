@@ -312,7 +312,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 const double PresetWidth = 150;   // fixed, so a long preset name does not clip
                 const double GapRow = 8;          // preset -> stepper
                 const double GapInner = 4;        // stepper -> box -> stepper
-                const double InlineFontSize = 12;  // the control's default is too large for this row height:
+                const double InlineFontSize = 11;  // the control's default is too large for this row height:
                                        // descenders (the "g" in Springs) were clipped by the box
 
                 _buyPresetCard = new ComboBox
