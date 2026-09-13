@@ -277,7 +277,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             var stopButton = MakeButton("Stop", ControlAppearance.Danger);
             stopButton.Click += (_, _) => _service.StopTool();
 
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                // Right-aligned explicitly. A vertical StackPanel stretches its children to the
+                // column's width, and the column is as wide as its widest row — so on the Buy card,
+                // where the preset and count sit above, Start/Stop were stretched to that width and
+                // then laid out from ITS left edge, pulling them away from every other card's buttons.
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
             buttons.Children.Add(startButton);
             buttons.Children.Add(stopButton);
 
