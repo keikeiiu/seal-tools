@@ -57,60 +57,79 @@ Then a **"Test grid"** button that overlays all 64 computed centres on a screens
 decoration: the whole design rests on the grid being linear, and the only way to know that for *your*
 render is to look at 64 dots at once. If the fit is wrong it will be obvious there and nowhere else.
 
-### Buying
+### Buying and selling share one flow
 
-The safe half. Worst case is spending gold.
+Selling reuses the buying UI — right-clicking an item opens the same COUNTER dialog a shop does. So
+there is **one** click sequence, driven twice:
 
-1. Click the list entry (position comes from calibration; see the open question about list order).
-2. The COUNTER opens — click **MAX** for a stack, or the keypad for a specific number.
+1. Open the dialog: left-click the shop row (buy) or right-click the bag slot (sell).
+2. Click **MAX**.
 3. Click confirm.
-4. Repeat `n` times, where `n` is set per item.
+4. An extra confirmation may follow on valuable items — see the open questions. Treated as a
+   separate, optional step rather than assumed either way.
 
-The COUNTER's keypad is clickable, so quantity is set by clicking buttons, not by typing into a
-field. **That is why no backspace was added to the firmware** — a fixed sequence of clicks needs no
-text-field semantics from the game at all.
+**Quantity is always MAX.** The game caps a stack at 300 (it occasionally shows 301, which is a game
+bug). MAX takes whatever is there, so the tool never needs to know or type a number — which is also
+why no backspace went into the firmware. A fixed sequence of clicks needs no text-field semantics
+from the game at all.
 
-### Selling
+Buying is the safe half: worst case is spending gold.
 
-The destructive half, and worth being blunt about: a mis-aimed click sells the wrong item and it is
-gone. Every other tool here is recoverable — a bad roll costs springs. This one does not.
+### Selling — which slots
 
-1. Right-click the slot (the firmware's `R`; no new command needed).
-2. If the game confirms, click confirm.
-3. Repeat across the slots you selected.
+You say how much to sell, not the tool: **a number of slots**, or **a full page** (64). Whatever sits
+in those slots is what goes, and the decision of what is in them stays with you. No rule engine, no
+OCR of the bag.
+
+Worth being blunt about the rest: this is the only destructive action in the suite. A mis-aimed click
+sells the wrong stack and it is gone — every other tool here is recoverable, a bad roll just costs
+springs.
 
 Required before it runs live:
 
-- a **hard per-run cap**, set by you, enforced in the loop — not advisory
+- a **hard per-run cap**, enforced in the loop rather than advisory
 - a **dry-run mode** that highlights the slots it would click and sells nothing
 - the grid overlay above as the calibration gate
 
-Selecting *which* slots is the part still undesigned. Options: an explicit list of slot indices; a
-whole-page sweep; or an attribute rule reusing `AttrMatcher` (already flagged in
-[IDEAS.md](IDEAS.md) as the natural home). The rule-based one is the most useful and the most work.
-
 ### Scrolling
 
-Firmware now has `Q n` / `Z n` (wheel up/down, n notches). Two things to know:
+Firmware has `Q n` / `Z n` (wheel up/down, n notches). Two things to know:
 
 - The wheel scrolls **whatever is under the cursor**, so the tool must place the cursor over the list
-  before scrolling — that is a calibration point, not a firmware concern.
-- How many notches move one row is unknown and must be measured. A **Test Scroll** button in the
-  calibrator (point at the list, scroll n, see where it lands) is the cheap way to find it.
+  before scrolling — a calibration point, not a firmware concern.
+- Because a shop's listing is stable, an item's scroll amount is a **fixed constant per item**, not
+  something searched for at runtime. So the per-item config is just {scroll notches, row index}, and
+  the tool scrolls to the top first to have a known origin.
+
+The one number still needed is **notches per row**, which a Test Scroll button measures in a minute.
 
 ---
 
+## Settled
+
+- **The shop listing is stable.** Shops differ from each other, but a given shop keeps the same
+  entries in the same order. Only a few items matter — springs (for magic tuning), potions, pet food
+  — so an item sits at a **fixed row**, and the scroll needed to reach it is a **fixed number of
+  notches**. No scroll-and-find, no OCR of the list. This was the biggest fork and it went the easy
+  way.
+- **Selling uses the buying UI.** Right-click opens the same COUNTER dialog, so one click sequence
+  serves both.
+- **Quantity is always MAX.** No typing, no per-item quantity logic.
+- **What to sell is your call**, expressed as a slot count or a full page.
+
 ## Open questions
 
-1. **Does the shop list order or contents change between visits?** This is the biggest fork. If the
-   list is stable, an item sits at a fixed row and we click it directly. If stock changes what is
-   listed, we need scroll-and-find by OCR, which is markedly slower and needs the list readable.
-2. **How many notches equal one row?** Measurable with a Test Scroll button.
-3. **Does right-clicking an item sell immediately, or open a confirmation?** If it confirms, that is
-   another point to calibrate.
-4. **Do stacked items show a count on the icon?** Decides whether the tool can detect "this needs a
-   quantity" itself, or you flag it per item.
-5. **A capture of the quantity dialog**, so its buttons can be measured.
+1. **Does the bag compact after a stack is sold?** If selling slot 0 shifts everything left, the
+   whole job is clicking slot 0 N times — much simpler and much safer than stepping through slots.
+   If slots are vacated in place, the tool walks 0..N-1. This changes the loop, so it wants one
+   deliberate test.
+2. **The extra confirmation.** Some items confirm and some do not, apparently by value. Is it a
+   dialog with a button, or does it take Enter? That decides whether the step is another calibrated
+   point or the firmware's existing `E`. If it varies by item, it probably wants a per-item
+   "confirms" flag rather than a guess.
+3. **How many notches equal one row?** Measurable with a Test Scroll button, and it makes the
+   per-item scroll amounts calibratable rather than guessed.
+4. **A capture of the COUNTER dialog**, so MAX and confirm can be measured.
 
 ---
 
