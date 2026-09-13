@@ -141,6 +141,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     private bool _cycleRunning;
     private System.Windows.Controls.Image? _gemResultPreview;
 
+    // Buy/Sell calibrator state. Only the scroll test exists so far — the bag grid and the shop
+    // rows come next, so this holds a hint line and nothing else yet.
+    private TextBlock? _buySellHint;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -451,6 +455,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
+        ConfigTabs.Items.Add(BuildBuySellCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSetupTab());
         ConfigTabs.Items.Add(BuildHotkeysTab());
@@ -3413,6 +3418,79 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
     /// copied verbatim into nine Build*Tab methods, which is why the horizontal-scroll fix below had
     /// to be made nine times.</summary>
+    /// <summary>Buy / Sell calibration. Only the scroll test is here so far: the rest of this tab —
+    /// dragging the bag grid, picking shop rows, marking MAX — lands with the tool itself. This much
+    /// exists now because it is what proves the reflashed firmware's wheel works, and until that is
+    /// confirmed there is no point building anything on top of it.</summary>
+    private TabItem BuildBuySellCalibrateTab()
+    {
+        var panel = new StackPanel();
+
+        _buySellHint = new TextBlock
+        {
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+            Text = "Put the mouse over the shop list first — the wheel scrolls whatever is under the cursor.",
+        };
+
+        var notches = UiText("3");
+        notches.Width = 60;
+        notches.VerticalAlignment = VerticalAlignment.Center;
+        var up = MakeButton("Scroll up", ControlAppearance.Secondary);
+        var down = MakeButton("Scroll down", ControlAppearance.Secondary);
+        up.Click += async (_, _) => await BuySellTestScroll(notches, upwards: true);
+        down.Click += async (_, _) => await BuySellTestScroll(notches, upwards: false);
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(notches);
+        row.Children.Add(up);
+        row.Children.Add(down);
+
+        panel.Children.Add(Section("Test scroll (wheel)",
+            Hint("Sends real wheel notches to the game through the Arduino, so you can see how far one " +
+                 "notch moves the shop list — the number that sets every buy item's scroll amount. " +
+                 "Requires the firmware with the Q/Z commands flashed; without it, nothing happens."),
+            LabeledField("Notches", row),
+            _buySellHint));
+
+        return MakeTab("Buy / Sell", panel);
+    }
+
+    /// <summary>One wheel nudge, for calibrating how far a notch moves the list. Sends and reports;
+    /// it does not touch the cursor, so whatever is under it is what scrolls.</summary>
+    private async Task BuySellTestScroll(Wpf.Ui.Controls.TextBox notches, bool upwards)
+    {
+        if (!int.TryParse(notches.Text.Trim(), out var n) || n < 1)
+        {
+            _buySellHint!.Text = "Enter how many notches to send (1 or more).";
+            return;
+        }
+        if (n > 127)
+        {
+            // The firmware clamps to 30; say so rather than let the number silently shrink.
+            _buySellHint!.Text = "The firmware caps a single scroll at 30 notches.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            _buySellHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
+            return;
+        }
+
+        try
+        {
+            ser.Write((upwards ? "Q " : "Z ") + n + "\n");
+            _buySellHint!.Text = $"Sent {n} notch(es) {(upwards ? "up" : "down")} — did the list move?";
+        }
+        catch (Exception ex)
+        {
+            _buySellHint!.Text = $"Send failed: {ex.Message}";
+        }
+    }
+
     private static TabItem MakeTab(string header, Panel panel) =>
         new()
         {
