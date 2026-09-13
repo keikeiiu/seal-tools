@@ -327,6 +327,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 {
                     Orientation = Orientation.Horizontal,
                     VerticalAlignment = VerticalAlignment.Center,
+                    // MakeButton carries a 6px right margin, so a row of them ends 6px short of the
+                    // column edge. Without the same inset here the "+" overhangs "Stop" by exactly
+                    // that — which is what made the two rows look out of line even though the
+                    // buttons below matched every other card to the pixel.
+                    Margin = new Thickness(0, 0, 6, 0),
                 };
                 countRow.Children.Add(minus);
                 countRow.Children.Add(_buyCountCard);
