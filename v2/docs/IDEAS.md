@@ -18,6 +18,11 @@ because it changes how something else should be done.
 - ~~**Harden the empty check**~~ — **done** [2026-09-10]: the check only judges while the game is the
   foreground window, and logs a refusal otherwise. See [CALIBRATION.md](CALIBRATION.md).
 - **Game-window watchdog** (S). If the window closes or minimizes mid-run, stop cleanly.
+- **Passive watcher — death and pet notifications** (L) ⚑. Poll the game while you are not looking and
+  either act or tell you: **death** by OCR on a calibrated region, **pet needs attention** by a pixel
+  diff on a menu-bar icon. Designed in [PLAN-WATCHER.md](PLAN-WATCHER.md) — it is a launcher-level
+  service rather than a tool card, because it must poll *without* holding the Arduino and only take the
+  port in order to act. Notify-only is the recommended first phase.
 - **Surface crashes on the card** (S). A tool exception already writes `logs/error.log`; put the last
   error on the card so it is seen, not buried.
 - **Auto-screenshot on failure** (S). Capture the window whenever a tool stops with an error —
