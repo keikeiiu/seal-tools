@@ -1208,7 +1208,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
         keyHeader.Children.Add(fastHeaderLabel);
-        var presetBox = new ComboBox { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
+        // MinWidth is a floor for a very narrow window, not the width it takes: it sits in a star
+        // column now, so it stretches into whatever the Rename and Delete buttons leave.
+        var presetBox = new ComboBox { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
         var presetName = UiText("");
         presetName.Width = 160;
         presetName.VerticalAlignment = VerticalAlignment.Center;
@@ -1405,14 +1407,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var b in new[] { renamePreset, delPreset })
             b.Margin = new Thickness(8, 0, 0, 0);
 
-        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        // A Grid, not a horizontal StackPanel. A StackPanel measures its children with unbounded width,
+        // so the picker took its whole MinWidth and the two buttons their natural size, and the total
+        // ran past the card — at a 619-logical-px window the Delete button was clipped mid-word
+        // ("Delet"). With the picker in a star column it takes what is left rather than demanding it,
+        // so the row fits at any width instead of only at the width it was built at.
+        var pickRow = new Grid();
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(presetBox, 0);
+        Grid.SetColumn(renamePreset, 1);
+        Grid.SetColumn(delPreset, 2);
         pickRow.Children.Add(presetBox);
         pickRow.Children.Add(renamePreset);
         pickRow.Children.Add(delPreset);
 
         panel.Children.Add(Section("Active",
             Hint("Which key set the spammer presses. The keys below are a read-only summary; click Edit " +
-                 "to change them. Switching the preset is not saved until Save Spammer Config."),
+                 "to change them. Switching the preset is not saved until Save Preset."),
             LabeledField("Preset", pickRow),
             keysSummary,
             editButton,
@@ -1502,9 +1515,14 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).");
             UpdateSummary();
         };
+        // The editor goes in before the save button, not after. It used to be added last, which put
+        // Save Preset ABOVE the prompt and the two cards it saves — and with the editor collapsed,
+        // which is how the tab opens, a lone Save button with nothing above it. The calibrator tabs
+        // had this same fault ("the save used to sit between two cards, belonging to neither"); the
+        // rule is status card, then the action, last.
+        panel.Children.Add(editor);
         panel.Children.Add(save);
         panel.Children.Add(result);
-        panel.Children.Add(editor);
 
         loading = true;
         RefreshPresetList(current);
