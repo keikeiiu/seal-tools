@@ -42,7 +42,8 @@ v2 is the current/active version. Check-in is explicitly out of scope for v2.
   - `Arduino.cs` — WMI VID/PID discovery + `System.IO.Ports`.
   - `Config/` — YAML via YamlDotNet (defaults + local overlay + attributes), fails loudly on invalid input.
   - `WindowFinder.cs` — Win32 `EnumWindows`/`GetClientRect`/`ClientToScreen`.
-  - `ScreenCapture.cs` — `PrintWindow` (calibration) + `CopyFromScreen` (OCR/loop).
+  - `ScreenCapture.cs` — `CopyFromScreen` only, for every capture path. (`PrintWindow` was measured to
+    return a solid black frame for this game — see Part D item 7.)
   - `Hotkeys.cs` — `GetAsyncKeyState`.
   - `GemPointer.cs` — shared Arduino "mouse tool" calls (absolute move, `C`, `R`, `D`).
   - `GemColorAnalyzer.cs` — color-composition fingerprint (empty vs filled result box).
@@ -154,8 +155,15 @@ These are settled by evidence/memory — **do not reverse them**:
    game and presses the button, so no extra click is needed.
 5. **Do NOT re-introduce pixel-computed relative-move (`(point - Register) * scale / 100`)** — that is what broke relative moves; the composer intentionally sends raw HID counts.
 6. **Do NOT "fix" OCR row-bucketing blind** — evidence first.
-7. **Do NOT change the PrintWindow capture path** for calibration back to CopyFromScreen — PrintWindow is the DirectX-safe fix.
-8. **Do NOT fold the "Save Composer Moves" button / advanced-mode** work into this pass — separately tracked future task.
+7. **Do NOT reintroduce `PrintWindow`** for calibration. It was measured to return a **solid black
+   frame** for this game, so the calibrator screenshot came back blank; `CopyFromScreen` replaced it
+   and is the only capture path. *(This item used to say the exact opposite — "do NOT change the
+   PrintWindow path back to CopyFromScreen, PrintWindow is the DirectX-safe fix" — which was true for
+   other games and false for this one, and was written before the measurement. Corrected
+   2026-09-14; see `COORDINATES.md` and `STATUS.md`.)*
+8. **Do NOT fold the "Save Composer Moves" button / advanced-mode** work into this pass — separately
+   tracked future task. *(Since landed: the button is **Save tuned counts** on Calibrate Gem, and it
+   saves `gem.movements` independently of the full click-point calibration.)*
 
 ---
 

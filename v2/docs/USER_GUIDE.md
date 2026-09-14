@@ -2,8 +2,7 @@
 
 Every card, tab and button in the launcher, what it does, and when to use it.
 
-**繁體中文版：[USER_GUIDE.zh-TW.md](USER_GUIDE.zh-TW.md)** — *written before v2.9; it does not yet cover
-the Buy, Sell or Buy / Sell tabs.*
+**繁體中文版：[USER_GUIDE.zh-TW.md](USER_GUIDE.zh-TW.md)**
 
 Installing for the first time? Start with [INSTALL.md](INSTALL.md). For *why* the coordinates work
 the way they do, see [COORDINATES.md](COORDINATES.md); for the step-by-step calibration flow,
