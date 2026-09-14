@@ -1107,6 +1107,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         public Wpf.Ui.Controls.TextBox Key { get; } = UiText("", null, clearButton: false);
         public Wpf.Ui.Controls.TextBox Delay { get; } = UiText("", null, clearButton: false);
         // "fast" is the friendly face of the leading '*' on the key; the config still stores '*key'.
+        //
+        // Left to size itself on purpose. Do NOT pin Width here: the drawn glyph needs more than the
+        // ~20px it looks like, and a Width of 20 clips it away COMPLETELY (measured — an empty gap
+        // where the tick box should be). The column is what gives it room; see FastColumnWidth.
         public CheckBox Fast { get; } = new() { VerticalAlignment = VerticalAlignment.Center };
     }
 
@@ -1186,18 +1190,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         var rows = new List<SpamKeyRow>();
+        // The Fast column. 48 was too narrow and clipped the tick box's RIGHT BORDER away, leaving a
+        // "C" — left border and top/bottom stubs, no right edge. The glyph asks for more than it
+        // appears to: at 48 less the cell's 8px margin the control got 40, and the border fell about
+        // 2px outside. Pinching it the other way is not a fix either — a Width of 20 clips it away
+        // entirely. Measured both ways; 60 leaves ~52 for a ~42px glyph.
+        const double FastColumnWidth = 60;
+
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
         // noise. One header, then bare boxes lined up underneath it.
         var rowsPanel = new Grid();
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
+        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FastColumnWidth) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var keyHeader = new Grid { Margin = new Thickness(0, 0, 0, 2) };
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
+        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FastColumnWidth) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var keyHeaderLabel = new TextBlock { Text = "Key", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
         var delayHeaderLabel = new TextBlock { Text = "Delay (s)", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
