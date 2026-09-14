@@ -60,7 +60,39 @@ Two things this depends on:
 
 ## The two action flows
 
-### Pet feed — the Sell flow, pointed at one slot
+### Pet feed — icon triggers, dialog decides, two slots feed
+
+The automation is: **the pet runs out of food, feed 2 stacks.**
+
+**The icon is not the trigger on its own.** It flags several states — the pet *levelling up* as well as
+running out of food — so acting on it directly could feed a pet that wants something else entirely. The
+user's own answer is the design: **open the dialog and confirm.**
+
+```
+icon lights up  ──►  click the icon (calibrated point)  ──►  read the dialog
+（cheap diff）                                              （OCR, decides）
+                                                                  │
+                                        "out of food" ────────────┴──────────── "levelled up"
+                                              │                                      │
+                                    feed 2 stacks, close                        close, do nothing
+```
+
+This is the same pairing as death: **a nearly-free check wakes an expensive one**, and the expensive
+one — not the cheap one — is what authorises a click.
+
+**Feeding is two bag slots handed over one at a time** — two right-click transactions, the Sell shape
+twice. So there are two designated slots to keep stocked and locked, not one.
+
+**The alternative worth noting:** skip the icon entirely and simply open the dialog on a timer. Simpler
+— no icon region to calibrate and no diff to tune — but it opens a UI window on a schedule while you
+are playing, whether or not anything has happened. Watching the icon means the dialog is only opened
+when the game says something changed.
+
+**One thing that needs a guard:** if the icon stays lit until the state is dealt with, a levelling-up
+notice that never clears would open the dialog on every poll. A per-trigger cooldown, and treating
+"opened it, nothing to do" as handled, is what stops that becoming a loop.
+
+### Feed — the transaction
 
 **Moving the food to the feeder is a right-click transaction**, the same shape as buying and selling:
 right-click the item in the backpack, then work the dialog. That matters more than it sounds, because
@@ -74,7 +106,7 @@ with two differences to measure rather than assume:
 - **the dialog may not have a MAX.** Feeding is not a quantity handover, so the step after the
   right-click may be a confirm button rather than MAX → Enter → Enter. The count of steps needs
   measuring on a real dialog, not inferring from the sell one.
-- **it is one slot, chosen in advance**, not a selection of many.
+- **two slots, each one transaction**, not a selection of many.
 
 **Where the food is: a designated slot, held there by the backpack's lock button.** The lock is what
 makes a fixed slot index trustworthy — without it a compacting bag moves the item and the index points
@@ -184,16 +216,19 @@ option; it is more moving parts than either alone.)
 
 ## Open questions
 
-1. **What does the pet action actually do?** Click the menu-bar icon and then a button in the window it
-   opens? **If the tool has to open that UI itself, this is a scripted sequence rather than a click** —
-   a different and larger feature.
+1. ~~**What does the pet action actually do?**~~ **Answered:** the tool clicks the icon, reads the
+   dialog to tell "out of food" from "levelled up", and feeds two bag slots one at a time. What is still
+   unknown is **the phrase the dialog uses for "out of food"**, and the dialog's step count.
 2. **How long does the death state last?** If the game revives you automatically after some seconds,
    the window to act is short and the poll interval decides whether it is catchable at all.
 3. **What is the death text**, and how stable is the region it appears in? A phrase to match is easy; a
    region that is also quiet when nothing is happening is the part that needs measuring.
-4. **Does the pet trigger act, or only notify?** "Needs to upgrade and such" may be a decision you want
-   to make rather than one to delegate.
-5. **What happens on repeated failure** — retry forever, or give up and say so? Unattended retrying is
+4. ~~**Does the pet trigger act, or only notify?**~~ **Answered:** it acts, but only after the dialog
+   confirms the state.
+5. **Does opening the pet dialog interrupt play?** If it takes focus or pauses something, an
+   icon-triggered open is much less intrusive than a timer — which is an argument for watching the icon
+   rather than polling the dialog.
+6. **What happens on repeated failure** — retry forever, or give up and say so? Unattended retrying is
    how a misread becomes a loop of clicks.
 
 ## Phasing
