@@ -86,6 +86,57 @@ wrong item**, and unlike a mis-aimed sale there is no undo. Two things follow:
   place to check before confirming — OCR on the dialog, not on the bag. (The project deliberately has
   no bag OCR; see [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
 
+#### Backing out of a dialog
+
+The dialog's **X is just another calibrated point**, so closing one costs no firmware change — the tool
+clicks it like any other. `Esc` would be tidier and the firmware does not have it (`C R D H E T S K F X
+W Q Z P U`), but adding it would buy nothing the X does not, and every added command is a reflash of
+every board.
+
+### Locating the food: the designated slot, and what search would take
+
+**The default is the designated slot.** It is confirmed doable, needs nothing read, and the lock holds
+the item there.
+
+**Search:** the button *dims every non-matching item*, so items do not move and the match is the cell
+that stays at full colour.
+
+**The obvious way to find it does not work.** "Find the cell that is not dimmed" assumes full colour
+reads as brighter than dimmed — and **the pet food's own colour is close to the dimmed colour**, so a
+brightness threshold cannot separate the food from some other item dimmed. Measured by the user; it is
+not something the code could have inferred.
+
+**The version that does work costs more than it saves.** Compare *before and after* rather than testing
+brightness: capture the bag, run the search, capture again. The non-matching cells change (they dim)
+and the match is a cell that **did not change** — relative to each cell's own appearance, so the food's
+colour stops mattering. That is the empty-check mechanism again. But **empty cells do not change
+either**, so they read as matches too, and excluding them needs a fourth calibrated thing: the
+appearance of an empty slot.
+
+So the surviving version is a before/after diff *plus* an empty-slot test, and it still sits on top of
+the typing problem below. That is a lot of new failure surface for a feature whose only job is to avoid
+maintaining one slot's position — which the bag lock already does.
+
+**And the search box clears its text every time it is opened**, so every feed would have to type the
+name. That is where the rest of it gets hard:
+
+- the board sends **HID scancodes, not characters**, so producing 中文 means driving the IME — for 速成,
+  a radical prefix and then a **candidate number** that depends on the IME's dictionary and ordering.
+  It breaks if the IME is in English mode, if the candidate order differs, or if the game does not route
+  IME input to the field at all;
+- **unless the item has an ASCII name the box accepts**, in which case `K c` types it a character at a
+  time and there is no IME involved — worth checking first, because it would make search a
+  straightforward win;
+- otherwise it needs **paste** (clipboard set by the launcher, then Ctrl+V). The firmware has no
+  modifier combos today, but `X` is Alt+Tab, so they are possible: one new command, one reflash. The
+  unknown is whether the game accepts a paste.
+
+**Decision:** build the designated slot. Search is not the cheaper path it first looked like — it needs
+either an ASCII name the box accepts or a firmware paste command to get the name in, and then a
+before/after diff plus an empty-slot test to find the result, against a colour that does not read as a
+simple brightness difference. Revisit only if the name turns out to be typeable in ASCII, since that
+removes the hardest part.
+
 ### Revive — undefined
 
 **Not yet designed.** What reviving consists of decides whether this is a click or a sequence:
