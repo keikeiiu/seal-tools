@@ -29,6 +29,35 @@ second tool is refused. So:
 > interleaving commands on one serial line and deciding which wins — a much larger change, with
 > failure modes that are hard to reason about from a log.
 
+## How it watches while another tool is running
+
+**Watching needs no Arduino at all.** Detection is pure screen reading — a capture, then OCR or a
+pixel diff. The port is only needed to *click*. So the watcher polls continuously no matter what else
+is running; only the **action** is gated on a tool not running.
+
+That makes the gate far less limiting than it first looks, because **stopping a tool does not need the
+port either** — `StopTool()` cancels a token, it writes nothing to the board. So on a death while the
+composer is running, the watcher does not have to queue and wait for the tool to end:
+
+1. **stop the running tool** — no port needed; this is also the right thing on its own, since a
+   composer clicking through a death dialog is doing damage;
+2. the port is now free;
+3. **act** — revive, then optionally leave things stopped, or restart.
+
+That removes most of why acting *alongside* a tool looked hard. What it does not remove is two writers
+on one serial line at the same instant, so the rule stays: the watcher takes the port only when nothing
+else holds it.
+
+Two things this depends on:
+
+- **A running tool can pollute a watched region.** The composer drives the gem UI, so a watched box
+  that overlaps anything it animates would see the tool's own clicks as a state change. The death
+  region in particular must be somewhere the tools never touch.
+- **The poll must not run on the UI thread.** The status timer is a `DispatcherTimer`, and an OCR read
+  is long enough that doing it there would visibly stutter the window. The watcher needs its own
+  background loop. (The calibrator's **Check OCR** does block the UI thread today — fine for a button
+  press, not for a poll.)
+
 ## Why this is mostly assembly, not new machinery
 
 | Need | Already exists |
@@ -49,8 +78,9 @@ clicking.
 1. **A false positive here is unrecoverable and unattended.** This is worse than the Sell tool: Sell
    runs once, while you are watching it. A watcher misreads a busy screen and clicks while you are in
    another room. Detection quality is the whole feature; everything else is plumbing.
-2. **A revive usually costs something** — a scroll, a percentage of experience. Auto-reviving spends a
-   resource on a decision you would normally make yourself.
+2. ~~**A revive costs something.**~~ **Downgraded** — the user's revive cost is close to nothing, so
+   spending a resource is not the objection. What is left is the part that is not a resource: acting
+   on a *wrong* read, or repeatedly, which is risk 1 wearing a different hat.
 3. **The capture reads the screen**, so the watch is blind whenever anything covers the game — the
    launcher included. A watcher that silently stops seeing is worse than one that says so.
 4. **OCR cadence.** The engine is cached but a read is not free. Death wants a short interval and OCR is
@@ -82,9 +112,13 @@ option; it is more moving parts than either alone.)
 
 ## Phasing
 
-1. **Notify-only watcher**, both detectors, no port and no clicks. This is worth doing first on its own
-   merits: it is the only way to learn the false-positive rate, and a false positive costs a beep
-   rather than a mis-click. It also settles questions 2, 3 and 4 by observation instead of guesswork.
-2. **Acting**, guarded — only when no tool runs, with a per-trigger cooldown and a give-up after N
-   attempts.
+**Agreed (2026-09-15): the first phase is notify-only, because the checking is the hard part.** The
+detectors get wired to a beep and a status line and nothing else, so they can be watched getting it
+wrong for a day and the false-positive rate measured — rather than trusted.
+
+1. **Notify-only watcher**, both detectors, no port and no clicks. A false positive costs a beep. It
+   also settles questions 2, 3 and 4 by observation instead of guesswork, which is the point: none of
+   them can be answered from a desk.
+2. **Acting**, guarded — only when no tool runs, or after stopping the one that does, with a
+   per-trigger cooldown and a give-up after N attempts.
 3. **The pet action sequence**, once question 1 has an answer.
