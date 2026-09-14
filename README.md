@@ -1,4 +1,4 @@
-# Seal Tools v2.9 (C# / .NET 8 WPF)
+# Seal Tools v2.9.1 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -8,7 +8,7 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 ## Download
 
-**Take the latest — [SealTools-v2.9.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9/SealTools-v2.9.zip).**
+**Take the latest — [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip).**
 Self-contained (exe + OCR models + config templates) — unzip and run. Installation, including flashing
 the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
 
@@ -16,11 +16,11 @@ Older releases are kept only when they are a useful fallback — there is curren
 
 | Version | File | |
 |---|---|---|
-| **v2.9** | [SealTools-v2.9.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9/SealTools-v2.9.zip) | Latest |
+| **v2.9.1** | [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip) | Latest |
 | v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | The last build before buy/sell |
 
 **Firmware.** The Arduino sketch ships alongside the app, not inside it:
-[SealTools-v2.9-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9/SealTools-v2.9-firmware.zip).
+[SealTools-v2.9.1-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1-firmware.zip).
 Unzip it and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. From v2.9 on this is published with
 every release — before that it was only in the repo, so a downloaded zip had no way to flash a board.
 
@@ -36,7 +36,8 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 | Version | Date | What it added |
 |---|---|---|
-| **v2.9** | 2026-09-14 | **Buy and Sell.** Bulk-buy the items you re-buy constantly and bulk-sell what you don't keep, both verified on a live game. Buy items are presets (row, scroll, usual count) kept in `local.yaml`; the sell selection is deliberately never saved. **First release to ship the Arduino firmware** — before this the sketch was only in the repo, so a downloaded zip had no way to flash a board. |
+| **v2.9.1** | 2026-09-15 | Hot fix on v2.9, driven by setting it up on a second PC. **`▸ Tools` hides the tool cards**, so the capture canvas gets the whole window on a screen too small to show both. Three layout defects fixed, all found by looking at a narrow window: the Spammer tab's **Save Preset** sat above the cards it saves, its **Delete** button was clipped mid-word, and the key row's **Fast** tick box drew with no right border. Also corrects the Buy/Sell calibration hint, which still described two row clicks from a design replaced by one dragged region. |
+| v2.9 | 2026-09-14 | **Buy and Sell.** Bulk-buy the items you re-buy constantly and bulk-sell what you don't keep, both verified on a live game. Buy items are presets (row, scroll, usual count) kept in `local.yaml`; the sell selection is deliberately never saved. **First release to ship the Arduino firmware** — before this the sketch was only in the repo, so a downloaded zip had no way to flash a board. |
 | v2.6 | 2026-09-13 | Safety and correctness pass, none of it visible: one tool start at a time, a stop during a cold start honoured, a failed config save reported instead of leaving the click looking inert, and the tuner stopping on a failed OCR read rather than below the target grade. Spammer presets left in `defaults.yaml` are now adopted into `local.yaml` instead of being deleted by the next save from any other tab. Hold Space releases the spacebar on stop; the firmware releases held keys when the host disappears. *(No release published; tag only.)* |
 | v2.4 | 2026-09-12 | Tuner cursor placement (`spring_mode: hid`) and the mouse guard (`off` / `stop` / `recenter`). OCR fixes: `DG`/`XG`/`SG` no longer parsed as a bare `G`, and attribute lines the matcher used to drop are restored. *(No release published; tag only.)* |
 | v2.3 | 2026-09-11 | The WPF-UI launcher: card-based tabs, pin-on-top, shrinking to the running tool's card, and placement remembered across restarts. Arduino closed-loop cursor placement. Pixel-based empty-result detection, comparing only the box's interior so a moved window can't stall the composer. A run ends after the last grade. Spammer presets moved to `local.yaml` so they stop shipping in the public zip. |

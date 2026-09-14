@@ -36,6 +36,11 @@ window to the height of a card that is no longer on screen.
 **Not persisted**, unlike the placement and pinning. It exists for one task, and a launcher that
 opened with its status cards missing would read as broken rather than as a setting.
 
+**Shipped as `v2.9.1`**, with the `v2.9` release removed rather than left beside it — the v2.9 zip had
+been up for a day and this supersedes it, so two live downloads would only split the audience. The tag
+stays, so `git show v2.9` still works. Replacing the *asset* inside v2.9 was the alternative and was
+rejected: the tag would then name a commit that is not the build in the zip.
+
 **Left open:** the layout sweep. Three defects in this area were found by the user *looking* at a
 narrow window (Save Preset above what it saves, a clipped Delete, the Fast tick box's missing right
 border), and none is reachable from the test project. This change is more of the same surface.
