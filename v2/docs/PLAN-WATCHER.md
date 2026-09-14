@@ -58,6 +58,40 @@ Two things this depends on:
   background loop. (The calibrator's **Check OCR** does block the UI thread today — fine for a button
   press, not for a poll.)
 
+## The two action flows
+
+### Pet feed — the Sell flow, pointed at one slot
+
+**Moving the food to the feeder is a right-click transaction**, the same shape as buying and selling:
+right-click the item in the backpack, then work the dialog. That matters more than it sounds, because
+**the firmware cannot drag**: `C` is a press and release in one command (`Mouse.press` … `delay` …
+`Mouse.release`), with no separate button-down/button-up. A drag would need new commands and a reflash
+of every board. A right-click transaction needs neither.
+
+So this is close to `ShopTool`'s `SellPass` — right-click a bag slot, run the shared `MaxEnterEnter` —
+with two differences to measure rather than assume:
+
+- **the dialog may not have a MAX.** Feeding is not a quantity handover, so the step after the
+  right-click may be a confirm button rather than MAX → Enter → Enter. The count of steps needs
+  measuring on a real dialog, not inferring from the sell one.
+- **it is one slot, chosen in advance**, not a selection of many.
+
+**Where the food is: a designated slot, held there by the backpack's lock button.** The lock is what
+makes a fixed slot index trustworthy — without it a compacting bag moves the item and the index points
+at something else. Still the sharpest risk in the whole feature, because **the failure is feeding the
+wrong item**, and unlike a mis-aimed sale there is no undo. Two things follow:
+
+- the lock is a **prerequisite**, not a nicety, and the watcher should say so if it cannot be assumed;
+- the handover dialog names the item, so if a cheap confirmation is ever wanted, that is the natural
+  place to check before confirming — OCR on the dialog, not on the bag. (The project deliberately has
+  no bag OCR; see [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
+
+### Revive — undefined
+
+**Not yet designed.** What reviving consists of decides whether this is a click or a sequence:
+a button in a death dialog is one calibrated point; anything that involves walking, a town, or a
+choice of revival type is a scripted flow with its own failure modes. Needs answering before phase 2.
+
 ## Why this is mostly assembly, not new machinery
 
 | Need | Already exists |
@@ -66,6 +100,7 @@ Two things this depends on:
 | Compare a region against a reference | The empty check: a saved crop, the fraction of differing pixels, and a **6px inset** because a one-pixel window shift once made an *empty* box score 7.7 % |
 | Drag a region to calibrate it | The Buy / Sell and Gem calibrators' canvas drag, and their `SizeChanged` overlay redraw |
 | Click a calibrated point | `HidPointer.To` + `Click` — the shared closed-loop placement both other tools use |
+| Right-click a bag slot, work a dialog | `ShopTool.SellPass` + `MaxEnterEnter` — the pet-feed action is this shape, one slot instead of a selection |
 | Tell you | The card status text plus `Beep()`. No new dependency, no tray icon, no toast |
 | Take and release the port | `ArduinoPortAsync` / `Dispose` on `LauncherService` |
 
