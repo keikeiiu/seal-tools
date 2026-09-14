@@ -22,8 +22,14 @@ buttons](images/launcher-cards.png)
 
 Each card is one tool: its name, its live status, and **Start** / **Stop**. Buy Items is the only card
 taller than the rest — its item and count sit **above** Start/Stop, because they have to be set before
-the run rather than during it. Below the cards are **▸ Configuration** on the left, and **Hold Space**
-and the pin on the right.
+the run rather than during it. Below the cards are **▸ Tools** and **▸ Configuration** on the left,
+and **Hold Space** and the pin on the right.
+
+**Hide the cards with ▸ Tools** when you need the window for something else — it is for calibration
+on a small screen, where the five cards take height that the capture canvas needs more. It opens the
+configuration tabs at the same time, because hiding the cards only makes sense when you are using
+them, and collapsing Configuration again brings the cards back. The window is never left showing
+neither. *(That is the pair: hiding the cards opens the tabs, closing the tabs restores the cards.)*
 
 **▸ Configuration** expands every tab and grows the window to fit. Clicking it again collapses them
 and returns the window to the size it had before.
@@ -48,6 +54,7 @@ the order they are listed in this document. Widen the window and the wrapping ch
 
 | Control | What it does |
 |---|---|
+| **▸ / ▾ Tools** | Hides the tool cards so the tabs — and a capture canvas — get the whole window. Opens Configuration at the same time; collapsing Configuration brings the cards back. Not remembered between launches. |
 | **▸ / ▾ Configuration** | Shows or hides the config tabs. The window resizes to suit. |
 | **Pin on top** / **Pinned on top** | Floats the launcher above every other window, so the tool status stays readable while you play. The label and colour change with the state. |
 | **Hold Space** / **Stop Space** | Presses the spacebar and **leaves it held** — the auto-pickup toggle, so you are not holding the key yourself. Clicking again releases it. The dot beside it reads `● idle` or `● holding`. It is not a tool card, so it does not shrink the window. |

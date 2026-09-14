@@ -9,6 +9,37 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-15 — the cards can be hidden, so a small screen can still calibrate
+
+**Reported from the second PC.** Its screen is small enough that maximizing the launcher to drag a
+capture canvas left the five tool cards eating height the canvas needed. The cards are ~500 logical px
+— on a maximized window that is a third of the space, and the canvas is the one thing on that tab
+that cannot be scrolled or shrunk.
+
+**`▸ Tools`** now hides them, sitting to the left of `Configuration` because it controls the row above
+it. Verified by measurement: hidden, the tab strip moves from y=986 to y=234, the window keeps its
+height, and the tabs take all of it.
+
+**The two toggles move together, each in one direction**, and that is the whole design:
+
+- hiding the cards **opens** Configuration — hiding them is only meaningful when you are using the
+  tabs, and this is also what keeps the window from ever being empty;
+- collapsing Configuration **restores** the cards.
+
+Either rule alone leaves a reachable state with nothing in the window. Confirmed both ways: hidden →
+1845 px tall with 0 `Start` buttons; collapse Configuration → 995 px with all 5 back.
+
+**Cards-hidden counts as "not mini".** Mini mode shows one card and sizes the window to it, so the two
+cannot both apply — without the guard, collapsing the cards while a tool ran would have shrunk the
+window to the height of a card that is no longer on screen.
+
+**Not persisted**, unlike the placement and pinning. It exists for one task, and a launcher that
+opened with its status cards missing would read as broken rather than as a setting.
+
+**Left open:** the layout sweep. Three defects in this area were found by the user *looking* at a
+narrow window (Save Preset above what it saves, a clipped Delete, the Fast tick box's missing right
+border), and none is reachable from the test project. This change is more of the same surface.
+
 ## 2026-09-14 (4) — v2.9 packaged, and the firmware had never shipped at all
 
 **The release.** `v2.9` is tagged on `main` (the branch fast-forwarded, 32 commits, 0 behind), with

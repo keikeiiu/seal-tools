@@ -201,6 +201,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
         };
         ConfigToggle.Click += (_, _) => SetConfigExpanded(!_configExpanded);
+        ToolsToggle.Click += (_, _) => SetToolsCollapsed(!_toolsCollapsed);
         PinToggle.Click += (_, _) => SetPinned(!Topmost);
         SetConfigExpanded(false);
 
@@ -489,17 +490,36 @@ public partial class MainWindow : FluentWindow, IDisposable
     // a fresh launch expands to the window's designed height.
     private double _configExpandedHeight;
 
-    // Layout state. Both the config collapse and the mini mode want to set Height, so one function
-    // owns it — otherwise they fight, each undoing the other's resize.
+    // Layout state. The config collapse, the card collapse and the mini mode all want to set Height,
+    // so one function owns it — otherwise they fight, each undoing the other's resize.
     private bool _configExpanded;
+    /// <summary>Tool cards hidden so the tabs get the height. Deliberately NOT persisted: it exists
+    // for one task — dragging a capture canvas on a screen too small to show the cards and the canvas
+    // at once — and a launcher that opened with its status cards missing would read as broken.</summary>
+    private bool _toolsCollapsed;
     private string? _miniToolId;
     private bool _layoutApplied;
     private bool _appliedExpanded;
     private bool _appliedMini;
+    private bool _appliedToolsCollapsed;
 
     private void SetConfigExpanded(bool expanded)
     {
         _configExpanded = expanded;
+        // Collapsing the tabs brings the cards back. Otherwise the window could be left showing
+        // neither, which is not a state worth being able to reach — and this is the pair the two
+        // toggles are: hiding the cards opens the tabs, closing the tabs restores the cards.
+        if (!expanded) _toolsCollapsed = false;
+        ApplyWindowLayout();
+    }
+
+    /// <summary>Hides the tool cards, giving the tabs the whole window.</summary>
+    private void SetToolsCollapsed(bool collapsed)
+    {
+        _toolsCollapsed = collapsed;
+        // Only meaningful alongside the tabs — you hide the cards to use them. Opening Configuration
+        // here is also what keeps the window from ever being empty.
+        if (collapsed) _configExpanded = true;
         ApplyWindowLayout();
     }
 
@@ -570,8 +590,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// the running tool's card is shown, and the height that follows from those.</summary>
     private void ApplyWindowLayout()
     {
-        bool mini = _miniToolId != null;
-        if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded) return;
+        // Cards-hidden counts as "not mini": mini mode shows ONE card and sizes the window to it, so
+        // the two cannot both apply — collapsing the cards would otherwise shrink the window to a
+        // height for a card that is not on screen.
+        bool mini = _miniToolId != null && !_toolsCollapsed;
+        if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded
+            && _toolsCollapsed == _appliedToolsCollapsed) return;
 
         // Remember the height the user was working with before anything shrinks it.
         if (_layoutApplied && _appliedExpanded && !_appliedMini && Height > _collapsedHeight)
@@ -579,6 +603,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         ConfigTabs.Visibility = _configExpanded ? Visibility.Visible : Visibility.Collapsed;
         ConfigToggle.Content = (_configExpanded ? "▾  " : "▸  ") + "Configuration";
+        ToolsPanel.Visibility = _toolsCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        ToolsToggle.Content = (_toolsCollapsed ? "▸  " : "▾  ") + "Tools";
 
         foreach (var (id, card) in _toolCards)
             card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
@@ -595,6 +621,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         _layoutApplied = true;
         _appliedExpanded = _configExpanded;
         _appliedMini = mini;
+        _appliedToolsCollapsed = _toolsCollapsed;
     }
 
     /// <summary>Height the window needs for the tool cards that are currently visible, plus the fixed

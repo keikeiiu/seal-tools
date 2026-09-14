@@ -26,7 +26,12 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
-                    <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3"
+                    <!-- Sits above ConfigToggle because it controls the row above: the cards. Hiding them
+                         is for calibration on a small screen, where the five cards take height the capture
+                         canvas needs more. -->
+                    <ui:Button x:Name="ToolsToggle" Appearance="Secondary" Padding="10,3,12,3"
+                               ToolTip="Hide the tool cards to give the tabs below the whole window — for dragging a capture canvas on a small screen. Opens Configuration at the same time, and comes back when you collapse Configuration."/>
+                    <ui:Button x:Name="ConfigToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
                                ToolTip="Show or hide the configuration tabs"/>
                     <ui:Button x:Name="PinToggle" Appearance="Secondary" Padding="10,3,12,3" Margin="8,0,0,0"
                                ToolTip="Keep this window above the game so the tool status stays visible while you play"/>
