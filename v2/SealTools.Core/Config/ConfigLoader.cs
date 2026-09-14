@@ -27,6 +27,47 @@ public sealed class ConfigLoader
 
     private string PathOf(string name) => Path.Combine(_configDir, name);
 
+    // Written above the serialized content on every save. YamlDotNet serializes an object graph, so
+    // it cannot carry comments through: whatever prose a save destroys is gone for good, and the only
+    // comments that survive are the ones the writer emits itself. That is what this is.
+    //
+    // It says the two things a reader has to know before editing the file, because both have already
+    // cost real data. Comments vanish on the next save from any tab. And a key the serializer's
+    // anonymous object does not mention is DROPPED - that is not a theory, it is how a machine's
+    // spammer presets were deleted outright (the block lived here, a Save from the Tuner tab rewrote
+    // the file without it, and nothing said so). Presets live in local.yaml now and the adoption path
+    // catches strays, but the underlying behaviour has not changed and will not without a rework.
+    private const string DefaultsHeader =
+        "# ── Portable settings ─────────────────────────────────────────────────────────────\n" +
+        "# The same on every machine. Anything measured on ONE machine belongs in local.yaml, not here.\n" +
+        "#\n" +
+        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you press Save on the\n" +
+        "# Tuner, Gem or Hotkeys tab. It serialises a fixed list of keys, which means:\n" +
+        "#   * every comment in here is lost on the next save, including any you add;\n" +
+        "#   * any key the launcher does not know about is DROPPED, silently — this is how a spammer\n" +
+        "#     block once disappeared, taking a player's key rotations with it. Presets are personal\n" +
+        "#     and live in local.yaml, which is why there is no spammer section below.\n" +
+        "#\n" +
+        "# Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.\n" +
+        "\n";
+
+    // The same warning for local.yaml. It loses comments the same way, and its comments are the more
+    // valuable ones - local.yaml.example ships a page of guidance explaining that the seeded values
+    // are v1 starting points and will be wrong until the calibrators run, all of which the first
+    // save deletes.
+    private const string LocalHeader =
+        "# ── Machine-specific settings ─────────────────────────────────────────────────────\n" +
+        "# Everything measured or tuned on THIS machine: coordinates, the display environment, the\n" +
+        "# Arduino port override, and your own spammer presets. Gitignored, and excluded from the\n" +
+        "# public zip by publish.bat — do not commit it or share it.\n" +
+        "#\n" +
+        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you calibrate or save\n" +
+        "# a preset. It serialises a fixed list of keys, so every comment here is lost on the next\n" +
+        "# save and any key the launcher does not know about is DROPPED. Keep a copy if you hand-edit.\n" +
+        "#\n" +
+        "# Documented in docs/CONFIG.md; calibrating is docs/CALIBRATION.md.\n" +
+        "\n";
+
     public AppConfig Load()
     {
         var defaults = Deserialize<AppConfig>("defaults.yaml");
@@ -178,7 +219,7 @@ public sealed class ConfigLoader
     public void SaveLocal(LocalOverrides local)
     {
         var path = PathOf("local.yaml");
-        var yaml = Serializer.Serialize(local);
+        var yaml = LocalHeader + Serializer.Serialize(local);
         var tmp = path + ".tmp";
         File.WriteAllText(tmp, yaml);
         File.Move(tmp, path, overwrite: true);
@@ -222,7 +263,7 @@ public sealed class ConfigLoader
         };
 
         var path = PathOf("defaults.yaml");
-        var yaml = Serializer.Serialize(portable);
+        var yaml = DefaultsHeader + Serializer.Serialize(portable);
         var tmp = path + ".tmp";
         File.WriteAllText(tmp, yaml);
         File.Move(tmp, path, overwrite: true);

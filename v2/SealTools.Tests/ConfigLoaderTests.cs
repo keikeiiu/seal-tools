@@ -283,7 +283,68 @@ public class ConfigLoaderTests
             // "Personal" reaching the shipped defaults.yaml on disk.
             var written = File.ReadAllText(Path.Combine(dir, "defaults.yaml"));
             Assert.DoesNotContain("Personal", written);
-            Assert.DoesNotContain("spammer", written);
+
+            // No spammer KEY, which is what this actually means. It used to assert the word never
+            // appears at all, and that stopped being the same thing once the generated header began
+            // explaining why there is no spammer section — prose that contains the word while
+            // writing no key. Matching the parsed key is both narrower and truer than matching a
+            // substring, and it cannot be satisfied by adding a comment.
+            Assert.DoesNotContain("\nspammer:", written);
+            Assert.False(written.StartsWith("spammer:", StringComparison.Ordinal),
+                "defaults.yaml must not open with a spammer key");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Saving rewrites these files from a fixed key list, so every comment in them is destroyed -
+    // including the page of guidance local.yaml.example ships explaining that the seeded values are
+    // v1 starting points and will be wrong until the calibrators run. The writer therefore emits its
+    // own header, which is the only prose that CAN survive a save, and it has to say the two things
+    // that have already cost data: comments are not preserved, and unknown keys are dropped.
+    [Fact]
+    public void BothSavesWriteAHeaderSayingWhatTheyDestroy()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+
+            loader.SaveDefaults(cfg);
+            loader.SaveLocal(loader.LoadLocal()!);
+
+            foreach (var name in new[] { "defaults.yaml", "local.yaml" })
+            {
+                var written = File.ReadAllText(Path.Combine(dir, name));
+                Assert.StartsWith("#", written);              // a header, not bare serialised content
+                Assert.Contains("REWRITES this whole file", written);
+                Assert.Contains("DROPPED", written);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // The header must not be parsed as content, and must not disturb the round-trip the other tests
+    // rely on: a save followed by a load has to return what was saved.
+    [Fact]
+    public void HeaderDoesNotDisturbTheRoundTrip()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Tuner.TargetGrade = "XG";
+
+            loader.SaveDefaults(cfg);
+
+            Assert.Equal("XG", new ConfigLoader(dir).Load().Tuner.TargetGrade);
         }
         finally
         {

@@ -1,3 +1,15 @@
+# ── Portable settings ─────────────────────────────────────────────────────────────
+# The same on every machine. Anything measured on ONE machine belongs in local.yaml, not here.
+#
+# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you press Save on the
+# Tuner, Gem or Hotkeys tab. It serialises a fixed list of keys, which means:
+#   * every comment in here is lost on the next save, including any you add;
+#   * any key the launcher does not know about is DROPPED, silently — this is how a spammer
+#     block once disappeared, taking a player's key rotations with it. Presets are personal
+#     and live in local.yaml, which is why there is no spammer section below.
+#
+# Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.
+
 window:
   title: TW_LIVE
 reference_window:
@@ -97,6 +109,4 @@ gem:
   empty_streak: 2
   colored_gap_min: 40
   save_empty_captures: false
-# No spammer block: presets are the player's own rotations and live in local.yaml, which
-# publish.bat excludes. A block here would be deleted the first time any other tab saves
-# (SaveDefaults rewrites this file from an explicit field list), so it could not be a seed.
+  move_mode: arduino

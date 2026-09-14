@@ -56,6 +56,20 @@ machine** (calibration, coordinates, port) and values that are simply **yours** 
 Both live there for the same reason — `publish.bat public` excludes the file, so neither leaks into
 someone else's install. A setting that is personal but not machine-specific has no third home.
 
+## Comments do not survive a save
+
+Both files are written by serialising an object graph, which cannot carry comments. So:
+
+- **Every comment in either file is destroyed by the next save** — including ones you added by hand.
+- **Any key the launcher does not know about is dropped**, silently. This is not hypothetical: it is
+  how a machine's spammer presets were deleted outright. The block lived in `defaults.yaml`, a Save
+  from the Tuner tab rewrote the file without it, and nothing reported it. Presets live in
+  `local.yaml` now and the adoption path catches strays, but the underlying behaviour is unchanged.
+
+Because of that, the writer emits its **own** header on every save — the only prose that can survive.
+It says both of the above, so the warning travels with the file rather than living only here. If you
+want to hand-edit either file, back it up first, and put enduring notes in this document instead.
+
 ## How saves work
 
 - The launcher's **Save** writes the portable sections to `defaults.yaml` (`SaveDefaults`) and the
