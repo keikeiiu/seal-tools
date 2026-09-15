@@ -60,37 +60,82 @@ Two things this depends on:
 
 ## The two action flows
 
-### Pet feed — icon triggers, dialog decides, two slots feed
+### Pet feed — boarding (代养), not feeding
 
-The automation is: **the pet runs out of food, feed 2 stacks.**
+The automation is: **the pet's boarding runs out of food, restock the feeder with 2 stacks.**
 
-**The icon is not the trigger on its own.** It flags several states — the pet *levelling up* as well as
-running out of food — so acting on it directly could feed a pet that wants something else entirely. The
-user's own answer is the design: **open the dialog and confirm.**
+It is **not** the manual feeding system, and the two do not mix — a boarding food item cannot be used
+for 喂养. Conflating them sends the flow to the wrong window, so it is worth stating plainly:
+
+| | 喂养 (manual feeding) | **代养 (boarding) — this feature** |
+|---|---|---|
+| Opened by | clicking the pet cartoon image (bottom-right) | the **宠物代养** button |
+| You do | place 1 item, click 喂食, repeat | stock the feeder, click 开始代养 |
+| Then | — | the game **auto-feeds once a minute** |
+
+**The game does the feeding; the tool only restocks.** That is what makes this worth automating at all:
+the job is *stocking*, not clicking a dialog over and over.
+
+#### What it eats, and how fast
+
+One feed per minute, fixed, and — unlike manual hunger — **not** paused by town maps, 飞越广场, the
+arena, fishing, 摆摊 or selling. So the rate is just the per-feed count × 60:
+
+| Stage | Food (喂养值) | Per feed | Per hour | 600 food (2×300) lasts |
+|---|---|---|---|---|
+| 1–3 | 一般宠物食物 (5) | 2 | 120 | 5 h 00 m |
+| 4–5 | 营养满分宠物食物 (15) | 1 | 60 | 10 h 00 m |
+| 6 | 高级宠物食物 (30) | 3 | 180 | **3 h 20 m** |
+| 7 | 高级宠物食物 (30) | 4 | 240 | **2 h 30 m** |
+| 7G | **cannot be boarded** | — | — | — |
+
+Stage 6 and 7 take the **same food** and differ only in count — x3 and x4, confirmed against the item
+pages for 真蔬果男妖精仙子 (stage 6) and the stage-7 spirit, which agree with the news page's table.
+
+**The refill interval is a property of the pet, not the tool.** The same two stacks buy 10 hours on a
+stage-4/5 pet and 2.5 on a stage-7, so the poll cadence should be derived from the configured pet
+rather than hardcoded.
+
+**Boarding auto-stops** when the pet reaches **+9 (100%+)**, when the **character logs off**, and —
+unconfirmed — when the **food runs out**. On a stop, the pet and the leftover food are **mailed back**.
+
+**Restocking a +9 pet is wasted food**, so "is it at +9?" is a real guard rather than a formality.
+
+#### The flow
 
 ```
-icon lights up  ──►  click the icon (calibrated point)  ──►  read the dialog
-（cheap diff）                                              （OCR, decides）
-                                                                  │
-                                        "out of food" ────────────┴──────────── "levelled up"
-                                              │                                      │
-                                    feed 2 stacks, close                        close, do nothing
+icon lights up  ──►  open the 代养 window  ──►  read it
+（cheap diff on        （calibrated button,       （OCR: EXP% + feeder state）
+  the cartoon image）     NOT the icon click）          │
+                                        feeder empty ──┴── pet at +9
+                                              │                    │
+                                restock 2 stacks, close      close, do not restock
 ```
 
-This is the same pairing as death: **a nearly-free check wakes an expensive one**, and the expensive
-one — not the cheap one — is what authorises a click.
+**The icon click is the trap.** Clicking the cartoon image opens the **喂养** window, which is about the
+other mechanism and holds none of the boarding food — so the icon is a *signal to act*, not the control
+that gets you there. The boarding window is opened by its own button, and that button is the calibrated
+point.
 
-**Feeding is two bag slots handed over one at a time** — two right-click transactions, the Sell shape
+This is still the pairing the rest of the watcher uses: **a nearly-free check wakes an expensive one**,
+and the expensive one — not the cheap one — is what authorises a click.
+
+**Restocking is two bag slots handed over one at a time** — two right-click transactions, the Sell shape
 twice. So there are two designated slots to keep stocked and locked, not one.
 
-**The alternative worth noting:** skip the icon entirely and simply open the dialog on a timer. Simpler
-— no icon region to calibrate and no diff to tune — but it opens a UI window on a schedule while you
-are playing, whether or not anything has happened. Watching the icon means the dialog is only opened
-when the game says something changed.
+**The trigger state persists, which makes this the easy half.** The prompt and the exclamation icon stay
+up until the pet is fed — nothing resolves it on its own, because the character stays online — so the
+pet detector can poll slowly, and a missed poll costs a minute rather than the event. The cadence worry
+attached to the death trigger does not apply here.
 
-**One thing that needs a guard:** if the icon stays lit until the state is dealt with, a levelling-up
-notice that never clears would open the dialog on every poll. A per-trigger cooldown, and treating
-"opened it, nothing to do" as handled, is what stops that becoming a loop.
+**The alternative worth noting:** skip the icon entirely and open the boarding window on a timer.
+Simpler — no icon region to calibrate and no diff to tune — but it opens a UI window on a schedule while
+you are playing, whether or not anything has happened. Watching the icon means the window is only
+opened when the game says something changed.
+
+**One thing that still needs a guard:** the icon stays lit until the state is dealt with, so a state
+that never clears would open the window on every poll. A per-trigger cooldown, and treating "opened it,
+nothing to do" as handled, is what stops that becoming a loop.
 
 ### Feed — the transaction
 
@@ -103,9 +148,10 @@ of every board. A right-click transaction needs neither.
 So this is close to `ShopTool`'s `SellPass` — right-click a bag slot, run the shared `MaxEnterEnter` —
 with two differences to measure rather than assume:
 
-- **the dialog may not have a MAX.** Feeding is not a quantity handover, so the step after the
-  right-click may be a confirm button rather than MAX → Enter → Enter. The count of steps needs
-  measuring on a real dialog, not inferring from the sell one.
+- **the dialog may not have a MAX.** Placing a stack into the feeder is not obviously the same
+  quantity handover the shop uses, so the step after the right-click may be a confirm button rather
+  than MAX → Enter → Enter. The count of steps needs measuring on a real dialog, not inferring from
+  the sell one.
 - **two slots, each one transaction**, not a selection of many.
 
 **Where the food is: a designated slot, held there by the backpack's lock button.** The lock is what
@@ -216,18 +262,20 @@ option; it is more moving parts than either alone.)
 
 ## Open questions
 
-1. ~~**What does the pet action actually do?**~~ **Answered:** the tool clicks the icon, reads the
-   dialog to tell "out of food" from "levelled up", and feeds two bag slots one at a time. What is still
-   unknown is **the phrase the dialog uses for "out of food"**, and the dialog's step count.
+1. ~~**What does the pet action actually do?**~~ **Answered:** boarding, not manual feeding — stock the
+   代养 feeder with 2 stacks and let the game auto-feed. What is still unknown: whether the feeder is
+   **two positions or one filled twice**, whether the item dialog **has a MAX**, and whether boarding
+   **stops or merely idles when the food runs out** (the flow above assumes a stop, which is what makes
+   the +9 branch worth guarding).
 2. **How long does the death state last?** If the game revives you automatically after some seconds,
    the window to act is short and the poll interval decides whether it is catchable at all.
 3. **What is the death text**, and how stable is the region it appears in? A phrase to match is easy; a
    region that is also quiet when nothing is happening is the part that needs measuring.
 4. ~~**Does the pet trigger act, or only notify?**~~ **Answered:** it acts, but only after the dialog
    confirms the state.
-5. **Does opening the pet dialog interrupt play?** If it takes focus or pauses something, an
+5. **Does opening the boarding window interrupt play?** If it takes focus or pauses something, an
    icon-triggered open is much less intrusive than a timer — which is an argument for watching the icon
-   rather than polling the dialog.
+   rather than polling the window.
 6. **What happens on repeated failure** — retry forever, or give up and say so? Unattended retrying is
    how a misread becomes a loop of clicks.
 
