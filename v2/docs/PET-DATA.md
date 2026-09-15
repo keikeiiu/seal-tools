@@ -119,37 +119,46 @@ minutes      = food items / items per auto-feed   (2 / 1 / 3 / 4 by stage)
 
 `wyz` is fixed by **species + stage** — every pet on a line at a stage shares one figure. The single
 exception is stage 7, where the 32 `.G` pets sit at 33000; they cannot be boarded, so for everything the
-tool can actually act on, the whole 327-pet table collapses to this. Each cell is `wyz` with the time to
-`+9` in brackets. The columns are **evolution stages** — growth levels `+0 … +9` are the `× 12.6` inside
-each cell, not columns.
+tool can actually act on, the whole 327-pet table collapses to this.
+
+**Each cell is the total 喂养值 to take that pet from `+0` to `+9` 100 %** — that is, `wyz × 12.6` — with
+the boarding time it implies in brackets. The per-level base `wyz` is in the detailed table at the end.
+The columns are **evolution stages**; growth levels are the multiplication inside each cell, not columns.
 
 | Species | Stage 1 | Stage 2 | Stage 3 | Stage 4 | Stage 5 | Stage 6 | Stage 7 |
 |---|---|---|---|---|---|---|---|
-| 种子类 | 30 (38m) | 60 (1h 16m) | 120 (2h 32m) | 240 (3h 22m) | 5000 (2d 22h) | 5200 (12h 08m) | 8200 (14h 21m) |
-| 咕咕类 | 120 (2h 32m) | 240 (5h 02m) | 480 (10h 05m) | 960 (13h 27m) | 5000 (2d 22h) | 5200 (12h 08m) | 10200 (17h 51m) |
-| 鸟蛋类 | 240 (5h 02m) | 480 (10h 05m) | 960 (20h 10m) | 1920 (1d 2h) | 5000 (2d 22h) | 5200 (12h 08m) | 12200 (21h 21m) |
-| 天蛋类 | 60 (1h 16m) | 120 (2h 32m) | 240 (5h 02m) | 480 (6h 44m) | 5000 (2d 22h) | 5200 (12h 08m) | 11200 (19h 36m) |
-| 异色种子 | 40 (50m) | 70 (1h 28m) | 140 (2h 56m) | 270 (3h 47m) | 5000 (2d 22h) | — | — |
-| 异色咕咕 | 140 (2h 56m) | 270 (5h 40m) | 530 (11h 08m) | 1060 (14h 51m) | 5000 (2d 22h) | — | — |
-| 异色鸟蛋 | 270 (5h 40m) | 530 (11h 08m) | 1060 (22h 16m) | 2120 (1d 5h) | 5000 (2d 22h) | — | — |
-| 异色天蛋 | 70 (1h 28m) | 140 (2h 56m) | 270 (5h 40m) | 530 (7h 26m) | 5000 (2d 22h) | — | — |
-| 黑龙类 | 70 (1h 28m) | 140 (2h 56m) | 270 (5h 40m) | 530 (7h 26m) | 10000 (5d 20h) | 10000 (23h 20m) | 20400 (1d 11h) |
-| 曼德拉 | 70 (1h 28m) | 140 (2h 56m) | 270 (5h 40m) | 530 (7h 26m) | 10000 (5d 20h) | 10000 (23h 20m) | 20400 (1d 11h) |
-| 三尾狐 | 70 (1h 28m) | 140 (2h 56m) | 270 (5h 40m) | 530 (7h 26m) | 10000 (5d 20h) | 10000 (23h 20m) | 20400 (1d 11h) |
+| 种子类 | 378 (38m) | 756 (1h 16m) | 1,512 (2h 32m) | 3,024 (3h 22m) | 63,000 (2d 22h) | 65,520 (12h 08m) | 103,320 (14h 21m) |
+| 咕咕类 | 1,512 (2h 32m) | 3,024 (5h 02m) | 6,048 (10h 05m) | 12,096 (13h 27m) | 63,000 (2d 22h) | 65,520 (12h 08m) | 128,520 (17h 51m) |
+| 鸟蛋类 | 3,024 (5h 02m) | 6,048 (10h 05m) | 12,096 (20h 10m) | 24,192 (1d 2h) | 63,000 (2d 22h) | 65,520 (12h 08m) | 153,720 (21h 21m) |
+| 天蛋类 | 756 (1h 16m) | 1,512 (2h 32m) | 3,024 (5h 02m) | 6,048 (6h 44m) | 63,000 (2d 22h) | 65,520 (12h 08m) | 141,120 (19h 36m) |
+| 异色种子 | 504 (50m) | 882 (1h 28m) | 1,764 (2h 56m) | 3,402 (3h 47m) | 63,000 (2d 22h) | — | — |
+| 异色咕咕 | 1,764 (2h 56m) | 3,402 (5h 40m) | 6,678 (11h 08m) | 13,356 (14h 51m) | 63,000 (2d 22h) | — | — |
+| 异色鸟蛋 | 3,402 (5h 40m) | 6,678 (11h 08m) | 13,356 (22h 16m) | 26,712 (1d 5h) | 63,000 (2d 22h) | — | — |
+| 异色天蛋 | 882 (1h 28m) | 1,764 (2h 56m) | 3,402 (5h 40m) | 6,678 (7h 26m) | 63,000 (2d 22h) | — | — |
+| 黑龙类 | 882 (1h 28m) | 1,764 (2h 56m) | 3,402 (5h 40m) | 6,678 (7h 26m) | 126,000 (5d 20h) | 126,000 (23h 20m) | 257,040 (1d 11h) |
+| 曼德拉 | 882 (1h 28m) | 1,764 (2h 56m) | 3,402 (5h 40m) | 6,678 (7h 26m) | 126,000 (5d 20h) | 126,000 (23h 20m) | 257,040 (1d 11h) |
+| 三尾狐 | 882 (1h 28m) | 1,764 (2h 56m) | 3,402 (5h 40m) | 6,678 (7h 26m) | 126,000 (5d 20h) | 126,000 (23h 20m) | 257,040 (1d 11h) |
 
 Three things fall out of it:
 
-- **The 原色 and 异色 variants of the four egg lines converge at stage 5** — all eight are 5000. That is
-  why "stage 5 and up is all the same" feels true: it holds for eight of the eleven lines, and the three
-  that differ are the ones you would not have boarded by accident.
-- **The three 神兽 lines — 黑龙 / 曼德拉 / 三尾狐 — run at double from stage 5 on**: 10000, 10000, 20400
-  against the standard lines' 5000, 5200, 8200–12200. They match the standard lines *exactly* through
-  stage 4 and diverge after, which is what makes them easy to miss.
+- **The 原色 and 异色 variants of the four egg lines converge at stage 5** — all eight share the base
+  5000, so 63,000 喂养值. That is why "stage 5 and up is all the same" feels true: it holds for eight of
+  the eleven lines, and the three that differ are the ones you would not have boarded by accident.
+- **The three 神兽 lines — 黑龙 / 曼德拉 / 三尾狐 — run at double from stage 5 on** (base 10000, 10000,
+  20400 against the standard lines' 5000, 5200, 8200–12200). They match the standard lines *exactly*
+  through stage 4 and diverge after, which is what makes them easy to miss.
 - **The 异色 lines end at stage 5.** They are not a separate line above it — their stage-6 and 7 forms
   turn up under the 原色 categories, so there is nothing to look up.
 
-**The stage-5 figure is the one that matters most in practice**: 80 of the 295 boardable pets sit at
-`wyz` 5000, and it is a 2 d 12 h job, not the 2 d a flat reading suggests.
+**The stage-5 row is the one that matters most in practice**: 80 of the 295 boardable pets sit there, at
+**63,000 喂养值 — 4,200 items and 2 d 22 h** of boarding, or 5 d 20 h for the 神兽 lines.
+
+**Stage 6 is *faster* than stage 5 despite costing about the same**, which is the one place where the
+two columns disagree — and it is worth expecting, because cost and time are not the same axis. 63,000
+喂养值 at stage 5 is 4,200 营养满分宠物食物 at 1 per minute = **2 d 22 h**; 65,520 at stage 6 is 2,184
+高级宠物食物 at 3 per minute = **12 h 08 m**. Barely more 喂养值, under a quarter of the time, purely
+because the stage-6 food is twice as dense and is fed three times as fast. So a stage-6 pet is a
+*morning*, not a weekend — and the intuition "higher stage means longer" is wrong across that boundary.
 
 ## All 327 pets
 
