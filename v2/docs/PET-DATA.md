@@ -27,11 +27,16 @@ whose names end in `.G` have no boarding food at all. Not one `.G`, and not one 
 exception. That matters because it is the one case where stocking the feeder is *impossible* rather than
 merely pointless.
 
-## What `wyz` is — unresolved, and it gates the advance feature
+## What `wyz` is — settled, but the per-level curve is not
 
-`wyz` is stored per pet, and it is **not** determined by stage alone. At stage 1 it runs 30 … 270, and
-stage 7 splits across six different values. The pattern in stages 1–4 is clean — eight growth lines,
-each doubling per stage:
+**Confirmed by the player (2026-09-16): `wyz` is the cost of one level, not the run.** And the cost is
+**not constant across levels** — so `+0 → +9` is a **sum, not a multiple**, and the value on the item
+page is only its entry point.
+
+The news page's worked example agrees, and pins *which* entry point: 种子 `+0 → +1` needs **30**, and
+种子's `wyz` is exactly 30. So the item page stores the **`+0 → +1`** figure.
+
+The figure is per pet, and it doubles cleanly across stages 1–4 along eight growth lines:
 
 | Stage | 30 | 40 | 60 | 70 | 120 | 140 | 240 | 270 |
 |---|---|---|---|---|---|---|---|---|
@@ -41,24 +46,28 @@ each doubling per stage:
 | 4 | 240 | 270 | 480 | 530 | 960 | 1060 | 1920 | 2120 |
 
 (The `70` line covers four species that share it — 黑帝斯之蛋, 黑龙之蛋, 曼德拉种子, 一尾狐.) The
-doubling then **stops**: stage 5 jumps to 5000 or 10000, not 3840, and stage 7 spreads across
+doubling then **stops**: stage 5 jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
 8200 / 10200 / 11200 / 12200 / 20400 / 33000.
 
-That discretisation has to mean something — a wholly table-driven system would not double so exactly —
-but what it means is the open question, because two readings fit the evidence:
+### What is still missing
 
-- **one level**: the news page's worked example is 种子 `+0 → +1` = **30**, and 种子's `wyz` is exactly
-  30. On this reading `wyz` is the cost of a single level and the `+0 → +9` total is some multiple of
-  it — but the multiplier is not stated, and the page's phrase 宠物**当前**成长所需的喂养值 ("the 喂养值
-  required for the pet's *current* growth") implies the cost changes as the pet levels, which would
-  make it a sum rather than a multiplication.
-- **the whole run**: `wyz` is the total to go `+0 → +9`, and the news page's 30 is a coincidence of the
-  seed's line. Less likely given the doubling, but not excluded.
+**The curve *within* a pet.** The `+0 → +1` cost is known for all 327 pets, but `+1 → +2` through
+`+8 → +9` are not, and the total is their sum. Until that progression is known, the advance
+"time to finish this pet" feature has no trustworthy input.
 
-**This cannot be settled from the desk.** It wants one in-game measurement: take a pet with a known
-`wyz`, feed it a known 喂养值, and read the resulting EXP%. A seed fed 10 喂养值 should show 33 % if the
-per-level reading is right (the page's own example), and something much smaller if `wyz` is the total.
-Until then, the advance "time to finish this pet" feature has no trustworthy input.
+Two candidate shapes, and the data above hints at the second without proving it:
+
+- **Flat** — every level costs the item page's `wyz`. Then the total is simply `9 × wyz`, and a stage-1
+  seed finishes in 270 喂养值. This is the easy case, and it is what "the cost of one level" would mean
+  if the cost did not move.
+- **Rising** — each level costs more than the last, so the item page's number is just the first step.
+  The doubling across stages is suggestive of a table-driven curve rather than a flat constant, but the
+  two are independent scales and this proves nothing on its own.
+
+Distinguishing them wants one in-game observation rather than a stronger inference: **read the boarding
+window's own "time to next level" figure** at `+0` and again at, say, `+2`. If the two levels take the
+same time, the curve is flat. If the second takes longer, it is rising, and the ratio at two or three
+levels is enough to fit the rest.
 
 
 ## All 327 pets
