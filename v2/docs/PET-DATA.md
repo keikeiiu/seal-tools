@@ -1,8 +1,8 @@
 # Pet data — normal pets (原色 + 异色)
 
 Status: **reference data, scraped 2026-09-15.** Nothing reads this yet; it exists because the pet
-watcher's food and timing come from it, and because the "how long until this pet is done" question
-needs a per-pet number rather than a rule of thumb.
+watcher's food and timing come from it, and because "how long until this pet is done" wants a per-pet
+number rather than a rule of thumb.
 
 Source: `https://www.2usealol.com/item_info.php?id=<petId>`, for every pet reachable from
 `pet_list.php?item_type=22&njd=<1..11>&pid=1` (item_type 22 = normal pets; **battle pets are a separate
@@ -27,16 +27,18 @@ whose names end in `.G` have no boarding food at all. Not one `.G`, and not one 
 exception. That matters because it is the one case where stocking the feeder is *impossible* rather than
 merely pointless.
 
-## What `wyz` is — settled, but the per-level curve is not
+Only **three** foods appear across all 327 pets (一般 / 营养满分 / 高级).
 
-**Confirmed by the player (2026-09-16): `wyz` is the cost of one level, not the run.** And the cost is
-**not constant across levels** — so `+0 → +9` is a **sum, not a multiple**, and the value on the item
-page is only its entry point.
+## How the cost works
 
-The news page's worked example agrees, and pins *which* entry point: 种子 `+0 → +1` needs **30**, and
-种子's `wyz` is exactly 30. So the item page stores the **`+0 → +1`** figure.
+**`wyz` is the cost of one level, and it is flat** — the same figure applies to every level of that pet,
+`+0 → +1` through `+8 → +9`. What varies is *between* pets, being set per species and stage rather than
+per growth level. (Confirmed by the player, 2026-09-16.)
 
-The figure is per pet, and it doubles cleanly across stages 1–4 along eight growth lines:
+So the total to `+9` 100 % is simply `wyz × 9`. The news page's worked example pins the unit: 种子
+`+0 → +1` needs **30**, and 种子's `wyz` is exactly 30.
+
+The figure doubles cleanly across stages 1–4 along eight growth lines, then breaks at stage 5:
 
 | Stage | 30 | 40 | 60 | 70 | 120 | 140 | 240 | 270 |
 |---|---|---|---|---|---|---|---|---|
@@ -45,30 +47,72 @@ The figure is per pet, and it doubles cleanly across stages 1–4 along eight gr
 | 3 | 120 | 140 | 240 | 270 | 480 | 530 | 960 | 1060 |
 | 4 | 240 | 270 | 480 | 530 | 960 | 1060 | 1920 | 2120 |
 
-(The `70` line covers four species that share it — 黑帝斯之蛋, 黑龙之蛋, 曼德拉种子, 一尾狐.) The
-doubling then **stops**: stage 5 jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
+(The `70` line covers four species that share it — 黑帝斯之蛋, 黑龙之蛋, 曼德拉种子, 一尾狐.) Stage 5
+jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
 8200 / 10200 / 11200 / 12200 / 20400 / 33000.
 
-### What is still missing
+## Time to `+9` (100 %), per pet
 
-**The curve *within* a pet.** The `+0 → +1` cost is known for all 327 pets, but `+1 → +2` through
-`+8 → +9` are not, and the total is their sum. Until that progression is known, the advance
-"time to finish this pet" feature has no trustworthy input.
+The whole chain, derived from the boarding rules above:
 
-Two candidate shapes, and the data above hints at the second without proving it:
+```
+total 喂养值 = wyz × 9
+food items   = total 喂养值 / that food's 喂养值 per item
+minutes      = food items / items per auto-feed   (2 / 1 / 3 / 4 by stage)
+```
 
-- **Flat** — every level costs the item page's `wyz`. Then the total is simply `9 × wyz`, and a stage-1
-  seed finishes in 270 喂养值. This is the easy case, and it is what "the cost of one level" would mean
-  if the cost did not move.
-- **Rising** — each level costs more than the last, so the item page's number is just the first step.
-  The doubling across stages is suggestive of a table-driven curve rather than a flat constant, but the
-  two are independent scales and this proves nothing on its own.
+| Stage | `wyz` | Food | Pets | Total 喂养值 | Food items | Time | Stacks |
+|---|---|---|---|---|---|---|---|
+| 1 | 30 | 一般宠物食物 | 1 | 270 | 54 | 0h 27m | 0.2 |
+| 1 | 40 | 一般宠物食物 | 1 | 360 | 72 | 0h 36m | 0.2 |
+| 1 | 60 | 一般宠物食物 | 1 | 540 | 108 | 0h 54m | 0.4 |
+| 1 | 70 | 一般宠物食物 | 4 | 630 | 126 | 1h 03m | 0.4 |
+| 1 | 120 | 一般宠物食物 | 1 | 1,080 | 216 | 1h 48m | 0.7 |
+| 1 | 140 | 一般宠物食物 | 1 | 1,260 | 252 | 2h 06m | 0.8 |
+| 1 | 240 | 一般宠物食物 | 1 | 2,160 | 432 | 3h 36m | 1.4 |
+| 1 | 270 | 一般宠物食物 | 1 | 2,430 | 486 | 4h 03m | 1.6 |
+| 2 | 60 | 一般宠物食物 | 1 | 540 | 108 | 0h 54m | 0.4 |
+| 2 | 70 | 一般宠物食物 | 1 | 630 | 126 | 1h 03m | 0.4 |
+| 2 | 120 | 一般宠物食物 | 1 | 1,080 | 216 | 1h 48m | 0.7 |
+| 2 | 140 | 一般宠物食物 | 4 | 1,260 | 252 | 2h 06m | 0.8 |
+| 2 | 240 | 一般宠物食物 | 1 | 2,160 | 432 | 3h 36m | 1.4 |
+| 2 | 270 | 一般宠物食物 | 1 | 2,430 | 486 | 4h 03m | 1.6 |
+| 2 | 480 | 一般宠物食物 | 1 | 4,320 | 864 | 7h 12m | 2.9 |
+| 2 | 530 | 一般宠物食物 | 1 | 4,770 | 954 | 7h 57m | 3.2 |
+| 3 | 120 | 一般宠物食物 | 4 | 1,080 | 216 | 1h 48m | 0.7 |
+| 3 | 140 | 一般宠物食物 | 4 | 1,260 | 252 | 2h 06m | 0.8 |
+| 3 | 240 | 一般宠物食物 | 1 | 2,160 | 432 | 3h 36m | 1.4 |
+| 3 | 270 | 一般宠物食物 | 4 | 2,430 | 486 | 4h 03m | 1.6 |
+| 3 | 480 | 一般宠物食物 | 4 | 4,320 | 864 | 7h 12m | 2.9 |
+| 3 | 530 | 一般宠物食物 | 4 | 4,770 | 954 | 7h 57m | 3.2 |
+| 3 | 960 | 一般宠物食物 | 2 | 8,640 | 1,728 | 14h 24m | 5.8 |
+| 3 | 1060 | 一般宠物食物 | 2 | 9,540 | 1,908 | 15h 54m | 6.4 |
+| 4 | 240 | 营养满分宠物食物 | 11 | 2,160 | 144 | 2h 24m | 0.5 |
+| 4 | 270 | 营养满分宠物食物 | 11 | 2,430 | 162 | 2h 42m | 0.5 |
+| 4 | 480 | 营养满分宠物食物 | 1 | 4,320 | 288 | 4h 48m | 1.0 |
+| 4 | 530 | 营养满分宠物食物 | 4 | 4,770 | 318 | 5h 18m | 1.1 |
+| 4 | 960 | 营养满分宠物食物 | 7 | 8,640 | 576 | 9h 36m | 1.9 |
+| 4 | 1060 | 营养满分宠物食物 | 7 | 9,540 | 636 | 10h 36m | 2.1 |
+| 4 | 1920 | 营养满分宠物食物 | 8 | 17,280 | 1,152 | 19h 12m | 3.8 |
+| 4 | 2120 | 营养满分宠物食物 | 8 | 19,080 | 1,272 | 21h 12m | 4.2 |
+| 5 | 5000 | 营养满分宠物食物 | 80 | 45,000 | 3,000 | 2d 2h | 10.0 |
+| 5 | 10000 | 营养满分宠物食物 | 6 | 90,000 | 6,000 | 4d 4h | 20.0 |
+| 6 | 5200 | 高级宠物食物 | 36 | 46,800 | 1,560 | 8h 40m | 5.2 |
+| 6 | 10000 | 高级宠物食物 | 9 | 90,000 | 3,000 | 16h 40m | 10.0 |
+| 7 | 8200 | 高级宠物食物 | 15 | 73,800 | 2,460 | 10h 15m | 8.2 |
+| 7 | 10200 | 高级宠物食物 | 11 | 91,800 | 3,060 | 12h 45m | 10.2 |
+| 7 | 11200 | 高级宠物食物 | 4 | 100,800 | 3,360 | 14h 00m | 11.2 |
+| 7 | 12200 | 高级宠物食物 | 12 | 109,800 | 3,660 | 15h 15m | 12.2 |
+| 7 | 20400 | 高级宠物食物 | 18 | 183,600 | 6,120 | 1d 1h | 20.4 |
 
-Distinguishing them wants one in-game observation rather than a stronger inference: **read the boarding
-window's own "time to next level" figure** at `+0` and again at, say, `+2`. If the two levels take the
-same time, the curve is flat. If the second takes longer, it is rising, and the ratio at two or three
-levels is enough to fit the rest.
+The stage-7 `.G` pets are absent because they cannot be boarded — their 33000 is the largest `wyz` in
+the set and no feeder will ever take it.
 
+**Read the Time column as the answer to "how long does this pet need the feeder".** It is the total
+boarding time to reach `+9` 100 %, which is also the span the feeder has to be kept stocked across — so
+it divides by the 2.5–10 h a full 600-food load buys (see the first table) to give the number of
+restocks. A stage-5 pet at 5000, for instance, wants ~3000 items and 2 days 2 h of boarding, which is
+roughly 5 reloads of the feeder.
 
 ## All 327 pets
 
