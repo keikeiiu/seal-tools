@@ -57,7 +57,18 @@ jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
 exception is stage 7, where the 32 `.G` pets sit at 33000; they cannot be boarded, so for everything the
 tool can actually act on, the whole 327-pet table collapses to this. Time to `+9` is in brackets.
 
-Each cell is **one growth level** (`+0 → +1`) at that stage — the full stage is `× 9` for `+0 → +9`.
+Each cell holds `wyz` — the cost of the **first** growth level, `+0 → +1` — and the bracket is the whole
+stage, computed as `× 9`.
+
+> **The bracketed times are a lower bound, not the answer.** They assume all nine growth levels cost the
+> same as the first. The player reports that later levels cost more, and that this holds at **every**
+> stage, not only stage 7 — so the real figure is higher and these are floors.
+>
+> The `wyz` values themselves are exact (read from each pet's own page); only the brackets are in
+> question. The site publishes no per-level breakdown — `item_info.php` carries a single `wyz` in its
+> `data-baseinfo`, the petmap tool's model binds only names and evolution odds, and there is no data
+> endpoint — so the per-level figures have to be measured in-game. See "The missing per-level cost".
+
 The columns are evolution stages, and **`+1`–`+7` in the header means stage 1–7, not growth level 1–7**;
 growth levels do not appear as columns because they are the multiplication.
 
@@ -87,6 +98,28 @@ Three things fall out of it:
   turn up under the 原色 categories, so there is nothing to look up.
 
 The `.G` pets are omitted: 33000 each, unboardable, and the largest `wyz` in the set.
+
+### The missing per-level cost
+
+`wyz` is the `+0 → +1` figure. The other eight levels' costs are unknown, and the player reports they
+differ — **at every stage, not just stage 7**. That splits this file's numbers cleanly in two:
+
+- **Unaffected: the food rates and restock intervals.** Those come from the per-stage feed counts
+  (2 / 1 / 3 / 4 per minute), which are measured directly and contain no level cost at all. The
+  "how often must I reload the feeder" question is settled regardless of how this resolves.
+- **Affected: every bracketed time.** A rising per-level cost makes each one a floor. A flat cost makes
+  them exact. Nothing else in this file depends on the answer.
+
+Two ways to get the curve, either of which is enough:
+
+1. **Read the boarding window.** It states 当前宠物成长到下一个等级的所需时间 — the time to the next
+   level. Noting it at `+0` and again at, say, `+2` gives the ratio between levels directly, and two or
+   three readings across a stage fit the rest. Needs no feeding and disrupts nothing.
+2. **Feed a known amount and read the EXP%.** The news page's worked example is the template: a seed fed
+   10 喂养值 showed 33 %, i.e. `10 / 30 = 33 %` against its 30-point level. Repeating this at `+5` gives
+   that level's cost by the same division.
+
+Until one of them is done, treat the brackets as "at least this long".
 
 ## Time to `+9` (100 %), per pet
 
