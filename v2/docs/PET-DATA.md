@@ -51,6 +51,39 @@ The figure doubles cleanly across stages 1–4 along eight growth lines, then br
 jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
 8200 / 10200 / 11200 / 12200 / 20400 / 33000.
 
+### By species, at a glance
+
+`wyz` is fixed by **species + stage** — every pet on a line at a stage shares one figure. The single
+exception is stage 7, where the 32 `.G` pets sit at 33000; they cannot be boarded, so for everything the
+tool can actually act on, the whole 327-pet table collapses to this. Time to `+9` is in brackets.
+
+| Species | +1 | +2 | +3 | +4 | +5 | +6 | +7 |
+|---|---|---|---|---|---|---|---|
+| 种子类 | 30 (27m) | 60 (54m) | 120 (1h48m) | 240 (2h24m) | 5000 (2d2h) | 5200 (8h40m) | 8200 (10h15m) |
+| 咕咕类 | 120 (1h48m) | 240 (3h36m) | 480 (7h12m) | 960 (9h36m) | 5000 (2d2h) | 5200 (8h40m) | 10200 (12h45m) |
+| 鸟蛋类 | 240 (3h36m) | 480 (7h12m) | 960 (14h24m) | 1920 (19h12m) | 5000 (2d2h) | 5200 (8h40m) | 12200 (15h15m) |
+| 天蛋类 | 60 (54m) | 120 (1h48m) | 240 (3h36m) | 480 (4h48m) | 5000 (2d2h) | 5200 (8h40m) | 11200 (14h00m) |
+| 异色种子 | 40 (36m) | 70 (1h03m) | 140 (2h06m) | 270 (2h42m) | 5000 (2d2h) | — | — |
+| 异色咕咕 | 140 (2h06m) | 270 (4h03m) | 530 (7h57m) | 1060 (10h36m) | 5000 (2d2h) | — | — |
+| 异色鸟蛋 | 270 (4h03m) | 530 (7h57m) | 1060 (15h54m) | 2120 (21h12m) | 5000 (2d2h) | — | — |
+| 异色天蛋 | 70 (1h03m) | 140 (2h06m) | 270 (4h03m) | 530 (5h18m) | 5000 (2d2h) | — | — |
+| 黑龙类 | 70 (1h03m) | 140 (2h06m) | 270 (4h03m) | 530 (5h18m) | 10000 (4d4h) | 10000 (16h40m) | 20400 (1d1h) |
+| 曼德拉 | 70 (1h03m) | 140 (2h06m) | 270 (4h03m) | 530 (5h18m) | 10000 (4d4h) | 10000 (16h40m) | 20400 (1d1h) |
+| 三尾狐 | 70 (1h03m) | 140 (2h06m) | 270 (4h03m) | 530 (5h18m) | 10000 (4d4h) | 10000 (16h40m) | 20400 (1d1h) |
+
+Three things fall out of it:
+
+- **The 原色 and 异色 variants of the four egg lines converge at stage 5** — all eight of them are 5000.
+  That is why "stage 5 and up is all the same" feels true: it is true for eight of the eleven lines, and
+  the three that differ are the ones you would not have boarded by accident.
+- **The three 神兽 lines — 黑龙 / 曼德拉 / 三尾狐 — run at double from stage 5 on**: 10000, 10000, 20400
+  against the standard lines' 5000, 5200, 8200–12200. They match the standard lines *exactly* through
+  stage 4 and diverge after, which is what makes them easy to miss.
+- **The 异色 lines end at stage 5.** They are not a separate line above it — their stage-6 and 7 forms
+  turn up under the 原色 categories, so there is nothing to look up.
+
+The `.G` pets are omitted: 33000 each, unboardable, and the largest `wyz` in the set.
+
 ## Time to `+9` (100 %), per pet
 
 The whole chain, derived from the boarding rules above:
