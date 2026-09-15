@@ -160,6 +160,53 @@ two columns disagree — and it is worth expecting, because cost and time are no
 because the stage-6 food is twice as dense and is fed three times as fast. So a stage-6 pet is a
 *morning*, not a weekend — and the intuition "higher stage means longer" is wrong across that boundary.
 
+## The `.G` pets — 415,800 喂养值 each, and no feeder
+
+All 32 `.G` pets are stage 7 with the **same** base (`wyz` 33000), and the per-level rule holds — verified
+on 森之精灵妖精.G, which runs `33000 → 62700` in steps of exactly 3300, ending at `33000 × 1.9`:
+
+```
+total = 33000 × 12.6 = 415,800 喂养值
+```
+
+Every `.G` pet costs exactly the same to finish, which is the one place in this data where the species
+lines collapse completely — the 种子 `.G` and the 三尾狐 `.G` are identical.
+
+**What they are not is a boarding job.** These are precisely the pets with no 代养所需道具, so the feeder
+cannot take them — and the boarding food is explicitly unusable for manual feeding, so the two item
+pools do not overlap. A `.G` pet has to go through the 喂养 window, one item per feeding, with no
+auto-feed at all.
+
+So **only the 喂养值 total is fixed here; the time is not.** Boarding's "1 feed per minute, 2/1/3/4 items"
+is a property of 代养 and has no equivalent for manual feeding — the rate would be whatever feeding path
+gets built, bounded by how fast the UI flow can be driven per item. Item counts, using the news page's
+own food table, are the part that can be stated:
+
+| Item | 喂养值 | Items per `.G` pet |
+|---|---|---|
+| 郁金香 | 20 | 20,790 |
+| 奶粉 | 50 | 8,316 |
+| 葡萄 | 60 | 6,930 |
+| 香蕉 | 80 | 5,198 |
+| 西瓜 | 120 | 3,465 |
+| 咕咕大力丸 | 150 | 2,772 |
+| 超级咕咕大力丸 | 2,000 | 208 |
+
+The last row is the one that matters in practice: it is a 200× spread between the worst and best food,
+which is the difference between 20,790 manual feedings and 208.
+
+### The 32 `.G` pets
+
+| Species | Pets |
+|---|---|
+| 种子类 | 森之精灵妖精.G, 真森之精灵妖精.G, 花之精灵妖精.G, 真花之精灵妖精.G |
+| 咕咕类 | 战鸡联盟领主.G, 真战鸡联盟领主.G, 战鸡联盟女领主.G, 真战鸡联盟女领主.G |
+| 鸟蛋类 | 巴哈姆特女帝.G, 真巴哈姆特女帝.G, 圣光菲尼克斯.G, 真圣光菲尼克斯.G |
+| 天蛋类 | 战场女武神.G, 真战场女武神.G |
+| 黑龙类 | 回锅的黑龙(攻击).G, 真回锅的黑龙(攻击).G, 回锅的黑龙(魔法).G, 真回锅的黑龙(魔法).G, 回锅的黑龙(综合).G, 真回锅的黑龙(综合).G |
+| 曼德拉 | 甜美香气曼德拉(攻击).G, 真甜美香气曼德拉(攻击).G, 甜美香气曼德拉(魔法).G, 真甜美香气曼德拉(魔法).G, 甜美香气曼德拉(综合).G, 真甜美香气曼德拉(综合).G |
+| 三尾狐 | 少女偶像三尾(攻击).G, 真月光天使三尾(攻击).G, 少女偶像三尾(魔法).G, 真月光天使三尾(魔法).G, 少女偶像三尾(综合).G, 真月光天使三尾(综合).G |
+
 ## All 327 pets
 
 ### 种子类 (61)
