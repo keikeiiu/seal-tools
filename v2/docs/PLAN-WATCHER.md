@@ -92,6 +92,11 @@ arena, fishing, 摆摊 or selling. So the rate is just the per-feed count × 60:
 Stage 6 and 7 take the **same food** and differ only in count — x3 and x4, confirmed against the item
 pages for 真蔬果男妖精仙子 (stage 6) and the stage-7 spirit, which agree with the news page's table.
 
+**All 327 normal pets are tabulated in [PET-DATA.md](PET-DATA.md)** — per-pet stage, boarding food and
+count, scraped from the item pages. Battle pets are a separate category and are not in it. The table
+confirmed the rule above per pet, and confirmed the one exclusion cleanly: of the 92 stage-7 pets,
+exactly the 32 with `.G` names have no boarding food at all.
+
 **The refill interval is a property of the pet, not the tool.** The same two stacks buy 10 hours on a
 stage-4/5 pet and 2.5 on a stage-7, so the poll cadence should be derived from the configured pet
 rather than hardcoded.
