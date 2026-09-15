@@ -57,7 +57,11 @@ jumps to 5000 or 10000 rather than 3840, and stage 7 spreads across
 exception is stage 7, where the 32 `.G` pets sit at 33000; they cannot be boarded, so for everything the
 tool can actually act on, the whole 327-pet table collapses to this. Time to `+9` is in brackets.
 
-| Species | +1 | +2 | +3 | +4 | +5 | +6 | +7 |
+Each cell is **one growth level** (`+0 → +1`) at that stage — the full stage is `× 9` for `+0 → +9`.
+The columns are evolution stages, and **`+1`–`+7` in the header means stage 1–7, not growth level 1–7**;
+growth levels do not appear as columns because they are the multiplication.
+
+| Species | Stage 1 | Stage 2 | Stage 3 | Stage 4 | Stage 5 | Stage 6 | Stage 7 |
 |---|---|---|---|---|---|---|---|
 | 种子类 | 30 (27m) | 60 (54m) | 120 (1h48m) | 240 (2h24m) | 5000 (2d2h) | 5200 (8h40m) | 8200 (10h15m) |
 | 咕咕类 | 120 (1h48m) | 240 (3h36m) | 480 (7h12m) | 960 (9h36m) | 5000 (2d2h) | 5200 (8h40m) | 10200 (12h45m) |
