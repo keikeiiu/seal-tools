@@ -65,6 +65,35 @@ failure surface for something you can simply point at.
 whether or not the bag compacts, whereas ascending silently skips items if it does — and here a shifted
 index does not mis-sell an item, it feeds the pet the wrong stack.
 
+### What the live boarding window shows
+
+Captured 2026-09-17. The window is titled **PET BREED** and the player has confirmed the chick icon opens
+it — so it is the 代養 window, not 餵養.
+
+| Shown | Reading | Why it matters |
+|---|---|---|
+| `每1分 讀取3個` | 3 per minute | **The game states the burn rate**, and it matches the stage-6 figure derived from the news page — so the model is confirmed from the game itself rather than inferred |
+| `79.04%` | the pet's EXP | the `+9` guard's read |
+| `到+9為止預計所需時間: 約 15分` | ETA to `+9` | the advance feature's headline number, **displayed by the game** rather than computed by us — if it reads stably, that feature is an OCR away |
+| `結束代養` | end-boarding button | present while boarding runs, so the window distinguishes running from stopped |
+
+### One thing that capture contradicts
+
+The food area reads as a **single** slot showing `150 300` — current over cap — with three **locked** rows
+below, marked `需要擴張欄位` and `+ 15 Days` / `+ 30 Days`.
+
+If that reading holds, two figures recorded earlier are wrong:
+
+- **"the feeder holds two slots."** It looks like one. The locked rows are more likely *additional pet*
+  slots — the 代養欄位擴張券 the news page describes — than extra food slots, and those are different
+  things.
+- **A 600-item load.** A 300 cap makes a reload **300 items, not 600**, so the feeder empties in
+  **100 minutes, not 200**, and a full stage-6 pet takes **8 reloads, not 4**.
+
+Both are left as they stand until confirmed. (Rewriting a schedule on an inference is how the earlier
+"the Sell grid can be reused" mistake happened, and that one was only caught because the player knew the
+bag moves.)
+
 ### Pages
 
 **The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
