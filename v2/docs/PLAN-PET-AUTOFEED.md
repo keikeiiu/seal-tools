@@ -150,24 +150,40 @@ problem.
 ### Finding the pet — the new central problem
 
 The pet lands in the first free bag slot, and during a farming run the bag is not static — so a marked
-cell cannot hold it, and neither can any fixed point.
+cell cannot hold it, and neither can any fixed point. It has to be *found*.
 
-Two candidate answers:
+**The player confirms the pet item carries a distinctive pet icon**, which is what makes matching viable.
+It is also the mechanism that generalises: **a second pet is another crop, not a redesign** — which is why
+this is the right shape for the multi-pet stage that comes later.
 
-- **Mark a cell for it** — dead on arrival, for exactly that reason.
-- **Template-match it across the grid.** The 8×8 lattice is calibrated anyway (point 9), each cell is
-  ~51 px square, and the primitive already exists in this project: a saved crop compared against a region
-  by differing-pixel fraction, the empty-check's mechanism with its 6 px inset. One saved pet-icon crop
-  against 64 cells is 64 cheap comparisons, **no OCR**, and it *finds* the pet wherever it landed instead
-  of requiring it to be somewhere.
+The primitive already exists here — a saved crop compared against a region by differing-pixel fraction,
+the empty-check's mechanism with its 6 px inset. One pet-icon crop against the 64 calibrated cells is 64
+cheap comparisons, **no OCR anywhere**, and it finds the pet **wherever it landed** rather than requiring
+it to be somewhere.
 
-**That is the one I would try**, and it costs one more calibration — a saved crop of the pet item's icon.
-It also raises the question to answer before building it: **is the pet item visually distinct enough to
-match reliably?** A near-miss here does not waste food, it clicks a random bag item and hopes.
+#### Why not reserve a slot for it instead
 
-The same mechanism could find the **food** too, replacing the marked-cells design outright — but the food
-does not move while it is locked, so marking stays the simpler answer, and template matching should earn
-its place on the pet first.
+The player's suggestion — pre-calibrate a slot the pet always lands in — is tempting because it turns a
+search into a fixed point, and a fixed point needs no crop and no matching. It does not survive the
+farming premise:
+
+- "First free slot" is a property of the bag **at the instant boarding ends**, and the character is
+  picking loot up throughout. **Loot takes the first free slot too** — so the reserved slot is precisely
+  the one loot lands in.
+- The lock does not rescue it: locks apply to **items**, and the slot has to be **empty** for the pet to
+  land in it.
+
+So a reserved slot can be *expected* but never *guaranteed*. Worth keeping as an optimisation — if the
+pet is usually there, that is one comparison instead of 64 — but the full scan has to sit underneath it,
+and the scan is cheap enough that the optimisation buys little.
+
+**What remains is visual ambiguity**: if two items look close enough to confuse, the tool right-clicks the
+wrong one. That is the failure most worth a deliberate test before any of this is trusted, and the pet's
+icon being distinct is encouraging but not the same as *no other item looking similar*.
+
+The same matching could find the **food** too, replacing the marked-cells design outright — but locked
+food does not move, so marking stays the simpler answer, and matching should earn its place on the pet
+first.
 
 **The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
 **(page, cell)** pairs rather than plain cell indices, and the tool has to reach the right page.
@@ -473,11 +489,11 @@ something the tool checks.
 1. ~~**Can the feeder be topped up while boarding is running?**~~ **Answered: no.** Every two stacks the
    pet must be reloaded, so *end → re-place pet → place food → start* is the reload path, four times per
    stage-6 pet. Which promotes the next question from an implementation detail to the risky part.
-2. **Is the pet item visually distinct enough to template-match reliably?** The pet lands in the first
-   free slot, so it has to be *found*, and the only mechanism this project has is a saved-crop comparison
-   across the 64 cells. If two items look close enough to confuse, the tool clicks the wrong one — the
-   worst failure in the document, and the one that most deserves a deliberate test before it is trusted.
-   **This is now the highest-risk unknown.**
+2. **Could another item be mistaken for the pet?** The pet has a distinctive icon (player, 2026-09-17),
+   so matching is viable — but the question is what else ends up in the bag, since farming fills it with
+   loot. One near-miss means right-clicking the wrong item, which is the failure most worth a deliberate
+   test: fill the bag with a typical farming load, run the match across all 64 cells, and **read the
+   scores** rather than only the winner. **Still the highest-risk unknown**, but a narrower one now.
 3. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
    otherwise identical. If it does not, the quantity is typed and the flow changes shape — the one
    remaining unknown that would alter the *transaction* rather than its numbers.
