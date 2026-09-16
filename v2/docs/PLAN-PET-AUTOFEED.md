@@ -1,7 +1,7 @@
 # Auto pet-food replacement — plan
 
 Status: **design for review. Nothing built.** Scope is deliberately narrow: **stage-6 pets, boarding
-only.** Everything the design rests on is measured — see [PET-DATA.md](PET-DATA.md) — except the four
+only.** Everything the design rests on is measured — see [PET-DATA.md](PET-DATA.md) — except the seven
 items in Open Questions.
 
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
@@ -43,22 +43,40 @@ two pieces of state, and neither needs the screen:
 | **Feeder empties at** | last load + 200 min | Arithmetic — `load / rate`. |
 | **Stacks left in the bag** | the marked grid cells | **The Sell-style bag grid** — you mark the slots holding pet food. |
 
-**Where the food is comes from the Sell-style grid, not from a reading.** The Buy/Sell tab already has
-an **8×8 clickable bag grid**: you click slots, they light up, and those are the ones that go. This
-feature reuses it directly — you mark the slots holding pet food, and **that selection is the
-inventory**. Two cells are consumed per reload, so the tool knows both where to click and how many are
-left, with no bag OCR anywhere: the project has none by design (see
+**Where the food is comes from a Sell-style grid — but with its own calibration.** The Buy/Sell tab's
+8×8 clickable bag grid is the right *interaction*: click slots, they light up, those are the ones that
+go. **The grid itself cannot be shared**, because the bag opens in a different place here than it does
+beside the shop window. So this feature carries its own two-corner bag calibration; the Sell one is
+**not** reused. (An earlier revision of this document claimed otherwise. It was wrong.)
+
+Past that it works the same way: you mark **every slot holding pet food — around ten of them, not two**
+— and that selection is the inventory. The tool consumes them highest index first and knows both where
+to click and how many are left, with no bag OCR anywhere: the project has none by design (see
 [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
 failure surface for something you can simply point at.
 
-Two consequences worth stating:
+**Highest index first, for the same reason `SellPass` does it.** Consuming from the top is correct
+whether or not the bag compacts, whereas ascending silently skips items if it does — and here a shifted
+index does not mis-sell an item, it feeds the pet the wrong stack.
+
+### Pages
+
+**The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
+**(page, cell)** pairs rather than plain cell indices, and the tool has to be able to reach the right
+page and know it is on it — a "next page" click issued from the wrong page lands on the wrong food.
+
+That is three more calibrated things: page-forward, page-back, and **the page indicator**, so the tool
+can confirm where it is rather than counting clicks and hoping. Whether that indicator is readable is
+an open question below.
+
+Two further consequences:
 
 - **The marked cells are the whole inventory model.** There is no separate number to seed and no way for
-  two sources of truth to drift apart — if reality changes, you re-mark the grid and the tool is correct
-  again.
-- **The bag lock is still a prerequisite.** The grid makes a cell index trustworthy *only* while the
-  contents stay put. Without the lock a compacting bag slides the food into different cells, and the
-  marked index now points at something else.
+  two sources of truth to drift apart — if reality changes, you re-mark and the tool is correct again.
+- **The bag lock is now doubly load-bearing.** A cell index is trustworthy *only* while the contents
+  stay put. The character is auto-farming while this runs, so items are being picked up and consumed
+  around the food the whole time; without the lock a compacting bag slides the food into different
+  cells, and every marked index points at something else.
 
 ---
 
@@ -169,12 +187,19 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 5 | **Boarding window close (X)** | point | backing out without acting |
 | 6 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
 | 7 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
-| — | **Bag grid, two corners** | boxes | **reused from Buy / Sell** — supplies the food slots |
+| 8 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
+| 9 | **Page forward** | point | reaching pages 2…N where more food lives |
+| 10 | **Page back** | point | returning to a known page |
+| 11 | **Page indicator** | box | knowing *which* page is showing, rather than counting clicks |
 
-**The food slots cost no new calibration.** The Sell screen already drags a box around the whole 8×8 grid
-and a second around one slot, checks that the two agree, and draws a 64-centre overlay to prove the grid
-is uniform. This feature needs exactly that, already calibrated, and the food's location is then just a
-set of cell indices — which is why the table above has seven points rather than nine.
+**The bag grid is its own calibration.** Same two-corner method as Sell — a box around the whole 8×8 grid,
+a second around one slot, a consistency check between them, and the 64-centre overlay to see the grid is
+uniform — but against the bag as it sits in *this* flow, which is somewhere else. Sharing Sell's numbers
+would point every cell at the wrong place.
+
+**The food slots themselves cost nothing to calibrate.** Once the grid exists, a food slot is a
+`(page, cell)` pair you click, not a captured region — which is what keeps eleven points from becoming
+eleven *plus* ten.
 
 The empty-check reuses the existing mechanism exactly: a saved crop, the fraction of differing pixels,
 and the **6 px inset** — the inset is not optional, because a one-pixel window shift once scored an
@@ -193,7 +218,7 @@ mistake to make in this feature.
 |---|---|
 | Open a window, click a point | `HidPointer.To` + `Click` |
 | Right-click a bag slot, work the dialog | `ShopTool.SellPass` + `MaxEnterEnter` |
-| An 8×8 bag grid you click to mark slots | the Sell screen's slot picker, and its two-corner grid calibration |
+| An 8×8 bag grid you click to mark slots | the Sell screen's slot picker — the *interaction*, not its calibration |
 | Compare a region to a reference | the empty check (crop + differing-pixel fraction + 6 px inset) |
 | Drag a box on a captured screenshot | the Buy/Sell and Gem calibrators |
 | Read a region as text | `OcrEngine.Scan` — only needed for the optional `+9` guard |
@@ -208,25 +233,29 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
 
 1. **Reloading a pet that finished its stage (`+9`).** Wastes two stacks per cycle and never stops.
    Guarded by reading the boarding window before acting.
-2. **Feeding the wrong item.** The bag slots are designated and **locked** — the lock is what makes a
-   fixed slot index trustworthy, because without it a compacting bag moves the item and the index
-   points at something else. Unlike a mis-aimed sale there is no undo. The lock is a **prerequisite**,
-   and the tool should refuse to run without it being confirmed.
-3. **The stack counter drifting from reality.** Low consequence: the tool reloads a slot that is empty
-   or misses one. Recoverable by correcting the number.
-4. **The schedule firing while the character was offline.** The feeder still has food, the empty-check
+2. **Feeding the wrong item — now the worst case, not the second.** The character is auto-farming
+   throughout, so items are appearing and disappearing beside the food the whole time. Two ways it goes
+   wrong: a compacting bag slides the food into different cells, or the tool acts on the wrong **page**.
+   Either points a click at something that is not pet food, and unlike a mis-aimed sale there is no
+   undo. The **lock is a prerequisite**, not a nicety, and pagination must be confirmed against the page
+   indicator rather than assumed.
+3. **A wrong-page reload specifically.** "Next page" issued from the wrong page lands on the wrong food,
+   after which the tool right-clicks a marked cell index that now holds a different item. This is why
+   the page indicator is calibrated rather than clicks being counted and hoped for.
+4. **The marked cells drifting from reality.** Lower consequence than (2): the tool reloads an empty
+   slot, or misses one. Recoverable by re-marking the grid.
+5. **The schedule firing while the character was offline.** The feeder still has food, the empty-check
    says so, and the tool reschedules. Self-correcting, and the reason the empty-check exists rather
    than blind placement.
-5. **A capture that is blind** because something covers the game — the launcher included. The watcher
+6. **A capture that is blind** because something covers the game — the launcher included. The watcher
    should say so rather than silently stop seeing.
 
 ---
 
 ## 8. Phasing
 
-1. **Calibration tab only.** The seven points above, plus the reused bag grid, saved and reloadable,
-   each with a Test button. Nothing clicks. Self-verifying by looking at it, and it is the gate for
-   everything after.
+1. **Calibration tab only.** The eleven points above, saved and reloadable, each with a Test button.
+   Nothing clicks. Self-verifying by looking at it, and it is the gate for everything after.
 2. **Empty-check read-out.** Show the feeder's verdict live, still without clicking. This is the
    measurement that tells you whether the crop threshold is right *before* it is trusted.
 3. **One manual reload.** A button that performs the two transactions when you press it. Proves the
@@ -239,8 +268,9 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
 
 ## 9. Open questions
 
-These are the four things the design rests on that are **not** yet measured. The first two block
-phase 3; the last two only change numbers.
+These are the things the design rests on that are **not** yet measured. Questions 1 and 2 block phase 3;
+3 and 4 only change numbers; **5–7 decide whether the grid and pagination approach survives at all** and
+are worth answering before any of it is built.
 
 1. **Does the boarding item dialog have a MAX?** Unknown. If it does not, the flow is not `MaxEnterEnter`
    and the step count changes — one extra calibrated point, or a different sequence.
@@ -251,6 +281,16 @@ phase 3; the last two only change numbers.
 4. **Does the feeder really hold two stacks, or two *positions*?** The plan assumes two slots that each
    take a stack, which is why there are two feeder boxes to calibrate. If it is one position accepting a
    stack at a time, those collapse to one and the reload becomes one transaction, not two.
+5. **Does the bag show a page indicator the tool can read?** If it does — a number, or a row of dots —
+   point 11 becomes a cheap read and pagination is safe. If it does not, the tool has to establish a
+   known page first (page back repeatedly until the view stops changing, the same "get to a known
+   origin" trick the buy list uses) and count from there, which is materially more fragile.
+6. **How many pages does the bag have, and is the grid the same size on each?** The plan assumes the
+   8×8 lattice repeats per page at the same coordinates. If the last page is partial, or the grid shifts,
+   page-aware cell indices stop being interchangeable.
+7. **Is the food kept locked?** Everything in §2 assumes it is. If the slots cannot be locked — or the
+   farming run unlocks them — the marked cells are not a stable map and the whole grid approach needs
+   rethinking.
 
 ---
 
