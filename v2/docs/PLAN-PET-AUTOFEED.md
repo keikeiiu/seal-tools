@@ -75,7 +75,21 @@ it — so it is the 代養 window, not 餵養.
 | `每1分 讀取3個` | 3 per minute | **The game states the burn rate**, and it matches the stage-6 figure derived from the news page — so the model is confirmed from the game itself rather than inferred |
 | `79.04%` | the pet's EXP | the `+9` guard's read |
 | `到+9為止預計所需時間: 約 15分` | ETA to `+9` | the advance feature's headline number, **displayed by the game** rather than computed by us — if it reads stably, that feature is an OCR away |
-| `結束代養` | end-boarding button | present while boarding runs, so the window distinguishes running from stopped |
+| `結束代養` / `開始代養` | **one toggle button** | the same button starts and ends boarding (player, 2026-09-17), so its **label is a free state read** — `結束代養` means running, `開始代養` means stopped |
+
+**That toggle is a better state signal than anything we planned to derive.** Boarding auto-stops on `+9`
+and on logout, and probably when the food runs out; in every one of those cases the button flips back to
+`開始代養`. So one small crop of the button, compared against a saved label, answers *"is this pet
+currently being fed"* directly — which is the question the whole feature is built around.
+
+It does **not** answer *why* it stopped, which is what the `+9` guard needs. But `開始代養` showing is a
+much stronger trigger than hunger falling, because it says the *game* considers boarding inactive rather
+than inferring it from a side effect.
+
+**And it raises a question the flow depends on: must boarding be stopped before the feeder can be
+restocked?** If the food slot is only editable while stopped, every reload becomes
+*end → restock → start*, and the tool has to put the state back exactly as it found it rather than just
+closing the window.
 
 ### One thing that capture contradicts
 
@@ -279,12 +293,13 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 3 | **Feeder slot A** | box | empty-check crop; the drop target |
 | 4 | **Feeder slot B** | box | the second slot |
 | 5 | **Count dialog MAX** | point | *if it has one* — a different dialog, in a different place, from the sell one |
-| 6 | **Boarding window close (X)** | point | backing out without acting |
-| 7 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger (see below) |
-| 8 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
-| 9 | **Page tab 1** | point | go to page 1 directly |
-| 10 | **Page tab 2** | point | page 2 |
-| 11 | **Page tab 3** | point | page 3 |
+| 6 | **Boarding toggle label** | box | `結束代養` vs `開始代養` — a direct read of whether boarding is running |
+| 7 | **Boarding window close (X)** | point | backing out without acting |
+| 8 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger (see below) |
+| 9 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
+| 10 | **`ITEM1` tab** | point | go to page 1 directly |
+| 11 | **`ITEM2` tab** | point | page 2 |
+| 12 | **`ITEM3` tab** | point | page 3 |
 
 **Getting to the feeder is two clicks, not one.** `目錄` opens a secondary panel of eight round icons,
 and the pet feed icon is one of them — so the flow needs the menu button *and* the icon, in that order.
