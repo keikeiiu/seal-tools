@@ -125,11 +125,14 @@ holds.
 
 ### Trigger B — the icon (reactive, cheap)
 
-A pixel diff on the **menu-bar icon**, which switches from its normal glyph to one carrying a `!` when
-the pet wants attention. (The pet's own cartoon image also shows a prompt, but the player's observation
-is that the menu-bar icon is the reliable one — and it is the signal the original watcher design was
-built around.) It needs **two reference crops**, plain and `!`, which are worth capturing before the
-calibration screen is designed rather than after.
+A pixel diff on the **目錄 button** in the bottom-left icon cluster, which gains a **red highlight** when
+the pet wants attention — confirmed by the player against the 2026-09-17 capture, where it is lit. (The
+pet's own cartoon image also shows a prompt, but the player's observation is that this is the reliable
+one, and it is the signal the original watcher design was built around.)
+
+The tool needs the button's box in both states: **lit** for "needs attention", **plain** as the
+reference. The plain one is still uncaptured, and it is the one that matters — a diff needs the *quiet*
+state to compare against.
 
 **Catches:** everything the schedule cannot know — the character went offline (boarding stops and the
 schedule falls behind), someone fed the pet by hand, boarding stopped early, or the configured rate is
