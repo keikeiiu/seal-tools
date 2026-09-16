@@ -68,12 +68,16 @@ index does not mis-sell an item, it feeds the pet the wrong stack.
 ### Pages
 
 **The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
-**(page, cell)** pairs rather than plain cell indices, and the tool has to be able to reach the right
-page and know it is on it — a "next page" click issued from the wrong page lands on the wrong food.
+**(page, cell)** pairs rather than plain cell indices, and the tool has to reach the right page.
 
-That is three more calibrated things: page-forward, page-back, and **the page indicator**, so the tool
-can confirm where it is rather than counting clicks and hoping. Whether that indicator is readable is
-an open question below.
+**Navigate by absolute tab, not by "next".** The page control is calibrated as **three points, one per
+page**, and the tool clicks the page it wants directly. That is what makes pagination safe: clicking the
+"page 2" tab lands on page 2 *whatever page you were on*, so there is no relative navigation to get out
+of step, and **nothing needs to be read** — the tool knows which page it is on because it chose. A
+"next page" scheme would need the indicator read back to confirm each step; absolute tabs need nothing.
+
+(The player's call, and it is the better one — it removes the indicator question rather than answering
+it.)
 
 **The bag comes up on its own.** Opening the boarding window auto-opens the bag, at a fixed position —
 just not the same one the buy/sell flow uses. So there is no bag-open click to calibrate and none to
@@ -130,6 +134,20 @@ calibration screen is designed rather than after.
 **Catches:** everything the schedule cannot know — the character went offline (boarding stops and the
 schedule falls behind), someone fed the pet by hand, boarding stopped early, or the configured rate is
 simply wrong.
+
+**A better trigger may exist, and it is visible in the 2026-09-17 capture.** The game prints the pet's
+hunger as a **readable percentage** at the bottom right — `肚子餓(34%)`, sitting directly above
+`EXP(102.86%)` — which matches the news page's "look at the bottom-right for the pet's hunger". If that
+text is stable enough to read, an OCR poll replaces the pixel diff outright:
+
+- a number is **unambiguous** where a diff is binary, so it also gives *how* hungry, not just that it is;
+- it **retires the "does the icon blink" question** — there is no reference crop to flap;
+- the **same region carries the EXP%**, which is exactly what the `+9` guard wants, so one read could
+  serve both.
+
+The cost is an OCR per poll rather than a near-free diff — which matters far less here than it does for
+death, because this state *persists*. **Worth settling before the trigger is built**, because it could
+remove the icon calibration and the guard's separate region in one go.
 
 ### Recommendation: A primary, B as backstop — not one path
 
@@ -229,9 +247,9 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 6 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
 | 7 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
 | 8 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
-| 9 | **Page forward** | point | reaching pages 2…N where more food lives |
-| 10 | **Page back** | point | returning to a known page |
-| 11 | **Page indicator** | box | knowing *which* page is showing, rather than counting clicks |
+| 9 | **Page tab 1** | point | go to page 1 directly |
+| 10 | **Page tab 2** | point | page 2 |
+| 11 | **Page tab 3** | point | page 3 |
 
 **The bag grid is its own calibration.** Same two-corner method as Sell — a box around the whole 8×8 grid,
 a second around one slot, a consistency check between them, and the 64-centre overlay to see the grid is
@@ -321,16 +339,13 @@ something the tool checks.
 1. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
    otherwise identical. If it does not, the quantity is typed and the flow changes shape — this is the
    one remaining unknown that would alter the transaction rather than its numbers.
-2. **Does the bag show a readable page indicator?** There are three pages; whether the *current* one is
-   legible is still open. If it is, point 11 is a cheap read and pagination is safe. If not, the tool has
-   to establish a known page first — page back repeatedly until the view stops changing, the same "get
-   to a known origin" trick the buy list uses — and count from there, which is markedly more fragile.
-3. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
-   grid shifts per page, `(page, cell)` indices stop being interchangeable.
-4. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
+2. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
+   grid shifts per page, `(page, cell)` indices stop being interchangeable. (The page-*indicator*
+   question is closed: absolute page tabs removed the need to read it at all.)
+3. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
    sloppy. If it swaps or refuses, the empty-check has to be exact — which changes how tight Trigger A
    needs to be.
-5. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
+4. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
    needs two crops or a wider tolerance. Two captures — the glyph plain, and with `!` — answer it and
    supply the reference at the same time, so this one is worth doing first because it is free.
 
