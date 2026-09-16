@@ -77,14 +77,20 @@ it — so it is the 代養 window, not 餵養.
 | `到+9為止預計所需時間: 約 15分` | ETA to `+9` | the advance feature's headline number, **displayed by the game** rather than computed by us — if it reads stably, that feature is an OCR away |
 | `結束代養` / `開始代養` | **one toggle button** | the same button starts and ends boarding (player, 2026-09-17), so its **label is a free state read** — `結束代養` means running, `開始代養` means stopped |
 
-**That toggle is a better state signal than anything we planned to derive.** Boarding auto-stops on `+9`
-and on logout, and probably when the food runs out; in every one of those cases the button flips back to
-`開始代養`. So one small crop of the button, compared against a saved label, answers *"is this pet
-currently being fed"* directly — which is the question the whole feature is built around.
+**That toggle is the most definitive state read available.** Boarding auto-stops on `+9`, on logout, and
+probably when the food runs out; in every one of those cases the button flips back to `開始代養`. So one
+small crop compared against a saved label answers *"is this pet currently being fed"* directly.
 
-It does **not** answer *why* it stopped, which is what the `+9` guard needs. But `開始代養` showing is a
-much stronger trigger than hunger falling, because it says the *game* considers boarding inactive rather
-than inferring it from a side effect.
+**But it is not passive, and that decides where it belongs.** The button is only visible while the
+boarding window is open, so it cannot be the polling trigger without opening a UI window every 30
+seconds while you play. The 目錄 icon and the hunger % are both visible without opening anything.
+
+So the split is: **poll passively, then confirm on the button.** The cheap check decides *whether* to
+open the window; the button label decides *what to do* once it is open. Same "a nearly-free check wakes
+an expensive one" pairing the watcher uses for death — and it means the trigger question (icon versus
+hunger %) is only about which passive signal is more reliable, not about the button at all.
+
+It also does **not** say *why* boarding stopped, which is the `+9` guard's job.
 
 **And it raises a question the flow depends on: must boarding be stopped before the feeder can be
 restocked?** If the food slot is only editable while stopped, every reload becomes
