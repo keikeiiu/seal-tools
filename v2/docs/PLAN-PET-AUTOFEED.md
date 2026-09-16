@@ -114,7 +114,46 @@ Both are left as they stand until confirmed. (Rewriting a schedule on an inferen
 "the Sell grid can be reused" mistake happened, and that one was only caught because the player knew the
 bag moves.)
 
-### Pages
+### Ending boarding drops the pet too
+
+Player, 2026-09-17 — and visible in the capture where the button reads `開始代養` with **both** the pet slot
+and the food slot empty: ending boarding returns the pet as well as the leftover food.
+
+So a reload that has to end boarding is **not a top-up**. It is:
+
+```
+end  →  re-place the pet  →  place the food  →  start
+```
+
+That is much more than two right-clicks, and it pulls the **pet item itself** into the bag map.
+
+**And the pet lands in the first free bag slot** (player, 2026-09-17) — so its position is a function of
+whatever else the bag holds at that moment, which during a farming run is changing constantly. That is
+the worst property a cell-indexed map can have: the pet is not *at* a cell, it is wherever the bag
+happened to be empty. Reserving a slot only fixes it if the bag's fill state is controlled, and it is
+not.
+
+So there are two ways to handle the returned pet and both are bad:
+
+- **Find it** — which needs bag OCR, and this project has none by design
+  ([PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)).
+- **Reserve a slot** — which only works while nothing else changes the bag, and the whole premise is
+  that the character is farming.
+
+**Which leaves not ending boarding at all as the only robust answer.** Everything above collapses into
+the single question below.
+
+**Which makes one question decide the whole shape of the feature: can the feeder be topped up while
+boarding is running?**
+
+- **If yes**, the tool never ends anything, the pet is never dropped, and none of the above exists. The
+  reload stays the simple two-transaction flow, and the four-step cycle is a manual-recovery path the
+  tool only needs to *detect*, not perform.
+- **If no**, every reload is the four-step cycle, the grid grows a second selection, and there is a
+  second way to mis-click — one that leaves the pet sitting unboarded in a bag slot rather than merely
+  wasting food.
+
+This is now the most important unknown in the document, and it is a single observation in-game.
 
 **The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
 **(page, cell)** pairs rather than plain cell indices, and the tool has to reach the right page.
@@ -355,23 +394,27 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
 
 ## 7. Failure modes, worst first
 
-1. **Reloading a pet that finished its stage (`+9`).** Wastes two stacks per cycle and never stops.
+1. **The pet dying.** The news page is explicit that below 100 % EXP, hunger reaching zero *twice* kills
+   the pet. So a long unattended gap is not merely lost growth — it is the one outcome here that cannot
+   be undone, and it is why the schedule wants a wide margin rather than a tight one. This is the only
+   failure in the list whose cost is permanent.
+2. **Leaving the pet dropped.** Ending boarding returns the pet to the bag, so a reload that *has* to end
+   — or a tool that dies partway through one — can leave the pet sitting unboarded, which is failure (1)
+   on a timer. **If topping up while running is possible this failure does not exist at all**, which is
+   the strongest argument yet for the simple flow.
+3. **Reloading a pet that finished its stage (`+9`).** Wastes the food per cycle and never stops.
    Guarded by reading the boarding window before acting.
-2. **Feeding the wrong item — now the worst case, not the second.** The character is auto-farming
-   throughout, so items are appearing and disappearing beside the food the whole time. Two ways it goes
-   wrong: a compacting bag slides the food into different cells, or the tool acts on the wrong **page**.
-   Either points a click at something that is not pet food, and unlike a mis-aimed sale there is no
-   undo. The **lock is a prerequisite**, not a nicety, and pagination must be confirmed against the page
-   indicator rather than assumed.
-3. **A wrong-page reload specifically.** "Next page" issued from the wrong page lands on the wrong food,
-   after which the tool right-clicks a marked cell index that now holds a different item. This is why
-   the page indicator is calibrated rather than clicks being counted and hoped for.
-4. **The marked cells drifting from reality.** Lower consequence than (2): the tool reloads an empty
+4. **Feeding the wrong item.** The character is auto-farming throughout, so items appear and disappear
+   beside the food the whole time; a compacting bag slides the food into different cells and a marked
+   index now points at something else. Unlike a mis-aimed sale there is no undo. **The lock is a
+   prerequisite**, not a nicety. (Absolute `ITEM1`–`ITEM3` tabs removed the wrong-page version of this,
+   since clicking a tab cannot overshoot.)
+5. **The marked cells drifting from reality.** Lower consequence than (4): the tool reloads an empty
    slot, or misses one. Recoverable by re-marking the grid.
-5. **The schedule firing while the character was offline.** The feeder still has food, the empty-check
+6. **The schedule firing while the character was offline.** The feeder still has food, the empty-check
    says so, and the tool reschedules. Self-correcting, and the reason the empty-check exists rather
    than blind placement.
-6. **A capture that is blind** because something covers the game — the launcher included. The watcher
+7. **A capture that is blind** because something covers the game — the launcher included. The watcher
    should say so rather than silently stop seeing.
 
 ---
@@ -401,18 +444,20 @@ the food is locked via the bag's own lock; the count dialog takes **one** Enter 
 after it; and all ten stacks are a single item type, which is your setup responsibility rather than
 something the tool checks.
 
-1. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
-   otherwise identical. If it does not, the quantity is typed and the flow changes shape — this is the
-   one remaining unknown that would alter the transaction rather than its numbers.
-2. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
+1. **Can the feeder be topped up while boarding is running?** The decisive one — see above. It is also
+   the same question as "what happens when food goes into a partially-full feeder": if adding food
+   works while running, the tool never needs to end anything and the pet is never dropped; if it does
+   not, every reload becomes *end → re-place pet → place food → start*. **One observation answers both
+   halves**, and it decides whether this feature has one grid selection or two.
+2. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
+   otherwise identical. If it does not, the quantity is typed and the flow changes shape — the one
+   remaining unknown that would alter the *transaction* rather than its numbers.
+3. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
    grid shifts per page, `(page, cell)` indices stop being interchangeable. (The page-*indicator*
-   question is closed: absolute page tabs removed the need to read it at all.)
-3. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
-   sloppy. If it swaps or refuses, the empty-check has to be exact — which changes how tight Trigger A
-   needs to be.
+   question is closed — absolute `ITEM1`/`ITEM2`/`ITEM3` tabs removed the need to read it at all.)
 4. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
-   needs two crops or a wider tolerance. Two captures — the glyph plain, and with `!` — answer it and
-   supply the reference at the same time, so this one is worth doing first because it is free.
+   needs two crops or a wider tolerance. Two captures — plain and red — answer it and supply the
+   reference at the same time, so this one is free.
 
 ---
 
