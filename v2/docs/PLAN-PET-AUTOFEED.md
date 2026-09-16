@@ -191,7 +191,10 @@ character stays online.
   trigger A or B fires
           │
           ▼
-  click 宠物代养  ──►  boarding window opens, bag auto-opens with it
+  click 目錄  ──►  secondary icon panel opens
+          │
+          ▼
+  click the pet feed icon  ──►  boarding window opens, bag auto-opens with it
           │
           ▼
   read the feeder slots (empty-check crop, one per slot)
@@ -242,17 +245,26 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 
 | # | What | Kind | Used for |
 |---|---|---|---|
-| 1 | **宠物代养 button** | point | opens the boarding window |
-| 2 | **Feeder slot A** | box | empty-check crop; the drop target |
-| 3 | **Feeder slot B** | box | the second slot |
-| 4 | **Count dialog MAX** | point | *if it has one* — a different dialog, in a different place, from the sell one |
-| 5 | **Boarding window close (X)** | point | backing out without acting |
-| 6 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
-| 7 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
+| 1 | **目錄 button** | point | opens the secondary icon panel |
+| 2 | **Pet feed icon** — the chick holding a bottle | point | opens the boarding window |
+| 3 | **Feeder slot A** | box | empty-check crop; the drop target |
+| 4 | **Feeder slot B** | box | the second slot |
+| 5 | **Count dialog MAX** | point | *if it has one* — a different dialog, in a different place, from the sell one |
+| 6 | **Boarding window close (X)** | point | backing out without acting |
+| 7 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger (see below) |
 | 8 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
 | 9 | **Page tab 1** | point | go to page 1 directly |
 | 10 | **Page tab 2** | point | page 2 |
 | 11 | **Page tab 3** | point | page 3 |
+
+**Getting to the feeder is two clicks, not one.** `目錄` opens a secondary panel of eight round icons,
+and the pet feed icon is one of them — so the flow needs the menu button *and* the icon, in that order.
+The icon is at a fixed position in a static grid, which means **a point, not a reference image**: nothing
+has to be *found*.
+
+The panel carries **▲▼ scroll indicators**, so it may hold more icons than the eight visible. If the pet
+icon needs scrolling to reach, that is the same problem as the bag pages and wants the same answer —
+navigate to a known position, never scroll-and-hope.
 
 **The bag grid is its own calibration.** Same two-corner method as Sell — a box around the whole 8×8 grid,
 a second around one slot, a consistency check between them, and the 64-centre overlay to see the grid is
