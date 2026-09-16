@@ -41,13 +41,24 @@ two pieces of state, and neither needs the screen:
 | **Rate** | 3 items/min | Config, from the stage. Measured game constant. |
 | **Load** | 600 items (2 stacks × 300) | What the tool placed last time. |
 | **Feeder empties at** | last load + 200 min | Arithmetic — `load / rate`. |
-| **Stacks left in the bag** | a counter | **Decremented by the tool**, seeded by you. |
+| **Stacks left in the bag** | the marked grid cells | **The Sell-style bag grid** — you mark the slots holding pet food. |
 
-**The stack counter is a counter, not a reading.** The project deliberately has no bag OCR
-(see [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)), and inventing one here to count stacks would be a large new
-failure surface for a number you already know. So you tell the tool how many stacks are banked when it
-starts, it subtracts two per reload, and it warns when you are about to run out. If the count drifts
-from reality, the fix is to correct the number — not to make the tool guess.
+**Where the food is comes from the Sell-style grid, not from a reading.** The Buy/Sell tab already has
+an **8×8 clickable bag grid**: you click slots, they light up, and those are the ones that go. This
+feature reuses it directly — you mark the slots holding pet food, and **that selection is the
+inventory**. Two cells are consumed per reload, so the tool knows both where to click and how many are
+left, with no bag OCR anywhere: the project has none by design (see
+[PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
+failure surface for something you can simply point at.
+
+Two consequences worth stating:
+
+- **The marked cells are the whole inventory model.** There is no separate number to seed and no way for
+  two sources of truth to drift apart — if reality changes, you re-mark the grid and the tool is correct
+  again.
+- **The bag lock is still a prerequisite.** The grid makes a cell index trustworthy *only* while the
+  contents stay put. Without the lock a compacting bag slides the food into different cells, and the
+  marked index now points at something else.
 
 ---
 
@@ -126,10 +137,10 @@ character stays online.
   # if so, close and stop      (the schedule was early)
     │
     ▼
-  2 × [ right-click bag slot → dialog → MAX → Enter → Enter ]
+  2 × [ right-click a marked bag cell → dialog → MAX → Enter → Enter ]
     │
     ▼
-  close the window, set next-empty = now + 200 min, stacks -= 2
+  close the window; next-empty = now + 200 min; 2 cells marked consumed
 ```
 
 **Everything after the first click is the Sell shape** — `ClickAt(right: true)` then the shared
@@ -154,12 +165,16 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 1 | **宠物代养 button** | point | opens the boarding window |
 | 2 | **Feeder slot A** | box | empty-check crop; the drop target |
 | 3 | **Feeder slot B** | box | the second slot |
-| 4 | **Bag slot 1** | point | right-click source for stack 1 |
-| 5 | **Bag slot 2** | point | right-click source for stack 2 |
-| 6 | **Dialog MAX** | point | *if the dialog has one* — see Open Questions |
-| 7 | **Boarding window close (X)** | point | backing out without acting |
-| 8 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
-| 9 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
+| 4 | **Dialog MAX** | point | *if the dialog has one* — see Open Questions |
+| 5 | **Boarding window close (X)** | point | backing out without acting |
+| 6 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
+| 7 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
+| — | **Bag grid, two corners** | boxes | **reused from Buy / Sell** — supplies the food slots |
+
+**The food slots cost no new calibration.** The Sell screen already drags a box around the whole 8×8 grid
+and a second around one slot, checks that the two agree, and draws a 64-centre overlay to prove the grid
+is uniform. This feature needs exactly that, already calibrated, and the food's location is then just a
+set of cell indices — which is why the table above has seven points rather than nine.
 
 The empty-check reuses the existing mechanism exactly: a saved crop, the fraction of differing pixels,
 and the **6 px inset** — the inset is not optional, because a one-pixel window shift once scored an
@@ -178,6 +193,7 @@ mistake to make in this feature.
 |---|---|
 | Open a window, click a point | `HidPointer.To` + `Click` |
 | Right-click a bag slot, work the dialog | `ShopTool.SellPass` + `MaxEnterEnter` |
+| An 8×8 bag grid you click to mark slots | the Sell screen's slot picker, and its two-corner grid calibration |
 | Compare a region to a reference | the empty check (crop + differing-pixel fraction + 6 px inset) |
 | Drag a box on a captured screenshot | the Buy/Sell and Gem calibrators |
 | Read a region as text | `OcrEngine.Scan` — only needed for the optional `+9` guard |
@@ -208,8 +224,9 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
 
 ## 8. Phasing
 
-1. **Calibration tab only.** All nine points, saved and reloadable, each with a Test button. Nothing
-   clicks. Self-verifying by looking at it, and it is the gate for everything after.
+1. **Calibration tab only.** The seven points above, plus the reused bag grid, saved and reloadable,
+   each with a Test button. Nothing clicks. Self-verifying by looking at it, and it is the gate for
+   everything after.
 2. **Empty-check read-out.** Show the feeder's verdict live, still without clicking. This is the
    measurement that tells you whether the crop threshold is right *before* it is trusted.
 3. **One manual reload.** A button that performs the two transactions when you press it. Proves the
@@ -232,8 +249,8 @@ phase 3; the last two only change numbers.
 3. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
    sloppy. If it swaps or refuses, the empty-check must be exact. Changes how tight Trigger A has to be.
 4. **Does the feeder really hold two stacks, or two *positions*?** The plan assumes two slots that each
-   take a stack. If it is one position accepting a stack at a time, points 2/3 and 4/5 collapse to one
-   each.
+   take a stack, which is why there are two feeder boxes to calibrate. If it is one position accepting a
+   stack at a time, those collapse to one and the reload becomes one transaction, not two.
 
 ---
 
