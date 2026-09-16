@@ -97,22 +97,18 @@ restocked?** If the food slot is only editable while stopped, every reload becom
 *end → restock → start*, and the tool has to put the state back exactly as it found it rather than just
 closing the window.
 
-### One thing that capture contradicts
+### The load size — resolved
 
-The food area reads as a **single** slot showing `150 300` — current over cap — with three **locked** rows
-below, marked `需要擴張欄位` and `+ 15 Days` / `+ 30 Days`.
+The food area reads `150 300`, which I took to be a 300-item cap on the whole load. Combined with the
+player's answer — **every two stacks, the pet must be reloaded** — it means:
 
-If that reading holds, two figures recorded earlier are wrong:
+- **the load is two stacks, 600 items** — exactly what the schedule was first built on;
+- **`300` is the per-stack cap**, not the size of a load;
+- so a load lasts **200 minutes**, and a stage-6 pet takes **four loads** to `+9`.
 
-- **"the feeder holds two slots."** It looks like one. The locked rows are more likely *additional pet*
-  slots — the 代養欄位擴張券 the news page describes — than extra food slots, and those are different
-  things.
-- **A 600-item load.** A 300 cap makes a reload **300 items, not 600**, so the feeder empties in
-  **100 minutes, not 200**, and a full stage-6 pet takes **8 reloads, not 4**.
-
-Both are left as they stand until confirmed. (Rewriting a schedule on an inference is how the earlier
-"the Sell grid can be reused" mistake happened, and that one was only caught because the player knew the
-bag moves.)
+The "one slot, 100-minute period, eight reloads" reading was wrong and is withdrawn. (It is also the
+second time an inference from a screenshot has been wrong — the Sell-grid one being the first — which is
+why the schedule keeps getting marked as provisional until the player confirms it.)
 
 ### Ending boarding drops the pet too
 
@@ -143,17 +139,35 @@ So there are two ways to handle the returned pet and both are bad:
 **Which leaves not ending boarding at all as the only robust answer.** Everything above collapses into
 the single question below.
 
-**Which makes one question decide the whole shape of the feature: can the feeder be topped up while
-boarding is running?**
+**Answered, and the answer is the hard one: ending is mandatory.** The player's rule is that **every two
+stacks, the pet must be reloaded** — so topping up while running is not possible, and the
+end → re-place → place → start cycle is not an edge case. It *is* the reload path, run **four times** to
+take a stage-6 pet to `+9`.
 
-- **If yes**, the tool never ends anything, the pet is never dropped, and none of the above exists. The
-  reload stays the simple two-transaction flow, and the four-step cycle is a manual-recovery path the
-  tool only needs to *detect*, not perform.
-- **If no**, every reload is the four-step cycle, the grid grows a second selection, and there is a
-  second way to mis-click — one that leaves the pet sitting unboarded in a bag slot rather than merely
-  wasting food.
+That is a substantially bigger feature than the one this document opened with, and it has a new central
+problem.
 
-This is now the most important unknown in the document, and it is a single observation in-game.
+### Finding the pet — the new central problem
+
+The pet lands in the first free bag slot, and during a farming run the bag is not static — so a marked
+cell cannot hold it, and neither can any fixed point.
+
+Two candidate answers:
+
+- **Mark a cell for it** — dead on arrival, for exactly that reason.
+- **Template-match it across the grid.** The 8×8 lattice is calibrated anyway (point 9), each cell is
+  ~51 px square, and the primitive already exists in this project: a saved crop compared against a region
+  by differing-pixel fraction, the empty-check's mechanism with its 6 px inset. One saved pet-icon crop
+  against 64 cells is 64 cheap comparisons, **no OCR**, and it *finds* the pet wherever it landed instead
+  of requiring it to be somewhere.
+
+**That is the one I would try**, and it costs one more calibration — a saved crop of the pet item's icon.
+It also raises the question to answer before building it: **is the pet item visually distinct enough to
+match reliably?** A near-miss here does not waste food, it clicks a random bag item and hopes.
+
+The same mechanism could find the **food** too, replacing the marked-cells design outright — but the food
+does not move while it is locked, so marking stays the simpler answer, and template matching should earn
+its place on the pet first.
 
 **The bag is paged, and ten stacks of food need not sit on page 1.** So the food map is a set of
 **(page, cell)** pairs rather than plain cell indices, and the tool has to reach the right page.
@@ -282,27 +296,33 @@ character stays online.
   click 目錄  ──►  secondary icon panel opens
           │
           ▼
-  click the pet feed icon  ──►  boarding window opens, bag auto-opens with it
+  click the pet feed icon  ──►  boarding window + bag open
           │
           ▼
-  read the feeder slots (empty-check crop, one per slot)
+  confirm the toggle reads 開始代養  (i.e. boarding is stopped)
           │
     ┌─────┴──────────────────────┐
     │                            │
-  slot empty                   slot full
+  stopped                     running
     │                            │
     ▼                            ▼
-  # guard: is the pet at +9?   close, reschedule
-  # if so, close and stop      (the schedule was early)
+  # guard: EXP% at +9?         close, reschedule
+  # if so, close and stop      (the schedule fired early)
     │
     ▼
-  go to the page holding the first marked cell, confirm on the indicator
+  find the pet — template-match its icon across the 64 bag cells
+    │
+    ▼
+  right-click the pet → it drops into the boarding slot
+    │
+    ▼
+  go to the page holding the first marked food cell
     │
     ▼
   2 × [ right-click the marked cell → count dialog → MAX → Enter ]
     │        one Enter — there is no second confirmation here
     ▼
-  close the window; next-empty = now + 200 min; 2 cells marked consumed
+  click 開始代養;  close;  next-empty = now + 200 min
 ```
 
 **The transaction is the Sell shape minus its last step.** Right-click the bag cell, click MAX in the
@@ -342,9 +362,15 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 7 | **Boarding window close (X)** | point | backing out without acting |
 | 8 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger (see below) |
 | 9 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
-| 10 | **`ITEM1` tab** | point | go to page 1 directly |
-| 11 | **`ITEM2` tab** | point | page 2 |
-| 12 | **`ITEM3` tab** | point | page 3 |
+| 10 | **Pet item icon** | crop | **template-matched across the 64 cells** to find the dropped pet |
+| 11 | **`ITEM1` tab** | point | go to page 1 directly |
+| 12 | **`ITEM2` tab** | point | page 2 |
+| 13 | **`ITEM3` tab** | point | page 3 |
+
+**Point 10 is the odd one out** — the only crop used to *find* something rather than to detect a change
+or check emptiness. It exists solely because ending boarding drops the pet into the first free slot, and
+it is the piece of this design I am least confident in: a poor match means clicking an arbitrary bag item
+and hoping, which is the worst failure the feature has.
 
 **Getting to the feeder is two clicks, not one.** `目錄` opens a secondary panel of eight round icons,
 and the pet feed icon is one of them — so the flow needs the menu button *and* the icon, in that order.
@@ -444,18 +470,21 @@ the food is locked via the bag's own lock; the count dialog takes **one** Enter 
 after it; and all ten stacks are a single item type, which is your setup responsibility rather than
 something the tool checks.
 
-1. **Can the feeder be topped up while boarding is running?** The decisive one — see above. It is also
-   the same question as "what happens when food goes into a partially-full feeder": if adding food
-   works while running, the tool never needs to end anything and the pet is never dropped; if it does
-   not, every reload becomes *end → re-place pet → place food → start*. **One observation answers both
-   halves**, and it decides whether this feature has one grid selection or two.
-2. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
+1. ~~**Can the feeder be topped up while boarding is running?**~~ **Answered: no.** Every two stacks the
+   pet must be reloaded, so *end → re-place pet → place food → start* is the reload path, four times per
+   stage-6 pet. Which promotes the next question from an implementation detail to the risky part.
+2. **Is the pet item visually distinct enough to template-match reliably?** The pet lands in the first
+   free slot, so it has to be *found*, and the only mechanism this project has is a saved-crop comparison
+   across the 64 cells. If two items look close enough to confuse, the tool clicks the wrong one — the
+   worst failure in the document, and the one that most deserves a deliberate test before it is trusted.
+   **This is now the highest-risk unknown.**
+3. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
    otherwise identical. If it does not, the quantity is typed and the flow changes shape — the one
    remaining unknown that would alter the *transaction* rather than its numbers.
-3. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
+4. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
    grid shifts per page, `(page, cell)` indices stop being interchangeable. (The page-*indicator*
    question is closed — absolute `ITEM1`/`ITEM2`/`ITEM3` tabs removed the need to read it at all.)
-4. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
+5. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
    needs two crops or a wider tolerance. Two captures — plain and red — answer it and supply the
    reference at the same time, so this one is free.
 
