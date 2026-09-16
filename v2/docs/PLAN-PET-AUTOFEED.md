@@ -1,8 +1,8 @@
 # Auto pet-food replacement — plan
 
 Status: **design for review. Nothing built.** Scope is deliberately narrow: **stage-6 pets, boarding
-only.** Everything the design rests on is measured — see [PET-DATA.md](PET-DATA.md) — except the seven
-items in Open Questions.
+only.** Everything the design rests on is measured or confirmed — see [PET-DATA.md](PET-DATA.md) —
+except the five items in Open Questions.
 
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
 notices, reloads the feeder, and carries on. Nothing else about the pet is automated.
@@ -28,6 +28,12 @@ stage — and therefore the one where a bug costs least:
 A stage-6 pet completes in about **12 hours and 4 feeder reloads** — short enough to watch a whole run
 end to end in one session, which is what makes it a sane first target. Stage 5 is the opposite: a
 2 d 22 h job where a wrong calibration burns a weekend before anyone notices.
+
+**The farming is the game's own, so the board is free.** The premise is that this runs while the
+character auto-farms. That feature belongs to the game and runs by itself — it is not one of our tools —
+so it holds no Arduino port, and the one-tool-at-a-time rule in [PLAN-WATCHER.md](PLAN-WATCHER.md) never
+bites. Had the farming been ours, the pet reload would be impossible while it ran and this feature would
+need a different shape entirely.
 
 ---
 
@@ -69,6 +75,26 @@ That is three more calibrated things: page-forward, page-back, and **the page in
 can confirm where it is rather than counting clicks and hoping. Whether that indicator is readable is
 an open question below.
 
+**The bag comes up on its own.** Opening the boarding window auto-opens the bag, at a fixed position —
+just not the same one the buy/sell flow uses. So there is no bag-open click to calibrate and none to
+spend each cycle; the grid merely has to be measured where *this* flow puts it.
+
+**The lock is the player's tool, not ours.** The bag lets you lock individual items in place, and the
+ten food stacks are expected to be locked. That is what makes a marked cell a stable address across a
+farming session, and it is why the plan treats "food is locked" as a setup fact rather than something
+to verify.
+
+**What you own, and what the tool owns.** You buy the right food and mark where it lives; the tool keeps
+the feeder loaded so you do not have to attend the PC around the clock. That split is deliberate and it
+is the load-bearing assumption of the whole feature: **the tool never verifies the item is the right
+one.** There is no bag OCR (above), so a marked cell is *trusted* to hold pet food. If the wrong item
+gets marked, the tool will cheerfully feed it — which is exactly why marking is a setup step you own
+rather than something the tool infers.
+
+**Ten marked stacks is a full stage-6 pet with one reload to spare**, which is what makes "ten" the right
+default rather than an arbitrary number: 2,184 items is 8 stacks, the feeder takes 2 per reload, so ten
+cells is five reloads against the four a complete pet needs.
+
 Two further consequences:
 
 - **The marked cells are the whole inventory model.** There is no separate number to seed and no way for
@@ -95,8 +121,11 @@ holds.
 
 ### Trigger B — the icon (reactive, cheap)
 
-A pixel diff on the 感叹号 region of the pet cartoon image, bottom-right. The icon is the *hunger*
-signal — the game's own "this pet is not being fed" indicator.
+A pixel diff on the **menu-bar icon**, which switches from its normal glyph to one carrying a `!` when
+the pet wants attention. (The pet's own cartoon image also shows a prompt, but the player's observation
+is that the menu-bar icon is the reliable one — and it is the signal the original watcher design was
+built around.) It needs **two reference crops**, plain and `!`, which are worth capturing before the
+calibration screen is designed rather than after.
 
 **Catches:** everything the schedule cannot know — the character went offline (boarding stops and the
 schedule falls behind), someone fed the pet by hand, boarding stopped early, or the configured rate is
@@ -141,7 +170,7 @@ character stays online.
   trigger A or B fires
           │
           ▼
-  click 宠物代养  ──►  boarding window opens
+  click 宠物代养  ──►  boarding window opens, bag auto-opens with it
           │
           ▼
   read the feeder slots (empty-check crop, one per slot)
@@ -155,15 +184,27 @@ character stays online.
   # if so, close and stop      (the schedule was early)
     │
     ▼
-  2 × [ right-click a marked bag cell → dialog → MAX → Enter → Enter ]
+  go to the page holding the first marked cell, confirm on the indicator
     │
+    ▼
+  2 × [ right-click the marked cell → count dialog → MAX → Enter ]
+    │        one Enter — there is no second confirmation here
     ▼
   close the window; next-empty = now + 200 min; 2 cells marked consumed
 ```
 
-**Everything after the first click is the Sell shape** — `ClickAt(right: true)` then the shared
-`MaxEnterEnter` — so the two reloads reuse `ShopTool`'s transaction verbatim. **No firmware change is
-needed**: the board already has `C` (click), `R` (right-click) and `E` (Enter).
+**The transaction is the Sell shape minus its last step.** Right-click the bag cell, click MAX in the
+count dialog, press Enter — then stop. `MaxEnterEnter` sends a *second* Enter for the sell confirmation,
+and **this dialog has no confirmation behind it**, so the reload needs a sibling rather than a straight
+reuse: same two clicks, one Enter instead of two. The count dialog's MAX still has to be calibrated,
+because it is a different dialog in a different place from the sell one.
+
+**Dragging is the other way the game allows loading the feeder, and it is not available to us.** The
+firmware has no press/release pair — `C` is a press and release in a single command — so a drag would
+mean new commands and a reflash of every board. The right-click path needs none of that.
+
+**No firmware change is needed at all**: the board already has `C` (click), `R` (right-click) and `E`
+(Enter).
 
 **The guard matters.** A pet at `+9` has finished its stage; boarding auto-stopped because there is
 nothing left to gain, and reloading it wastes two stacks. The boarding window is the right place to
@@ -183,7 +224,7 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 1 | **宠物代养 button** | point | opens the boarding window |
 | 2 | **Feeder slot A** | box | empty-check crop; the drop target |
 | 3 | **Feeder slot B** | box | the second slot |
-| 4 | **Dialog MAX** | point | *if the dialog has one* — see Open Questions |
+| 4 | **Count dialog MAX** | point | *if it has one* — a different dialog, in a different place, from the sell one |
 | 5 | **Boarding window close (X)** | point | backing out without acting |
 | 6 | **感叹号 icon** | box | Trigger B's diff region + reference crop |
 | 7 | **Boarding status / EXP%** | box | *optional* — the `+9` guard's read |
@@ -217,7 +258,7 @@ mistake to make in this feature.
 | Need | Already there |
 |---|---|
 | Open a window, click a point | `HidPointer.To` + `Click` |
-| Right-click a bag slot, work the dialog | `ShopTool.SellPass` + `MaxEnterEnter` |
+| Right-click a bag slot, work the count dialog | `ShopTool`'s right-click + MAX, **minus** the second Enter — this dialog has no confirmation |
 | An 8×8 bag grid you click to mark slots | the Sell screen's slot picker — the *interaction*, not its calibration |
 | Compare a region to a reference | the empty check (crop + differing-pixel fraction + 6 px inset) |
 | Drag a box on a captured screenshot | the Buy/Sell and Gem calibrators |
@@ -268,29 +309,30 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
 
 ## 9. Open questions
 
-These are the things the design rests on that are **not** yet measured. Questions 1 and 2 block phase 3;
-3 and 4 only change numbers; **5–7 decide whether the grid and pagination approach survives at all** and
-are worth answering before any of it is built.
+These are the things the design rests on that are **not** yet confirmed. Only the first two block
+building the calibration tab; the rest change numbers or tolerances.
 
-1. **Does the boarding item dialog have a MAX?** Unknown. If it does not, the flow is not `MaxEnterEnter`
-   and the step count changes — one extra calibrated point, or a different sequence.
-2. **Does the bag need to be open while the boarding window is up?** Not yet observed. If it does, that
-   is a tenth calibration point and one more click per cycle.
-3. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
-   sloppy. If it swaps or refuses, the empty-check must be exact. Changes how tight Trigger A has to be.
-4. **Does the feeder really hold two stacks, or two *positions*?** The plan assumes two slots that each
-   take a stack, which is why there are two feeder boxes to calibrate. If it is one position accepting a
-   stack at a time, those collapse to one and the reload becomes one transaction, not two.
-5. **Does the bag show a page indicator the tool can read?** If it does — a number, or a row of dots —
-   point 11 becomes a cheap read and pagination is safe. If it does not, the tool has to establish a
-   known page first (page back repeatedly until the view stops changing, the same "get to a known
-   origin" trick the buy list uses) and count from there, which is materially more fragile.
-6. **How many pages does the bag have, and is the grid the same size on each?** The plan assumes the
-   8×8 lattice repeats per page at the same coordinates. If the last page is partial, or the grid shifts,
-   page-aware cell indices stop being interchangeable.
-7. **Is the food kept locked?** Everything in §2 assumes it is. If the slots cannot be locked — or the
-   farming run unlocks them — the marked cells are not a stable map and the whole grid approach needs
-   rethinking.
+Answered by the player on 2026-09-17, and now folded into the design above: the farming is the game's
+own; the bag auto-opens with the boarding window; the bag has **three** pages; the feeder has two slots;
+the food is locked via the bag's own lock; the count dialog takes **one** Enter with no confirmation
+after it; and all ten stacks are a single item type, which is your setup responsibility rather than
+something the tool checks.
+
+1. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
+   otherwise identical. If it does not, the quantity is typed and the flow changes shape — this is the
+   one remaining unknown that would alter the transaction rather than its numbers.
+2. **Does the bag show a readable page indicator?** There are three pages; whether the *current* one is
+   legible is still open. If it is, point 11 is a cheap read and pagination is safe. If not, the tool has
+   to establish a known page first — page back repeatedly until the view stops changing, the same "get
+   to a known origin" trick the buy list uses — and count from there, which is markedly more fragile.
+3. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
+   grid shifts per page, `(page, cell)` indices stop being interchangeable.
+4. **What happens when food is placed into a partially-full feeder?** If it tops up, the schedule can be
+   sloppy. If it swaps or refuses, the empty-check has to be exact — which changes how tight Trigger A
+   needs to be.
+5. **Does the 感叹号 menu icon blink?** If it animates, a single reference crop will flap and the diff
+   needs two crops or a wider tolerance. Two captures — the glyph plain, and with `!` — answer it and
+   supply the reference at the same time, so this one is worth doing first because it is free.
 
 ---
 
