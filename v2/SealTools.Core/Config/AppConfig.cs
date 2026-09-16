@@ -18,6 +18,87 @@ public sealed class AppConfig
     public GemConfig Gem { get; set; } = new();
     public SpammerConfig Spammer { get; set; } = new();
     public BuySellConfig BuySell { get; set; } = new();
+    public PetConfig Pet { get; set; } = new();
+}
+
+/// <summary>Geometry for the pet food auto-replacement tool — the boarding (代養) flow. Every value
+/// here is machine-specific, so all of it lives in local.yaml beside the buy/sell grid; nothing
+/// belongs in the portable defaults.yaml.
+///
+/// See docs/PLAN-PET-AUTOFEED.md. Two things about this shape are worth knowing before reading it:
+/// the bag opened by the boarding window is at a DIFFERENT place from the one the shop opens beside,
+/// so <see cref="BagGrid"/> is its own calibration and must not be shared with
+/// <see cref="BuySellConfig.BagGrid"/>; and the points below are the click path, which is
+/// 目錄 → pet feed icon → boarding window, not the pet cartoon image (that opens a different window
+/// entirely, about the manual feeding system).</summary>
+public sealed class PetConfig
+{
+    // ── The click path into the boarding window ─────────────────────────────
+
+    /// <summary>The 目錄 button in the bottom-left icon cluster. Opens the secondary icon panel.</summary>
+    public List<int>? MenuButton { get; set; }
+
+    /// <summary>The pet feed icon in that panel — the chick holding a bottle. Opens the boarding
+    /// window, and the bag comes up with it. A POINT rather than a crop: it sits at a fixed position
+    /// in a static grid, so nothing has to be found.</summary>
+    public List<int>? FeedIcon { get; set; }
+
+    /// <summary>Centre of MAX in the boarding count dialog. A different dialog, in a different place,
+    /// from the buy/sell one — so it is its own point.</summary>
+    public List<int>? DialogMax { get; set; }
+
+    /// <summary>The boarding window's X. There are two close buttons on screen at once (this one and
+    /// the bag's), so the flow has to know which it is pressing.</summary>
+    public List<int>? CloseButton { get; set; }
+
+    /// <summary>The bag's ITEM1 / ITEM2 / ITEM3 tab points, in page order. Absolute tabs, not
+    /// next/prev: clicking a tab lands on that page whatever page you were on, so nothing has to be
+    /// read back to know where the tool is.</summary>
+    public List<List<int>> PageTabs { get; set; } = new();
+
+    // ── What the boarding window says ───────────────────────────────────────
+
+    /// <summary>The 開始代養 / 結束代養 toggle's label. The same button starts and ends boarding, so
+    /// its label is a direct read of whether the pet is currently being fed — the most definitive
+    /// state signal available, though only visible while the window is open.</summary>
+    public List<int>? ToggleLabel { get; set; }
+
+    /// <summary>The feeder slots, empty-check crops. Two of them: the load is two stacks and each is
+    /// placed separately.</summary>
+    public List<int>? FeederSlotA { get; set; }
+    public List<int>? FeederSlotB { get; set; }
+
+    /// <summary>The pet's hunger readout at the bottom right — `肚子餓(nn%)`. The intended polling
+    /// trigger, since it is visible without opening any window (see PLAN-PET-AUTOFEED.md §3).</summary>
+    public List<int>? HungerRegion { get; set; }
+
+    // ── The bag, as THIS flow shows it ──────────────────────────────────────
+
+    /// <summary>Whole bag grid region client-relative physical [x, y, w, h], for the bag the boarding
+    /// window opens. NOT interchangeable with <see cref="BuySellConfig.BagGrid"/>: the bag sits
+    /// somewhere else here, and sharing the numbers would aim every cell at the wrong item.</summary>
+    public List<int>? BagGrid { get; set; }
+
+    /// <summary>One bag slot, the uniformity check on <see cref="BagGrid"/>.</summary>
+    public List<int>? BagSlot { get; set; }
+
+    /// <summary>The bag cells holding pet food, each as [page, cell] with page 0-based. Consumed
+    /// highest cell index first, the same rule SellPass uses and for the same reason.</summary>
+    public List<List<int>> FoodCells { get; set; } = new();
+
+    // ── Behaviour ───────────────────────────────────────────────────────────
+
+    /// <summary>How many items one boarding load is: two stacks of the game's 300 cap.</summary>
+    public int LoadItems { get; set; } = 600;
+
+    /// <summary>Items the game consumes per minute while boarding runs. Stage 6 is 3; the boarding
+    /// window states this itself (`每1分 讀取3個`), so it is a measured game constant rather than a
+    /// guess.</summary>
+    public int ItemsPerMinute { get; set; } = 3;
+
+    /// <summary>Minutes a full load lasts, derived rather than stored — so the two numbers above can
+    /// never disagree with it.</summary>
+    public int LoadMinutes => ItemsPerMinute > 0 ? LoadItems / ItemsPerMinute : 0;
 }
 
 /// <summary>Geometry and presets for the buy/sell tool. The rectangles are machine-specific — a

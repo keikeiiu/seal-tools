@@ -352,6 +352,62 @@ public class ConfigLoaderTests
         }
     }
 
+    // The pet calibrator writes its own local.yaml block. The load-bearing assertion is the last
+    // one: the bag the boarding window opens is at a DIFFERENT place from the one the shop opens
+    // beside, so the pet grid and the buy/sell grid are separate calibrations. If they ever shared a
+    // field, every click in the pet flow would land on the wrong bag cell — and unlike a mis-aimed
+    // sale there is no undo for feeding the pet the wrong item.
+    [Fact]
+    public void PetCalibrationRoundTripsAndKeepsItsOwnBagGrid()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Pet = new ConfigLoader.LocalPet
+            {
+                MenuButton = new List<int> { 815, 1735 },
+                FeedIcon = new List<int> { 900, 1400 },
+                DialogMax = new List<int> { 700, 300 },
+                CloseButton = new List<int> { 880, 140 },
+                PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
+                ToggleLabel = new List<int> { 590, 200, 120, 30 },
+                FeederSlotA = new List<int> { 250, 210, 60, 60 },
+                FeederSlotB = new List<int> { 320, 210, 60, 60 },
+                HungerRegion = new List<int> { 2400, 1700, 150, 30 },
+                BagGrid = new List<int> { 660, 150, 408, 408 },
+                BagSlot = new List<int> { 660, 150, 51, 51 },
+                FoodCells = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
+            };
+            loader.SaveLocal(local);
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal(new List<int> { 815, 1735 }, cfg.Pet.MenuButton);
+            Assert.Equal(new List<int> { 900, 1400 }, cfg.Pet.FeedIcon);
+            Assert.Equal(new List<int> { 590, 200, 120, 30 }, cfg.Pet.ToggleLabel);
+            Assert.Equal(new List<int> { 2400, 1700, 150, 30 }, cfg.Pet.HungerRegion);
+            Assert.Equal(3, cfg.Pet.PageTabs.Count);
+            Assert.Equal(2, cfg.Pet.FoodCells.Count);
+            Assert.Equal(new List<int> { 660, 150, 408, 408 }, cfg.Pet.BagGrid);
+            Assert.Equal(200, cfg.Pet.LoadMinutes);   // 600 items at 3/min
+
+            // The two grids are independent calibrations, and this is the assertion that keeps them so.
+            Assert.Null(cfg.BuySell.BagGrid);
+
+            // A zero-sized rectangle is not a calibration and must not be adopted — the same guard the
+            // buy/sell grid gets. Without it all 64 derived centres land on the same pixel.
+            local.Pet.BagGrid = new List<int> { 0, 0, 0, 0 };
+            new ConfigLoader(dir).SaveLocal(local);
+            Assert.Null(new ConfigLoader(dir).Load().Pet.BagGrid);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // Presets used to live in defaults.yaml. SaveDefaults no longer writes them, so the first Save
     // on any other tab rewrites that file without a spammer block — and on a machine that only ever
     // ran the older build, that deleted the player's only copy. Load() adopts them into local.yaml

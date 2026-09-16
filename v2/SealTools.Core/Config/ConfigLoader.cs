@@ -203,6 +203,24 @@ public sealed class ConfigLoader
                     defaults.BuySell.Presets[name] = preset;
         }
 
+        if (local.Pet is { } pet)
+        {
+            if (IsPoint(pet.MenuButton)) defaults.Pet.MenuButton = pet.MenuButton;
+            if (IsPoint(pet.FeedIcon)) defaults.Pet.FeedIcon = pet.FeedIcon;
+            if (IsPoint(pet.DialogMax)) defaults.Pet.DialogMax = pet.DialogMax;
+            if (IsPoint(pet.CloseButton)) defaults.Pet.CloseButton = pet.CloseButton;
+            if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
+            if (BagGrid.IsValidRect(pet.ToggleLabel)) defaults.Pet.ToggleLabel = pet.ToggleLabel;
+            if (BagGrid.IsValidRect(pet.FeederSlotA)) defaults.Pet.FeederSlotA = pet.FeederSlotA;
+            if (BagGrid.IsValidRect(pet.FeederSlotB)) defaults.Pet.FeederSlotB = pet.FeederSlotB;
+            if (BagGrid.IsValidRect(pet.HungerRegion)) defaults.Pet.HungerRegion = pet.HungerRegion;
+            // The boarding bag's grid, deliberately separate from BuySell's — the bag sits somewhere
+            // else in this flow, so borrowing those numbers would aim every cell at the wrong item.
+            if (BagGrid.IsValidRect(pet.BagGrid)) defaults.Pet.BagGrid = pet.BagGrid;
+            if (BagGrid.IsValidRect(pet.BagSlot)) defaults.Pet.BagSlot = pet.BagSlot;
+            if (pet.FoodCells is { Count: > 0 }) defaults.Pet.FoodCells = pet.FoodCells;
+        }
+
         // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
         // calibration — not in the portable defaults.yaml that publish.bat ships. Merged per preset
         // name rather than wholesale, so a preset added by hand to defaults.yaml would survive.
@@ -279,6 +297,7 @@ public sealed class ConfigLoader
         public LocalUi? Ui { get; set; }
         public LocalSpammer? Spammer { get; set; }
         public LocalBuySell? BuySell { get; set; }
+        public LocalPet? Pet { get; set; }
     }
 
     /// <summary>The buy/sell tool's geometry and presets. Machine-specific like the gem positions —
@@ -311,6 +330,24 @@ public sealed class ConfigLoader
 
         /// <summary>Hard per-run ceiling on slots sold.</summary>
         public int? SellCap { get; set; }
+    }
+
+    /// <summary>The pet food auto-replacement geometry (see <see cref="PetConfig"/>). Machine-specific
+    /// in full — including the bag grid, which is NOT the same one the shop opens beside.</summary>
+    public sealed class LocalPet
+    {
+        public List<int>? MenuButton { get; set; }
+        public List<int>? FeedIcon { get; set; }
+        public List<int>? DialogMax { get; set; }
+        public List<int>? CloseButton { get; set; }
+        public List<List<int>>? PageTabs { get; set; }
+        public List<int>? ToggleLabel { get; set; }
+        public List<int>? FeederSlotA { get; set; }
+        public List<int>? FeederSlotB { get; set; }
+        public List<int>? HungerRegion { get; set; }
+        public List<int>? BagGrid { get; set; }
+        public List<int>? BagSlot { get; set; }
+        public List<List<int>>? FoodCells { get; set; }
     }
 
     private static bool IsPoint(List<int>? p) => p is { Count: 2 };

@@ -160,6 +160,20 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The "what is set so far" list on the Buy/Sell calibrate tab.</summary>
     private TextBlock? _bsChecklist;
 
+    // Pet calibrator state. Deliberately its own capture and canvas rather than sharing the buy/sell
+    // one: the two are marked against different screens (the shop vs the boarding window), and a
+    // shared capture would let a mark be taken against the wrong one without anything saying so.
+    private TextBlock? _petHint;
+    private Image? _petImage;
+    private Canvas? _petCanvas;
+    private BitmapSource? _petScreenshot;
+    private string? _petDragTarget;
+    private Point? _petDragStart;
+    private Rectangle? _petMarquee;
+    /// <summary>Which single point the calibrator is waiting for — see <see cref="PetArmPoint"/>.</summary>
+    private string? _petPointTarget;
+    private TextBlock? _petChecklist;
+
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
     /// <summary>The row picker on the Buy tab, kept as a field because RefreshBuyPresets fills it —
@@ -646,6 +660,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
         ConfigTabs.Items.Add(BuildBuySellCalibrateTab());
+        ConfigTabs.Items.Add(BuildPetCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSetupTab());
         ConfigTabs.Items.Add(BuildHotkeysTab());
@@ -4273,6 +4288,471 @@ public partial class MainWindow : FluentWindow, IDisposable
         return MakeTab("Buy / Sell", panel);
     }
 
+    // ── Pet food auto-replacement — calibrator ──────────────────────────────
+    //
+    // Marks the boarding (代養) flow; see docs/PLAN-PET-AUTOFEED.md. Two things make this tab unlike
+    // the others:
+    //
+    //   * The marks live on TWO screens that cannot both be up. 目錄 and the pet feed icon are on the
+    //     main screen with the icon panel open; everything else needs the boarding window, which
+    //     covers that panel. So the tab expects a capture per screen. Marks are written to config as
+    //     they are placed, so re-capturing only swaps the background and never loses one.
+    //   * The bag here is NOT the bag the shop opens beside. Same 8x8 game grid, different place on
+    //     screen — so it gets its own two-corner drag. Sharing the buy/sell numbers would aim every
+    //     cell at the wrong item, which is the one failure in this feature with no undo.
+    private TabItem BuildPetCalibrateTab()
+    {
+        var panel = new StackPanel();
+
+        var hint = Mono();
+        hint.Text = "Capture with the icon panel open first (click 目錄), mark those two points, then " +
+                    "capture again with the boarding window up and mark the rest.";
+        _petHint = hint;
+
+        var image = new Image { Stretch = Stretch.Uniform };
+        var canvas = new Canvas { Background = Brushes.Transparent, MinHeight = 300 };
+        _petImage = image;
+        _petCanvas = canvas;
+        canvas.MouseDown += (_, e) => PetMouseDown(canvas, e.GetPosition(canvas));
+        canvas.MouseMove += (_, e) => PetMouseMove(canvas, e.GetPosition(canvas));
+        canvas.MouseUp += (_, e) => PetMouseUp(canvas, e.GetPosition(canvas));
+        canvas.SizeChanged += (_, _) => PetRedrawOverlay();
+
+        var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
+        grid.Children.Add(image);
+        grid.Children.Add(canvas);
+
+        var capture = MakeButton("Capture game", ControlAppearance.Primary);
+        capture.Click += (_, _) => PetCapture();
+        var captureRow = new StackPanel { Orientation = Orientation.Horizontal };
+        captureRow.Children.Add(capture);
+
+        panel.Children.Add(Section("Capture",
+            Hint("Expect two captures, because the marks live on screens that cannot both be up. " +
+                 "FIRST: open the icon panel (click 目錄) and mark those two points. THEN: open the " +
+                 "boarding window and press Capture again. Marks already placed are kept — each is " +
+                 "written as you make it — so re-capturing only swaps the background."),
+            captureRow,
+            grid));
+
+        var markMenu = MakeButton("Mark 目錄", ControlAppearance.Secondary);
+        markMenu.Click += (_, _) => PetArmPoint("menu");
+        var markFeed = MakeButton("Mark pet feed icon", ControlAppearance.Secondary);
+        markFeed.Click += (_, _) => PetArmPoint("feed");
+        var markMax = MakeButton("Mark count dialog MAX", ControlAppearance.Secondary);
+        markMax.Click += (_, _) => PetArmPoint("max");
+        var markClose = MakeButton("Mark boarding X", ControlAppearance.Secondary);
+        markClose.Click += (_, _) => PetArmPoint("close");
+        var pointRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { markMenu, markFeed, markMax, markClose })
+        {
+            b.Margin = new Thickness(0, 0, 6, 0);
+            pointRow.Children.Add(b);
+        }
+
+        panel.Children.Add(Section("How it gets to the feeder",
+            Hint("目錄 is the button in the bottom-left icon cluster; it opens a panel of eight round " +
+                 "icons, and the pet feed icon in that panel is the chick holding a bottle. Both are " +
+                 "POINTS — they never move, so nothing has to be found. Do NOT mark the pet cartoon " +
+                 "image on the main screen: that opens the manual feeding window, a different system " +
+                 "holding a different food."),
+            LabeledField("Mark", pointRow)));
+
+        var tabRow = new StackPanel { Orientation = Orientation.Horizontal };
+        for (int i = 1; i <= 3; i++)
+        {
+            var page = i;
+            var b = MakeButton($"Mark ITEM{page}", ControlAppearance.Secondary);
+            b.Click += (_, _) => PetArmPoint($"tab{page}");
+            b.Margin = new Thickness(0, 0, 6, 0);
+            tabRow.Children.Add(b);
+        }
+
+        panel.Children.Add(Section("Bag pages",
+            Hint("ITEM1 / ITEM2 / ITEM3 are ABSOLUTE tabs: clicking one lands on that page whatever " +
+                 "page you were on. That is why they are three marks rather than a next/previous " +
+                 "pair — there is nothing to read back and nothing to lose count of."),
+            LabeledField("Mark", tabRow)));
+
+        var drawToggle = MakeButton("Draw toggle label", ControlAppearance.Secondary);
+        drawToggle.Click += (_, _) => PetArmDrag("toggle");
+        var drawFeeder = MakeButton("Draw feeder slots", ControlAppearance.Secondary);
+        drawFeeder.Click += (_, _) => PetArmDrag("feederA");
+        var drawHunger = MakeButton("Draw hunger readout", ControlAppearance.Secondary);
+        drawHunger.Click += (_, _) => PetArmDrag("hunger");
+        var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { drawToggle, drawFeeder, drawHunger })
+        {
+            b.Margin = new Thickness(0, 0, 6, 0);
+            boxRow.Children.Add(b);
+        }
+
+        panel.Children.Add(Section("What the boarding window says",
+            Hint("Toggle label — the 開始代養 / 結束代養 button. It is ONE button that both starts and " +
+                 "ends boarding, so its label says whether the pet is being fed right now; that is the " +
+                 "strongest state read there is. Box the label itself, not the whole button.\n" +
+                 "Feeder slots — drag the first, then it asks for the second. Each is the empty-check " +
+                 "crop, which is how the tool tells a loaded slot from an empty one.\n" +
+                 "Hunger readout — 肚子餓(nn%) at the bottom right. This is the POLLING trigger, " +
+                 "because it is visible without opening any window. The toggle is not."),
+            LabeledField("Draw", boxRow)));
+
+        var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
+        drawGrid.Click += (_, _) => PetArmDrag("grid");
+        var drawSlot = MakeButton("Draw one slot", ControlAppearance.Secondary);
+        drawSlot.Click += (_, _) => PetArmDrag("slot");
+        var showCentres = MakeButton("Show 64 centres", ControlAppearance.Secondary);
+        showCentres.Click += (_, _) => PetShowCentres();
+        var gridRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { drawGrid, drawSlot, showCentres })
+        {
+            b.Margin = new Thickness(0, 0, 6, 0);
+            gridRow.Children.Add(b);
+        }
+
+        panel.Children.Add(Section("Bag grid (this flow's own)",
+            Hint("The bag the boarding window opens is at a DIFFERENT place from the one the shop " +
+                 "opens beside, so this is its own calibration — the Buy/Sell numbers are NOT reused. " +
+                 "Same method though: a box around the whole 8x8, then a second around one slot as the " +
+                 "uniformity check. \"Show 64 centres\" draws where the tool would right-click; if the " +
+                 "dots miss the slots, re-drag the grid area."),
+            LabeledField("Draw", gridRow)));
+
+        _petChecklist = Mono();
+        _petChecklist.Text = "nothing captured yet";
+        panel.Children.Add(Section("Setup so far",
+            Hint("Filled in as you mark things. Saving with a gap is allowed — the tool says what is " +
+                 "missing rather than clicking into empty screen."),
+            _petChecklist));
+
+        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
+        save.Click += (_, _) => PetSave();
+        panel.Children.Add(Section("Save", save));
+
+        panel.Children.Add(Section("Result", hint));
+
+        RefreshPetChecklist();
+        return MakeTab("Calibrate Pet", panel);
+    }
+
+    /// <summary>Arms one of the single-point marks — they are one click each, and the next click on
+    /// the capture fills whichever is armed.</summary>
+    private void PetArmPoint(string which)
+    {
+        if (_petScreenshot == null)
+        {
+            _petHint!.Text = "Capture the game first.";
+            return;
+        }
+        _petPointTarget = which;
+        _petHint!.Text = which switch
+        {
+            "menu" => "Click 目錄 — the button in the bottom-left icon cluster.",
+            "feed" => "Click the pet feed icon in the panel that opens: the chick holding a bottle.",
+            "max" => "Click MAX in the boarding count dialog. If it turns out this dialog has no MAX, " +
+                     "say so — the flow changes shape rather than just losing a point.",
+            "close" => "Click the BOARDING window's X. There are two X buttons on screen at once " +
+                       "(this one and the bag's), so make sure it is the boarding window's.",
+            _ => $"Click the {which.ToUpperInvariant().Replace("TAB", "-ITEM")} tab in the bag.",
+        };
+    }
+
+    private void PetSetPoint(string which, List<int> point)
+    {
+        var pet = _service.Config.Pet;
+        switch (which)
+        {
+            case "menu": pet.MenuButton = point; break;
+            case "feed": pet.FeedIcon = point; break;
+            case "max": pet.DialogMax = point; break;
+            case "close": pet.CloseButton = point; break;
+            default:
+                var page = which[^1] - '1';
+                while (pet.PageTabs.Count <= page) pet.PageTabs.Add(new List<int>());
+                pet.PageTabs[page] = point;
+                break;
+        }
+
+        PetRedrawOverlay();
+        _petHint!.Text = which switch
+        {
+            "menu" => $"目錄 at ({point[0]},{point[1]}).",
+            "feed" => $"Pet feed icon at ({point[0]},{point[1]}).",
+            "max" => $"Count dialog MAX at ({point[0]},{point[1]}).",
+            "close" => $"Boarding X at ({point[0]},{point[1]}).",
+            _ => $"ITEM{which[^1]} tab at ({point[0]},{point[1]}).",
+        };
+    }
+
+    private void PetArmDrag(string target)
+    {
+        if (_petScreenshot == null)
+        {
+            _petHint!.Text = "Capture the game first.";
+            return;
+        }
+        _petDragTarget = target;
+        _petHint!.Text = target switch
+        {
+            "toggle" => "Drag a box around the 開始代養 / 結束代養 label — the text itself, not the button.",
+            "feederA" => "Drag a box around the FIRST feeder slot.",
+            "feederB" => "Drag a box around the SECOND feeder slot.",
+            "hunger" => "Drag a box around 肚子餓(nn%) at the bottom right.",
+            "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
+            _ => "Drag a box around ONE slot.",
+        };
+    }
+
+    private async void PetCapture()
+    {
+        var shot = await CaptureScreenshotAsync();
+        if (shot == null)
+        {
+            _petHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        _petScreenshot = shot.Value.Image;
+        _petImage!.Source = shot.Value.Image;
+        _petDragTarget = null;
+        _petDragStart = null;
+        _petMarquee = null;
+        _petCanvas!.Children.Clear();
+        PetRedrawOverlay();
+        _petHint!.Text = "Captured. Marks already placed are kept — if what you need next is not on " +
+            "this screen, open it in the game and capture again.";
+    }
+
+    private void PetMouseDown(Canvas canvas, Point p)
+    {
+        if (_petScreenshot == null) return;
+
+        // A single-point mark is finished by the click itself, unlike a box which needs the drag to
+        // end before it means anything.
+        if (_petPointTarget != null)
+        {
+            var natural = CanvasToNatural(p, _petScreenshot, _petCanvas!);
+            PetSetPoint(_petPointTarget, new List<int>
+            {
+                (int)Math.Round(natural.X), (int)Math.Round(natural.Y),
+            });
+            _petPointTarget = null;
+            return;
+        }
+
+        if (_petDragTarget == null) return;
+        _petDragStart = p;
+        _petMarquee = new Rectangle
+        {
+            Stroke = Brushes.Magenta,
+            StrokeThickness = 2,
+            StrokeDashArray = new DoubleCollection { 4, 2 },
+        };
+        Canvas.SetLeft(_petMarquee, p.X);
+        Canvas.SetTop(_petMarquee, p.Y);
+        canvas.Children.Add(_petMarquee);
+    }
+
+    private void PetMouseMove(Canvas canvas, Point p)
+    {
+        if (_petMarquee == null || _petDragStart == null) return;
+        Canvas.SetLeft(_petMarquee, Math.Min(_petDragStart.Value.X, p.X));
+        Canvas.SetTop(_petMarquee, Math.Min(_petDragStart.Value.Y, p.Y));
+        _petMarquee.Width = Math.Abs(p.X - _petDragStart.Value.X);
+        _petMarquee.Height = Math.Abs(p.Y - _petDragStart.Value.Y);
+    }
+
+    private void PetMouseUp(Canvas canvas, Point p)
+    {
+        if (_petMarquee == null || _petDragStart == null || _petScreenshot == null || _petCanvas == null) return;
+
+        var a = CanvasToNatural(_petDragStart.Value, _petScreenshot, _petCanvas);
+        var b = CanvasToNatural(p, _petScreenshot, _petCanvas);
+        var rect = new List<int>
+        {
+            (int)Math.Round(Math.Min(a.X, b.X)),
+            (int)Math.Round(Math.Min(a.Y, b.Y)),
+            (int)Math.Round(Math.Abs(b.X - a.X)),
+            (int)Math.Round(Math.Abs(b.Y - a.Y)),
+        };
+
+        canvas.Children.Remove(_petMarquee);
+        _petMarquee = null;
+        _petDragStart = null;
+
+        // Smaller floor than the buy/sell tab's 20 px: the hunger readout and the toggle label are
+        // text-sized boxes, and 20 would reject legitimate ones. The 6 px inset the empty check uses
+        // needs room, so this still refuses a slip of the mouse.
+        if (rect[2] < 10 || rect[3] < 10)
+        {
+            _petHint!.Text = $"That box is only {rect[2]}x{rect[3]} px — too small, drag again.";
+            return;
+        }
+
+        var pet = _service.Config.Pet;
+        switch (_petDragTarget)
+        {
+            case "toggle":
+                pet.ToggleLabel = rect;
+                _petDragTarget = null;
+                _petHint!.Text = $"Toggle label {rect[2]}x{rect[3]} — the tool reads this to tell a " +
+                    "pet being fed from one that is not.";
+                break;
+            case "feederA":
+                pet.FeederSlotA = rect;
+                _petDragTarget = "feederB";
+                _petHint!.Text = $"First feeder slot {rect[2]}x{rect[3]}. Now drag the SECOND.";
+                break;
+            case "feederB":
+                pet.FeederSlotB = rect;
+                _petDragTarget = null;
+                _petHint!.Text = $"Second feeder slot {rect[2]}x{rect[3]}.";
+                break;
+            case "hunger":
+                pet.HungerRegion = rect;
+                _petDragTarget = null;
+                _petHint!.Text = $"Hunger readout {rect[2]}x{rect[3]}.";
+                break;
+            case "grid":
+                pet.BagGrid = rect;
+                _petDragTarget = "slot";
+                _petHint!.Text = $"Grid area {rect[2]}x{rect[3]}. Now drag a box around ONE slot.";
+                break;
+            default:
+                pet.BagSlot = rect;
+                _petDragTarget = null;
+                var gap = BagGrid.ImpliedGap(pet.BagGrid ?? new List<int>(), rect);
+                _petHint!.Text = $"Slot {rect[2]}x{rect[3]}, implying a {Math.Round(gap)} px gap. " +
+                    (BagGrid.Disagreement(pet.BagGrid ?? new List<int>(), rect)
+                     ?? "Grid and slot box agree.");
+                break;
+        }
+
+        PetRedrawOverlay();
+        RefreshPetChecklist();
+    }
+
+    /// <summary>Redraws every pet mark from the current config. Colour-coded so it is obvious which
+    /// mark is which on a capture that carries two windows' worth of UI.</summary>
+    private void PetRedrawOverlay()
+    {
+        if (_petScreenshot == null || _petCanvas == null) return;
+
+        _petCanvas.Children.Clear();
+        var pet = _service.Config.Pet;
+        var canvas = _petCanvas;
+        var shot = _petScreenshot;
+
+        if (BagGrid.IsValidRect(pet.BagGrid))
+        {
+            foreach (var (x, y) in BagGrid.Centres(pet.BagGrid!))
+                Dot(canvas, shot, new Point(x, y), Brushes.Magenta, 8);
+        }
+
+        if (pet.MenuButton is { Count: 2 } mb) Dot(canvas, shot, new Point(mb[0], mb[1]), Brushes.Gold, 16);
+        if (pet.FeedIcon is { Count: 2 } fi) Dot(canvas, shot, new Point(fi[0], fi[1]), Brushes.Orange, 16);
+        if (pet.DialogMax is { Count: 2 } dm) Dot(canvas, shot, new Point(dm[0], dm[1]), Brushes.OrangeRed, 14);
+        if (pet.CloseButton is { Count: 2 } cb) Dot(canvas, shot, new Point(cb[0], cb[1]), Brushes.Crimson, 14);
+
+        // Page tabs drawn at growing sizes, so a swapped pair reads as wrong rather than silently
+        // sending the tool to the wrong page.
+        for (int i = 0; i < pet.PageTabs.Count; i++)
+            if (pet.PageTabs[i] is { Count: 2 } tab)
+                Dot(canvas, shot, new Point(tab[0], tab[1]), Brushes.DeepSkyBlue, 12 + i * 3);
+
+        if (BagGrid.IsValidRect(pet.ToggleLabel)) Box(canvas, shot, pet.ToggleLabel!, Brushes.LimeGreen);
+        if (BagGrid.IsValidRect(pet.FeederSlotA)) Box(canvas, shot, pet.FeederSlotA!, Brushes.Yellow);
+        if (BagGrid.IsValidRect(pet.FeederSlotB)) Box(canvas, shot, pet.FeederSlotB!, Brushes.Yellow);
+        if (BagGrid.IsValidRect(pet.HungerRegion)) Box(canvas, shot, pet.HungerRegion!, Brushes.Violet);
+        if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
+
+        RefreshPetChecklist();
+    }
+
+    /// <summary>Draws every slot centre the grid implies — the check that the bag really is uniform,
+    /// and the only way to see it is.</summary>
+    private void PetShowCentres()
+    {
+        if (_petScreenshot == null)
+        {
+            _petHint!.Text = "Capture the game first.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(_service.Config.Pet.BagGrid))
+        {
+            _petHint!.Text = "Draw the grid area first.";
+            return;
+        }
+
+        PetRedrawOverlay();
+        _petHint!.Text = "Drew the 64 slot centres. If the magenta dots don't sit on the bag slots, " +
+            "re-drag the grid area. " +
+            (BagGrid.Disagreement(_service.Config.Pet.BagGrid!, _service.Config.Pet.BagSlot ?? new List<int>())
+             ?? "Grid and slot box agree.");
+    }
+
+    private void RefreshPetChecklist()
+    {
+        if (_petChecklist == null) return;
+        var pet = _service.Config.Pet;
+
+        string Mark(bool ok, string label) => (ok ? "  ok   " : "  --   ") + label;
+
+        var tabs = 0;
+        foreach (var t in pet.PageTabs) if (t is { Count: 2 }) tabs++;
+
+        var lines = new List<string>
+        {
+            Mark(pet.MenuButton is { Count: 2 }, "目錄 button           (click)"),
+            Mark(pet.FeedIcon is { Count: 2 }, "pet feed icon       (click)"),
+            Mark(pet.DialogMax is { Count: 2 }, "count dialog MAX    (click)"),
+            Mark(pet.CloseButton is { Count: 2 }, "boarding X          (click)"),
+            Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
+            Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding toggle label (drag)"),
+            Mark(BagGrid.IsValidRect(pet.FeederSlotA), "feeder slot 1        (drag)"),
+            Mark(BagGrid.IsValidRect(pet.FeederSlotB), "feeder slot 2        (drag)"),
+            Mark(BagGrid.IsValidRect(pet.HungerRegion), "hunger readout       (drag)"),
+            Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
+            Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
+        };
+
+        _petChecklist.Text = string.Join("\n", lines);
+    }
+
+    private void PetSave()
+    {
+        var pet = _service.Config.Pet;
+
+        // Only the grid pair gets a blocking check: a mis-dragged grid aims every click at the wrong
+        // cell, and unlike a mis-aimed sale there is no undo. The rest save with gaps on purpose, so
+        // the tool can say what is missing rather than refusing to open.
+        if (BagGrid.IsValidRect(pet.BagGrid) && BagGrid.IsValidRect(pet.BagSlot) &&
+            BagGrid.Disagreement(pet.BagGrid!, pet.BagSlot!) is { } problem)
+        {
+            _petHint!.Text = "Not saved: " + problem;
+            return;
+        }
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.Pet = new ConfigLoader.LocalPet
+        {
+            MenuButton = pet.MenuButton,
+            FeedIcon = pet.FeedIcon,
+            DialogMax = pet.DialogMax,
+            CloseButton = pet.CloseButton,
+            PageTabs = pet.PageTabs,
+            ToggleLabel = pet.ToggleLabel,
+            FeederSlotA = pet.FeederSlotA,
+            FeederSlotB = pet.FeederSlotB,
+            HungerRegion = pet.HungerRegion,
+            BagGrid = pet.BagGrid,
+            BagSlot = pet.BagSlot,
+            FoodCells = pet.FoodCells,
+        };
+        TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
+            "Saved to config\\local.yaml. All of it is machine-specific, so none of it ships.");
+    }
+
     /// <summary>Arms one of the four single-point marks — they are one click each, and the next click
     /// on the capture fills whichever is armed.</summary>
     private void ArmPoint(string which)
@@ -4452,11 +4932,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// visible immediately — without it a click looks like it did nothing, which is exactly how the
     /// shop marks felt.</summary>
     /// <summary>A calibrated rectangle as an outline on the capture.</summary>
-    private void Box(List<int> rect, Brush stroke)
+    private static void Box(Canvas? canvas, BitmapSource? shot, List<int> rect, Brush stroke)
     {
-        if (!CanvasReady()) return;
-        var a = NaturalToCanvas(new Point(rect[0], rect[1]), _bsScreenshot!, _bsCanvas!);
-        var b = NaturalToCanvas(new Point(rect[0] + rect[2], rect[1] + rect[3]), _bsScreenshot!, _bsCanvas!);
+        if (!CanvasReady(canvas, shot)) return;
+        var a = NaturalToCanvas(new Point(rect[0], rect[1]), shot!, canvas!);
+        var b = NaturalToCanvas(new Point(rect[0] + rect[2], rect[1] + rect[3]), shot!, canvas!);
         var box = new Rectangle
         {
             Width = Math.Max(1, b.X - a.X),
@@ -4467,7 +4947,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
         Canvas.SetLeft(box, a.X);
         Canvas.SetTop(box, a.Y);
-        _bsCanvas!.Children.Add(box);
+        canvas!.Children.Add(box);
     }
 
     private void BsRedrawOverlay()
@@ -4476,25 +4956,27 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         _bsCanvas.Children.Clear();
         var bs = _service.Config.BuySell;
+        var canvas = _bsCanvas;
+        var shot = _bsScreenshot;
 
         if (BagGrid.IsValidRect(bs.BagGrid))
         {
             foreach (var (x, y) in BagGrid.Centres(bs.BagGrid!))
-                Dot(new Point(x, y), Brushes.Magenta, 8);
+                Dot(canvas, shot, new Point(x, y), Brushes.Magenta, 8);
         }
 
         // Distinct colours so it is obvious which mark is which on a busy capture.
-        if (bs.ScrollPoint is { Count: 2 } sp) Dot(new Point(sp[0], sp[1]), Brushes.Yellow, 14);
+        if (bs.ScrollPoint is { Count: 2 } sp) Dot(canvas, shot, new Point(sp[0], sp[1]), Brushes.Yellow, 14);
         // The list region and the rows derived from it — the same idea as the 64 bag centres, and
         // the check that matters: if these don't sit on the rows, the region drag is wrong.
         if (BagGrid.IsValidRect(bs.ShopRegion))
         {
-            Box(bs.ShopRegion!, Brushes.DeepSkyBlue);
+            Box(canvas, shot, bs.ShopRegion!, Brushes.DeepSkyBlue);
             foreach (var (x, y) in ShopGeometry.RowCentres(bs.ShopRegion, bs.ShopRows))
-                Dot(new Point(x, y), Brushes.LimeGreen, 10);
+                Dot(canvas, shot, new Point(x, y), Brushes.LimeGreen, 10);
         }
 
-        if (bs.MaxButton is { Count: 2 } mb) Dot(new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
+        if (bs.MaxButton is { Count: 2 } mb) Dot(canvas, shot, new Point(mb[0], mb[1]), Brushes.OrangeRed, 14);
 
         RefreshCalibChecklist();
     }
@@ -4504,11 +4986,15 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>False until the canvas has been laid out. Drawing before that would place markers as
     /// if the scale were 1, i.e. silently in the wrong spot — better to draw nothing and let the
     /// resize handler do it once the size is known.</summary>
-    private bool CanvasReady() => _bsScreenshot != null && _bsCanvas is { ActualWidth: > 0, ActualHeight: > 0 };
+    private static bool CanvasReady(Canvas? canvas, BitmapSource? shot) =>
+        shot != null && canvas is { ActualWidth: > 0, ActualHeight: > 0 };
 
-    private void Dot(Point natural, Brush stroke, double size)
+    /// <summary>One marker at a natural (image) coordinate. Takes its canvas explicitly rather than
+    /// reading the buy/sell fields, because there is more than one calibrator on this window and each
+    /// draws on its own capture.</summary>
+    private static void Dot(Canvas? canvas, BitmapSource? shot, Point natural, Brush stroke, double size)
     {
-        if (!CanvasReady()) return;
+        if (!CanvasReady(canvas, shot)) return;
         var dot = new Ellipse
         {
             Width = size,
@@ -4517,10 +5003,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             StrokeThickness = 2,
             Fill = Brushes.Transparent,
         };
-        var p = NaturalToCanvas(natural, _bsScreenshot!, _bsCanvas!);
+        var p = NaturalToCanvas(natural, shot!, canvas!);
         Canvas.SetLeft(dot, p.X - size / 2);
         Canvas.SetTop(dot, p.Y - size / 2);
-        _bsCanvas!.Children.Add(dot);
+        canvas!.Children.Add(dot);
     }
 
     /// <summary>Which marks are set and which are missing. Saving with a gap leaves the tool refusing
