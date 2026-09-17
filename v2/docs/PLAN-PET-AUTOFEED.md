@@ -533,3 +533,62 @@ something the tool checks.
 - **Stage 5.** The long job (2 d 22 h). Same flow, different config, and the one where a bug is
   expensive — so it comes after 6 is trusted.
 - **Death, revive, and the rest of the watcher.** [PLAN-WATCHER.md](PLAN-WATCHER.md).
+
+---
+
+## 11. The multi-pet direction
+
+**Not built, and deliberately not structurally prepared for yet.** Recorded because it changes what
+counts as a good decision *now*, and because the restructure is cheap while it is imagined and
+expensive once the code assumes one pet everywhere.
+
+### What the window already supports
+
+`PET BREED` shows **four rows**: one active, three locked behind `需要擴張欄位` and the paid
+`+ 15 Days` / `+ 30 Days` service. So four pets can be boarded at once once the service is paid for.
+The rows are already there; this is not a redesign of the window.
+
+### Why it is not just "the same thing four times"
+
+| | Today (one row) | Four rows |
+|---|---|---|
+| Start button | one, marked | **one per row** (believed — see below) |
+| Food location | one set of cells | **per row**, and possibly on different bag pages |
+| Food type | whatever you locked | **can differ**, because the pets can be at different stages |
+| Schedule | one clock | **per row** — a stage-6 pet burns 3/min and a stage-7 4/min, so one timer is wrong for one of them |
+
+The food point is the one that catches people out: [PET-DATA.md](PET-DATA.md) gives 一般宠物食物 for
+stages 1–3, 营养满分宠物食物 for 4–5 and 高级宠物食物 for 6–7, so two pets on different stages are fed
+from two different items, in two different places.
+
+### Two directions, and which to take
+
+**B — custom setup (recommended first).** You mark each row: which cell the pet goes back into, which
+cells hold that row's food. The tool reloads on schedule. This is what is built today, extended from
+one row to N. It is honest about who decides, and it needs no new reading.
+
+**A — automatic (later, if it earns its place).** The tool finds whatever pet is not yet `+9` 100 %,
+puts it in, and feeds it the right food for its stage. Feasible because **hovering a pet's bag icon
+shows its name and growth** (player, 2026-09-17) — and the name resolves to a stage through the table in
+[PET-DATA.md](PET-DATA.md), which is already scraped. So A reads something that exists rather than
+inventing a signal.
+
+What A costs, stated plainly: a hover-and-wait per pet, an OCR of the tooltip, and the cursor moving
+around the bag. That is affordable **once, as a setup scan** — "which pet should I board?" — and not
+affordable per reload. So A is a chooser bolted onto B, not a replacement for it.
+
+**Recommendation: build B, and treat A as a natural extension of it.** A's hard part — identifying a
+pet and its stage — is exactly the part that would be wasted if B's per-row setup is never generalised.
+
+### UI: a row selector, not four tabs
+
+Four separate tabs would put each pet's marks out of sight of the others, and the likeliest mistake is
+**which row you are editing** — the same mistake the bag picker already guards against by painting the
+active page. One screen with `Row 1 … Row 4` where the page selector sits makes that visible, and makes
+adding a row a click rather than a new tab.
+
+### What to do before building any of it
+
+**Buy one slot and capture the second row.** Two of the three unknowns are answerable only from a
+screenshot of an unlocked row — whether the start button is per row, and whether the food slots are
+per row or shared — and a restructure built on a guess is a restructure done twice.
