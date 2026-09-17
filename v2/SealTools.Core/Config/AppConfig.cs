@@ -19,6 +19,43 @@ public sealed class AppConfig
     public SpammerConfig Spammer { get; set; } = new();
     public BuySellConfig BuySell { get; set; } = new();
     public PetConfig Pet { get; set; } = new();
+    public TooltipConfig Tooltip { get; set; } = new();
+}
+
+/// <summary>Where the game's hover panel sits relative to the cursor — see
+/// docs/PLAN-HOVER-INFO.md.
+///
+/// A capability, not a setting of any one tool: the panel is anchored to the pointer, so its position
+/// relative to the pointer is the same everywhere in the game even though its SIZE varies by what is
+/// under it. Calibrating that offset once serves every hover-read this suite ever does — a pet's name
+/// and growth, a food stack's count, whatever wants one next.
+///
+/// All four values are client-relative PHYSICAL pixels, like every other calibrated coordinate here,
+/// which is why they belong in local.yaml: a box measured at one machine's scale means nothing at
+/// another's.</summary>
+public sealed class TooltipConfig
+{
+    /// <summary>Panel's left edge relative to the cursor. Negative when the panel sits left of the
+    /// pointer, which is what happens near a screen edge if the game flips it.</summary>
+    public int OffsetX { get; set; }
+
+    /// <summary>Panel's top edge relative to the cursor.</summary>
+    public int OffsetY { get; set; }
+
+    /// <summary>The captured box's size. Deliberately sized for the LARGEST panel rather than one per
+    /// item type: a smaller panel then leaves background behind it, which OCR ignores, where a
+    /// per-type box would stop the offset being universal — the entire point of calibrating it.</summary>
+    public int Width { get; set; }
+    public int Height { get; set; }
+
+    /// <summary>How long the panel takes to appear after the cursor settles on an item. Too short and
+    /// the capture finds an empty region, which reads exactly like "nothing here" — the same class of
+    /// silent failure as a click that outruns an animation.</summary>
+    public int HoverDelayMs { get; set; } = 700;
+
+    /// <summary>True once a box has been dragged. The offset alone is meaningless without a size to
+    /// read, and a size without an offset would read the wrong place.</summary>
+    public bool IsSet => Width > 0 && Height > 0;
 }
 
 /// <summary>Geometry for the pet food auto-replacement tool — the boarding (代養) flow. Every value

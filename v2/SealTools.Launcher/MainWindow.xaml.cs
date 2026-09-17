@@ -161,6 +161,20 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The "what is set so far" list on the Buy/Sell calibrate tab.</summary>
     private TextBlock? _bsChecklist;
 
+    // Hover-panel calibrator state.
+    private TextBlock? _tooltipHint;
+    private Image? _tooltipImage;
+    private Canvas? _tooltipCanvas;
+    private BitmapSource? _tooltipScreenshot;
+    /// <summary>The point the tool will park the cursor on so a panel comes up — marked on the capture,
+    /// then used by the hover button. Deliberately not persisted: it is a working position for this
+    /// calibration, not a fact about the machine.</summary>
+    private List<int>? _tooltipHoverPoint;
+    private bool _tooltipArmingPoint;
+    private bool _tooltipArmed;
+    private Point? _tooltipDragStart;
+    private Rectangle? _tooltipMarquee;
+
     // Pet calibrator state. Deliberately its own capture and canvas rather than sharing the buy/sell
     // one: the two are marked against different screens (the shop vs the boarding window), and a
     // shared capture would let a mark be taken against the wrong one without anything saying so.
@@ -676,6 +690,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
         ConfigTabs.Items.Add(BuildBuySellCalibrateTab());
         ConfigTabs.Items.Add(BuildPetCalibrateTab());
+        ConfigTabs.Items.Add(BuildTooltipCalibrateTab());
         ConfigTabs.Items.Add(BuildArduinoTab());
         ConfigTabs.Items.Add(BuildSetupTab());
         ConfigTabs.Items.Add(BuildHotkeysTab());
@@ -4322,6 +4337,286 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         RefreshCalibChecklist();
         return MakeTab("Buy / Sell", panel);
+    }
+
+    // ── Hover panel calibrator ──────────────────────────────────────────────
+    //
+    // Universal by design, which is why it is its own tab rather than a section of a tool's: the panel
+    // is anchored to the POINTER, so its offset from the pointer is the same everywhere in the game
+    // even though its SIZE varies by what is under it. One calibration therefore serves every
+    // hover-read this suite ever does. See docs/PLAN-HOVER-INFO.md.
+    //
+    // The tool PLACES the cursor rather than reading where it happens to be. That is what makes the
+    // offset exact: the pointer is at a coordinate the tool chose, so nothing has to be inferred from
+    // a cursor read taken at an uncertain moment — and the hover itself is reproducible instead of
+    // depending on the user holding still.
+    private TabItem BuildTooltipCalibrateTab()
+    {
+        var panel = new StackPanel();
+
+        var hint = Mono();
+        hint.Text = "Capture the game, mark the point to hover, then let the tool hover and capture again.";
+        _tooltipHint = hint;
+
+        var image = new Image { Stretch = Stretch.Uniform };
+        var canvas = new Canvas { Background = Brushes.Transparent, MinHeight = 300 };
+        _tooltipImage = image;
+        _tooltipCanvas = canvas;
+        canvas.MouseDown += (_, e) => TooltipMouseDown(canvas, e.GetPosition(canvas));
+        canvas.MouseMove += (_, e) => TooltipMouseMove(canvas, e.GetPosition(canvas));
+        canvas.MouseUp += (_, e) => TooltipMouseUp(canvas, e.GetPosition(canvas));
+        canvas.SizeChanged += (_, _) => TooltipRedraw();
+
+        var grid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
+        grid.Children.Add(image);
+        grid.Children.Add(canvas);
+
+        var capture = MakeButton("Capture game", ControlAppearance.Primary);
+        capture.Click += (_, _) => TooltipCapture();
+        var mark = MakeButton("Mark hover point", ControlAppearance.Secondary);
+        mark.Click += (_, _) => TooltipMarkHoverPoint();
+        var hover = MakeButton("Hover and capture", ControlAppearance.Primary);
+        hover.Click += (_, _) => TooltipHoverAndCapture();
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in new UiButton[] { capture, mark, hover })
+        {
+            b.Margin = new Thickness(0, 0, 6, 0);
+            row.Children.Add(b);
+        }
+
+        panel.Children.Add(Section("Measure the hover panel",
+            Hint("1. Capture game — with the bag or whatever holds the item open.\n" +
+                 "2. Mark hover point — click the item whose panel you want, in the capture. The tool " +
+                 "will park the cursor there, so pick one that reliably shows a panel.\n" +
+                 "3. Hover and capture — the tool moves the cursor there with the Arduino, clicks to " +
+                 "give the game focus, waits for the panel, and captures again. Then drag a box around " +
+                 "the panel.\n" +
+                 "The offset is worked out from the point the tool placed the cursor on, so nothing is " +
+                 "typed and nothing is eyeballed. Size the box for the LARGEST panel you care about — " +
+                 "a pet's is bigger than a food item's — because a smaller panel then just leaves " +
+                 "background behind it, which the read ignores. A box per item type would be tighter " +
+                 "and would stop the offset being universal, which is the whole point of it."),
+            LabeledField("Do", row),
+            grid));
+
+        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
+        save.Click += (_, _) => TooltipSave();
+        panel.Children.Add(Section("Save", save));
+
+        panel.Children.Add(Section("Result", hint));
+
+        return MakeTab("Calibrate Tooltip", panel);
+    }
+
+    private async void TooltipCapture()
+    {
+        // A plain capture, for marking the hover point on. The offset is NOT measured from this one.
+        var shot = await CaptureScreenshotAsync();
+        if (shot == null)
+        {
+            _tooltipHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        _tooltipScreenshot = shot.Value.Image;
+        _tooltipImage!.Source = shot.Value.Image;
+        _tooltipArmed = false;
+        _tooltipArmingPoint = false;
+        _tooltipDragStart = null;
+        _tooltipMarquee = null;
+        _tooltipCanvas!.Children.Clear();
+        TooltipRedraw();
+        _tooltipHint!.Text = "Captured. Now press Mark hover point and click the item whose panel you " +
+            "want to measure.";
+    }
+
+    private void TooltipMarkHoverPoint()
+    {
+        if (_tooltipScreenshot == null)
+        {
+            _tooltipHint!.Text = "Capture the game first.";
+            return;
+        }
+        _tooltipArmingPoint = true;
+        _tooltipHint!.Text = "Click the item to hover over — one that reliably shows a panel.";
+    }
+
+    /// <summary>Move, click to focus, wait for the panel, and capture. The cursor is placed by the tool,
+    /// so the coordinate the offset is measured against is one it chose rather than one it read.</summary>
+    private async void TooltipHoverAndCapture()
+    {
+        if (_tooltipHoverPoint is not { Count: 2 } point)
+        {
+            _tooltipHint!.Text = "Mark the hover point first.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            _tooltipHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
+            return;
+        }
+
+        var delay = Math.Max(200, _service.Config.Tooltip.HoverDelayMs);
+
+        // One click does both jobs here and elsewhere: the HID click focuses the game as it presses,
+        // so there is no separate focus step. It lands on the item, which is the point — the panel is
+        // what is being measured.
+        if (!TryPlace(ser, point[0], point[1], out var err))
+        {
+            _tooltipHint!.Text = "Couldn't move the cursor: " + err;
+            return;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(delay);
+
+        if (_tooltipScreenshot is not null && _tooltipCanvas is not null)
+        {
+            var shot = await CaptureScreenshotAsync();
+            if (shot == null)
+            {
+                _tooltipHint!.Text = "Couldn't capture after the hover — is the game still up?";
+                return;
+            }
+            _tooltipScreenshot = shot.Value.Image;
+            _tooltipImage!.Source = shot.Value.Image;
+        }
+
+        _tooltipArmed = true;
+        _tooltipArmingPoint = false;
+        _tooltipCanvas!.Children.Clear();
+        TooltipRedraw();
+        _tooltipHint!.Text = "Hovered and captured. Drag a box around the panel now — if no panel is " +
+            "showing, the item was a poor choice; mark another and try again.";
+    }
+
+    private void TooltipMouseDown(Canvas canvas, Point p)
+    {
+        if (_tooltipScreenshot == null) return;
+
+        if (_tooltipArmingPoint)
+        {
+            var natural = CanvasToNatural(p, _tooltipScreenshot, _tooltipCanvas!);
+            _tooltipHoverPoint = new List<int>
+            {
+                (int)Math.Round(natural.X), (int)Math.Round(natural.Y),
+            };
+            _tooltipArmingPoint = false;
+            TooltipRedraw();
+            _tooltipHint!.Text = $"Hover point ({_tooltipHoverPoint[0]},{_tooltipHoverPoint[1]}). Now " +
+                "press Hover and capture — the tool will move there and take the picture for you.";
+            return;
+        }
+
+        if (!_tooltipArmed) return;
+        _tooltipDragStart = p;
+        _tooltipMarquee = new Rectangle
+        {
+            Stroke = Brushes.Magenta,
+            StrokeThickness = 2,
+            StrokeDashArray = new DoubleCollection { 4, 2 },
+        };
+        Canvas.SetLeft(_tooltipMarquee, p.X);
+        Canvas.SetTop(_tooltipMarquee, p.Y);
+        canvas.Children.Add(_tooltipMarquee);
+    }
+
+    private void TooltipMouseMove(Canvas canvas, Point p)
+    {
+        if (_tooltipMarquee == null || _tooltipDragStart == null) return;
+        Canvas.SetLeft(_tooltipMarquee, Math.Min(_tooltipDragStart.Value.X, p.X));
+        Canvas.SetTop(_tooltipMarquee, Math.Min(_tooltipDragStart.Value.Y, p.Y));
+        _tooltipMarquee.Width = Math.Abs(p.X - _tooltipDragStart.Value.X);
+        _tooltipMarquee.Height = Math.Abs(p.Y - _tooltipDragStart.Value.Y);
+    }
+
+    private void TooltipMouseUp(Canvas canvas, Point p)
+    {
+        if (_tooltipMarquee == null || _tooltipDragStart == null || _tooltipScreenshot == null ||
+            _tooltipCanvas == null) return;
+
+        var a = CanvasToNatural(_tooltipDragStart.Value, _tooltipScreenshot, _tooltipCanvas);
+        var b = CanvasToNatural(p, _tooltipScreenshot, _tooltipCanvas);
+        var rect = new List<int>
+        {
+            (int)Math.Round(Math.Min(a.X, b.X)),
+            (int)Math.Round(Math.Min(a.Y, b.Y)),
+            (int)Math.Round(Math.Abs(b.X - a.X)),
+            (int)Math.Round(Math.Abs(b.Y - a.Y)),
+        };
+
+        canvas.Children.Remove(_tooltipMarquee);
+        _tooltipMarquee = null;
+        _tooltipDragStart = null;
+        _tooltipArmed = false;
+
+        if (rect[2] < 20 || rect[3] < 20)
+        {
+            _tooltipHint!.Text = $"That box is only {rect[2]}x{rect[3]} px — too small, drag again.";
+            return;
+        }
+
+        // The offset is against the point the TOOL placed the cursor on, not against anything read off
+        // the screen. That is the whole reason the hover is a button rather than a user action.
+        if (_tooltipHoverPoint is not { Count: 2 } origin)
+        {
+            _tooltipHint!.Text = "No hover point — press Mark hover point, then Hover and capture again.";
+            return;
+        }
+
+        var cfg = _service.Config.Tooltip;
+        cfg.OffsetX = rect[0] - origin[0];
+        cfg.OffsetY = rect[1] - origin[1];
+        cfg.Width = rect[2];
+        cfg.Height = rect[3];
+
+        TooltipRedraw();
+        TooltipSay();
+    }
+
+    private void TooltipRedraw()
+    {
+        if (_tooltipScreenshot == null || _tooltipCanvas == null) return;
+        _tooltipCanvas.Children.Clear();
+        var canvas = _tooltipCanvas;
+        var shot = _tooltipScreenshot;
+
+        if (_tooltipHoverPoint is { Count: 2 } p)
+            Dot(canvas, shot, new Point(p[0], p[1]), Brushes.Gold, 18);
+
+        var cfg = _service.Config.Tooltip;
+        if (cfg.IsSet && _tooltipHoverPoint is { Count: 2 } origin)
+            Box(canvas, shot,
+                new List<int> { origin[0] + cfg.OffsetX, origin[1] + cfg.OffsetY, cfg.Width, cfg.Height },
+                Brushes.Magenta);
+    }
+
+    private void TooltipSay()
+    {
+        var cfg = _service.Config.Tooltip;
+        _tooltipHint!.Text =
+            $"Panel offset from the cursor: ({cfg.OffsetX}, {cfg.OffsetY}), reading {cfg.Width}x" +
+            $"{cfg.Height} px. Every hover-read in the game uses this — a pet's panel and a food " +
+            "item's sit at the same offset even though their sizes differ. Check the magenta box lands " +
+            "on the panel rather than beside it, then Save.";
+    }
+
+    private void TooltipSave()
+    {
+        var cfg = _service.Config.Tooltip;
+        if (!cfg.IsSet)
+        {
+            _tooltipHint!.Text = "Measure it first — an offset with no size reads the wrong place.";
+            return;
+        }
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.Tooltip = cfg;
+        TrySaveCalibration(() => _service.SaveLocal(local), _tooltipHint!,
+            $"Saved to config\\local.yaml — offset ({cfg.OffsetX}, {cfg.OffsetY}) at " +
+            $"{cfg.Width}x{cfg.Height}. Measured in this machine's pixels, so it does not travel.");
     }
 
     // ── Pet food auto-replacement — calibrator ──────────────────────────────

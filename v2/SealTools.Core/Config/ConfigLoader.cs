@@ -223,6 +223,10 @@ public sealed class ConfigLoader
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
         }
 
+        // The hover panel's offset is measured in this machine's pixels, so it lives here with
+        // the other calibrated geometry rather than in the portable defaults.
+        if (local.Tooltip is { IsSet: true } tip) defaults.Tooltip = tip;
+
         // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
         // calibration — not in the portable defaults.yaml that publish.bat ships. Merged per preset
         // name rather than wholesale, so a preset added by hand to defaults.yaml would survive.
@@ -300,6 +304,7 @@ public sealed class ConfigLoader
         public LocalSpammer? Spammer { get; set; }
         public LocalBuySell? BuySell { get; set; }
         public LocalPet? Pet { get; set; }
+        public TooltipConfig? Tooltip { get; set; }
     }
 
     /// <summary>The buy/sell tool's geometry and presets. Machine-specific like the gem positions —
