@@ -281,20 +281,23 @@ public sealed class LauncherService : IDisposable
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
-        "pet" => new PetTool(Config, PersistPetFoodCellsUsed).Run(ser, state, ct),
+        "pet" => new PetTool(Config, PersistPetState).Run(ser, state, ct),
         _ => 1,
     };
 
-    /// <summary>Records how many pet-food cells a run has used up. Written per stack rather than at
-    /// the end of a run, because the run is meant to last days and a machine that loses power mid-run
-    /// would otherwise come back aiming at cells it had already emptied.</summary>
-    private void PersistPetFoodCellsUsed(int used)
+    /// <summary>Records the pet run's own state: how many food cells are used up, and whether boarding
+    /// is running. Both are written as they change rather than at the end of a run, because the run is
+    /// meant to last days and a machine that loses power mid-run would otherwise come back aiming at
+    /// cells it had already emptied — or pressing a toggle whose current meaning it has forgotten,
+    /// which would end the boarding it meant to start.</summary>
+    private void PersistPetState()
     {
         try
         {
             var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
             local.Pet ??= new ConfigLoader.LocalPet();
-            local.Pet.FoodCellsUsed = used;
+            local.Pet.FoodCellsUsed = Config.Pet.FoodCellsUsed;
+            local.Pet.BoardingRunning = Config.Pet.BoardingRunning;
             _loader.SaveLocal(local);
         }
         catch (Exception ex)

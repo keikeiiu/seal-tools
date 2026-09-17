@@ -185,6 +185,19 @@ public sealed class PetConfig
 
     // ── Behaviour ───────────────────────────────────────────────────────────
 
+    /// <summary>Whether boarding is running right now — i.e. the pet is in the loader rather than in
+    /// the bag.
+    ///
+    /// The reload needs it because the 開始代養 / 結束代養 control is ONE button: clicking it while
+    /// boarding runs ENDS it, and clicking it while stopped STARTS it. So the tool cannot press it
+    /// blindly — it would do the opposite of what the step needs, and the pet would end up in the
+    /// wrong place.
+    ///
+    /// Read from the label once a reference crop exists for it; until then it is stated by the player
+    /// at the start and set by the tool afterwards, because a successful reload always leaves boarding
+    /// running.</summary>
+    public bool BoardingRunning { get; set; }
+
     /// <summary>How many items one boarding load is: two stacks of the game's 300 cap.</summary>
     public int LoadItems { get; set; } = 600;
 

@@ -71,12 +71,12 @@ public sealed class PetTool : ToolBase
     /// <summary>Persists how many food cells are used up. Passed in rather than done here because a
     /// tool has no config loader — and the count has to outlive the process: a restart that reset it
     /// would aim the next reload at cells this run had already emptied.</summary>
-    private readonly Action<int>? _persistFoodCellsUsed;
+    private readonly Action? _persistState;
 
-    public PetTool(AppConfig cfg, Action<int>? persistFoodCellsUsed = null) : base(cfg.Hotkeys)
+    public PetTool(AppConfig cfg, Action? persistState = null) : base(cfg.Hotkeys)
     {
         _cfg = cfg;
-        _persistFoodCellsUsed = persistFoodCellsUsed;
+        _persistState = persistState;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -206,6 +206,18 @@ public sealed class PetTool : ToolBase
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
+            // The pet has to be IN THE BAG before it can be put back, and while boarding runs it is
+            // in the loader instead. So a reload off a running boarding starts by ending it — which is
+            // also what returns the leftover food. Skipped when boarding is already stopped, because
+            // this button TOGGLES: pressing it then would start the very thing we are about to end.
+            if (_cfg.Pet.BoardingRunning)
+            {
+                state.Message = "Ending boarding…";
+                Log("  ending boarding (the pet is in the loader, so it has to come back first)");
+                if (!PressToggle(ser, out error)) { Log("  FAILED ending: " + error); return false; }
+                SleepCheck(EndWait);
+            }
+
             state.Message = "Placing the pet…";
             Log("  placing the pet");
             if (!PlacePet(ser, out error)) { Log("  FAILED placing the pet: " + error); return false; }
@@ -217,6 +229,11 @@ public sealed class PetTool : ToolBase
             state.Message = "Starting boarding…";
             Log("  starting boarding");
             if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
+
+            // A finished reload always leaves boarding running, so the next one knows to end first —
+            // recorded rather than assumed, because the tool has no way to read it back yet.
+            _cfg.Pet.BoardingRunning = true;
+            _persistState?.Invoke();
 
             Log("  reload complete");
             return true;
@@ -351,9 +368,24 @@ public sealed class PetTool : ToolBase
         if (cell is not { Count: 2 }) return null;
 
         cfg.FoodCellsUsed++;
-        _persistFoodCellsUsed?.Invoke(cfg.FoodCellsUsed);
+        _persistState?.Invoke();
         Log($"  food cell {cfg.FoodCellsUsed}/{cells.Count} used (page {cell[0] + 1}, cell {cell[1]})");
         return (cell[0], cell[1]);
+    }
+
+    /// <summary>The count dialog's Enter and the toggling of boarding both want a beat after the
+    /// window has changed state, and a boarding window that has just opened or closed is animating.
+    /// </summary>
+    private const double EndWait = 1.2;
+
+    /// <summary>Presses the 開始代養 / 結束代養 button — the same press serves both, which is exactly
+    /// why the caller has to know which one it wants. The label box's centre is the click: the label
+    /// sits on the button.</summary>
+    private bool PressToggle(SerialPort ser, out string error)
+    {
+        var label = _cfg.Pet.ToggleLabel!;
+        var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
+        return Click(ser, centre, right: false, "the start/end boarding button", out error);
     }
 
     private bool StartBoarding(SerialPort ser, out string error)

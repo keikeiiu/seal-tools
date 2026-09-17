@@ -201,6 +201,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
+    /// <summary>Ticked while the pet is boarding rather than in the bag — see PetConfig.BoardingRunning.</summary>
+    private CheckBox? _petBoardingRunning;
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -4833,6 +4835,26 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petReadyText = ready;
         panel.Children.Add(Section("Ready to run", ready));
 
+        // The reload's one piece of state it cannot read for itself. The 開始代養 / 結束代養 control is
+        // a single button, so pressing it does the OPPOSITE of what is needed if the tool has the
+        // state wrong — ending a boarding it meant to start, or the reverse.
+        _petBoardingRunning = new CheckBox
+        {
+            Content = "The pet is already in the loader (boarding is running)",
+            IsChecked = _service.Config.Pet.BoardingRunning,
+            Margin = new Thickness(0, 4, 0, 4),
+        };
+        _petBoardingRunning.Checked += (_, _) => { _service.Config.Pet.BoardingRunning = true; PetCellSave(hint); };
+        _petBoardingRunning.Unchecked += (_, _) => { _service.Config.Pet.BoardingRunning = false; PetCellSave(hint); };
+
+        panel.Children.Add(Section("Boarding state",
+            Hint("Tick this if the pet is boarding right now rather than sitting in the bag. The " +
+                 "reload has to END boarding first to get the pet back before it can put it in again, " +
+                 "and the start/end control is one button — so pressing it with the wrong idea of the " +
+                 "state does the opposite of what the step needs. The tool ticks it for you after a " +
+                 "successful reload, since a finished reload always leaves boarding running."),
+            _petBoardingRunning));
+
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read
         // food_cells: [] because nothing on this tab had ever written it.
@@ -5243,6 +5265,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         local.Pet.PetCell = pet.PetCell;
         local.Pet.FoodCells = pet.FoodCells;
         local.Pet.FoodCellsUsed = pet.FoodCellsUsed;
+        local.Pet.BoardingRunning = pet.BoardingRunning;
 
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
             $"Saved {pet.FoodCells.Count} food cell(s) and the pet cell to config/local.yaml. They " +
@@ -5278,6 +5301,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             BagSlot = pet.BagSlot,
             FoodCells = pet.FoodCells,
             FoodCellsUsed = pet.FoodCellsUsed,
+            BoardingRunning = pet.BoardingRunning,
             PetCell = pet.PetCell,
         };
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
