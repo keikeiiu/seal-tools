@@ -698,3 +698,63 @@ knowing, and it is the most likely explanation for a click that lands on the rig
 | after 目錄, and after a page tab | 0.9 s | panel opening; bag re-rendering |
 | after Enter / MAX | 0.5 s | dialog opening or closing |
 | between aiming and clicking | 0.35 s | plus a re-aim, because the cursor can drift in it |
+
+---
+
+## 13. The pet queue — design, not built
+
+Goal: **board the next pet by itself.** You keep a line of pets waiting; when the boarded one
+finishes, the tool puts the next one in.
+
+### The two ways boarding ends, and why they differ
+
+| Ending | The pet | The leftover food |
+|---|---|---|
+| **Manual** — pressing 結束代養 | returns to the bag | returns to the bag |
+| **Auto** — the pet reaches `+9` at 100% | **mailed to the player** | **mailed to the player** |
+
+That second row is what makes this feature small. The finished pet **leaves on its own** — there is
+nothing to remove, and nothing to put back — so the only thing the tool does differently when a pet
+finishes is take the *next* one out of the bag instead of the same one.
+
+(An earlier revision of this document recorded only the manual case and generalised it to both. The
+mailbox is the difference, and it is the one that matters here.)
+
+### What it needs
+
+**A queue of bag cells, in order** — the same shape as [`FoodCells`](#) already has: marked on the Pet
+tab with the page-aware 8×8 picker, walked front to back, with a persisted counter so a restart resumes
+where it stopped rather than re-boarding a pet it already finished.
+
+**A "this pet is finished" test**, and it is `+N` **and** `EXP >= 100` read off the pet's panel — see
+§12 for why `+9` alone is the wrong test, and why the compare is inclusive.
+
+**The confirmation.** When a pet finishes, opening the breeder shows a message saying so, dismissed with
+Enter — the same shape as the out-of-food message, so the Enter the reload already sends after opening
+the window may already cover it. Unverified.
+
+### The cycle
+
+```
+open the breeder                      目錄 → pet icon → Enter
+read the boarded pet's panel          stage, +N, EXP
+  finished?  (+N == 9 and EXP >= 100)
+      → advance the queue, take the next pet's cell
+  not finished?
+      → the same pet, as now
+place that pet                        right-click its cell
+load two stacks                       page tab → right-click → MAX → Enter  (×2)
+start and close                       the start button → the X
+```
+
+Everything except "which cell does the pet come from" is the existing reload, unchanged.
+
+### Open questions
+
+1. **When a pet is mailed, does the bag compact?** If the other queued pets shift, their marked cells
+   point at the wrong ones — the same failure the food cells have, and the lock is the same answer. Worth
+   confirming that a mailed pet leaves a hole rather than closing one.
+2. **Is the finish confirmation the same dialog as the out-of-food one?** If it is, nothing new is
+   needed; if it is a distinct one, it may need its own dismissal.
+3. **What ends the run?** When the queue empties — stop and say so, or wait and re-check? Stopping is
+   the honest answer, since the alternative is polling forever for a pet that is not there.
