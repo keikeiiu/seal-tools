@@ -104,6 +104,31 @@ restocked?** If the food slot is only editable while stopped, every reload becom
 *end → restock → start*, and the tool has to put the state back exactly as it found it rather than just
 closing the window.
 
+### What the EXP% actually is, and why it matters
+
+**`[52.18%]` is 喂养值 eaten over 喂养值 needed for the CURRENT level** (player, 2026-09-18). The news
+page states the same relation its own way: a pet fed 10 喂养值 against a 30-point level shows
+`(10/30) × 100 = 33%`.
+
+That is the piece that turns "how much feeding is left" from a guess into arithmetic, because the other
+two terms are both available:
+
+| Term | From |
+|---|---|
+| The level's total cost | [PET-DATA.md](PET-DATA.md) — `base × (1 + n/10)` for level `+n` |
+| Which level it is on | the panel's `+N` |
+| How far through it | the panel's `[..%]` |
+
+so **this level's remaining 喂养值 is `cost × (1 − pct/100)`**, and the rest of the run to `+9` is the
+sum of the levels after it. Divide by the food's 喂养值 for items, or by the rate for time.
+
+**The catch is the `base`.** The per-level cost is `base × (1 + n/10)`, and `base` is a property of the
+pet's *species line*, not its stage — a 神兽 costs double a standard line at the same stage. The panel
+gives the stage but not the line, and the line lives in the name, which is the one field the OCR cannot
+be trusted with. Two ways out, neither built: read the boarding window's own
+`到N為止預計所需時間` and multiply by the rate to get the current level's cost directly, or pick the
+species once when the tool is set up and treat it as configuration.
+
 ### The load size — resolved
 
 The food area reads `150 300`, which I took to be a 300-item cap on the whole load. Combined with the
