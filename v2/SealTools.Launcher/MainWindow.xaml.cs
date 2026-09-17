@@ -178,6 +178,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     private int _petPickPage;
     private bool _petPickPetMode;
     private Dictionary<int, Border> _petCellBoxes = new();
+    /// <summary>The page buttons, and the two mode buttons — kept so the active one can be shown as
+    /// active. Without that the picker silently edits a page nobody can see it is editing, and marks
+    /// appear on a page the user is not looking at.</summary>
+    private readonly List<UiButton> _petPageButtons = new();
+    private UiButton? _petFoodModeButton;
+    private UiButton? _petPetModeButton;
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
@@ -4484,6 +4490,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             var b = MakeButton($"Page {page}", ControlAppearance.Secondary);
             b.Click += (_, _) => { _petPickPage = page - 1; RefreshPetCells(); };
             b.Margin = new Thickness(0, 0, 6, 0);
+            _petPageButtons.Add(b);
             pageRow.Children.Add(b);
         }
 
@@ -4491,6 +4498,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         modeFood.Click += (_, _) => { _petPickPetMode = false; RefreshPetCells(); };
         var modePet = MakeButton("Mark the PET cell", ControlAppearance.Secondary);
         modePet.Click += (_, _) => { _petPickPetMode = true; RefreshPetCells(); };
+        _petFoodModeButton = modeFood;
+        _petPetModeButton = modePet;
         modeFood.Margin = new Thickness(0, 0, 6, 0);
         modePet.Margin = new Thickness(0, 0, 6, 0);
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -4830,6 +4839,18 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void RefreshPetCells()
     {
+        // The controls first, and before the empty-boxes guard: which page and which mode are being
+        // edited has to be visible even when nothing is marked yet — that is exactly the state where
+        // a wrong page silently swallows the first click.
+        for (int i = 0; i < _petPageButtons.Count; i++)
+            _petPageButtons[i].Appearance = i == _petPickPage
+                ? ControlAppearance.Primary
+                : ControlAppearance.Secondary;
+        if (_petFoodModeButton != null)
+            _petFoodModeButton.Appearance = _petPickPetMode ? ControlAppearance.Secondary : ControlAppearance.Primary;
+        if (_petPetModeButton != null)
+            _petPetModeButton.Appearance = _petPickPetMode ? ControlAppearance.Primary : ControlAppearance.Secondary;
+
         if (_petCellBoxes.Count == 0) return;
         var pet = _service.Config.Pet;
 
