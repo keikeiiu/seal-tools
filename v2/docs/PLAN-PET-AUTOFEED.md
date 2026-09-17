@@ -720,11 +720,39 @@ finishes is take the *next* one out of the bag instead of the same one.
 (An earlier revision of this document recorded only the manual case and generalised it to both. The
 mailbox is the difference, and it is the one that matters here.)
 
-### What it needs
+### How the next pet is found — and why the bag can keep moving
 
-**A queue of bag cells, in order** — the same shape as [`FoodCells`](#) already has: marked on the Pet
-tab with the page-aware 8×8 picker, walked front to back, with a persisted counter so a restart resumes
-where it stopped rather than re-boarding a pet it already finished.
+Marked cells assume the bag does not change, and the premise is that the character **farms while this
+runs** — loot fills the bag and a static map stops being true. So the queue is not a list of cells.
+
+**It is a list of ICONS: the one to three pets you actually breed.** The player's insight (2026-09-18):
+there are hundreds of pets and no need to know them, because the tool only ever looks for the handful
+you are working on. Everything needed for that already exists:
+
+- `IconMatch` — a saved crop compared across the 64 cells by differing-pixel fraction, no OCR. Written
+  for this, then set aside while the simpler flow was proven.
+- The stage/EXP read — a matched cell is hovered, its panel read, and the pet is boarded only if it is
+  **not** already `+9` at 100%.
+
+```
+scan the bag for a cell matching one of the known pet icons
+  no match          → nothing to board; stop and say so
+  match             → hover it, read the panel
+      +9 and 100%   → finished; look for another
+      otherwise     → board it
+```
+
+**The status check is what makes one-to-three icons safe.** Without it, a finished pet left in the bag
+would be boarded over and over; with it, "is this one done?" is answered per candidate rather than
+assumed from position. And it is the same read the reload already wants for its own guard, so nothing
+new is needed to ask.
+
+The cost, stated honestly: a hover and an OCR per candidate cell, so the scan is seconds rather than
+milliseconds. Acceptable because it runs once per reload — every few hours — rather than per cycle.
+
+*(What this replaces: a queue of marked bag cells, which was the first shape and assumed a still bag.
+Kept in the history because the reasoning that killed it — loot moving things — is the same reasoning
+that protects the food cells, where the lock makes a static map true.)
 
 **A "this pet is finished" test**, and it is `+N` **and** `EXP >= 100` read off the pet's panel — see
 §12 for why `+9` alone is the wrong test, and why the compare is inclusive.
@@ -751,9 +779,9 @@ Everything except "which cell does the pet come from" is the existing reload, un
 
 ### Open questions
 
-1. **When a pet is mailed, does the bag compact?** If the other queued pets shift, their marked cells
-   point at the wrong ones — the same failure the food cells have, and the lock is the same answer. Worth
-   confirming that a mailed pet leaves a hole rather than closing one.
+1. ~~**When a pet is mailed, does the bag compact?**~~ **Answered:** it leaves a **hole** (player,
+   2026-09-18). Which is what makes a static map possible at all — and also what the icon list does not
+   have to care about, since it looks for the pet rather than for a position.
 2. **Is the finish confirmation the same dialog as the out-of-food one?** If it is, nothing new is
    needed; if it is a distinct one, it may need its own dismissal.
 3. **What ends the run?** When the queue empties — stop and say so, or wait and re-check? Stopping is
