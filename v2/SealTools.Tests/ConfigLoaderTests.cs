@@ -372,6 +372,8 @@ public class ConfigLoaderTests
                 CloseButton = new List<int> { 880, 140 },
                 PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
                 ToggleLabel = new List<int> { 590, 200, 120, 30 },
+                FeederSlotA = new List<int> { 250, 210, 60, 60 },
+                FeederSlotB = new List<int> { 320, 210, 60, 60 },
                 BagGrid = new List<int> { 660, 150, 408, 408 },
                 BagSlot = new List<int> { 660, 150, 51, 51 },
                 FoodCells = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
@@ -383,6 +385,8 @@ public class ConfigLoaderTests
             Assert.Equal(new List<int> { 815, 1735 }, cfg.Pet.MenuButton);
             Assert.Equal(new List<int> { 900, 1400 }, cfg.Pet.FeedIcon);
             Assert.Equal(new List<int> { 590, 200, 120, 30 }, cfg.Pet.ToggleLabel);
+            Assert.Equal(new List<int> { 250, 210, 60, 60 }, cfg.Pet.FeederSlotA);
+            Assert.Equal(new List<int> { 320, 210, 60, 60 }, cfg.Pet.FeederSlotB);
             Assert.Equal(3, cfg.Pet.PageTabs.Count);
             Assert.Equal(2, cfg.Pet.FoodCells.Count);
             Assert.Equal(new List<int> { 660, 150, 408, 408 }, cfg.Pet.BagGrid);

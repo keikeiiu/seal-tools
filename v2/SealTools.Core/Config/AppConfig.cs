@@ -71,6 +71,16 @@ public sealed class PetConfig
     /// reload and there is nothing left for the label to answer.</summary>
     public List<int>? ToggleLabel { get; set; }
 
+    /// <summary>The two feeder slots in the boarding window, as boxes.
+    ///
+    /// These are the empty-check crops: the same saved-crop-and-differing-pixels test the composer
+    /// uses on its result box, which is how a loaded slot is told from an empty one. The current flow
+    /// does not read them yet — it reloads on a schedule rather than looking first — so they are
+    /// calibrated ahead of the check that will use them rather than because something needs them
+    /// today.</summary>
+    public List<int>? FeederSlotA { get; set; }
+    public List<int>? FeederSlotB { get; set; }
+
     // ── The bag, as THIS flow shows it ──────────────────────────────────────
 
     /// <summary>Whole bag grid region client-relative physical [x, y, w, h], for the bag the boarding
