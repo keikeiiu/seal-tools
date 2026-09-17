@@ -5145,6 +5145,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             var existing = pet.FoodCells.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
             if (existing != null) pet.FoodCells.Remove(existing);
             else pet.FoodCells.Add(new List<int> { _petPickPage, cell });
+
+            // Any change to the set invalidates how far the last run got through it: cells have moved
+            // or been added, so a count carried over would skip or repeat. Re-marking means "start
+            // from the top of this list", which is the only assumption that is safe either way.
+            pet.FoodCellsUsed = 0;
         }
 
         RefreshPetCells();
@@ -5237,6 +5242,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         local.Pet ??= new ConfigLoader.LocalPet();
         local.Pet.PetCell = pet.PetCell;
         local.Pet.FoodCells = pet.FoodCells;
+        local.Pet.FoodCellsUsed = pet.FoodCellsUsed;
 
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
             $"Saved {pet.FoodCells.Count} food cell(s) and the pet cell to config/local.yaml. They " +
@@ -5271,6 +5277,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             BagGrid = pet.BagGrid,
             BagSlot = pet.BagSlot,
             FoodCells = pet.FoodCells,
+            FoodCellsUsed = pet.FoodCellsUsed,
             PetCell = pet.PetCell,
         };
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,

@@ -138,9 +138,19 @@ public sealed class PetConfig
     /// <summary>One bag slot, the uniformity check on <see cref="BagGrid"/>.</summary>
     public List<int>? BagSlot { get; set; }
 
-    /// <summary>The bag cells holding pet food, each as [page, cell] with page 0-based. Consumed
-    /// highest cell index first, the same rule SellPass uses and for the same reason.</summary>
+    /// <summary>The bag cells holding pet food, each as [page, cell] with page 0-based.
+    ///
+    /// Consumed in the order they are listed, tracked by <see cref="FoodCellsUsed"/>. NOT
+    /// highest-index-first, which is what SellPass does and what an earlier revision of this copied —
+    /// that rule exists because a sold slot leaves a hole the bag may compact into, and **the food
+    /// here is locked**, so nothing shifts and the order buys nothing. What does matter is not
+    /// re-clicking a cell this run has already emptied, which is what the count is for.</summary>
     public List<List<int>> FoodCells { get; set; } = new();
+
+    /// <summary>How many of <see cref="FoodCells"/> have been used up. Persisted, because a restart
+    /// that reset it would silently right-click cells the previous run had already emptied — and the
+    /// only thing that notices is a pet that stops being fed.</summary>
+    public int FoodCellsUsed { get; set; }
 
     /// <summary>The bag cell the pet is put back into, as [page, cell].
     ///

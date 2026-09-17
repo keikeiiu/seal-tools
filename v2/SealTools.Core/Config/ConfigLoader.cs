@@ -218,6 +218,7 @@ public sealed class ConfigLoader
             if (BagGrid.IsValidRect(pet.BagGrid)) defaults.Pet.BagGrid = pet.BagGrid;
             if (BagGrid.IsValidRect(pet.BagSlot)) defaults.Pet.BagSlot = pet.BagSlot;
             if (pet.FoodCells is { Count: > 0 }) defaults.Pet.FoodCells = pet.FoodCells;
+            if (pet.FoodCellsUsed is { } used and >= 0) defaults.Pet.FoodCellsUsed = used;
             if (pet.PetCell is { Count: 2 }) defaults.Pet.PetCell = pet.PetCell;
             if (BagGrid.IsValidRect(pet.PetIconRect)) defaults.Pet.PetIconRect = pet.PetIconRect;
             if (!string.IsNullOrWhiteSpace(pet.PetIconPng)) defaults.Pet.PetIconPng = pet.PetIconPng;
@@ -355,6 +356,7 @@ public sealed class ConfigLoader
         public List<int>? BagGrid { get; set; }
         public List<int>? BagSlot { get; set; }
         public List<List<int>>? FoodCells { get; set; }
+        public int? FoodCellsUsed { get; set; }
         public List<int>? PetCell { get; set; }
         public List<int>? PetIconRect { get; set; }
         public string? PetIconPng { get; set; }

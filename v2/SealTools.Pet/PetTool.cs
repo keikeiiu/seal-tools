@@ -68,9 +68,16 @@ public sealed class PetTool : ToolBase
     }
 
     private readonly AppConfig _cfg;
-    private int _nextFoodCell;
+    /// <summary>Persists how many food cells are used up. Passed in rather than done here because a
+    /// tool has no config loader — and the count has to outlive the process: a restart that reset it
+    /// would aim the next reload at cells this run had already emptied.</summary>
+    private readonly Action<int>? _persistFoodCellsUsed;
 
-    public PetTool(AppConfig cfg) : base(cfg.Hotkeys) => _cfg = cfg;
+    public PetTool(AppConfig cfg, Action<int>? persistFoodCellsUsed = null) : base(cfg.Hotkeys)
+    {
+        _cfg = cfg;
+        _persistFoodCellsUsed = persistFoodCellsUsed;
+    }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
@@ -243,6 +250,9 @@ public sealed class PetTool : ToolBase
 
     /// <summary>Right-click the marked cell to put the pet back into the boarding slot.
     ///
+    /// ONE right-click, with no dialog behind it — confirmed by the player (2026-09-17), not assumed.
+    /// A pet is a single item rather than a stack, so nothing asks how many the way the food does.
+    ///
     /// This is the SIMPLE path and it is what runs today: the cell is marked, so nothing has to be
     /// found. It holds while the bag is stable, which is the testing case.
     ///
@@ -291,7 +301,8 @@ public sealed class PetTool : ToolBase
             var cell = NextFoodCell(pet);
             if (cell == null)
             {
-                error = "Ran out of marked food cells.";
+                error = $"No food cells left — {pet.FoodCellsUsed} of {pet.FoodCells.Count} used. " +
+                        "Mark the cells holding food again on the Pet tab.";
                 return false;
             }
 
@@ -320,14 +331,25 @@ public sealed class PetTool : ToolBase
         return true;
     }
 
+    /// <summary>The next marked food cell, and the first one NOT yet used.
+    ///
+    /// Starts from the persisted count rather than from zero, so a restart continues where the last
+    /// run stopped instead of re-clicking cells it already emptied. Returns null once the marked cells
+    /// are exhausted, which stops the reload rather than guessing — the honest failure, since the
+    /// alternative is clicking an empty slot and reporting success.</summary>
     private (int Page, int Cell)? NextFoodCell(PetConfig cfg)
     {
         var cells = cfg.FoodCells;
         if (cells.Count == 0) return null;
+        if (cfg.FoodCellsUsed < 0 || cfg.FoodCellsUsed >= cells.Count) return null;
 
-        var cell = cells[_nextFoodCell % cells.Count];
-        _nextFoodCell++;
-        return cell is { Count: 2 } ? (cell[0], cell[1]) : null;
+        var cell = cells[cfg.FoodCellsUsed];
+        if (cell is not { Count: 2 }) return null;
+
+        cfg.FoodCellsUsed++;
+        _persistFoodCellsUsed?.Invoke(cfg.FoodCellsUsed);
+        Log($"  food cell {cfg.FoodCellsUsed}/{cells.Count} used (page {cell[0] + 1}, cell {cell[1]})");
+        return (cell[0], cell[1]);
     }
 
     private bool StartBoarding(SerialPort ser, out string error)

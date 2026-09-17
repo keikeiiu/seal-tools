@@ -281,9 +281,29 @@ public sealed class LauncherService : IDisposable
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
-        "pet" => new PetTool(Config).Run(ser, state, ct),
+        "pet" => new PetTool(Config, PersistPetFoodCellsUsed).Run(ser, state, ct),
         _ => 1,
     };
+
+    /// <summary>Records how many pet-food cells a run has used up. Written per stack rather than at
+    /// the end of a run, because the run is meant to last days and a machine that loses power mid-run
+    /// would otherwise come back aiming at cells it had already emptied.</summary>
+    private void PersistPetFoodCellsUsed(int used)
+    {
+        try
+        {
+            var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Pet ??= new ConfigLoader.LocalPet();
+            local.Pet.FoodCellsUsed = used;
+            _loader.SaveLocal(local);
+        }
+        catch (Exception ex)
+        {
+            // Losing the count is bad but not fatal — the next reload clicks a used cell and the one
+            // after that recovers. Killing the tool over it would be worse.
+            Console.WriteLine("[pet] couldn't persist the food-cell count: " + ex.Message);
+        }
+    }
 
     public void Dispose()
     {

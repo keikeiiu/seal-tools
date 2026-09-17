@@ -92,7 +92,7 @@ public static class HidPointer
             int askX = StepCount(dx, divisor), askY = StepCount(dy, divisor);
             Move(ser, askX, askY);
             moves++;
-            WaitForCursorToSettle();
+            WaitForCursorToSettle((x, y));
 
             // The measured travel per requested count IS the gain. Logged per step because on a machine
             // where it is not 1:1 the loop damps itself and the later steps are the informative ones.
@@ -133,15 +133,35 @@ public static class HidPointer
     /// <summary>Blocks until two consecutive polls report the same position, i.e. the HID move the
     /// firmware is walking out in chunks has finished. Bounded — a cursor that never stops moving
     /// must not hang the composer.</summary>
-    private static void WaitForCursorToSettle()
+    private static void WaitForCursorToSettle((int X, int Y) before)
     {
+        // A move is not finished until it has been SEEN to move.
+        //
+        // The firmware walks a move out in 10-px chunks, so between the write returning and the first
+        // chunk landing the cursor is legitimately still at its old position — and two polls in a row
+        // reading that old position is indistinguishable from a finished move. Treating it as finished
+        // is what made the loop feed the next correction forward against a stale number: measured on
+        // the live game (2026-09-17), two asks of -600 and -481 were issued while the cursor was still
+        // un-moving, and all three then landed together and clamped at the top of the screen.
+        //
+        // The shop's placements never exposed this because each correction was small; a full-height
+        // move to a bag cell is where the queueing has room to accumulate.
         var previous = WindowFinder.LogicalCursorPosition();
         if (previous is null) return;
+
+        bool seenMove = previous.Value != before;
+
         for (int i = 0; i < MaxSettlePolls; i++)
         {
             Thread.Sleep(PollMs);
             var now = WindowFinder.LogicalCursorPosition();
-            if (now == previous) return;
+            if (now is null) return;
+
+            // Settled only after movement has been observed, OR when the move asked for nothing —
+            // otherwise a stationary cursor would keep this waiting out its full budget.
+            if (seenMove && now == previous) return;
+
+            if (now != before) seenMove = true;
             previous = now;
         }
     }
