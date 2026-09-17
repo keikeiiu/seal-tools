@@ -4713,7 +4713,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         drawToggle.Click += (_, _) => PetArmDrag("toggle");
         var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
         drawPetSlot.Click += (_, _) => PetArmDrag("petslot");
-        var drawFeeder = MakeButton("Draw feeder slots", ControlAppearance.Secondary);
+        var drawFeeder = MakeButton("Draw food counts", ControlAppearance.Secondary);
         drawFeeder.Click += (_, _) => PetArmDrag("feederA");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
@@ -4731,10 +4731,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "and the one that answers \"did the pet actually go in?\" before any food is loaded: " +
                  "a right-click that missed leaves an empty slot and a window that otherwise looks " +
                  "perfectly normal.\n" +
-                 "Feeder slots — drag the first, then it asks for the second. These are the " +
-                 "empty-check crops, which is how a loaded slot is told from an empty one; the " +
-                 "current flow reloads on a schedule rather than looking first, so they are " +
-                 "calibrated ahead of the check that will read them."),
+                 "Food counts — drag the first slot's number, then it asks for the second's. These " +
+                 "are the READ regions: the number that says how much food is left, which the game " +
+                 "draws at each slot's bottom-right and which spills past the slot's frame. Box the " +
+                 "digits tightly and stop short of the neighbouring slot, or the two numbers come " +
+                 "back as one string."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -4940,8 +4941,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                         "to start boarding once the food is loaded.",
             "petslot" => "Drag a box around the PET SLOT in the boarding window — the square the " +
                         "pet sits in, next to the food.",
-            "feederA" => "Drag a box around the FIRST feeder slot.",
-            "feederB" => "Drag a box around the SECOND feeder slot.",
+            "feederA" => "Drag a box around the FIRST slot's COUNT — the number at its bottom-right, " +
+                        "which spills past the slot's frame. Tight around the digits, and not " +
+                        "reaching the next slot, or the two numbers read as one.",
+            "feederB" => "Drag a box around the SECOND slot's count.",
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
             _ => "Drag a box around ONE slot.",
         };
@@ -5052,12 +5055,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             case "feederA":
                 pet.FeederSlotA = rect;
                 _petDragTarget = "feederB";
-                _petHint!.Text = $"First feeder slot {rect[2]}x{rect[3]}. Now drag the SECOND.";
+                _petHint!.Text = $"First count {rect[2]}x{rect[3]}. Now the SECOND slot's count.";
                 break;
             case "feederB":
                 pet.FeederSlotB = rect;
                 _petDragTarget = null;
-                _petHint!.Text = $"Second feeder slot {rect[2]}x{rect[3]}.";
+                _petHint!.Text = $"Second count {rect[2]}x{rect[3]}.";
                 break;
             case "grid":
                 pet.BagGrid = rect;
@@ -5154,8 +5157,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
             Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding start button (drag)"),
             Mark(BagGrid.IsValidRect(pet.BoardingPetSlot), "boarding pet slot    (drag)"),
-            Mark(BagGrid.IsValidRect(pet.FeederSlotA), "feeder slot 1        (drag)"),
-            Mark(BagGrid.IsValidRect(pet.FeederSlotB), "feeder slot 2        (drag)"),
+            Mark(BagGrid.IsValidRect(pet.FeederSlotA), "food count 1         (drag)"),
+            Mark(BagGrid.IsValidRect(pet.FeederSlotB), "food count 2         (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
         };

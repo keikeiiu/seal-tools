@@ -118,13 +118,20 @@ public sealed class PetConfig
     /// perfectly normal.</summary>
     public List<int>? BoardingPetSlot { get; set; }
 
-    /// <summary>The two feeder slots in the boarding window, as boxes.
+    /// <summary>The two FOOD COUNTS in the boarding window, as boxes.
     ///
-    /// These are the empty-check crops: the same saved-crop-and-differing-pixels test the composer
-    /// uses on its result box, which is how a loaded slot is told from an empty one. The current flow
-    /// does not read them yet — it reloads on a schedule rather than looking first — so they are
-    /// calibrated ahead of the check that will use them rather than because something needs them
-    /// today.</summary>
+    /// Each is the number the game draws on a food slot — how many items are left in that stack,
+    /// which is the reading the reload decision is meant to hang on rather than the 185-minute
+    /// arithmetic it uses today.
+    ///
+    /// Boxed TIGHTLY around the digits, not around the slot: the number sits at the slot's
+    /// bottom-right and spills past its frame, so a box that frames the slot clips it. And not so
+    /// wide that it reaches the next slot, because then the two numbers read as one string.
+    ///
+    /// Named FeederSlotA/B for the slot they belong to; an earlier revision had them framing the
+    /// slots themselves as empty-check crops, and the name outlived the purpose — the boxes were
+    /// re-dragged onto the numbers because a clipped read was worth less than a slot check that was
+    /// never built.</summary>
     public List<int>? FeederSlotA { get; set; }
     public List<int>? FeederSlotB { get; set; }
 
