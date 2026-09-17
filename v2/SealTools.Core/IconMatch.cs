@@ -141,6 +141,32 @@ public static class IconMatch
         return results;
     }
 
+    /// <summary>Encode a crop for storage in local.yaml. Base64 in the YAML rather than a side-car
+    /// image file, because local.yaml is already the machine-specific store and a second file is a
+    /// second thing to lose — a machine that copies its config but not the image gets a tool that
+    /// matches the pet against nothing and cannot say why.</summary>
+    public static string ToBase64(Mat image)
+    {
+        Cv2.ImEncode(".png", image, out byte[] bytes);
+        return Convert.ToBase64String(bytes);
+    }
+
+    /// <summary>The stored crop, or null when there isn't one or it no longer decodes. Null is the
+    /// answer the caller acts on — the tool refuses to match rather than matching against garbage.</summary>
+    public static Mat? FromBase64(string? encoded)
+    {
+        if (string.IsNullOrWhiteSpace(encoded)) return null;
+        try
+        {
+            var decoded = Cv2.ImDecode(Convert.FromBase64String(encoded), ImreadModes.Color);
+            return decoded.Empty() ? null : decoded;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static Mat Inset(Mat m, int inset)
     {
         int w = m.Width - inset * 2;

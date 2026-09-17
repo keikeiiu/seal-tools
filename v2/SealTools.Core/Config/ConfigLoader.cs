@@ -218,6 +218,9 @@ public sealed class ConfigLoader
             if (BagGrid.IsValidRect(pet.BagGrid)) defaults.Pet.BagGrid = pet.BagGrid;
             if (BagGrid.IsValidRect(pet.BagSlot)) defaults.Pet.BagSlot = pet.BagSlot;
             if (pet.FoodCells is { Count: > 0 }) defaults.Pet.FoodCells = pet.FoodCells;
+            if (BagGrid.IsValidRect(pet.PetIconRect)) defaults.Pet.PetIconRect = pet.PetIconRect;
+            if (!string.IsNullOrWhiteSpace(pet.PetIconPng)) defaults.Pet.PetIconPng = pet.PetIconPng;
+            if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
         }
 
         // Spammer presets are the player's own key rotations, so they belong in local.yaml with the
@@ -346,6 +349,9 @@ public sealed class ConfigLoader
         public List<int>? BagGrid { get; set; }
         public List<int>? BagSlot { get; set; }
         public List<List<int>>? FoodCells { get; set; }
+        public List<int>? PetIconRect { get; set; }
+        public string? PetIconPng { get; set; }
+        public List<int>? MaxButton { get; set; }
     }
 
     private static bool IsPoint(List<int>? p) => p is { Count: 2 };

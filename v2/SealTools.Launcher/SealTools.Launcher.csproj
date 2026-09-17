@@ -6,6 +6,7 @@
     <ProjectReference Include="..\SealTools.GemComposer\SealTools.GemComposer.csproj" />
     <ProjectReference Include="..\SealTools.Spammer\SealTools.Spammer.csproj" />
     <ProjectReference Include="..\SealTools.Shop\SealTools.Shop.csproj" />
+    <ProjectReference Include="..\SealTools.Pet\SealTools.Pet.csproj" />
   </ItemGroup>
 
   <ItemGroup>

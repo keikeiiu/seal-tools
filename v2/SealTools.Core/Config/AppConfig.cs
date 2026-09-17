@@ -91,6 +91,27 @@ public sealed class PetConfig
     /// highest cell index first, the same rule SellPass uses and for the same reason.</summary>
     public List<List<int>> FoodCells { get; set; } = new();
 
+    /// <summary>Where the pet item was dragged on the calibration capture. Kept so the box can be
+    /// redrawn and re-cropped, rather than being a one-shot.</summary>
+    public List<int>? PetIconRect { get; set; }
+
+    /// <summary>The pet's bag icon, cropped from the capture at <see cref="PetIconRect"/> and stored
+    /// as a base64 PNG. This is what the tool matches across the 64 cells to find the pet after
+    /// boarding ends and drops it into the first free slot.
+    ///
+    /// A crop PER PET, because the icon is the pet's own portrait (see PLAN-PET-AUTOFEED.md §5). The
+    /// multi-pet case is therefore more entries, not a different mechanism.</summary>
+    public string? PetIconPng { get; set; }
+
+    /// <summary>Optional override for the count dialog's MAX.
+    ///
+    /// Normally null and <see cref="BuySellConfig.MaxButton"/> is used — the boarding count dialog is
+    /// the same dialog, so a second mark for one button would be a second thing to drift. It exists
+    /// because that sameness is the mechanism, which the player confirmed, and NOT the position,
+    /// which they could not: the dialog may sit elsewhere in this flow. If a demo run shows it does,
+    /// this is the mark to fill rather than a rebuild.</summary>
+    public List<int>? MaxButton { get; set; }
+
     // ── Behaviour ───────────────────────────────────────────────────────────
 
     /// <summary>How many items one boarding load is: two stacks of the game's 300 cap.</summary>
