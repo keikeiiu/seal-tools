@@ -71,6 +71,7 @@ public static class HidPointer
         int divisor = 1;
         int lastError = int.MaxValue;
         int moves = 0;
+        var start = WindowFinder.LogicalCursorPosition();
 
         for (int step = 1; step <= MaxSteps; step++)
         {
@@ -88,14 +89,45 @@ public static class HidPointer
             if (error >= lastError) divisor *= 2;
             lastError = error;
 
-            Move(ser, StepCount(dx, divisor), StepCount(dy, divisor));
+            int askX = StepCount(dx, divisor), askY = StepCount(dy, divisor);
+            Move(ser, askX, askY);
             moves++;
             WaitForCursorToSettle();
+
+            // The measured travel per requested count IS the gain. Logged per step because on a machine
+            // where it is not 1:1 the loop damps itself and the later steps are the informative ones.
+            if (WindowFinder.LogicalCursorPosition() is { } after)
+                Trace($"  step {step}: at=({x},{y}) goal=({goalX},{goalY}) ask=({askX},{askY}) " +
+                      $"divisor={divisor} -> ({after.X},{after.Y})");
         }
 
         var final = WindowFinder.LogicalCursorPosition();
+        Trace($"FAILED goal=({goalX},{goalY}) final=({final?.X},{final?.Y}) steps={moves} " +
+              $"lastError={lastError} divisor={divisor}");
         return new CursorPlacement(false, moves, final?.X, final?.Y,
             $"the cursor wouldn't move to ({goalX},{goalY}) — it stopped at ({final?.X},{final?.Y})");
+    }
+
+    /// <summary>A failed placement is the one time the numbers behind it matter, and they are gone by
+    /// the time anyone looks — the card shows a sentence and the caller moves on. So a failure writes
+    /// the whole trace: where the cursor started, what each step asked for, where it actually ended
+    /// up, and the damping factor. That is enough to READ the HID gain off, which is the number the
+    /// loop silently assumes is 1:1 (docs/CURSOR-INVESTIGATION.md).
+    ///
+    /// Written only on failure, so a working placement pays nothing.</summary>
+    private static void Trace(string line)
+    {
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "cursor_trace.txt"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+        }
+        catch
+        {
+            // A diagnostic must never be the reason a placement fails.
+        }
     }
 
     /// <summary>Blocks until two consecutive polls report the same position, i.e. the HID move the
