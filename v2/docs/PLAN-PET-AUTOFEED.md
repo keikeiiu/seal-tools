@@ -106,9 +106,23 @@ closing the window.
 
 ### What the EXP% actually is, and why it matters
 
-**`[52.18%]` is 喂养值 eaten over 喂养值 needed for the CURRENT level** (player, 2026-09-18). The news
-page states the same relation its own way: a pet fed 10 喂养值 against a 30-point level shows
-`(10/30) × 100 = 33%`.
+**`[52.18%]` is 喂养值 eaten over 喂养值 needed — but the denominator is not settled, and the two
+candidates differ by a factor of nine.**
+
+- **The current level.** The news page's own worked example reads this way: a pet fed 10 喂养值 against
+  a 30-point level shows `(10/30) × 100 = 33%`, and its wording is 宠物**当前**成长所需的喂养值 — "the
+  喂养值 required for the pet's *current* growth".
+- **The whole stage.** The player reads it this way (2026-09-18), adding "more or less" — so it is a
+  reading, not a measurement.
+
+**It matters because it changes every number derived from it.** Per level, the percentage resets each
+time the pet levels and the remaining feed is `cost × (1 − pct/100)` for that level. Per stage, it climbs
+monotonically from `+0` to `+9` and the remaining feed is `stage_total × (1 − pct/100)` — nine times
+larger, and no level-by-level detail at all.
+
+**One observation settles it:** watch the percentage as a pet levels up. If it drops back near zero each
+time, it is per level; if it keeps climbing, it is per stage. Worth doing before anything is computed
+from it, because a factor of nine is not a rounding error.
 
 That is the piece that turns "how much feeding is left" from a guess into arithmetic, because the other
 two terms are both available:
