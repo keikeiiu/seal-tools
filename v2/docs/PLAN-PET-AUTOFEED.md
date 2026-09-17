@@ -373,28 +373,35 @@ Capture must be `CopyFromScreen` — `PrintWindow` returns black for this game (
 | 2 | **Pet feed icon** — the chick holding a bottle | point | opens the boarding window |
 | 3 | **Feeder slot A** | box | empty-check crop; the drop target |
 | 4 | **Feeder slot B** | box | the second slot |
-| 5 | **Count dialog MAX** | point | *if it has one* — a different dialog, in a different place, from the sell one |
-| 6 | **Boarding toggle label** | box | `結束代養` vs `開始代養` — a direct read of whether boarding is running |
-| 7 | **Boarding window close (X)** | point | backing out without acting |
-| 8 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger (see below) |
-| 9 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
-| 10 | **Pet item icon** | crop | **template-matched across the 64 cells** to find the dropped pet |
-| 11 | **`ITEM1` tab** | point | go to page 1 directly |
-| 12 | **`ITEM2` tab** | point | page 2 |
-| 13 | **`ITEM3` tab** | point | page 3 |
+| 5 | **Boarding toggle label** | box | `結束代養` vs `開始代養` — a direct read of whether boarding is running |
+| 6 | **Boarding window close (X)** | point | backing out without acting |
+| 7 | **Hunger % region** | box | `肚子餓(nn%)` — Trigger B, or the whole trigger |
+| 8 | **Bag grid, two corners** | boxes | the **boarding** bag — its own, *not* the Sell one |
+| 9 | **Pet item icon** | crop | **template-matched across the 64 cells** to find the dropped pet |
+| 10 | **`ITEM1` tab** | point | go to page 1 directly |
+| 11 | **`ITEM2` tab** | point | page 2 |
+| 12 | **`ITEM3` tab** | point | page 3 |
 
-**Point 10 is the odd one out** — the only crop used to *find* something rather than to detect a change
-or check emptiness. It exists solely because ending boarding drops the pet into the first free slot, and
-it is the piece of this design I am least confident in: a poor match means clicking an arbitrary bag item
-and hoping, which is the worst failure the feature has.
+**There is deliberately no MAX point.** The boarding count dialog is **the same dialog the buy/sell
+tools use** (player, 2026-09-17), so `BuySellConfig.MaxButton` is reused verbatim. A second mark for one
+button would be a second thing to drift, and a wrong MAX here means feeding the wrong quantity.
 
-**Getting to the feeder is two clicks, not one.** `目錄` opens a secondary panel of eight round icons,
-and the pet feed icon is one of them — so the flow needs the menu button *and* the icon, in that order.
-The icon is at a fixed position in a static grid, which means **a point, not a reference image**: nothing
-has to be *found*.
+**The sequence is still not the same, though.** This dialog takes MAX and then **one** Enter — there is
+no confirmation behind it — so `MaxEnterEnter`'s second Enter must not be sent. Same clicks, one fewer
+keystroke, and getting that wrong would fire an Enter into whatever the game shows next.
+
+**Point 9 is the odd one out** — the only crop used to *find* something rather than to detect a change or
+check emptiness. The pet's bag icon is the **pet's own portrait** (the player's example: a 咕咕寶寶), which
+is what makes matching possible at all — and also what means **a second pet is a second crop, not a
+redesign**, so the multi-pet stage is a config addition. It is still the piece of this design I am least
+confident in: a poor match clicks an arbitrary bag item, which is the worst failure the feature has.
+
+**Getting to the feeder is two clicks, not one.** `目錄` opens a panel of eight round icons, and the pet
+feed icon is one of them — so the flow needs the menu button *and* the icon, in that order. Both are at
+fixed positions, which means **points, not reference images**: nothing has to be *found*.
 
 The panel carries **▲▼ scroll indicators**, so it may hold more icons than the eight visible. If the pet
-icon needs scrolling to reach, that is the same problem as the bag pages and wants the same answer —
+icon ever needs scrolling to reach, that is the bag-page problem again and wants the same answer —
 navigate to a known position, never scroll-and-hope.
 
 **The bag grid is its own calibration.** Same two-corner method as Sell — a box around the whole 8×8 grid,
@@ -402,18 +409,18 @@ a second around one slot, a consistency check between them, and the 64-centre ov
 uniform — but against the bag as it sits in *this* flow, which is somewhere else. Sharing Sell's numbers
 would point every cell at the wrong place.
 
-**The food slots themselves cost nothing to calibrate.** Once the grid exists, a food slot is a
-`(page, cell)` pair you click, not a captured region — which is what keeps eleven points from becoming
-eleven *plus* ten.
+**The food stacks themselves cost nothing to calibrate.** Once the grid exists, a food cell is a
+`(page, cell)` pair you click, not a captured region — which is what keeps the point count from growing
+with the number of stacks.
 
 The empty-check reuses the existing mechanism exactly: a saved crop, the fraction of differing pixels,
 and the **6 px inset** — the inset is not optional, because a one-pixel window shift once scored an
 *empty* box at 7.7 %.
 
-**Note on 1 vs 8:** the icon is on the pet cartoon image, but clicking that opens the **喂养** window —
-a different system, holding the wrong food. So the icon is a *signal to act*, never the control that
-gets you there. The boarding window has its own button, and that is point 1. This is the single easiest
-mistake to make in this feature.
+**One thing not to confuse:** the trigger is the `目錄` button going red, and that is a *signal to act* —
+never the control that gets you there. Clicking the **pet cartoon image** on the main screen opens the
+**喂养** window, a different system holding a different food. The boarding window is `目錄` → the pet feed
+icon, points 1 and 2. That is the single easiest mistake in this feature.
 
 ---
 
@@ -489,14 +496,16 @@ something the tool checks.
 1. ~~**Can the feeder be topped up while boarding is running?**~~ **Answered: no.** Every two stacks the
    pet must be reloaded, so *end → re-place pet → place food → start* is the reload path, four times per
    stage-6 pet. Which promotes the next question from an implementation detail to the risky part.
-2. **Could another item be mistaken for the pet?** The pet has a distinctive icon (player, 2026-09-17),
-   so matching is viable — but the question is what else ends up in the bag, since farming fills it with
-   loot. One near-miss means right-clicking the wrong item, which is the failure most worth a deliberate
-   test: fill the bag with a typical farming load, run the match across all 64 cells, and **read the
-   scores** rather than only the winner. **Still the highest-risk unknown**, but a narrower one now.
-3. **Does the count dialog have a MAX?** Assumed yes, since the sell dialog does and the sequence is
-   otherwise identical. If it does not, the quantity is typed and the flow changes shape — the one
-   remaining unknown that would alter the *transaction* rather than its numbers.
+2. **Could another item be mistaken for the pet?** The pet's bag icon is **the pet's own portrait** — a
+   咕咕寶寶 for the player's current pet (2026-09-17) — so matching is viable, and a second pet is a
+   second crop rather than a redesign. What is still unknown is what else ends up in the bag, since
+   farming fills it with loot. One near-miss means right-clicking the wrong item, which is the failure
+   most worth a deliberate test: fill the bag with a typical farming load, run the match across all 64
+   cells, and **read the scores** rather than only the winner. **Still the highest-risk unknown.**
+3. ~~**Does the count dialog have a MAX?**~~ **Answered: yes, and it is the same dialog the buy/sell
+   tools use** — so its point is reused rather than re-marked, and no MAX is calibrated on the pet tab.
+   The part to keep in view is the sequence, which is *not* the same: MAX then **one** Enter, with no
+   confirmation behind it.
 4. **Is the 8×8 lattice identical on all three pages?** Assumed, with the last possibly partial. If the
    grid shifts per page, `(page, cell)` indices stop being interchangeable. (The page-*indicator*
    question is closed — absolute `ITEM1`/`ITEM2`/`ITEM3` tabs removed the need to read it at all.)

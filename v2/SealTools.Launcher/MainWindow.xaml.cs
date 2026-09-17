@@ -4339,12 +4339,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         markMenu.Click += (_, _) => PetArmPoint("menu");
         var markFeed = MakeButton("Mark pet feed icon", ControlAppearance.Secondary);
         markFeed.Click += (_, _) => PetArmPoint("feed");
-        var markMax = MakeButton("Mark count dialog MAX", ControlAppearance.Secondary);
-        markMax.Click += (_, _) => PetArmPoint("max");
         var markClose = MakeButton("Mark boarding X", ControlAppearance.Secondary);
         markClose.Click += (_, _) => PetArmPoint("close");
         var pointRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { markMenu, markFeed, markMax, markClose })
+        foreach (var b in new UiButton[] { markMenu, markFeed, markClose })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             pointRow.Children.Add(b);
@@ -4449,8 +4447,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             "menu" => "Click 目錄 — the button in the bottom-left icon cluster.",
             "feed" => "Click the pet feed icon in the panel that opens: the chick holding a bottle.",
-            "max" => "Click MAX in the boarding count dialog. If it turns out this dialog has no MAX, " +
-                     "say so — the flow changes shape rather than just losing a point.",
             "close" => "Click the BOARDING window's X. There are two X buttons on screen at once " +
                        "(this one and the bag's), so make sure it is the boarding window's.",
             _ => $"Click the {which.ToUpperInvariant().Replace("TAB", "-ITEM")} tab in the bag.",
@@ -4464,7 +4460,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             case "menu": pet.MenuButton = point; break;
             case "feed": pet.FeedIcon = point; break;
-            case "max": pet.DialogMax = point; break;
             case "close": pet.CloseButton = point; break;
             default:
                 var page = which[^1] - '1';
@@ -4478,7 +4473,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             "menu" => $"目錄 at ({point[0]},{point[1]}).",
             "feed" => $"Pet feed icon at ({point[0]},{point[1]}).",
-            "max" => $"Count dialog MAX at ({point[0]},{point[1]}).",
             "close" => $"Boarding X at ({point[0]},{point[1]}).",
             _ => $"ITEM{which[^1]} tab at ({point[0]},{point[1]}).",
         };
@@ -4651,7 +4645,6 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         if (pet.MenuButton is { Count: 2 } mb) Dot(canvas, shot, new Point(mb[0], mb[1]), Brushes.Gold, 16);
         if (pet.FeedIcon is { Count: 2 } fi) Dot(canvas, shot, new Point(fi[0], fi[1]), Brushes.Orange, 16);
-        if (pet.DialogMax is { Count: 2 } dm) Dot(canvas, shot, new Point(dm[0], dm[1]), Brushes.OrangeRed, 14);
         if (pet.CloseButton is { Count: 2 } cb) Dot(canvas, shot, new Point(cb[0], cb[1]), Brushes.Crimson, 14);
 
         // Page tabs drawn at growing sizes, so a swapped pair reads as wrong rather than silently
@@ -4705,7 +4698,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Mark(pet.MenuButton is { Count: 2 }, "目錄 button           (click)"),
             Mark(pet.FeedIcon is { Count: 2 }, "pet feed icon       (click)"),
-            Mark(pet.DialogMax is { Count: 2 }, "count dialog MAX    (click)"),
             Mark(pet.CloseButton is { Count: 2 }, "boarding X          (click)"),
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
             Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding toggle label (drag)"),
@@ -4738,7 +4730,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             MenuButton = pet.MenuButton,
             FeedIcon = pet.FeedIcon,
-            DialogMax = pet.DialogMax,
             CloseButton = pet.CloseButton,
             PageTabs = pet.PageTabs,
             ToggleLabel = pet.ToggleLabel,

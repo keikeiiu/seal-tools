@@ -43,9 +43,14 @@ public sealed class PetConfig
     /// in a static grid, so nothing has to be found.</summary>
     public List<int>? FeedIcon { get; set; }
 
-    /// <summary>Centre of MAX in the boarding count dialog. A different dialog, in a different place,
-    /// from the buy/sell one — so it is its own point.</summary>
-    public List<int>? DialogMax { get; set; }
+    // NOTE: there is deliberately no MAX point here. The boarding count dialog is the SAME dialog the
+    // buy/sell tools use, so <see cref="BuySellConfig.MaxButton"/> is reused verbatim (player,
+    // 2026-09-17). A second mark for one button would be a second thing to drift, and a wrong MAX
+    // here means feeding the pet the wrong quantity.
+    //
+    // The sequence is not identical though: the boarding dialog takes MAX then ONE Enter. There is no
+    // confirmation behind it, so `MaxEnterEnter`'s second Enter must not be sent (see
+    // PLAN-PET-AUTOFEED.md §4).
 
     /// <summary>The boarding window's X. There are two close buttons on screen at once (this one and
     /// the bag's), so the flow has to know which it is pressing.</summary>

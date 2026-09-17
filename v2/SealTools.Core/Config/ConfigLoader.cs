@@ -207,7 +207,6 @@ public sealed class ConfigLoader
         {
             if (IsPoint(pet.MenuButton)) defaults.Pet.MenuButton = pet.MenuButton;
             if (IsPoint(pet.FeedIcon)) defaults.Pet.FeedIcon = pet.FeedIcon;
-            if (IsPoint(pet.DialogMax)) defaults.Pet.DialogMax = pet.DialogMax;
             if (IsPoint(pet.CloseButton)) defaults.Pet.CloseButton = pet.CloseButton;
             if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
             if (BagGrid.IsValidRect(pet.ToggleLabel)) defaults.Pet.ToggleLabel = pet.ToggleLabel;
@@ -338,7 +337,6 @@ public sealed class ConfigLoader
     {
         public List<int>? MenuButton { get; set; }
         public List<int>? FeedIcon { get; set; }
-        public List<int>? DialogMax { get; set; }
         public List<int>? CloseButton { get; set; }
         public List<List<int>>? PageTabs { get; set; }
         public List<int>? ToggleLabel { get; set; }

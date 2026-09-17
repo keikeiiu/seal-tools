@@ -369,7 +369,6 @@ public class ConfigLoaderTests
             {
                 MenuButton = new List<int> { 815, 1735 },
                 FeedIcon = new List<int> { 900, 1400 },
-                DialogMax = new List<int> { 700, 300 },
                 CloseButton = new List<int> { 880, 140 },
                 PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
                 ToggleLabel = new List<int> { 590, 200, 120, 30 },
