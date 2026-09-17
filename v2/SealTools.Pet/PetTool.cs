@@ -394,7 +394,12 @@ public sealed class PetTool : ToolBase
     /// <summary>The count dialog's Enter and the toggling of boarding both want a beat after the
     /// window has changed state, and a boarding window that has just opened or closed is animating.
     /// </summary>
-    private const double EndWait = 1.2;
+    /// <summary>Raised from 1.2s after a live true-reload where every cursor placement was visibly
+    /// correct and the pet still did not board: the likely cause is that the pet has not reappeared
+    /// in the bag yet when its cell is right-clicked, so the click lands on an empty slot and looks
+    /// like a miss. The window is a guess until the real figure is known — see the log line, which
+    /// timestamps the end press against the placement so the gap can be read off a run.</summary>
+    private const double EndWait = 2.5;
 
     /// <summary>Presses the 開始代養 / 結束代養 button — the same press serves both, which is exactly
     /// why the caller has to know which one it wants. The label box's centre is the click: the label
@@ -447,6 +452,18 @@ public sealed class PetTool : ToolBase
         }
 
         SleepCheck(ClickWait);
+
+        // Re-aim before pressing. The wait exists so the game is ready for the click, but anything
+        // that moves the cursor during it moves what the click lands on — and something does: the
+        // live trace shows the cursor shifting hundreds of pixels on its own, enough to turn a click
+        // meant for the pet into a click on empty bag. Placing again is usually one extra move and it
+        // is the difference between aiming and having aimed.
+        if (!PlaceOn(ser, point[0], point[1], out error))
+        {
+            Log($"  FAILED re-aiming at {what} before clicking: {error}");
+            return false;
+        }
+
         if (right) HidPointer.RightClick(ser);
         else HidPointer.Click(ser);
 
