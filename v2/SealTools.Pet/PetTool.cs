@@ -244,12 +244,30 @@ public sealed class PetTool : ToolBase
         }
     }
 
-    /// <summary>目錄 → the pet feed icon → the boarding window (which brings the bag up with it).</summary>
+    /// <summary>目錄 → the pet feed icon → the boarding window (which brings the bag up with it),
+    /// then an Enter to clear anything the window opened with.
+    ///
+    /// That Enter is for one case: when the pet has used up ALL its food, opening the breeder raises a
+    /// message saying so, and the 結束代養 button cannot be used until it is dismissed. Before that
+    /// point there is no message and the Enter does nothing — confirmed by the player, who put it as
+    /// "an extra enter doesn't affect anything".
+    ///
+    /// Sent unconditionally rather than only when the food is known to be out, because the tool cannot
+    /// know that: it is the same choice the sell flow makes with its second Enter, and the same
+    /// reason — a keystroke with no dialog in front of it is a no-op, where a missing keystroke in
+    /// front of one is a reload that stops dead.
+    /// </summary>
     private bool OpenBoarding(SerialPort ser, out string error)
     {
         if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
         SleepCheck(WindowWait);
-        return Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error);
+        if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+
+        SleepCheck(ClickWait);
+        if (!Enter(ser, out error)) return false;
+        Log("  enter (clears the out-of-food message if the breeder opened with one)");
+        SleepCheck(DialogWait);
+        return true;
     }
 
     private void CloseBoarding(SerialPort ser)
