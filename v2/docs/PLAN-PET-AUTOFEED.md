@@ -1,8 +1,11 @@
 # Auto pet-food replacement — plan
 
-Status: **design for review. Nothing built.** Scope is deliberately narrow: **stage-6 pets, boarding
-only.** Everything the design rests on is measured or confirmed — see [PET-DATA.md](PET-DATA.md) —
-except the five items in Open Questions.
+Status: **the flow is built and has never been run against the game.** Calibrate Pet, the Pet tab and
+the reload engine all exist; no reload has been executed yet, so everything below is still design until
+one has. Scope is deliberately narrow: **stage-6 pets, boarding only, one row.**
+
+Everything the design rests on is measured or confirmed — see [PET-DATA.md](PET-DATA.md) — except the
+open questions at the end.
 
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
 notices, reloads the feeder, and carries on. Nothing else about the pet is automated.
