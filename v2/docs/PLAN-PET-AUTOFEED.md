@@ -371,11 +371,11 @@ mean new commands and a reflash of every board. The right-click path needs none 
 **No firmware change is needed at all**: the board already has `C` (click), `R` (right-click) and `E`
 (Enter).
 
-**The guard matters, and "finished" is narrower than it sounds.** A pet is finished at **`+9` AND over
-100% EXP** — not `+9` alone (player, 2026-09-18). At `+9` under 100% it is still growing and still wants
+**The guard matters, and "finished" is narrower than it sounds.** A pet is finished at **`+9` AND 100% EXP or more** — not `+9` alone (player, 2026-09-18), and
+100% exactly counts. At `+9` under 100% it is still growing and still wants
 feeding; the game stops boarding only once it is both, which is the state that lets it evolve.
 
-So the check is on **growth and EXP together**, and reading the growth alone would stop feeding a pet
+So the check is on **growth and EXP together** — `+9` and `EXP >= 100` — and reading the growth alone would stop feeding a pet
 that has not finished — the opposite of the failure this guard exists to prevent. Both are on the pet's
 panel as `+N` and `[..%]`, and both read cleanly (see [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md)).
 
@@ -472,7 +472,7 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
    — or a tool that dies partway through one — can leave the pet sitting unboarded, which is failure (1)
    on a timer. **If topping up while running is possible this failure does not exist at all**, which is
    the strongest argument yet for the simple flow.
-3. **Reloading a pet that has finished.** `+9` with over 100% EXP is the state that lets a pet evolve,
+3. **Reloading a pet that has finished.** `+9` with 100% EXP or more is the state that lets a pet evolve,
    and the game stops boarding there; restocking it wastes the food every cycle. Guarded by reading the
    growth and the EXP **together** — see above for why `+9` alone is the wrong test. The mirror failure
    is treating `+9` as finished and abandoning a pet that still wants feeding.
