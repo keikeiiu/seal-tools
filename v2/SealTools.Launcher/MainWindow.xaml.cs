@@ -5289,7 +5289,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             foreach (var (what, box) in boxes)
             {
                 var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
-                var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region));
+                // Each read leaves its upscaled region behind, so a blank result can be told apart
+                // from a wrong region by looking at the file rather than by arguing about it.
+                var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+                var debugPath = System.IO.Path.Combine(
+                    AppContext.BaseDirectory, "logs", "reads", $"{what.Replace(" ", "")}_{stamp}.png");
+                var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region, 3, debugPath));
                 var joined = string.Join(" | ", lines);
 
                 // The number is what matters, so it is parsed rather than echoed: a slot reading "270"
@@ -5309,7 +5314,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         hint.Text = string.Join("; ", report) +
-            (counted > 0 ? $". Total {total} items" : ". (Nothing parsed — check the boxes cover the numbers.)");
+            (counted > 0
+                ? $". Total {total} items."
+                : ". Nothing parsed. Each read saved what the OCR saw to logs\reads — open one to see " +
+                  "whether the box is in the wrong place or the number is too small to read.");
     }
 
     private void PetCellSave(TextBlock hint)

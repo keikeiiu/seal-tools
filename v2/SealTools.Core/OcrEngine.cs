@@ -116,7 +116,7 @@ public sealed class OcrEngine : IDisposable
     /// No retry loop and no confirmation: those exist in <see cref="Scan(OcrGeometry)"/> to keep a
     /// bad read from advancing the composer, and a caller that has its own sense of a good read
     /// should not pay for them.</summary>
-    public IReadOnlyList<string> ReadLines(RegionConfig region)
+    public IReadOnlyList<string> ReadLines(RegionConfig region, int upscale = 3, string? saveDebug = null)
     {
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return Array.Empty<string>();
@@ -127,9 +127,31 @@ public sealed class OcrEngine : IDisposable
         using var mat = cap.Image;
         InitOcr();
 
+        // Upscaled before recognition. The detector is trained on ordinary screen text; a game's stack
+        // count is about a dozen pixels tall, and below roughly twenty it finds NOTHING — which is
+        // indistinguishable from "no text in this region" until someone looks at the image. Scaling up
+        // is what makes the difference between a blank read and a number.
+        using var scaled = new Mat();
+        Mat input = mat;
+        if (upscale > 1)
+        {
+            Cv2.Resize(mat, scaled, new Size(mat.Width * upscale, mat.Height * upscale),
+                0, 0, InterpolationFlags.Cubic);
+            input = scaled;
+        }
+
+        // Saved on request so a caller can LOOK at what was read: a blank result has two very
+        // different causes — the region is in the wrong place, or the text is too small — and the
+        // image says which. Written at the upscaled size, because that is what the reader saw.
+        if (!string.IsNullOrEmpty(saveDebug))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(saveDebug)!);
+            input.ImWrite(saveDebug);
+        }
+
         // A null path: the recogniser only writes a frame when it is given somewhere to write, and
         // the tuner already passes null whenever save_captures is off.
-        var ocrResult = _ocr!.RecognizeText(mat, null!);
+        var ocrResult = _ocr!.RecognizeText(input, null!);
         var items = ocrResult.WordResults ?? Array.Empty<DetBoxItem>();
 
         // RowHeight only groups glyphs into lines here; nothing is filtered by position, because the
