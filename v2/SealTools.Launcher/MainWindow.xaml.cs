@@ -177,7 +177,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Which bag page the cell picker edits, and whether a click marks food or the pet.</summary>
     private int _petPickPage;
     private bool _petPickPetMode;
-    private Grid? _petCellGrid;
+    private Dictionary<int, Border> _petCellBoxes = new();
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
@@ -3685,43 +3685,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var hint = Mono();
         _sellHint = hint;
 
-        var slots = new Grid { Margin = new Thickness(0, 8, 0, 8), HorizontalAlignment = HorizontalAlignment.Left };
-        for (int c = 0; c < BagGrid.Cols; c++)
-            slots.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
-        for (int r = 0; r < BagGrid.Rows; r++)
-            slots.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34) });
-
-        // One extra column for a per-row button. Selling a row's worth is the common case, and
-        // eight clicks where one will do is the kind of thing that gets a tool abandoned.
-        slots.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        for (int r = 0; r < BagGrid.Rows; r++)
-        {
-            int row = r;
-            var rowButton = MakeRowButton($"row {r + 1}");
-            rowButton.ToolTip = $"Select or clear all 8 slots of bag row {r + 1}";
-            rowButton.Click += (_, _) => ToggleSellRow(row);
-            Grid.SetRow(rowButton, r);
-            Grid.SetColumn(rowButton, BagGrid.Cols);
-            slots.Children.Add(rowButton);
-        }
-
+        // The per-row buttons are Sell's own — see MakeBagPicker.
+        var (slots, sellCells) = MakeBagPicker(ToggleSellSlot, ToggleSellRow);
         _sellSlotBoxes.Clear();
-        for (int i = 0; i < BagGrid.SlotCount; i++)
-        {
-            int index = i;
-            var cell = new Border
-            {
-                Margin = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                BorderThickness = new Thickness(1),
-                ToolTip = $"Bag slot {index + 1}",
-            };
-            cell.MouseLeftButtonDown += (_, _) => ToggleSellSlot(index);
-            Grid.SetRow(cell, index / BagGrid.Cols);
-            Grid.SetColumn(cell, index % BagGrid.Cols);
-            slots.Children.Add(cell);
-            _sellSlotBoxes[index] = cell;
-        }
+        foreach (var (index, cell) in sellCells) _sellSlotBoxes[index] = cell;
 
         var all = MakeButton("Select all", ControlAppearance.Secondary);
         all.Click += (_, _) => { _service.Config.BuySell.SellSlots = Enumerable.Range(0, BagGrid.SlotCount).ToList(); PaintSellSlots(); };
@@ -4150,6 +4117,60 @@ public partial class MainWindow : FluentWindow, IDisposable
         PaintSellSlots();
     }
 
+    /// <summary>The 8x8 bag picker, shared by the Sell screen and the Pet screen.
+    ///
+    /// They want the same WIDGET over different selections — Sell's is the per-run list of what to
+    /// sell, Pet's is where the food and the pet live — so the grid is built once here and told what
+    /// a click means. The selection itself stays with the caller, which is the point: sharing the
+    /// widget must not share the choice, or un-marking a food cell would become a sale.
+    ///
+    /// <paramref name="onRow"/> adds the per-row shortcut column, and only selling passes it: "all
+    /// eight slots of row 3" is a meaningful sale and is not a meaningful thing to mark as food.</summary>
+    private static (Grid Grid, Dictionary<int, Border> Cells) MakeBagPicker(
+        Action<int> onClick, Action<int>? onRow = null)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 8, 0, 8), HorizontalAlignment = HorizontalAlignment.Left };
+        for (int c = 0; c < BagGrid.Cols; c++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+        for (int r = 0; r < BagGrid.Rows; r++)
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34) });
+
+        if (onRow != null)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            for (int r = 0; r < BagGrid.Rows; r++)
+            {
+                int row = r;
+                var rowButton = MakeRowButton($"row {r + 1}");
+                rowButton.ToolTip = $"Select or clear all 8 slots of bag row {r + 1}";
+                rowButton.Click += (_, _) => onRow(row);
+                Grid.SetRow(rowButton, r);
+                Grid.SetColumn(rowButton, BagGrid.Cols);
+                grid.Children.Add(rowButton);
+            }
+        }
+
+        var cells = new Dictionary<int, Border>();
+        for (int i = 0; i < BagGrid.SlotCount; i++)
+        {
+            int index = i;
+            var cell = new Border
+            {
+                Margin = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+                ToolTip = $"Bag slot {index + 1}",
+            };
+            cell.MouseLeftButtonDown += (_, _) => onClick(index);
+            Grid.SetRow(cell, index / BagGrid.Cols);
+            Grid.SetColumn(cell, index % BagGrid.Cols);
+            grid.Children.Add(cell);
+            cells[index] = cell;
+        }
+
+        return (grid, cells);
+    }
+
     private void ToggleSellSlot(int index)
     {
         var slots = _service.Config.BuySell.SellSlots;
@@ -4476,33 +4497,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         modeRow.Children.Add(modeFood);
         modeRow.Children.Add(modePet);
 
-        // Stands in for the bag. Deliberately built by hand rather than from the Sell screen's
-        // picker: that one is wired to the sell selection, and reusing it would make un-marking a
-        // food cell a sale.
-        _petCellGrid = new Grid { Margin = new Thickness(0, 8, 0, 4), HorizontalAlignment = HorizontalAlignment.Left };
-        for (int r = 0; r < BagGrid.Rows; r++) _petCellGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        for (int c = 0; c < BagGrid.Cols; c++) _petCellGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        for (int i = 0; i < BagGrid.SlotCount; i++)
-        {
-            var cell = i;
-            var b = new UiButton
-            {
-                Content = "",
-                Appearance = ControlAppearance.Secondary,
-                Width = 34,
-                Height = 26,
-                Margin = new Thickness(1),
-            };
-            b.Click += (_, _) => TogglePetCell(cell);
-            Grid.SetRow(b, i / BagGrid.Cols);
-            Grid.SetColumn(b, i % BagGrid.Cols);
-            _petCellGrid.Children.Add(b);
-        }
+        // The same widget the Sell screen uses, over this screen's own selection.
+        var (cellGrid, petCells) = MakeBagPicker(TogglePetCell);
+        _petCellBoxes = petCells;
 
         var cellsPanel = new StackPanel();
         cellsPanel.Children.Add(LabeledField("Page to edit", pageRow));
         cellsPanel.Children.Add(LabeledField("A click marks", modeRow));
-        cellsPanel.Children.Add(_petCellGrid);
+        cellsPanel.Children.Add(cellGrid);
         _petCellInfo = Mono();
         cellsPanel.Children.Add(_petCellInfo);
 
@@ -4828,18 +4830,24 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void RefreshPetCells()
     {
-        if (_petCellGrid == null) return;
+        if (_petCellBoxes.Count == 0) return;
         var pet = _service.Config.Pet;
 
-        foreach (var child in _petCellGrid.Children)
+        foreach (var (i, cell) in _petCellBoxes)
         {
-            if (child is not UiButton b) continue;
-            var i = Grid.GetRow(b) * BagGrid.Cols + Grid.GetColumn(b);
             var isFood = pet.FoodCells.Any(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == i);
             var isPet = pet.PetCell is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
 
-            b.Content = isPet ? "PET" : isFood ? "food" : "";
-            b.Appearance = isPet || isFood ? ControlAppearance.Primary : ControlAppearance.Secondary;
+            // Two marks in one grid, so two colours. They are exclusive by construction — a cell is
+            // the pet's or it is the food's — and if that ever changed the picker would be lying.
+            var brush = isPet ? Res("SystemFillColorCautionBrush")
+                : isFood ? Res("SystemFillColorSuccessBrush")
+                : Res("CardBackgroundFillColorDefaultBrush");
+            cell.Background = brush;
+            cell.BorderBrush = isPet || isFood ? brush : Res("TextFillColorSecondaryBrush");
+            cell.ToolTip = isPet ? $"Bag slot {i + 1} — the pet"
+                : isFood ? $"Bag slot {i + 1} — food"
+                : $"Bag slot {i + 1}";
         }
 
         if (_petCellInfo == null) return;
