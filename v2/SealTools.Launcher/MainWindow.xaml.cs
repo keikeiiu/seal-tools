@@ -4862,6 +4862,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         save.Click += (_, _) => PetCellSave(hint);
         panel.Children.Add(Section("Save", save));
 
+        // Shows what the OCR makes of the feeder slots before anything acts on it. The counts are the
+        // reading the reload decision will hang on, and a reading nobody has looked at is a number
+        // nobody should trust — the same reason every other calibrator has a Test button.
+        var testRead = MakeButton("Test read", ControlAppearance.Secondary);
+        testRead.Click += async (_, _) => await PetTestRead(hint);
+        panel.Children.Add(Section("Read the feeder",
+            Hint("Open the boarding window with the food loaded, then press Test read. The tool reads " +
+                 "each feeder slot and reports the text it found — the stack counts the reload " +
+                 "decision will use. The slots are the boxes drawn on Calibrate Pet, so if this reads " +
+                 "nothing, check those boxes cover the numbers."),
+            testRead));
+
         panel.Children.Add(Section("Result", hint));
 
         RefreshPetCells();
@@ -5251,6 +5263,55 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Writes the bag marks. They live in the same local.yaml block as the geometry because
     /// they are the same kind of thing — coordinates measured on this machine — even though one is set
     /// once and the other re-marked as the bag changes.</summary>
+    /// <summary>Reads both feeder slots and reports what the OCR found, without acting on it.
+    ///
+    /// The launcher is hidden for the read because the capture reads the screen: whatever is on top is
+    /// what lands in the image, and a count read off the launcher would be a plausible-looking number
+    /// that means nothing.</summary>
+    private async Task PetTestRead(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        if (!BagGrid.IsValidRect(pet.FeederSlotA) && !BagGrid.IsValidRect(pet.FeederSlotB))
+        {
+            hint.Text = "Draw the feeder slots on Calibrate Pet first — the counts are read from them.";
+            return;
+        }
+
+        var boxes = new List<(string What, List<int> Box)>();
+        if (BagGrid.IsValidRect(pet.FeederSlotA)) boxes.Add(("slot 1", pet.FeederSlotA!));
+        if (BagGrid.IsValidRect(pet.FeederSlotB)) boxes.Add(("slot 2", pet.FeederSlotB!));
+
+        var report = new List<string>();
+        var total = 0;
+        var counted = 0;
+        try
+        {
+            foreach (var (what, box) in boxes)
+            {
+                var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
+                var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region));
+                var joined = string.Join(" | ", lines);
+
+                // The number is what matters, so it is parsed rather than echoed: a slot reading "270"
+                // and one reading "27O" look identical in a report and behave completely differently.
+                var digits = new string(joined.Where(char.IsDigit).ToArray());
+                var parsed = int.TryParse(digits, out var n) ? n : (int?)null;
+                if (parsed is { } value) { total += value; counted++; }
+
+                report.Add($"{what}: {(joined.Length == 0 ? "(nothing)" : joined)}" +
+                           (parsed is { } v2 ? $" -> {v2}" : " -> not a number"));
+            }
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Read failed: " + ex.Message;
+            return;
+        }
+
+        hint.Text = string.Join("; ", report) +
+            (counted > 0 ? $". Total {total} items" : ". (Nothing parsed — check the boxes cover the numbers.)");
+    }
+
     private void PetCellSave(TextBlock hint)
     {
         var pet = _service.Config.Pet;

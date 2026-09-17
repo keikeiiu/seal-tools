@@ -105,6 +105,41 @@ public sealed class OcrEngine : IDisposable
     }
 
     // One capture + OCR pass over the geometry (no retry). The retry policy lives in Scan().
+    /// <summary>Read a region as plain text lines — what the game shows there, with no
+    /// interpretation.
+    ///
+    /// <see cref="Scan(OcrGeometry)"/> reconstructs lines by Y-band and filters them by X, which is
+    /// right for a form whose shape is known (the tuning window) and wrong for "read whatever is in
+    /// this box". Added for callers that want a NUMBER off the screen — the pet feeder's stack counts
+    /// — where the only thing in the region is the number.
+    ///
+    /// No retry loop and no confirmation: those exist in <see cref="Scan(OcrGeometry)"/> to keep a
+    /// bad read from advancing the composer, and a caller that has its own sense of a good read
+    /// should not pay for them.</summary>
+    public IReadOnlyList<string> ReadLines(RegionConfig region)
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return Array.Empty<string>();
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, region);
+        if (cap == null) return Array.Empty<string>();
+
+        using var mat = cap.Image;
+        InitOcr();
+
+        // A null path: the recogniser only writes a frame when it is given somewhere to write, and
+        // the tuner already passes null whenever save_captures is off.
+        var ocrResult = _ocr!.RecognizeText(mat, null!);
+        var items = ocrResult.WordResults ?? Array.Empty<DetBoxItem>();
+
+        // RowHeight only groups glyphs into lines here; nothing is filtered by position, because the
+        // whole region is the thing being read.
+        return BuildLines(items, Math.Max(8, _cfg.Tuner.Ocr.RowHeight))
+            .Select(line => _cleaner.Clean(line.text))
+            .Where(text => text.Length > 0)
+            .ToList();
+    }
+
     private ScanResult? ScanOnce(OcrGeometry ocr, IntPtr hwnd, bool forceCapture)
     {
         var region = ocr.Region;

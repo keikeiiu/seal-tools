@@ -260,6 +260,15 @@ public sealed class LauncherService : IDisposable
         return _diagnosticOcr.Scan(ocr);
     }
 
+    /// <summary>Reads a region as plain text — for a calibrator that wants to show what the OCR sees
+    /// before anything is built on the reading. Distinct from <see cref="CheckOcr"/> because that one
+    /// interprets the region as the tuning window.</summary>
+    public IReadOnlyList<string> ReadText(RegionConfig region)
+    {
+        _diagnosticOcr ??= new OcrEngine(Config, Attributes, _rootDir);
+        return _diagnosticOcr.ReadLines(region);
+    }
+
     /// <summary>Deletes the debug OCR capture images (logs/captures/*.png). Returns the number removed.</summary>
     public int CleanupCaptures()
     {
