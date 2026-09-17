@@ -63,19 +63,13 @@ public sealed class PetConfig
 
     // ── What the boarding window says ───────────────────────────────────────
 
-    /// <summary>The 開始代養 / 結束代養 toggle's label. The same button starts and ends boarding, so
-    /// its label is a direct read of whether the pet is currently being fed — the most definitive
-    /// state signal available, though only visible while the window is open.</summary>
+    /// <summary>The 開始代養 / 結束代養 button, as a box — the tool CLICKS its centre to start
+    /// boarding once the food is loaded. Its label is not read.
+    ///
+    /// It was briefly planned as a state read: one button both starts and ends boarding, so its label
+    /// would say whether the pet is being fed. Dropped, because the schedule already decides when to
+    /// reload and there is nothing left for the label to answer.</summary>
     public List<int>? ToggleLabel { get; set; }
-
-    /// <summary>The feeder slots, empty-check crops. Two of them: the load is two stacks and each is
-    /// placed separately.</summary>
-    public List<int>? FeederSlotA { get; set; }
-    public List<int>? FeederSlotB { get; set; }
-
-    /// <summary>The pet's hunger readout at the bottom right — `肚子餓(nn%)`. The intended polling
-    /// trigger, since it is visible without opening any window (see PLAN-PET-AUTOFEED.md §3).</summary>
-    public List<int>? HungerRegion { get; set; }
 
     // ── The bag, as THIS flow shows it ──────────────────────────────────────
 
