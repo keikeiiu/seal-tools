@@ -37,9 +37,9 @@ firmware zip:
 
 | File | What it is | When you want it |
 |---|---|---|
-| `SealTools-v2.9.1.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
-| `SealTools-v2.9.1-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
-| `SealTools-v2.9.1-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
+| `SealTools-v2.10.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
+| `SealTools-v2.10-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
+| `SealTools-v2.10-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
 
 > ⚠ **Do not use the `-local` zip on a different machine.** It carries coordinates measured on the PC
 > it was built from. On a machine with a different resolution, DPI scale or game client size, every
@@ -92,7 +92,7 @@ those two look identical later.
 
 ## 3. Install the app
 
-1. Unzip `SealTools-v2.9.1.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
+1. Unzip `SealTools-v2.10.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
    installer and nothing is written outside the folder.
 2. Run `SealTools.Launcher.exe`.
    **Recommended: right-click → Run as administrator.** The app opens a serial port, and on some

@@ -1,4 +1,4 @@
-# Seal Tools v2.9.1 (C# / .NET 8 WPF)
+# Seal Tools v2.10 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -8,7 +8,7 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 ## Download
 
-**Take the latest — [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip).**
+**Take the latest — [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip).**
 Self-contained (exe + OCR models + config templates) — unzip and run. Installation, including flashing
 the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
 

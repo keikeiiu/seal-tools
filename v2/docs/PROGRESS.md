@@ -9,6 +9,52 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-17 — the Pet Feeder, and the cursor bug it uncovered
+
+**Shipped as `v2.10`.** A new tool that keeps a boarded pet fed while nobody is watching, plus two
+fixes to the shared cursor placement that reach every other tool.
+
+**The design work was in the documentation, not the session.** `PLAN-PET-AUTOFEED.md` was written first
+and corrected repeatedly against what the game actually does — the mechanism is 代養 (boarding), not
+餵養; the load is two stacks of 300; ending the feed returns the pet *and* the food, so a reload is
+end → replace → load → start rather than a top-up. `PET-DATA.md` carries all 327 normal pets with their
+boarding food and the per-level 喂养值 cost, measured off the live site (`base × 12.6` for a full
+stage — the cost rises by a tenth of the base each level).
+
+**The tool's trigger is a schedule, and that is a conclusion rather than a shortcut.** The hunger
+readout at the bottom right belongs to the *carried* pet, not the boarded one, so nothing on the main
+screen says anything about the pet being fed. What is left is arithmetic, and it is enough: reloading
+early is nearly free because the leftover food comes back.
+
+**The cursor placement bug it uncovered is the more valuable find.** `HidPointer.WaitForCursorToSettle`
+treated two polls reading the same position as a finished move — which is equally true of a move that
+has not *started*. On a full-height move the loop fed corrections forward against a stale position,
+three asks landed together, and the cursor clamped at the top of the screen. Two fixes: a move is not
+settled until movement has been *seen*, and the step budget went 6 → 16 because a damped correction
+needs ~10. Every tool that places a cursor inherited this; the shop never exposed it because its
+corrections are small.
+
+**Still unexplained:** something moves the cursor that is not the tool — one trace shows 550 px of
+travel in answer to a 61 px request. A re-aim before each click covers it. If it is the game's own
+auto-farming moving the pointer, it affects every placement.
+
+**Deliberately not built:** reading the boarding state (a tick box stands in), and the pet-slot and
+feeder-slot checks — both slots are calibrated and neither is read, so a reload that half-fails
+currently reports success.
+
+**Left open**
+
+- The boarding state is asserted by the player, not read. A crop comparison of the 開始代養 / 結束代養
+  label replaces the tick box and needs no new machinery.
+- The pet slot and feeder slots are calibrated but unread — the guards that would let the tool stand
+  behind `reload complete`.
+- Most inter-step delays are still inherited from the shop tool's values; only the 2.5s after ending
+  and the 0.9s after a page tab are measured.
+- `OcrEngine` lives in `SealTools.Tuner`, so the pet tool cannot use it for the EXP% read that would
+  stop it feeding a finished pet. Moving it to `Core` is the prerequisite.
+
+---
+
 ## 2026-09-15 — the cards can be hidden, so a small screen can still calibrate
 
 **Reported from the second PC.** Its screen is small enough that maximizing the launcher to drag a
