@@ -325,6 +325,10 @@ public sealed class PetTool : ToolBase
             // ONE Enter, not two. The sell flow's second Enter dismisses a confirmation this dialog
             // does not have, so sending it would press an Enter into whatever follows.
             if (!Enter(ser, out error)) return false;
+            // Logged because it is the one action with nothing to see: a keypress has no cursor
+            // movement and no visible effect of its own, so a reload that skipped it would read
+            // exactly like one that sent it.
+            Log("  enter (confirms the count dialog — no second one: this dialog has no confirmation)");
             SleepCheck(DialogWait);
         }
 
