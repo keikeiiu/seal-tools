@@ -67,9 +67,36 @@ portable `defaults.yaml` — the same rule the bag grids and the OCR band alread
 
 | Read | Enables |
 |---|---|
-| A pet's name and growth (`+9 [78.20%]`) | "which pet still needs boarding" — the automatic direction in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md) §11. The **name** resolves to a stage through [PET-DATA.md](PET-DATA.md), which is already scraped, so no new data is needed |
+| A pet's **stage, growth and EXP** | "where is this pet" and "is it done" — the automatic direction in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md) §11, and the guard that stops the feeder reloading a finished pet |
 | A food stack's count | knowing when the feeder runs dry instead of predicting it, which is the single biggest accuracy upgrade available to that tool |
 | Anything else's tooltip | whatever wants it next, for the cost of a parser rather than a calibration |
+
+### Measured on the live game: read the NUMBERS, never the text
+
+Verified 2026-09-18, reading a pet panel on the live game. **Every digit came back exact; the Chinese
+did not.**
+
+```
+on screen   (6階) 真蔚藍鳳凰 +7 [52.18%]
+read        （6）真蔚蓝凤凰+7[52.18%]
+
+on screen   所有職業皆可使用    讀作   所有瞬業皆可使用
+on screen   販賣價格            讀作   贩直價格
+```
+
+The pattern is not random: the recogniser's language model is **Simplified**, and the game renders
+**Traditional**. So 藍 → 蓝 and 鳳 → 凤 are the model *normalising* to a script the game is not using,
+and the characters it cannot map that way are mangled — 階 → 踏, 職 → 瞬, 賣 → 直.
+
+**Which kills the original plan for this read.** The idea was to resolve a pet's stage from its NAME
+via the scraped table in [PET-DATA.md](PET-DATA.md) — but that table is Simplified (it comes from the
+Simplified data site, see [[seal-game-data-source]]) and the game is not, so even a *perfect* read would
+not match. Two independent reasons the lookup could not work.
+
+**And it turns out not to be needed.** The panel states the stage outright as `(N階)`, the growth as
+`+N` and the EXP as `[..%]` — three numbers, all of which read cleanly. So the design is to parse the
+digits and ignore every surrounding character, which sidesteps the script mismatch and the recogniser's
+weakness in the same move. The 327-entry table is not needed for this at all.
 
 ## Where it lives in the UI
 
