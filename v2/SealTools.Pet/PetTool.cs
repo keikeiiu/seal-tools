@@ -48,6 +48,25 @@ public sealed class PetTool : ToolBase
     /// wants measuring against a real farming bag rather than trusting — see the plan's open question.</summary>
     private const double MatchLimit = 0.12;
 
+    /// <summary>The reload's own log. Written because the card's message is the only other record of a
+    /// reload, and it is overwritten by the next line and gone once the tool stops — so a failure that
+    /// happened while nobody was watching left nothing at all to read. Lands beside the launcher's
+    /// crash log, under the bin directory.</summary>
+    private static void Log(string line)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "pet.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+        }
+        catch
+        {
+            // Logging must never be the reason a tool fails.
+        }
+    }
+
     private readonly AppConfig _cfg;
     private int _nextFoodCell;
 
@@ -62,6 +81,10 @@ public sealed class PetTool : ToolBase
             state.Running = false;
             return 0;
         }
+
+        Log($"run started — cycling every {CycleMinutes():0} min " +
+            $"({_cfg.Pet.LoadItems} items at {_cfg.Pet.ItemsPerMinute}/min, minus " +
+            $"{SafetyMarginMinutes:0} min margin)");
 
         var failures = 0;
         try
@@ -169,18 +192,26 @@ public sealed class PetTool : ToolBase
         // the window and then closed it again", because the close below is the cleanup and it is the
         // only thing the eye catches.
         state.Message = "Opening the boarding window…";
-        if (!OpenBoarding(ser, out error)) return false;
+        Log("reload: opening the boarding window");
+        if (!OpenBoarding(ser, out error)) { Log("  FAILED opening: " + error); return false; }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
             state.Message = "Placing the pet…";
-            if (!PlacePet(ser, out error)) return false;
+            Log("  placing the pet");
+            if (!PlacePet(ser, out error)) { Log("  FAILED placing the pet: " + error); return false; }
+
             state.Message = "Loading the food…";
-            if (!LoadFood(ser, out error)) return false;
+            Log("  loading the food");
+            if (!LoadFood(ser, out error)) { Log("  FAILED loading the food: " + error); return false; }
+
             state.Message = "Starting boarding…";
-            if (!StartBoarding(ser, out error)) return false;
+            Log("  starting boarding");
+            if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
+
+            Log("  reload complete");
             return true;
         }
         finally
