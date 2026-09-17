@@ -36,7 +36,13 @@ public static class HidPointer
 
     // Bounded so a wedged pointer can't hang the composer. One iteration is the normal case: the
     // measured gain is 1:1 (D 100 0 -> +100 px in GetCursorPos space), so the first move lands.
-    private const int MaxSteps = 6;
+    //
+    // Raised from 6 after a live failure (2026-09-17). Six is enough for the normal case and was too
+    // few for the DAMPED one: once the divisor doubles, each step closes only about half the
+    // remaining error, so a correction that starts far out needs roughly ten steps to reach the 2 px
+    // tolerance and the loop gave up ~19 px short. The budget only gets spent when something has
+    // already gone wrong, so raising it costs nothing on a healthy placement.
+    private const int MaxSteps = 16;
 
     // The firmware walks a "D dx dy" move in 10-px chunks with a 1 ms gap (arduino/seal_mouse.ino),
     // so a long move keeps arriving for tens of ms after Write returns. Sampling too early makes the

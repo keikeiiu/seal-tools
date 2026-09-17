@@ -230,9 +230,9 @@ public sealed class PetTool : ToolBase
     /// <summary>目錄 → the pet feed icon → the boarding window (which brings the bag up with it).</summary>
     private bool OpenBoarding(SerialPort ser, out string error)
     {
-        if (!Click(ser, _cfg.Pet.MenuButton!, right: false, out error)) return false;
+        if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
         SleepCheck(WindowWait);
-        return Click(ser, _cfg.Pet.FeedIcon!, right: false, out error);
+        return Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error);
     }
 
     private void CloseBoarding(SerialPort ser)
@@ -241,7 +241,7 @@ public sealed class PetTool : ToolBase
         // Logged even though it cannot fail the reload: it is the cleanup, and on a failed reload it
         // is the LAST thing that moves the cursor. Without a line here the log ends at the failure and
         // the closing reads as a step that ran and did something unexplained.
-        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, out var err))
+        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, "the boarding X", out var err))
             Log("  close: couldn't reach the X — " + err);
         else
             Log("  close: clicked the boarding window's X");
@@ -285,7 +285,7 @@ public sealed class PetTool : ToolBase
 
         var (cx, cy) = centres[cell];
         Console.WriteLine($"[pet] placing from page {page + 1}, cell {cell}");
-        return Click(ser, new List<int> { cx, cy }, right: true, out error);
+        return Click(ser, new List<int> { cx, cy }, right: true, $"the PET at cell {cell} (page {page + 1})", out error);
     }
 
     /// <summary>Two stacks, one transaction each. The cell to use rotates through the marked set
@@ -316,10 +316,10 @@ public sealed class PetTool : ToolBase
                 return false;
             }
             var (cx, cy) = centres[index];
-            if (!Click(ser, new List<int> { cx, cy }, right: true, out error)) return false;
+            if (!Click(ser, new List<int> { cx, cy }, right: true, $"FOOD cell {index} (page {page + 1})", out error)) return false;
 
             SleepCheck(DialogWait);
-            if (!Click(ser, EffectiveMax()!, right: false, out error)) return false;
+            if (!Click(ser, EffectiveMax()!, right: false, "MAX", out error)) return false;
             SleepCheck(DialogWait);
 
             // ONE Enter, not two. The sell flow's second Enter dismisses a confirmation this dialog
@@ -358,7 +358,7 @@ public sealed class PetTool : ToolBase
         // the button, which is why one box serves as both the read and the press.
         var label = _cfg.Pet.ToggleLabel!;
         var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
-        return Click(ser, centre, right: false, out error);
+        return Click(ser, centre, right: false, "the start button", out error);
     }
 
     private bool SelectPage(SerialPort ser, int page, out string error)
@@ -373,19 +373,30 @@ public sealed class PetTool : ToolBase
 
         // Absolute tabs, not next/previous: clicking ITEM2 lands on page 2 whatever page we were on,
         // so there is no relative position to lose track of and nothing to read back.
-        if (!Click(ser, tabs[page], right: false, out error)) return false;
+        if (!Click(ser, tabs[page], right: false, $"the ITEM{page + 1} tab", out error)) return false;
         SleepCheck(ClickWait);
         return true;
     }
 
     // ── Plumbing ────────────────────────────────────────────────────────────
 
-    private bool Click(SerialPort ser, List<int> point, bool right, out string error)
+    /// <summary>Place, then click. Both halves are logged against <paramref name="what"/>, because
+    /// "the cursor went to the pet and nothing happened" is ambiguous otherwise: the move can have
+    /// succeeded with the click never sent, or been sent at the wrong moment. The log now says which.
+    /// </summary>
+    private bool Click(SerialPort ser, List<int> point, bool right, string what, out string error)
     {
-        if (!PlaceOn(ser, point[0], point[1], out error)) return false;
+        if (!PlaceOn(ser, point[0], point[1], out error))
+        {
+            Log($"  FAILED moving to {what} at ({point[0]},{point[1]}): {error}");
+            return false;
+        }
+
         SleepCheck(ClickWait);
         if (right) HidPointer.RightClick(ser);
         else HidPointer.Click(ser);
+
+        Log($"  {(right ? "right-click" : "click")} {what} at ({point[0]},{point[1]})");
         return true;
     }
 
