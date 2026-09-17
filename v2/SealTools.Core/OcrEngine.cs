@@ -156,10 +156,19 @@ public sealed class OcrEngine : IDisposable
 
         // RowHeight only groups glyphs into lines here; nothing is filtered by position, because the
         // whole region is the thing being read.
-        return BuildLines(items, Math.Max(8, _cfg.Tuner.Ocr.RowHeight))
-            .Select(line => _cleaner.Clean(line.text))
-            .Where(text => text.Length > 0)
+        var lines = BuildLines(items, Math.Max(8, _cfg.Tuner.Ocr.RowHeight))
+            .Select(line => (Text: _cleaner.Clean(line.text), line.conf))
+            .Where(line => line.Text.Length > 0)
             .ToList();
+
+        // Written beside the image when one was asked for. The image says what the reader was GIVEN;
+        // this says what it made of it, and those are different failures needing different fixes.
+        // Confidence is kept because a line read at 0.3 is a line to distrust even when it looks right.
+        if (!string.IsNullOrEmpty(saveDebug))
+            File.WriteAllText(Path.ChangeExtension(saveDebug, ".txt"),
+                string.Join(Environment.NewLine, lines.Select(l => $"{l.conf:0.00}	{l.Text}")) + Environment.NewLine);
+
+        return lines.Select(l => l.Text).ToList();
     }
 
     private ScanResult? ScanOnce(OcrGeometry ocr, IntPtr hwnd, bool forceCapture)

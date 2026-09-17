@@ -4406,12 +4406,30 @@ public partial class MainWindow : FluentWindow, IDisposable
         save.Click += (_, _) => TooltipSave();
         var testRead = MakeButton("Test read", ControlAppearance.Secondary);
         testRead.Click += async (_, _) => await TooltipTestRead(hint);
+        // A field rather than a constant, because it was measured and then immediately found wanting:
+        // 700ms read the bag instead of the panel on the first attempt, and only worked once the
+        // cursor had been parked a while. That is a number to tune by watching, which means a control.
+        var hoverBox = UiText(_service.Config.Tooltip.HoverDelayMs.ToString(CultureInfo.InvariantCulture));
+        hoverBox.Width = 70;
+        hoverBox.VerticalAlignment = VerticalAlignment.Center;
+        hoverBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(hoverBox.Text.Trim(), out var ms) && ms >= 100)
+                _service.Config.Tooltip.HoverDelayMs = ms;
+        };
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         save.Margin = new Thickness(0, 0, 6, 0);
         testRead.Margin = new Thickness(0, 0, 6, 0);
         buttons.Children.Add(save);
         buttons.Children.Add(testRead);
-        panel.Children.Add(Section("Save and check", buttons));
+        panel.Children.Add(Section("Save and check",
+            Hint("Hover delay — how long the cursor sits on the item before the panel is read. 700ms " +
+                 "was not always enough: one read caught the bag with the cursor on it and no panel " +
+                 "up yet, which looks exactly like a wrong offset. Raise it until Test read is " +
+                 "reliable, then press Save to keep it."),
+            LabeledField("Hover delay (ms)", hoverBox),
+            buttons));
 
         panel.Children.Add(Section("Result", hint));
 
@@ -4438,6 +4456,46 @@ public partial class MainWindow : FluentWindow, IDisposable
         TooltipRedraw();
         _tooltipHint!.Text = "Captured. Now press Mark hover point and click the item whose panel you " +
             "want to measure.";
+    }
+
+    /// <summary>Focus on an inert point, THEN move to the hover point — without clicking it.
+    ///
+    /// The click is only there to give the game focus, and the HID click focuses as it presses. Making
+    /// it the hover point too means pressing whatever is being hovered, and on a pet in the bag that
+    /// SWITCHES THE EQUIPPED PET (player, 2026-09-18) — so the thing being measured is changed by the
+    /// act of measuring it. A hover needs the cursor OVER the item, not a press on it.
+    ///
+    /// The focus point is the buy/sell one, reused rather than re-marked: it is already calibrated and
+    /// already documented as a place nothing responds to, and a second one would be a second thing to
+    /// drift.
+    /// </summary>
+    private async Task<bool> FocusThenHover(SerialPort ser, List<int> hoverPoint, TextBlock hint)
+    {
+        var focus = _service.Config.BuySell.ScrollPoint;
+        if (focus is not { Count: 2 })
+        {
+            hint.Text = "No focus point is calibrated. Both tools left-click one at the start of a run " +
+                        "to give the game focus — mark it on Calibrate Buy/Sell, somewhere inert. It " +
+                        "must NOT be the item being hovered: the click would act on it.";
+            return false;
+        }
+
+        if (!TryPlace(ser, focus[0], focus[1], out var err))
+        {
+            hint.Text = "Couldn't reach the focus point: " + err;
+            return false;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(400);
+
+        // MOVE only. This is the whole point of the split.
+        if (!TryPlace(ser, hoverPoint[0], hoverPoint[1], out err))
+        {
+            hint.Text = "Couldn't move onto the item: " + err;
+            return false;
+        }
+        await Task.Delay(Math.Max(200, _service.Config.Tooltip.HoverDelayMs));
+        return true;
     }
 
     private void TooltipMarkHoverPoint()
@@ -4468,18 +4526,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var delay = Math.Max(200, _service.Config.Tooltip.HoverDelayMs);
-
         // One click does both jobs here and elsewhere: the HID click focuses the game as it presses,
         // so there is no separate focus step. It lands on the item, which is the point — the panel is
         // what is being measured.
-        if (!TryPlace(ser, point[0], point[1], out var err))
-        {
-            _tooltipHint!.Text = "Couldn't move the cursor: " + err;
-            return;
-        }
-        HidPointer.Click(ser);
-        await Task.Delay(delay);
+        if (!await FocusThenHover(ser, point, _tooltipHint!)) return;
 
         if (_tooltipScreenshot is not null && _tooltipCanvas is not null)
         {
@@ -4643,13 +4693,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        if (!TryPlace(ser, point[0], point[1], out var err))
-        {
-            hint.Text = "Couldn't move the cursor: " + err;
-            return;
-        }
-        HidPointer.Click(ser);
-        await Task.Delay(Math.Max(200, cfg.HoverDelayMs));
+        if (!await FocusThenHover(ser, point, hint)) return;
 
         // The panel region is the point the cursor was parked on, plus the offset the calibration
         // measured — which is the whole reason the offset is stored rather than an absolute box.

@@ -51,7 +51,7 @@ public sealed class TooltipConfig
     /// <summary>How long the panel takes to appear after the cursor settles on an item. Too short and
     /// the capture finds an empty region, which reads exactly like "nothing here" — the same class of
     /// silent failure as a click that outruns an animation.</summary>
-    public int HoverDelayMs { get; set; } = 700;
+    public int HoverDelayMs { get; set; } = 1200;
 
     /// <summary>True once a box has been dragged. The offset alone is meaningless without a size to
     /// read, and a size without an offset would read the wrong place.</summary>
