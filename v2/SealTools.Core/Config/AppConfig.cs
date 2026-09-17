@@ -108,6 +108,16 @@ public sealed class PetConfig
     /// reload and there is nothing left for the label to answer.</summary>
     public List<int>? ToggleLabel { get; set; }
 
+    /// <summary>The pet's slot IN THE BOARDING WINDOW, as a box — not to be confused with
+    /// <see cref="PetCell"/>, which is where the pet sits in the BAG. This is the slot a
+    /// successfully-placed pet lands in.
+    ///
+    /// An empty-check crop, like the feeder slots: the same saved-crop-and-differing-pixels test. It
+    /// answers "did a pet actually go in?", which is the check worth having before loading food and
+    /// starting — a right-click that missed leaves an empty slot and a boarding window that looks
+    /// perfectly normal.</summary>
+    public List<int>? BoardingPetSlot { get; set; }
+
     /// <summary>The two feeder slots in the boarding window, as boxes.
     ///
     /// These are the empty-check crops: the same saved-crop-and-differing-pixels test the composer

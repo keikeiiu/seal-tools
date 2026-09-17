@@ -4709,10 +4709,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         // the boarded one. Marks nothing reads are marks that go stale unnoticed.
         var drawToggle = MakeButton("Draw start button", ControlAppearance.Secondary);
         drawToggle.Click += (_, _) => PetArmDrag("toggle");
+        var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
+        drawPetSlot.Click += (_, _) => PetArmDrag("petslot");
         var drawFeeder = MakeButton("Draw feeder slots", ControlAppearance.Secondary);
         drawFeeder.Click += (_, _) => PetArmDrag("feederA");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawToggle, drawFeeder })
+        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             boxRow.Children.Add(b);
@@ -4723,6 +4725,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "clicks its centre once the food is loaded. It is one button that both starts and " +
                  "ends boarding, but the label is not read: the schedule already decides when to " +
                  "reload, so there is nothing to ask.\n" +
+                 "Pet slot — the square the pet lands in when it is placed. An empty-check crop, " +
+                 "and the one that answers \"did the pet actually go in?\" before any food is loaded: " +
+                 "a right-click that missed leaves an empty slot and a window that otherwise looks " +
+                 "perfectly normal.\n" +
                  "Feeder slots — drag the first, then it asks for the second. These are the " +
                  "empty-check crops, which is how a loaded slot is told from an empty one; the " +
                  "current flow reloads on a schedule rather than looking first, so they are " +
@@ -4891,6 +4897,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             "toggle" => "Drag a box around the 開始代養 / 結束代養 button. The tool clicks its centre " +
                         "to start boarding once the food is loaded.",
+            "petslot" => "Drag a box around the PET SLOT in the boarding window — the square the " +
+                        "pet sits in, next to the food.",
             "feederA" => "Drag a box around the FIRST feeder slot.",
             "feederB" => "Drag a box around the SECOND feeder slot.",
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
@@ -4993,6 +5001,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                 _petHint!.Text = $"Start button {rect[2]}x{rect[3]} — the tool clicks its centre once " +
                     "the food is loaded.";
                 break;
+            case "petslot":
+                pet.BoardingPetSlot = rect;
+                _petDragTarget = null;
+                _petHint!.Text = $"Pet slot {rect[2]}x{rect[3]} — the tool checks this is occupied " +
+                    "after placing the pet, so a missed right-click stops the run instead of loading " +
+                    "food into an empty boarding.";
+                break;
             case "feederA":
                 pet.FeederSlotA = rect;
                 _petDragTarget = "feederB";
@@ -5050,6 +5065,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 Dot(canvas, shot, new Point(tab[0], tab[1]), Brushes.DeepSkyBlue, 12 + i * 3);
 
         if (BagGrid.IsValidRect(pet.ToggleLabel)) Box(canvas, shot, pet.ToggleLabel!, Brushes.LimeGreen);
+        if (BagGrid.IsValidRect(pet.BoardingPetSlot)) Box(canvas, shot, pet.BoardingPetSlot!, Brushes.DeepSkyBlue);
         if (BagGrid.IsValidRect(pet.FeederSlotA)) Box(canvas, shot, pet.FeederSlotA!, Brushes.Yellow);
         if (BagGrid.IsValidRect(pet.FeederSlotB)) Box(canvas, shot, pet.FeederSlotB!, Brushes.Yellow);
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
@@ -5096,6 +5112,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(pet.CloseButton is { Count: 2 }, "boarding X          (click)"),
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
             Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding start button (drag)"),
+            Mark(BagGrid.IsValidRect(pet.BoardingPetSlot), "boarding pet slot    (drag)"),
             Mark(BagGrid.IsValidRect(pet.FeederSlotA), "feeder slot 1        (drag)"),
             Mark(BagGrid.IsValidRect(pet.FeederSlotB), "feeder slot 2        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
@@ -5219,6 +5236,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             CloseButton = pet.CloseButton,
             PageTabs = pet.PageTabs,
             ToggleLabel = pet.ToggleLabel,
+            BoardingPetSlot = pet.BoardingPetSlot,
             FeederSlotA = pet.FeederSlotA,
             FeederSlotB = pet.FeederSlotB,
             BagGrid = pet.BagGrid,
