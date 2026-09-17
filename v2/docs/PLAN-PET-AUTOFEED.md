@@ -375,9 +375,14 @@ mean new commands and a reflash of every board. The right-click path needs none 
 100% exactly counts. At `+9` under 100% it is still growing and still wants
 feeding; the game stops boarding only once it is both, which is the state that lets it evolve.
 
-So the check is on **growth and EXP together** — `+9` and `EXP >= 100` — and reading the growth alone would stop feeding a pet
-that has not finished — the opposite of the failure this guard exists to prevent. Both are on the pet's
-panel as `+N` and `[..%]`, and both read cleanly (see [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md)).
+**And the boarding stops at exactly 100%, not past it** (player, 2026-09-18): the breeder feeds a pet to
+the evolve threshold and then stops, so `100.00%` is the normal finished reading rather than an edge
+case. That is why the comparison is inclusive.
+
+So the check is on **growth and EXP together** — `+9` and `EXP >= 100` — and reading the growth alone
+would stop feeding a pet that has not finished, the opposite of the failure this guard exists to
+prevent. Both are on the pet's panel as `+N` and `[..%]`, and both read cleanly
+(see [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md)).
 
 ---
 
