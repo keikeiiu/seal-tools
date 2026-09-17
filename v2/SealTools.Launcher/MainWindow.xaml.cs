@@ -4506,18 +4506,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petCellInfo = Mono();
         cellsPanel.Children.Add(_petCellInfo);
 
-        panel.Children.Add(Section("Food and pet cells",
-            Hint("The 8x8 stands in for the bag. Pick a PAGE first — marks are per page, because the " +
-                 "same cell index on another page is a different item, and the bag is paged. Then " +
-                 "choose what a click marks:" + Environment.NewLine +
-                 "  FOOD cells — every slot holding pet food. Consumed highest index first, the same " +
-                 "rule the Sell screen uses and for the same reason: correct whether or not the bag " +
-                 "compacts after a slot empties." + Environment.NewLine +
-                 "  PET cell — the single slot the pet goes back into. One, not many." + Environment.NewLine +
-                 "These are marked on the capture's grid, so the bag grid above has to be calibrated " +
-                 "first for the tool to know where these cells actually are."),
-            cellsPanel));
-
 
         panel.Children.Add(Section("The bag, right now",
             Hint("Where the food is and where the pet goes, as the bag looks BEFORE you start. " +
