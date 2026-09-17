@@ -39,6 +39,15 @@ public sealed class PetTool : ToolBase
 
     private const double RetryMinutes = 5;
 
+    /// <summary>After a bag page tab is clicked, before anything is clicked inside the grid.
+    ///
+    /// Switching pages re-renders the grid, and a right-click delivered during that is dropped — with
+    /// the cursor sitting on the right cell the whole time, so it reads as a miss rather than as
+    /// timing. This is the same class of bug as the click delays that bit the shop on a second PC: a
+    /// click that outruns an animation is indistinguishable from a click that was never sent.
+    /// </summary>
+    private const double PageWait = 0.9;
+
     /// <summary>How many reloads may fail in a row before the tool stops. Unattended retrying is how
     /// a misread becomes a loop of clicks, and this one runs while nobody is watching.</summary>
     private const int MaxFailures = 3;
@@ -433,7 +442,7 @@ public sealed class PetTool : ToolBase
         // Absolute tabs, not next/previous: clicking ITEM2 lands on page 2 whatever page we were on,
         // so there is no relative position to lose track of and nothing to read back.
         if (!Click(ser, tabs[page], right: false, $"the ITEM{page + 1} tab", out error)) return false;
-        SleepCheck(ClickWait);
+        SleepCheck(PageWait);
         return true;
     }
 
