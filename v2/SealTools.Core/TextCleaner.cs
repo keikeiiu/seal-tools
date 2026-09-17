@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using SealTools.Core.Config;
 
-namespace SealTools.Tuner;
+namespace SealTools.Core;
 
 // Applies the OCR text-cleanup table from attributes.yaml (ported from clean_text()).
 public sealed class TextCleaner

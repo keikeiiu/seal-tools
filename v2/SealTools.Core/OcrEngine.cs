@@ -14,7 +14,7 @@ using RapidOCRSharpOnnx.Utils;
 using SealTools.Core;
 using SealTools.Core.Config;
 
-namespace SealTools.Tuner;
+namespace SealTools.Core;
 
 // Faithful port of tuner/ocr_engine.py TuningOCR. Geometry, grade-color thresholds,
 // and model paths all come from config (no hardcoded values).
