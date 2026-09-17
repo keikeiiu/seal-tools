@@ -1,8 +1,12 @@
 # Auto pet-food replacement — plan
 
-Status: **the flow is built and has never been run against the game.** Calibrate Pet, the Pet tab and
-the reload engine all exist; no reload has been executed yet, so everything below is still design until
-one has. Scope is deliberately narrow: **stage-6 pets, boarding only, one row.**
+Status: **the reload works, both ways, verified live 2026-09-17.** Both entry states run end to end —
+boarding already stopped with the pet in the bag, and the true reload with the pet in the loader, which
+is the one that needs ending first.
+
+What that leaves unproven is everything around the reload rather than the reload itself: nothing verifies
+the pet actually went in or the food actually landed, and the boarding state is still asserted by hand
+(see §4). Scope is deliberately narrow: **stage-6 pets, boarding only, one row.**
 
 Everything the design rests on is measured or confirmed — see [PET-DATA.md](PET-DATA.md) — except the
 open questions at the end.
@@ -595,3 +599,46 @@ adding a row a click rather than a new tab.
 **Buy one slot and capture the second row.** Two of the three unknowns are answerable only from a
 screenshot of an unlocked row — whether the start button is per row, and whether the food slots are
 per row or shared — and a restructure built on a guess is a restructure done twice.
+
+---
+
+## 12. What the live runs taught, that the design could not
+
+Recorded because these are measurements now, not guesses, and several of them were wrong in the design.
+
+**The reload takes ~15 seconds.** Comfortably inside the 185-minute cycle, so no delay below is
+expensive and every one of them can afford to be generous.
+
+**Ending boarding has to be a step, and the design did not have it.** The reload was drawn as
+place → food → start, which only works when the pet is already in the bag. A true reload starts with it
+in the loader, where its bag cell is empty — so the right-click meant to place it hits whatever is in
+that slot instead. Fixed by pressing the 開始代養 / 結束代養 button first (player confirmed that stopping
+the feed is how the pet comes back, and that all the food comes out with it, unfinished stacks too).
+
+**That button is a TOGGLE, so the tool has to know the state.** Pressing it while boarding runs ends it;
+while stopped, starts it. There is no reading-free way to be sure, so today it is a checkbox on the Pet
+tab that the tool ticks for itself after a successful reload. Replacing it with a crop comparison of the
+label is the obvious next step and needs no new machinery.
+
+**The out-of-food message.** When the pet has used up ALL its food, opening the breeder raises a message
+that has to be dismissed before 結束代養 is usable. An Enter after the window opens clears it and is a
+no-op otherwise, so it is sent every time.
+
+**A cursor move is not finished until it has been SEEN to move.** The placement loop treated two polls
+agreeing as "settled", which is equally true of a move that has not started. On a full-height move the
+loop fed corrections forward against a stale position and the queued asks landed together, clamping at
+the top of the screen. The shop never exposed it because its corrections are small.
+
+**Something moves the cursor that is not the tool** — one trace shows 550 px of travel in response to a
+61 px ask. Unidentified. A re-aim immediately before each click covers it, but the cause is worth
+knowing, and it is the most likely explanation for a click that lands on the right cell and does nothing.
+
+**The delays, as they now stand.** All guesses except the two marked:
+
+| Delay | Value | Note |
+|---|---|---|
+| after the start/end press | 2.5 s | the pet returning to the bag |
+| after the start press | 2.0 s | the start taking, before the cleanup closes the window |
+| after 目錄, and after a page tab | 0.9 s | panel opening; bag re-rendering |
+| after Enter / MAX | 0.5 s | dialog opening or closing |
+| between aiming and clicking | 0.35 s | plus a re-aim, because the cursor can drift in it |
