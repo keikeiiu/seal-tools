@@ -90,9 +90,15 @@ on screen   所有職業皆可使用    讀作   所有瞬業皆可使用
 on screen   販賣價格            讀作   贩直價格
 ```
 
-The pattern is not random: the recogniser's language model is **Simplified**, and the game renders
-**Traditional**. So 藍 → 蓝 and 鳳 → 凤 are the model *normalising* to a script the game is not using,
-and the characters it cannot map that way are mangled — 階 → 踏, 職 → 瞬, 賣 → 直.
+**The failure is not uniform, which is worse than if it were.** A later read on a food item returned
+`高級寵物食物` exactly — traditional 級 and 寵 included — so the recogniser is not simply a Simplified
+model normalising everything. It reads some Traditional characters correctly, converts others
+(藍 → 蓝, 鳳 → 凤), and mangles the rest (階 → 踏, 職 → 瞬, 賣 → 直). An earlier note here claimed the
+Simplified-model mechanism outright; that was too tidy and is withdrawn.
+
+What that means in practice: **a Traditional string that reads correctly once is not a string that reads
+correctly reliably**, and there is no way to tell which kind you have without testing that exact string
+repeatedly. Digits and punctuation have shown no such variance.
 
 **Which kills the original plan for this read.** The idea was to resolve a pet's stage from its NAME
 via the scraped table in [PET-DATA.md](PET-DATA.md) — but that table is Simplified (it comes from the
