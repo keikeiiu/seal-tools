@@ -106,23 +106,28 @@ closing the window.
 
 ### What the EXP% actually is, and why it matters
 
-**`[52.18%]` is 喂养值 eaten over 喂养值 needed — but the denominator is not settled, and the two
-candidates differ by a factor of nine.**
+**`[52.18%]` is 喂养值 eaten over the 喂养值 needed for the WHOLE STAGE** — not for the current level
+(player, 2026-09-18, answering the question this section first raised).
 
-- **The current level.** The news page's own worked example reads this way: a pet fed 10 喂养值 against
-  a 30-point level shows `(10/30) × 100 = 33%`, and its wording is 宠物**当前**成长所需的喂养值 — "the
-  喂养值 required for the pet's *current* growth".
-- **The whole stage.** The player reads it this way (2026-09-18), adding "more or less" — so it is a
-  reading, not a measurement.
+**And the stage reading is the one that fits the finished state**, which is what makes it credible
+rather than merely asserted: the game stops boarding at `+9` with exactly 100%, and that is the point at
+which the pet can evolve. A stage total of 100% is precisely the evolve threshold. Read per level,
+`+9` at 100% would mean only "this level is done", with no next level to level into — and nothing would
+explain why the breeder stops there.
 
-**It matters because it changes every number derived from it.** Per level, the percentage resets each
-time the pet levels and the remaining feed is `cost × (1 − pct/100)` for that level. Per stage, it climbs
-monotonically from `+0` to `+9` and the remaining feed is `stage_total × (1 − pct/100)` — nine times
-larger, and no level-by-level detail at all.
+The news page's worked example (10 fed against a 30-point level showing 33%) still describes the
+mechanic correctly; on this reading `30` was simply that pet's *whole-stage* figure for the level it
+happened to be describing, and the page was illustrating the division rather than the scope.
 
-**One observation settles it:** watch the percentage as a pet levels up. If it drops back near zero each
-time, it is per level; if it keeps climbing, it is per stage. Worth doing before anything is computed
-from it, because a factor of nine is not a rounding error.
+**What follows is simpler than the per-level reading would have been:**
+
+```
+remaining 喂养值 = base × 12.6 × (1 − pct/100)
+```
+
+with `base` from [PET-DATA.md](PET-DATA.md) and the percentage straight off the panel — one subtraction
+over the whole run to `+9`, with no level-by-level accumulation and no need to follow the pet's growth
+indicator at all.
 
 That is the piece that turns "how much feeding is left" from a guess into arithmetic, because the other
 two terms are both available:
