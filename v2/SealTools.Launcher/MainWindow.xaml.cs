@@ -4833,6 +4833,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petReadyText = ready;
         panel.Children.Add(Section("Ready to run", ready));
 
+        // Without this the marks live only in memory and vanish on the next launcher start, which is
+        // exactly what happened: they were marked, a run used them, and local.yaml still read
+        // food_cells: [] because nothing on this tab had ever written it.
+        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
+        save.Click += (_, _) => PetCellSave(hint);
+        panel.Children.Add(Section("Save", save));
+
         panel.Children.Add(Section("Result", hint));
 
         RefreshPetCells();
@@ -5212,6 +5219,28 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? $"Ready. Cycles about every {pet.LoadMinutes - 15} minutes."
             : "Not ready:" + Environment.NewLine + "  - " +
               string.Join(Environment.NewLine + "  - ", lines);
+    }
+
+    /// <summary>Writes the bag marks. They live in the same local.yaml block as the geometry because
+    /// they are the same kind of thing — coordinates measured on this machine — even though one is set
+    /// once and the other re-marked as the bag changes.</summary>
+    private void PetCellSave(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        if (pet.PetCell is not { Count: 2 } && pet.FoodCells.Count == 0)
+        {
+            hint.Text = "Nothing to save — mark the pet's cell and the food cells first.";
+            return;
+        }
+
+        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+        local.Pet ??= new ConfigLoader.LocalPet();
+        local.Pet.PetCell = pet.PetCell;
+        local.Pet.FoodCells = pet.FoodCells;
+
+        TrySaveCalibration(() => _service.SaveLocal(local), hint,
+            $"Saved {pet.FoodCells.Count} food cell(s) and the pet cell to config/local.yaml. They " +
+            "survive a restart now — mark them again whenever the bag changes.");
     }
 
     private void PetSave()
