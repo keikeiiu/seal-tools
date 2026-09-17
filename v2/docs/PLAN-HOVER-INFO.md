@@ -1,11 +1,17 @@
 # Reading the hover tooltip — plan
 
-Status: **design only. Nothing built.** A general capability, not a pet-feature detail — which is why it
-has its own document rather than a section in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md).
+Status: **calibrated and reading, verified live 2026-09-18.** The Calibrate Tooltip tab measures the
+offset, hovers with the Arduino, and reads the panel; a Test read reports what the OCR saw, saved beside
+the image. What is NOT built is the parser that turns a read into something a tool acts on, and any
+consumer of it — so today this is a capability with no users.
 
-Goal: **read what the game shows when you hover an item.** The pet tool wants a pet's name and growth to
-decide what to board; the same read would give the food's remaining count, which is the difference
-between predicting when the feeder runs dry and knowing.
+A general capability, not a pet-feature detail, which is why it has its own document rather than a
+section in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md).
+
+Goal: **read what the game shows when you hover an item.** The pet tool wants to know a pet's stage,
+growth and EXP — to decide what to board and to know when it is finished; the same read gives the food's
+remaining count, which is the difference between predicting when the feeder runs dry and knowing. See
+the measurement below for what a read actually yields.
 
 ---
 
