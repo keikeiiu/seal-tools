@@ -231,7 +231,13 @@ public sealed class PetTool : ToolBase
     private void CloseBoarding(SerialPort ser)
     {
         if (!IsPoint(_cfg.Pet.CloseButton)) return;
-        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, out _)) return;
+        // Logged even though it cannot fail the reload: it is the cleanup, and on a failed reload it
+        // is the LAST thing that moves the cursor. Without a line here the log ends at the failure and
+        // the closing reads as a step that ran and did something unexplained.
+        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, out var err))
+            Log("  close: couldn't reach the X — " + err);
+        else
+            Log("  close: clicked the boarding window's X");
         SleepCheck(ClickWait);
     }
 
