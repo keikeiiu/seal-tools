@@ -742,6 +742,13 @@ scan the bag for a cell matching one of the known pet icons
       otherwise     → board it
 ```
 
+**First match wins, then the panel confirms it** (player, 2026-09-18): the icon narrows the field and
+the tooltip read is the double-check on stage and growth. So a poor icon match is caught downstream
+rather than acted on.
+
+**And no match means something specific**: every pet in the bag is finished, so there is nothing to
+board — not "the search failed". That is a reportable end state rather than an error.
+
 **The status check is what makes one-to-three icons safe.** Without it, a finished pet left in the bag
 would be boarded over and over; with it, "is this one done?" is answered per candidate rather than
 assumed from position. And it is the same read the reload already wants for its own guard, so nothing
@@ -749,6 +756,32 @@ new is needed to ask.
 
 The cost, stated honestly: a hover and an OCR per candidate cell, so the scan is seconds rather than
 milliseconds. Acceptable because it runs once per reload — every few hours — rather than per cycle.
+
+### Two different hard problems, only one of which needs the scan
+
+**Pets waiting in the bag can be LOCKED** (player, 2026-09-18), and a locked pet keeps its cell no
+matter what the character picks up. So the queue in its resting state is not a search problem at all —
+it is a set of known positions, and the lock is what makes that true. Nothing here changes for them.
+
+**The pet that comes OFF the breeder is the hard one.** When a pet's two stacks run out it is returned to
+the bag, and *that* landing place is the variable one: the character has been farming the whole time, so
+the free slots are not the free slots that existed when boarding started. A locked pet cannot be that
+one — it was not in the bag to be locked.
+
+So the icon scan earns its place on **one pet per reload** rather than on the queue. Everything else
+keeps working positionally, and the search exists for the case that genuinely cannot be one.
+
+*(Worth noting what this does to the earlier worry: the reason a static map was thought unworkable was
+loot moving things, and the lock answers that for anything the player parks. It is specifically the
+offloaded pet that has no home position.)*
+
+### Where the queue configuration lives
+
+**On the Pet tab, not Calibrate** (player, 2026-09-18). The crops are the player's own working set —
+which pets are being bred right now — and that changes between runs in a way the bag grid never does.
+Putting them under Calibrate would hide a per-run decision behind a once-a-machine screen, and the Pet
+tab is already where the marks that describe the bag *as it is now* live. The saved crops sit beside
+them for the same reason: so the configuration is visible and checkable before a run, not inferred.
 
 *(What this replaces: a queue of marked bag cells, which was the first shape and assumed a still bag.
 Kept in the history because the reasoning that killed it — loot moving things — is the same reasoning
