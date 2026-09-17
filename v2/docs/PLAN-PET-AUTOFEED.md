@@ -746,6 +746,11 @@ scan the bag for a cell matching one of the known pet icons
 the tooltip read is the double-check on stage and growth. So a poor icon match is caught downstream
 rather than acted on.
 
+**And no ordering logic is needed.** Re-boarding the pet already being bred is the intent, but any pet
+of the right kind is a harmless substitute (player, 2026-09-18) — so the tool takes the first
+non-finished match rather than maintaining a priority. That is one less thing to get wrong: a queue with
+an order is a queue that can be resumed in the wrong place, and this one cannot.
+
 **And no match means something specific**: every pet in the bag is finished, so there is nothing to
 board — not "the search failed". That is a reportable end state rather than an error.
 
