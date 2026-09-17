@@ -91,8 +91,18 @@ public sealed class PetConfig
     /// highest cell index first, the same rule SellPass uses and for the same reason.</summary>
     public List<List<int>> FoodCells { get; set; } = new();
 
+    /// <summary>The bag cell the pet is put back into, as [page, cell].
+    ///
+    /// This is the SIMPLE path and it is what the tool uses today: mark where the pet goes and
+    /// right-click it. It is honest about its own limitation — when farming, loot takes the first free
+    /// slot and the pet does not necessarily land here, so this works while the bag is stable and the
+    /// icon matching below is what replaces it. Testing the flow end to end is worth more than getting
+    /// the hard case right first.</summary>
+    public List<int>? PetCell { get; set; }
+
     /// <summary>Where the pet item was dragged on the calibration capture. Kept so the box can be
-    /// redrawn and re-cropped, rather than being a one-shot.</summary>
+    /// redrawn and re-cropped, rather than being a one-shot. Unused by the current flow — see
+    /// <see cref="PetCell"/> for why — and kept because it is the direction the farming case goes.</summary>
     public List<int>? PetIconRect { get; set; }
 
     /// <summary>The pet's bag icon, cropped from the capture at <see cref="PetIconRect"/> and stored

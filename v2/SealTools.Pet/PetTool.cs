@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO.Ports;
 using System.Threading;
-using OpenCvSharp;
 using SealTools.Core;
 using SealTools.Core.Config;
 
@@ -116,9 +115,9 @@ public sealed class PetTool : ToolBase
         if (!BagGrid.IsValidRect(pet.BagGrid) || !BagGrid.IsValidRect(pet.BagSlot))
             return "The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)";
         if (pet.PageTabs.Count == 0) return "The bag page tabs aren't calibrated — Calibrate Pet.";
-        if (IconMatch.FromBase64(pet.PetIconPng) == null)
-            return "The pet icon isn't captured — Calibrate Pet. Without it the pet cannot be found " +
-                   "after boarding drops it.";
+        if (pet.PetCell is not { Count: 2 })
+            return "The pet's bag cell isn't marked — Calibrate Pet. Nothing says where to put the " +
+                   "pet back.";
         if (pet.FoodCells.Count == 0)
             return "No food cells are marked — Calibrate Pet. Nothing says where the pet food lives.";
         if (EffectiveMax() == null)
@@ -178,73 +177,42 @@ public sealed class PetTool : ToolBase
         SleepCheck(ClickWait);
     }
 
-    /// <summary>Find the pet in the bag and right-click it into the boarding slot.
+    /// <summary>Right-click the marked cell to put the pet back into the boarding slot.
     ///
-    /// Searched across ALL pages, because the pet lands wherever the bag is free and that is not
-    /// necessarily the page the food is on.</summary>
+    /// This is the SIMPLE path and it is what runs today: the cell is marked, so nothing has to be
+    /// found. It holds while the bag is stable, which is the testing case.
+    ///
+    /// It is NOT correct while farming, and that is a known and accepted gap rather than an oversight:
+    /// the pet drops into the first free slot, and loot takes the first free slot too, so the pet does
+    /// not necessarily land here. IconMatch exists for exactly that case and is deliberately not wired
+    /// in yet — proving the rest of the flow end to end is worth more than solving the hard case
+    /// first.</summary>
     private bool PlacePet(SerialPort ser, out string error)
     {
         error = "";
         var pet = _cfg.Pet;
 
-        using var icon = IconMatch.FromBase64(pet.PetIconPng);
-        if (icon == null)
+        if (pet.PetCell is not { Count: 2 })
         {
-            error = "The pet icon is missing or no longer decodes — re-capture it on Calibrate Pet.";
+            error = "The pet's bag cell isn't marked — Calibrate Pet.";
             return false;
         }
 
-        var pages = Math.Max(1, pet.PageTabs.Count);
-        var bestCell = -1;
-        var bestScore = double.MaxValue;
-
-        for (int page = 0; page < pages; page++)
-        {
-            if (!SelectPage(ser, page, out error)) return false;
-
-            var shot = CaptureClient();
-            if (shot == null)
-            {
-                error = "Couldn't read the game window while looking for the pet.";
-                return false;
-            }
-
-            using var bag = shot.Image;
-            var found = IconMatch.FindBestCell(bag, pet.BagGrid!, icon);
-            if (found != null && found.Value.Score < bestScore)
-            {
-                // Cell index is the same on every page, so the page it was found on has to be kept —
-                // the same index on another page is a different item.
-                bestScore = found.Value.Score;
-                bestCell = found.Value.Cell;
-                _petPage = page;
-            }
-        }
-
-        if (bestCell < 0)
-        {
-            error = "Couldn't look for the pet — check the bag grid calibration.";
-            return false;
-        }
-
-        if (bestScore > MatchLimit)
-        {
-            // The refusal IS the safety feature. Every other failure here is recoverable; feeding the
-            // wrong item is not, so a weak match stops the run rather than guessing.
-            error = $"No bag cell looks like the pet — the closest is {bestScore:P0} different and the " +
-                    $"limit is {MatchLimit:P0}. Nothing was clicked.";
-            return false;
-        }
-
-        if (!SelectPage(ser, _petPage, out error)) return false;
+        var page = pet.PetCell[0];
+        var cell = pet.PetCell[1];
+        if (!SelectPage(ser, page, out error)) return false;
 
         var centres = BagGrid.Centres(pet.BagGrid!);
-        var (cx, cy) = centres[bestCell];
-        Console.WriteLine($"[pet] found at page {_petPage + 1}, cell {bestCell} ({bestScore:P1} different)");
+        if (cell < 0 || cell >= centres.Count)
+        {
+            error = $"The marked pet cell ({cell}) is outside the bag grid.";
+            return false;
+        }
+
+        var (cx, cy) = centres[cell];
+        Console.WriteLine($"[pet] placing from page {page + 1}, cell {cell}");
         return Click(ser, new List<int> { cx, cy }, right: true, out error);
     }
-
-    private int _petPage;
 
     /// <summary>Two stacks, one transaction each. The cell to use rotates through the marked set
     /// rather than always taking cell 0 — the first stack empties a cell, so a fixed index would
@@ -366,15 +334,6 @@ public sealed class PetTool : ToolBase
             return false;
         }
         return true;
-    }
-
-    /// <summary>A fresh capture of the game client. Null when the window can't be read — which the
-    /// callers treat as "stop", never as "carry on with an empty image".</summary>
-    private GameCapture? CaptureClient()
-    {
-        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
-        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
-        return ScreenCapture.CaptureClient(hwnd);
     }
 
     private static bool IsPoint(List<int>? p) => p is { Count: 2 };

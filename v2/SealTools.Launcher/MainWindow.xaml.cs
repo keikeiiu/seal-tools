@@ -173,6 +173,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Which single point the calibrator is waiting for — see <see cref="PetArmPoint"/>.</summary>
     private string? _petPointTarget;
     private TextBlock? _petChecklist;
+    /// <summary>Which bag page the cell picker edits, and whether a click marks food or the pet.</summary>
+    private int _petPickPage;
+    private bool _petPickPetMode;
+    private Grid? _petCellGrid;
+    private TextBlock? _petCellInfo;
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -4416,6 +4421,68 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "dots miss the slots, re-drag the grid area."),
             LabeledField("Draw", gridRow)));
 
+        var pageRow = new StackPanel { Orientation = Orientation.Horizontal };
+        for (int i = 1; i <= 3; i++)
+        {
+            var page = i;
+            var b = MakeButton($"Page {page}", ControlAppearance.Secondary);
+            b.Click += (_, _) => { _petPickPage = page - 1; RefreshPetCells(); };
+            b.Margin = new Thickness(0, 0, 6, 0);
+            pageRow.Children.Add(b);
+        }
+
+        var modeFood = MakeButton("Mark FOOD cells", ControlAppearance.Secondary);
+        modeFood.Click += (_, _) => { _petPickPetMode = false; RefreshPetCells(); };
+        var modePet = MakeButton("Mark the PET cell", ControlAppearance.Secondary);
+        modePet.Click += (_, _) => { _petPickPetMode = true; RefreshPetCells(); };
+        modeFood.Margin = new Thickness(0, 0, 6, 0);
+        modePet.Margin = new Thickness(0, 0, 6, 0);
+        var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        modeRow.Children.Add(modeFood);
+        modeRow.Children.Add(modePet);
+
+        // Stands in for the bag. Deliberately built by hand rather than from the Sell screen's
+        // picker: that one is wired to the sell selection, and reusing it would make un-marking a
+        // food cell a sale.
+        _petCellGrid = new Grid { Margin = new Thickness(0, 8, 0, 4), HorizontalAlignment = HorizontalAlignment.Left };
+        for (int r = 0; r < BagGrid.Rows; r++) _petCellGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        for (int c = 0; c < BagGrid.Cols; c++) _petCellGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        for (int i = 0; i < BagGrid.SlotCount; i++)
+        {
+            var cell = i;
+            var b = new UiButton
+            {
+                Content = "",
+                Appearance = ControlAppearance.Secondary,
+                Width = 34,
+                Height = 26,
+                Margin = new Thickness(1),
+            };
+            b.Click += (_, _) => TogglePetCell(cell);
+            Grid.SetRow(b, i / BagGrid.Cols);
+            Grid.SetColumn(b, i % BagGrid.Cols);
+            _petCellGrid.Children.Add(b);
+        }
+
+        var cellsPanel = new StackPanel();
+        cellsPanel.Children.Add(LabeledField("Page to edit", pageRow));
+        cellsPanel.Children.Add(LabeledField("A click marks", modeRow));
+        cellsPanel.Children.Add(_petCellGrid);
+        _petCellInfo = Mono();
+        cellsPanel.Children.Add(_petCellInfo);
+
+        panel.Children.Add(Section("Food and pet cells",
+            Hint("The 8x8 stands in for the bag. Pick a PAGE first — marks are per page, because the " +
+                 "same cell index on another page is a different item, and the bag is paged. Then " +
+                 "choose what a click marks:" + Environment.NewLine +
+                 "  FOOD cells — every slot holding pet food. Consumed highest index first, the same " +
+                 "rule the Sell screen uses and for the same reason: correct whether or not the bag " +
+                 "compacts after a slot empties." + Environment.NewLine +
+                 "  PET cell — the single slot the pet goes back into. One, not many." + Environment.NewLine +
+                 "These are marked on the capture's grid, so the bag grid above has to be calibrated " +
+                 "first for the tool to know where these cells actually are."),
+            cellsPanel));
+
         _petChecklist = Mono();
         _petChecklist.Text = "nothing captured yet";
         panel.Children.Add(Section("Setup so far",
@@ -4429,6 +4496,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Result", hint));
 
+        RefreshPetCells();
         RefreshPetChecklist();
         return MakeTab("Calibrate Pet", panel);
     }
@@ -4706,9 +4774,61 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(BagGrid.IsValidRect(pet.HungerRegion), "hunger readout       (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
+            Mark(pet.PetCell is { Count: 2 }, "pet's bag cell       (grid)"),
+            Mark(pet.FoodCells.Count > 0, $"food cells           (grid) {pet.FoodCells.Count}"),
         };
 
         _petChecklist.Text = string.Join("\n", lines);
+    }
+
+    /// <summary>Marks or unmarks one cell on the page being edited. Food cells toggle; the pet cell
+    /// is exclusive — clicking a new one moves it rather than adding a second, because a pet cannot
+    /// be in two slots and two marks would be a contradiction the tool would have to resolve.</summary>
+    private void TogglePetCell(int cell)
+    {
+        var pet = _service.Config.Pet;
+        if (_petPickPetMode)
+        {
+            var same = pet.PetCell is { Count: 2 } p && p[0] == _petPickPage && p[1] == cell;
+            pet.PetCell = same ? null : new List<int> { _petPickPage, cell };
+        }
+        else
+        {
+            var existing = pet.FoodCells.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
+            if (existing != null) pet.FoodCells.Remove(existing);
+            else pet.FoodCells.Add(new List<int> { _petPickPage, cell });
+        }
+
+        RefreshPetCells();
+    }
+
+    private void RefreshPetCells()
+    {
+        if (_petCellGrid == null) return;
+        var pet = _service.Config.Pet;
+
+        foreach (var child in _petCellGrid.Children)
+        {
+            if (child is not UiButton b) continue;
+            var i = Grid.GetRow(b) * BagGrid.Cols + Grid.GetColumn(b);
+            var isFood = pet.FoodCells.Any(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == i);
+            var isPet = pet.PetCell is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
+
+            b.Content = isPet ? "PET" : isFood ? "food" : "";
+            b.Appearance = isPet || isFood ? ControlAppearance.Primary : ControlAppearance.Secondary;
+        }
+
+        if (_petCellInfo == null) return;
+        var onPage = pet.FoodCells.Count(c => c is { Count: 2 } && c[0] == _petPickPage);
+        var petWhere = pet.PetCell is { Count: 2 } q
+            ? $"page {q[0] + 1}, cell {q[1]}"
+            : "not marked";
+
+        _petCellInfo.Text =
+            $"Editing page {_petPickPage + 1} — {onPage} food cell(s) here, {pet.FoodCells.Count} in " +
+            $"total. Pet cell: {petWhere}. A click marks " +
+            $"{(_petPickPetMode ? "the PET cell" : "a FOOD cell")}.";
+        RefreshPetChecklist();
     }
 
     private void PetSave()
@@ -4739,6 +4859,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             BagGrid = pet.BagGrid,
             BagSlot = pet.BagSlot,
             FoodCells = pet.FoodCells,
+            PetCell = pet.PetCell,
         };
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
             "Saved to config\\local.yaml. All of it is machine-specific, so none of it ships.");
