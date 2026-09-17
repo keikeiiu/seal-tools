@@ -68,7 +68,7 @@ public sealed class PetTool : ToolBase
         {
             while (!QuitPressed && !ct.IsCancellationRequested)
             {
-                if (ReloadOnce(ser, ct, out var error))
+                if (ReloadOnce(ser, state, ct, out var error))
                 {
                     failures = 0;
                     var next = DateTime.Now.AddMinutes(CycleMinutes());
@@ -115,6 +115,25 @@ public sealed class PetTool : ToolBase
         if (!BagGrid.IsValidRect(pet.BagGrid) || !BagGrid.IsValidRect(pet.BagSlot))
             return "The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)";
         if (pet.PageTabs.Count == 0) return "The bag page tabs aren't calibrated — Calibrate Pet.";
+
+        // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
+        // page the tool cannot reach. Checked here rather than discovered mid-flow: the reload closes
+        // the window on any failure, so a bad page surfaced as "it opened and then shut again" with
+        // nothing saying why.
+        var pages = new List<(string What, int Page)>();
+        if (pet.PetCell is { Count: 2 } pc) pages.Add(("The pet's bag cell", pc[0]));
+        foreach (var cell in pet.FoodCells)
+            if (cell is { Count: 2 }) pages.Add(("A food cell", cell[0]));
+
+        foreach (var (what, page) in pages)
+        {
+            if (page < 0 || page >= pet.PageTabs.Count)
+                return $"{what} is marked on bag page {page + 1}, but only {pet.PageTabs.Count} page " +
+                       "tab(s) are calibrated — mark the tab on Calibrate Pet, or move the cell.";
+            if (!IsPoint(pet.PageTabs[page]))
+                return $"{what} is marked on bag page {page + 1}, and that page's tab isn't " +
+                       "calibrated — mark ITEM" + (page + 1) + " on Calibrate Pet.";
+        }
         if (pet.PetCell is not { Count: 2 })
             return "The pet's bag cell isn't marked — Calibrate Pet. Nothing says where to put the " +
                    "pet back.";
@@ -141,18 +160,26 @@ public sealed class PetTool : ToolBase
 
     // ── One reload ──────────────────────────────────────────────────────────
 
-    private bool ReloadOnce(SerialPort ser, CancellationToken ct, out string error)
+    private bool ReloadOnce(SerialPort ser, ToolState state, CancellationToken ct, out string error)
     {
         error = "";
+        _ = ct;
 
+        // Each step names itself on the card as it runs. Without this a failure reads as "it opened
+        // the window and then closed it again", because the close below is the cleanup and it is the
+        // only thing the eye catches.
+        state.Message = "Opening the boarding window…";
         if (!OpenBoarding(ser, out error)) return false;
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
+            state.Message = "Placing the pet…";
             if (!PlacePet(ser, out error)) return false;
+            state.Message = "Loading the food…";
             if (!LoadFood(ser, out error)) return false;
+            state.Message = "Starting boarding…";
             if (!StartBoarding(ser, out error)) return false;
             return true;
         }
