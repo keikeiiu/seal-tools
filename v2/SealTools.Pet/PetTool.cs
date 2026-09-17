@@ -48,6 +48,12 @@ public sealed class PetTool : ToolBase
     /// </summary>
     private const double PageWait = 0.9;
 
+    /// <summary>After pressing start, before the window is closed. The player's call, and it closes a
+    /// real hole: the close is the cleanup and runs immediately after the start click, so the window
+    /// was being shut while the game was still acting on the press. Watching it work is what makes
+    /// this the right order — nothing here is slow enough to matter.</summary>
+    private const double StartWait = 2.0;
+
     /// <summary>How many reloads may fail in a row before the tool stops. Unattended retrying is how
     /// a misread becomes a loop of clicks, and this one runs while nobody is watching.</summary>
     private const int MaxFailures = 3;
@@ -238,6 +244,9 @@ public sealed class PetTool : ToolBase
             state.Message = "Starting boarding…";
             Log("  starting boarding");
             if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
+
+            // Let the start take before the cleanup closes the window it was pressed in.
+            SleepCheck(StartWait);
 
             // A finished reload always leaves boarding running, so the next one knows to end first —
             // recorded rather than assumed, because the tool has no way to read it back yet.
