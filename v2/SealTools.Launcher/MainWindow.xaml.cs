@@ -4404,7 +4404,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var save = MakeButton("Save Calibration", ControlAppearance.Primary);
         save.Click += (_, _) => TooltipSave();
-        panel.Children.Add(Section("Save", save));
+        var testRead = MakeButton("Test read", ControlAppearance.Secondary);
+        testRead.Click += async (_, _) => await TooltipTestRead(hint);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        save.Margin = new Thickness(0, 0, 6, 0);
+        testRead.Margin = new Thickness(0, 0, 6, 0);
+        buttons.Children.Add(save);
+        buttons.Children.Add(testRead);
+        panel.Children.Add(Section("Save and check", buttons));
 
         panel.Children.Add(Section("Result", hint));
 
@@ -4603,6 +4610,73 @@ public partial class MainWindow : FluentWindow, IDisposable
             $"{cfg.Height} px. Every hover-read in the game uses this — a pet's panel and a food " +
             "item's sit at the same offset even though their sizes differ. Check the magenta box lands " +
             "on the panel rather than beside it, then Save.";
+    }
+
+    /// <summary>Hovers the marked point and reads the panel, so we find out whether the OCR can make
+    /// sense of a tooltip BEFORE anything is built on it.
+    ///
+    /// The answer decides more than it looks: the plan is to resolve a pet's stage from its NAME, via
+    /// the 387-pet table in PET-DATA.md, and a read that gets the numbers but garbles the name is
+    /// nearly useless for that. Chinese text in a stylised game font is a harder read than the
+    /// numerals the feeder counts use, and nothing here can tell us which way it goes except trying.
+    /// </summary>
+    private async Task TooltipTestRead(TextBlock hint)
+    {
+        var cfg = _service.Config.Tooltip;
+        if (!cfg.IsSet)
+        {
+            hint.Text = "Calibrate the panel first — hover the point, capture, drag the box, Save.";
+            return;
+        }
+        if (_tooltipHoverPoint is not { Count: 2 } point)
+        {
+            hint.Text = "Mark the hover point first: press Mark hover point and click the item in the " +
+                        "capture. The panel is measured from where the cursor ended up, so the read " +
+                        "needs to know where that was.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            hint.Text = _service.LastArduinoError ?? "Arduino not found.";
+            return;
+        }
+
+        if (!TryPlace(ser, point[0], point[1], out var err))
+        {
+            hint.Text = "Couldn't move the cursor: " + err;
+            return;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(Math.Max(200, cfg.HoverDelayMs));
+
+        // The panel region is the point the cursor was parked on, plus the offset the calibration
+        // measured — which is the whole reason the offset is stored rather than an absolute box.
+        var region = new RegionConfig
+        {
+            Left = point[0] + cfg.OffsetX,
+            Top = point[1] + cfg.OffsetY,
+            Width = cfg.Width,
+            Height = cfg.Height,
+        };
+
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "reads", $"tooltip_{stamp}.png");
+
+        try
+        {
+            var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region, 3, debugPath));
+            hint.Text = lines.Count == 0
+                ? "Read nothing. See logs\reads\tooltip_*.png — it shows the region the OCR was " +
+                  "given, so a wrong offset and unreadable text can be told apart."
+                : "Read: " + string.Join(" | ", lines) +
+                  "  (also saved to logs\reads\tooltip_*.png)";
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Read failed: " + ex.Message;
+        }
     }
 
     private void TooltipSave()
