@@ -29,7 +29,7 @@ stage — and therefore the one where a bug costs least:
 | Food | 高级宠物食物 | 高级宠物食物 | 营养满分宠物食物 |
 | Burn | 3/min | 4/min | 1/min |
 | Two stacks (600) last | **3 h 20 m** | 2 h 30 m | 10 h 00 m |
-| Full stage to +9 | 2,184 items | 3,444–8,568 | 4,200 items |
+| Full stage to `+9` 100% | 2,514 items | 3,964–9,860 | 4,834 items |
 | Time to +9 | **12 h 08 m** | 14–35 h | 2 d 22 h |
 
 A stage-6 pet completes in about **12 hours and 4 feeder reloads** — short enough to watch a whole run
@@ -122,7 +122,7 @@ happened to be describing, and the page was illustrating the division rather tha
 **What follows is simpler than the per-level reading would have been:**
 
 ```
-remaining 喂养值 = base × 12.6 × (1 − pct/100)
+remaining 喂养值 = base × 14.5 × (1 − pct/100)
 ```
 
 with `base` from [PET-DATA.md](PET-DATA.md) and the percentage straight off the panel — one subtraction
@@ -265,8 +265,8 @@ gets marked, the tool will cheerfully feed it — which is exactly why marking i
 rather than something the tool infers.
 
 **Ten marked stacks is a full stage-6 pet with one reload to spare**, which is what makes "ten" the right
-default rather than an arbitrary number: 2,184 items is 8 stacks, the feeder takes 2 per reload, so ten
-cells is five reloads against the four a complete pet needs.
+default rather than an arbitrary number: 2,514 items is 9 stacks, the feeder takes 2 per reload, so a
+complete stage-6 pet is **five** reloads — and ten marked cells is exactly five.
 
 Two further consequences:
 
