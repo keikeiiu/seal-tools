@@ -256,19 +256,29 @@ state to compare against.
 schedule falls behind), someone fed the pet by hand, boarding stopped early, or the configured rate is
 simply wrong.
 
-**A better trigger may exist, and it is visible in the 2026-09-17 capture.** The game prints the pet's
-hunger as a **readable percentage** at the bottom right — `肚子餓(34%)`, sitting directly above
-`EXP(102.86%)` — which matches the news page's "look at the bottom-right for the pet's hunger". If that
-text is stable enough to read, an OCR poll replaces the pixel diff outright:
+**The hunger readout is NOT this pet's** (player, 2026-09-17). `肚子餓(nn%)` at the bottom right belongs
+to the **carried** pet — the one equipped on the character — not to the pet sitting in the boarding
+feeder. That kills the idea of polling it as the trigger for this feature, and it is a correction to the
+first draft of this section, which read the 34 % → 77 % change in the 2026-09-17 captures as boarding
+feeding the pet.
 
-- a number is **unambiguous** where a diff is binary, so it also gives *how* hungry, not just that it is;
-- it **retires the "does the icon blink" question** — there is no reference crop to flap;
-- the **same region carries the EXP%**, which is exactly what the `+9` guard wants, so one read could
-  serve both.
+Which leaves **the schedule as the only passive trigger**, and it needs nothing read at all — which is
+what §3 already argued for on cost grounds. The loop closes in the window instead:
 
-The cost is an OCR per poll rather than a near-free diff — which matters far less here than it does for
-death, because this state *persists*. **Worth settling before the trigger is built**, because it could
-remove the icon calibration and the guard's separate region in one go.
+```
+schedule fires  →  open the window  →  toggle reads 開始代養?
+                                        (boarding is stopped, so it needs a reload)
+                                        →  reload  →  start
+```
+
+That is still sufficient: the schedule decides *when to look*, and the toggle decides *what to do*. The
+only thing lost is the ability to notice an early stop — and the toggle read catches that anyway, one
+poll later. What the schedule genuinely cannot do is tell you the pet needs food *before* the boarding
+window is opened; it does not need to, because opening it is cheap and causes nothing.
+
+**Open:** whether the carried pet and the boarded pet can be different at all, and what the `目錄` red
+means if they can. If the icon is also the carried pet's, then nothing on the main screen says anything
+about the boarded one, and the schedule is not merely the cheapest trigger but the *only* one.
 
 ### Recommendation: A primary, B as backstop — not one path
 

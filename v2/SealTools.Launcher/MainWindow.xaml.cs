@@ -41,6 +41,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ("spammer", "Skill Spammer"),
         ("buy", "Buy Items"),
         ("sell", "Sell Items"),
+        ("pet", "Pet Feeder"),
     };
 
     private static readonly string[] Grades = { "N", "G", "DG", "XG", "SG" };
@@ -178,6 +179,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     private bool _petPickPetMode;
     private Grid? _petCellGrid;
     private TextBlock? _petCellInfo;
+    /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
+    private TextBlock? _petReadyText;
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -661,6 +664,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildSpammerTab());
         ConfigTabs.Items.Add(BuildBuyTab());
         ConfigTabs.Items.Add(BuildSellTab());
+        ConfigTabs.Items.Add(BuildPetTab());
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
@@ -4421,6 +4425,37 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "dots miss the slots, re-drag the grid area."),
             LabeledField("Draw", gridRow)));
 
+        _petChecklist = Mono();
+        _petChecklist.Text = "nothing captured yet";
+        panel.Children.Add(Section("Setup so far",
+            Hint("Filled in as you mark things. Saving with a gap is allowed — the tool says what is " +
+                 "missing rather than clicking into empty screen."),
+            _petChecklist));
+
+        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
+        save.Click += (_, _) => PetSave();
+        panel.Children.Add(Section("Save", save));
+
+        panel.Children.Add(Section("Result", hint));
+
+        RefreshPetCells();
+        RefreshPetChecklist();
+        return MakeTab("Calibrate Pet", panel);
+    }
+
+    // ── Pet tab — the bag setup a run reads ────────────────────────────────
+    //
+    // This is NOT calibration and does not live on the Calibrate Pet tab, for the reason the Sell
+    // screen already gives: what is in the bag changes with what the character has been doing, and a
+    // selection carried over from last time is a selection nobody re-checked. The geometry that does
+    // NOT change — the bag grid, the windows, the points — stays on Calibrate Pet.
+    private TabItem BuildPetTab()
+    {
+        var panel = new StackPanel();
+        var hint = Mono();
+        hint.Text = "Mark where the pet food is and where the pet goes, then press Start on the " +
+                    "Pet Feeder card.";
+
         var pageRow = new StackPanel { Orientation = Orientation.Horizontal };
         for (int i = 1; i <= 3; i++)
         {
@@ -4483,22 +4518,23 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "first for the tool to know where these cells actually are."),
             cellsPanel));
 
-        _petChecklist = Mono();
-        _petChecklist.Text = "nothing captured yet";
-        panel.Children.Add(Section("Setup so far",
-            Hint("Filled in as you mark things. Saving with a gap is allowed — the tool says what is " +
-                 "missing rather than clicking into empty screen."),
-            _petChecklist));
 
-        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
-        save.Click += (_, _) => PetSave();
-        panel.Children.Add(Section("Save", save));
+        panel.Children.Add(Section("The bag, right now",
+            Hint("Where the food is and where the pet goes, as the bag looks BEFORE you start. " +
+                 "Re-mark them whenever the bag changes — the tool acts on what is marked here, and " +
+                 "a stale mark means it right-clicks whatever has taken that slot since."),
+            cellsPanel));
+
+        var ready = Mono();
+        ready.Text = "";
+        _petReadyText = ready;
+        panel.Children.Add(Section("Ready to run", ready));
 
         panel.Children.Add(Section("Result", hint));
 
         RefreshPetCells();
-        RefreshPetChecklist();
-        return MakeTab("Calibrate Pet", panel);
+        RefreshPetReady();
+        return MakeTab("Pet", panel);
     }
 
     /// <summary>Arms one of the single-point marks — they are one click each, and the next click on
@@ -4829,6 +4865,30 @@ public partial class MainWindow : FluentWindow, IDisposable
             $"total. Pet cell: {petWhere}. A click marks " +
             $"{(_petPickPetMode ? "the PET cell" : "a FOOD cell")}.";
         RefreshPetChecklist();
+        RefreshPetReady();
+    }
+
+    /// <summary>What the tool would say if you pressed Start now. Mirrors PetTool.Ready, so a gap
+    /// shows on the tab rather than as a card message after the click.</summary>
+    private void RefreshPetReady()
+    {
+        if (_petReadyText == null) return;
+        var cfg = _service.Config;
+        var pet = cfg.Pet;
+        var max = pet.MaxButton ?? cfg.BuySell.MaxButton;
+
+        var lines = new List<string>();
+        if (pet.PetCell is not { Count: 2 }) lines.Add("the pet's bag cell is not marked");
+        if (pet.FoodCells.Count == 0) lines.Add("no food cells are marked");
+        if (pet.FoodCells.Count == 1) lines.Add("only one food cell is marked — a load is two stacks");
+        if (max is not { Count: 2 }) lines.Add("no MAX is calibrated (Buy / Sell, or Calibrate Pet)");
+        if (!BagGrid.IsValidRect(pet.BagGrid)) lines.Add("the boarding bag grid is not calibrated");
+        if (pet.PageTabs.Count == 0) lines.Add("the bag page tabs are not calibrated");
+
+        _petReadyText.Text = lines.Count == 0
+            ? $"Ready. Cycles about every {pet.LoadMinutes - 15} minutes."
+            : "Not ready:" + Environment.NewLine + "  - " +
+              string.Join(Environment.NewLine + "  - ", lines);
     }
 
     private void PetSave()

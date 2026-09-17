@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SealTools.Core;
 using SealTools.Core.Config;
+using SealTools.Pet;
 using SealTools.Shop;
 using SealTools.Spammer;
 using SealTools.Tuner;
@@ -109,7 +110,7 @@ public sealed class LauncherService : IDisposable
     /// flight returns true without starting anything — see the guard below.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
-        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell"))
+        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell" or "pet"))
         {
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
@@ -280,6 +281,7 @@ public sealed class LauncherService : IDisposable
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
+        "pet" => new PetTool(Config).Run(ser, state, ct),
         _ => 1,
     };
 
