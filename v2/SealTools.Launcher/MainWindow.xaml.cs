@@ -5276,6 +5276,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petQueuePanel,
             _petQueueList));
 
+        // Scans the bag for the queued pets WITHOUT running anything — the same matching the reload
+        // uses, on demand. Its job is to answer "are the crops I saved finding the right things, and
+        // how many of them are out there", which is the question a queue that has never been tried
+        // cannot answer about itself. Reports against PetTool.MatchLimit, the number the run uses.
+        var scanBag = MakeButton("Scan the bag for these pets", ControlAppearance.Secondary);
+        scanBag.Click += async (_, _) => await PetScanBag(hint);
+        panel.Children.Add(Section("Find them",
+            Hint("Put the boarding bag up, then press this. It opens nothing, clicks nothing and " +
+                 "boards nothing — it captures each bag page and matches the crops above against all " +
+                 "64 cells, so you can see what the queue would find and how many there are.\n" +
+                 "It does click the ITEM tabs, because a pet can be on any page and there is no other " +
+                 "way to look at one."),
+            scanBag));
+
         // The hover read has been a capability with no consumer since 2026-09-18. Before anything is
         // built on it — the finished-pet guard and the queue both are — it has to be shown working on
         // a live pet, and the report has to be wide enough to answer what we do NOT know yet: whether
@@ -6329,6 +6343,108 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             // A reference image that will not load is not worth a message; the marks are all still
             // there, and Capture game is one press away.
+        }
+    }
+
+    /// <summary>Scans every bag page for the queued pets and reports what it found — the same
+    /// matching <see cref="SealTools.Pet.PetTool"/> does before it boards, run on demand and without
+    /// boarding anything.
+    ///
+    /// It exists because a queue cannot answer questions about itself. A crop is either finding the
+    /// pet or it is not, and the only evidence is a score — so this shows the score, the cell, and how
+    /// many cells came in under the limit. "3 matches" is the number worth knowing before a run: one
+    /// is a pet, three is three pets of that kind in the bag.
+    ///
+    /// It DOES click the ITEM tabs, and that is unavoidable — a pet can be on any page and there is no
+    /// way to look at a page without switching to it. Everything else is read-only: no right-click, no
+    /// count dialog, nothing boarded.</summary>
+    private async Task PetScanBag(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        if (pet.Queue.Count == 0)
+        {
+            hint.Text = "No pet icons captured yet. Capture one — Mark a pet to queue, click the " +
+                        "cell it is in, then Capture the marked pet's icon.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
+        {
+            hint.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        var report = new List<string>();
+        var totals = new int[pet.Queue.Count];
+
+        try
+        {
+            for (int p = 0; p < pet.PageTabs.Count; p++)
+            {
+                if (pet.PageTabs[p] is not { Count: 2 } tab) continue;
+
+                if (!TryPlace(ser, tab[0], tab[1], out var err))
+                {
+                    report.Add($"page {p + 1}: couldn't reach the tab ({err})");
+                    continue;
+                }
+                HidPointer.Click(ser);
+                await Task.Delay(900);
+
+                var cap = await WithLauncherHiddenAsync(() => ScreenCapture.CaptureClient(hwnd));
+                if (cap == null) { report.Add($"page {p + 1}: couldn't capture the bag"); continue; }
+
+                using var bag = cap.Image;
+                var pageLines = new List<string>();
+
+                for (int i = 0; i < pet.Queue.Count; i++)
+                {
+                    var entry = pet.Queue[i];
+                    using var icon = IconMatch.FromBase64(entry.Png);
+                    if (icon == null)
+                    {
+                        pageLines.Add($"    {i + 1}. {entry.Label ?? "(no name)"} — crop wouldn't decode");
+                        continue;
+                    }
+
+                    var scores = IconMatch.ScoreAll(bag, pet.BagGrid!, icon);
+                    var hits = scores.Where(s => s.Score <= SealTools.Pet.PetTool.MatchLimit).ToList();
+                    totals[i] += hits.Count;
+
+                    if (scores.Count == 0) { pageLines.Add($"    {i + 1}. {entry.Label ?? "(no name)"} — no cells scored"); continue; }
+
+                    var runner = scores.Count > 1 ? scores[1].Score : double.NaN;
+                    pageLines.Add(
+                        $"    {i + 1}. {entry.Label ?? "(no name)"} — best {scores[0].Score:0.###} at cell " +
+                        $"{scores[0].Cell}" +
+                        (hits.Count > 1 ? $", {hits.Count} cells under the limit" : ", nothing else close") +
+                        (double.IsNaN(runner) ? "" : $"; runner-up {runner:0.###}"));
+                }
+
+                report.Add($"page {p + 1}:");
+                report.AddRange(pageLines);
+            }
+
+            report.Add("");
+            report.Add($"Limit {SealTools.Pet.PetTool.MatchLimit:0.###} — a cell at or under it is a pet " +
+                       "the tool would board. Below each row is the TOTAL across all pages:");
+            for (int i = 0; i < pet.Queue.Count; i++)
+                report.Add($"    {i + 1}. {pet.Queue[i].Label ?? "(no name)"}: {totals[i]} cell(s)");
+
+            hint.Text = string.Join(Environment.NewLine, report);
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Scan failed: " + ex.Message;
         }
     }
 

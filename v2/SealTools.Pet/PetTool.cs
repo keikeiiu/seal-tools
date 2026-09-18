@@ -72,8 +72,12 @@ public sealed class PetTool : ToolBase
 
     /// <summary>How unlike the pet a cell may look and still be clicked, as a fraction of pixels that
     /// differ. Deliberately strict: a near-miss right-clicks some other item, which has no undo. This
-    /// wants measuring against a real farming bag rather than trusting — see the plan's open question.</summary>
-    private const double MatchLimit = 0.12;
+    /// wants measuring against a real farming bag rather than trusting — see the plan's open question.
+    ///
+    /// PUBLIC so the Pet tab's "scan the bag" reports against the number the tool actually uses. A
+    /// diagnostic with its own copy of a threshold is a diagnostic that can agree with a run and be
+    /// wrong about it.</summary>
+    public const double MatchLimit = 0.12;
 
     /// <summary>The reload's own log. Written because the card's message is the only other record of a
     /// reload, and it is overwritten by the next line and gone once the tool stops — so a failure that
