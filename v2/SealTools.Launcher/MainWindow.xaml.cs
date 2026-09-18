@@ -5179,8 +5179,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the bag. The reload has to END boarding to get the pet back before it can put it in " +
                  "again, and the start/end control is one button per row: pressing it with the wrong " +
                  "idea of the state does the opposite of what the step needs, and the pet ends up in " +
-                 "the wrong place. The tool ticks each one for you after a successful reload, since a " +
-                 "finished reload always leaves boarding running."),
+                 "the wrong place.\n" +
+                 "You do not have to get this right. When the tool starts it opens the breeder once " +
+                 "and LOOKS at each row's pet slot, so a row that is already feeding is left alone " +
+                 "rather than ended and redone — a pet in the loader is visible, and an empty one " +
+                 "settles the question the other way. These ticks are the fallback for a row whose " +
+                 "slot cannot be read, and the tool keeps them up to date after every reload."),
             _petBoardingTicks));
 
         // Without this the marks live only in memory and vanish on the next launcher start, which is

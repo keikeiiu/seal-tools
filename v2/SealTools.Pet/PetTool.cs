@@ -127,11 +127,22 @@ public sealed class PetTool : ToolBase
         // 200 minutes on one and 500 on the other. A single timer would reload the paid rows while
         // they were still half full, or leave the free row dry for five hours.
         //
-        // Every row is due immediately, which keeps the "a start establishes a known state" property
-        // the single-row tool had — the tool cannot read how much food a row holds, so the only way to
-        // know is to do a reload. It costs one round of reloads on start, and the food cells for all
-        // of them.
-        var next = _cfg.Pet.Slots.ToDictionary(r => r, _ => DateTime.Now);
+        // LOOK FIRST, DON'T RELOAD FIRST (player, 2026-09-19). Every row used to be due immediately,
+        // on the reasoning that the tool cannot read how much food a row holds so the only way to know
+        // the state is to establish it. That reasoning has expired: the boarding slot is read here,
+        // and reloading a row that is already boarding means ending a feed the player has running and
+        // then redoing it — which is a lot of disturbance to learn something one look tells us.
+        //
+        // The rows that ARE boarding are scheduled a full cycle out. That assumes a full feeder, and
+        // it is a guess — the food counts would say, and reading them is the next thing this tool
+        // wants. So it is logged as the assumption it is.
+        InspectRows(ser, state);
+
+        var next = _cfg.Pet.Slots.ToDictionary(
+            r => r,
+            r => r.BoardingRunning
+                ? DateTime.Now.AddMinutes(CycleMinutesFor(r))
+                : DateTime.Now);
         var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);
 
         try
@@ -250,6 +261,67 @@ public sealed class PetTool : ToolBase
     /// <summary>How a row is named in a log line or on the card. 1-based, matching the window.</summary>
     private string NameOf(PetSlotConfig row) =>
         $"Row {_cfg.Pet.Slots.IndexOf(row) + 1}";
+
+    /// <summary>Opens the breeder once at the start of a run and LOOKS — no reload, nothing clicked
+    /// but the two icons to open the window and the X to close it.
+    ///
+    /// This exists because the player has a breeder running when they press Start, and reloading
+    /// everything on start means ending four feeds that were already going and redoing them — a
+    /// minute of clicking and a round of food cells to learn what one look tells us.
+    ///
+    /// What it reads is the boarding slot, which already had a reference crop for the "did the pet
+    /// actually go in?" check. That same comparison answers "is a pet in there right now", and an
+    /// empty slot cannot be boarding — so the answer is one-way and safe even though the tool never
+    /// learned to read the toggle label:
+    ///
+    ///     slot EMPTY     → boarding is stopped, certainly
+    ///     slot occupied  → boarding is running... which is also the state a pet sits in before Start
+    ///                      is pressed, so it does NOT prove it
+    ///     unreadable     → keep whatever the player ticked on the Pet tab
+    ///
+    /// Only the first line is a proof, and that is enough: the rows it settles are exactly the ones a
+    /// blind reload would have disturbed for no reason.</summary>
+    private void InspectRows(SerialPort ser, ToolState state)
+    {
+        state.Message = "Checking what is already running…";
+        Log("start: opening the breeder to check each row (no reload)");
+
+        if (!OpenBoarding(ser, out var error))
+        {
+            Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
+            return;
+        }
+
+        try
+        {
+            foreach (var row in _cfg.Pet.Slots)
+            {
+                var empty = PetSlotIsEmpty(row);
+                switch (empty)
+                {
+                    case true:
+                        row.BoardingRunning = false;
+                        Log($"  {NameOf(row)}: slot reads EMPTY, so this row is not boarding — " +
+                            "it will be reloaded now");
+                        break;
+                    case false:
+                        row.BoardingRunning = true;
+                        Log($"  {NameOf(row)}: a pet is in the loader — leaving it alone and " +
+                            $"reloading in {CycleMinutesFor(row):0} min");
+                        break;
+                    default:
+                        Log($"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
+                            $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
+                        break;
+                }
+            }
+            _persistState?.Invoke();
+        }
+        finally
+        {
+            CloseBoarding(ser);
+        }
+    }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
     /// Derived from the config rather than stored, so the rate and the load can never disagree with
