@@ -9,6 +9,42 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-19 (3) — the reload ran live, and the empty-slot reference finally decided something
+
+**The tool's core action ran end to end on the live game, first time.** One reload, 30 seconds, Start to
+`reload complete`:
+
+```
+目錄 → the feed icon → Enter (clears the out-of-food message)
+→ END boarding
+→ ITEM2 tab → right-click the pet's cell (page 2, cell 2)
+→ ITEM2 tab → right-click FOOD cell 52 → MAX → Enter
+→ ITEM2 tab → right-click FOOD cell 51 → MAX → Enter
+→ start boarding → close the window
+```
+
+**The placement was VERIFIED rather than assumed, and that is a line that is not in the log.** `PlacePet`
+logs nothing on a first-attempt success, `"the pet went in on attempt N"` only when a retry was needed,
+and `"pet slot not checked"` when the reference is missing or unreadable. None of the three appears, so
+the crop comparison ran and answered *occupied* on the first right-click. Captured 2026-09-18, this
+reference had until now only ever been written about.
+
+**Measured in the log rather than on the card:** two food cells consumed (11 → 13 of 16), boarding
+restarted, the window closed, and `boarding_running: true` afterwards — which is only trustworthy on a
+failure path because of `ecbbc5d`.
+
+**And a question the plan had already answered, re-opened and re-closed.** Topping up a starved feeder
+does **not** resume the feed: the game pops the error, the pet hangs unfed, and the only way forward is
+Enter → END → re-place the pet and the food → start (player, 2026-09-19). [§9](PLAN-PET-AUTOFEED.md)
+recorded "Answered: no" on 2026-09-17 without the mechanism, which is why the simplification was
+proposed, investigated, and killed a second time. **The mechanism is what §9 was missing.**
+
+**Not verified — and it is the one that matters next:** the slot read with the pet *starved and
+boarding running*, which is what the state-read design rests on. The read that ran here was
+post-placement. Nothing has read the slot before a click, and there is no button that would.
+
+---
+
 ## 2026-09-19 (2) — the panel parser, and the player correction that deleted a section of the plan
 
 **Goal.** Thread 1 of the handover. The hover read has worked since 2026-09-18 and had no consumers at
