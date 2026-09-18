@@ -14,6 +14,12 @@ open questions at the end.
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
 notices, reloads the feeder, and carries on. Nothing else about the pet is automated.
 
+> **`+10` means `+9` at 100%**, throughout this document. It is the state at which a pet can evolve —
+> boarding auto-stops, the pet and its leftover food are mailed back, and the run is done. It is **not**
+> a growth level: the game's levels stop at `+9`, and a pet at `+9` *below* 100% is still growing and
+> still wants feeding. The player's shorthand (2026-09-19), used here because "`+9` 100%" is easy to
+> read as "`+9`" — which is the wrong guard.
+
 Related: [PLAN-WATCHER.md](PLAN-WATCHER.md) covers the wider "notice things while you are not looking"
 design (death as well as pets) and is the parent of this document. This one is only the food half.
 
@@ -29,8 +35,8 @@ stage — and therefore the one where a bug costs least:
 | Food | 高级宠物食物 | 高级宠物食物 | 营养满分宠物食物 |
 | Burn | 3/min | 4/min | 1/min |
 | Two stacks (600) last | **3 h 20 m** | 2 h 30 m | 10 h 00 m |
-| Full stage to `+9` 100% | 2,514 items | 3,964–9,860 | 4,834 items |
-| Time to +9 | **12 h 08 m** | 14–35 h | 2 d 22 h |
+| Full stage to `+10` | 2,514 items | 3,964–9,860 | 4,834 items |
+| Time to `+10` | **13 h 58 m** | 16–24 h | 3 d 8 h |
 
 A stage-6 pet completes in about **12 hours and 4 feeder reloads** — short enough to watch a whole run
 end to end in one session, which is what makes it a sane first target. Stage 5 is the opposite: a
@@ -80,7 +86,7 @@ it — so it is the 代養 window, not 餵養.
 | Shown | Reading | Why it matters |
 |---|---|---|
 | `每1分 讀取3個` | 3 per minute | **The game states the burn rate**, and it matches the stage-6 figure derived from the news page — so the model is confirmed from the game itself rather than inferred |
-| `79.04%` | the pet's EXP | the `+9` guard's read |
+| `79.04%` | the pet's EXP | half of the `+10` guard's read |
 | `到+9為止預計所需時間: 約 15分` | ETA to `+9` | the advance feature's headline number, **displayed by the game** rather than computed by us — if it reads stably, that feature is an OCR away |
 | `結束代養` / `開始代養` | **one toggle button** | the same button starts and ends boarding (player, 2026-09-17), so its **label is a free state read** — `結束代養` means running, `開始代養` means stopped |
 
@@ -118,7 +124,7 @@ open the window; the button label decides *what to do* once it is open. Same "a 
 an expensive one" pairing the watcher uses for death — and it means the trigger question (icon versus
 hunger %) is only about which passive signal is more reliable, not about the button at all.
 
-It also does **not** say *why* boarding stopped, which is the `+9` guard's job.
+It also does **not** say *why* boarding stopped, which is the `+10` guard's job.
 
 **And it raises a question the flow depends on: must boarding be stopped before the feeder can be
 restocked?** If the food slot is only editable while stopped, every reload becomes
@@ -147,7 +153,7 @@ remaining 喂养值 = base × 14.5 × (1 − pct/100)
 ```
 
 with `base` from [PET-DATA.md](PET-DATA.md) and the percentage straight off the panel — one subtraction
-over the whole run to `+9`, with no level-by-level accumulation and no need to follow the pet's growth
+over the whole run to `+10`, with no level-by-level accumulation and no need to follow the pet's growth
 indicator at all.
 
 That is the piece that turns "how much feeding is left" from a guess into arithmetic, because the other
@@ -159,7 +165,7 @@ two terms are both available:
 | Which level it is on | the panel's `+N` |
 | How far through it | the panel's `[..%]` |
 
-so **this level's remaining 喂养值 is `cost × (1 − pct/100)`**, and the rest of the run to `+9` is the
+so **this level's remaining 喂养值 is `cost × (1 − pct/100)`**, and the rest of the run to `+10` is the
 sum of the levels after it. Divide by the food's 喂养值 for items, or by the rate for time.
 
 **The catch is the `base`.** The per-level cost is `base × (1 + n/10)`, and `base` is a property of the
@@ -176,7 +182,7 @@ player's answer — **every two stacks, the pet must be reloaded** — it means:
 
 - **the load is two stacks, 600 items** — exactly what the schedule was first built on;
 - **`300` is the per-stack cap**, not the size of a load;
-- so a load lasts **200 minutes**, and a stage-6 pet takes **four loads** to `+9`.
+- so a load lasts **200 minutes**, and a stage-6 pet takes **five loads** to `+10`.
 
 The "one slot, 100-minute period, eight reloads" reading was wrong and is withdrawn. (It is also the
 second time an inference from a screenshot has been wrong — the Sell-grid one being the first — which is
@@ -214,7 +220,7 @@ the single question below.
 **Answered, and the answer is the hard one: ending is mandatory.** The player's rule is that **every two
 stacks, the pet must be reloaded** — so topping up while running is not possible, and the
 end → re-place → place → start cycle is not an edge case. It *is* the reload path, run **four times** to
-take a stage-6 pet to `+9`.
+take a stage-6 pet to `+10`.
 
 That is a substantially bigger feature than the one this document opened with, and it has a new central
 problem.
@@ -404,7 +410,7 @@ character stays online.
   stopped                     running
     │                            │
     ▼                            ▼
-  # guard: EXP% at +9?         close, reschedule
+  # guard: +9 and EXP 100%?    close, reschedule
   # if so, close and stop      (the schedule fired early)
     │
     ▼
@@ -525,7 +531,7 @@ icon, points 1 and 2. That is the single easiest mistake in this feature.
 | An 8×8 bag grid you click to mark slots | the Sell screen's slot picker — the *interaction*, not its calibration |
 | Compare a region to a reference | the empty check (crop + differing-pixel fraction + 6 px inset) |
 | Drag a box on a captured screenshot | the Buy/Sell and Gem calibrators |
-| Read a region as text | `OcrEngine.Scan` — only needed for the optional `+9` guard |
+| Read a region as text | `OcrEngine.Scan` — only needed for the optional `+10` guard |
 | Tell you something | the card status line + `Beep()` |
 | Config | `local.yaml` via `ConfigLoader` |
 
@@ -543,7 +549,7 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
    — or a tool that dies partway through one — can leave the pet sitting unboarded, which is failure (1)
    on a timer. **If topping up while running is possible this failure does not exist at all**, which is
    the strongest argument yet for the simple flow.
-3. **Reloading a pet that has finished.** `+9` with 100% EXP or more is the state that lets a pet evolve,
+3. **Reloading a pet that has finished.** `+10` is the state that lets a pet evolve,
    and the game stops boarding there; restocking it wastes the food every cycle. Guarded by reading the
    growth and the EXP **together** — see above for why `+9` alone is the wrong test. The mirror failure
    is treating `+9` as finished and abandoning a pet that still wants feeding.
@@ -570,7 +576,7 @@ Nothing new is needed in the firmware, and nothing new is needed in the capture 
    measurement that tells you whether the crop threshold is right *before* it is trusted.
 3. **One manual reload.** A button that performs the two transactions when you press it. Proves the
    flow on the live game with a human watching.
-4. **Trigger A** — the schedule, with the stack counter and the `+9` guard.
+4. **Trigger A** — the schedule, with the stack counter and the `+10` guard.
 5. **Trigger B** — the icon diff, as a backstop.
 6. **Stage 7 and 5** — config only, once 6 is trusted.
 
