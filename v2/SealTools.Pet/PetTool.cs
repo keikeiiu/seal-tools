@@ -32,10 +32,10 @@ public sealed class PetTool : ToolBase
     private const double ClickWait = 0.35;
     private const double DialogWait = 0.5;
 
-    /// <summary>Reload this many minutes BEFORE the feeder is due to empty. Early is safe — the
-    /// leftover returns to the bag — and late is the path to a pet going hungry, so the margin wants
-    /// to be generous rather than tight.</summary>
-    private const double SafetyMarginMinutes = 15;
+    /// <summary>Reload this many minutes BEFORE the feeder is due to empty, from config. Early is
+    /// safe — the leftover returns to the bag — and late is the path to a pet going hungry, so the
+    /// margin trades wasted food against slack.</summary>
+    private double SafetyMarginMinutes => _cfg.Pet.SafetyMarginMinutes;
 
     private const double RetryMinutes = 5;
 
@@ -46,6 +46,10 @@ public sealed class PetTool : ToolBase
 
     /// <summary>After a click, before looking at the slot. The game needs a moment to move the pet.</summary>
     private const double PlaceSettle = 0.9;
+
+    /// <summary>The buffer after each action on the pet, from config. Every step in a reload changes the
+    /// breeder's state, and the next click is aimed at a window still absorbing the last one.</summary>
+    private double ActionWait => Math.Max(0.2, _cfg.Pet.ActionWaitMs / 1000.0);
 
     /// <summary>After a bag page tab is clicked, before anything is clicked inside the grid.
     ///
@@ -238,7 +242,7 @@ public sealed class PetTool : ToolBase
                 state.Message = "Ending boarding…";
                 Log("  ending boarding (the pet is in the loader, so it has to come back first)");
                 if (!PressToggle(ser, out error)) { Log("  FAILED ending: " + error); return false; }
-                SleepCheck(EndWait);
+                SleepCheck(Math.Max(EndWait, ActionWait));
             }
 
             state.Message = "Placing the pet…";
@@ -254,7 +258,7 @@ public sealed class PetTool : ToolBase
             if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
 
             // Let the start take before the cleanup closes the window it was pressed in.
-            SleepCheck(StartWait);
+            SleepCheck(Math.Max(StartWait, ActionWait));
 
             // A finished reload always leaves boarding running, so the next one knows to end first —
             // recorded rather than assumed, because the tool has no way to read it back yet.
@@ -289,10 +293,10 @@ public sealed class PetTool : ToolBase
         SleepCheck(WindowWait);
         if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
 
-        SleepCheck(ClickWait);
+        SleepCheck(ActionWait);
         if (!Enter(ser, out error)) return false;
         Log("  enter (clears the out-of-food message if the breeder opened with one)");
-        SleepCheck(DialogWait);
+        SleepCheck(ActionWait);
         return true;
     }
 
@@ -358,7 +362,7 @@ public sealed class PetTool : ToolBase
                     $"the PET at cell {cell} (page {page + 1})", out error))
                 return false;
 
-            SleepCheck(PlaceSettle);
+            SleepCheck(Math.Max(PlaceSettle, ActionWait));
 
             switch (PetSlotIsEmpty())
             {
@@ -439,9 +443,9 @@ public sealed class PetTool : ToolBase
             var (cx, cy) = centres[index];
             if (!Click(ser, new List<int> { cx, cy }, right: true, $"FOOD cell {index} (page {page + 1})", out error)) return false;
 
-            SleepCheck(DialogWait);
+            SleepCheck(ActionWait);
             if (!Click(ser, EffectiveMax()!, right: false, "MAX", out error)) return false;
-            SleepCheck(DialogWait);
+            SleepCheck(ActionWait);
 
             // ONE Enter, not two. The sell flow's second Enter dismisses a confirmation this dialog
             // does not have, so sending it would press an Enter into whatever follows.
@@ -450,7 +454,7 @@ public sealed class PetTool : ToolBase
             // movement and no visible effect of its own, so a reload that skipped it would read
             // exactly like one that sent it.
             Log("  enter (confirms the count dialog — no second one: this dialog has no confirmation)");
-            SleepCheck(DialogWait);
+            SleepCheck(ActionWait);
         }
 
         return true;
@@ -519,7 +523,7 @@ public sealed class PetTool : ToolBase
         // Absolute tabs, not next/previous: clicking ITEM2 lands on page 2 whatever page we were on,
         // so there is no relative position to lose track of and nothing to read back.
         if (!Click(ser, tabs[page], right: false, $"the ITEM{page + 1} tab", out error)) return false;
-        SleepCheck(PageWait);
+        SleepCheck(Math.Max(PageWait, ActionWait));
         return true;
     }
 

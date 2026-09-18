@@ -4986,6 +4986,39 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petReadyText = ready;
         panel.Children.Add(Section("Ready to run", ready));
 
+        // The two numbers that decide WHEN the tool acts and how long it waits between its own steps.
+        // Both are judgements rather than measurements — one trades wasted food against slack, the
+        // other trades a slower reload against clicks that do not register — so both are fields.
+        var marginBox = UiText(_service.Config.Pet.SafetyMarginMinutes.ToString(CultureInfo.InvariantCulture));
+        marginBox.Width = 60;
+        marginBox.VerticalAlignment = VerticalAlignment.Center;
+        marginBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(marginBox.Text.Trim(), out var m) && m >= 0)
+                _service.Config.Pet.SafetyMarginMinutes = m;
+        };
+
+        var waitBox = UiText(_service.Config.Pet.ActionWaitMs.ToString(CultureInfo.InvariantCulture));
+        waitBox.Width = 70;
+        waitBox.VerticalAlignment = VerticalAlignment.Center;
+        waitBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(waitBox.Text.Trim(), out var ms) && ms >= 100)
+                _service.Config.Pet.ActionWaitMs = ms;
+        };
+
+        panel.Children.Add(Section("Timing",
+            Hint($"Safety margin — how many minutes EARLY to reload against the load's own duration. " +
+                 $"The load is {_service.Config.Pet.LoadMinutes} minutes, so a margin of " +
+                 $"{_service.Config.Pet.SafetyMarginMinutes} reloads every " +
+                 $"{_service.Config.Pet.LoadMinutes - _service.Config.Pet.SafetyMarginMinutes}. " +
+                 "Smaller leaves less food behind each reload; larger gives more slack if the timing " +
+                 "is off." + Environment.NewLine +
+                 "Action wait — the pause after EACH step of a reload before the next one. Too short " +
+                 "and a click does not register, which costs a whole cycle."),
+            LabeledField("Safety margin (min)", marginBox),
+            LabeledField("Action wait (ms)", waitBox)));
+
         // The reload's one piece of state it cannot read for itself. The 開始代養 / 結束代養 control is
         // a single button, so pressing it does the OPPOSITE of what is needed if the tool has the
         // state wrong — ending a boarding it meant to start, or the reverse.

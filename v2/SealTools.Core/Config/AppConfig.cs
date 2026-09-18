@@ -222,6 +222,31 @@ public sealed class PetConfig
     /// running.</summary>
     public bool BoardingRunning { get; set; }
 
+    /// <summary>How many minutes EARLY to reload, against the load's own duration.
+    ///
+    /// The cycle is `load_minutes − this`: 600 items at 3/min is 200 minutes, so 15 reloads at 185.
+    /// Small means less food is left behind when the reload happens (15 minutes of margin at 3/min is
+    /// ~45 items thrown away each time); large means more slack if the timing is off.
+    ///
+    /// Was a constant of 15 until the player asked for five more minutes on the cycle (2026-09-19),
+    /// which makes it 10 and the cycle 190. A field because it is a judgement about risk, not a
+    /// measurement — and because the two ways of being wrong are not equal: reloading a little early
+    /// wastes food, reloading late leaves the pet unfed.</summary>
+    public int SafetyMarginMinutes { get; set; } = 10;
+
+    /// <summary>How long to wait after EACH action on the pet before the next one — ending boarding,
+    /// placing the pet, a stack, the start.
+    ///
+    /// Separate from the tool's own click delays because it is the player's observation (2026-09-19)
+    /// that the game needs a buffer after each pet-changing action, not just after a click. Every step
+    /// here changes the breeder's state, and the next click is aimed at a window that is still
+    /// absorbing the last one. A field rather than a constant because it is tuned by watching, like
+    /// the hover delay.
+    ///
+    /// The cost of too long is a slower reload; the cost of too short is a click that does not
+    /// register, which is the failure this tool cannot see without the pet-slot check.</summary>
+    public int ActionWaitMs { get; set; } = 1200;
+
     /// <summary>How many items one boarding load is: two stacks of the game's 300 cap.</summary>
     public int LoadItems { get; set; } = 600;
 
