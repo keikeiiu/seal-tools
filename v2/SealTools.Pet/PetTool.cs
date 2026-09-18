@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO.Ports;
 using System.Threading;
 using SealTools.Core;
@@ -392,26 +393,49 @@ public sealed class PetTool : ToolBase
         error = "";
         var pet = _cfg.Pet;
 
-        if (pet.ReturnSlot is not { Count: 2 })
+        int page, cell;
+
+        if (pet.Queue.Count > 0)
         {
-            error = "The return slot isn't marked — the tool has nothing to right-click. Mark it on " +
-                    "the Pet tab, or capture a pet icon.";
+            // THE QUEUE IS THE ANSWER when it exists, and there is deliberately NO fallback to the
+            // return slot if it finds nothing. A pet that is not in the bag either finished and was
+            // mailed or was never there — and right-clicking a marked cell on the assumption that it
+            // holds the pet is exactly the guess the icon matching exists to replace. Failing here
+            // says so on the card and makes the reload stop, which is §13's honest end state.
+            if (!FindQueuedPet(ser, out page, out cell, out var score, out var why))
+            {
+                error = $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet " +
+                        "finished it was mailed, so this is the queue being empty of live pets — " +
+                        "capture the next one's icon on the Pet tab.";
+                return false;
+            }
+            Log($"  found a queued pet: page {page + 1}, cell {cell}, match {score:0.###}");
+        }
+        else if (pet.ReturnSlot is { Count: 2 } back)
+        {
+            page = back[0];
+            cell = back[1];
+            Log($"  no queue captured — placing from the return slot, page {page + 1}, cell {cell}");
+        }
+        else
+        {
+            error = "Neither a queued pet icon nor a return slot is set — there is nothing to " +
+                    "right-click. Mark the return slot or capture a pet icon, on the Pet tab.";
             return false;
         }
 
-        var page = pet.ReturnSlot[0];
-        var cell = pet.ReturnSlot[1];
+        // After a scan the bag is left on whichever page was swept last, so the page the cell lives on
+        // has to be brought back up before anything is clicked on it.
         if (!SelectPage(ser, page, out error)) return false;
 
         var centres = BagGrid.Centres(pet.BagGrid!);
         if (cell < 0 || cell >= centres.Count)
         {
-            error = $"The marked pet cell ({cell}) is outside the bag grid.";
+            error = $"The pet cell ({cell}) is outside the bag grid.";
             return false;
         }
 
         var (cx, cy) = centres[cell];
-        Log($"  placing from the return slot, page {page + 1}, cell {cell}");
 
         // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost roughly half
         // its boarded time to reloads that loaded food into an empty slot and reported success — and
@@ -446,6 +470,84 @@ public sealed class PetTool : ToolBase
 
         error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
                 "empty. Nothing was loaded. Check the return slot on the Pet tab.";
+        return false;
+    }
+
+    /// <summary>Looks for a queued pet across every calibrated bag page, by icon.
+    ///
+    /// This is what §13 calls the icon scan, and it exists because POSITION cannot be trusted: a pet
+    /// returned by the boarding window lands in the first free bag slot, and the character farms
+    /// throughout, so by the time a reload needs to find it the cell it came from holds something
+    /// else. The icon is the pet's own portrait and does not move with the bag.
+    ///
+    /// The winner and the RUNNER-UP are both logged, which is the point of using ScoreAll rather than
+    /// FindBestCell: a runner-up close to the winner is a tool that will eventually right-click the
+    /// wrong item, and the two scores are the only way to see that coming before it happens.
+    ///
+    /// No result means every queued pet is absent from the bag — not "the search failed". A pet that
+    /// finished is mailed and gone, so there is nothing in the bag to find.</summary>
+    private bool FindQueuedPet(SerialPort ser, out int page, out int cell, out double score, out string why)
+    {
+        page = 0;
+        cell = -1;
+        score = 1;
+        why = "";
+
+        var pet = _cfg.Pet;
+        if (!BagGrid.IsValidRect(pet.BagGrid)) { why = "the bag grid isn't calibrated"; return false; }
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
+        { why = "the game window isn't open"; return false; }
+
+        // The best and the next best, kept together so the log can show how close the call was.
+        var best = double.MaxValue;
+        var runnerUp = double.MaxValue;
+
+        for (int p = 0; p < pet.PageTabs.Count; p++)
+        {
+            if (!IsPoint(pet.PageTabs[p])) continue;
+            if (!SelectPage(ser, p, out why)) return false;
+            SleepCheck(PageWait);
+
+            var cap = ScreenCapture.CaptureClient(hwnd);
+            if (cap == null) { why = "the bag couldn't be captured"; return false; }
+
+            using var bag = cap.Image;
+            foreach (var entry in pet.Queue)
+            {
+                using var icon = IconMatch.FromBase64(entry.Png);
+                if (icon == null) continue;
+
+                // ScoreAll is sorted best-first, so the first is this icon's best cell — and the second
+                // is the cell it nearly tied with, which is the number worth knowing.
+                var scores = IconMatch.ScoreAll(bag, pet.BagGrid!, icon);
+                if (scores.Count == 0) continue;
+
+                if (scores[0].Score < best)
+                {
+                    runnerUp = Math.Min(best, scores.Count > 1 ? scores[1].Score : double.MaxValue);
+                    best = scores[0].Score;
+                    page = p;
+                    cell = scores[0].Cell;
+                    why = entry.Label ?? "(unlabelled)";
+                }
+            }
+        }
+
+        score = best;
+        if (best <= MatchLimit)
+        {
+            Log($"  icon scan: best {best:0.###} at page {page + 1} cell {cell} ({why}), runner-up " +
+                $"{(runnerUp == double.MaxValue ? "n/a" : runnerUp.ToString("0.###", CultureInfo.InvariantCulture))}");
+            return true;
+        }
+
+        Log($"  icon scan found nothing within {MatchLimit:0.###}: best was " +
+            $"{(best == double.MaxValue ? "no scores" : best.ToString("0.###", CultureInfo.InvariantCulture))} across " +
+            $"{pet.Queue.Count} icon(s) and {pet.PageTabs.Count} page(s)");
+        why = $"the closest match was {(best == double.MaxValue ? "nothing" : best.ToString("0.###", CultureInfo.InvariantCulture))}, " +
+              $"and anything above {MatchLimit:0.###} is too unlike the pet to click";
         return false;
     }
 
