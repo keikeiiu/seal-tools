@@ -39,6 +39,14 @@ public sealed class PetTool : ToolBase
 
     private const double RetryMinutes = 5;
 
+    /// <summary>How many times to re-click the pet before giving up. More than one because the failure
+    /// is intermittent rather than a wrong calibration — the cursor is verified on target — so a retry
+    /// is the fix and the count only bounds it.</summary>
+    private const int PlaceAttempts = 3;
+
+    /// <summary>After a click, before looking at the slot. The game needs a moment to move the pet.</summary>
+    private const double PlaceSettle = 0.9;
+
     /// <summary>After a bag page tab is clicked, before anything is clicked inside the grid.
     ///
     /// Switching pages re-renders the grid, and a right-click delivered during that is dropped — with
@@ -337,8 +345,68 @@ public sealed class PetTool : ToolBase
         }
 
         var (cx, cy) = centres[cell];
-        Console.WriteLine($"[pet] placing from page {page + 1}, cell {cell}");
-        return Click(ser, new List<int> { cx, cy }, right: true, $"the PET at cell {cell} (page {page + 1})", out error);
+        Log($"  placing from page {page + 1}, cell {cell}");
+
+        // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost roughly half
+        // its boarded time to reloads that loaded food into an empty slot and reported success — and
+        // the placement is verified to within 2px, so the cursor was on target when the click went out.
+        // An intermittent action cannot be made reliable by aiming better; it can only be checked and
+        // repeated.
+        for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
+        {
+            if (!Click(ser, new List<int> { cx, cy }, right: true,
+                    $"the PET at cell {cell} (page {page + 1})", out error))
+                return false;
+
+            SleepCheck(PlaceSettle);
+
+            switch (PetSlotIsEmpty())
+            {
+                case false:
+                    if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
+                    return true;
+
+                case null:
+                    // No reference, or the region couldn't be read. Unknown is NOT failure — refusing
+                    // to run because a safety net is absent would be worse than the thing it guards.
+                    Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
+                    return true;
+
+                default:
+                    Log($"  pet slot is still EMPTY after attempt {attempt}");
+                    break;
+            }
+        }
+
+        error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
+                "empty. Nothing was loaded. Check the pet's bag cell on the Pet tab.";
+        return false;
+    }
+
+    /// <summary>Whether the boarding window's pet slot still looks empty.
+    ///
+    /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
+    /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
+    /// otherwise work.</summary>
+    private bool? PetSlotIsEmpty()
+    {
+        var pet = _cfg.Pet;
+        if (!BagGrid.IsValidRect(pet.BoardingPetSlot)) return null;
+
+        using var reference = IconMatch.FromBase64(pet.PetSlotEmptyPng);
+        if (reference == null) return null;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+
+        var box = pet.BoardingPetSlot!;
+        var cap = ScreenCapture.CaptureClientRegion(hwnd,
+            new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] });
+        if (cap == null) return null;
+
+        using var now = cap.Image;
+        var difference = IconMatch.DifferingFraction(reference, now);
+        return difference <= pet.PetSlotOccupiedAbove;
     }
 
     /// <summary>Two stacks, one transaction each. The cell to use rotates through the marked set

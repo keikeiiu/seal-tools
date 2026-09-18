@@ -118,6 +118,23 @@ public sealed class PetConfig
     /// perfectly normal.</summary>
     public List<int>? BoardingPetSlot { get; set; }
 
+    /// <summary>The pet slot as it looks EMPTY, cropped from a capture and stored as a base64 PNG.
+    ///
+    /// The reference for "did the pet actually go in?". A right-click can fail to register — measured
+    /// on a live 12-hour run, where roughly half the boarded time was lost to reloads that loaded food
+    /// into an empty slot and reported success — and the placement itself is verified, so the click
+    /// was on target. Which means the only way to know is to look at the result.
+    ///
+    /// Capture it with the breeder empty, before a pet goes in.</summary>
+    public string? PetSlotEmptyPng { get; set; }
+
+    /// <summary>How unlike the empty reference a slot must look before it counts as occupied, as a
+    /// fraction of differing pixels. Deliberately low: the composer measured an empty box against
+    /// itself at 0.000 and against a gem at ~0.3, so anything above a few percent is content. The cost
+    /// of being wrong in the strict direction is a retry; in the loose direction it is not noticing a
+    /// pet that never went in, which is what this exists to catch.</summary>
+    public double PetSlotOccupiedAbove { get; set; } = 0.05;
+
     /// <summary>The two FOOD COUNTS in the boarding window, as boxes.
     ///
     /// Each is the number the game draws on a food slot — how many items are left in that stack,

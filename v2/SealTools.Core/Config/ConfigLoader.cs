@@ -211,6 +211,7 @@ public sealed class ConfigLoader
             if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
             if (BagGrid.IsValidRect(pet.ToggleLabel)) defaults.Pet.ToggleLabel = pet.ToggleLabel;
             if (BagGrid.IsValidRect(pet.BoardingPetSlot)) defaults.Pet.BoardingPetSlot = pet.BoardingPetSlot;
+            if (!string.IsNullOrWhiteSpace(pet.PetSlotEmptyPng)) defaults.Pet.PetSlotEmptyPng = pet.PetSlotEmptyPng;
             if (BagGrid.IsValidRect(pet.FeederSlotA)) defaults.Pet.FeederSlotA = pet.FeederSlotA;
             if (BagGrid.IsValidRect(pet.FeederSlotB)) defaults.Pet.FeederSlotB = pet.FeederSlotB;
             // The boarding bag's grid, deliberately separate from BuySell's — the bag sits somewhere
@@ -352,6 +353,7 @@ public sealed class ConfigLoader
         public List<List<int>>? PageTabs { get; set; }
         public List<int>? ToggleLabel { get; set; }
         public List<int>? BoardingPetSlot { get; set; }
+        public string? PetSlotEmptyPng { get; set; }
         public List<int>? FeederSlotA { get; set; }
         public List<int>? FeederSlotB { get; set; }
         public List<int>? BagGrid { get; set; }

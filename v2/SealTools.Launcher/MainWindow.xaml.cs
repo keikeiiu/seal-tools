@@ -3496,6 +3496,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         canvas.Children.Add(dot);
     }
 
+    /// <summary>BitmapSource -> Mat. The reverse of <see cref="MatToBitmapSource"/>, which is all the
+    /// launcher needed until the empty-pet-slot reference wanted a crop of what the calibrator is
+    /// showing. Pixels are copied through a byte array because the two types share no memory model.
+    /// </summary>
+    private static Mat BitmapSourceToMat(BitmapSource source)
+    {
+        var bgr = source.Format == PixelFormats.Bgr24
+            ? source
+            : new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0);
+
+        int stride = bgr.PixelWidth * 3;
+        var bytes = new byte[stride * bgr.PixelHeight];
+        bgr.CopyPixels(bytes, stride, 0);
+
+        var mat = new Mat(bgr.PixelHeight, bgr.PixelWidth, OpenCvSharp.MatType.CV_8UC3);
+        System.Runtime.InteropServices.Marshal.Copy(bytes, 0, mat.Data, bytes.Length);
+        return mat;
+    }
+
     private static BitmapSource MatToBitmapSource(Mat mat)
     {
         var width = mat.Width;
@@ -4884,9 +4903,22 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "missing rather than clicking into empty screen."),
             _petChecklist));
 
+        var emptySlot = MakeButton("Capture empty pet slot", ControlAppearance.Secondary);
+        emptySlot.Click += (_, _) => PetCaptureEmptySlot();
+
         var save = MakeButton("Save Calibration", ControlAppearance.Primary);
         save.Click += (_, _) => PetSave();
-        panel.Children.Add(Section("Save", save));
+        var saveRow = new StackPanel { Orientation = Orientation.Horizontal };
+        emptySlot.Margin = new Thickness(0, 0, 6, 0);
+        saveRow.Children.Add(emptySlot);
+        saveRow.Children.Add(save);
+        panel.Children.Add(Section("Save",
+            Hint("Capture empty pet slot — with the breeder OPEN and NO pet in it. This is the " +
+                 "reference the tool compares against after every placement, so it can tell a pet that " +
+                 "went in from a right-click that did nothing. Without it the check is skipped and a " +
+                 "failed placement is invisible, which is how a 12-hour run lost half its boarding time " +
+                 "while reporting success."),
+            saveRow));
 
         panel.Children.Add(Section("Result", hint));
 
@@ -5275,6 +5307,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
             Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding start button (drag)"),
             Mark(BagGrid.IsValidRect(pet.BoardingPetSlot), "boarding pet slot    (drag)"),
+            Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
             Mark(BagGrid.IsValidRect(pet.FeederSlotA), "food count 1         (drag)"),
             Mark(BagGrid.IsValidRect(pet.FeederSlotB), "food count 2         (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
@@ -5462,6 +5495,46 @@ public partial class MainWindow : FluentWindow, IDisposable
             "survive a restart now — mark them again whenever the bag changes.");
     }
 
+    /// <summary>Crops the boarding window's pet slot out of the current capture and stores it as the
+    /// EMPTY reference. Taken from the capture rather than a fresh grab so what is stored is exactly
+    /// what was on screen when you looked at it.</summary>
+    private void PetCaptureEmptySlot()
+    {
+        var pet = _service.Config.Pet;
+        if (_petScreenshot == null)
+        {
+            _petHint!.Text = "Capture the game first — with the breeder open and no pet in it.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BoardingPetSlot))
+        {
+            _petHint!.Text = "Draw the pet slot first — the crop is taken from that box.";
+            return;
+        }
+
+        var box = pet.BoardingPetSlot!;
+        var rect = new OpenCvSharp.Rect(box[0], box[1], box[2], box[3]);
+        if (rect.Right > _petScreenshot.PixelWidth || rect.Bottom > _petScreenshot.PixelHeight)
+        {
+            _petHint!.Text = "The pet slot box falls outside the capture — re-draw it and capture again.";
+            return;
+        }
+
+        try
+        {
+            using var full = BitmapSourceToMat(_petScreenshot);
+            using var crop = new OpenCvSharp.Mat(full, rect);
+            pet.PetSlotEmptyPng = IconMatch.ToBase64(crop);
+            _petHint!.Text = $"Empty pet slot stored ({rect.Width}x{rect.Height}). The tool will now " +
+                "check after every placement that a pet actually went in. Save to keep it.";
+            RefreshPetChecklist();
+        }
+        catch (Exception ex)
+        {
+            _petHint!.Text = "Couldn't crop the slot: " + ex.Message;
+        }
+    }
+
     private void PetSave()
     {
         var pet = _service.Config.Pet;
@@ -5485,6 +5558,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             PageTabs = pet.PageTabs,
             ToggleLabel = pet.ToggleLabel,
             BoardingPetSlot = pet.BoardingPetSlot,
+            PetSlotEmptyPng = pet.PetSlotEmptyPng,
             FeederSlotA = pet.FeederSlotA,
             FeederSlotB = pet.FeederSlotB,
             BagGrid = pet.BagGrid,
