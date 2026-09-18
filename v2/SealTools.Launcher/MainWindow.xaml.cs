@@ -214,6 +214,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>This row's food-slot count — 2 on the free row, 5 on a paid one.</summary>
     private Wpf.Ui.Controls.TextBox? _petStacksBox;
 
+    /// <summary>The queue on the Pet tab: the label field, the preview of the last crop, and the list.</summary>
+    private Wpf.Ui.Controls.TextBox? _petQueueLabel;
+    private Image? _petQueuePreview;
+    private TextBlock? _petQueueList;
+
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
     /// <summary>The row picker on the Buy tab, kept as a field because RefreshBuyPresets fills it —
@@ -4953,8 +4958,6 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "dots miss the slots, re-drag the grid area."),
             LabeledField("Draw", gridRow)));
 
-        RefreshPetRows();
-
         _petChecklist = Mono();
         _petChecklist.Text = "nothing captured yet";
         panel.Children.Add(Section("Setup so far",
@@ -4981,6 +4984,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Result", hint));
 
+        RefreshPetRows();
         RefreshPetCells();
         RefreshPetChecklist();
         return MakeTab("Calibrate Pet", panel);
@@ -5119,6 +5123,63 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "nothing, check those boxes cover the numbers."),
             testRead));
 
+        // ── THE QUEUE ────────────────────────────────────────────────────────
+        //
+        // A pet returned by the boarding window lands in the FIRST FREE bag slot, and the character
+        // farms throughout — so by the time a reload needs to find it, the position it was taken from
+        // is meaningless. The icon is not: it is the pet's own portrait, so matching it across the 64
+        // cells finds the pet wherever it went.
+        //
+        // Captured from the bag cell you have marked rather than by dragging a box, because the grid is
+        // already calibrated — the cell centre and the pitch give the exact crop, so there is nothing
+        // to aim.
+        var queueLabel = UiText("", "name this pet");
+        queueLabel.Width = 160;
+        queueLabel.VerticalAlignment = VerticalAlignment.Center;
+        _petQueueLabel = queueLabel;
+
+        var addIcon = MakeButton("Capture icon from the pet cell", ControlAppearance.Secondary);
+        addIcon.Click += async (_, _) => await PetCaptureIcon(hint);
+        var removeIcon = MakeButton("Remove last", ControlAppearance.Secondary);
+        removeIcon.Click += (_, _) =>
+        {
+            var pet = _service.Config.Pet;
+            if (pet.Queue.Count == 0) { hint.Text = "The queue is empty."; return; }
+            pet.Queue.RemoveAt(pet.Queue.Count - 1);
+            PetQueueSave();
+            RefreshPetQueue();
+            hint.Text = $"Removed. {pet.Queue.Count} pet icon(s) left.";
+        };
+
+        var queueButtons = new StackPanel { Orientation = Orientation.Horizontal };
+        addIcon.Margin = new Thickness(0, 0, 6, 0);
+        queueButtons.Children.Add(addIcon);
+        queueButtons.Children.Add(removeIcon);
+
+        _petQueuePreview = new Image
+        {
+            Stretch = Stretch.None,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+
+        _petQueueList = Mono();
+        _petQueueList.Text = "no pet icons captured yet";
+
+        panel.Children.Add(Section("The queue — which pets to breed",
+            Hint("Mark the bag cell HOLDING THE PET first (Mark the PET cell), put that bag page up, " +
+                 "then press Capture icon. The crop is taken from the marked cell, so there is nothing " +
+                 "to aim — the grid is already calibrated.\n" +
+                 "When a pet finishes it is MAILED and leaves the bag, so a queued pet that can be " +
+                 "found is by definition not finished: the tool boards the first match and needs no " +
+                 "other test. Any pet of the right kind is a harmless substitute, because an idle " +
+                 "breeder is wasted time.\n" +
+                 "With no icons captured the tool falls back to the marked return slot."),
+            LabeledField("Label", queueLabel),
+            queueButtons,
+            _petQueuePreview,
+            _petQueueList));
+
         // The hover read has been a capability with no consumer since 2026-09-18. Before anything is
         // built on it — the finished-pet guard and the queue both are — it has to be shown working on
         // a live pet, and the report has to be wide enough to answer what we do NOT know yet: whether
@@ -5136,6 +5197,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Result", hint));
 
+        RefreshPetQueue();
         RefreshPetCells();
         RefreshPetReady();
         return MakeTab("Pet", panel);
@@ -5822,6 +5884,119 @@ public partial class MainWindow : FluentWindow, IDisposable
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
             $"Saved {pet.FoodSlots.Count} food cell(s), the pet cell, and the timing. They survive a " +
             "restart now — mark the cells again whenever the bag changes.");
+    }
+
+    /// <summary>Crops a queued pet's icon out of a fresh capture and adds it to the queue.
+    ///
+    /// Taken from the MARKED CELL rather than from a dragged box, because the bag grid is already
+    /// calibrated: the cell centre and the pitch give the exact crop, so there is nothing to aim. What
+    /// it does require is the bag up on the marked page with the pet in that cell — the crop is
+    /// whatever is really there, which is why the preview is shown rather than the entry being taken
+    /// on trust. A wrong crop is not dangerous (it matches nothing, and the scan then finds no pet and
+    /// says so) but it is a queue entry that will never work, and silence about that is worse.
+    ///
+    /// The box is the same one <see cref="IconMatch.FindBestCell"/> scores against, from the same
+    /// centre and pitch — so what is captured here is literally what the scan will be looking for.</summary>
+    private async Task PetCaptureIcon(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        if (pet.ReturnSlot is not { Count: 2 } marked)
+        {
+            hint.Text = "Mark the bag cell HOLDING THE PET first — the icon is cropped from it. " +
+                        "(Mark the PET cell above, put that bag page up, then press this.)";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+
+        var centres = BagGrid.Centres(pet.BagGrid!);
+        var cell = marked[1];
+        if (cell < 0 || cell >= centres.Count)
+        {
+            hint.Text = $"The marked pet cell ({cell}) is outside the bag grid.";
+            return;
+        }
+
+        var shot = await CaptureScreenshotAsync();
+        if (shot == null)
+        {
+            hint.Text = "Couldn't capture — is the game open and not minimized?";
+            return;
+        }
+
+        var (cx, cy) = centres[cell];
+        var box = new OpenCvSharp.Rect(
+            cx - (int)Math.Round(BagGrid.PitchX(pet.BagGrid!) / 2),
+            cy - (int)Math.Round(BagGrid.PitchY(pet.BagGrid!) / 2),
+            (int)Math.Round(BagGrid.PitchX(pet.BagGrid!)),
+            (int)Math.Round(BagGrid.PitchY(pet.BagGrid!)));
+
+        if (box.X < 0 || box.Y < 0 ||
+            box.Right > shot.Value.Image.PixelWidth || box.Bottom > shot.Value.Image.PixelHeight)
+        {
+            hint.Text = "The pet cell falls outside the capture — re-check the bag grid on Calibrate Pet.";
+            return;
+        }
+
+        try
+        {
+            using var full = BitmapSourceToMat(shot.Value.Image);
+            using var crop = new Mat(full, box);
+
+            pet.Queue.Add(new PetQueueEntry
+            {
+                Label = string.IsNullOrWhiteSpace(_petQueueLabel?.Text) ? null : _petQueueLabel!.Text.Trim(),
+                Rect = new List<int> { box.X, box.Y, box.Width, box.Height },
+                Png = IconMatch.ToBase64(crop),
+            });
+
+            PetQueueSave();
+            RefreshPetQueue();
+            if (_petQueuePreview != null) _petQueuePreview.Source = MatToBitmapSource(crop);
+
+            hint.Text = $"Added {box.Width}x{box.Height} from page {marked[0] + 1}, cell {cell}. " +
+                        $"{pet.Queue.Count} pet icon(s) queued. Check the preview matches the pet.";
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Couldn't crop the icon: " + ex.Message;
+        }
+    }
+
+    /// <summary>Writes the queue straight through, like the bag marks — the crops are the player's
+    /// working set and losing them to a forgotten Save would mean re-capturing every pet.</summary>
+    private void PetQueueSave()
+    {
+        try
+        {
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Pet = ConfigLoader.LocalPet.From(_service.Config.Pet);
+            _service.SaveLocal(local);
+        }
+        catch (Exception ex)
+        {
+            if (_petQueueList != null) _petQueueList.Text = "couldn't save the queue: " + ex.Message;
+        }
+    }
+
+    private void RefreshPetQueue()
+    {
+        var queue = _service.Config.Pet.Queue;
+        if (_petQueueList == null) return;
+
+        if (queue.Count == 0)
+        {
+            _petQueueList.Text = "no pet icons captured yet — the tool will use the marked return slot";
+            return;
+        }
+
+        _petQueueList.Text = string.Join("\n", queue.Select((q, i) =>
+            $"  {i + 1}. {(string.IsNullOrWhiteSpace(q.Label) ? "(no label)" : q.Label)}" +
+            $"  {q.Rect?[2]}x{q.Rect?[3]} at ({q.Rect?[0]},{q.Rect?[1]})" +
+            $"  {q.Png?.Length ?? 0} chars"));
     }
 
     /// <summary>Crops the boarding window's pet slot out of the current capture and stores it as the
