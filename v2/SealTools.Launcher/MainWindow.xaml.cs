@@ -5071,10 +5071,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petFoodModeButton = modeFood;
         _petPetModeButton = modePet;
         _petQueueModeButton = modeQueue;
-        modeFood.Margin = new Thickness(0, 0, 6, 0);
-        modePet.Margin = new Thickness(0, 0, 6, 0);
-        modeQueue.Margin = new Thickness(0, 0, 6, 0);
-        var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        // VERTICAL, one per line. Three buttons in a horizontal row do not wrap, so on a narrow
+        // launcher the third simply runs off the edge — and the third is the new one, which made it
+        // look like it had not been built. The same trap as the layout sweep the user found by
+        // looking at a narrow window.
+        modeFood.Margin = new Thickness(0, 0, 0, 4);
+        modePet.Margin = new Thickness(0, 0, 0, 4);
+        modeQueue.Margin = new Thickness(0, 0, 0, 4);
+        var modeRow = new StackPanel { Orientation = Orientation.Vertical };
         modeRow.Children.Add(modeFood);
         modeRow.Children.Add(modePet);
         modeRow.Children.Add(modeQueue);
@@ -5085,7 +5089,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var cellsPanel = new StackPanel();
         cellsPanel.Children.Add(LabeledField("Page to edit", pageRow));
-        cellsPanel.Children.Add(LabeledField("A click marks", modeRow));
+        cellsPanel.Children.Add(LabeledField("Clicking a bag cell marks…", modeRow));
         cellsPanel.Children.Add(cellGrid);
         _petCellInfo = Mono();
         cellsPanel.Children.Add(_petCellInfo);
