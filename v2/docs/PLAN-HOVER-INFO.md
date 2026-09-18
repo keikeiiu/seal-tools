@@ -157,12 +157,31 @@ every other. Two options, and the choice is about how often it gets re-tuned:
    region.
 3. **Does the panel move while it is up?** If it animates in, the capture has to wait for it to settle,
    not merely for it to appear.
-4. **Does the panel state the current level's 所需喂养值?** Raised by the player 2026-09-19, and the one
-   question that would change the most. If it does — and the panel box is deliberately oversized, so it
-   may already be reading rows nobody has looked at — then that number **is** `wyz × (1 + growth/10)` and
-   the pet's `wyz` falls out of a single read: `wyz = 所需喂养值 ÷ (1 + growth/10)`. The remaining-time
-   calculation would then need no table, no pet identification and no second reading. Every other route
-   to `wyz` (the 327-pet table by name, or measuring the rate across two reads) exists only because this
-   one is unproven. **The Pet tab's Test read answers it with one hover** — it dumps every number it saw
-   with its surrounding characters, so the report says what the panel contains rather than only what the
-   parser was looking for.
+4. ~~**Does the panel state the current level's 所需喂养值?**~~ **Answered — no (2026-09-19).** The Pet
+   tab's Test read hovered a live pet and returned the panel in full:
+
+   ```
+   (6階) 真蔚藍米魯 [0.06%]
+   所有職業皆可使用。
+   等級限制 150
+   名望限制 51595
+   販賣價格 - 500000s
+   ```
+
+   Stage, name, EXP, and then three rows about using and selling the item. **No feeding cost**, so `wyz`
+   cannot be derived from one read this way.
+
+   **But the same read found the route that works, and it is better than expected.** The NAME reads
+   cleanly and matches the scraped table exactly: the panel's `真蔚蓝米鲁` is character-for-character the
+   `真蔚蓝米鲁` of [PET-DATA.md](PET-DATA.md) id 24759, stage 6, `wyz` 5200. The script mismatch this
+   document warned about **does not apply to the read**, because RapidOCR outputs Simplified and the
+   table is Simplified — the two agree. (The warning was about the game *displaying* Traditional, which
+   it does; it is the *recogniser* that normalises, and `text_fixes` only converts the pairs it lists.)
+
+   So the remaining-time chain closes: read the panel → the name → the table → `wyz`, and the stage's
+   rate → minutes. What is still open is matching when the name contains a character that `text_fixes`
+   DOES convert, which would leave the read partly Traditional against a Simplified table.
+
+5. **Do other pet panels confirm the name match?** One exact match is not a rule, and the fixture came
+   from a pet whose name happens to contain no converted characters. Worth a few more hovers before the
+   lookup is built on it.

@@ -102,8 +102,73 @@ public class PetPanelTests
     [Fact]
     public void GrowthWithoutExpGivesNull() => Assert.Null(P("（6）真蔚蓝凤凰+7"));
 
+    // ── The whole panel, as the live game actually produced it (2026-09-19) ──
+    //
+    // These five lines are one read verbatim, from the Pet tab's Test read. It is the fixture that
+    // matters most because it is the only panel we have that was NOT hand-written, and it corrected
+    // two things the earlier tests had wrong.
+
+    private static readonly string[] LiveZeroPet =
+    {
+        "（6踏）真蔚蓝米鲁[0.06%]",
+        "所有瞬業皆可使用",
+        "等級限制1150",
+        "名望限制51595",
+        "贩直價格-500000s",
+    };
+
+    /// <summary>A +0 pet renders NO "+N". Requiring one rejected every pet at the start of its run,
+    /// which is the pet this tool feeds most often — and it failed in a way that looked like the read
+    /// being broken rather than the parser being wrong.</summary>
     [Fact]
-    public void ExpWithoutGrowthGivesNull() => Assert.Null(P("（6）真蔚蓝凤凰[52.18%]"));
+    public void AZeroPetHasNoGrowthAndParsesAsZero()
+    {
+        var panel = PetPanel.Parse(LiveZeroPet);
+
+        Assert.NotNull(panel);
+        Assert.Equal(6, panel!.Stage);
+        Assert.Equal(0, panel.Growth);
+        Assert.Equal(0.06, panel.Exp, 3);
+        Assert.False(panel.IsFinished);
+    }
+
+    /// <summary>The 階 was misread as 踏 and the stage still has to come out. It is read off the
+    /// panel's own first row, so a mangled unit must not cost the one value that identifies which
+    /// food and which rate this pet needs.</summary>
+    [Fact]
+    public void AMangledStageUnitStillParsesTheStage() => Assert.Equal(6, PetPanel.Parse(LiveZeroPet)!.Stage);
+
+    /// <summary>The other two panels the same session produced, both from hovering the wrong thing.
+    /// Neither carries a bracketed percentage, so neither is a pet — which is the whole of what keeps
+    /// a scan that hovers the wrong cell from inventing one.</summary>
+    [Fact]
+    public void TheOtherTooltipsTheSessionReadAreNotPets()
+    {
+        // A bag item, and a quest letter. Neither has a bracketed percentage anywhere.
+        Assert.Null(P("能量的舜渣", "促希菌特大陵各每收集而来的神秘掉落物：",
+            "邂子城的?能量守恒者?知道這是什应東西?拿去给他看看吧"));
+        Assert.Null(P("奥藤的請求信", "奥藤為了找回冬天，正在收集大量的",
+            "有效期間", "2026年9月月20日0時58分"));
+    }
+
+    /// <summary>The panel states the sell price, the level limit and the fame limit — three large
+    /// numbers that a parser hunting for digits would happily mistake for something. Anchoring on the
+    /// bracket and the + is what makes them impossible to pick up.</summary>
+    [Fact]
+    public void ThePanelsOtherNumbersAreNotMistakenForGrowthOrExp()
+    {
+        var panel = PetPanel.Parse(LiveZeroPet);
+
+        Assert.Equal(0, panel!.Growth);      // not 150, not 51595, not 500000
+        Assert.Equal(0.06, panel.Exp, 3);    // and not one of those either
+    }
+
+    /// <summary>The BRACKET is what makes a percentage an EXP bar rather than any other number that
+    /// happens to carry a %. Both live reads kept theirs, and the recogniser is reliable on ASCII
+    /// punctuation where it is not on Chinese — so requiring it costs nothing real and it is the one
+    /// thing standing between a scan and an item whose description mentions a rate.</summary>
+    [Fact]
+    public void AnUnbracketedPercentageIsNotAPet() => Assert.Null(P("某個物品", "增加 10% 的掉落率"));
 
     // ── Shapes the recogniser plausibly returns ─────────────────────────────
 

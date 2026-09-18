@@ -64,15 +64,29 @@ public sealed record PetPanel(int? Stage, int Growth, double Exp)
 
         var text = Normalise(string.Join(" ", lines));
 
-        var growth = MatchInt(GrowthPattern, text);
+        // The EXP bar is the anchor, and it is the bracketed percentage — nothing else in a game
+        // tooltip carries one. It has to be the anchor, because a +0 pet shows NO growth at all (see
+        // below), so "has a +N" cannot be the test for "this is a pet".
         var exp = MatchDouble(ExpPattern, text);
-        if (growth == null || exp == null) return null;
+        if (exp == null) return null;
 
-        // The stage is the parenthesised integer, e.g. （6） — read with the 階 already dropped, so
-        // the unit is optional and its absence is not a failure.
+        // The stage, e.g. （6階）. The unit is optional AND may be misread — the measured panel reads
+        // "（6踏）" — so a couple of characters are tolerated between the digits and the bracket.
         var stage = MatchInt(StagePattern, text);
 
-        return new PetPanel(stage, growth.Value, exp.Value);
+        // A MISSING growth is ZERO, and that is measured rather than assumed: a +0 pet renders no
+        // "+N" at all. The panel for 真蔚藍米魯 at 0.06 % (live, 2026-09-19) reads
+        // "（6踏）真蔚蓝米鲁[0.06%]" — a space where a +7 sits on a levelled pet, with the image
+        // crisp enough that nothing was lost. So requiring the +N rejected every pet at the very
+        // start of its run, which is the pet this tool is most often feeding.
+        //
+        // The cost, stated: a +N the OCR *dropped* is also read as +0. For the finished test that is
+        // harmless — 0 is never 9 — but it would overstate a remaining-time estimate. Nothing
+        // distinguishes the two from one read, and reading zero as a failure would be wrong far more
+        // often than reading a dropped +N as zero.
+        var growth = MatchInt(GrowthPattern, text) ?? 0;
+
+        return new PetPanel(stage, growth, exp.Value);
     }
 
     // A full-width digit is a different character to the recogniser and the same number to a reader,
@@ -94,17 +108,20 @@ public sealed record PetPanel(int? Stage, int Growth, double Exp)
         return sb.ToString();
     }
 
-    // Bounded to a plausible stage so a stray long number in a misread row cannot be read as one.
+    // Bounded to a plausible stage so a stray long number in a misread row cannot be read as one, and
+    // tolerant of up to two characters where the 階 should be — the live panel read "（6踏）".
     private static readonly Regex StagePattern =
-        new(@"[（(]\s*(\d{1,2})\s*[階阶]?\s*[)）]", RegexOptions.Compiled);
+        new(@"[（(]\s*(\d{1,2})\s*[^)）]{0,2}[)）]", RegexOptions.Compiled);
 
     // Not followed by a % — that would be an EXP-shaped number, and the growth is the one with the
     // plus in front of it and nothing behind it.
     private static readonly Regex GrowthPattern =
         new(@"\+\s*(\d{1,2})(?!\s*%)", RegexOptions.Compiled);
 
+    // The opening bracket is required and the closing one is not: it is the opening plus the % that
+    // say "EXP bar", and a lost trailing glyph should not cost the whole reading.
     private static readonly Regex ExpPattern =
-        new(@"(\d+(?:\.\d+)?)\s*%", RegexOptions.Compiled);
+        new(@"[\[［【]\s*(\d+(?:\.\d+)?)\s*%", RegexOptions.Compiled);
 
     private static int? MatchInt(Regex re, string text)
     {

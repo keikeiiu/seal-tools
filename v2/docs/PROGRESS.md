@@ -65,10 +65,42 @@ matters is not the two fields restored but the shape: `EveryLocalPetFieldIsCopie
 forgetting it there fails the test suite rather than the player's next session. Mutation-checked —
 deleting `ActionWaitMs` from the projection fails both new tests.
 
-**Not verified live.** The parser is pure code with tests; nothing has run the Test read yet, and no
-tool acts on a read. The next hover on a real pet settles the `wyz` question. The save fix is a
-compile check plus tests — the launcher is not reachable from the test project, so the buttons
-themselves have not been pressed.
+**Status when written:** the parser was pure code with tests and nothing had run the Test read. That
+changed the same session — see below. No tool acts on a read yet. The save fix is a compile check
+plus tests only: the launcher is not reachable from the test project, so the buttons themselves have
+not been pressed.
+
+### The Test read ran, and it answered three questions at once
+
+**First hover of the session, three reads** (`logs\reads\petpanel_*.png`). Two were the wrong thing —
+a bag item and a quest letter — and the third was the pet:
+
+```
+(6階) 真蔚藍米魯 [0.06%]
+所有職業皆可使用。
+等級限制 150
+名望限制 51595
+販賣價格 - 500000s
+```
+
+**`所需喂养值` is NOT in the panel**, so `wyz` cannot fall out of one read and the expected shortcut
+is dead. But the same read found the route that does work, and it is the one this project had ruled
+out: **the name reads cleanly and matches the scraped table exactly.** The panel's `真蔚蓝米鲁` is
+character-for-character [PET-DATA.md](PET-DATA.md)'s `真蔚蓝米鲁`, id 24759, stage 6, `wyz` 5200.
+PLAN-HOVER-INFO's script-mismatch warning was about the game *displaying* Traditional — true, but the
+*recogniser* outputs Simplified and the table is Simplified, so the two agree as long as the name has
+no character that `text_fixes` converts. That caveat is the new open question.
+
+So the remaining-time chain closes end to end for this pet: 14.5 − done(0, 0.06%) = 14.4994 units ×
+5200 = 75,397 喂养值 ÷ 30 per item ÷ 3 per minute = **838 minutes**, against the table's own 838.0.
+
+**And the parser was wrong in two ways the live panel exposed, both fixed with the read as the
+fixture.** A **+0 pet renders no `+N` at all** — the row is a space where a +7 sits on a levelled pet,
+with the image crisp enough that nothing was lost — so requiring one rejected every pet at the start
+of its run, which is the pet this tool feeds most. A missing growth now reads as zero, and the test
+that said otherwise was simply wrong. Separately the 階 is misread as 踏 (`（6踏）`), so the stage
+pattern tolerates a couple of mangled characters. All three anchors — zero-growth, the stage-unit
+tolerance, and the bracket that makes a percentage an EXP bar — are mutation-checked.
 
 ---
 
