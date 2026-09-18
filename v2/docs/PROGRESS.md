@@ -50,8 +50,25 @@ that echoed only the parse could not say whether anything else is in the panel. 
 never a click: a click on a pet in the bag switches the equipped pet, so measuring would change what
 is measured (already why `FocusThenHover` is split).
 
+**And the handover's own pending task turned out to be impossible, which is the find of the session.**
+The instruction was to set the Pet tab's Timing fields and press Save. Checking whether that would
+survive a restart: the boxes write `ActionWaitMs` and `WaitAfterEmptyMinutes` to the in-memory config,
+`ConfigLoader` reads both back from `LocalPet` — and **nothing ever wrote them**, on either pet tab.
+The values would have reverted on the next launch, silently, which is `gem.move_mode` again
+(PROGRESS.md, 2026-09-13). The same audit found the worse half: Calibrate Pet's Save built its own
+`LocalPet` field list and **replaced** the object, and that list omitted `PetIconRect`, `PetIconPng`
+and `MaxButton` — so saving a calibration would have wiped the queue crops and the pet's own MAX.
+
+Both are now one projection, `LocalPet.From(PetConfig)`, called by both save buttons. The fix that
+matters is not the two fields restored but the shape: `EveryLocalPetFieldIsCopiedFromTheConfig` walks
+`LocalPet`'s properties by reflection against a fully-populated `PetConfig`, so adding a field and
+forgetting it there fails the test suite rather than the player's next session. Mutation-checked —
+deleting `ActionWaitMs` from the projection fails both new tests.
+
 **Not verified live.** The parser is pure code with tests; nothing has run the Test read yet, and no
-tool acts on a read. The next hover on a real pet settles the `wyz` question.
+tool acts on a read. The next hover on a real pet settles the `wyz` question. The save fix is a
+compile check plus tests — the launcher is not reachable from the test project, so the buttons
+themselves have not been pressed.
 
 ---
 

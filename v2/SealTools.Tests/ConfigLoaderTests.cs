@@ -409,6 +409,83 @@ public class ConfigLoaderTests
         }
     }
 
+    // The pet flow persists through LocalPet, and the launcher used to build that object from TWO
+    // hand-written field lists — one per pet tab. A field missing from either was silently never
+    // saved, and because Calibrate Pet's list REPLACED the object rather than mutating it, a save
+    // there also wiped whatever the other list knew about. That is how the Timing boxes came to
+    // revert on every launch and how a calibration save dropped the queue crops.
+    //
+    // There is one projection now (`LocalPet.From`) and this is what keeps it complete: it walks
+    // LocalPet's properties by reflection, so ADDING A FIELD AND FORGETTING IT THERE FAILS HERE
+    // rather than in a player's next session. The values are all non-default on purpose — a copy
+    // that was never made is then a null where a value was expected, not a coincidence.
+    [Fact]
+    public void EveryLocalPetFieldIsCopiedFromTheConfig()
+    {
+        var cfg = new PetConfig
+        {
+            MenuButton = new List<int> { 1, 2 },
+            FeedIcon = new List<int> { 3, 4 },
+            CloseButton = new List<int> { 5, 6 },
+            PageTabs = new List<List<int>> { new() { 7, 8 } },
+            ToggleLabel = new List<int> { 9, 10, 11, 12 },
+            BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
+            PetSlotEmptyPng = "empty-slot-png",
+            FeederSlotA = new List<int> { 17, 18, 19, 20 },
+            FeederSlotB = new List<int> { 21, 22, 23, 24 },
+            BagGrid = new List<int> { 25, 26, 27, 28 },
+            BagSlot = new List<int> { 29, 30, 31, 32 },
+            FoodCells = new List<List<int>> { new() { 0, 33 } },
+            FoodCellsUsed = 7,
+            PetCell = new List<int> { 34, 35 },
+            PetIconRect = new List<int> { 36, 37, 38, 39 },
+            PetIconPng = "icon-png",
+            MaxButton = new List<int> { 40, 41 },
+            BoardingRunning = true,
+            WaitAfterEmptyMinutes = 3,
+            ActionWaitMs = 1234,
+        };
+
+        var local = ConfigLoader.LocalPet.From(cfg);
+
+        foreach (var prop in typeof(ConfigLoader.LocalPet).GetProperties())
+        {
+            var source = typeof(PetConfig).GetProperty(prop.Name);
+            Assert.True(source != null,
+                $"LocalPet.{prop.Name} has no PetConfig counterpart — the two have drifted apart");
+            Assert.True(Equals(prop.GetValue(local), source!.GetValue(cfg)),
+                $"LocalPet.{prop.Name} was not copied from PetConfig, so a Save silently drops it");
+        }
+    }
+
+    /// <summary>The Timing fields are the pair that was written by nothing at all. Pinned through the
+    /// loader as well as the projection, because either half failing loses the value in the same
+    /// silent way: the numbers look set on the tab and are gone after a restart.</summary>
+    [Fact]
+    public void PetTimingRoundTripsThroughLocalYaml()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Pet = ConfigLoader.LocalPet.From(new PetConfig
+            {
+                WaitAfterEmptyMinutes = 2,
+                ActionWaitMs = 1234,
+            });
+            loader.SaveLocal(local);
+
+            var cfg = new ConfigLoader(dir).Load();
+            Assert.Equal(2, cfg.Pet.WaitAfterEmptyMinutes);
+            Assert.Equal(1234, cfg.Pet.ActionWaitMs);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // Presets used to live in defaults.yaml. SaveDefaults no longer writes them, so the first Save
     // on any other tab rewrites that file without a spammer block — and on a machine that only ever
     // ran the older build, that deleted the player's only copy. Load() adopts them into local.yaml

@@ -369,6 +369,50 @@ public sealed class ConfigLoader
         public List<int>? PetIconRect { get; set; }
         public string? PetIconPng { get; set; }
         public List<int>? MaxButton { get; set; }
+
+        /// <summary>THE one place a <see cref="PetConfig"/> becomes a LocalPet, and it exists because
+        /// there were two.
+        ///
+        /// The launcher had a Save on each of the two pet tabs, and each built its own explicit field
+        /// list. Three things went wrong with that, all of them silent:
+        ///
+        ///   * `ActionWaitMs` and `WaitAfterEmptyMinutes` were in NEITHER list. The Timing boxes on the
+        ///     Pet tab wrote them to the in-memory config, the loader read them back from here, and
+        ///     nothing in between ever wrote them — so the values reverted on the next launch, which is
+        ///     the same shape as `gem.move_mode` (PROGRESS.md, 2026-09-13).
+        ///   * `PetIconRect`, `PetIconPng` and `MaxButton` were missing from Calibrate Pet's list, and
+        ///     that Save REPLACED the object — so saving a calibration wiped the queue crops and the
+        ///     pet's own MAX.
+        ///   * Nothing failed. A missing field is indistinguishable from a field that was never set.
+        ///
+        /// A single projection is what makes the omission impossible rather than merely fixed:
+        /// `EveryLocalPetFieldIsCopiedFromTheConfig` walks these properties by reflection, so adding a
+        /// field to this class and forgetting it here fails the build's tests rather than the player's
+        /// next session. Both save buttons now call this, so neither can drop what the other wrote.
+        /// </summary>
+        public static LocalPet From(PetConfig p) => new()
+        {
+            MenuButton = p.MenuButton,
+            FeedIcon = p.FeedIcon,
+            CloseButton = p.CloseButton,
+            PageTabs = p.PageTabs,
+            ToggleLabel = p.ToggleLabel,
+            BoardingPetSlot = p.BoardingPetSlot,
+            PetSlotEmptyPng = p.PetSlotEmptyPng,
+            FeederSlotA = p.FeederSlotA,
+            FeederSlotB = p.FeederSlotB,
+            BagGrid = p.BagGrid,
+            BagSlot = p.BagSlot,
+            FoodCells = p.FoodCells,
+            FoodCellsUsed = p.FoodCellsUsed,
+            PetCell = p.PetCell,
+            PetIconRect = p.PetIconRect,
+            PetIconPng = p.PetIconPng,
+            MaxButton = p.MaxButton,
+            BoardingRunning = p.BoardingRunning,
+            WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes,
+            ActionWaitMs = p.ActionWaitMs,
+        };
     }
 
     private static bool IsPoint(List<int>? p) => p is { Count: 2 };

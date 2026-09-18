@@ -5669,16 +5669,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
+        // The WHOLE pet block, not only the marks — this is the Pet tab's Save, and the Timing fields
+        // above it are the tab's too. Writing a subset here is what left them permanently unpersisted:
+        // the boxes set them in memory, the loader read them back, and no save ever wrote them, so
+        // they reverted on the next launch. Same projection as Calibrate Pet's save, so neither
+        // button can drop what the other wrote.
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet ??= new ConfigLoader.LocalPet();
-        local.Pet.PetCell = pet.PetCell;
-        local.Pet.FoodCells = pet.FoodCells;
-        local.Pet.FoodCellsUsed = pet.FoodCellsUsed;
-        local.Pet.BoardingRunning = pet.BoardingRunning;
+        local.Pet = ConfigLoader.LocalPet.From(pet);
 
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
-            $"Saved {pet.FoodCells.Count} food cell(s) and the pet cell to config/local.yaml. They " +
-            "survive a restart now — mark them again whenever the bag changes.");
+            $"Saved {pet.FoodCells.Count} food cell(s), the pet cell, and the timing. They survive a " +
+            "restart now — mark the cells again whenever the bag changes.");
     }
 
     /// <summary>Crops the boarding window's pet slot out of the current capture and stores it as the
@@ -5736,24 +5737,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet = new ConfigLoader.LocalPet
-        {
-            MenuButton = pet.MenuButton,
-            FeedIcon = pet.FeedIcon,
-            CloseButton = pet.CloseButton,
-            PageTabs = pet.PageTabs,
-            ToggleLabel = pet.ToggleLabel,
-            BoardingPetSlot = pet.BoardingPetSlot,
-            PetSlotEmptyPng = pet.PetSlotEmptyPng,
-            FeederSlotA = pet.FeederSlotA,
-            FeederSlotB = pet.FeederSlotB,
-            BagGrid = pet.BagGrid,
-            BagSlot = pet.BagSlot,
-            FoodCells = pet.FoodCells,
-            FoodCellsUsed = pet.FoodCellsUsed,
-            BoardingRunning = pet.BoardingRunning,
-            PetCell = pet.PetCell,
-        };
+        // ONE projection for both pet save buttons — see LocalPet.From. The list that used to be here
+        // omitted PetIconRect, PetIconPng, MaxButton and both timing fields, and because it REPLACED
+        // the object rather than mutating it, saving a calibration silently wiped them.
+        local.Pet = ConfigLoader.LocalPet.From(pet);
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
             "Saved to config\\local.yaml. All of it is machine-specific, so none of it ships.");
     }
