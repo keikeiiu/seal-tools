@@ -14,7 +14,9 @@ open questions at the end.
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
 notices, reloads the feeder, and carries on. Nothing else about the pet is automated.
 
-> **`+10` means `+9` at 100%**, throughout this document. It is the state at which a pet can evolve —
+> **`+10` means `+9` at 100%**, throughout this document — **and the string `+10` appears nowhere in
+> the game.** The panel shows `+9` with a percentage, `100.00%` or above; `+10` is our name for that
+> state, not something to look for on screen. It is the state at which a pet can evolve —
 > boarding auto-stops, the pet and its leftover food are mailed back, and the run is done. It is **not**
 > a growth level: the game's levels stop at `+9`, and a pet at `+9` *below* 100% is still growing and
 > still wants feeding. The player's shorthand (2026-09-19), used here because "`+9` 100%" is easy to
@@ -442,9 +444,10 @@ mean new commands and a reflash of every board. The right-click path needs none 
 **No firmware change is needed at all**: the board already has `C` (click), `R` (right-click) and `E`
 (Enter).
 
-**The guard matters, and "finished" is narrower than it sounds.** A pet is finished at **`+9` AND 100% EXP or more** — not `+9` alone (player, 2026-09-18), and
-100% exactly counts. At `+9` under 100% it is still growing and still wants
-feeding; the game stops boarding only once it is both, which is the state that lets it evolve.
+**The guard matters, and "finished" is narrower than it sounds.** A pet is finished at **`+10`** —
+`+9` **and** 100% EXP or more, with 100% exactly counting. Not `+9` alone (player, 2026-09-18). At `+9`
+under 100% it is still growing and still wants feeding; the game stops boarding only once it is both,
+which is the state that lets it evolve.
 
 **And at `+9` the boarding stops at exactly 100%, not past it** (player, 2026-09-18). Below `+9` hitting
 100% simply levels the pet up and it carries on; at `+9` there is no next level, so the breeder feeds it
