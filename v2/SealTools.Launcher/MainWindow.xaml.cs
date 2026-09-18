@@ -5172,21 +5172,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read
         // food_cells: [] because nothing on this tab had ever written it.
-        // "Save", not "Save Calibration" — this tab holds the run's state rather than the machine's,
-        // and the two Saves are scoped to their own halves now. Calling both by the same name would
-        // say they are the same kind of act, which is the confusion the scoping exists to remove.
-        var save = MakeButton("Save", ControlAppearance.Primary);
-        save.Click += (_, _) =>
-        {
-            var pet = _service.Config.Pet;
-            if (pet.ReturnSlot is not { Count: 2 } && pet.FoodSlots.Count == 0)
-            {
-                hint.Text = "Nothing to save — mark the return slot and the food cells first.";
-                return;
-            }
-            PetSessionSave(hint);
-        };
-        panel.Children.Add(Section("Save", save));
 
         // Shows what the OCR makes of the feeder slots before anything acts on it. The counts are the
         // reading the reload decision will hang on, and a reading nobody has looked at is a number
@@ -5276,6 +5261,25 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "on Calibrate Tooltip. The dump of every number is deliberate: it is how we find out " +
                  "what else the panel states besides the three values the parser wants."),
             testPanel));
+
+        // LAST, deliberately: everything above is an input and this is the button that keeps it.
+        // It sat between the timing and the queue, so a save looked like part of one section rather
+        // than the end of the page.
+            // "Save", not "Save Calibration" — this tab holds the run's state rather than the machine's,
+            // and the two Saves are scoped to their own halves now. Calling both by the same name would
+            // say they are the same kind of act, which is the confusion the scoping exists to remove.
+            var save = MakeButton("Save", ControlAppearance.Primary);
+            save.Click += (_, _) =>
+            {
+                var pet = _service.Config.Pet;
+                if (pet.ReturnSlot is not { Count: 2 } && pet.FoodSlots.Count == 0)
+                {
+                    hint.Text = "Nothing to save — mark the return slot and the food cells first.";
+                    return;
+                }
+                PetSessionSave(hint);
+            };
+            panel.Children.Add(Section("Save", save));
 
         panel.Children.Add(Section("Result", hint));
 
