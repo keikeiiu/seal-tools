@@ -9,6 +9,49 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-19 — the pet checks, the timing model, and what the game actually does
+
+**Long session, mostly on the Pet Feeder's edges.** v2.10 shipped at the start of it; everything after
+is the work that makes the tool trustworthy rather than merely working.
+
+**A 12-hour unattended run, and the failure it exposed.** Five reloads, all reported as successes — and
+the pet was at +5 26%, roughly half the progress twelve hours of feeding should produce. The cause: a
+right-click can fail to register, and **nothing looked at the result**. The placement is verified to
+within 2px, so the cursor was on target when the click went out; the game simply did not act on it.
+An intermittent action cannot be aimed out of existence, so the tool now **checks the pet slot after
+each placement and clicks again** — up to three times — against a captured reference of the empty slot.
+Unknown (no reference) is deliberately NOT failure.
+
+**Three mechanics the player corrected, each of which changes code:**
+
+- **`+10`** — our name for `+9` at 100%, the state that lets a pet evolve. **The string appears nowhere
+  in the game**, which shows `+9` with a percentage. `+9` alone is the wrong guard in both directions.
+- **Boarding auto-stops on `+9` 100% and on logout, and on nothing else.** The food running out does
+  *not* stop it: the game raises `寵物食物不足` in a bubble, writes the same line to the chat log, and
+  leaves the button reading `結束代養` while the pet simply goes unfed. So the toggle covers finished
+  and unboarded, and the chat line is the only "food is out" signal — and the better one, being text in
+  a fixed region.
+- **A stage is `base × 14.5`, not `× 12.6`** — the old figure summed only the nine transitions and so
+  measured the cost to *reach* `+9`, not to finish it. Every published total was 15% low. Corrected in
+  `PET-DATA.md`, the matrix, the `.G` total, the CSV and the plan.
+
+**Timing is now modelled the way it is meant.** The cycle is `load + wait_after_empty`, positive by
+design: reloading *after* the feeder empties guarantees it IS empty when two stacks go in, and what the
+game does with a top-up onto a partial stack is unknown. The earlier "safety margin" model had the sign
+backwards and discarded 45 items a cycle.
+
+**The hover read works and was verified live** — `OcrEngine` moved to Core, a plain `ReadLines` added,
+and a Test read that saves both the image and the text it read. **Every digit came back exact; the
+Chinese did not**, non-uniformly. `attributes.yaml` already carries the fix table for exactly this,
+with the comment saying so — my own two attempts at explaining it are recorded in the doc as wrong in
+opposite directions.
+
+**Left open** — the handover (`HANDOVER.md`) carries the ordered list: the parser and the `+10` guard
+first, then the icon scan and the queue, the feeder-count read, the two-writers race, and filling
+`text_fixes` from the OCR logs.
+
+---
+
 ## 2026-09-17 — the Pet Feeder, and the cursor bug it uncovered
 
 **Shipped as `v2.10`.** A new tool that keeps a boarded pet fed while nobody is watching, plus two
