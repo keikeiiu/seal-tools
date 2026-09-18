@@ -241,6 +241,20 @@ public sealed class PetTool : ToolBase
                 state.Message = "Ending boarding…";
                 Log("  ending boarding (the pet is in the loader, so it has to come back first)");
                 if (!PressToggle(ser, out error)) { Log("  FAILED ending: " + error); return false; }
+
+                // The flag follows the PRESS, not the end of the reload. It used to be set once, at the
+                // bottom, only on success — so a reload that failed between here and the start left it
+                // saying "boarding is running" while the pet was already back in the bag. The retry
+                // then trusted it, pressed the toggle to END a boarding that was already stopped, and
+                // STARTED one instead: the exact opposite of the step, on the path that runs when
+                // something has already gone wrong.
+                //
+                // Pressing it is what changes the state, so recording it here is recording what
+                // happened rather than what was hoped for. It assumes the press landed, which every
+                // click in this tool assumes; the pet-slot check after placement is what catches it
+                // when that is wrong.
+                _cfg.Pet.BoardingRunning = false;
+                _persistState?.Invoke();
                 SleepCheck(Math.Max(EndWait, ActionWait));
             }
 
@@ -256,13 +270,14 @@ public sealed class PetTool : ToolBase
             Log("  starting boarding");
             if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
 
-            // Let the start take before the cleanup closes the window it was pressed in.
-            SleepCheck(Math.Max(StartWait, ActionWait));
-
-            // A finished reload always leaves boarding running, so the next one knows to end first —
-            // recorded rather than assumed, because the tool has no way to read it back yet.
+            // Same reasoning as the end above: the press is what starts the feed, so the flag is set
+            // here rather than at the end of a reload that can still fail after it (the sleep below
+            // cannot fail, but the intent is what matters — the state changed at the press).
             _cfg.Pet.BoardingRunning = true;
             _persistState?.Invoke();
+
+            // Let the start take before the cleanup closes the window it was pressed in.
+            SleepCheck(Math.Max(StartWait, ActionWait));
 
             Log("  reload complete");
             return true;
