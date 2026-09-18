@@ -5145,8 +5145,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read
         // food_cells: [] because nothing on this tab had ever written it.
-        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
-        save.Click += (_, _) => PetCellSave(hint);
+        // "Save", not "Save Calibration" — this tab holds the run's state rather than the machine's,
+        // and the two Saves are scoped to their own halves now. Calling both by the same name would
+        // say they are the same kind of act, which is the confusion the scoping exists to remove.
+        var save = MakeButton("Save", ControlAppearance.Primary);
+        save.Click += (_, _) =>
+        {
+            var pet = _service.Config.Pet;
+            if (pet.ReturnSlot is not { Count: 2 } && pet.FoodSlots.Count == 0)
+            {
+                hint.Text = "Nothing to save — mark the return slot and the food cells first.";
+                return;
+            }
+            PetSessionSave(hint);
+        };
         panel.Children.Add(Section("Save", save));
 
         // Shows what the OCR makes of the feeder slots before anything acts on it. The counts are the
@@ -5184,9 +5196,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             var pet = _service.Config.Pet;
             if (pet.Queue.Count == 0) { hint.Text = "The queue is empty."; return; }
             pet.Queue.RemoveAt(pet.Queue.Count - 1);
-            PetQueueSave();
+            PetSessionSave(hint);
             RefreshPetQueue();
-            hint.Text = $"Removed. {pet.Queue.Count} pet icon(s) left.";
         };
 
         var queueButtons = new StackPanel { Orientation = Orientation.Horizontal };
@@ -5673,8 +5684,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 IsChecked = row.BoardingRunning,
                 Margin = new Thickness(0, 2, 0, 2),
             };
-            tick.Checked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = true; PetCellSave(_petTabHint!); } };
-            tick.Unchecked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = false; PetCellSave(_petTabHint!); } };
+            tick.Checked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = true; PetSessionSave(_petTabHint!); } };
+            tick.Unchecked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = false; PetSessionSave(_petTabHint!); } };
             _petBoardingTicks.Children.Add(tick);
         }
         _syncingPetRow = false;
@@ -6069,22 +6080,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         return found.Count == 0 ? "(no numbers)" : string.Join("  |  ", found);
     }
 
-    private void PetCellSave(TextBlock hint)
+    /// <summary>Writes THIS TAB'S HALF — the run's state — and nothing else.
+    ///
+    /// The counterpart of Calibrate Pet's Save, scoped for the same reason the tabs are: the return
+    /// slot, the food cells, the queue, the timing and the boarding flags describe this run, and
+    /// writing them must not disturb a bag grid or a row's geometry. Through ApplySession, which
+    /// mutates the loaded block rather than replacing it — replacing is what blanked the other half
+    /// twice.
+    ///
+    /// One writer for all of it: the Save button, the boarding ticks and the icon capture all call
+    /// this, because they are all changes to the same half. They used to be two near-identical
+    /// methods, which is one field away from disagreeing about what the half contains.</summary>
+    private void PetSessionSave(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        if (pet.ReturnSlot is not { Count: 2 } && pet.FoodSlots.Count == 0)
-        {
-            hint.Text = "Nothing to save — mark the pet's cell and the food cells first.";
-            return;
-        }
-
-        // The WHOLE pet block, not only the marks — this is the Pet tab's Save, and the Timing fields
-        // above it are the tab's too. Writing a subset here is what left them permanently unpersisted:
-        // the boxes set them in memory, the loader read them back, and no save ever wrote them, so
-        // they reverted on the next launch. Same projection as Calibrate Pet's save, so neither
-        // button can drop what the other wrote.
-        // SESSION ONLY — the counterpart of Calibrate Pet's Save. It writes this tab's own half and
-        // leaves the calibration untouched, so a Save here cannot disturb a grid or a row's geometry.
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
         local.Pet ??= new ConfigLoader.LocalPet();
         ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
@@ -6225,7 +6234,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 Png = IconMatch.ToBase64(crop),
             });
 
-            PetQueueSave();
+            PetSessionSave(hint);
             RefreshPetQueue();
             if (_petQueuePreview != null) _petQueuePreview.Source = MatToBitmapSource(crop);
 
@@ -6235,23 +6244,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         catch (Exception ex)
         {
             hint.Text = "Couldn't crop the icon: " + ex.Message;
-        }
-    }
-
-    /// <summary>Writes the queue straight through, like the bag marks — the crops are the player's
-    /// working set and losing them to a forgotten Save would mean re-capturing every pet.</summary>
-    private void PetQueueSave()
-    {
-        try
-        {
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet ??= new ConfigLoader.LocalPet();
-            ConfigLoader.LocalPet.ApplySession(local.Pet, _service.Config.Pet);
-            _service.SaveLocal(local);
-        }
-        catch (Exception ex)
-        {
-            if (_petQueueList != null) _petQueueList.Text = "couldn't save the queue: " + ex.Message;
         }
     }
 
