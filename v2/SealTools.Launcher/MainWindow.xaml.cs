@@ -202,8 +202,17 @@ public partial class MainWindow : FluentWindow, IDisposable
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
-    /// <summary>Ticked while the pet is boarding rather than in the bag — see PetConfig.BoardingRunning.</summary>
+    /// <summary>Ticked while the pet is boarding rather than in the bag — see PetSlotConfig.BoardingRunning.</summary>
     private CheckBox? _petBoardingRunning;
+
+    /// <summary>Which breeding row the Calibrate Pet tab is marking. See <see cref="EditRow"/>.</summary>
+    private int _petEditRow;
+
+    /// <summary>Rebuilt whenever a row is added, so the strip always shows exactly the rows that exist.</summary>
+    private StackPanel? _petRowStrip;
+
+    /// <summary>This row's food-slot count — 2 on the free row, 5 on a paid one.</summary>
+    private Wpf.Ui.Controls.TextBox? _petStacksBox;
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -4847,6 +4856,53 @@ public partial class MainWindow : FluentWindow, IDisposable
         // gone: the tool never inspects the feeder — it reloads on a schedule rather than asking the
         // game anything — and the hunger readout at the bottom right belongs to the CARRIED pet, not
         // the boarded one. Marks nothing reads are marks that go stale unnoticed.
+        // ── WHICH ROW THE MARKS BELOW BELONG TO ────────────────────────────
+        //
+        // The window has four breeding rows, and the capture (2026-09-19) settled that they are
+        // genuinely independent: each carries its own start/end button, its own pet slot and its own
+        // food boxes. So every mark in the sections below is a mark for ONE row, and this picks which.
+        //
+        // Same reasoning as the bag picker's page buttons: a mark written against the wrong row is one
+        // the tool will act on, and the tab would give no sign of it. The count matters here too — the
+        // free row holds two food stacks and a paid row five, so the tool reloads them on different
+        // clocks and a wrong number here is a row reloaded early or left dry.
+        _petRowStrip = new StackPanel { Orientation = Orientation.Horizontal };
+
+        var addRow = MakeButton("+ Add row", ControlAppearance.Secondary);
+        addRow.Click += (_, _) =>
+        {
+            var pet = _service.Config.Pet;
+            if (pet.Slots.Count >= 4)
+            {
+                _petHint!.Text = "Four rows is what the window has — one free and three paid.";
+                return;
+            }
+            _petEditRow = pet.Slots.Count;
+            EditRow(pet);
+            RefreshPetRows();
+            PetRedrawOverlay();
+        };
+
+        _petStacksBox = UiText("");
+        _petStacksBox.Width = 46;
+        _petStacksBox.VerticalAlignment = VerticalAlignment.Center;
+        _petStacksBox.TextChanged += PetStacksChanged;
+
+        var rowRow = new StackPanel { Orientation = Orientation.Horizontal };
+        addRow.Margin = new Thickness(8, 0, 0, 0);
+        rowRow.Children.Add(_petRowStrip);
+        rowRow.Children.Add(addRow);
+
+        panel.Children.Add(Section("Breeding rows",
+            Hint("The window holds four rows — one free, three behind the paid expansion — and each " +
+                 "has its OWN start button, pet slot and food boxes. Pick the row first: everything " +
+                 "you drag below is recorded against it.\n" +
+                 "Food slots per row — 2 on the free row, 5 on a paid one. It is the row's capacity, " +
+                 "not a preference, and the tool reloads each row on its own clock because of it. " +
+                 "Getting it wrong reloads a row early or leaves it dry."),
+            rowRow,
+            LabeledField("Food slots in this row", _petStacksBox)));
+
         var drawToggle = MakeButton("Draw start button", ControlAppearance.Secondary);
         drawToggle.Click += (_, _) => PetArmDrag("toggle");
         var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
@@ -4896,6 +4952,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "uniformity check. \"Show 64 centres\" draws where the tool would right-click; if the " +
                  "dots miss the slots, re-drag the grid area."),
             LabeledField("Draw", gridRow)));
+
+        RefreshPetRows();
 
         _petChecklist = Mono();
         _petChecklist.Text = "nothing captured yet";
@@ -5374,15 +5432,20 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Marks or unmarks one cell on the page being edited. Food cells toggle; the pet cell
     /// is exclusive — clicking a new one moves it rather than adding a second, because a pet cannot
     /// be in two slots and two marks would be a contradiction the tool would have to resolve.</summary>
-    /// <summary>The breeding row the calibrator edits, created on demand.
+    /// <summary>The breeding row the calibrator is editing, created on demand.
     ///
-    /// ROW 0 for now: the tool drives the rows as a list but the UI still marks one, so the tab edits
-    /// the first. The row selector that makes the others markable is part of the row-loop work, and it
-    /// is why these go through one accessor rather than through `Slots[0]` scattered across the tab.</summary>
-    private static PetSlotConfig EditRow(PetConfig pet)
+    /// Which row is picked by the strip above the marks, and it matters for the same reason the bag
+    /// picker's page buttons matter: a mark written against the wrong row is a mark the tool will act
+    /// on, and nothing else on the tab would show it. The tool itself drives every configured row —
+    /// this is only about where a drag lands.
+    ///
+    /// A row ADDED here defaults to five stacks if it is not the first, because rows 2-4 only exist
+    /// behind the paid expansion and a paid row holds five. The free row holds two.</summary>
+    private PetSlotConfig EditRow(PetConfig pet)
     {
-        while (pet.Slots.Count < 1) pet.Slots.Add(new PetSlotConfig());
-        return pet.Slots[0];
+        while (pet.Slots.Count <= _petEditRow)
+            pet.Slots.Add(new PetSlotConfig { Stacks = pet.Slots.Count == 0 ? 2 : 5 });
+        return pet.Slots[_petEditRow];
     }
 
     /// <summary>Read/write one of a row's food-count boxes by position. They are a list because a paid
@@ -5394,6 +5457,55 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         while (row.FeederSlots.Count <= i) row.FeederSlots.Add(new List<int>());
         row.FeederSlots[i] = rect;
+    }
+
+    /// <summary>Rebuilds the row strip and syncs the food-slot field to the selected row.
+    ///
+    /// Rebuilt rather than appended to because the row count changes: "+ Add row" has to produce a new
+    /// button, and a strip built once at startup could not show a row that was added afterwards. The
+    /// same mistake the Buy tab's row picker made, and the same fix.</summary>
+    private void RefreshPetRows()
+    {
+        var pet = _service.Config.Pet;
+
+        if (_petRowStrip != null)
+        {
+            _petRowStrip.Children.Clear();
+            for (int i = 0; i < pet.Slots.Count; i++)
+            {
+                var index = i;
+                var b = MakeButton($"Row {index + 1}", index == _petEditRow
+                    ? ControlAppearance.Primary
+                    : ControlAppearance.Secondary);
+                b.Margin = new Thickness(0, 0, 6, 0);
+                b.Click += (_, _) =>
+                {
+                    _petEditRow = index;
+                    RefreshPetRows();
+                    PetRedrawOverlay();
+                };
+                _petRowStrip.Children.Add(b);
+            }
+        }
+
+        // Written rather than bound, so the field shows the row you just switched to instead of the
+        // previous row's count — with the handler suppressed, or setting it would write back.
+        if (_petStacksBox != null && pet.Slots.Count > _petEditRow)
+        {
+            _petStacksBox.TextChanged -= PetStacksChanged;
+            _petStacksBox.Text = pet.Slots[_petEditRow].Stacks.ToString(CultureInfo.InvariantCulture);
+            _petStacksBox.TextChanged += PetStacksChanged;
+        }
+    }
+
+    private void PetStacksChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_petStacksBox == null) return;
+        if (int.TryParse(_petStacksBox.Text.Trim(), out var n) && n is > 0 and <= 5)
+        {
+            EditRow(_service.Config.Pet).Stacks = n;
+            RefreshPetChecklist();
+        }
     }
 
     private void TogglePetCell(int cell)
