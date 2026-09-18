@@ -5465,13 +5465,27 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (pet.PageTabs[i] is { Count: 2 } tab)
                 Dot(canvas, shot, new Point(tab[0], tab[1]), Brushes.DeepSkyBlue, 12 + i * 3);
 
-        // The row being edited — see EditRow. The shared marks above are drawn from `pet`; everything
-        // that belongs to a breeding row comes from `row`.
-        var row = EditRow(pet);
-        if (BagGrid.IsValidRect(row.ToggleLabel)) Box(canvas, shot, row.ToggleLabel!, Brushes.LimeGreen);
-        if (BagGrid.IsValidRect(row.BoardingPetSlot)) Box(canvas, shot, row.BoardingPetSlot!, Brushes.DeepSkyBlue);
-        if (BagGrid.IsValidRect(FeederAt(row, 0))) Box(canvas, shot, FeederAt(row, 0)!, Brushes.Yellow);
-        if (BagGrid.IsValidRect(FeederAt(row, 1))) Box(canvas, shot, FeederAt(row, 1)!, Brushes.Yellow);
+        // EVERY row, not just the one being edited. Drawing only the selected one made switching rows
+        // look like the previous row had been erased — the marks were all still in the config, but the
+        // picture said otherwise, which is a display that talks the player into re-marking. The row
+        // being edited keeps its solid colours; the others are drawn faint so their position is
+        // visible without competing with the one you are working on.
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var row = pet.Slots[i];
+            var editing = i == _petEditRow;
+
+            var toggleBrush = editing ? Brushes.LimeGreen : Faint(Brushes.LimeGreen);
+            var slotBrush = editing ? Brushes.DeepSkyBlue : Faint(Brushes.DeepSkyBlue);
+            var countBrush = editing ? Brushes.Yellow : Faint(Brushes.Yellow);
+
+            if (BagGrid.IsValidRect(row.ToggleLabel)) Box(canvas, shot, row.ToggleLabel!, toggleBrush);
+            if (BagGrid.IsValidRect(row.BoardingPetSlot)) Box(canvas, shot, row.BoardingPetSlot!, slotBrush);
+            for (int f = 0; f < Math.Max(1, row.Stacks); f++)
+                if (BagGrid.IsValidRect(FeederAt(row, f)))
+                    Box(canvas, shot, FeederAt(row, f)!, countBrush);
+        }
+
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
         RefreshPetChecklist();
@@ -6396,6 +6410,14 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// visible immediately — without it a click looks like it did nothing, which is exactly how the
     /// shop marks felt.</summary>
     /// <summary>A calibrated rectangle as an outline on the capture.</summary>
+    /// <summary>The same colour at low opacity — for a mark that is NOT the one being edited.
+    ///
+    /// Faded at full colour rather than switched to grey, so the four kinds of box stay recognisable
+    /// across rows: green is always a start button, blue always a pet slot, yellow always a count.
+    /// A grey version would make every row look like the same kind of thing.</summary>
+    private static Brush Faint(Brush b) =>
+        b is SolidColorBrush s ? new SolidColorBrush(Color.FromArgb(70, s.Color.R, s.Color.G, s.Color.B)) : b;
+
     private static void Box(Canvas? canvas, BitmapSource? shot, List<int> rect, Brush stroke)
     {
         if (!CanvasReady(canvas, shot)) return;
