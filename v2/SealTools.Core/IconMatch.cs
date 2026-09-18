@@ -89,26 +89,46 @@ public static class IconMatch
     public static (int Cell, double Score)? FindBestCell(Mat bag, IReadOnlyList<int> grid, Mat icon,
         int inset = DefaultInset, int tolerance = DefaultTolerance)
     {
-        if (bag.Empty() || icon.Empty() || !BagGrid.IsValidRect(grid)) return null;
+        var all = ScoreAll(bag, grid, icon, inset, tolerance);
+        return all.Count == 0 ? null : all[0];
+    }
 
-        var centres = BagGrid.Centres(grid);
-        int cw = (int)Math.Round(BagGrid.PitchX(grid));
-        int ch = (int)Math.Round(BagGrid.PitchY(grid));
-        if (cw <= 0 || ch <= 0) return null;
+    /// <summary>How far a cell's contents may be shifted and still count as the same image.
+    ///
+    /// MEASURED, and it is the whole reason this parameter exists. The player's bag held seven pets,
+    /// and the crops found three — with the pets of the same kind scoring 0.43 to 0.78 against each
+    /// other while everything else in the bag sat at 0.83 and up. The cause was not the pets being
+    /// different: it is that their sprites are drawn at different SUB-CELL OFFSETS, so a pixel-exact
+    /// comparison only matched the cells where the sprite happened to land in the same place.
+    ///
+    /// Shrinking the compared box to the middle of the cell — the first thing tried, and the obvious
+    /// one — made it strictly worse: every pet scored 0.84 or more, because the offset is a shift of
+    /// the whole image and cropping harder does not chase it.
+    ///
+    /// So each cell is scored at a small spread of offsets and the BEST is kept. That is ordinary
+    /// template matching, and it is what the measurements asked for.</summary>
+    public const int SearchRadius = 3;
 
-        (int Cell, double Score)? best = null;
-        for (int i = 0; i < centres.Count; i++)
+    /// <summary>The lowest differing fraction over every offset within <see cref="SearchRadius"/> of
+    /// the cell's centre. Lower is better, as everywhere else here.</summary>
+    private static double BestOffsetScore(Mat bag, (int X, int Y) centre, int cw, int ch, Mat icon,
+        int inset, int tolerance, int radius)
+    {
+        var best = double.MaxValue;
+        for (int dy = -radius; dy <= radius; dy++)
         {
-            var (cx, cy) = centres[i];
-            var rect = new Rect(cx - cw / 2, cy - ch / 2, cw, ch);
-            if (rect.X < 0 || rect.Y < 0 || rect.Right > bag.Width || rect.Bottom > bag.Height)
-                continue;
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                var rect = new Rect(centre.X + dx - cw / 2, centre.Y + dy - ch / 2, cw, ch);
+                if (rect.X < 0 || rect.Y < 0 || rect.Right > bag.Width || rect.Bottom > bag.Height)
+                    continue;
 
-            using var cell = new Mat(bag, rect);
-            double score = DifferingFraction(icon, cell, inset, tolerance);
-            if (best == null || score < best.Value.Score) best = (i, score);
+                using var cell = new Mat(bag, rect);
+                var score = DifferingFraction(icon, cell, inset, tolerance);
+                if (score < best) best = score;
+                if (best == 0) return 0;   // cannot do better; stop looking
+            }
         }
-
         return best;
     }
 
@@ -116,7 +136,8 @@ public static class IconMatch
     /// the winner hides how close the runner-up was, and a runner-up at 0.02 is a tool that will
     /// eventually click the wrong item.</summary>
     public static IReadOnlyList<(int Cell, double Score)> ScoreAll(Mat bag, IReadOnlyList<int> grid,
-        Mat icon, int inset = DefaultInset, int tolerance = DefaultTolerance)
+        Mat icon, int inset = DefaultInset, int tolerance = DefaultTolerance,
+        int radius = SearchRadius)
     {
         var results = new List<(int Cell, double Score)>();
         if (bag.Empty() || icon.Empty() || !BagGrid.IsValidRect(grid)) return results;
@@ -128,13 +149,8 @@ public static class IconMatch
 
         for (int i = 0; i < centres.Count; i++)
         {
-            var (cx, cy) = centres[i];
-            var rect = new Rect(cx - cw / 2, cy - ch / 2, cw, ch);
-            if (rect.X < 0 || rect.Y < 0 || rect.Right > bag.Width || rect.Bottom > bag.Height)
-                continue;
-
-            using var cell = new Mat(bag, rect);
-            results.Add((i, DifferingFraction(icon, cell, inset, tolerance)));
+            var score = BestOffsetScore(bag, centres[i], cw, ch, icon, inset, tolerance, radius);
+            if (score != double.MaxValue) results.Add((i, score));
         }
 
         results.Sort((a, b) => a.Score.CompareTo(b.Score));
