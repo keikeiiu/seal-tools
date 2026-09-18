@@ -4913,7 +4913,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
         drawPetSlot.Click += (_, _) => PetArmDrag("petslot");
         var drawFeeder = MakeButton("Draw food counts", ControlAppearance.Secondary);
-        drawFeeder.Click += (_, _) => PetArmDrag("feeder:0");
+        // Starts at the first slot that is NOT marked yet, not always at slot 1. Pressing it again
+        // would otherwise re-arm slot 1 and overwrite it, so a row with four of five done could never
+        // be finished without redoing all four — which is what a half-marked row looked like.
+        drawFeeder.Click += (_, _) =>
+        {
+            var row = EditRow(_service.Config.Pet);
+            var next = 0;
+            while (next < row.Stacks && BagGrid.IsValidRect(FeederAt(row, next))) next++;
+            PetArmDrag($"feeder:{Math.Min(next, Math.Max(0, row.Stacks - 1))}");
+        };
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
         {
