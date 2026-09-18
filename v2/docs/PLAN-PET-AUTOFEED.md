@@ -84,9 +84,30 @@ it — so it is the 代養 window, not 餵養.
 | `到+9為止預計所需時間: 約 15分` | ETA to `+9` | the advance feature's headline number, **displayed by the game** rather than computed by us — if it reads stably, that feature is an OCR away |
 | `結束代養` / `開始代養` | **one toggle button** | the same button starts and ends boarding (player, 2026-09-17), so its **label is a free state read** — `結束代養` means running, `開始代養` means stopped |
 
-**That toggle is the most definitive state read available.** Boarding auto-stops on `+9`, on logout, and
-probably when the food runs out; in every one of those cases the button flips back to `開始代養`. So one
-small crop compared against a saved label answers *"is this pet currently being fed"* directly.
+**That toggle is the most definitive state read available — for the states it covers.** Boarding
+auto-stops on **`+9` at 100%** and on **logout**, and on **nothing else** (player, 2026-09-19). In both
+of those the button flips back to `開始代養`, so one small crop compared against a saved label answers
+*"is this pet finished or unboarded"* directly.
+
+**It does NOT cover the food running out**, which an earlier revision assumed it would. What actually
+happens when the feeder empties is captured in the 2026-09-19 screenshot:
+
+```
+寵物食物不足。
+請在寵物回收後重新開始。
+```
+
+a speech bubble from the pet cartoon with an OK button, and the same line in the **chat log**. The
+button still reads `結束代養`, both food slots are empty, and **the pet is simply not being fed while
+boarding continues to "run"**. So nothing on the breeder panel says the food is out, and the bubble and
+the chat line are the only signals — neither of which the tool reads.
+
+**The chat line is the better of the two**: text, in a fixed region, where the bubble may animate and
+has to be dismissed. That makes it the most reliable "the food is out" detector available, and it is
+worth reading before the bubble is worth clicking.
+
+**One upside:** because food exhaustion does not flip the toggle, the manual `BoardingRunning` flag has
+no case that silently makes it stale — which makes it safer than it looked.
 
 **But it is not passive, and that decides where it belongs.** The button is only visible while the
 boarding window is open, so it cannot be the polling trigger without opening a UI window every 30
