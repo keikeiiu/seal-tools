@@ -680,6 +680,21 @@ Four separate tabs would put each pet's marks out of sight of the others, and th
 active page. One screen with `Row 1 … Row 4` where the page selector sits makes that visible, and makes
 adding a row a click rather than a new tab.
 
+### The reload with four slots (player, 2026-09-19)
+
+Not a redesign — an ordering constraint, and a reassuring one:
+
+- **The offload/reload is done one pet at a time.** Each row is stopped, its pet drops, and it is
+  re-boarded into the **same breeding slot** before the next row is touched. So the four do not
+  interleave, and the existing single-pet reload is the inner step rather than something to rewrite.
+- **A pet returned by the stop button goes to the first FREE bag slot**, exactly as with one pet. This
+  is the part that does not get easier with four: each drop lands somewhere new, the bag is filling
+  while the character farms, and there are now four of them to find rather than one.
+- **The pets still waiting their turn do not move** — a 0 % pet parked at a slot the player locked
+  keeps that slot, so the queue's resting state stays positional. Only the pet coming *off* a breeder
+  is homeless, which is the same single-pet asymmetry §13 describes, multiplied by the number of rows
+  being cycled.
+
 ### What to do before building any of it
 
 **Buy one slot and capture the second row.** Two of the three unknowns are answerable only from a
@@ -783,13 +798,17 @@ throws away the hours it could have been working. So the tool takes the first no
 than maintaining a priority — one less thing to get wrong, since a queue with an order is a queue that
 can be resumed in the wrong place, and this one cannot be.
 
-**And no match means something specific**: every pet in the bag is finished, so there is nothing to
-board — not "the search failed". That is a reportable end state rather than an error.
+**And no match means something specific**: none of the pets you queued is in the bag, so there is
+nothing to board — not "the search failed". That is a reportable end state rather than an error.
 
-**The status check is what makes one-to-three icons safe.** Without it, a finished pet left in the bag
-would be boarded over and over; with it, "is this one done?" is answered per candidate rather than
-assumed from position. And it is the same read the reload already wants for its own guard, so nothing
-new is needed to ask.
+**The panel read is what makes one-to-three icons safe**, and it does two jobs at once. The icon
+narrows the field to a handful of cells; the read then says *which* pet that actually is — stage,
+growth, EXP — so a poor icon match is caught before anything is boarded rather than acted on. The
+finish test rides along in the same read, so asking costs nothing extra.
+
+*(A finished pet should never be a candidate at all — it is mailed and gone (player, 2026-09-19) — so
+that branch is a safety net rather than the main path. It stays because the read is being taken
+anyway and the test is two comparisons.)*
 
 The cost, stated honestly: a hover and an OCR per candidate cell, so the scan is seconds rather than
 milliseconds. Acceptable because it runs once per reload — every few hours — rather than per cycle.
@@ -827,6 +846,25 @@ that protects the food cells, where the lock makes a static map true.)
 **A "this pet is finished" test**, and it is `+N` **and** `EXP >= 100` read off the pet's panel — see
 §12 for why `+9` alone is the wrong test, and why the compare is inclusive.
 
+**It is read from a pet IN THE BAG, at the moment we go looking for one to board** (player,
+2026-09-19). Not from the boarded pet, which is what this section said until then, and the correction
+removes work rather than adding it:
+
+> A finished pet is **mailed by the game** and appears in neither the boarding window nor the bag.
+> So there is no boarded pet to inspect — the finished one is simply *absent*, and the question "is
+> this one done?" is asked of a **candidate** as it is considered, never of a pet already in a slot.
+
+That is also the only case the read has been verified on. The hover inside the boarding window was
+never tested, and with this correction it never needs to be.
+
+**A pet that is boarded and still growing is not re-tested at all** — the tool already knows to reload
+it, and the read exists for choosing, not for confirming.
+
+**And the reload has to end boarding before it can re-place the pet** — the same real-reload step §12
+describes. The one addition here is that a pet returned by the stop button goes to the **first
+available bag slot**, not to the cell it came from (player, 2026-09-19). Which is why the queue is a
+list of icons rather than of cells, and why an untouched pet is better kept where the player locked it.
+
 **The confirmation.** When a pet finishes, opening the breeder shows a message saying so, dismissed with
 Enter — the same shape as the out-of-food message, so the Enter the reload already sends after opening
 the window may already cover it. Unverified.
@@ -835,17 +873,28 @@ the window may already cover it. Unverified.
 
 ```
 open the breeder                      目錄 → pet icon → Enter
-read the boarded pet's panel          stage, +N, EXP
-  finished?  (+N == 9 and EXP >= 100)
-      → advance the queue, take the next pet's cell
-  not finished?
-      → the same pet, as now
+is the pet we boarded still in the loader?
+  yes → end boarding                   the toggle; the pet comes back to the bag
+        (it lands in the first FREE slot, not necessarily its old one)
+  no  → it finished and was mailed     nothing to end, nothing to put back
+scan the bag for the queue's icons    IconMatch over the marked pages
+  match → hover it, read its panel
+      +9 at 100%  → finished; try the next match
+      otherwise   → this is the pet to board
+  no match → every queued pet is done; stop and say so
 place that pet                        right-click its cell
 load two stacks                       page tab → right-click → MAX → Enter  (×2)
 start and close                       the start button → the X
 ```
 
 Everything except "which cell does the pet come from" is the existing reload, unchanged.
+
+**The remaining time is a by-product of the same read.** `wyz` is what makes it computable, and where
+it comes from is [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md) open question 4 — the panel itself, if it
+states the current level's 所需喂养值; the pet's name against the 327-entry table; or two reads a cycle
+apart. Worth stating as a goal here because it makes the *schedule* honest: today the cycle is
+`LoadItems ÷ ItemsPerMinute`, one rate for every pet, where PET-DATA's table gives 2/1/3/4 items per
+minute by stage.
 
 ### Open questions
 
