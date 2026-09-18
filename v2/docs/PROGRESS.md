@@ -9,6 +9,47 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-19 (4) — the paid rows are open, and §11's two unknowns are answered
+
+**The player bought the expansion.** The capture shows `該欄位約29日23時58分43秒後到期`, so a 30-day
+purchase, and the `PET BREED` window now carries four rows: one free, three paid.
+
+**§11 listed exactly two unknowns as blocking the multi-pet work, and both are now answered — per row:**
+
+| §11's question | Answer |
+|---|---|
+| Does each row have its OWN start button? | **Yes.** Row 1 reads `結束代養` (running) while rows 2–4 each read `開始代養`. |
+| Are the food slots per row or shared? | **Per row.** Rows 2–4 each render their own boxes under their own expiry line. |
+
+**And the game states two things the tool currently configures or computes**, both on the active row:
+
+```
+每1分 攝取3個。                    the burn rate — 3/min, per row
+到9為止預計所需時間: 約 89分        the ETA to +9, per row
+```
+
+The first retires §11's worry about one configured rate being wrong for a stage-7 row. The second is the
+answer to the question the player asked earlier — *"having to view the pet % and stage and +?, can we
+calculate its actual remaining time?"* — and it needs **none** of what was designed for it: not `wyz`,
+not the 327-pet table, not the name lookup, not two reads a cycle apart. The game already displays it.
+That whole line of work was solved by looking at the window.
+
+**And one thing I got wrong, which is now the third of its kind.** The capture showed the boarded free
+row rendering two food boxes (`198`, `300`) and the three idle PAID rows each rendering five. I read
+five as what a row holds and made it the default. The player: *"1 free row is 2 slots for food / 3 paid
+row are 5 slots for food"*. The screenshot was right; generalising from one instance was not. The value
+is now a per-row field — `StacksPerReload`, default 2 because 2 is the row the calibration points at.
+
+**What that difference is worth, once the paid rows are driven:** ~1.7 reloads per stage-6 pet instead
+of ~4.2. Every reload is a chance to leave the pet unboarded — §7's one permanent failure — so a paid
+row is worth boarding on with one pet, never mind four.
+
+**Left open:** the four-row work itself. The plan is `return_slot` + a list of `pet_slots` + a list of
+`food_slots`, per the player's own shape, with the swap (find the next pet by icon when one finishes)
+after it because the paid days are what is running. The tool still drives one row.
+
+---
+
 ## 2026-09-19 (3) — the reload ran live, and the empty-slot reference finally decided something
 
 **The tool's core action ran end to end on the live game, first time.** One reload, 30 seconds, Start to
