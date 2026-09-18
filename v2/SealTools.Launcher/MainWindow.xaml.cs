@@ -4913,7 +4913,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
         drawPetSlot.Click += (_, _) => PetArmDrag("petslot");
         var drawFeeder = MakeButton("Draw food counts", ControlAppearance.Secondary);
-        drawFeeder.Click += (_, _) => PetArmDrag("feederA");
+        drawFeeder.Click += (_, _) => PetArmDrag("feeder:0");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
         {
@@ -4987,6 +4987,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPetRows();
         RefreshPetCells();
         RefreshPetChecklist();
+        LoadPetCapture();
         return MakeTab("Calibrate Pet", panel);
     }
 
@@ -5256,16 +5257,27 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
         _petDragTarget = target;
+
+        // The food counts are a CHAIN, one drag per slot, and how many there are is the ROW's stack
+        // count — two on the free row, five on a paid one. It used to stop at two, which is the free
+        // row's number generalised to every row: the same mistake the load size made, in the markup.
+        if (target.StartsWith("feeder:", StringComparison.Ordinal))
+        {
+            var i = int.Parse(target["feeder:".Length..], CultureInfo.InvariantCulture);
+            var stacks = EditRow(_service.Config.Pet).Stacks;
+            _petHint!.Text = $"Drag a box around the COUNT on food slot {i + 1} of {stacks} — the " +
+                             "number at its bottom-right, which spills past the slot's frame. Tight " +
+                             "around the digits, and not reaching the next slot, or two numbers come " +
+                             "back as one string.";
+            return;
+        }
+
         _petHint!.Text = target switch
         {
             "toggle" => "Drag a box around the 開始代養 / 結束代養 button. The tool clicks its centre " +
                         "to start boarding once the food is loaded.",
             "petslot" => "Drag a box around the PET SLOT in the boarding window — the square the " +
                         "pet sits in, next to the food.",
-            "feederA" => "Drag a box around the FIRST slot's COUNT — the number at its bottom-right, " +
-                        "which spills past the slot's frame. Tight around the digits, and not " +
-                        "reaching the next slot, or the two numbers read as one.",
-            "feederB" => "Drag a box around the SECOND slot's count.",
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
             _ => "Drag a box around ONE slot.",
         };
@@ -5373,16 +5385,25 @@ public partial class MainWindow : FluentWindow, IDisposable
                     "after placing the pet, so a missed right-click stops the run instead of loading " +
                     "food into an empty boarding.";
                 break;
-            case "feederA":
-                SetFeederAt(EditRow(pet), 0, rect);
-                _petDragTarget = "feederB";
-                _petHint!.Text = $"First count {rect[2]}x{rect[3]}. Now the SECOND slot's count.";
+            case { } t when t.StartsWith("feeder:", StringComparison.Ordinal):
+            {
+                var i = int.Parse(t["feeder:".Length..], CultureInfo.InvariantCulture);
+                var row = EditRow(pet);
+                SetFeederAt(row, i, rect);
+                if (i + 1 < row.Stacks)
+                {
+                    _petDragTarget = $"feeder:{i + 1}";
+                    _petHint!.Text = $"Slot {i + 1}'s count {rect[2]}x{rect[3]}. Now slot " +
+                                     $"{i + 2} of {row.Stacks}.";
+                }
+                else
+                {
+                    _petDragTarget = null;
+                    _petHint!.Text = $"Slot {i + 1}'s count {rect[2]}x{rect[3]}. " +
+                                     $"All {row.Stacks} marked for this row.";
+                }
                 break;
-            case "feederB":
-                SetFeederAt(EditRow(pet), 1, rect);
-                _petDragTarget = null;
-                _petHint!.Text = $"Second count {rect[2]}x{rect[3]}.";
-                break;
+            }
             case "grid":
                 pet.BagGrid = rect;
                 _petDragTarget = "slot";
@@ -5886,6 +5907,70 @@ public partial class MainWindow : FluentWindow, IDisposable
             "restart now — mark the cells again whenever the bag changes.");
     }
 
+    /// <summary>Writes the capture the marks were placed against, so the next session opens with the
+    /// overlay VISIBLE instead of only listed in the checklist.
+    ///
+    /// RAW, with no boxes baked in — unlike the tuner's and the gem's reference PNGs. Those are static
+    /// records of a decision; this one is redrawn from the config every time the row changes, so a
+    /// baked image would show the marks as they were when it was saved rather than as they are now.
+    ///
+    /// A convenience, so it never fails a save: a lost reference image costs a re-capture, which is
+    /// cheaper than a Save that refuses.
+    /// </summary>
+    private void SavePetCapture()
+    {
+        if (_petScreenshot == null) return;
+        try
+        {
+            var path = CalibrationImagePath("calib_pet.png");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(_petScreenshot));
+            using var fs = File.Create(path);
+            encoder.Save(fs);
+        }
+        catch
+        {
+            // See above — never the reason a save fails.
+        }
+    }
+
+    /// <summary>Restores the last session's capture into the Calibrate Pet tab and redraws the marks
+    /// on it. Called after the tab is built, not from LoadCalibrationImages, because the image and the
+    /// canvas have to exist first.
+    ///
+    /// This is what the player noticed was missing: the marks were saved, the checklist said so, and
+    /// the picture showed nothing, because the overlay is drawn on a capture that only existed in the
+    /// session that took it.</summary>
+    private void LoadPetCapture()
+    {
+        if (_petImage == null) return;
+        var path = CalibrationImagePath("calib_pet.png");
+        if (!File.Exists(path)) return;
+
+        try
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(path, UriKind.Absolute);
+            bmp.EndInit();
+            bmp.Freeze();
+
+            _petScreenshot = bmp;
+            _petImage.Source = bmp;
+            PetRedrawOverlay();
+            if (_petHint != null)
+                _petHint.Text = "Showing the capture your saved marks were placed on. Re-capture only " +
+                                "if the game window has moved or been resized.";
+        }
+        catch
+        {
+            // A reference image that will not load is not worth a message; the marks are all still
+            // there, and Capture game is one press away.
+        }
+    }
+
     /// <summary>Crops a queued pet's icon out of a fresh capture and adds it to the queue.
     ///
     /// Taken from the MARKED CELL rather than from a dragged box, because the bag grid is already
@@ -6060,6 +6145,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         local.Pet = ConfigLoader.LocalPet.From(pet);
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
             "Saved to config\\local.yaml. All of it is machine-specific, so none of it ships.");
+
+        // Alongside the marks, the picture they were placed on — so reopening the tab shows where
+        // they landed rather than only telling you they exist.
+        SavePetCapture();
     }
 
     /// <summary>Arms one of the four single-point marks — they are one click each, and the next click
