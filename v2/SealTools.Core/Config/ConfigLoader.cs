@@ -221,7 +221,7 @@ public sealed class ConfigLoader
             if (pet.FoodCells is { Count: > 0 }) defaults.Pet.FoodCells = pet.FoodCells;
             if (pet.FoodCellsUsed is { } used and >= 0) defaults.Pet.FoodCellsUsed = used;
             if (pet.ActionWaitMs is { } wait and > 0) defaults.Pet.ActionWaitMs = wait;
-            if (pet.SafetyMarginMinutes is { } margin and >= 0) defaults.Pet.SafetyMarginMinutes = margin;
+            if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.BoardingRunning is { } running) defaults.Pet.BoardingRunning = running;
             if (pet.PetCell is { Count: 2 }) defaults.Pet.PetCell = pet.PetCell;
             if (BagGrid.IsValidRect(pet.PetIconRect)) defaults.Pet.PetIconRect = pet.PetIconRect;
@@ -363,7 +363,7 @@ public sealed class ConfigLoader
         public List<List<int>>? FoodCells { get; set; }
         public int? FoodCellsUsed { get; set; }
         public int? ActionWaitMs { get; set; }
-        public int? SafetyMarginMinutes { get; set; }
+        public int? WaitAfterEmptyMinutes { get; set; }
         public bool? BoardingRunning { get; set; }
         public List<int>? PetCell { get; set; }
         public List<int>? PetIconRect { get; set; }

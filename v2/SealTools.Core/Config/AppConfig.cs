@@ -222,17 +222,21 @@ public sealed class PetConfig
     /// running.</summary>
     public bool BoardingRunning { get; set; }
 
-    /// <summary>How many minutes EARLY to reload, against the load's own duration.
+    /// <summary>How many minutes to wait AFTER the feeder should be empty before reloading.
     ///
-    /// The cycle is `load_minutes − this`: 600 items at 3/min is 200 minutes, so 15 reloads at 185.
-    /// Small means less food is left behind when the reload happens (15 minutes of margin at 3/min is
-    /// ~45 items thrown away each time); large means more slack if the timing is off.
+    /// The cycle is `load_minutes + this`. A load is 600 items at 3/min = 200 minutes, so the default
+    /// of 5 reloads every 205.
     ///
-    /// Was a constant of 15 until the player asked for five more minutes on the cycle (2026-09-19),
-    /// which makes it 10 and the cycle 190. A field because it is a judgement about risk, not a
-    /// measurement — and because the two ways of being wrong are not equal: reloading a little early
-    /// wastes food, reloading late leaves the pet unfed.</summary>
-    public int SafetyMarginMinutes { get; set; } = 10;
+    /// **Positive, and that is the point** (player, 2026-09-19): reloading *after* the feeder empties
+    /// guarantees the feeder IS empty when two stacks go in. Reloading early leaves food in a slot
+    /// that takes two stacks, and what the game does with a top-up onto a partial is unknown —
+    /// refuses, swaps, or swallows it. A five-minute gap with nothing fed is the price of never
+    /// finding out, and it is 2.4% of the cycle.
+    ///
+    /// Negative means reload early, which discards food: at 3/min, arriving 10 minutes early sets
+    /// aside 30 items every cycle. Available because the trade may change once we know what a
+    /// partially-full feeder does.</summary>
+    public int WaitAfterEmptyMinutes { get; set; } = 5;
 
     /// <summary>How long to wait after EACH action on the pet before the next one — ending boarding,
     /// placing the pet, a stack, the start.

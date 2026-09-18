@@ -32,10 +32,9 @@ public sealed class PetTool : ToolBase
     private const double ClickWait = 0.35;
     private const double DialogWait = 0.5;
 
-    /// <summary>Reload this many minutes BEFORE the feeder is due to empty, from config. Early is
-    /// safe — the leftover returns to the bag — and late is the path to a pet going hungry, so the
-    /// margin trades wasted food against slack.</summary>
-    private double SafetyMarginMinutes => _cfg.Pet.SafetyMarginMinutes;
+    /// <summary>Minutes to wait PAST the feeder emptying, from config — positive by default, so the
+    /// reload lands on a guaranteed-empty feeder rather than a partial one.</summary>
+    private double WaitAfterEmptyMinutes => _cfg.Pet.WaitAfterEmptyMinutes;
 
     private const double RetryMinutes = 5;
 
@@ -117,8 +116,8 @@ public sealed class PetTool : ToolBase
         }
 
         Log($"run started — cycling every {CycleMinutes():0} min " +
-            $"({_cfg.Pet.LoadItems} items at {_cfg.Pet.ItemsPerMinute}/min, minus " +
-            $"{SafetyMarginMinutes:0} min margin)");
+            $"({_cfg.Pet.LoadItems} items at {_cfg.Pet.ItemsPerMinute}/min, plus " +
+            $"{WaitAfterEmptyMinutes:0} min after empty)");
 
         var failures = 0;
         try
@@ -212,7 +211,7 @@ public sealed class PetTool : ToolBase
     {
         var full = _cfg.Pet.LoadMinutes;
         if (full <= 0) return 60;   // a broken rate must not spin the loop
-        return Math.Max(5, full - SafetyMarginMinutes);
+        return Math.Max(5, full + WaitAfterEmptyMinutes);
     }
 
     // ── One reload ──────────────────────────────────────────────────────────

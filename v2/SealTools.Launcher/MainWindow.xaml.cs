@@ -4989,13 +4989,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The two numbers that decide WHEN the tool acts and how long it waits between its own steps.
         // Both are judgements rather than measurements — one trades wasted food against slack, the
         // other trades a slower reload against clicks that do not register — so both are fields.
-        var marginBox = UiText(_service.Config.Pet.SafetyMarginMinutes.ToString(CultureInfo.InvariantCulture));
+        var marginBox = UiText(_service.Config.Pet.WaitAfterEmptyMinutes.ToString(CultureInfo.InvariantCulture));
         marginBox.Width = 60;
         marginBox.VerticalAlignment = VerticalAlignment.Center;
         marginBox.TextChanged += (_, _) =>
         {
             if (int.TryParse(marginBox.Text.Trim(), out var m) && m >= 0)
-                _service.Config.Pet.SafetyMarginMinutes = m;
+                _service.Config.Pet.WaitAfterEmptyMinutes = m;
         };
 
         var waitBox = UiText(_service.Config.Pet.ActionWaitMs.ToString(CultureInfo.InvariantCulture));
@@ -5008,15 +5008,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         panel.Children.Add(Section("Timing",
-            Hint($"Safety margin — how many minutes EARLY to reload against the load's own duration. " +
-                 $"The load is {_service.Config.Pet.LoadMinutes} minutes, so a margin of " +
-                 $"{_service.Config.Pet.SafetyMarginMinutes} reloads every " +
-                 $"{_service.Config.Pet.LoadMinutes - _service.Config.Pet.SafetyMarginMinutes}. " +
-                 "Smaller leaves less food behind each reload; larger gives more slack if the timing " +
-                 "is off." + Environment.NewLine +
+            Hint($"Wait after empty — how many minutes PAST the feeder emptying to reload. The load " +
+                 $"is {_service.Config.Pet.LoadMinutes} minutes, so a wait of " +
+                 $"{_service.Config.Pet.WaitAfterEmptyMinutes} reloads every " +
+                 $"{_service.Config.Pet.LoadMinutes + _service.Config.Pet.WaitAfterEmptyMinutes}. " +
+                 "It is POSITIVE on purpose: reloading after the feeder empties guarantees it IS " +
+                 "empty when two stacks go in, and what the game does with a top-up onto a partial " +
+                 "stack is unknown. The cost is that many minutes with nothing fed; 1-2 covers any " +
+                 "drift, and a negative value reloads early and discards food." + Environment.NewLine +
                  "Action wait — the pause after EACH step of a reload before the next one. Too short " +
                  "and a click does not register, which costs a whole cycle."),
-            LabeledField("Safety margin (min)", marginBox),
+            LabeledField("Wait after empty (min)", marginBox),
             LabeledField("Action wait (ms)", waitBox)));
 
         // The reload's one piece of state it cannot read for itself. The 開始代養 / 結束代養 control is
