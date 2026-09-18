@@ -234,9 +234,17 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The Pet tab's checklist — its own features only, like Calibrate Pet's.</summary>
     private TextBlock? _petSessionChecklist;
 
+    /// <summary>The queued pets' crops, drawn side by side so a wrong capture is visible rather than
+    /// merely counted.</summary>
+    private WrapPanel? _petQueuePanel;
+
     /// <summary>Suppresses the tick handlers while the panel is being rebuilt, or repopulating it
     /// would write every row's value straight back.</summary>
     private bool _syncingPetRow;
+
+    /// <summary>One width for every small number field, so a card's fields share an edge. Two widths
+    /// is how the Timing pair came to be centred against each other instead of aligned.</summary>
+    private const double NumberFieldWidth = 70;
 
     /// <summary>The queue on the Pet tab: the label field, the preview of the last crop, and the list.</summary>
     private Wpf.Ui.Controls.TextBox? _petQueueLabel;
@@ -4999,13 +5007,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "missing rather than clicking into empty screen."),
             _petChecklist));
 
-        var emptySlot = MakeButton("Capture empty pet slot", ControlAppearance.Secondary);
+        var emptySlot = MakeInlineButton("Capture empty pet slot", ControlAppearance.Secondary);
         emptySlot.Click += (_, _) => PetCaptureEmptySlot();
+        emptySlot.Margin = new Thickness(0, 0, 6, 0);   // first in the row: no leading gap
 
-        var save = MakeButton("Save Calibration", ControlAppearance.Primary);
+        var save = MakeInlineButton("Save Calibration", ControlAppearance.Primary);
         save.Click += (_, _) => PetSave();
         var saveRow = new StackPanel { Orientation = Orientation.Horizontal };
-        emptySlot.Margin = new Thickness(0, 0, 6, 0);
         saveRow.Children.Add(emptySlot);
         saveRow.Children.Add(save);
         panel.Children.Add(Section("Save",
@@ -5119,8 +5127,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The two numbers that decide WHEN the tool acts and how long it waits between its own steps.
         // Both are judgements rather than measurements — one trades wasted food against slack, the
         // other trades a slower reload against clicks that do not register — so both are fields.
+        // SAME width AND left-aligned, both deliberately. A fixed Width on a control whose default
+        // alignment is Stretch makes it CENTRE in its column, so two boxes of different widths centre
+        // against each other and neither edge lines up — which is what the player saw. 60 vs 70 was
+        // the whole of it.
         var marginBox = UiText(_service.Config.Pet.WaitAfterEmptyMinutes.ToString(CultureInfo.InvariantCulture));
-        marginBox.Width = 60;
+        marginBox.Width = NumberFieldWidth;
+        marginBox.HorizontalAlignment = HorizontalAlignment.Left;
         marginBox.VerticalAlignment = VerticalAlignment.Center;
         marginBox.TextChanged += (_, _) =>
         {
@@ -5129,7 +5142,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         var waitBox = UiText(_service.Config.Pet.ActionWaitMs.ToString(CultureInfo.InvariantCulture));
-        waitBox.Width = 70;
+        waitBox.Width = NumberFieldWidth;
+        waitBox.HorizontalAlignment = HorizontalAlignment.Left;
         waitBox.VerticalAlignment = VerticalAlignment.Center;
         waitBox.TextChanged += (_, _) =>
         {
@@ -5200,9 +5214,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         queueLabel.VerticalAlignment = VerticalAlignment.Center;
         _petQueueLabel = queueLabel;
 
-        var addIcon = MakeButton("Capture the marked pet's icon", ControlAppearance.Secondary);
+        // MakeInlineButton, not MakeButton — this repo already learned this one twice. MakeButton
+        // carries a 10px TOP margin meant for a button standing alone, so two of them in a row sit at
+        // different heights the moment one has its margin overridden and the other does not. That is
+        // the whole of the misalignment the player saw between these two.
+        var addIcon = MakeInlineButton("Capture the marked pet's icon", ControlAppearance.Secondary);
         addIcon.Click += async (_, _) => await PetCaptureIcon(hint);
-        var removeIcon = MakeButton("Remove last", ControlAppearance.Secondary);
+        addIcon.Margin = new Thickness(0, 0, 6, 0);   // first in the row: no leading gap
+        var removeIcon = MakeInlineButton("Remove last", ControlAppearance.Secondary);
         removeIcon.Click += (_, _) =>
         {
             var pet = _service.Config.Pet;
@@ -5224,6 +5243,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             Margin = new Thickness(0, 6, 0, 0),
         };
 
+        // The captures themselves, not just a count. A queue entry is a crop of a pet's portrait, and
+        // the only way to know it caught the right thing is to LOOK — a wrong crop matches nothing,
+        // which is safe but silent, and a run that never finds a pet is hard to tell from a queue
+        // that was never filled. The thumbnails are the same pixels the scan scores against.
+        _petQueuePanel = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+
         _petQueueList = Mono();
         _petQueueList.Text = "no pet icons captured yet";
 
@@ -5242,9 +5267,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "What is captured is the pet's OWN PORTRAIT, matched wherever it has moved to — so " +
                  "the bag can be rearranged and the queue still works. With no icons captured the " +
                  "tool falls back to the return slot."),
-            LabeledField("Label", queueLabel),
+            LabeledField("Name for the next one", queueLabel),
             queueButtons,
-            _petQueuePreview,
+            _petQueuePanel,
             _petQueueList));
 
         // The hover read has been a capability with no consumer since 2026-09-18. Before anything is
@@ -5658,6 +5683,64 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Read/write one of a row's food-count boxes by position. They are a list because a paid
     /// row shows five, but the calibrator has two drag targets and that is all it needs to name.</summary>
+    /// <summary>Draws each queued pet's crop, in the order the scan will try them, with the name from
+    /// the capture.
+    ///
+    /// Rebuilt rather than appended to, because entries are removed as well as added and a thumbnail
+    /// left behind would be a pet the tool is not looking for. A crop that will not decode is drawn as
+    /// a blank box with its name, rather than skipped — an entry that cannot be read is exactly the
+    /// one worth seeing.</summary>
+    private void RefreshPetQueueThumbs()
+    {
+        if (_petQueuePanel == null) return;
+        _petQueuePanel.Children.Clear();
+
+        var queue = _service.Config.Pet.Queue;
+        for (int i = 0; i < queue.Count; i++)
+        {
+            var entry = queue[i];
+
+            var item = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+
+            var thumb = new Image
+            {
+                Width = 48,
+                Height = 48,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ToolTip = $"{entry.Label ?? "(no name)"} — captured {entry.Rect?[2]}x{entry.Rect?[3]} " +
+                          $"at ({entry.Rect?[0]},{entry.Rect?[1]})",
+            };
+
+            try
+            {
+                using var mat = IconMatch.FromBase64(entry.Png);
+                if (mat != null) thumb.Source = MatToBitmapSource(mat);
+            }
+            catch
+            {
+                // Left blank on purpose — see the doc comment.
+            }
+
+            item.Children.Add(thumb);
+            item.Children.Add(new TextBlock
+            {
+                Text = $"{i + 1}. {entry.Label ?? "(no name)"}",
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = Res("TextFillColorSecondaryBrush"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 76,
+            });
+
+            _petQueuePanel.Children.Add(item);
+        }
+    }
+
     /// <summary>Fills the Pet tab's checklist. Its own items only — see where the section is built for
     /// why the two tabs are kept apart.</summary>
     private void RefreshPetSessionChecklist()
@@ -6169,8 +6252,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         local.Pet ??= new ConfigLoader.LocalPet();
         ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
 
+        // The queue is reported by NAME, not by count. "2 pet icons" does not tell you whether the
+        // name you typed went in with the crop — and the name is only read at capture time, so the
+        // question "did my name save?" has a real answer that the message can just give.
+        var queued = pet.Queue.Count == 0
+            ? "no queued pets"
+            : $"{pet.Queue.Count} queued pet(s): " + string.Join(", ", pet.Queue.Select(q => q.Label ?? "(no name)"));
+
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
-            $"Saved {pet.FoodSlots.Count} food cell(s), the return slot, the queue and the boarding " +
+            $"Saved {pet.FoodSlots.Count} food cell(s), the return slot, {queued}, and the boarding " +
             "flags. The geometry on Calibrate Pet was left alone.");
     }
 
@@ -6323,6 +6413,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var queue = _service.Config.Pet.Queue;
         if (_petQueueList == null) return;
+
+        RefreshPetQueueThumbs();
 
         if (queue.Count == 0)
         {
