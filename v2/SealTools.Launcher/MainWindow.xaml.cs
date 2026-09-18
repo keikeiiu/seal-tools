@@ -191,7 +191,18 @@ public partial class MainWindow : FluentWindow, IDisposable
     private TextBlock? _petChecklist;
     /// <summary>Which bag page the cell picker edits, and whether a click marks food or the pet.</summary>
     private int _petPickPage;
-    private bool _petPickPetMode;
+
+    /// <summary>What a click on the bag marks. Three now, and the third is the point: the RETURN slot
+    /// is where a pet comes back to — one cell you keep EMPTY — while the pet you want to queue is
+    /// somewhere else entirely, in a slot that holds a pet. Cropping a queue icon from the return slot
+    /// could only ever capture an empty cell, which is what made the two look like one thing.</summary>
+    private enum PetPick { Food, ReturnSlot, QueueSource }
+    private PetPick _petPick = PetPick.Food;
+
+    /// <summary>The bag cell holding a pet whose icon is about to be captured. Transient — it is a
+    /// source for one crop, not a saved mark, because where the pet sits now is not where it will be
+    /// found later. The whole point of the icon is that it does not need the position.</summary>
+    private List<int>? _petQueueSource;
     private Dictionary<int, Border> _petCellBoxes = new();
     /// <summary>The page buttons, and the two mode buttons — kept so the active one can be shown as
     /// active. Without that the picker silently edits a page nobody can see it is editing, and marks
@@ -199,6 +210,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private readonly List<UiButton> _petPageButtons = new();
     private UiButton? _petFoodModeButton;
     private UiButton? _petPetModeButton;
+    private UiButton? _petQueueModeButton;
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
@@ -5045,16 +5057,27 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         var modeFood = MakeButton("Mark FOOD cells", ControlAppearance.Secondary);
-        modeFood.Click += (_, _) => { _petPickPetMode = false; RefreshPetCells(); };
-        var modePet = MakeButton("Mark the PET cell", ControlAppearance.Secondary);
-        modePet.Click += (_, _) => { _petPickPetMode = true; RefreshPetCells(); };
+        modeFood.Click += (_, _) => { _petPick = PetPick.Food; RefreshPetCells(); };
+
+        // "RETURN slot", not "the PET cell". They are different places and the old label said they
+        // were the same: this one is where a pet comes BACK to — a cell you keep empty — while a pet
+        // you want to breed is sitting in a cell that holds a pet.
+        var modePet = MakeButton("Mark the RETURN slot", ControlAppearance.Secondary);
+        modePet.Click += (_, _) => { _petPick = PetPick.ReturnSlot; RefreshPetCells(); };
+
+        var modeQueue = MakeButton("Mark a pet to queue", ControlAppearance.Secondary);
+        modeQueue.Click += (_, _) => { _petPick = PetPick.QueueSource; RefreshPetCells(); };
+
         _petFoodModeButton = modeFood;
         _petPetModeButton = modePet;
+        _petQueueModeButton = modeQueue;
         modeFood.Margin = new Thickness(0, 0, 6, 0);
         modePet.Margin = new Thickness(0, 0, 6, 0);
+        modeQueue.Margin = new Thickness(0, 0, 6, 0);
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal };
         modeRow.Children.Add(modeFood);
         modeRow.Children.Add(modePet);
+        modeRow.Children.Add(modeQueue);
 
         // The same widget the Sell screen uses, over this screen's own selection.
         var (cellGrid, petCells) = MakeBagPicker(TogglePetCell);
@@ -5188,7 +5211,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         queueLabel.VerticalAlignment = VerticalAlignment.Center;
         _petQueueLabel = queueLabel;
 
-        var addIcon = MakeButton("Capture icon from the pet cell", ControlAppearance.Secondary);
+        var addIcon = MakeButton("Capture the marked pet's icon", ControlAppearance.Secondary);
         addIcon.Click += async (_, _) => await PetCaptureIcon(hint);
         var removeIcon = MakeButton("Remove last", ControlAppearance.Secondary);
         removeIcon.Click += (_, _) =>
@@ -5216,14 +5239,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petQueueList.Text = "no pet icons captured yet";
 
         panel.Children.Add(Section("The queue — which pets to breed",
-            Hint("Mark the bag cell HOLDING THE PET first (Mark the PET cell), put that bag page up, " +
-                 "then press Capture icon. The crop is taken from the marked cell, so there is nothing " +
-                 "to aim — the grid is already calibrated.\n" +
+            Hint("These are the pets WAITING to be boarded, and there can be as many as you like. " +
+                 "To add one: press \"Mark a pet to queue\", click the bag cell the pet is sitting " +
+                 "in, put that page up, then press Capture icon. The crop comes from the marked " +
+                 "cell, so there is nothing to aim.\n" +
+                 "A pet you are queuing is NOT the same as the return slot below. The return slot is " +
+                 "where a boarded pet comes BACK to — one cell, kept empty. A queued pet sits in a " +
+                 "cell that holds a pet, and each one is photographed separately.\n" +
                  "When a pet finishes it is MAILED and leaves the bag, so a queued pet that can be " +
                  "found is by definition not finished: the tool boards the first match and needs no " +
                  "other test. Any pet of the right kind is a harmless substitute, because an idle " +
                  "breeder is wasted time.\n" +
-                 "With no icons captured the tool falls back to the marked return slot."),
+                 "What is captured is the pet's OWN PORTRAIT, matched wherever it has moved to — so " +
+                 "the bag can be rearranged and the queue still works. With no icons captured the " +
+                 "tool falls back to the return slot."),
             LabeledField("Label", queueLabel),
             queueButtons,
             _petQueuePreview,
@@ -5237,7 +5266,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var testPanel = MakeButton("Test read the pet panel", ControlAppearance.Secondary);
         testPanel.Click += async (_, _) => await PetTestPanelRead(hint);
         panel.Children.Add(Section("Read a pet's panel",
-            Hint("Hovers the marked PET cell, on the page it is marked for, and reports what the OCR " +
+            Hint("Hovers the pet you marked with \"Mark a pet to queue\", and reports what the OCR " +
                  "makes of the hover panel. The pet has to BE in that cell — one that is in the loader " +
                  "instead leaves the cell empty and the read finds nothing. Needs the panel calibrated " +
                  "on Calibrate Tooltip. The dump of every number is deliberate: it is how we find out " +
@@ -5781,21 +5810,38 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void TogglePetCell(int cell)
     {
         var pet = _service.Config.Pet;
-        if (_petPickPetMode)
-        {
-            var same = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == cell;
-            pet.ReturnSlot = same ? null : new List<int> { _petPickPage, cell };
-        }
-        else
-        {
-            var existing = pet.FoodSlots.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
-            if (existing != null) pet.FoodSlots.Remove(existing);
-            else pet.FoodSlots.Add(new List<int> { _petPickPage, cell });
 
-            // Any change to the set invalidates how far the last run got through it: cells have moved
-            // or been added, so a count carried over would skip or repeat. Re-marking means "start
-            // from the top of this list", which is the only assumption that is safe either way.
-            pet.FoodSlotsUsed = 0;
+        switch (_petPick)
+        {
+            case PetPick.ReturnSlot:
+            {
+                // ONE cell, and clicking it again clears it. It is where a returned pet lands, so it
+                // is a cell you keep free — not a pet's home, and naming it "the PET cell" is what
+                // made that ambiguous.
+                var same = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == cell;
+                pet.ReturnSlot = same ? null : new List<int> { _petPickPage, cell };
+                PetSessionSave(_petTabHint!);
+                break;
+            }
+
+            case PetPick.QueueSource:
+                // Transient, and not saved: it says "crop from here", not "a pet lives here".
+                _petQueueSource = new List<int> { _petPickPage, cell };
+                break;
+
+            default:
+            {
+                var existing = pet.FoodSlots.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
+                if (existing != null) pet.FoodSlots.Remove(existing);
+                else pet.FoodSlots.Add(new List<int> { _petPickPage, cell });
+
+                // Any change to the set invalidates how far the last run got through it: cells have
+                // moved or been added, so a count carried over would skip or repeat. Re-marking means
+                // "start from the top of this list", which is the only assumption that is safe either
+                // way.
+                pet.FoodSlotsUsed = 0;
+                break;
+            }
         }
 
         RefreshPetCells();
@@ -5811,9 +5857,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 ? ControlAppearance.Primary
                 : ControlAppearance.Secondary;
         if (_petFoodModeButton != null)
-            _petFoodModeButton.Appearance = _petPickPetMode ? ControlAppearance.Secondary : ControlAppearance.Primary;
+            _petFoodModeButton.Appearance = _petPick == PetPick.Food ? ControlAppearance.Primary : ControlAppearance.Secondary;
         if (_petPetModeButton != null)
-            _petPetModeButton.Appearance = _petPickPetMode ? ControlAppearance.Primary : ControlAppearance.Secondary;
+            _petPetModeButton.Appearance = _petPick == PetPick.ReturnSlot ? ControlAppearance.Primary : ControlAppearance.Secondary;
+        if (_petQueueModeButton != null)
+            _petQueueModeButton.Appearance = _petPick == PetPick.QueueSource ? ControlAppearance.Primary : ControlAppearance.Secondary;
 
         if (_petCellBoxes.Count == 0) return;
         var pet = _service.Config.Pet;
@@ -5821,31 +5869,43 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var (i, cell) in _petCellBoxes)
         {
             var isFood = pet.FoodSlots.Any(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == i);
-            var isPet = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
+            var isReturn = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
+            var isQueue = _petQueueSource is { Count: 2 } qs && qs[0] == _petPickPage && qs[1] == i;
 
-            // Two marks in one grid, so two colours. They are exclusive by construction — a cell is
-            // the pet's or it is the food's — and if that ever changed the picker would be lying.
-            var brush = isPet ? Res("SystemFillColorCautionBrush")
+            // Three marks in one grid, and they are different KINDS of thing: food is an inventory,
+            // the return slot is a place you keep free, and the queue source is a pet you are about to
+            // photograph. Coloured apart so a glance says which is which.
+            var brush = isReturn ? Res("SystemFillColorCautionBrush")
+                : isQueue ? Res("SystemFillColorAttentionBrush")
                 : isFood ? Res("SystemFillColorSuccessBrush")
                 : Res("CardBackgroundFillColorDefaultBrush");
             cell.Background = brush;
-            cell.BorderBrush = isPet || isFood ? brush : Res("TextFillColorSecondaryBrush");
-            cell.ToolTip = isPet ? $"Bag slot {i + 1} — the pet"
+            cell.BorderBrush = isReturn || isFood || isQueue ? brush : Res("TextFillColorSecondaryBrush");
+            cell.ToolTip = isReturn ? $"Bag slot {i + 1} — the RETURN slot (where a pet comes back to)"
+                : isQueue ? $"Bag slot {i + 1} — the pet being queued"
                 : isFood ? $"Bag slot {i + 1} — food"
                 : $"Bag slot {i + 1}";
         }
 
         if (_petCellInfo == null) return;
         var onPage = pet.FoodSlots.Count(c => c is { Count: 2 } && c[0] == _petPickPage);
-        var petWhere = pet.ReturnSlot is { Count: 2 } q
-            ? $"page {q[0] + 1}, cell {q[1]}"
+        var returnWhere = pet.ReturnSlot is { Count: 2 } rq
+            ? $"page {rq[0] + 1}, cell {rq[1]}"
+            : "not marked";
+        var queueWhere = _petQueueSource is { Count: 2 } qq
+            ? $"page {qq[0] + 1}, cell {qq[1]}"
             : "not marked";
 
         _petCellInfo.Text =
             $"Editing page {_petPickPage + 1} — {onPage} food cell(s) here, {pet.FoodSlots.Count} in " +
-            $"total. Pet cell: {petWhere}. A click marks " +
-            $"{(_petPickPetMode ? "the PET cell" : "a FOOD cell")}.";
-        RefreshPetChecklist();
+            $"total. Return slot: {returnWhere}. Pet to queue: {queueWhere}. " +
+            $"A click marks {_petPick switch
+            {
+                PetPick.ReturnSlot => "the RETURN slot",
+                PetPick.QueueSource => "a pet to queue",
+                _ => "a FOOD cell",
+            }}.";
+        RefreshPetSessionChecklist();
         RefreshPetReady();
     }
 
@@ -5972,10 +6032,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
             return;
         }
-        if (pet.ReturnSlot is not { Count: 2 } marked)
+        // A cell HOLDING A PET, which is the queue source — not the return slot, which is kept empty
+        // and would have nothing to hover. Reading an empty cell would report "not a pet panel" and
+        // look like the parser failing rather than the wrong cell being read.
+        if (_petQueueSource is not { Count: 2 } marked)
         {
-            hint.Text = "No pet cell is marked. Mark one on this tab first — this reads the cell that " +
-                        "is marked, so it checks the mark and the read in the same press.";
+            hint.Text = "Mark a pet to read first — press \"Mark a pet to queue\" and click the " +
+                        "bag cell the pet is sitting in. NOT the return slot: that one is kept empty.";
             return;
         }
 
@@ -5983,7 +6046,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var (page, cell) = (marked[0], marked[1]);
         if (cell < 0 || cell >= centres.Count)
         {
-            hint.Text = $"The marked pet cell ({cell}) is outside the bag grid — re-mark it.";
+            hint.Text = $"The marked pet ({cell}) is outside the bag grid — mark it again.";
             return;
         }
 
@@ -5992,7 +6055,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // guards against, and it would read as "the panel is empty" rather than as a wrong page.
         if (page < 0 || page >= pet.PageTabs.Count || pet.PageTabs[page] is not { Count: 2 } tab)
         {
-            hint.Text = $"The pet cell is marked on bag page {page + 1}, and that page's tab isn't " +
+            hint.Text = $"The marked pet is on bag page {page + 1}, and that page's tab isn't " +
                         "calibrated — mark it on Calibrate Pet.";
             return;
         }
@@ -6181,10 +6244,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private async Task PetCaptureIcon(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        if (pet.ReturnSlot is not { Count: 2 } marked)
+        if (_petQueueSource is not { Count: 2 } marked)
         {
-            hint.Text = "Mark the bag cell HOLDING THE PET first — the icon is cropped from it. " +
-                        "(Mark the PET cell above, put that bag page up, then press this.)";
+            hint.Text = "Mark the bag cell HOLDING THE PET first — press \"Mark a pet to queue\", " +
+                        "click the cell with the pet in it, then press this. NOT the return slot: " +
+                        "that one is kept empty, so there is no pet there to photograph.";
             return;
         }
         if (!BagGrid.IsValidRect(pet.BagGrid))
@@ -6197,7 +6261,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var cell = marked[1];
         if (cell < 0 || cell >= centres.Count)
         {
-            hint.Text = $"The marked pet cell ({cell}) is outside the bag grid.";
+            hint.Text = $"The marked pet ({cell}) is outside the bag grid.";
             return;
         }
 
@@ -6218,7 +6282,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (box.X < 0 || box.Y < 0 ||
             box.Right > shot.Value.Image.PixelWidth || box.Bottom > shot.Value.Image.PixelHeight)
         {
-            hint.Text = "The pet cell falls outside the capture — re-check the bag grid on Calibrate Pet.";
+            hint.Text = "The marked pet falls outside the capture — re-check the bag grid on Calibrate Pet.";
             return;
         }
 

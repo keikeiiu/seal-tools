@@ -436,7 +436,7 @@ public sealed class PetTool : ToolBase
         var centres = BagGrid.Centres(pet.BagGrid!);
         if (cell < 0 || cell >= centres.Count)
         {
-            error = $"The pet cell ({cell}) is outside the bag grid.";
+            error = $"The return slot ({cell}) is outside the bag grid.";
             return false;
         }
 
