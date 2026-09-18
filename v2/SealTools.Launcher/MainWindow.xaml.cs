@@ -5004,6 +5004,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         hint.Text = "Mark where the pet food is and where the pet goes, then press Start on the " +
                     "Pet Feeder card.";
 
+        // Open on the page the marks are actually on. It used to open on page 1 whatever the config
+        // said, and because the marks live on ONE page the grid came up looking blank — which reads as
+        // "my marks are gone" and invites re-clicking them. The picker TOGGLES, so re-clicking a marked
+        // cell removes it: the display talking the player into deleting their own calibration.
+        _petPickPage = InitialPetPage();
+
         var pageRow = new StackPanel { Orientation = Orientation.Horizontal };
         for (int i = 1; i <= 3; i++)
         {
@@ -5496,18 +5502,46 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var lines = new List<string>
         {
+            "SHARED — marked once, used by every row",
             Mark(pet.MenuButton is { Count: 2 }, "目錄 button           (click)"),
             Mark(pet.FeedIcon is { Count: 2 }, "pet feed icon       (click)"),
             Mark(pet.CloseButton is { Count: 2 }, "boarding X          (click)"),
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
-            Mark(BagGrid.IsValidRect(EditRow(pet).ToggleLabel), "boarding start button (drag)"),
-            Mark(BagGrid.IsValidRect(EditRow(pet).BoardingPetSlot), "boarding pet slot    (drag)"),
-            Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
-            Mark(BagGrid.IsValidRect(FeederAt(EditRow(pet), 0)), "food count 1         (drag)"),
-            Mark(BagGrid.IsValidRect(FeederAt(EditRow(pet), 1)), "food count 2         (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
+            Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
+            // These two live on the PET tab, and they are the ones a stray click can empty — the bag
+            // picker TOGGLES, so clicking a marked cell removes it. Listed here because losing them
+            // silently is what made a live run look like it had been "reset": the row marks were all
+            // intact and the two things the reload actually draws on were gone.
+            Mark(pet.ReturnSlot is { Count: 2 }, "return slot          (Pet tab)"),
+            Mark(pet.FoodSlots.Count > 0, $"food cells           (Pet tab) {pet.FoodSlots.Count} marked, " +
+                                          $"{pet.FoodSlotsUsed} used"),
         };
+
+        // EVERY row, not just the one being edited. The whole point of the rows is that they differ —
+        // a checklist that showed only the selected one would report "ready" for a row 3 that had
+        // never been drawn, and the tool would drive it into empty screen. It also makes the rows
+        // comparable: three paid rows should read identically apart from their boxes.
+        if (pet.Slots.Count == 0)
+        {
+            lines.Add("");
+            lines.Add("ROWS — none yet. Press \"+ Add row\" below.");
+        }
+
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var row = pet.Slots[i];
+            var counts = Enumerable.Range(0, Math.Max(1, row.Stacks))
+                .Count(f => BagGrid.IsValidRect(FeederAt(row, f)));
+
+            lines.Add("");
+            lines.Add($"ROW {i + 1} — {(i == 0 ? "free, 2 food slots" : "paid, 5 food slots")}" +
+                      $"{(i == _petEditRow ? "   ← editing" : "")}");
+            lines.Add(Mark(BagGrid.IsValidRect(row.ToggleLabel), "start/end button     (drag)"));
+            lines.Add(Mark(BagGrid.IsValidRect(row.BoardingPetSlot), "pet slot             (drag)"));
+            lines.Add(Mark(counts >= row.Stacks, $"food counts          (drag) {counts}/{row.Stacks}"));
+        }
 
         _petChecklist.Text = string.Join("\n", lines);
     }
@@ -5533,6 +5567,25 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Read/write one of a row's food-count boxes by position. They are a list because a paid
     /// row shows five, but the calibrator has two drag targets and that is all it needs to name.</summary>
+    /// <summary>Which bag page the picker opens on: the return slot's page, or failing that the page
+    /// holding the most food cells. Falls back to the first page when nothing is marked at all.</summary>
+    private int InitialPetPage()
+    {
+        var pet = _service.Config.Pet;
+        if (pet.ReturnSlot is { Count: 2 } back && back[0] >= 0 && back[0] < pet.PageTabs.Count)
+            return back[0];
+
+        var most = pet.FoodSlots
+            .Where(c => c is { Count: 2 })
+            .GroupBy(c => c[0])
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault();
+
+        return most != null && most.Key >= 0 && most.Key < Math.Max(1, pet.PageTabs.Count)
+            ? most.Key
+            : 0;
+    }
+
     private static List<int>? FeederAt(PetSlotConfig row, int i)
         => i < row.FeederSlots.Count ? row.FeederSlots[i] : null;
 
@@ -5579,6 +5632,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petStacksBox.Text = pet.Slots[_petEditRow].Stacks.ToString(CultureInfo.InvariantCulture);
             _petStacksBox.TextChanged += PetStacksChanged;
         }
+
+        // The checklist marks which row is being edited and lists them all, so it has to follow the
+        // selection and the row count rather than only the marks.
+        RefreshPetChecklist();
     }
 
     private void PetStacksChanged(object sender, TextChangedEventArgs e)

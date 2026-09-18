@@ -528,6 +528,57 @@ public class ConfigLoaderTests
         "  pet_icon_rect: [36, 37, 38, 39]\n" +
         "  pet_icon_png: 'iVBORw0KGgo='\n";
 
+    // The player's ACTUAL pre-rows pet block, copied field for field from their local.yaml on
+    // 2026-09-19 — including the empty values, which is the part a hand-written fixture gets wrong.
+    // Written after a live run showed `food_slots: []` and an empty `return_slot` where a migrated
+    // file should have had both, so this is the regression that says whether the migration is at
+    // fault or something downstream wiped them.
+    private const string PlayersPreRowsPetLocal =
+        ValidOcrLocal +
+        "pet:\n" +
+        "  menu_button:\n  - 830\n  - 1740\n" +
+        "  feed_icon:\n  - 874\n  - 1665\n" +
+        "  close_button:\n  - 866\n  - 177\n" +
+        "  page_tabs:\n  - - 976\n    - 221\n  - - 1064\n    - 217\n  - - 1155\n    - 221\n" +
+        "  toggle_label:\n  - 682\n  - 260\n  - 127\n  - 46\n" +
+        "  boarding_pet_slot:\n  - 240\n  - 247\n  - 64\n  - 70\n" +
+        "  feeder_slot_a:\n  - 344\n  - 262\n  - 67\n  - 56\n" +
+        "  feeder_slot_b:\n  - 412\n  - 259\n  - 63\n  - 60\n" +
+        "  bag_grid:\n  - 933\n  - 242\n  - 405\n  - 406\n" +
+        "  bag_slot:\n  - 933\n  - 243\n  - 47\n  - 48\n" +
+        "  food_cells:\n  - - 1\n    - 63\n  - - 1\n    - 62\n  - - 1\n    - 61\n" +
+        "  food_cells_used: 11\n" +
+        "  action_wait_ms: \n" +
+        "  wait_after_empty_minutes: \n" +
+        "  boarding_running: true\n" +
+        "  pet_cell:\n  - 1\n  - 2\n" +
+        "  pet_icon_rect: \n" +
+        "  pet_icon_png: \n" +
+        "  max_button: \n";
+
+    [Fact]
+    public void ThePlayersRealPreRowsFileSurvivesTheMigration()
+    {
+        var dir = MakeTempConfigDirWithLocal(PlayersPreRowsPetLocal);
+        try
+        {
+            var pet = new ConfigLoader(dir).Load().Pet;
+
+            Assert.Equal(new List<int> { 1, 2 }, pet.ReturnSlot);
+            Assert.Equal(3, pet.FoodSlots.Count);
+            Assert.Equal(11, pet.FoodSlotsUsed);
+
+            var slot = Assert.Single(pet.Slots);
+            Assert.Equal(new List<int> { 682, 260, 127, 46 }, slot.ToggleLabel);
+            Assert.Equal(new List<int> { 240, 247, 64, 70 }, slot.BoardingPetSlot);
+            Assert.True(slot.BoardingRunning);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void PetBlockWrittenBeforeTheRowsLoadsAsOneRow()
     {
