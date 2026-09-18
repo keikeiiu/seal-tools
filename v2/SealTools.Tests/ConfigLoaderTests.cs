@@ -371,13 +371,25 @@ public class ConfigLoaderTests
                 FeedIcon = new List<int> { 900, 1400 },
                 CloseButton = new List<int> { 880, 140 },
                 PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
-                ToggleLabel = new List<int> { 590, 200, 120, 30 },
-                BoardingPetSlot = new List<int> { 190, 210, 60, 60 },
-                FeederSlotA = new List<int> { 250, 210, 60, 60 },
-                FeederSlotB = new List<int> { 320, 210, 60, 60 },
                 BagGrid = new List<int> { 660, 150, 408, 408 },
                 BagSlot = new List<int> { 660, 150, 51, 51 },
-                FoodCells = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
+                FoodSlots = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
+                ReturnSlot = new List<int> { 1, 2 },
+                Slots = new List<ConfigLoader.LocalPetSlot>
+                {
+                    new()
+                    {
+                        ToggleLabel = new List<int> { 590, 200, 120, 30 },
+                        BoardingPetSlot = new List<int> { 190, 210, 60, 60 },
+                        FeederSlots = new List<List<int>>
+                        {
+                            new() { 250, 210, 60, 60 },
+                            new() { 320, 210, 60, 60 },
+                        },
+                        Stacks = 5,
+                        BoardingRunning = true,
+                    },
+                },
             };
             loader.SaveLocal(local);
 
@@ -385,14 +397,23 @@ public class ConfigLoaderTests
 
             Assert.Equal(new List<int> { 815, 1735 }, cfg.Pet.MenuButton);
             Assert.Equal(new List<int> { 900, 1400 }, cfg.Pet.FeedIcon);
-            Assert.Equal(new List<int> { 590, 200, 120, 30 }, cfg.Pet.ToggleLabel);
-            Assert.Equal(new List<int> { 190, 210, 60, 60 }, cfg.Pet.BoardingPetSlot);
-            Assert.Equal(new List<int> { 250, 210, 60, 60 }, cfg.Pet.FeederSlotA);
-            Assert.Equal(new List<int> { 320, 210, 60, 60 }, cfg.Pet.FeederSlotB);
+            Assert.Equal(new List<int> { 1, 2 }, cfg.Pet.ReturnSlot);
             Assert.Equal(3, cfg.Pet.PageTabs.Count);
-            Assert.Equal(2, cfg.Pet.FoodCells.Count);
+            Assert.Equal(2, cfg.Pet.FoodSlots.Count);
             Assert.Equal(new List<int> { 660, 150, 408, 408 }, cfg.Pet.BagGrid);
-            Assert.Equal(200, cfg.Pet.LoadMinutes);   // 600 items at 3/min
+
+            // The rows survive as rows, with the per-row fields intact — including Stacks, which is
+            // the whole reason a row is a thing rather than a set of loose fields.
+            var slot = Assert.Single(cfg.Pet.Slots);
+            Assert.Equal(new List<int> { 590, 200, 120, 30 }, slot.ToggleLabel);
+            Assert.Equal(new List<int> { 190, 210, 60, 60 }, slot.BoardingPetSlot);
+            Assert.Equal(2, slot.FeederSlots.Count);
+            Assert.Equal(5, slot.Stacks);
+            Assert.True(slot.BoardingRunning);
+
+            // Derived, per row: 5 stacks = 1,500 items at 3/min = 500 minutes.
+            Assert.Equal(1500, PetConfig.LoadItemsFor(slot));
+            Assert.Equal(500, cfg.Pet.LoadMinutesFor(slot));
 
             // The two grids are independent calibrations, and this is the assertion that keeps them so.
             Assert.Null(cfg.BuySell.BagGrid);
@@ -428,33 +449,148 @@ public class ConfigLoaderTests
             FeedIcon = new List<int> { 3, 4 },
             CloseButton = new List<int> { 5, 6 },
             PageTabs = new List<List<int>> { new() { 7, 8 } },
-            ToggleLabel = new List<int> { 9, 10, 11, 12 },
-            BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
             PetSlotEmptyPng = "empty-slot-png",
-            FeederSlotA = new List<int> { 17, 18, 19, 20 },
-            FeederSlotB = new List<int> { 21, 22, 23, 24 },
             BagGrid = new List<int> { 25, 26, 27, 28 },
             BagSlot = new List<int> { 29, 30, 31, 32 },
-            FoodCells = new List<List<int>> { new() { 0, 33 } },
-            FoodCellsUsed = 7,
-            PetCell = new List<int> { 34, 35 },
-            PetIconRect = new List<int> { 36, 37, 38, 39 },
-            PetIconPng = "icon-png",
+            FoodSlots = new List<List<int>> { new() { 0, 33 } },
+            FoodSlotsUsed = 7,
+            ReturnSlot = new List<int> { 34, 35 },
             MaxButton = new List<int> { 40, 41 },
-            BoardingRunning = true,
             WaitAfterEmptyMinutes = 3,
             ActionWaitMs = 1234,
+            Slots = new List<PetSlotConfig>
+            {
+                new()
+                {
+                    ToggleLabel = new List<int> { 9, 10, 11, 12 },
+                    BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
+                    FeederSlots = new List<List<int>> { new() { 17, 18, 19, 20 } },
+                    Stacks = 5,
+                    BoardingRunning = true,
+                },
+            },
+            Queue = new List<PetQueueEntry>
+            {
+                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png" },
+            },
         };
 
         var local = ConfigLoader.LocalPet.From(cfg);
+
+        // The nested shapes are MAPPED rather than assigned — a LocalPetSlot is a different type from
+        // a PetSlotConfig — so reference equality is the wrong check for them and they are asserted
+        // field by field below instead. Everything else is a straight assignment and is compared here.
+        var mapped = new[] { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
 
         foreach (var prop in typeof(ConfigLoader.LocalPet).GetProperties())
         {
             var source = typeof(PetConfig).GetProperty(prop.Name);
             Assert.True(source != null,
                 $"LocalPet.{prop.Name} has no PetConfig counterpart — the two have drifted apart");
+            if (mapped.Contains(prop.Name)) continue;
             Assert.True(Equals(prop.GetValue(local), source!.GetValue(cfg)),
                 $"LocalPet.{prop.Name} was not copied from PetConfig, so a Save silently drops it");
+        }
+
+        // The nested shapes are lists, so the loop above only proves the LIST was copied. These are
+        // the fields inside a row and inside a queue entry — a new one of those is exactly the kind of
+        // thing that gets added to PetSlotConfig and forgotten in the projection.
+        var slot = Assert.Single(local.Slots!);
+        Assert.Equal(new List<int> { 9, 10, 11, 12 }, slot.ToggleLabel);
+        Assert.Equal(new List<int> { 13, 14, 15, 16 }, slot.BoardingPetSlot);
+        Assert.Equal(5, slot.Stacks);
+        Assert.True(slot.BoardingRunning);
+
+        var queued = Assert.Single(local.Queue!);
+        Assert.Equal("p", queued.Label);
+        Assert.Equal("icon-png", queued.Png);
+    }
+
+    // The pet block used to be one flat set of fields. It is now `slots:` plus `return_slot` and
+    // `food_slots`, and the loader sets IgnoreUnmatchedProperties — so an old file does not fail, it
+    // just silently loses every key nothing maps to any more. That is a player's whole pet
+    // calibration, and it is the same shape of loss the spammer migration exists to prevent.
+    //
+    // This is the test that says the upgrade keeps it. Every value below is one a real local.yaml
+    // carries today, written under its OLD name, and every one has to come back under the new one.
+    private const string PreRowsPetLocal =
+        ValidOcrLocal +
+        "pet:\n" +
+        "  menu_button: [815, 1735]\n" +
+        "  toggle_label: [682, 260, 127, 46]\n" +
+        "  boarding_pet_slot: [240, 247, 64, 70]\n" +
+        "  feeder_slot_a: [344, 262, 67, 56]\n" +
+        "  feeder_slot_b: [412, 259, 63, 60]\n" +
+        "  boarding_running: true\n" +
+        "  pet_cell: [1, 2]\n" +
+        "  food_cells: [[1, 63], [1, 62]]\n" +
+        "  food_cells_used: 11\n" +
+        "  pet_icon_rect: [36, 37, 38, 39]\n" +
+        "  pet_icon_png: 'iVBORw0KGgo='\n";
+
+    [Fact]
+    public void PetBlockWrittenBeforeTheRowsLoadsAsOneRow()
+    {
+        var dir = MakeTempConfigDirWithLocal(PreRowsPetLocal);
+        try
+        {
+            var pet = new ConfigLoader(dir).Load().Pet;
+
+            // The rows: one, built from the flat fields, and it is the FREE row — which is why two
+            // stacks is the right count to carry over rather than a guess.
+            var slot = Assert.Single(pet.Slots);
+            Assert.Equal(new List<int> { 682, 260, 127, 46 }, slot.ToggleLabel);
+            Assert.Equal(new List<int> { 240, 247, 64, 70 }, slot.BoardingPetSlot);
+            Assert.Equal(2, slot.Stacks);
+            Assert.True(slot.BoardingRunning);
+            Assert.Equal(2, slot.FeederSlots.Count);
+
+            // The renames. `pet_cell` and `food_cells` are also stranded keys, one level down.
+            Assert.Equal(new List<int> { 1, 2 }, pet.ReturnSlot);
+            Assert.Equal(2, pet.FoodSlots.Count);
+            Assert.Equal(11, pet.FoodSlotsUsed);
+
+            // The staged icon becomes the first queued pet — the field was never read by anything, and
+            // this is the migration that finally gives it a consumer rather than dropping it.
+            var queued = Assert.Single(pet.Queue);
+            Assert.Equal(new List<int> { 36, 37, 38, 39 }, queued.Rect);
+            Assert.Equal("iVBORw0KGgo=", queued.Png);
+
+            // Shared fields are untouched by the migration.
+            Assert.Equal(new List<int> { 815, 1735 }, pet.MenuButton);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The other half of the migration: once the new build has saved, the file carries
+    /// `slots:` and the flat keys are gone — and loading THAT must not re-run the migration over the
+    /// top and produce a second row or overwrite a value the player has since changed.</summary>
+    [Fact]
+    public void AMigratedFileRoundTripsWithoutMigratingTwice()
+    {
+        var dir = MakeTempConfigDirWithLocal(PreRowsPetLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var migrated = loader.Load();
+
+            // Save it back the way the UI would, then load again.
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Pet = ConfigLoader.LocalPet.From(migrated.Pet);
+            loader.SaveLocal(local);
+
+            var again = new ConfigLoader(dir).Load().Pet;
+            var slot = Assert.Single(again.Slots);
+            Assert.Equal(new List<int> { 682, 260, 127, 46 }, slot.ToggleLabel);
+            Assert.Equal(new List<int> { 1, 2 }, again.ReturnSlot);
+            Assert.Single(again.Queue);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
         }
     }
 

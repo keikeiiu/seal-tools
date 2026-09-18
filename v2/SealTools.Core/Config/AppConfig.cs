@@ -58,6 +58,80 @@ public sealed class TooltipConfig
     public bool IsSet => Width > 0 && Height > 0;
 }
 
+/// <summary>ONE BREEDING ROW of the `PET BREED` window.
+///
+/// The window holds four rows — one free, three paid — and they are independent: each has its own
+/// start/end button, its own food boxes and its own boarding slot (measured from the capture,
+/// 2026-09-19, which also showed all four boarding at once). So every field here is per row, and the
+/// list of these is <see cref="PetConfig.Slots"/>.
+///
+/// The one field that is NOT just geometry: <see cref="Stacks"/>. The free row holds TWO food stacks
+/// and a paid row holds FIVE (player, 2026-09-19), which is why the load size is a property of the row
+/// rather than of the tool — and why a row's reload interval differs from its neighbour's.</summary>
+public sealed class PetSlotConfig
+{
+    /// <summary>The 開始代養 / 結束代養 button, as a box — the tool CLICKS its centre to start or end
+    /// boarding on THIS row. Its label is not read.</summary>
+    public List<int>? ToggleLabel { get; set; }
+
+    /// <summary>The pet's slot in the boarding window, as a box — the slot a successfully-placed pet
+    /// lands in, and the crop the "did it actually go in?" check reads. NOT to be confused with
+    /// <see cref="PetConfig.ReturnSlot"/>, which is where the pet sits in the BAG.</summary>
+    public List<int>? BoardingPetSlot { get; set; }
+
+    /// <summary>The FOOD COUNT boxes in this row, as boxes — one per food slot, each framing the
+    /// number the game draws on it. Normally two, and NOT <see cref="Stacks"/> wide: these are the
+    /// counts a row displays, which is two whether the row holds two stacks or five.
+    ///
+    /// Boxed TIGHTLY around the digits rather than the slot: the number sits at the slot's
+    /// bottom-right and spills past its frame, so a box that frames the slot clips it.
+    ///
+    /// Nothing reads them yet — the reload still schedules by arithmetic. They are the reading that
+    /// would replace it (PLAN-PET-AUTOFEED.md §2), which is why they are calibrated and unread.</summary>
+    public List<List<int>> FeederSlots { get; set; } = new();
+
+    /// <summary>How many food stacks this row holds — 2 on the free row, 5 on a paid one. Different
+    /// per row means different reload intervals, so the schedule is per row too.</summary>
+    public int Stacks { get; set; } = 2;
+
+    /// <summary>Whether boarding is running on THIS row right now — i.e. the pet is in the loader
+    /// rather than in the bag.
+    ///
+    /// The reload needs it because the 開始代養 / 結束代養 control is ONE button per row: pressing it
+    /// while boarding runs ENDS it, and while stopped STARTS it. So the tool cannot press it blindly —
+    /// it would do the opposite of what the step needs.
+    ///
+    /// Read from the row's own boarding slot once a reference crop exists; until then it is stated by
+    /// the player at the start and set by the tool afterwards, because a successful reload always
+    /// leaves boarding running.</summary>
+    public bool BoardingRunning { get; set; }
+}
+
+/// <summary>One pet to breed, identified by its ICON rather than by a bag position.
+///
+/// The position is the thing that cannot be trusted: a pet returned by the boarding window lands in
+/// the FIRST FREE SLOT, and the character farms throughout, so the first free slot is not the slot the
+/// pet came from and not the slot that was marked. The icon is the pet's own portrait, so matching it
+/// across the 64 cells finds the pet wherever it went — which is what turns a queue of positions into
+/// a queue of pets.
+///
+/// <see cref="Png"/> is a crop stored as base64 in local.yaml, like the empty-slot reference and for
+/// the same reason: a second file is a second thing to lose. <see cref="Rect"/> is kept so the box can
+/// be redrawn and re-cropped rather than being a one-shot.</summary>
+public sealed class PetQueueEntry
+{
+    /// <summary>For the log and the UI only. NOTHING matches on it — the recogniser returned
+    /// 真蔚蓝尽凰 for 真蔚藍鳳凰 on a live read (2026-09-19), and the name never needs to be read at all
+    /// because the crop is the identity.</summary>
+    public string? Label { get; set; }
+
+    /// <summary>Where the icon was dragged on the calibration capture.</summary>
+    public List<int>? Rect { get; set; }
+
+    /// <summary>The icon itself, cropped at <see cref="Rect"/>.</summary>
+    public string? Png { get; set; }
+}
+
 /// <summary>Geometry for the pet food auto-replacement tool — the boarding (代養) flow. Every value
 /// here is machine-specific, so all of it lives in local.yaml beside the buy/sell grid; nothing
 /// belongs in the portable defaults.yaml.
@@ -67,7 +141,11 @@ public sealed class TooltipConfig
 /// so <see cref="BagGrid"/> is its own calibration and must not be shared with
 /// <see cref="BuySellConfig.BagGrid"/>; and the points below are the click path, which is
 /// 目錄 → pet feed icon → boarding window, not the pet cartoon image (that opens a different window
-/// entirely, about the manual feeding system).</summary>
+/// entirely, about the manual feeding system).
+///
+/// What is SHARED and what is PER ROW is the split that matters. The way in (目錄, the feed icon, the
+/// X), the bag and its grid, the food pool, and the queue are shared; the toggle, the boarding slot
+/// and the stack count belong to a row and live in <see cref="Slots"/>.</summary>
 public sealed class PetConfig
 {
     // ── The click path into the boarding window ─────────────────────────────
@@ -100,23 +178,15 @@ public sealed class PetConfig
 
     // ── What the boarding window says ───────────────────────────────────────
 
-    /// <summary>The 開始代養 / 結束代養 button, as a box — the tool CLICKS its centre to start
-    /// boarding once the food is loaded. Its label is not read.
+    /// <summary>The breeding rows, top to bottom — ONE ENTRY PER ROW. Index 0 is the free row.
     ///
-    /// It was briefly planned as a state read: one button both starts and ends boarding, so its label
-    /// would say whether the pet is being fed. Dropped, because the schedule already decides when to
-    /// reload and there is nothing left for the label to answer.</summary>
-    public List<int>? ToggleLabel { get; set; }
-
-    /// <summary>The pet's slot IN THE BOARDING WINDOW, as a box — not to be confused with
-    /// <see cref="PetCell"/>, which is where the pet sits in the BAG. This is the slot a
-    /// successfully-placed pet lands in.
+    /// A list rather than four fields because the rows are the same thing repeated: the capture shows
+    /// four identical layouts, each with its own button, food boxes and pet slot. Adding a row is an
+    /// entry, not a mechanism.
     ///
-    /// An empty-check crop, like the feeder slots: the same saved-crop-and-differing-pixels test. It
-    /// answers "did a pet actually go in?", which is the check worth having before loading food and
-    /// starting — a right-click that missed leaves an empty slot and a boarding window that looks
-    /// perfectly normal.</summary>
-    public List<int>? BoardingPetSlot { get; set; }
+    /// The tool drives as many as are configured, one at a time — the player's own ordering constraint
+    /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
+    public List<PetSlotConfig> Slots { get; set; } = new();
 
     /// <summary>The pet slot as it looks EMPTY, cropped from a capture and stored as a base64 PNG.
     ///
@@ -164,39 +234,39 @@ public sealed class PetConfig
 
     /// <summary>The bag cells holding pet food, each as [page, cell] with page 0-based.
     ///
-    /// Consumed in the order they are listed, tracked by <see cref="FoodCellsUsed"/>. NOT
+    /// ONE POOL FOR ALL ROWS: every row's reload draws its stacks from this list in order, which is
+    /// right while the pets share a food type (the player's stated case — "assuming the pets are the
+    /// same stage"). With four rows the pool is drawn down far faster: 2+5+5+5 = 17 cells per full
+    /// round, against 2 before.
+    ///
+    /// Consumed in the order they are listed, tracked by <see cref="FoodSlotsUsed"/>. NOT
     /// highest-index-first, which is what SellPass does and what an earlier revision of this copied —
     /// that rule exists because a sold slot leaves a hole the bag may compact into, and **the food
     /// here is locked**, so nothing shifts and the order buys nothing. What does matter is not
     /// re-clicking a cell this run has already emptied, which is what the count is for.</summary>
-    public List<List<int>> FoodCells { get; set; } = new();
+    public List<List<int>> FoodSlots { get; set; } = new();
 
-    /// <summary>How many of <see cref="FoodCells"/> have been used up. Persisted, because a restart
+    /// <summary>How many of <see cref="FoodSlots"/> have been used up. Persisted, because a restart
     /// that reset it would silently right-click cells the previous run had already emptied — and the
     /// only thing that notices is a pet that stops being fed.</summary>
-    public int FoodCellsUsed { get; set; }
+    public int FoodSlotsUsed { get; set; }
 
-    /// <summary>The bag cell the pet is put back into, as [page, cell].
+    /// <summary>The bag cell a returned pet lands in, as [page, cell] — the ROW-INDEPENDENT landing
+    /// place, because the game puts it in the first free slot rather than where it came from.
     ///
-    /// This is the SIMPLE path and it is what the tool uses today: mark where the pet goes and
-    /// right-click it. It is honest about its own limitation — when farming, loot takes the first free
-    /// slot and the pet does not necessarily land here, so this works while the bag is stable and the
-    /// icon matching below is what replaces it. Testing the flow end to end is worth more than getting
-    /// the hard case right first.</summary>
-    public List<int>? PetCell { get; set; }
+    /// The player's own name for it, and the reason the bag is kept with one slot free: a returned pet
+    /// lands there, so the mark stays true. It is the SIMPLE path and it is what the tool uses today.
+    /// It is honest about its own limitation — when farming, loot takes the first free slot and the pet
+    /// does not necessarily land here — which is what <see cref="Queue"/> replaces it with.</summary>
+    public List<int>? ReturnSlot { get; set; }
 
-    /// <summary>Where the pet item was dragged on the calibration capture. Kept so the box can be
-    /// redrawn and re-cropped, rather than being a one-shot. Unused by the current flow — see
-    /// <see cref="PetCell"/> for why — and kept because it is the direction the farming case goes.</summary>
-    public List<int>? PetIconRect { get; set; }
-
-    /// <summary>The pet's bag icon, cropped from the capture at <see cref="PetIconRect"/> and stored
-    /// as a base64 PNG. This is what the tool matches across the 64 cells to find the pet after
-    /// boarding ends and drops it into the first free slot.
+    /// <summary>The pets to breed, identified by ICON. The tool scans the bag for the best match and
+    /// boards the first one it finds — see <see cref="PetQueueEntry"/> for why position cannot be
+    /// trusted, and PLAN-PET-AUTOFEED.md §13 for why any match will do rather than a particular one:
+    /// an idle breeder is wasted time, so a substitute of the right kind is harmless.
     ///
-    /// A crop PER PET, because the icon is the pet's own portrait (see PLAN-PET-AUTOFEED.md §5). The
-    /// multi-pet case is therefore more entries, not a different mechanism.</summary>
-    public string? PetIconPng { get; set; }
+    /// Empty means the tool falls back to <see cref="ReturnSlot"/> and the fixed-cell behaviour.</summary>
+    public List<PetQueueEntry> Queue { get; set; } = new();
 
     /// <summary>Optional override for the count dialog's MAX.
     ///
@@ -208,19 +278,6 @@ public sealed class PetConfig
     public List<int>? MaxButton { get; set; }
 
     // ── Behaviour ───────────────────────────────────────────────────────────
-
-    /// <summary>Whether boarding is running right now — i.e. the pet is in the loader rather than in
-    /// the bag.
-    ///
-    /// The reload needs it because the 開始代養 / 結束代養 control is ONE button: clicking it while
-    /// boarding runs ENDS it, and clicking it while stopped STARTS it. So the tool cannot press it
-    /// blindly — it would do the opposite of what the step needs, and the pet would end up in the
-    /// wrong place.
-    ///
-    /// Read from the label once a reference crop exists for it; until then it is stated by the player
-    /// at the start and set by the tool afterwards, because a successful reload always leaves boarding
-    /// running.</summary>
-    public bool BoardingRunning { get; set; }
 
     /// <summary>How many minutes to wait AFTER the feeder should be empty before reloading.
     ///
@@ -254,38 +311,25 @@ public sealed class PetConfig
     /// <summary>The game's per-stack cap, and a game constant rather than a setting.</summary>
     public const int StackSize = 300;
 
-    /// <summary>How many food stacks one reload puts into a row.
-    ///
-    /// **This is a property of the ROW, not of the tool** (player, 2026-09-19):
-    ///
-    /// > 1 free row is 2 slots for food / 3 paid row are 5 slots for food
-    ///
-    /// So the free row holds 2 stacks and each paid row holds 5. The capture showed exactly that and
-    /// was nearly misread: the boarded free row rendered two boxes holding `198` and `300`, while the
-    /// three idle PAID rows underneath it each rendered five empty ones. The earlier reading — "a row
-    /// holds five" — was wrong, because the row it was measured on was the one row that does not.
-    ///
-    /// **It defaults to 2 because 2 is the row this tool drives today.** The single-row calibration is
-    /// the free row's toggle, so a 5 here would right-click three empty slots every reload. It becomes
-    /// a per-`pet_slots` field with the four-row work, which is also where the 5 pays off: a paid row's
-    /// 1,500-item load lasts 500 minutes against a stage-6 pet's ~2,514 items, so ~1.7 reloads per pet
-    /// instead of ~4.2 — and every reload is a chance to leave the pet unboarded, which the plan calls
-    /// the one permanent failure mode.</summary>
-    public int StacksPerReload { get; set; } = 2;
-
-    /// <summary>How many items one boarding load is, DERIVED from the stack count so the two can never
-    /// disagree. It was a settable 600 before, which is how "two stacks" became invisible.</summary>
-    public int LoadItems => StacksPerReload * StackSize;
-
     /// <summary>Items the game consumes per minute while boarding runs. Stage 6 is 3; the boarding
     /// window states this itself (`每1分 攝取3個`), so it is a measured game constant rather than a
-    /// guess — and the row states its own, so a stage-7 row saying 4 is readable rather than a number
+    /// guess — and each row states its own, so a stage-7 row saying 4 is readable rather than a number
     /// this config is simply wrong about.</summary>
     public int ItemsPerMinute { get; set; } = 3;
 
-    /// <summary>Minutes a full load lasts, derived rather than stored — so the numbers above can
-    /// never disagree with it.</summary>
-    public int LoadMinutes => ItemsPerMinute > 0 ? LoadItems / ItemsPerMinute : 0;
+    /// <summary>How many items one reload puts into the given row, DERIVED from that row's stack count
+    /// so the two can never disagree. It was a settable tool-wide 600 before, which is how "two
+    /// stacks" became invisible — and it is per row now because the free row holds two and a paid row
+    /// five, so the two empty at different times and need different timers.</summary>
+    public static int LoadItemsFor(PetSlotConfig slot) => Math.Max(1, slot.Stacks) * StackSize;
+
+    /// <summary>Minutes that row's load lasts, derived rather than stored.</summary>
+    public int LoadMinutesFor(PetSlotConfig slot) =>
+        ItemsPerMinute > 0 ? LoadItemsFor(slot) / ItemsPerMinute : 0;
+
+    /// <summary>Minutes between reloads for that row: the load, plus the wait past empty.</summary>
+    public int CycleMinutesFor(PetSlotConfig slot) =>
+        LoadMinutesFor(slot) + WaitAfterEmptyMinutes;
 }
 
 /// <summary>Geometry and presets for the buy/sell tool. The rectangles are machine-specific — a

@@ -5010,9 +5010,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Timing",
             Hint($"Wait after empty — how many minutes PAST the feeder emptying to reload. The load " +
-                 $"is {_service.Config.Pet.LoadMinutes} minutes, so a wait of " +
-                 $"{_service.Config.Pet.WaitAfterEmptyMinutes} reloads every " +
-                 $"{_service.Config.Pet.LoadMinutes + _service.Config.Pet.WaitAfterEmptyMinutes}. " +
+                 $"is {_service.Config.Pet.LoadMinutesFor(EditRow(_service.Config.Pet))} minutes, so a " +
+                 $"wait of {_service.Config.Pet.WaitAfterEmptyMinutes} reloads every " +
+                 $"{_service.Config.Pet.CycleMinutesFor(EditRow(_service.Config.Pet))}. " +
                  "It is POSITIVE on purpose: reloading after the feeder empties guarantees it IS " +
                  "empty when the stacks go in, and what the game does with a top-up onto a partial " +
                  "stack is unknown. The cost is that many minutes with nothing fed; 1-2 covers any " +
@@ -5028,11 +5028,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petBoardingRunning = new CheckBox
         {
             Content = "The pet is already in the loader (boarding is running)",
-            IsChecked = _service.Config.Pet.BoardingRunning,
+            IsChecked = EditRow(_service.Config.Pet).BoardingRunning,
             Margin = new Thickness(0, 4, 0, 4),
         };
-        _petBoardingRunning.Checked += (_, _) => { _service.Config.Pet.BoardingRunning = true; PetCellSave(hint); };
-        _petBoardingRunning.Unchecked += (_, _) => { _service.Config.Pet.BoardingRunning = false; PetCellSave(hint); };
+        _petBoardingRunning.Checked += (_, _) => { EditRow(_service.Config.Pet).BoardingRunning = true; PetCellSave(hint); };
+        _petBoardingRunning.Unchecked += (_, _) => { EditRow(_service.Config.Pet).BoardingRunning = false; PetCellSave(hint); };
 
         panel.Children.Add(Section("Boarding state",
             Hint("Tick this if the pet is boarding right now rather than sitting in the bag. The " +
@@ -5241,25 +5241,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         switch (_petDragTarget)
         {
             case "toggle":
-                pet.ToggleLabel = rect;
+                EditRow(pet).ToggleLabel = rect;
                 _petDragTarget = null;
                 _petHint!.Text = $"Start button {rect[2]}x{rect[3]} — the tool clicks its centre once " +
                     "the food is loaded.";
                 break;
             case "petslot":
-                pet.BoardingPetSlot = rect;
+                EditRow(pet).BoardingPetSlot = rect;
                 _petDragTarget = null;
                 _petHint!.Text = $"Pet slot {rect[2]}x{rect[3]} — the tool checks this is occupied " +
                     "after placing the pet, so a missed right-click stops the run instead of loading " +
                     "food into an empty boarding.";
                 break;
             case "feederA":
-                pet.FeederSlotA = rect;
+                SetFeederAt(EditRow(pet), 0, rect);
                 _petDragTarget = "feederB";
                 _petHint!.Text = $"First count {rect[2]}x{rect[3]}. Now the SECOND slot's count.";
                 break;
             case "feederB":
-                pet.FeederSlotB = rect;
+                SetFeederAt(EditRow(pet), 1, rect);
                 _petDragTarget = null;
                 _petHint!.Text = $"Second count {rect[2]}x{rect[3]}.";
                 break;
@@ -5309,10 +5309,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (pet.PageTabs[i] is { Count: 2 } tab)
                 Dot(canvas, shot, new Point(tab[0], tab[1]), Brushes.DeepSkyBlue, 12 + i * 3);
 
-        if (BagGrid.IsValidRect(pet.ToggleLabel)) Box(canvas, shot, pet.ToggleLabel!, Brushes.LimeGreen);
-        if (BagGrid.IsValidRect(pet.BoardingPetSlot)) Box(canvas, shot, pet.BoardingPetSlot!, Brushes.DeepSkyBlue);
-        if (BagGrid.IsValidRect(pet.FeederSlotA)) Box(canvas, shot, pet.FeederSlotA!, Brushes.Yellow);
-        if (BagGrid.IsValidRect(pet.FeederSlotB)) Box(canvas, shot, pet.FeederSlotB!, Brushes.Yellow);
+        // The row being edited — see EditRow. The shared marks above are drawn from `pet`; everything
+        // that belongs to a breeding row comes from `row`.
+        var row = EditRow(pet);
+        if (BagGrid.IsValidRect(row.ToggleLabel)) Box(canvas, shot, row.ToggleLabel!, Brushes.LimeGreen);
+        if (BagGrid.IsValidRect(row.BoardingPetSlot)) Box(canvas, shot, row.BoardingPetSlot!, Brushes.DeepSkyBlue);
+        if (BagGrid.IsValidRect(FeederAt(row, 0))) Box(canvas, shot, FeederAt(row, 0)!, Brushes.Yellow);
+        if (BagGrid.IsValidRect(FeederAt(row, 1))) Box(canvas, shot, FeederAt(row, 1)!, Brushes.Yellow);
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
         RefreshPetChecklist();
@@ -5356,11 +5359,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(pet.FeedIcon is { Count: 2 }, "pet feed icon       (click)"),
             Mark(pet.CloseButton is { Count: 2 }, "boarding X          (click)"),
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
-            Mark(BagGrid.IsValidRect(pet.ToggleLabel), "boarding start button (drag)"),
-            Mark(BagGrid.IsValidRect(pet.BoardingPetSlot), "boarding pet slot    (drag)"),
+            Mark(BagGrid.IsValidRect(EditRow(pet).ToggleLabel), "boarding start button (drag)"),
+            Mark(BagGrid.IsValidRect(EditRow(pet).BoardingPetSlot), "boarding pet slot    (drag)"),
             Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
-            Mark(BagGrid.IsValidRect(pet.FeederSlotA), "food count 1         (drag)"),
-            Mark(BagGrid.IsValidRect(pet.FeederSlotB), "food count 2         (drag)"),
+            Mark(BagGrid.IsValidRect(FeederAt(EditRow(pet), 0)), "food count 1         (drag)"),
+            Mark(BagGrid.IsValidRect(FeederAt(EditRow(pet), 1)), "food count 2         (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
         };
@@ -5371,24 +5374,46 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Marks or unmarks one cell on the page being edited. Food cells toggle; the pet cell
     /// is exclusive — clicking a new one moves it rather than adding a second, because a pet cannot
     /// be in two slots and two marks would be a contradiction the tool would have to resolve.</summary>
+    /// <summary>The breeding row the calibrator edits, created on demand.
+    ///
+    /// ROW 0 for now: the tool drives the rows as a list but the UI still marks one, so the tab edits
+    /// the first. The row selector that makes the others markable is part of the row-loop work, and it
+    /// is why these go through one accessor rather than through `Slots[0]` scattered across the tab.</summary>
+    private static PetSlotConfig EditRow(PetConfig pet)
+    {
+        while (pet.Slots.Count < 1) pet.Slots.Add(new PetSlotConfig());
+        return pet.Slots[0];
+    }
+
+    /// <summary>Read/write one of a row's food-count boxes by position. They are a list because a paid
+    /// row shows five, but the calibrator has two drag targets and that is all it needs to name.</summary>
+    private static List<int>? FeederAt(PetSlotConfig row, int i)
+        => i < row.FeederSlots.Count ? row.FeederSlots[i] : null;
+
+    private static void SetFeederAt(PetSlotConfig row, int i, List<int> rect)
+    {
+        while (row.FeederSlots.Count <= i) row.FeederSlots.Add(new List<int>());
+        row.FeederSlots[i] = rect;
+    }
+
     private void TogglePetCell(int cell)
     {
         var pet = _service.Config.Pet;
         if (_petPickPetMode)
         {
-            var same = pet.PetCell is { Count: 2 } p && p[0] == _petPickPage && p[1] == cell;
-            pet.PetCell = same ? null : new List<int> { _petPickPage, cell };
+            var same = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == cell;
+            pet.ReturnSlot = same ? null : new List<int> { _petPickPage, cell };
         }
         else
         {
-            var existing = pet.FoodCells.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
-            if (existing != null) pet.FoodCells.Remove(existing);
-            else pet.FoodCells.Add(new List<int> { _petPickPage, cell });
+            var existing = pet.FoodSlots.FirstOrDefault(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == cell);
+            if (existing != null) pet.FoodSlots.Remove(existing);
+            else pet.FoodSlots.Add(new List<int> { _petPickPage, cell });
 
             // Any change to the set invalidates how far the last run got through it: cells have moved
             // or been added, so a count carried over would skip or repeat. Re-marking means "start
             // from the top of this list", which is the only assumption that is safe either way.
-            pet.FoodCellsUsed = 0;
+            pet.FoodSlotsUsed = 0;
         }
 
         RefreshPetCells();
@@ -5413,8 +5438,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         foreach (var (i, cell) in _petCellBoxes)
         {
-            var isFood = pet.FoodCells.Any(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == i);
-            var isPet = pet.PetCell is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
+            var isFood = pet.FoodSlots.Any(c => c is { Count: 2 } && c[0] == _petPickPage && c[1] == i);
+            var isPet = pet.ReturnSlot is { Count: 2 } p && p[0] == _petPickPage && p[1] == i;
 
             // Two marks in one grid, so two colours. They are exclusive by construction — a cell is
             // the pet's or it is the food's — and if that ever changed the picker would be lying.
@@ -5429,13 +5454,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         if (_petCellInfo == null) return;
-        var onPage = pet.FoodCells.Count(c => c is { Count: 2 } && c[0] == _petPickPage);
-        var petWhere = pet.PetCell is { Count: 2 } q
+        var onPage = pet.FoodSlots.Count(c => c is { Count: 2 } && c[0] == _petPickPage);
+        var petWhere = pet.ReturnSlot is { Count: 2 } q
             ? $"page {q[0] + 1}, cell {q[1]}"
             : "not marked";
 
         _petCellInfo.Text =
-            $"Editing page {_petPickPage + 1} — {onPage} food cell(s) here, {pet.FoodCells.Count} in " +
+            $"Editing page {_petPickPage + 1} — {onPage} food cell(s) here, {pet.FoodSlots.Count} in " +
             $"total. Pet cell: {petWhere}. A click marks " +
             $"{(_petPickPetMode ? "the PET cell" : "a FOOD cell")}.";
         RefreshPetChecklist();
@@ -5452,20 +5477,20 @@ public partial class MainWindow : FluentWindow, IDisposable
         var max = pet.MaxButton ?? cfg.BuySell.MaxButton;
 
         var lines = new List<string>();
-        if (pet.PetCell is not { Count: 2 }) lines.Add("the pet's bag cell is not marked");
-        if (pet.FoodCells.Count == 0) lines.Add("no food cells are marked");
+        if (pet.ReturnSlot is not { Count: 2 }) lines.Add("the pet's bag cell is not marked");
+        if (pet.FoodSlots.Count == 0) lines.Add("no food cells are marked");
         // Counts CELLS, not reloads — a reload now eats StacksPerReload of them, so the press that
         // empties the list arrives that much sooner. Said here rather than discovered mid-run, when
         // the reload has already ended boarding and cannot start it again.
-        if (pet.FoodCells.Count < pet.StacksPerReload)
-            lines.Add($"only {pet.FoodCells.Count} food cell(s) are marked — one reload loads " +
-                      $"{pet.StacksPerReload} stacks, one cell each");
+        if (pet.FoodSlots.Count < EditRow(pet).Stacks)
+            lines.Add($"only {pet.FoodSlots.Count} food cell(s) are marked — one reload loads " +
+                      $"{EditRow(pet).Stacks} stacks, one cell each");
         if (max is not { Count: 2 }) lines.Add("no MAX is calibrated (Buy / Sell, or Calibrate Pet)");
         if (!BagGrid.IsValidRect(pet.BagGrid)) lines.Add("the boarding bag grid is not calibrated");
         if (pet.PageTabs.Count == 0) lines.Add("the bag page tabs are not calibrated");
 
         _petReadyText.Text = lines.Count == 0
-            ? $"Ready. Cycles about every {pet.LoadMinutes - 15} minutes."
+            ? $"Ready. Cycles about every {pet.LoadMinutesFor(EditRow(pet))} minutes."
             : "Not ready:" + Environment.NewLine + "  - " +
               string.Join(Environment.NewLine + "  - ", lines);
     }
@@ -5481,15 +5506,15 @@ public partial class MainWindow : FluentWindow, IDisposable
     private async Task PetTestRead(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        if (!BagGrid.IsValidRect(pet.FeederSlotA) && !BagGrid.IsValidRect(pet.FeederSlotB))
+        if (!BagGrid.IsValidRect(FeederAt(EditRow(pet), 0)) && !BagGrid.IsValidRect(FeederAt(EditRow(pet), 1)))
         {
             hint.Text = "Draw the feeder slots on Calibrate Pet first — the counts are read from them.";
             return;
         }
 
         var boxes = new List<(string What, List<int> Box)>();
-        if (BagGrid.IsValidRect(pet.FeederSlotA)) boxes.Add(("slot 1", pet.FeederSlotA!));
-        if (BagGrid.IsValidRect(pet.FeederSlotB)) boxes.Add(("slot 2", pet.FeederSlotB!));
+        if (BagGrid.IsValidRect(FeederAt(EditRow(pet), 0))) boxes.Add(("slot 1", FeederAt(EditRow(pet), 0)!));
+        if (BagGrid.IsValidRect(FeederAt(EditRow(pet), 1))) boxes.Add(("slot 2", FeederAt(EditRow(pet), 1)!));
 
         var report = new List<string>();
         var total = 0;
@@ -5557,7 +5582,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
             return;
         }
-        if (pet.PetCell is not { Count: 2 } marked)
+        if (pet.ReturnSlot is not { Count: 2 } marked)
         {
             hint.Text = "No pet cell is marked. Mark one on this tab first — this reads the cell that " +
                         "is marked, so it checks the mark and the read in the same press.";
@@ -5668,7 +5693,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void PetCellSave(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        if (pet.PetCell is not { Count: 2 } && pet.FoodCells.Count == 0)
+        if (pet.ReturnSlot is not { Count: 2 } && pet.FoodSlots.Count == 0)
         {
             hint.Text = "Nothing to save — mark the pet's cell and the food cells first.";
             return;
@@ -5683,7 +5708,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         local.Pet = ConfigLoader.LocalPet.From(pet);
 
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
-            $"Saved {pet.FoodCells.Count} food cell(s), the pet cell, and the timing. They survive a " +
+            $"Saved {pet.FoodSlots.Count} food cell(s), the pet cell, and the timing. They survive a " +
             "restart now — mark the cells again whenever the bag changes.");
     }
 
@@ -5698,13 +5723,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petHint!.Text = "Capture the game first — with the breeder open and no pet in it.";
             return;
         }
-        if (!BagGrid.IsValidRect(pet.BoardingPetSlot))
+        if (!BagGrid.IsValidRect(EditRow(pet).BoardingPetSlot))
         {
             _petHint!.Text = "Draw the pet slot first — the crop is taken from that box.";
             return;
         }
 
-        var box = pet.BoardingPetSlot!;
+        var box = EditRow(pet).BoardingPetSlot!;
         var rect = new OpenCvSharp.Rect(box[0], box[1], box[2], box[3]);
         if (rect.Right > _petScreenshot.PixelWidth || rect.Bottom > _petScreenshot.PixelHeight)
         {

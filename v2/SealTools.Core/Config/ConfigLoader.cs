@@ -96,9 +96,48 @@ public sealed class ConfigLoader
         AdoptSpammerPresetsIntoLocal(defaults, local);
         ApplyOverrides(defaults, local);
 
+        // AFTER the merge, because the migration only fills gaps: a file that already carries
+        // `slots:` must win over the flat keys it also happens to still hold.
+        MigratePetSlots(defaults.Pet, Deserialize<LocalOverridesLegacy>("local.yaml").Pet);
+
         ConfigValidator.Validate(defaults);
         return defaults;
     }
+
+    // A pet block written before the breeding rows existed is one flat set of fields — see
+    // LocalPetLegacy for why it is read separately, and for what goes wrong without this.
+    //
+    // Fills only what the new shape left empty, so a half-migrated file (rows written by the new build,
+    // flat keys still present because nothing rewrote them) resolves to the rows.
+    private static void MigratePetSlots(PetConfig pet, LocalPetLegacy? old)
+    {
+        if (old == null) return;
+
+        // `pet_cell` and `food_cells` were renamed to `return_slot` and `food_slots`, so their VALUES
+        // are stranded under keys nothing maps to — the same silent loss, one level down.
+        if (pet.ReturnSlot is not { Count: 2 } && old.PetCell is { Count: 2 }) pet.ReturnSlot = old.PetCell;
+        if (pet.FoodSlots.Count == 0 && old.FoodCells is { Count: > 0 }) pet.FoodSlots = old.FoodCells;
+        if (pet.FoodSlotsUsed == 0 && old.FoodCellsUsed is { } used and > 0) pet.FoodSlotsUsed = used;
+        if (pet.Queue.Count == 0 && !string.IsNullOrWhiteSpace(old.PetIconPng))
+            pet.Queue.Add(new PetQueueEntry { Rect = old.PetIconRect, Png = old.PetIconPng });
+
+        if (pet.Slots.Count > 0) return;
+
+        // The one row the old build could drive, and it is the free row — which is why 2 is the right
+        // stack count to carry over rather than a guess.
+        pet.Slots.Add(new PetSlotConfig
+        {
+            ToggleLabel = old.ToggleLabel,
+            BoardingPetSlot = old.BoardingPetSlot,
+            FeederSlots = new List<List<int>?> { old.FeederSlotA, old.FeederSlotB }
+                .Where(IsValidRect).Select(r => r!).ToList(),
+            Stacks = 2,
+            BoardingRunning = old.BoardingRunning ?? false,
+        });
+    }
+
+    private static bool IsValidRect(List<int>? r) => BagGrid.IsValidRect(r);
+
 
     // A config written before presets existed has a flat `spammer.keys` list. Move it into a preset
     // named "default" so the rest of the app only deals with presets.
@@ -209,24 +248,25 @@ public sealed class ConfigLoader
             if (IsPoint(pet.FeedIcon)) defaults.Pet.FeedIcon = pet.FeedIcon;
             if (IsPoint(pet.CloseButton)) defaults.Pet.CloseButton = pet.CloseButton;
             if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
-            if (BagGrid.IsValidRect(pet.ToggleLabel)) defaults.Pet.ToggleLabel = pet.ToggleLabel;
-            if (BagGrid.IsValidRect(pet.BoardingPetSlot)) defaults.Pet.BoardingPetSlot = pet.BoardingPetSlot;
             if (!string.IsNullOrWhiteSpace(pet.PetSlotEmptyPng)) defaults.Pet.PetSlotEmptyPng = pet.PetSlotEmptyPng;
-            if (BagGrid.IsValidRect(pet.FeederSlotA)) defaults.Pet.FeederSlotA = pet.FeederSlotA;
-            if (BagGrid.IsValidRect(pet.FeederSlotB)) defaults.Pet.FeederSlotB = pet.FeederSlotB;
             // The boarding bag's grid, deliberately separate from BuySell's — the bag sits somewhere
             // else in this flow, so borrowing those numbers would aim every cell at the wrong item.
             if (BagGrid.IsValidRect(pet.BagGrid)) defaults.Pet.BagGrid = pet.BagGrid;
             if (BagGrid.IsValidRect(pet.BagSlot)) defaults.Pet.BagSlot = pet.BagSlot;
-            if (pet.FoodCells is { Count: > 0 }) defaults.Pet.FoodCells = pet.FoodCells;
-            if (pet.FoodCellsUsed is { } used and >= 0) defaults.Pet.FoodCellsUsed = used;
+            if (pet.FoodSlots is { Count: > 0 }) defaults.Pet.FoodSlots = pet.FoodSlots;
+            if (pet.FoodSlotsUsed is { } used and >= 0) defaults.Pet.FoodSlotsUsed = used;
             if (pet.ActionWaitMs is { } wait and > 0) defaults.Pet.ActionWaitMs = wait;
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
-            if (pet.BoardingRunning is { } running) defaults.Pet.BoardingRunning = running;
-            if (pet.PetCell is { Count: 2 }) defaults.Pet.PetCell = pet.PetCell;
-            if (BagGrid.IsValidRect(pet.PetIconRect)) defaults.Pet.PetIconRect = pet.PetIconRect;
-            if (!string.IsNullOrWhiteSpace(pet.PetIconPng)) defaults.Pet.PetIconPng = pet.PetIconPng;
+            if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
+
+            // Wholesale rather than merged per row: these are the player's own calibration for the
+            // machine in front of them, and half of one file's rows merged into another's would be a
+            // configuration nobody wrote.
+            if (pet.Slots is { Count: > 0 } slots)
+                defaults.Pet.Slots = slots.Select(s => s.ToConfig()).ToList();
+            if (pet.Queue is { Count: > 0 } queued)
+                defaults.Pet.Queue = queued.Select(q => q.ToConfig()).ToList();
         }
 
         // The hover panel's offset is measured in this machine's pixels, so it lives here with
@@ -345,6 +385,37 @@ public sealed class ConfigLoader
         public int? SellCap { get; set; }
     }
 
+    /// <summary>One breeding row, as it is written to local.yaml.</summary>
+    public sealed class LocalPetSlot
+    {
+        public List<int>? ToggleLabel { get; set; }
+        public List<int>? BoardingPetSlot { get; set; }
+        public List<List<int>>? FeederSlots { get; set; }
+        public int? Stacks { get; set; }
+        public bool? BoardingRunning { get; set; }
+
+        /// <summary>The live shape, from the stored one. A missing `stacks` means TWO — the free
+        /// row's count, which is the only row a file written before the rows existed can describe.</summary>
+        public PetSlotConfig ToConfig() => new()
+        {
+            ToggleLabel = ToggleLabel,
+            BoardingPetSlot = BoardingPetSlot,
+            FeederSlots = FeederSlots ?? new(),
+            Stacks = Stacks ?? 2,
+            BoardingRunning = BoardingRunning ?? false,
+        };
+    }
+
+    /// <summary>One queued pet, as it is written to local.yaml.</summary>
+    public sealed class LocalPetQueueEntry
+    {
+        public string? Label { get; set; }
+        public List<int>? Rect { get; set; }
+        public string? Png { get; set; }
+
+        public PetQueueEntry ToConfig() => new() { Label = Label, Rect = Rect, Png = Png };
+    }
+
     /// <summary>The pet food auto-replacement geometry (see <see cref="PetConfig"/>). Machine-specific
     /// in full — including the bag grid, which is NOT the same one the shop opens beside.</summary>
     public sealed class LocalPet
@@ -353,22 +424,17 @@ public sealed class ConfigLoader
         public List<int>? FeedIcon { get; set; }
         public List<int>? CloseButton { get; set; }
         public List<List<int>>? PageTabs { get; set; }
-        public List<int>? ToggleLabel { get; set; }
-        public List<int>? BoardingPetSlot { get; set; }
         public string? PetSlotEmptyPng { get; set; }
-        public List<int>? FeederSlotA { get; set; }
-        public List<int>? FeederSlotB { get; set; }
         public List<int>? BagGrid { get; set; }
         public List<int>? BagSlot { get; set; }
-        public List<List<int>>? FoodCells { get; set; }
-        public int? FoodCellsUsed { get; set; }
+        public List<List<int>>? FoodSlots { get; set; }
+        public int? FoodSlotsUsed { get; set; }
         public int? ActionWaitMs { get; set; }
         public int? WaitAfterEmptyMinutes { get; set; }
-        public bool? BoardingRunning { get; set; }
-        public List<int>? PetCell { get; set; }
-        public List<int>? PetIconRect { get; set; }
-        public string? PetIconPng { get; set; }
+        public List<int>? ReturnSlot { get; set; }
         public List<int>? MaxButton { get; set; }
+        public List<LocalPetSlot>? Slots { get; set; }
+        public List<LocalPetQueueEntry>? Queue { get; set; }
 
         /// <summary>THE one place a <see cref="PetConfig"/> becomes a LocalPet, and it exists because
         /// there were two.
@@ -396,23 +462,65 @@ public sealed class ConfigLoader
             FeedIcon = p.FeedIcon,
             CloseButton = p.CloseButton,
             PageTabs = p.PageTabs,
-            ToggleLabel = p.ToggleLabel,
-            BoardingPetSlot = p.BoardingPetSlot,
             PetSlotEmptyPng = p.PetSlotEmptyPng,
-            FeederSlotA = p.FeederSlotA,
-            FeederSlotB = p.FeederSlotB,
             BagGrid = p.BagGrid,
             BagSlot = p.BagSlot,
-            FoodCells = p.FoodCells,
-            FoodCellsUsed = p.FoodCellsUsed,
-            PetCell = p.PetCell,
-            PetIconRect = p.PetIconRect,
-            PetIconPng = p.PetIconPng,
+            FoodSlots = p.FoodSlots,
+            FoodSlotsUsed = p.FoodSlotsUsed,
+            ReturnSlot = p.ReturnSlot,
             MaxButton = p.MaxButton,
-            BoardingRunning = p.BoardingRunning,
             WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes,
             ActionWaitMs = p.ActionWaitMs,
+            Slots = p.Slots.Select(s => new LocalPetSlot
+            {
+                ToggleLabel = s.ToggleLabel,
+                BoardingPetSlot = s.BoardingPetSlot,
+                FeederSlots = s.FeederSlots,
+                Stacks = s.Stacks,
+                BoardingRunning = s.BoardingRunning,
+            }).ToList(),
+            Queue = p.Queue.Select(q => new LocalPetQueueEntry
+            {
+                Label = q.Label,
+                Rect = q.Rect,
+                Png = q.Png,
+            }).ToList(),
         };
+    }
+
+    /// <summary>The pet block AS IT WAS WRITTEN BEFORE the breeding rows existed — one flat set of
+    /// fields with no `slots:` list, and `pet_cell` / `food_cells` under their old names.
+    ///
+    /// It is a separate class, and read as a SECOND pass over local.yaml, for one reason: the fields
+    /// below have no counterpart on the live <see cref="PetConfig"/> any more, and
+    /// `EveryLocalPetFieldIsCopiedFromTheConfig` requires every LocalPet property to have one. Keeping
+    /// them on LocalPet would have meant teaching that test to ignore things, which is the beginning of
+    /// the guard not working. Here they are clearly marked, read once, and deletable the day no
+    /// pre-rows local.yaml exists.
+    ///
+    /// The values themselves matter: `IgnoreUnmatchedProperties` means an old file does not fail, it
+    /// just silently loses the keys nothing maps to. Without this pass, upgrading would have thrown
+    /// away the player's whole pet calibration — the shape of loss the spammer migration exists for.
+    /// </summary>
+    public sealed class LocalPetLegacy
+    {
+        public List<int>? ToggleLabel { get; set; }
+        public List<int>? BoardingPetSlot { get; set; }
+        public List<int>? FeederSlotA { get; set; }
+        public List<int>? FeederSlotB { get; set; }
+        public bool? BoardingRunning { get; set; }
+        public List<int>? PetCell { get; set; }
+        public List<List<int>>? FoodCells { get; set; }
+        public int? FoodCellsUsed { get; set; }
+        public List<int>? PetIconRect { get; set; }
+        public string? PetIconPng { get; set; }
+    }
+
+    /// <summary>Just enough of local.yaml to reach the old pet block. Deserialized alongside the real
+    /// one, never saved.</summary>
+    private sealed class LocalOverridesLegacy
+    {
+        public LocalPetLegacy? Pet { get; set; }
     }
 
     private static bool IsPoint(List<int>? p) => p is { Count: 2 };

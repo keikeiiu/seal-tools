@@ -294,19 +294,22 @@ public sealed class LauncherService : IDisposable
         _ => 1,
     };
 
-    /// <summary>Records the pet run's own state: how many food cells are used up, and whether boarding
-    /// is running. Both are written as they change rather than at the end of a run, because the run is
+    /// <summary>Records the pet run's own state: how many food cells are used up, and which rows are
+    /// boarding. Both are written as they change rather than at the end of a run, because the run is
     /// meant to last days and a machine that loses power mid-run would otherwise come back aiming at
     /// cells it had already emptied — or pressing a toggle whose current meaning it has forgotten,
-    /// which would end the boarding it meant to start.</summary>
+    /// which would end the boarding it meant to start.
+    ///
+    /// The WHOLE pet block, through the same single projection the two Save buttons use, rather than
+    /// the two fields it used to write. The tool no longer owns those two fields in isolation: the
+    /// boarding flag now lives on a breeding row, and writing a subset of the rows back is how a
+    /// half-saved pet block gets made.</summary>
     private void PersistPetState()
     {
         try
         {
             var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet ??= new ConfigLoader.LocalPet();
-            local.Pet.FoodCellsUsed = Config.Pet.FoodCellsUsed;
-            local.Pet.BoardingRunning = Config.Pet.BoardingRunning;
+            local.Pet = ConfigLoader.LocalPet.From(Config.Pet);
             _loader.SaveLocal(local);
         }
         catch (Exception ex)

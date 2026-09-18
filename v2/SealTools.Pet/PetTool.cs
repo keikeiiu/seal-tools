@@ -116,7 +116,7 @@ public sealed class PetTool : ToolBase
         }
 
         Log($"run started — cycling every {CycleMinutes():0} min " +
-            $"({_cfg.Pet.LoadItems} items at {_cfg.Pet.ItemsPerMinute}/min, plus " +
+            $"({PetConfig.LoadItemsFor(Row!)} items at {_cfg.Pet.ItemsPerMinute}/min, plus " +
             $"{WaitAfterEmptyMinutes:0} min after empty)");
 
         var failures = 0;
@@ -166,19 +166,23 @@ public sealed class PetTool : ToolBase
 
         if (!IsPoint(pet.MenuButton)) return "目錄 isn't calibrated — Calibrate Pet.";
         if (!IsPoint(pet.FeedIcon)) return "The pet feed icon isn't calibrated — Calibrate Pet.";
-        if (!BagGrid.IsValidRect(pet.ToggleLabel)) return "The boarding toggle label isn't calibrated — Calibrate Pet.";
         if (!IsPoint(pet.CloseButton)) return "The boarding window's X isn't calibrated — Calibrate Pet.";
         if (!BagGrid.IsValidRect(pet.BagGrid) || !BagGrid.IsValidRect(pet.BagSlot))
             return "The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)";
         if (pet.PageTabs.Count == 0) return "The bag page tabs aren't calibrated — Calibrate Pet.";
+        if (Row is not { } row)
+            return "No breeding row is set up — Calibrate Pet. Each row needs its start/end button " +
+                   "and its pet slot marked.";
+        if (!BagGrid.IsValidRect(row.ToggleLabel))
+            return "The boarding toggle label isn't calibrated — Calibrate Pet.";
 
         // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
         // page the tool cannot reach. Checked here rather than discovered mid-flow: the reload closes
         // the window on any failure, so a bad page surfaced as "it opened and then shut again" with
         // nothing saying why.
         var pages = new List<(string What, int Page)>();
-        if (pet.PetCell is { Count: 2 } pc) pages.Add(("The pet's bag cell", pc[0]));
-        foreach (var cell in pet.FoodCells)
+        if (pet.ReturnSlot is { Count: 2 } rs) pages.Add(("The return slot", rs[0]));
+        foreach (var cell in pet.FoodSlots)
             if (cell is { Count: 2 }) pages.Add(("A food cell", cell[0]));
 
         foreach (var (what, page) in pages)
@@ -190,10 +194,12 @@ public sealed class PetTool : ToolBase
                 return $"{what} is marked on bag page {page + 1}, and that page's tab isn't " +
                        "calibrated — mark ITEM" + (page + 1) + " on Calibrate Pet.";
         }
-        if (pet.PetCell is not { Count: 2 })
-            return "The pet's bag cell isn't marked — Calibrate Pet. Nothing says where to put the " +
-                   "pet back.";
-        if (pet.FoodCells.Count == 0)
+        // The fixed cell is only required while there is no queue to find the pet by — see
+        // PetConfig.Queue. With icons captured the tool looks for the pet rather than for a position.
+        if (pet.ReturnSlot is not { Count: 2 } && pet.Queue.Count == 0)
+            return "Neither a return slot nor any queued pet icon is set — the tool has nothing to " +
+                   "find the pet by. Mark the return slot on the Pet tab, or capture a pet icon.";
+        if (pet.FoodSlots.Count == 0)
             return "No food cells are marked — Calibrate Pet. Nothing says where the pet food lives.";
         if (EffectiveMax() == null)
             return "No MAX is calibrated — Calibrate Buy/Sell, or mark one on Calibrate Pet.";
@@ -204,12 +210,23 @@ public sealed class PetTool : ToolBase
     /// They are the same dialog, so normally one mark serves both.</summary>
     private List<int>? EffectiveMax() => _cfg.Pet.MaxButton ?? _cfg.BuySell.MaxButton;
 
+    /// <summary>The row being driven.
+    ///
+    /// ONE ROW TODAY — the first configured. The rows are a list now and the loop that services them
+    /// one at a time is the next step, so every reference goes through here rather than through
+    /// `Slots[0]` scattered about: when that loop lands, this is the property that changes.</summary>
+    private PetSlotConfig? Row => _cfg.Pet.Slots.Count > 0 ? _cfg.Pet.Slots[0] : null;
+
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
     /// Derived from the config rather than stored, so the rate and the load can never disagree with
-    /// the interval they produce.</summary>
+    /// the interval they produce.
+    ///
+    /// Per ROW, because the free row holds two stacks and a paid row five — so the two empty at
+    /// different times and one timer cannot serve both.</summary>
     private double CycleMinutes()
     {
-        var full = _cfg.Pet.LoadMinutes;
+        if (Row is not { } row) return 60;
+        var full = _cfg.Pet.LoadMinutesFor(row);
         if (full <= 0) return 60;   // a broken rate must not spin the loop
         return Math.Max(5, full + WaitAfterEmptyMinutes);
     }
@@ -236,7 +253,7 @@ public sealed class PetTool : ToolBase
             // in the loader instead. So a reload off a running boarding starts by ending it — which is
             // also what returns the leftover food. Skipped when boarding is already stopped, because
             // this button TOGGLES: pressing it then would start the very thing we are about to end.
-            if (_cfg.Pet.BoardingRunning)
+            if (Row!.BoardingRunning)
             {
                 state.Message = "Ending boarding…";
                 Log("  ending boarding (the pet is in the loader, so it has to come back first)");
@@ -253,7 +270,7 @@ public sealed class PetTool : ToolBase
                 // happened rather than what was hoped for. It assumes the press landed, which every
                 // click in this tool assumes; the pet-slot check after placement is what catches it
                 // when that is wrong.
-                _cfg.Pet.BoardingRunning = false;
+                Row!.BoardingRunning = false;
                 _persistState?.Invoke();
                 SleepCheck(Math.Max(EndWait, ActionWait));
             }
@@ -273,7 +290,7 @@ public sealed class PetTool : ToolBase
             // Same reasoning as the end above: the press is what starts the feed, so the flag is set
             // here rather than at the end of a reload that can still fail after it (the sleep below
             // cannot fail, but the intent is what matters — the state changed at the press).
-            _cfg.Pet.BoardingRunning = true;
+            Row!.BoardingRunning = true;
             _persistState?.Invoke();
 
             // Let the start take before the cleanup closes the window it was pressed in.
@@ -345,14 +362,15 @@ public sealed class PetTool : ToolBase
         error = "";
         var pet = _cfg.Pet;
 
-        if (pet.PetCell is not { Count: 2 })
+        if (pet.ReturnSlot is not { Count: 2 })
         {
-            error = "The pet's bag cell isn't marked — Calibrate Pet.";
+            error = "The return slot isn't marked — the tool has nothing to right-click. Mark it on " +
+                    "the Pet tab, or capture a pet icon.";
             return false;
         }
 
-        var page = pet.PetCell[0];
-        var cell = pet.PetCell[1];
+        var page = pet.ReturnSlot[0];
+        var cell = pet.ReturnSlot[1];
         if (!SelectPage(ser, page, out error)) return false;
 
         var centres = BagGrid.Centres(pet.BagGrid!);
@@ -363,7 +381,7 @@ public sealed class PetTool : ToolBase
         }
 
         var (cx, cy) = centres[cell];
-        Log($"  placing from page {page + 1}, cell {cell}");
+        Log($"  placing from the return slot, page {page + 1}, cell {cell}");
 
         // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost roughly half
         // its boarded time to reloads that loaded food into an empty slot and reported success — and
@@ -397,11 +415,11 @@ public sealed class PetTool : ToolBase
         }
 
         error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
-                "empty. Nothing was loaded. Check the pet's bag cell on the Pet tab.";
+                "empty. Nothing was loaded. Check the return slot on the Pet tab.";
         return false;
     }
 
-    /// <summary>Whether the boarding window's pet slot still looks empty.
+    /// <summary>Whether this row's pet slot in the boarding window still looks empty.
     ///
     /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
     /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
@@ -409,7 +427,8 @@ public sealed class PetTool : ToolBase
     private bool? PetSlotIsEmpty()
     {
         var pet = _cfg.Pet;
-        if (!BagGrid.IsValidRect(pet.BoardingPetSlot)) return null;
+        if (Row is not { } row) return null;
+        if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
 
         using var reference = IconMatch.FromBase64(pet.PetSlotEmptyPng);
         if (reference == null) return null;
@@ -417,7 +436,7 @@ public sealed class PetTool : ToolBase
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
 
-        var box = pet.BoardingPetSlot!;
+        var box = row.BoardingPetSlot!;
         var cap = ScreenCapture.CaptureClientRegion(hwnd,
             new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] });
         if (cap == null) return null;
@@ -427,25 +446,25 @@ public sealed class PetTool : ToolBase
         return difference <= pet.PetSlotOccupiedAbove;
     }
 
-    /// <summary>One transaction per stack, filling as many of the row's five slots as asked for —
-    /// see <see cref="PetConfig.StacksPerReload"/> for why it is five and not two.
+    /// <summary>One transaction per stack, filling as many of the row's slots as it holds — see
+    /// <see cref="PetSlotConfig.Stacks"/> for why that is two on the free row and five on a paid one.
     ///
     /// The cell to use rotates through the marked set rather than always taking cell 0: the first
-    /// stack empties a cell, so a fixed index would right-click an empty slot on every pass after
-    /// the first. With five stacks a reload now consumes five cells, so the marked set wants to be
-    /// that much larger — and the "no food cells left" failure comes that much sooner if it is not.</summary>
+    /// stack empties a cell, so a fixed index would right-click an empty slot on every pass after the
+    /// first. A reload consumes one cell per stack, so the marked set wants to be at least that large
+    /// per row — and the "no food cells left" failure comes correspondingly sooner if it is not.</summary>
     private bool LoadFood(SerialPort ser, out string error)
     {
         error = "";
         var pet = _cfg.Pet;
 
-        var stacks = Math.Max(1, pet.StacksPerReload);
+        var stacks = Math.Max(1, Row!.Stacks);
         for (int stack = 0; stack < stacks; stack++)
         {
             var cell = NextFoodCell(pet);
             if (cell == null)
             {
-                error = $"No food cells left — {pet.FoodCellsUsed} of {pet.FoodCells.Count} used. " +
+                error = $"No food cells left — {pet.FoodSlotsUsed} of {pet.FoodSlots.Count} used. " +
                         "Mark the cells holding food again on the Pet tab.";
                 return false;
             }
@@ -487,16 +506,16 @@ public sealed class PetTool : ToolBase
     /// alternative is clicking an empty slot and reporting success.</summary>
     private (int Page, int Cell)? NextFoodCell(PetConfig cfg)
     {
-        var cells = cfg.FoodCells;
+        var cells = cfg.FoodSlots;
         if (cells.Count == 0) return null;
-        if (cfg.FoodCellsUsed < 0 || cfg.FoodCellsUsed >= cells.Count) return null;
+        if (cfg.FoodSlotsUsed < 0 || cfg.FoodSlotsUsed >= cells.Count) return null;
 
-        var cell = cells[cfg.FoodCellsUsed];
+        var cell = cells[cfg.FoodSlotsUsed];
         if (cell is not { Count: 2 }) return null;
 
-        cfg.FoodCellsUsed++;
+        cfg.FoodSlotsUsed++;
         _persistState?.Invoke();
-        Log($"  food cell {cfg.FoodCellsUsed}/{cells.Count} used (page {cell[0] + 1}, cell {cell[1]})");
+        Log($"  food cell {cfg.FoodSlotsUsed}/{cells.Count} used (page {cell[0] + 1}, cell {cell[1]})");
         return (cell[0], cell[1]);
     }
 
@@ -515,7 +534,7 @@ public sealed class PetTool : ToolBase
     /// sits on the button.</summary>
     private bool PressToggle(SerialPort ser, out string error)
     {
-        var label = _cfg.Pet.ToggleLabel!;
+        var label = Row!.ToggleLabel!;
         var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
         return Click(ser, centre, right: false, "the start/end boarding button", out error);
     }
@@ -524,7 +543,7 @@ public sealed class PetTool : ToolBase
     {
         // The toggle's LABEL box is what is calibrated, so its centre is the click. The label sits on
         // the button, which is why one box serves as both the read and the press.
-        var label = _cfg.Pet.ToggleLabel!;
+        var label = Row!.ToggleLabel!;
         var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
         return Click(ser, centre, right: false, "the start button", out error);
     }
