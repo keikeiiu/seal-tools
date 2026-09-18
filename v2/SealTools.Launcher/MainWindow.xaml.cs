@@ -5752,20 +5752,37 @@ public partial class MainWindow : FluentWindow, IDisposable
         var max = pet.MaxButton ?? cfg.BuySell.MaxButton;
 
         var lines = new List<string>();
-        if (pet.ReturnSlot is not { Count: 2 }) lines.Add("the pet's bag cell is not marked");
+        if (pet.ReturnSlot is not { Count: 2 } && pet.Queue.Count == 0)
+            lines.Add("neither the return slot nor a pet icon is marked — nothing says where the pet is");
         if (pet.FoodSlots.Count == 0) lines.Add("no food cells are marked");
-        // Counts CELLS, not reloads — a reload now eats StacksPerReload of them, so the press that
-        // empties the list arrives that much sooner. Said here rather than discovered mid-run, when
-        // the reload has already ended boarding and cannot start it again.
-        if (pet.FoodSlots.Count < EditRow(pet).Stacks)
-            lines.Add($"only {pet.FoodSlots.Count} food cell(s) are marked — one reload loads " +
-                      $"{EditRow(pet).Stacks} stacks, one cell each");
         if (max is not { Count: 2 }) lines.Add("no MAX is calibrated (Buy / Sell, or Calibrate Pet)");
         if (!BagGrid.IsValidRect(pet.BagGrid)) lines.Add("the boarding bag grid is not calibrated");
         if (pet.PageTabs.Count == 0) lines.Add("the bag page tabs are not calibrated");
 
+        // EVERY row, because the tool drives every row. It used to describe the edited one, which
+        // would report "ready" for three rows that had never been drawn.
+        if (pet.Slots.Count == 0) lines.Add("no breeding rows are set up — Calibrate Pet");
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var r = pet.Slots[i];
+            if (!BagGrid.IsValidRect(r.ToggleLabel)) lines.Add($"row {i + 1}: start/end button not marked");
+            if (!BagGrid.IsValidRect(r.BoardingPetSlot)) lines.Add($"row {i + 1}: pet slot not marked");
+
+            var marked = Enumerable.Range(0, Math.Max(1, r.Stacks))
+                .Count(f => BagGrid.IsValidRect(FeederAt(r, f)));
+            if (marked < r.Stacks) lines.Add($"row {i + 1}: {marked} of {r.Stacks} food counts marked");
+        }
+
+        // Counts CELLS against a whole ROUND, not against one row: the rows are served one after the
+        // other from one pool, so what matters is whether the pool covers all of them.
+        var round = pet.Slots.Sum(r => Math.Max(1, r.Stacks));
+        if (round > 0 && pet.FoodSlots.Count > 0 && pet.FoodSlots.Count < round)
+            lines.Add($"{pet.FoodSlots.Count} food cell(s) marked but one round of all " +
+                      $"{pet.Slots.Count} row(s) loads {round}");
+
         _petReadyText.Text = lines.Count == 0
-            ? $"Ready. Cycles about every {pet.LoadMinutesFor(EditRow(pet))} minutes."
+            ? $"Ready. {pet.Slots.Count} row(s), reloading every " +
+              string.Join(" / ", pet.Slots.Select(r => $"{pet.CycleMinutesFor(r)} min")) + "."
             : "Not ready:" + Environment.NewLine + "  - " +
               string.Join(Environment.NewLine + "  - ", lines);
     }
@@ -5781,15 +5798,20 @@ public partial class MainWindow : FluentWindow, IDisposable
     private async Task PetTestRead(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        if (!BagGrid.IsValidRect(FeederAt(EditRow(pet), 0)) && !BagGrid.IsValidRect(FeederAt(EditRow(pet), 1)))
+
+        // EVERY count on the row being edited, not the first two. A paid row has five, so this used
+        // to read two of them and quietly imply the row was empty of the other three.
+        var row = EditRow(pet);
+        var boxes = new List<(string What, List<int> Box)>();
+        for (int f = 0; f < Math.Max(1, row.Stacks); f++)
+            if (BagGrid.IsValidRect(FeederAt(row, f)))
+                boxes.Add(($"slot {f + 1}", FeederAt(row, f)!));
+
+        if (boxes.Count == 0)
         {
-            hint.Text = "Draw the feeder slots on Calibrate Pet first — the counts are read from them.";
+            hint.Text = "Draw the food counts on Calibrate Pet first — the counts are read from them.";
             return;
         }
-
-        var boxes = new List<(string What, List<int> Box)>();
-        if (BagGrid.IsValidRect(FeederAt(EditRow(pet), 0))) boxes.Add(("slot 1", FeederAt(EditRow(pet), 0)!));
-        if (BagGrid.IsValidRect(FeederAt(EditRow(pet), 1))) boxes.Add(("slot 2", FeederAt(EditRow(pet), 1)!));
 
         var report = new List<string>();
         var total = 0;

@@ -199,11 +199,19 @@ public sealed class PetTool : ToolBase
         if (!BagGrid.IsValidRect(pet.BagGrid) || !BagGrid.IsValidRect(pet.BagSlot))
             return "The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)";
         if (pet.PageTabs.Count == 0) return "The bag page tabs aren't calibrated — Calibrate Pet.";
-        if (Row is not { } row)
+        if (_cfg.Pet.Slots.Count == 0)
             return "No breeding row is set up — Calibrate Pet. Each row needs its start/end button " +
                    "and its pet slot marked.";
-        if (!BagGrid.IsValidRect(row.ToggleLabel))
-            return "The boarding toggle label isn't calibrated — Calibrate Pet.";
+
+        // EVERY row, not the first. The tool drives them all, so a row with no button marked would
+        // otherwise be discovered mid-run — as a click at (0,0) or at whatever the empty box's centre
+        // works out to, during an unattended run.
+        for (int i = 0; i < _cfg.Pet.Slots.Count; i++)
+        {
+            if (!BagGrid.IsValidRect(_cfg.Pet.Slots[i].ToggleLabel))
+                return $"Row {i + 1}'s start/end button isn't marked — Calibrate Pet. The tool has " +
+                       "nothing to click for that row, and it drives every configured row.";
+        }
 
         // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
         // page the tool cannot reach. Checked here rather than discovered mid-flow: the reload closes
@@ -238,9 +246,6 @@ public sealed class PetTool : ToolBase
     /// <summary>The count dialog's MAX: the pet override when set, otherwise the shared buy/sell one.
     /// They are the same dialog, so normally one mark serves both.</summary>
     private List<int>? EffectiveMax() => _cfg.Pet.MaxButton ?? _cfg.BuySell.MaxButton;
-
-    /// <summary>The rows this run drives, in configuration order. Empty means nothing is set up.</summary>
-    private PetSlotConfig? Row => _cfg.Pet.Slots.Count > 0 ? _cfg.Pet.Slots[0] : null;
 
     /// <summary>How a row is named in a log line or on the card. 1-based, matching the window.</summary>
     private string NameOf(PetSlotConfig row) =>
