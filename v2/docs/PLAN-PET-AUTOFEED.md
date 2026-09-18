@@ -133,20 +133,37 @@ restocked?** If the food slot is only editable while stopped, every reload becom
 *end → restock → start*, and the tool has to put the state back exactly as it found it rather than just
 closing the window.
 
-### What the EXP% actually is, and why it matters
+### What the EXP% actually is — corrected 2026-09-19, and it is per LEVEL
 
-**`[52.18%]` is 喂养值 eaten over the 喂养值 needed for the WHOLE STAGE** — not for the current level
-(player, 2026-09-18, answering the question this section first raised).
+**This section said the percentage was of the WHOLE STAGE, and that was wrong.** A capture with all four
+rows boarding settled it, because the boarding window prints its own ETA and that is a checkable claim:
 
-**And the stage reading is the one that fits the finished state**, which is what makes it credible
-rather than merely asserted: the game stops boarding at `+9` with exactly 100%, and that is the point at
-which the pet can evolve. A stage total of 100% is precisely the evolve threshold. Read per level,
-`+9` at 100% would mean only "this level is done", with no next level to level into — and nothing would
-explain why the breeder stops there.
+```
+row 1  (free, +8)  25.99%   到9為止預計所需時間: 約 77分
+row 2  (paid, +0)  17.37%   到1為止預計所需時間: 約 48分
+row 3  (paid, +0)  15.63%   到1為止預計所需時間: 約 49分
+row 4  (paid, +0)  10.44%   到1為止預計所需時間: 約 52分
+```
 
-The news page's worked example (10 fed against a 30-point level showing 33%) still describes the
-mechanic correctly; on this reading `30` was simply that pet's *whole-stage* figure for the level it
-happened to be describing, and the page was illustrating the division rather than the scope.
+**The game names the next level, and it differs per row** — `到9` on the pet at `+8`, `到1` on the three
+at `+0`. A whole-stage reading would say `到9` on all four. That alone decides it.
+
+And the arithmetic agrees to the minute. `(1 − e) × wyz × (1 + g/10) ÷ 90 喂养值/min`, with
+`wyz = 5200` (stage 6) and 高级宠物食物 at 30 per item: **77.0, 47.7, 48.7, 51.7** minutes against the
+displayed **77, 48, 49, 52**. Four independent confirmations, none of them rounded into agreement.
+
+**So: the percentage is the CURRENT LEVEL's bar, and the ETA is the time to finish that bar.**
+
+**The old argument for the stage reading dissolves rather than being overruled.** It ran: *"read per
+level, `+9` at 100% would mean only 'this level is done', with no next level to level into — and nothing
+would explain why the breeder stops there."* But at `+9` there IS no next level — that is what makes it
+the top — so finishing that bar *is* finishing, and that is precisely why the breeder stops. The reading
+that made the stopping behaviour mysterious is the one that was wrong.
+
+**What it changes for the tool:** the remaining-time formula is per level, which is what
+`done(g,e) = Σ(1 + n/10) + (1 + g/10) × e/100` already computes. And the strictest reading of all is
+available for free — **each row prints its own ETA**, so the tool can quote the game rather than
+reproduce its arithmetic.
 
 **What follows is simpler than the per-level reading would have been:**
 
@@ -708,11 +725,22 @@ Not a redesign — an ordering constraint, and a reassuring one:
   is homeless, which is the same single-pet asymmetry §13 describes, multiplied by the number of rows
   being cycled.
 
-### What to do before building any of it
+### What to do before building any of it — DONE 2026-09-19
 
-**Buy one slot and capture the second row.** Two of the three unknowns are answerable only from a
-screenshot of an unlocked row — whether the start button is per row, and whether the food slots are
-per row or shared — and a restructure built on a guess is a restructure done twice.
+**The player bought the expansion and captured all four rows at once, and every unknown is answered:**
+
+| Question | Answer |
+|---|---|
+| Can four pets board at the same time? | **Yes** — the capture shows all four rows reading `結束代養` with their own food and their own ETA. The premise this whole section rests on. |
+| Does each row have its OWN start button? | **Yes** — row 1 read `結束代養` while rows 2–4 read `開始代養` before they were started. |
+| Are the food slots per row or shared? | **Per row.** |
+| How many stacks does a row hold? | **Two on the free row, FIVE on each paid row** (player, 2026-09-19: *"1 free row is 2 slots for food / 3 paid row are 5 slots for food"*). |
+
+That last answer arrived the hard way: the captured free row showed two boxes and the three idle paid
+rows showed five, and the five were generalised to all rows before the player corrected it. See §2's
+"the load size" for what the mistake cost and what the correction is worth.
+
+The three paid rows also print `該欄位約29日23時…後到期`, so the window states its own remaining rental.
 
 ---
 

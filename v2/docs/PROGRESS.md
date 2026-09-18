@@ -44,6 +44,29 @@ is now a per-row field — `StacksPerReload`, default 2 because 2 is the row the
 of ~4.2. Every reload is a chance to leave the pet unboarded — §7's one permanent failure — so a paid
 row is worth boarding on with one pet, never mind four.
 
+**And a second capture, with all four rows boarding, settled what the EXP% means — and this document's
+own §2 was wrong about it.** §2 said the percentage was of the WHOLE STAGE; it is of the CURRENT LEVEL.
+The window proves it by printing its own ETA and naming the next level:
+
+```
+row 1 (free, +8)  25.99%   到9為止預計所需時間: 約 77分
+row 2 (paid, +0)  17.37%   到1為止預計所需時間: 約 48分
+row 3 (paid, +0)  15.63%   到1為止預計所需時間: 約 49分
+row 4 (paid, +0)  10.44%   到1為止預計所需時間: 約 52分
+```
+
+`到9` on the pet at `+8` and `到1` on the three at `+0` is the giveaway — a stage-wide reading would say
+`到9` on all four. And `(1 − e) × wyz × (1 + g/10) ÷ 90` gives **77.0, 47.7, 48.7, 51.7** minutes against
+the displayed **77, 48, 49, 52**. Four confirmations to the minute, none rounded into agreement.
+
+**§2's argument for the stage reading dissolves rather than being overruled**: it said a per-level
+reading could not explain why the breeder stops at `+9`, but at `+9` there is no next level — that is
+what "top" means. The reading that made the stopping behaviour mysterious was the one that was wrong.
+
+**Useful side effect:** each row prints its own ETA, so the tool can quote the game instead of
+reproducing its arithmetic. And the four rows report ~3.6 h (the `+8` pet) and ~13.96 h each (the three
+at `+0`) to `+9` 100 %.
+
 **Left open:** the four-row work itself. The plan is `return_slot` + a list of `pet_slots` + a list of
 `food_slots`, per the player's own shape, with the swap (find the next pet by icon when one finishes)
 after it because the paid days are what is running. The tool still drives one row.
