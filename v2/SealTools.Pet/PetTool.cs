@@ -115,36 +115,64 @@ public sealed class PetTool : ToolBase
             return 0;
         }
 
-        Log($"run started — cycling every {CycleMinutes():0} min " +
-            $"({PetConfig.LoadItemsFor(Row!)} items at {_cfg.Pet.ItemsPerMinute}/min, plus " +
-            $"{WaitAfterEmptyMinutes:0} min after empty)");
+        Log($"run started — {_cfg.Pet.Slots.Count} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
+            $"{WaitAfterEmptyMinutes:0} min after empty: " +
+            string.Join(", ", _cfg.Pet.Slots.Select(r =>
+                $"{NameOf(r)} every {CycleMinutesFor(r):0} min " +
+                $"({PetConfig.LoadItemsFor(r)} items, {r.Stacks} stacks)")));
 
-        var failures = 0;
+        // One schedule PER ROW. Not one clock for all of them, and the reason is arithmetic rather
+        // than taste: the free row holds two food stacks and a paid row five, so a full load lasts
+        // 200 minutes on one and 500 on the other. A single timer would reload the paid rows while
+        // they were still half full, or leave the free row dry for five hours.
+        //
+        // Every row is due immediately, which keeps the "a start establishes a known state" property
+        // the single-row tool had — the tool cannot read how much food a row holds, so the only way to
+        // know is to do a reload. It costs one round of reloads on start, and the food cells for all
+        // of them.
+        var next = _cfg.Pet.Slots.ToDictionary(r => r, _ => DateTime.Now);
+        var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);
+
         try
         {
             while (!QuitPressed && !ct.IsCancellationRequested)
             {
-                if (ReloadOnce(ser, state, ct, out var error))
+                var live = next.Keys.ToList();
+                if (live.Count == 0)
                 {
-                    failures = 0;
-                    var next = DateTime.Now.AddMinutes(CycleMinutes());
-                    state.Message = $"Reloaded. Next reload {next:HH:mm}.";
+                    state.Message = "Every row has failed repeatedly — stopped.";
+                    break;
+                }
+
+                var row = live.OrderBy(r => next[r]).First();
+                if (!SleepUntil(next[row], ct)) break;
+
+                if (ReloadRow(ser, state, row, out var error))
+                {
+                    failures[row] = 0;
+                    next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
+                    state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}.";
                     Console.WriteLine(state.Message);
                     Beep(523, 100);
-                    if (!SleepUntil(next, ct)) break;
                 }
                 else
                 {
-                    failures++;
-                    state.Message = $"Reload failed {failures}/{MaxFailures}: {error}";
+                    failures[row]++;
+                    state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {error}";
                     Console.WriteLine(state.Message);
                     Beep(200, 400);
-                    if (failures >= MaxFailures)
+
+                    // A row that keeps failing is DROPPED rather than taking the run with it. With
+                    // four rows that matters: one bad calibration should not stop the other three
+                    // being fed, and previously any row reaching MaxFailures stopped everything.
+                    if (failures[row] >= MaxFailures)
                     {
-                        state.Message = "Stopped after repeated failures: " + error;
-                        break;
+                        Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
+                            "rows carry on");
+                        next.Remove(row);
+                        continue;
                     }
-                    if (!SleepMinutes(RetryMinutes, ct)) break;
+                    next[row] = DateTime.Now.AddMinutes(RetryMinutes);
                 }
             }
         }
@@ -210,12 +238,12 @@ public sealed class PetTool : ToolBase
     /// They are the same dialog, so normally one mark serves both.</summary>
     private List<int>? EffectiveMax() => _cfg.Pet.MaxButton ?? _cfg.BuySell.MaxButton;
 
-    /// <summary>The row being driven.
-    ///
-    /// ONE ROW TODAY — the first configured. The rows are a list now and the loop that services them
-    /// one at a time is the next step, so every reference goes through here rather than through
-    /// `Slots[0]` scattered about: when that loop lands, this is the property that changes.</summary>
+    /// <summary>The rows this run drives, in configuration order. Empty means nothing is set up.</summary>
     private PetSlotConfig? Row => _cfg.Pet.Slots.Count > 0 ? _cfg.Pet.Slots[0] : null;
+
+    /// <summary>How a row is named in a log line or on the card. 1-based, matching the window.</summary>
+    private string NameOf(PetSlotConfig row) =>
+        $"Row {_cfg.Pet.Slots.IndexOf(row) + 1}";
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
     /// Derived from the config rather than stored, so the rate and the load can never disagree with
@@ -223,9 +251,8 @@ public sealed class PetTool : ToolBase
     ///
     /// Per ROW, because the free row holds two stacks and a paid row five — so the two empty at
     /// different times and one timer cannot serve both.</summary>
-    private double CycleMinutes()
+    private double CycleMinutesFor(PetSlotConfig row)
     {
-        if (Row is not { } row) return 60;
         var full = _cfg.Pet.LoadMinutesFor(row);
         if (full <= 0) return 60;   // a broken rate must not spin the loop
         return Math.Max(5, full + WaitAfterEmptyMinutes);
@@ -233,16 +260,19 @@ public sealed class PetTool : ToolBase
 
     // ── One reload ──────────────────────────────────────────────────────────
 
-    private bool ReloadOnce(SerialPort ser, ToolState state, CancellationToken ct, out string error)
+    /// <summary>One reload of ONE ROW — the sequence is unchanged from the single-row tool; what is
+    /// new is that the row is a parameter rather than whatever the config happened to name. The rows
+    /// are serviced one at a time, which is the player's own ordering constraint (2026-09-19): each
+    /// row is offloaded and re-boarded before the next is touched.</summary>
+    private bool ReloadRow(SerialPort ser, ToolState state, PetSlotConfig row, out string error)
     {
         error = "";
-        _ = ct;
 
         // Each step names itself on the card as it runs. Without this a failure reads as "it opened
         // the window and then closed it again", because the close below is the cleanup and it is the
         // only thing the eye catches.
-        state.Message = "Opening the boarding window…";
-        Log("reload: opening the boarding window");
+        state.Message = $"{NameOf(row)}: opening the boarding window…";
+        Log($"reload {NameOf(row)}: opening the boarding window");
         if (!OpenBoarding(ser, out error)) { Log("  FAILED opening: " + error); return false; }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
@@ -253,11 +283,11 @@ public sealed class PetTool : ToolBase
             // in the loader instead. So a reload off a running boarding starts by ending it — which is
             // also what returns the leftover food. Skipped when boarding is already stopped, because
             // this button TOGGLES: pressing it then would start the very thing we are about to end.
-            if (Row!.BoardingRunning)
+            if (row.BoardingRunning)
             {
-                state.Message = "Ending boarding…";
+                state.Message = $"{NameOf(row)}: ending boarding…";
                 Log("  ending boarding (the pet is in the loader, so it has to come back first)");
-                if (!PressToggle(ser, out error)) { Log("  FAILED ending: " + error); return false; }
+                if (!PressToggle(ser, row, out error)) { Log("  FAILED ending: " + error); return false; }
 
                 // The flag follows the PRESS, not the end of the reload. It used to be set once, at the
                 // bottom, only on success — so a reload that failed between here and the start left it
@@ -270,27 +300,27 @@ public sealed class PetTool : ToolBase
                 // happened rather than what was hoped for. It assumes the press landed, which every
                 // click in this tool assumes; the pet-slot check after placement is what catches it
                 // when that is wrong.
-                Row!.BoardingRunning = false;
+                row.BoardingRunning = false;
                 _persistState?.Invoke();
                 SleepCheck(Math.Max(EndWait, ActionWait));
             }
 
-            state.Message = "Placing the pet…";
+            state.Message = $"{NameOf(row)}: placing the pet…";
             Log("  placing the pet");
-            if (!PlacePet(ser, out error)) { Log("  FAILED placing the pet: " + error); return false; }
+            if (!PlacePet(ser, row, out error)) { Log("  FAILED placing the pet: " + error); return false; }
 
-            state.Message = "Loading the food…";
+            state.Message = $"{NameOf(row)}: loading the food…";
             Log("  loading the food");
-            if (!LoadFood(ser, out error)) { Log("  FAILED loading the food: " + error); return false; }
+            if (!LoadFood(ser, row, out error)) { Log("  FAILED loading the food: " + error); return false; }
 
-            state.Message = "Starting boarding…";
+            state.Message = $"{NameOf(row)}: starting boarding…";
             Log("  starting boarding");
-            if (!StartBoarding(ser, out error)) { Log("  FAILED starting: " + error); return false; }
+            if (!StartBoarding(ser, row, out error)) { Log("  FAILED starting: " + error); return false; }
 
             // Same reasoning as the end above: the press is what starts the feed, so the flag is set
             // here rather than at the end of a reload that can still fail after it (the sleep below
             // cannot fail, but the intent is what matters — the state changed at the press).
-            Row!.BoardingRunning = true;
+            row.BoardingRunning = true;
             _persistState?.Invoke();
 
             // Let the start take before the cleanup closes the window it was pressed in.
@@ -357,7 +387,7 @@ public sealed class PetTool : ToolBase
     /// not necessarily land here. IconMatch exists for exactly that case and is deliberately not wired
     /// in yet — proving the rest of the flow end to end is worth more than solving the hard case
     /// first.</summary>
-    private bool PlacePet(SerialPort ser, out string error)
+    private bool PlacePet(SerialPort ser, PetSlotConfig row, out string error)
     {
         error = "";
         var pet = _cfg.Pet;
@@ -396,7 +426,7 @@ public sealed class PetTool : ToolBase
 
             SleepCheck(Math.Max(PlaceSettle, ActionWait));
 
-            switch (PetSlotIsEmpty())
+            switch (PetSlotIsEmpty(row))
             {
                 case false:
                     if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
@@ -424,10 +454,9 @@ public sealed class PetTool : ToolBase
     /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
     /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
     /// otherwise work.</summary>
-    private bool? PetSlotIsEmpty()
+    private bool? PetSlotIsEmpty(PetSlotConfig row)
     {
         var pet = _cfg.Pet;
-        if (Row is not { } row) return null;
         if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
 
         using var reference = IconMatch.FromBase64(pet.PetSlotEmptyPng);
@@ -453,12 +482,12 @@ public sealed class PetTool : ToolBase
     /// stack empties a cell, so a fixed index would right-click an empty slot on every pass after the
     /// first. A reload consumes one cell per stack, so the marked set wants to be at least that large
     /// per row — and the "no food cells left" failure comes correspondingly sooner if it is not.</summary>
-    private bool LoadFood(SerialPort ser, out string error)
+    private bool LoadFood(SerialPort ser, PetSlotConfig row, out string error)
     {
         error = "";
         var pet = _cfg.Pet;
 
-        var stacks = Math.Max(1, Row!.Stacks);
+        var stacks = Math.Max(1, row.Stacks);
         for (int stack = 0; stack < stacks; stack++)
         {
             var cell = NextFoodCell(pet);
@@ -532,18 +561,18 @@ public sealed class PetTool : ToolBase
     /// <summary>Presses the 開始代養 / 結束代養 button — the same press serves both, which is exactly
     /// why the caller has to know which one it wants. The label box's centre is the click: the label
     /// sits on the button.</summary>
-    private bool PressToggle(SerialPort ser, out string error)
+    private bool PressToggle(SerialPort ser, PetSlotConfig row, out string error)
     {
-        var label = Row!.ToggleLabel!;
+        var label = row.ToggleLabel!;
         var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
         return Click(ser, centre, right: false, "the start/end boarding button", out error);
     }
 
-    private bool StartBoarding(SerialPort ser, out string error)
+    private bool StartBoarding(SerialPort ser, PetSlotConfig row, out string error)
     {
         // The toggle's LABEL box is what is calibrated, so its centre is the click. The label sits on
         // the button, which is why one box serves as both the read and the press.
-        var label = Row!.ToggleLabel!;
+        var label = row.ToggleLabel!;
         var centre = new List<int> { label[0] + label[2] / 2, label[1] + label[3] / 2 };
         return Click(ser, centre, right: false, "the start button", out error);
     }
