@@ -5014,7 +5014,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  $"{_service.Config.Pet.WaitAfterEmptyMinutes} reloads every " +
                  $"{_service.Config.Pet.LoadMinutes + _service.Config.Pet.WaitAfterEmptyMinutes}. " +
                  "It is POSITIVE on purpose: reloading after the feeder empties guarantees it IS " +
-                 "empty when two stacks go in, and what the game does with a top-up onto a partial " +
+                 "empty when the stacks go in, and what the game does with a top-up onto a partial " +
                  "stack is unknown. The cost is that many minutes with nothing fed; 1-2 covers any " +
                  "drift, and a negative value reloads early and discards food." + Environment.NewLine +
                  "Action wait — the pause after EACH step of a reload before the next one. Too short " +
@@ -5454,7 +5454,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         var lines = new List<string>();
         if (pet.PetCell is not { Count: 2 }) lines.Add("the pet's bag cell is not marked");
         if (pet.FoodCells.Count == 0) lines.Add("no food cells are marked");
-        if (pet.FoodCells.Count == 1) lines.Add("only one food cell is marked — a load is two stacks");
+        // Counts CELLS, not reloads — a reload now eats StacksPerReload of them, so the press that
+        // empties the list arrives that much sooner. Said here rather than discovered mid-run, when
+        // the reload has already ended boarding and cannot start it again.
+        if (pet.FoodCells.Count < pet.StacksPerReload)
+            lines.Add($"only {pet.FoodCells.Count} food cell(s) are marked — one reload loads " +
+                      $"{pet.StacksPerReload} stacks, one cell each");
         if (max is not { Count: 2 }) lines.Add("no MAX is calibrated (Buy / Sell, or Calibrate Pet)");
         if (!BagGrid.IsValidRect(pet.BagGrid)) lines.Add("the boarding bag grid is not calibrated");
         if (pet.PageTabs.Count == 0) lines.Add("the bag page tabs are not calibrated");

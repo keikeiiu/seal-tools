@@ -177,18 +177,29 @@ be trusted with. Two ways out, neither built: read the boarding window's own
 `到N為止預計所需時間` and multiply by the rate to get the current level's cost directly, or pick the
 species once when the tool is set up and treat it as configuration.
 
-### The load size — resolved
+### The load size — resolved, and it is NOT one number
 
-The food area reads `150 300`, which I took to be a 300-item cap on the whole load. Combined with the
-player's answer — **every two stacks, the pet must be reloaded** — it means:
+**The capacity is a property of the ROW** (player, 2026-09-19):
 
-- **the load is two stacks, 600 items** — exactly what the schedule was first built on;
-- **`300` is the per-stack cap**, not the size of a load;
-- so a load lasts **200 minutes**, and a stage-6 pet takes **five loads** to `+10`.
+> 1 free row is 2 slots for food / 3 paid row are 5 slots for food
 
-The "one slot, 100-minute period, eight reloads" reading was wrong and is withdrawn. (It is also the
-second time an inference from a screenshot has been wrong — the Sell-grid one being the first — which is
-why the schedule keeps getting marked as provisional until the player confirms it.)
+- **The free row takes two stacks, 600 items.** `300` is the per-stack cap, never the size of a load.
+- **Each paid row takes five stacks, 1,500 items.**
+- So a load lasts **200 minutes on the free row and 500 on a paid one**, and a stage-6 pet takes
+  **five loads on the free row, about two on a paid one**.
+
+The earlier "the load is two stacks" was TRUE OF THE ROW IT WAS MEASURED ON and generalised to all of
+them. The correction came from the same capture that produced the mistake: the boarded free row showed
+two boxes holding `198` and `300`, and the three idle paid rows below it each showed five. I read the
+five as what a row holds; the player read it as what THOSE rows hold.
+
+That difference is worth 2.5× on the reload count — ~4.2 per pet on the free row against ~1.7 on a paid
+one — and every reload is a chance to leave the pet unboarded, which §7 calls the one permanent failure.
+**Which is an argument for boarding on the paid rows well beyond the four-at-once they were bought for.**
+
+*(This is the third time an inference from a screenshot has been wrong — the Sell-grid one first, then
+"the load is 300". The pattern is the same each time: reading a value off one instance and treating it
+as a rule. It is why `StacksPerReload` is now a per-row field rather than a constant.)*
 
 ### Ending boarding drops the pet too
 
@@ -591,7 +602,9 @@ These are the things the design rests on that are **not** yet confirmed. Only th
 building the calibration tab; the rest change numbers or tolerances.
 
 Answered by the player on 2026-09-17, and now folded into the design above: the farming is the game's
-own; the bag auto-opens with the boarding window; the bag has **three** pages; the feeder has two slots;
+own; the bag auto-opens with the boarding window; the bag has **three** pages; the FREE row has two food
+slots and each paid row five (corrected 2026-09-19 — this said "the feeder has two slots", which was the
+free row generalised to all of them);
 the food is locked via the bag's own lock; the count dialog takes **one** Enter with no confirmation
 after it; and all ten stacks are a single item type, which is your setup responsibility rather than
 something the tool checks.

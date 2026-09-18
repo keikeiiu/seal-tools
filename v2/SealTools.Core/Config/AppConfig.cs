@@ -224,14 +224,14 @@ public sealed class PetConfig
 
     /// <summary>How many minutes to wait AFTER the feeder should be empty before reloading.
     ///
-    /// The cycle is `load_minutes + this`. A load is 600 items at 3/min = 200 minutes, so the default
-    /// of 5 reloads every 205.
+    /// The cycle is `load_minutes + this`. On the free row the default is 2 stacks = 600 items at
+    /// 3/min = 200 minutes, so the default of 5 reloads every 205; a paid row's 5 stacks make it 505.
     ///
     /// **Positive, and that is the point** (player, 2026-09-19): reloading *after* the feeder empties
-    /// guarantees the feeder IS empty when two stacks go in. Reloading early leaves food in a slot
-    /// that takes two stacks, and what the game does with a top-up onto a partial is unknown —
+    /// guarantees the feeder IS empty when the stacks go in. Reloading early leaves food in a slot
+    /// that takes several stacks, and what the game does with a top-up onto a partial is unknown —
     /// refuses, swaps, or swallows it. A five-minute gap with nothing fed is the price of never
-    /// finding out, and it is 2.4% of the cycle.
+    /// finding out, and it is 1% of the cycle.
     ///
     /// Negative means reload early, which discards food: at 3/min, arriving 10 minutes early sets
     /// aside 30 items every cycle. Available because the trade may change once we know what a
@@ -251,15 +251,39 @@ public sealed class PetConfig
     /// register, which is the failure this tool cannot see without the pet-slot check.</summary>
     public int ActionWaitMs { get; set; } = 1200;
 
-    /// <summary>How many items one boarding load is: two stacks of the game's 300 cap.</summary>
-    public int LoadItems { get; set; } = 600;
+    /// <summary>The game's per-stack cap, and a game constant rather than a setting.</summary>
+    public const int StackSize = 300;
+
+    /// <summary>How many food stacks one reload puts into a row.
+    ///
+    /// **This is a property of the ROW, not of the tool** (player, 2026-09-19):
+    ///
+    /// > 1 free row is 2 slots for food / 3 paid row are 5 slots for food
+    ///
+    /// So the free row holds 2 stacks and each paid row holds 5. The capture showed exactly that and
+    /// was nearly misread: the boarded free row rendered two boxes holding `198` and `300`, while the
+    /// three idle PAID rows underneath it each rendered five empty ones. The earlier reading — "a row
+    /// holds five" — was wrong, because the row it was measured on was the one row that does not.
+    ///
+    /// **It defaults to 2 because 2 is the row this tool drives today.** The single-row calibration is
+    /// the free row's toggle, so a 5 here would right-click three empty slots every reload. It becomes
+    /// a per-`pet_slots` field with the four-row work, which is also where the 5 pays off: a paid row's
+    /// 1,500-item load lasts 500 minutes against a stage-6 pet's ~2,514 items, so ~1.7 reloads per pet
+    /// instead of ~4.2 — and every reload is a chance to leave the pet unboarded, which the plan calls
+    /// the one permanent failure mode.</summary>
+    public int StacksPerReload { get; set; } = 2;
+
+    /// <summary>How many items one boarding load is, DERIVED from the stack count so the two can never
+    /// disagree. It was a settable 600 before, which is how "two stacks" became invisible.</summary>
+    public int LoadItems => StacksPerReload * StackSize;
 
     /// <summary>Items the game consumes per minute while boarding runs. Stage 6 is 3; the boarding
-    /// window states this itself (`每1分 讀取3個`), so it is a measured game constant rather than a
-    /// guess.</summary>
+    /// window states this itself (`每1分 攝取3個`), so it is a measured game constant rather than a
+    /// guess — and the row states its own, so a stage-7 row saying 4 is readable rather than a number
+    /// this config is simply wrong about.</summary>
     public int ItemsPerMinute { get; set; } = 3;
 
-    /// <summary>Minutes a full load lasts, derived rather than stored — so the two numbers above can
+    /// <summary>Minutes a full load lasts, derived rather than stored — so the numbers above can
     /// never disagree with it.</summary>
     public int LoadMinutes => ItemsPerMinute > 0 ? LoadItems / ItemsPerMinute : 0;
 }

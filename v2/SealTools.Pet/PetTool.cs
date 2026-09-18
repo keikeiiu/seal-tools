@@ -12,7 +12,7 @@ namespace SealTools.Pet;
 // The game feeds the pet; this only RELOADS THE FEEDER. That reload is not a top-up: ending boarding
 // returns the pet to the bag as well as the food, so every reload is
 //
-//     end  →  find the pet  →  re-place it  →  load two stacks  →  start
+//     end  →  find the pet  →  re-place it  →  load the stacks  →  start
 //
 // and it is why the pet has to be FOUND rather than pointed at — it lands in the first free bag slot,
 // which depends on whatever else the bag held at that instant.
@@ -427,15 +427,20 @@ public sealed class PetTool : ToolBase
         return difference <= pet.PetSlotOccupiedAbove;
     }
 
-    /// <summary>Two stacks, one transaction each. The cell to use rotates through the marked set
-    /// rather than always taking cell 0 — the first stack empties a cell, so a fixed index would
-    /// right-click an empty slot on the second pass.</summary>
+    /// <summary>One transaction per stack, filling as many of the row's five slots as asked for —
+    /// see <see cref="PetConfig.StacksPerReload"/> for why it is five and not two.
+    ///
+    /// The cell to use rotates through the marked set rather than always taking cell 0: the first
+    /// stack empties a cell, so a fixed index would right-click an empty slot on every pass after
+    /// the first. With five stacks a reload now consumes five cells, so the marked set wants to be
+    /// that much larger — and the "no food cells left" failure comes that much sooner if it is not.</summary>
     private bool LoadFood(SerialPort ser, out string error)
     {
         error = "";
         var pet = _cfg.Pet;
 
-        for (int stack = 0; stack < 2; stack++)
+        var stacks = Math.Max(1, pet.StacksPerReload);
+        for (int stack = 0; stack < stacks; stack++)
         {
             var cell = NextFoodCell(pet);
             if (cell == null)
