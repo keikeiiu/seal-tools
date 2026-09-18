@@ -202,9 +202,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     private TextBlock? _petCellInfo;
     /// <summary>The "what is missing before Start" line on the Pet tab.</summary>
     private TextBlock? _petReadyText;
-    /// <summary>Ticked while the pet is boarding rather than in the bag — see PetSlotConfig.BoardingRunning.</summary>
-    private CheckBox? _petBoardingRunning;
-
     /// <summary>Which breeding row the Calibrate Pet tab is marking. See <see cref="EditRow"/>.</summary>
     private int _petEditRow;
 
@@ -213,6 +210,14 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>This row's food-slot count — 2 on the free row, 5 on a paid one.</summary>
     private Wpf.Ui.Controls.TextBox? _petStacksBox;
+
+    /// <summary>Whether the row being edited is boarding right now. Per row, and the tool's one piece
+    /// of unreadable state — see where it is built.</summary>
+    private CheckBox? _petRowBoarding;
+
+    /// <summary>Suppresses the boarding tick's handlers while the field is being re-read for a row
+    /// switch, or setting it would write the value straight back.</summary>
+    private bool _syncingPetRow;
 
     /// <summary>The queue on the Pet tab: the label field, the preview of the last crop, and the list.</summary>
     private Wpf.Ui.Controls.TextBox? _petQueueLabel;
@@ -4893,6 +4898,33 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petStacksBox.VerticalAlignment = VerticalAlignment.Center;
         _petStacksBox.TextChanged += PetStacksChanged;
 
+        // PER ROW, and it is the tool's one piece of state it cannot read for itself. The toggle is
+        // one button per row: pressing it while boarding runs ENDS it, and while stopped STARTS it, so
+        // a wrong flag does the exact opposite of the step. Ticked while this row is boarding; the
+        // tool maintains it afterwards, because a successful reload always leaves boarding running.
+        //
+        // It was on the Pet tab and edited only row 0, which left rows 2-4 permanently "stopped" to
+        // the tool — and with them boarding, the first reload would have pressed start on a running
+        // feed and stopped it.
+        _petRowBoarding = new CheckBox
+        {
+            Content = "this row is boarding now",
+            Margin = new Thickness(0, 4, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _petRowBoarding.Checked += (_, _) =>
+        {
+            if (_syncingPetRow) return;
+            EditRow(_service.Config.Pet).BoardingRunning = true;
+            PetSave();
+        };
+        _petRowBoarding.Unchecked += (_, _) =>
+        {
+            if (_syncingPetRow) return;
+            EditRow(_service.Config.Pet).BoardingRunning = false;
+            PetSave();
+        };
+
         var rowRow = new StackPanel { Orientation = Orientation.Horizontal };
         addRow.Margin = new Thickness(8, 0, 0, 0);
         rowRow.Children.Add(_petRowStrip);
@@ -4906,7 +4938,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "not a preference, and the tool reloads each row on its own clock because of it. " +
                  "Getting it wrong reloads a row early or leaves it dry."),
             rowRow,
-            LabeledField("Food slots in this row", _petStacksBox)));
+            LabeledField("Food slots in this row", _petStacksBox),
+            _petRowBoarding));
 
         var drawToggle = MakeButton("Draw start button", ControlAppearance.Secondary);
         drawToggle.Click += (_, _) => PetArmDrag("toggle");
@@ -5100,25 +5133,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Wait after empty (min)", marginBox),
             LabeledField("Action wait (ms)", waitBox)));
 
-        // The reload's one piece of state it cannot read for itself. The 開始代養 / 結束代養 control is
-        // a single button, so pressing it does the OPPOSITE of what is needed if the tool has the
-        // state wrong — ending a boarding it meant to start, or the reverse.
-        _petBoardingRunning = new CheckBox
-        {
-            Content = "The pet is already in the loader (boarding is running)",
-            IsChecked = EditRow(_service.Config.Pet).BoardingRunning,
-            Margin = new Thickness(0, 4, 0, 4),
-        };
-        _petBoardingRunning.Checked += (_, _) => { EditRow(_service.Config.Pet).BoardingRunning = true; PetCellSave(hint); };
-        _petBoardingRunning.Unchecked += (_, _) => { EditRow(_service.Config.Pet).BoardingRunning = false; PetCellSave(hint); };
-
+        // Boarding state used to be ticked here, and it edited ROW 1 whatever you were looking at —
+        // so rows 2-4 were permanently "stopped" to the tool while they were really boarding, and the
+        // first reload would have pressed start on a running feed and stopped it. It lives on
+        // Calibrate Pet now, one tick per row, beside the marks it belongs to.
         panel.Children.Add(Section("Boarding state",
-            Hint("Tick this if the pet is boarding right now rather than sitting in the bag. The " +
-                 "reload has to END boarding first to get the pet back before it can put it in again, " +
-                 "and the start/end control is one button — so pressing it with the wrong idea of the " +
-                 "state does the opposite of what the step needs. The tool ticks it for you after a " +
-                 "successful reload, since a finished reload always leaves boarding running."),
-            _petBoardingRunning));
+            Hint("Per ROW now, and it moved to Calibrate Pet — one tick each, beside the row's own " +
+                 "marks. It is the tool's one piece of state it cannot read for itself: the 結束代養 / " +
+                 "開始代養 control is one button per row, so pressing it with the wrong idea of the " +
+                 "state does the opposite of what the step needs. The tool ticks each one for you " +
+                 "after a successful reload, since a finished reload always leaves boarding running.")));
 
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read
@@ -5654,6 +5678,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petStacksBox.TextChanged -= PetStacksChanged;
             _petStacksBox.Text = pet.Slots[_petEditRow].Stacks.ToString(CultureInfo.InvariantCulture);
             _petStacksBox.TextChanged += PetStacksChanged;
+        }
+
+        if (_petRowBoarding != null && pet.Slots.Count > _petEditRow)
+        {
+            _syncingPetRow = true;
+            _petRowBoarding.IsChecked = pet.Slots[_petEditRow].BoardingRunning;
+            _syncingPetRow = false;
         }
 
         // The checklist marks which row is being edited and lists them all, so it has to follow the
