@@ -6400,7 +6400,28 @@ public partial class MainWindow : FluentWindow, IDisposable
                 HidPointer.Click(ser);
                 await Task.Delay(900);
 
-                var cap = await WithLauncherHiddenAsync(() => ScreenCapture.CaptureClient(hwnd));
+                var page = p;
+                var cap = await WithLauncherHiddenAsync(() =>
+                {
+                    var c = ScreenCapture.CaptureClient(hwnd);
+                    // Saved so a wrong count can be LOOKED at rather than argued about: the image is
+                    // the bag exactly as the scan saw it, and the pets that did not match are in it.
+                    if (c != null)
+                    {
+                        try
+                        {
+                            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "reads");
+                            Directory.CreateDirectory(dir);
+                            c.Image.ImWrite(Path.Combine(dir,
+                                $"scan_page{page + 1}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
+                        }
+                        catch
+                        {
+                            // Evidence is a convenience; never fail a scan over it.
+                        }
+                    }
+                    return c;
+                });
                 if (cap == null) { report.Add($"page {p + 1}: couldn't capture the bag"); continue; }
 
                 using var bag = cap.Image;
@@ -6441,6 +6462,21 @@ public partial class MainWindow : FluentWindow, IDisposable
                 report.Add($"    {i + 1}. {pet.Queue[i].Label ?? "(no name)"}: {totals[i]} cell(s)");
 
             hint.Text = string.Join(Environment.NewLine, report);
+
+            // The same report, written down. The card's message is overwritten by the next thing and
+            // gone when the tab changes, and a scan is evidence about a queue that may be wrong — the
+            // one case where reading it later actually matters.
+            try
+            {
+                var dir = Path.Combine(AppContext.BaseDirectory, "logs", "reads");
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, $"scan_{DateTime.Now:yyyyMMdd_HHmmss}.txt"),
+                    hint.Text + Environment.NewLine);
+            }
+            catch
+            {
+                // As above — the report is on screen either way.
+            }
         }
         catch (Exception ex)
         {
