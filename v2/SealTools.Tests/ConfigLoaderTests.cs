@@ -506,6 +506,132 @@ public class ConfigLoaderTests
         Assert.Equal("icon-png", queued.Png);
     }
 
+    // The launcher has a Save on each pet tab and the two are SCOPED: Calibrate Pet writes the
+    // machine's half, the Pet tab writes the run's. That is only safe if the two halves together
+    // cover every field — a field in neither is one nothing ever saves, which is precisely the bug
+    // the single projection was introduced to end.
+    //
+    // So the assertion is a UNION, not a list: apply both to an empty block and the result must be
+    // identical to the whole-block projection. It fails the moment a field is added and put in
+    // neither half, and it does not care which half a field lands in.
+    [Fact]
+    public void TheTwoScopedSavesTogetherCoverTheWholeBlock()
+    {
+        var cfg = new PetConfig
+        {
+            MenuButton = new List<int> { 1, 2 },
+            FeedIcon = new List<int> { 3, 4 },
+            CloseButton = new List<int> { 5, 6 },
+            PageTabs = new List<List<int>> { new() { 7, 8 } },
+            PetSlotEmptyPng = "empty-slot-png",
+            BagGrid = new List<int> { 25, 26, 27, 28 },
+            BagSlot = new List<int> { 29, 30, 31, 32 },
+            FoodSlots = new List<List<int>> { new() { 0, 33 } },
+            FoodSlotsUsed = 7,
+            ReturnSlot = new List<int> { 34, 35 },
+            MaxButton = new List<int> { 40, 41 },
+            WaitAfterEmptyMinutes = 3,
+            ActionWaitMs = 1234,
+            Slots = new List<PetSlotConfig>
+            {
+                new()
+                {
+                    ToggleLabel = new List<int> { 9, 10, 11, 12 },
+                    BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
+                    FeederSlots = new List<List<int>> { new() { 17, 18, 19, 20 } },
+                    Stacks = 5,
+                    BoardingRunning = true,
+                },
+            },
+            Queue = new List<PetQueueEntry>
+            {
+                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png" },
+            },
+        };
+
+        // Each half on its OWN block, then the question per field: did either of them write the value
+        // the config actually holds?
+        //
+        // COMPARED AGAINST THE CONFIG, not against From — and that is the whole test. Comparing
+        // against From looks equivalent and is worthless: From is defined as the two halves, so it
+        // loses whatever they lose and agrees with itself. Compared against the config, a field in
+        // neither half leaves its block at the CLR default while the config holds a non-default, and
+        // the assertion fires. `cfg` below therefore fills every field on purpose.
+        var calibrationOnly = new ConfigLoader.LocalPet();
+        ConfigLoader.LocalPet.ApplyCalibration(calibrationOnly, cfg);
+
+        var sessionOnly = new ConfigLoader.LocalPet();
+        ConfigLoader.LocalPet.ApplySession(sessionOnly, cfg);
+
+        // The nested shapes are MAPPED, so reference equality is the wrong check and they are compared
+        // field by field below. Slots is also the one property BOTH halves touch — calibration owns the
+        // geometry, the session owns BoardingRunning.
+        var mapped = new[] { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
+
+        foreach (var prop in typeof(ConfigLoader.LocalPet).GetProperties())
+        {
+            if (mapped.Contains(prop.Name)) continue;
+            var source = typeof(PetConfig).GetProperty(prop.Name)!.GetValue(cfg);
+            var byCalibration = Equals(prop.GetValue(calibrationOnly), source);
+            var bySession = Equals(prop.GetValue(sessionOnly), source);
+
+            Assert.True(byCalibration || bySession,
+                $"LocalPet.{prop.Name} is in NEITHER scoped save, so no button ever writes it");
+        }
+
+        // Slots: calibration supplies the geometry, and the rows have to exist before the session can
+        // say anything about them.
+        var cal = Assert.Single(calibrationOnly.Slots!);
+        Assert.Equal(new List<int> { 9, 10, 11, 12 }, cal.ToggleLabel);
+        Assert.Equal(5, cal.Stacks);
+        Assert.True(cal.BoardingRunning);
+
+        // Queue: the session's, and the calibration half must not touch it.
+        var q = Assert.Single(sessionOnly.Queue!);
+        Assert.Equal("p", q.Label);
+        Assert.Equal("icon-png", q.Png);
+        // Null on a fresh block: the calibration half sets the queue to nothing at all, which is what
+        // "leaves it alone" means when there was nothing there to leave.
+        Assert.True(calibrationOnly.Queue is null or { Count: 0 });
+    }
+
+    /// <summary>And the scoping has to be REAL, or it is just a union with extra steps: a calibration
+    /// save must not disturb the run's half, because that is the whole reason for splitting them.</summary>
+    [Fact]
+    public void ACalibrationSaveLeavesTheSessionHalfAlone()
+    {
+        var cfg = new PetConfig
+        {
+            ReturnSlot = new List<int> { 1, 2 },
+            FoodSlots = new List<List<int>> { new() { 0, 33 } },
+            FoodSlotsUsed = 4,
+            Queue = new List<PetQueueEntry> { new() { Label = "kept", Png = "icon" } },
+            Slots = new List<PetSlotConfig> { new() { ToggleLabel = new List<int> { 9, 10, 11, 12 } } },
+        };
+        cfg.Slots[0].BoardingRunning = true;
+
+        // Calibration first, because the rows have to EXIST before either half can write anything
+        // into them — ApplySession deliberately does not invent a row, since introducing one is not
+        // the session's to do. That ordering is the real one: a machine is calibrated before it runs.
+        var onDisk = new ConfigLoader.LocalPet();
+        ConfigLoader.LocalPet.ApplyCalibration(onDisk, cfg);
+        ConfigLoader.LocalPet.ApplySession(onDisk, cfg);
+
+        // A calibration save from an app that does NOT know the session state — the shape of a
+        // restart where only the machine half was re-read.
+        var afterCalibration = onDisk;
+        ConfigLoader.LocalPet.ApplyCalibration(afterCalibration, new PetConfig
+        {
+            Slots = new List<PetSlotConfig> { new() { ToggleLabel = new List<int> { 1, 1, 1, 1 } } },
+        });
+
+        Assert.Equal(new List<int> { 1, 2 }, afterCalibration.ReturnSlot);
+        Assert.Equal(4, afterCalibration.FoodSlotsUsed);
+        Assert.Equal("kept", Assert.Single(afterCalibration.Queue!).Label);
+        Assert.True(Assert.Single(afterCalibration.Slots!).BoardingRunning);
+        Assert.Equal(new List<int> { 1, 1, 1, 1 }, Assert.Single(afterCalibration.Slots!).ToggleLabel);
+    }
+
     // The pet block used to be one flat set of fields. It is now `slots:` plus `return_slot` and
     // `food_slots`, and the loader sets IgnoreUnmatchedProperties — so an old file does not fail, it
     // just silently loses every key nothing maps to any more. That is a player's whole pet

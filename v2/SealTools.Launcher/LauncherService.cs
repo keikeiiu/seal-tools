@@ -300,16 +300,16 @@ public sealed class LauncherService : IDisposable
     /// cells it had already emptied — or pressing a toggle whose current meaning it has forgotten,
     /// which would end the boarding it meant to start.
     ///
-    /// The WHOLE pet block, through the same single projection the two Save buttons use, rather than
-    /// the two fields it used to write. The tool no longer owns those two fields in isolation: the
-    /// boarding flag now lives on a breeding row, and writing a subset of the rows back is how a
-    /// half-saved pet block gets made.</summary>
+    /// The SESSION half only, like the Pet tab's Save. The tool changes run state; it has no business
+    /// rewriting a bag grid or a row's geometry, and writing the whole block would make every
+    /// persisted count a chance to lose a calibration.</summary>
     private void PersistPetState()
     {
         try
         {
             var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(Config.Pet);
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplySession(local.Pet, Config.Pet);
             _loader.SaveLocal(local);
         }
         catch (Exception ex)

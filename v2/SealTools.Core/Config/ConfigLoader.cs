@@ -456,36 +456,83 @@ public sealed class ConfigLoader
         /// field to this class and forgetting it here fails the build's tests rather than the player's
         /// next session. Both save buttons now call this, so neither can drop what the other wrote.
         /// </summary>
-        public static LocalPet From(PetConfig p) => new()
+        /// <summary>THE one place a <see cref="PetConfig"/> becomes a LocalPet — the union of the two
+        /// scoped writers below.</summary>
+        public static LocalPet From(PetConfig p)
         {
-            MenuButton = p.MenuButton,
-            FeedIcon = p.FeedIcon,
-            CloseButton = p.CloseButton,
-            PageTabs = p.PageTabs,
-            PetSlotEmptyPng = p.PetSlotEmptyPng,
-            BagGrid = p.BagGrid,
-            BagSlot = p.BagSlot,
-            FoodSlots = p.FoodSlots,
-            FoodSlotsUsed = p.FoodSlotsUsed,
-            ReturnSlot = p.ReturnSlot,
-            MaxButton = p.MaxButton,
-            WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes,
-            ActionWaitMs = p.ActionWaitMs,
-            Slots = p.Slots.Select(s => new LocalPetSlot
+            var local = new LocalPet();
+            ApplyCalibration(local, p);
+            ApplySession(local, p);
+            return local;
+        }
+
+        /// <summary>The CALIBRATION half — everything marked on Calibrate Pet: the way into the
+        /// window, the bag's grid, and each row's geometry.
+        ///
+        /// Writes ONTO an existing LocalPet rather than replacing it, and that distinction is the
+        /// whole safety of the thing. The launcher saves from two tabs, and each is scoped to its own
+        /// — so a save has to leave the other half exactly as the file had it. Assigning a fresh
+        /// object would blank the half it is not about, which is the bug that cost the player their
+        /// food cells twice already.
+        ///
+        /// The rows merge BY INDEX: geometry is overwritten, but <see cref="LocalPetSlot.BoardingRunning"/>
+        /// is left alone, because that belongs to the session half and a calibration save must not
+        /// clear it.</summary>
+        public static void ApplyCalibration(LocalPet t, PetConfig p)
+        {
+            t.MenuButton = p.MenuButton;
+            t.FeedIcon = p.FeedIcon;
+            t.CloseButton = p.CloseButton;
+            t.PageTabs = p.PageTabs;
+            t.PetSlotEmptyPng = p.PetSlotEmptyPng;
+            t.BagGrid = p.BagGrid;
+            t.BagSlot = p.BagSlot;
+            t.MaxButton = p.MaxButton;
+
+            var merged = new List<LocalPetSlot>();
+            for (int i = 0; i < p.Slots.Count; i++)
             {
-                ToggleLabel = s.ToggleLabel,
-                BoardingPetSlot = s.BoardingPetSlot,
-                FeederSlots = s.FeederSlots,
-                Stacks = s.Stacks,
-                BoardingRunning = s.BoardingRunning,
-            }).ToList(),
-            Queue = p.Queue.Select(q => new LocalPetQueueEntry
+                var src = p.Slots[i];
+                var running = i < (t.Slots?.Count ?? 0) ? t.Slots![i].BoardingRunning : src.BoardingRunning;
+                merged.Add(new LocalPetSlot
+                {
+                    ToggleLabel = src.ToggleLabel,
+                    BoardingPetSlot = src.BoardingPetSlot,
+                    FeederSlots = src.FeederSlots,
+                    Stacks = src.Stacks,
+                    BoardingRunning = running,
+                });
+            }
+            t.Slots = merged;
+        }
+
+        /// <summary>The SESSION half — everything the Pet tab owns: the bag marks, the queue, the
+        /// timing, and whether each row is boarding. All of it describes THIS run rather than the
+        /// machine, which is why it is the half that changes between runs.
+        ///
+        /// Writes onto an existing LocalPet for the same reason as above, and touches only
+        /// <see cref="LocalPetSlot.BoardingRunning"/> within the rows — walking by index and doing
+        /// nothing when the counts disagree, because a row added on the other tab is not this half's
+        /// to introduce.</summary>
+        public static void ApplySession(LocalPet t, PetConfig p)
+        {
+            t.FoodSlots = p.FoodSlots;
+            t.FoodSlotsUsed = p.FoodSlotsUsed;
+            t.ReturnSlot = p.ReturnSlot;
+            t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
+            t.ActionWaitMs = p.ActionWaitMs;
+
+            t.Queue = p.Queue.Select(q => new LocalPetQueueEntry
             {
                 Label = q.Label,
                 Rect = q.Rect,
                 Png = q.Png,
-            }).ToList(),
-        };
+            }).ToList();
+
+            if (t.Slots == null) return;
+            for (int i = 0; i < p.Slots.Count && i < t.Slots.Count; i++)
+                t.Slots[i].BoardingRunning = p.Slots[i].BoardingRunning;
+        }
     }
 
     /// <summary>The pet block AS IT WAS WRITTEN BEFORE the breeding rows existed — one flat set of

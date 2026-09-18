@@ -219,6 +219,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// Calibrate Pet — reporting a Pet-tab save into the other tab's message box says nothing useful.</summary>
     private TextBlock? _petTabHint;
 
+    /// <summary>The Pet tab's checklist — its own features only, like Calibrate Pet's.</summary>
+    private TextBlock? _petSessionChecklist;
+
     /// <summary>Suppresses the tick handlers while the panel is being rebuilt, or repopulating it
     /// would write every row's value straight back.</summary>
     private bool _syncingPetRow;
@@ -5071,6 +5074,16 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "a stale mark means it right-clicks whatever has taken that slot since."),
             cellsPanel));
 
+        // This tab's OWN checklist, the counterpart of Calibrate Pet's "Setup so far" — same shape,
+        // same idea, and only this tab's items. What the two tabs hold is different in kind: that one
+        // is what is true of the machine, this one is what is true of this run.
+        _petSessionChecklist = Mono();
+        panel.Children.Add(Section("Setup so far — this tab",
+            Hint("The run's own state, as opposed to the machine's. The bag marks change whenever " +
+                 "the bag does, and the boarding flags change every reload — none of it is a " +
+                 "calibration and none of it is reported on Calibrate Pet."),
+            _petSessionChecklist));
+
         var ready = Mono();
         ready.Text = "";
         _petReadyText = ready;
@@ -5225,6 +5238,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPetBoardingTicks();
         RefreshPetQueue();
         RefreshPetCells();
+        RefreshPetSessionChecklist();
         RefreshPetReady();
         return MakeTab("Pet", panel);
     }
@@ -5543,14 +5557,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
             Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
-            // These two live on the PET tab, and they are the ones a stray click can empty — the bag
-            // picker TOGGLES, so clicking a marked cell removes it. Listed here because losing them
-            // silently is what made a live run look like it had been "reset": the row marks were all
-            // intact and the two things the reload actually draws on were gone.
-            Mark(pet.ReturnSlot is { Count: 2 }, "return slot          (Pet tab)"),
-            Mark(pet.FoodSlots.Count > 0, $"food cells           (Pet tab) {pet.FoodSlots.Count} marked, " +
-                                          $"{pet.FoodSlotsUsed} used"),
         };
+        // THIS TAB'S ITEMS ONLY. The return slot, the food cells and the queue are the Pet tab's, and
+        // reporting them here made a per-run gap look like a calibration gap — the two tabs are meant
+        // to be answerable separately, and a checklist that spans both is how they stopped being.
 
         // EVERY row, not just the one being edited. The whole point of the rows is that they differ —
         // a checklist that showed only the selected one would report "ready" for a row 3 that had
@@ -5600,7 +5610,38 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Read/write one of a row's food-count boxes by position. They are a list because a paid
     /// row shows five, but the calibrator has two drag targets and that is all it needs to name.</summary>
-    /// <summary>Rebuilds the Pet tab's boarding ticks — one per configured row.
+    /// <summary>Fills the Pet tab's checklist. Its own items only — see where the section is built for
+    /// why the two tabs are kept apart.</summary>
+    private void RefreshPetSessionChecklist()
+    {
+        if (_petSessionChecklist == null) return;
+        var pet = _service.Config.Pet;
+
+        string Mark(bool ok, string label) => (ok ? "  ok   " : "  --   ") + label;
+
+        var round = pet.Slots.Sum(r => Math.Max(1, r.Stacks));
+        var lines = new List<string>
+        {
+            Mark(pet.ReturnSlot is { Count: 2 },
+                 pet.ReturnSlot is { Count: 2 } rs
+                     ? $"return slot          page {rs[0] + 1}, cell {rs[1]}"
+                     : "return slot          not marked"),
+            Mark(pet.FoodSlots.Count > 0,
+                 $"food cells           {pet.FoodSlots.Count} marked, {pet.FoodSlotsUsed} used" +
+                 (round > 0 ? $"  (one round loads {round})" : "")),
+            Mark(pet.Queue.Count > 0,
+                 $"queued pet icons     {pet.Queue.Count}" +
+                 (pet.Queue.Count == 0 ? "  (the return slot is used instead)" : "")),
+        };
+
+        for (int i = 0; i < pet.Slots.Count; i++)
+            lines.Add(Mark(true, $"row {i + 1} boarding       " +
+                                 (pet.Slots[i].BoardingRunning ? "yes" : "no — tick it if it is feeding")));
+
+        _petSessionChecklist.Text = string.Join("\n", lines);
+    }
+
+    /// <summary>Rebuilds the Pet tab's boarding ticks — one per configured row.</summary>
     ///
     /// Rebuilt rather than built once because the row count changes: a row added on Calibrate Pet has
     /// to appear here as a tick, and a tick with no row behind it must not survive a row's removal.</summary>
@@ -5637,6 +5678,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petBoardingTicks.Children.Add(tick);
         }
         _syncingPetRow = false;
+        RefreshPetSessionChecklist();
     }
 
     /// <summary>Which bag page the picker opens on: the return slot's page, or failing that the page
@@ -5801,41 +5843,27 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void RefreshPetReady()
     {
         if (_petReadyText == null) return;
-        var cfg = _service.Config;
-        var pet = cfg.Pet;
-        var max = pet.MaxButton ?? cfg.BuySell.MaxButton;
+        var pet = _service.Config.Pet;
 
+        // THIS TAB'S ITEMS ONLY — the session half. The geometry, the bag grid and the rows are the
+        // Calibrate tab's and are reported there; listing them here too made each tab answer for the
+        // other, which is the mixing the two are meant to avoid. The card names the real reason if you
+        // press Start with a calibration gap, and Calibrate Pet's checklist names it before that.
         var lines = new List<string>();
         if (pet.ReturnSlot is not { Count: 2 } && pet.Queue.Count == 0)
             lines.Add("neither the return slot nor a pet icon is marked — nothing says where the pet is");
         if (pet.FoodSlots.Count == 0) lines.Add("no food cells are marked");
-        if (max is not { Count: 2 }) lines.Add("no MAX is calibrated (Buy / Sell, or Calibrate Pet)");
-        if (!BagGrid.IsValidRect(pet.BagGrid)) lines.Add("the boarding bag grid is not calibrated");
-        if (pet.PageTabs.Count == 0) lines.Add("the bag page tabs are not calibrated");
 
-        // EVERY row, because the tool drives every row. It used to describe the edited one, which
-        // would report "ready" for three rows that had never been drawn.
-        if (pet.Slots.Count == 0) lines.Add("no breeding rows are set up — Calibrate Pet");
-        for (int i = 0; i < pet.Slots.Count; i++)
-        {
-            var r = pet.Slots[i];
-            if (!BagGrid.IsValidRect(r.ToggleLabel)) lines.Add($"row {i + 1}: start/end button not marked");
-            if (!BagGrid.IsValidRect(r.BoardingPetSlot)) lines.Add($"row {i + 1}: pet slot not marked");
-
-            var marked = Enumerable.Range(0, Math.Max(1, r.Stacks))
-                .Count(f => BagGrid.IsValidRect(FeederAt(r, f)));
-            if (marked < r.Stacks) lines.Add($"row {i + 1}: {marked} of {r.Stacks} food counts marked");
-        }
-
-        // Counts CELLS against a whole ROUND, not against one row: the rows are served one after the
-        // other from one pool, so what matters is whether the pool covers all of them.
         var round = pet.Slots.Sum(r => Math.Max(1, r.Stacks));
         if (round > 0 && pet.FoodSlots.Count > 0 && pet.FoodSlots.Count < round)
             lines.Add($"{pet.FoodSlots.Count} food cell(s) marked but one round of all " +
                       $"{pet.Slots.Count} row(s) loads {round}");
+        if (pet.Queue.Count == 0)
+            lines.Add("no pet icon queued — the tool will use the return slot instead of looking " +
+                      "for the pet by icon");
 
         _petReadyText.Text = lines.Count == 0
-            ? $"Ready. {pet.Slots.Count} row(s), reloading every " +
+            ? $"This tab is ready. {pet.Slots.Count} row(s), reloading every " +
               string.Join(" / ", pet.Slots.Select(r => $"{pet.CycleMinutesFor(r)} min")) + "."
             : "Not ready:" + Environment.NewLine + "  - " +
               string.Join(Environment.NewLine + "  - ", lines);
@@ -6055,12 +6083,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         // the boxes set them in memory, the loader read them back, and no save ever wrote them, so
         // they reverted on the next launch. Same projection as Calibrate Pet's save, so neither
         // button can drop what the other wrote.
+        // SESSION ONLY — the counterpart of Calibrate Pet's Save. It writes this tab's own half and
+        // leaves the calibration untouched, so a Save here cannot disturb a grid or a row's geometry.
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet = ConfigLoader.LocalPet.From(pet);
+        local.Pet ??= new ConfigLoader.LocalPet();
+        ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
 
         TrySaveCalibration(() => _service.SaveLocal(local), hint,
-            $"Saved {pet.FoodSlots.Count} food cell(s), the pet cell, and the timing. They survive a " +
-            "restart now — mark the cells again whenever the bag changes.");
+            $"Saved {pet.FoodSlots.Count} food cell(s), the return slot, the queue and the boarding " +
+            "flags. The geometry on Calibrate Pet was left alone.");
     }
 
     /// <summary>Writes the capture the marks were placed against, so the next session opens with the
@@ -6214,7 +6245,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(_service.Config.Pet);
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplySession(local.Pet, _service.Config.Pet);
             _service.SaveLocal(local);
         }
         catch (Exception ex)
@@ -6231,6 +6263,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (queue.Count == 0)
         {
             _petQueueList.Text = "no pet icons captured yet — the tool will use the marked return slot";
+            RefreshPetSessionChecklist();
             return;
         }
 
@@ -6294,13 +6327,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
+        // CALIBRATION ONLY. Both Save buttons write through the same projection, but each is scoped to
+        // the half its tab owns — this one leaves the food cells, the queue and the boarding flags
+        // exactly as the file had them, because they are the Pet tab's business and this screen has no
+        // opinion about them. It writes ONTO the loaded block rather than replacing it; assigning a
+        // fresh object is what blanked the other half twice before.
         var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        // ONE projection for both pet save buttons — see LocalPet.From. The list that used to be here
-        // omitted PetIconRect, PetIconPng, MaxButton and both timing fields, and because it REPLACED
-        // the object rather than mutating it, saving a calibration silently wiped them.
-        local.Pet = ConfigLoader.LocalPet.From(pet);
+        local.Pet ??= new ConfigLoader.LocalPet();
+        ConfigLoader.LocalPet.ApplyCalibration(local.Pet, pet);
+
         TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
-            "Saved to config\\local.yaml. All of it is machine-specific, so none of it ships.");
+            "Saved the calibration to config\\local.yaml. The bag marks, the queue and the boarding " +
+            "flags are the Pet tab's and were left alone.");
 
         // Alongside the marks, the picture they were placed on — so reopening the tab shows where
         // they landed rather than only telling you they exist.
