@@ -1,9 +1,15 @@
 # Reading the hover tooltip — plan
 
-Status: **calibrated and reading, verified live 2026-09-18.** The Calibrate Tooltip tab measures the
-offset, hovers with the Arduino, and reads the panel; a Test read reports what the OCR saw, saved beside
-the image. What is NOT built is the parser that turns a read into something a tool acts on, and any
-consumer of it — so today this is a capability with no users.
+Status: **calibrated, reading, and now parsed — verified live 2026-09-18, parser added 2026-09-19.**
+The Calibrate Tooltip tab measures the offset, hovers with the Arduino, and reads the panel; a Test read
+reports what the OCR saw, saved beside the image. `PetPanel` turns those lines into
+`(stage, growth, EXP)` and the finished test, and the Pet tab has a Test read that hovers a marked bag
+cell and reports both the parse and **every number it saw** — the second half being how we find out
+whether the panel states more than the three values the parser wants.
+
+What is still NOT built: anything that **acts** on a read. The guard that stops the feeder reloading a
+finished pet, and the queue that boards the next one, are both designed (§13 of
+[PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md)) and neither is wired in.
 
 A general capability, not a pet-feature detail, which is why it has its own document rather than a
 section in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md).
@@ -151,3 +157,12 @@ every other. Two options, and the choice is about how often it gets re-tuned:
    region.
 3. **Does the panel move while it is up?** If it animates in, the capture has to wait for it to settle,
    not merely for it to appear.
+4. **Does the panel state the current level's 所需喂养值?** Raised by the player 2026-09-19, and the one
+   question that would change the most. If it does — and the panel box is deliberately oversized, so it
+   may already be reading rows nobody has looked at — then that number **is** `wyz × (1 + growth/10)` and
+   the pet's `wyz` falls out of a single read: `wyz = 所需喂养值 ÷ (1 + growth/10)`. The remaining-time
+   calculation would then need no table, no pet identification and no second reading. Every other route
+   to `wyz` (the 327-pet table by name, or measuring the rate across two reads) exists only because this
+   one is unproven. **The Pet tab's Test read answers it with one hover** — it dumps every number it saw
+   with its surrounding characters, so the report says what the panel contains rather than only what the
+   parser was looking for.

@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -5060,6 +5061,21 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "nothing, check those boxes cover the numbers."),
             testRead));
 
+        // The hover read has been a capability with no consumer since 2026-09-18. Before anything is
+        // built on it — the finished-pet guard and the queue both are — it has to be shown working on
+        // a live pet, and the report has to be wide enough to answer what we do NOT know yet: whether
+        // the panel carries the current level's 所需喂养值. If it does, the pet's wyz falls out of one
+        // read and the remaining time needs no table, no identification and no second reading.
+        var testPanel = MakeButton("Test read the pet panel", ControlAppearance.Secondary);
+        testPanel.Click += async (_, _) => await PetTestPanelRead(hint);
+        panel.Children.Add(Section("Read a pet's panel",
+            Hint("Hovers the marked PET cell, on the page it is marked for, and reports what the OCR " +
+                 "makes of the hover panel. The pet has to BE in that cell — one that is in the loader " +
+                 "instead leaves the cell empty and the read finds nothing. Needs the panel calibrated " +
+                 "on Calibrate Tooltip. The dump of every number is deliberate: it is how we find out " +
+                 "what else the panel states besides the three values the parser wants."),
+            testPanel));
+
         panel.Children.Add(Section("Result", hint));
 
         RefreshPetCells();
@@ -5507,6 +5523,141 @@ public partial class MainWindow : FluentWindow, IDisposable
                 ? $". Total {total} items."
                 : ". Nothing parsed. Each read saved what the OCR saw to logs\reads — open one to see " +
                   "whether the box is in the wrong place or the number is too small to read.");
+    }
+
+    /// <summary>Hovers the marked pet cell and reports the whole panel — the read the feeder's guard
+    /// and the queue will both rest on, shown working before anything is built on it.
+    ///
+    /// It reports EVERY number it saw, not only the three the parser wants, and that is the reason it
+    /// exists. The open question is whether the panel carries the current level's 所需喂养值: if it
+    /// does, then wyz = that ÷ (1 + growth/10) and the remaining time needs no table, no pet
+    /// identification and no second read. A report that echoed only the parse could not answer that.
+    ///
+    /// The hover is a MOVE, never a click — see FocusThenHover: a click on a pet in the bag SWITCHES
+    /// THE EQUIPPED PET, so clicking to measure would change the thing being measured.</summary>
+    private async Task PetTestPanelRead(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        var tip = _service.Config.Tooltip;
+
+        if (!tip.IsSet)
+        {
+            hint.Text = "No hover panel is calibrated. Calibrate Tooltip first — hover a pet, capture, " +
+                        "drag a box around the panel, Save. Without the offset this would OCR a " +
+                        "rectangle of whatever happens to sit beside the cursor.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+        if (pet.PetCell is not { Count: 2 } marked)
+        {
+            hint.Text = "No pet cell is marked. Mark one on this tab first — this reads the cell that " +
+                        "is marked, so it checks the mark and the read in the same press.";
+            return;
+        }
+
+        var centres = BagGrid.Centres(pet.BagGrid!);
+        var (page, cell) = (marked[0], marked[1]);
+        if (cell < 0 || cell >= centres.Count)
+        {
+            hint.Text = $"The marked pet cell ({cell}) is outside the bag grid — re-mark it.";
+            return;
+        }
+
+        // The mark carries the page it lives on, so bring that page up first. Hovering the right
+        // COORDINATE over whatever page happens to be showing is the same silent miss the tool itself
+        // guards against, and it would read as "the panel is empty" rather than as a wrong page.
+        if (page < 0 || page >= pet.PageTabs.Count || pet.PageTabs[page] is not { Count: 2 } tab)
+        {
+            hint.Text = $"The pet cell is marked on bag page {page + 1}, and that page's tab isn't " +
+                        "calibrated — mark it on Calibrate Pet.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            hint.Text = _service.LastArduinoError ?? "Arduino not found.";
+            return;
+        }
+
+        if (!TryPlace(ser, tab[0], tab[1], out var tabError))
+        {
+            hint.Text = $"Couldn't reach the ITEM{page + 1} tab: {tabError}";
+            return;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(900);
+
+        var (cx, cy) = centres[cell];
+        if (!await FocusThenHover(ser, new List<int> { cx, cy }, hint)) return;
+
+        // The panel region is the cell's centre plus the offset the calibration measured — which is
+        // the whole reason the offset is stored rather than an absolute box.
+        var region = new RegionConfig
+        {
+            Left = cx + tip.OffsetX,
+            Top = cy + tip.OffsetY,
+            Width = tip.Width,
+            Height = tip.Height,
+        };
+
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        var debugPath = Path.Combine(AppContext.BaseDirectory, "logs", "reads", $"petpanel_{stamp}.png");
+
+        try
+        {
+            var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region, 3, debugPath));
+            var panel = PetPanel.Parse(lines);
+
+            var report = new List<string>
+            {
+                $"Page {page + 1}, cell {cell} (bag slot {cell + 1}) — panel read at " +
+                $"({region.Left},{region.Top}) {region.Width}x{region.Height}.",
+                lines.Count == 0
+                    ? "Read NOTHING. The image saved to logs\\reads is the exact region the OCR was " +
+                      "given, so a wrong region and a pet that is not in that cell can be told apart " +
+                      "by looking at it."
+                    : "Lines: " + string.Join(" | ", lines),
+                panel == null
+                    ? "Not a pet panel — no growth + EXP pair in it. (The parser wants both: a +N and " +
+                      "a %.)"
+                    : "Parsed: " + panel.Describe(),
+                "Numbers seen: " + NumbersWithContext(lines),
+            };
+
+            hint.Text = string.Join(Environment.NewLine, report);
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Read failed: " + ex.Message;
+        }
+    }
+
+    /// <summary>Every number in a read, with a few characters either side of it.
+    ///
+    /// A diagnostic, NOT a parser — and the difference is the point. The parser deliberately reads
+    /// only the three values it wants; this deliberately reads all of them, because the question it
+    /// exists to answer cannot be answered by a report that echoes only what we already expected. The
+    /// surrounding text is what makes a bare number identifiable in a read whose Chinese is mangled.</summary>
+    private static string NumbersWithContext(IReadOnlyList<string> lines)
+    {
+        var text = string.Join(" ", lines);
+        if (text.Length == 0) return "(nothing read)";
+
+        var found = Regex.Matches(text, @"\d+(?:[.,]\d+)?")
+            .Select(m =>
+            {
+                var from = Math.Max(0, m.Index - 6);
+                var to = Math.Min(text.Length, m.Index + m.Length + 6);
+                return text.Substring(from, to - from);
+            })
+            .ToList();
+
+        return found.Count == 0 ? "(no numbers)" : string.Join("  |  ", found);
     }
 
     private void PetCellSave(TextBlock hint)

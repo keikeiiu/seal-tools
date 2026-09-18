@@ -9,6 +9,52 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-19 (2) — the panel parser, and the player correction that deleted a section of the plan
+
+**Goal.** Thread 1 of the handover. The hover read has worked since 2026-09-18 and had no consumers at
+all: `ReadLines` returned strings, two UI buttons printed them, and nothing turned a panel into
+something a tool could act on. This session added the parser and the first consumer.
+
+**`PetPanel` reads the numbers and nothing else** — and that is the design, not a shortcut. The
+measured read is `（6）真蔚蓝凤凰+7[52.18%]` against a screen showing `(6階) 真蔚藍鳳凰 +7 [52.18%]`:
+every digit exact, the Chinese not, and the recogniser's errors are not uniform — some characters
+arrive Simplified and `text_fixes` converts them, others arrive Traditional already, others are
+misread. A parser keyed on any character inherits all of it. Nothing is anchored to a bracket or a
+parenthesis either: the EXP is found by its `%`, the growth by its `+`. Two decisions worth naming:
+the finished test needs **both** numbers (`+9` with a filling bar is not done; a full bar on `+7` is
+not either), and it is **equals, not at-least**, because "at least 9" answers "finished" to a garbage
+growth — the one direction that stops feeding a pet that still needs it. 15 tests, mutation-checked.
+
+**The player correction is the more valuable half, because it removed work.** §13 had the reload read
+*the boarded pet's* panel to decide whether it was finished. The player, 2026-09-19: **a finished pet
+is mailed by the game** and appears in neither the boarding window nor the bag. So the boarded pet
+never needs reading at all, and the finish check belongs where we go looking for a pet to **board** —
+reading one **in the bag**, which is the case the read was verified on. The unverified hover inside
+the boarding window — the thing that made me want to prove the read before wiring it — is simply not
+needed. Also settled: the stop-breeding button returns the pet to the **first available bag slot**,
+not to where it was taken from, which is part of why the icon scan exists.
+
+**What the read still cannot give is `wyz`**, and that is the number the remaining time needs:
+`remaining = 14.5 − done(growth, exp)` in units of `wyz`, then ÷ the stage's rate. The read supplies
+the stage (→ rate, from PET-DATA's confirmed table) and the position; `wyz` is per **species + stage**
+and varies 27× within a single stage, so two stage-6 pets cannot be told apart by the panel. Three
+ways to get it, in the order they would be tried: the panel itself, if it states the current level's
+所需喂养值 (then `wyz = that ÷ (1 + growth/10)`, one read, no table); the pet's name against the
+327-entry table; or two reads a cycle apart, which measure the rate and so `wyz`, with no table at all.
+The open question is now item 4 of [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md).
+
+**The Pet tab's Test read is how that question gets answered.** It hovers the marked PET cell on its
+marked page, reads the panel at the calibrated offset, and reports the raw lines, the parse, and
+**every number it saw with its surrounding characters** — the last being the point, since a report
+that echoed only the parse could not say whether anything else is in the panel. It hovers with a MOVE,
+never a click: a click on a pet in the bag switches the equipped pet, so measuring would change what
+is measured (already why `FocusThenHover` is split).
+
+**Not verified live.** The parser is pure code with tests; nothing has run the Test read yet, and no
+tool acts on a read. The next hover on a real pet settles the `wyz` question.
+
+---
+
 ## 2026-09-19 — the pet checks, the timing model, and what the game actually does
 
 **Long session, mostly on the Pet Feeder's edges.** v2.10 shipped at the start of it; everything after
