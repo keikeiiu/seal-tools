@@ -9,6 +9,84 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-19 (5) — the four-row build, and a matcher that was only finding half the pets
+
+**The longest session yet, and the one that built the multi-pet feature end to end.** Four rows
+configured and driven one at a time, a queue of pet icons, a scan that finds the next pet by icon, and
+a start that no longer disturbs a feed already running. Then the player ran the scan and it found **3
+of their 7 pets** — which turned into the most valuable thing here.
+
+### The matcher was comparing whole cells, pixel-for-pixel
+
+Measured on the player's own bag capture, every crop against all 64 cells:
+
+```
+crop1 (blue):  6:0.000  7:0.000  4:0.434   then 53:0.832
+crop2 (gold):  3:0.000  2:0.556  1:0.562  0:0.784   then 60:0.838
+```
+
+Two pets scored **exactly zero** — pixel-identical to the crop — while their own kind scored 0.43 to
+0.78. The crops were right. **The pets' sprites are drawn at different sub-cell offsets**, so a
+pixel-exact comparison only matched the cells where the sprite happened to land in the same place.
+
+**The obvious fix was wrong, and the measurement is what said so.** Comparing only the middle of the
+cell — the answer to "the neighbours leak in", which is what it looked like — made it strictly worse:
+at coverage 0.7 *every* pet scored 0.84 or more. An offset is a translation of the whole image, and
+cropping harder does not chase a translation.
+
+Scoring each cell at a spread of offsets and keeping the best took it from **3 pets to 6**, with the
+separation now 0.000 against 0.830 — so `MatchLimit` stays at 0.12 and nothing has to be loosened. A
+sweep of radii 0/2/3/4/5/6 on the real bag: 0 found three, everything from 2 up found six with
+identical scores. Three, at a squared cost per cell.
+
+**The seventh is genuinely different**, and worth stating because "it found 6 of 7" invites the
+assumption that the last is another matcher failure: at every offset it sits at 0.320, and the bag
+image shows its sprite drawn **smaller**, with the cell's frame visible around it where the others
+fill theirs. It wants its own capture.
+
+### The rest, in order
+
+- **The rows became a list** (`pet_slots`), alongside `return_slot`, `food_slots` and a `queue`,
+  **with a migration** — `IgnoreUnmatchedProperties` means an old local.yaml does not fail, it
+  silently loses every key nothing maps to any more, which is a player's whole calibration.
+- **One schedule per row**, because the free row holds two food stacks and a paid row five: 200
+  minutes against 500. A failing row is dropped and the rest carry on, rather than one bad
+  calibration starving three.
+- **Saves are scoped to their tab.** Calibrate Pet writes the machine's half, the Pet tab writes the
+  run's — through writers that MUTATE the loaded block, because a scoped save that assigned a fresh
+  object would blank the half it is not about, which is how the food cells were lost twice.
+- **A start looks before it reloads.** Every row used to be due immediately, on the reasoning that the
+  tool cannot read the state so it must establish it. That expired: the boarding slot is readable, so
+  a run opens the breeder once, leaves the feeding rows alone, and schedules from what it saw.
+- **Marked-and-saved marks now show.** The overlay drew only the row being edited, so switching rows
+  looked like the previous one had been erased.
+
+### The pattern worth naming, because it recurred seven times
+
+**A number that belongs to a row, written down once as if it belonged to the tool.** The load size,
+the food-count drag chain, the overlay's box drawing, the feeder test read, both readiness checks and
+the checklist. Every one came from extending a single-pet tool rather than rewriting it, and the
+`Row` property — a `Slots[0]` accessor — was deleted because it made writing the next one a keystroke.
+
+### Three alignment bugs, all the same trap
+
+A control inheriting a default meant for a different context: two number fields of different widths
+centring against each other because a fixed `Width` plus the default `Stretch` centres in its column;
+and `MakeButton`'s 10px top margin sitting two buttons in a row at different heights, where
+`MakeInlineButton` already existed for exactly that and the lesson was already in this file.
+
+### Left open
+
+- **The seventh pet's capture**, and with it the question of whether a sprite that renders smaller is
+  a different pet or the same one at a different level. If icons change with level, a queue breaks as
+  pets grow — worth one deliberate check.
+- **The feeder counts are still unread**, so a row left alone is scheduled a full cycle out and that
+  assumes a full feeder. The counts would say, and reading them is the next thing worth building.
+- **The food budget**: ~57 marked cells a day across four rows, against a 64-cell bag holding the
+  pets. A restock and re-mark is a daily chore, not a one-off.
+
+---
+
 ## 2026-09-19 (4) — the paid rows are open, and §11's two unknowns are answered
 
 **The player bought the expansion.** The capture shows `該欄位約29日23時58分43秒後到期`, so a 30-day

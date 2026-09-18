@@ -832,6 +832,19 @@ scan the bag for a cell matching one of the known pet icons
 the tooltip read is the double-check on stage and growth. So a poor icon match is caught downstream
 rather than acted on.
 
+**BUILT, and the matching had to be fixed to work at all** (2026-09-19). The first live scan found 3 of
+the player's 7 pets. The crops were right: the matcher compared whole cells pixel-for-pixel, and a
+pet's sprite is drawn at a different SUB-CELL OFFSET in each cell, so it only matched where the sprite
+happened to land in the same place. Scoring each cell at a spread of offsets took it to 6 of 7, with
+the separation now 0.000 against 0.830 — see [PROGRESS.md](PROGRESS.md) for the numbers, and
+`IconMatch.SearchRadius` for the sweep that chose three.
+
+**What this costs:** an icon match is a *translation-tolerant* pixel comparison, not an identity. Two
+different pets that look alike will still separate if their sprites differ by more than the search
+window can explain — the seventh pet in that bag sat at 0.320 at every offset and was rejected — but a
+pet whose icon is drawn at a different SIZE needs its own crop. **Worth one check: does a pet's icon
+change as it levels?** If it does, a queue breaks as pets grow.
+
 **And no ordering logic is needed — because an idle breeder is wasted time.** Re-boarding the pet
 already being bred is the intent, but any pet of the right kind is a harmless substitute (player,
 2026-09-18): the breeder feeds whatever is in it, so leaving it empty while waiting for a particular pet
