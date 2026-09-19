@@ -290,7 +290,7 @@ public sealed class LauncherService : IDisposable
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
-        "pet" => new PetTool(Config, PersistPetState).Run(ser, state, ct),
+        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState).Run(ser, state, ct),
         _ => 1,
     };
 

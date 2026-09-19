@@ -118,9 +118,19 @@ public sealed class PetTool : ToolBase
     /// would aim the next reload at cells this run had already emptied.</summary>
     private readonly Action? _persistState;
 
-    public PetTool(AppConfig cfg, Action? persistState = null) : base(cfg.Hotkeys)
+    /// <summary>The OCR dictionary and the root the models live under — what an
+    /// <see cref="OcrEngine"/> needs, and what this tool needed the moment it wanted to read a count
+    /// rather than only a crop. Passed in the same shape <see cref="Tuner.SealTuner"/> takes them,
+    /// which is the precedent for a tool owning an engine rather than borrowing the launcher's.</summary>
+    private readonly AttributesConfig _attrs;
+    private readonly string _rootDir;
+
+    public PetTool(AppConfig cfg, AttributesConfig attrs, string rootDir, Action? persistState = null)
+        : base(cfg.Hotkeys)
     {
         _cfg = cfg;
+        _attrs = attrs;
+        _rootDir = rootDir;
         _persistState = persistState;
     }
 
@@ -147,28 +157,13 @@ public sealed class PetTool : ToolBase
         //
         // LOOK FIRST, DON'T RELOAD FIRST (player, 2026-09-19). Every row used to be due immediately,
         // on the reasoning that the tool cannot read how much food a row holds so the only way to know
-        // the state is to establish it. That reasoning has expired: the boarding slot is read here,
-        // and reloading a row that is already boarding means ending a feed the player has running and
-        // then redoing it — which is a lot of disturbance to learn something one look tells us.
+        // the state is to establish it. That reasoning has expired twice over: the boarding slot says
+        // whether a pet is in there, and the feeder counts say how much food is left — so a look
+        // answers what a reload used to be performed to find out.
         //
-        // The rows that ARE boarding are scheduled a full cycle out. That assumes a full feeder, and
-        // it is a guess — the food counts would say, and reading them is the next thing this tool
-        // wants. So it is logged as the assumption it is.
-        InspectRows(ser, state);
-
-        // Looking first tells the tool WHICH ROWS ARE BOARDING; it cannot tell how full a feeder is,
-        // because the counts are not read. So a row boarding on a part-full feeder looks exactly like
-        // one just loaded, and would be left to run dry for a whole cycle. This is the override for
-        // that case, and it is the player's to set: reload everything on start, whatever the look
-        // says. Nothing is wasted by it — ending boarding returns the leftover food with the pet.
-        if (_cfg.Pet.ReloadOnStart)
-            Log("start: reload-on-start is on — every row reloads now regardless of what the look found");
-
-        var next = _cfg.Pet.Slots.ToDictionary(
-            r => r,
-            r => !_cfg.Pet.ReloadOnStart && r.BoardingRunning
-                ? DateTime.Now.AddMinutes(CycleMinutesFor(r))
-                : DateTime.Now);
+        // The look returns the SCHEDULE, not just the flags: each row's next reload is worked out from
+        // what was read about it, and a row it could not read falls back to the configured cycle.
+        var next = InspectRows(ser, state);
         var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);
 
         try
@@ -307,17 +302,24 @@ public sealed class PetTool : ToolBase
     ///
     /// Only the first line is a proof, and that is enough: the rows it settles are exactly the ones a
     /// blind reload would have disturbed for no reason.</summary>
-    private void InspectRows(SerialPort ser, ToolState state)
+    private Dictionary<PetSlotConfig, DateTime> InspectRows(SerialPort ser, ToolState state)
     {
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
         state.Message = "Checking what is already running…";
         Log("start: opening the breeder to check each row (no reload)");
 
         if (!OpenBoarding(ser, out var error))
         {
             Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            return;
+            foreach (var row in _cfg.Pet.Slots)
+                schedule[row] = ScheduleFor(row, null);
+            return schedule;
         }
 
+        // The engine is built here and disposed with the look, rather than held for the life of the
+        // run: the counts are wanted at start, and an ONNX session parked in memory for days to be
+        // used once is a cost with nothing buying it.
+        OcrEngine? ocr = null;
         try
         {
             foreach (var row in _cfg.Pet.Slots)
@@ -332,21 +334,104 @@ public sealed class PetTool : ToolBase
                         break;
                     case false:
                         row.BoardingRunning = true;
-                        Log($"  {NameOf(row)}: a pet is in the loader — leaving it alone and " +
-                            $"reloading in {CycleMinutesFor(row):0} min");
+                        Log($"  {NameOf(row)}: a pet is in the loader");
                         break;
                     default:
                         Log($"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
                             $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
                         break;
                 }
+
+                // Only worth reading a feeder on a row that is actually boarding — an empty one has
+                // nothing loaded and will be filled in a moment anyway.
+                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null); continue; }
+
+                ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
+                var left = ReadFeederCounts(ocr, row);
+                schedule[row] = ScheduleFor(row, left);
+
+                if (left is { } items)
+                    Log($"  {NameOf(row)}: {items} item(s) left in the feeder — reloading in " +
+                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min");
+                else
+                    Log($"  {NameOf(row)}: the feeder counts couldn't be read — assuming a full " +
+                        $"load, so reloading in {CycleMinutesFor(row):0} min");
             }
             _persistState?.Invoke();
         }
         finally
         {
+            ocr?.Dispose();
             CloseBoarding(ser);
         }
+
+        return schedule;
+    }
+
+    /// <summary>When a row next needs a reload, from what was read about it.
+    ///
+    /// <paramref name="itemsLeft"/> is the feeder count when it could be read. From that the reload
+    /// lands just past the moment the row runs dry — the same "past empty, not early" rule the
+    /// configured cycle follows, and for the same reason: reloading onto a part-used slot is the case
+    /// whose behaviour is unknown.
+    ///
+    /// Null means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
+    /// (fall back to the configured cycle, which assumes a full load). The two are different and the
+    /// caller logs which.</summary>
+    private DateTime ScheduleFor(PetSlotConfig row, int? itemsLeft)
+    {
+        if (_cfg.Pet.ReloadOnStart) return DateTime.Now;
+        if (!row.BoardingRunning) return DateTime.Now;
+        if (itemsLeft is not { } items) return DateTime.Now.AddMinutes(CycleMinutesFor(row));
+
+        var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
+        return DateTime.Now.AddMinutes(Math.Max(0, items / (double)rate) + WaitAfterEmptyMinutes);
+    }
+
+    /// <summary>How many food items are left in a row, read off the counts the game draws on each of
+    /// its slots. Null when it cannot be read.
+    ///
+    /// This is the read the tool has most wanted: the boarding slot answers "is a pet in there", and
+    /// nothing answered "how much food is left" — so a row whose feeder had run dry overnight looked
+    /// exactly like one filled a minute ago, and the schedule had to assume a full load. The player
+    /// has had to tick a box to say otherwise.
+    ///
+    /// **A partial read understates the food, and that is the safe direction.** A slot with nothing in
+    /// it reads nothing and is simply not counted, so a row where three of five counts were legible
+    /// looks emptier than it is — and reloading early is nearly free, because ending boarding returns
+    /// the leftover food with the pet. Overstating would leave a pet unfed, which is the one thing
+    /// here that cannot be undone.</summary>
+    private int? ReadFeederCounts(OcrEngine ocr, PetSlotConfig row)
+    {
+        if (row.FeederSlots.Count == 0) return null;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+
+        // The read is a SCREEN GRAB, so anything in front of the game is what gets measured. The
+        // composer refuses to judge its empty box for the same reason — measuring the launcher's own
+        // UI once produced a confident answer about a window that had nothing to do with the game.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
+        var total = 0;
+        var counted = 0;
+
+        foreach (var box in row.FeederSlots)
+        {
+            if (!BagGrid.IsValidRect(box)) continue;
+
+            var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
+            var digits = new string(string.Join("", ocr.ReadLines(region, 3)).Where(char.IsDigit).ToArray());
+            if (digits.Length == 0) continue;
+
+            if (int.TryParse(digits, CultureInfo.InvariantCulture, out var n))
+            {
+                total += n;
+                counted++;
+            }
+        }
+
+        return counted == 0 ? null : total;
     }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
