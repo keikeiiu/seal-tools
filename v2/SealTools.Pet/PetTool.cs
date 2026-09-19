@@ -736,6 +736,18 @@ public sealed class PetTool : ToolBase
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
         { why = "the game window isn't open"; return false; }
 
+        // A capture reads the SCREEN, so anything in front of the game is what gets matched. The
+        // player found this the hard way: their game window was not focused, so every page was
+        // captured as whatever was over it, both crops scored 0.915 against it, and the tool reported
+        // "no queued pet is in the bag" — the RIGHT verdict from the wrong image, which is
+        // indistinguishable from a genuinely missing pet and was chased as one. The composer refuses
+        // to judge its empty box for exactly this reason, and the feeder counts already refuse here.
+        if (WindowFinder.ForegroundWindow() != hwnd)
+        {
+            why = "the game isn't the front window, so the capture would be of whatever is";
+            return false;
+        }
+
         // The best and the next best, kept together so the log can show how close the call was.
         var best = double.MaxValue;
         var runnerUp = double.MaxValue;
@@ -752,6 +764,21 @@ public sealed class PetTool : ToolBase
 
             var cap = ScreenCapture.CaptureClient(hwnd);
             if (cap == null) { why = "the bag couldn't be captured"; return false; }
+
+            // Saved, for the same reason the Pet tab's scan saves its own: a scan that finds nothing
+            // is indistinguishable from a scan that looked at the wrong thing, and the image is the
+            // only evidence that tells them apart.
+            try
+            {
+                var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "reads");
+                System.IO.Directory.CreateDirectory(dir);
+                cap.Image.ImWrite(System.IO.Path.Combine(dir,
+                    $"run_page{p + 1}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
+            }
+            catch
+            {
+                // Evidence is a convenience; never fail a scan over it.
+            }
 
             using var bag = cap.Image;
             foreach (var entry in pet.Queue)
