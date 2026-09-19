@@ -9,6 +9,39 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 (4) — Part 3's gate, and stopping short of the wiring on purpose
+
+**Only the first slice of [Part 3](PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
+so nothing about the tool's behaviour has changed — deliberately, and this is the entry that explains
+why the rest was not written.
+
+**The gate is one Arduino and one cursor, so who holds it has to be answerable.** Two decisions are the
+whole class: a claim is **refused rather than queued or reference-counted** (including from the owner
+asking twice — a tool that claimed twice and released once would leave the gate free while it still
+ran), and **a release from anyone but the owner is ignored** (a stale tool finishing late must not free
+the gate its competitor is waiting on, which is precisely how two tools end up writing at once). It is
+not a lock around each serial write, and the waiting is the caller's job — two tools *interleaving* on
+the cursor is still wrong, so the gate makes them take turns.
+
+**9 tests, mutation-checked in one direction:** dropping the ownership check from `Release` fails two of
+them. The honest limit is recorded in the plan too — the racing test (30 callers, exactly one winner) is
+*evidence* for why the check and the claim share one lock, not proof; a check-then-act mutation is not
+reliably caught by 30 threads, so it is not the mutation that was used to check it.
+
+**Why it stopped there.** The rest of Part 3 rewrites `LauncherService`'s single-tool core — the four
+slots become per-tool, `StopTool` becomes slot-aware, `_startInProgress` becomes per-slot, `RefreshStatus`
+and mini mode change, `PetTool` defers, `ToolBase` learns to ignore the Quit hotkey, and nine comment
+sites asserting the one-tool invariant get corrected. That is a large change to the exact code path a
+**live pet feeder is running from right now**, and none of it can be live-verified without the game and
+a launcher restart. The docs already carry the reason that matters: a reload is the one permanent
+failure, and an unverified refactor under a run that is feeding four pets is the wrong trade to make
+unasked.
+
+**Verified:** 109/109 tests, Release build clean. **Not verified:** anything about the wiring, because
+none of it is written.
+
+---
+
 ## 2026-09-20 (3) — Part 2: the board can finally be asked a question
 
 **Goal.** The second part of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — a `V` command, so that a

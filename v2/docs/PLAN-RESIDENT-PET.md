@@ -203,6 +203,11 @@ it without holding the tool start behind it.
 
 # Part 3 — the pet feeder becomes resident
 
+**Started 2026-09-20: the gate only.** `Core.PortGate` is built and tested; **nothing uses it yet**, so
+nothing about the current behaviour has changed. It went first because it is the one piece of this part
+that is verifiable without the game, and because a change to `LauncherService`'s single-tool core
+touches the code the live pet feeder runs from — which is not something to do half-checked.
+
 ## Context
 
 Today it is impossible: `StartToolCoreAsync` opens with `StopTool(fromStart: true)`
@@ -249,6 +254,22 @@ for `InspectRows` and each `ReloadRow`. **A Start pressed while the pet holds it
 reload's ~30 s, with the card saying so — never a silent no-op. It belongs in **`Core`**, because
 `LauncherService` is not reachable from the test project.
 
+**Built:** `Core.PortGate` — `TryAcquire(id)` / `Release(id)` / `Owner`. Two decisions that are the
+class's whole content:
+
+- **A claim is refused, never queued or reference-counted**, including from the owner asking twice. A
+  refused claim leaves nothing to undo; a tool that claimed twice and released once would leave the
+  gate free while it still ran, which is the failure this exists to prevent.
+- **A release from anyone but the owner is ignored.** A stale tool finishing late must not free the
+  gate its competitor is waiting on — that is exactly how two tools end up writing to the port at once.
+  The return value says whether it actually released, so a caller cannot report a release that did not
+  happen.
+
+The gate is deliberately **not a lock around each serial write**, and the waiting is the caller's
+(poll `TryAcquire`, `Task.Delay`, bounded) rather than the gate's. Two tools *interleaving* on the
+cursor is still wrong; the gate only makes them take turns, which is why the pet feeder defers for a
+whole reload instead of sharing one.
+
 Serial writes stay direct and unlocked: the gate is the guarantee, and a write lock would imply a safety
 this design does not provide — two tools *taking turns* on the cursor is still wrong, which is why the
 pet feeder defers rather than interleaves.
@@ -279,8 +300,13 @@ overwrites every non-current card with `"stopped"` on every tick — **a running
 
 ## Verification
 
-1. **Tests in `Core`:** the gate — claim/release, a second claim refused, a release by the wrong owner
-   ignored, `PortOwner` readable while held.
+1. **Tests in `Core`** — **done.** The gate: claim and release, a second claim refused, the same owner
+   asking twice refused, a release by the wrong owner ignored *and the gate still held*, `Owner`
+   readable while held, releasing a free gate is not a release, an owner is required, and 30 callers
+   racing for it produce exactly one winner. 9 tests, mutation-checked — dropping the ownership test
+   from `Release` fails two of them. **Not verifiable by test:** the atomicity itself. The racing test
+   is the reason the check and the claim share one lock, but a check-then-act mutation is not reliably
+   caught by 30 threads, so that test is evidence rather than proof.
 2. **Live, pet feeder alone** — the case that must not regress. A reload must look exactly as today.
 3. **Live, with a second tool:** start the pet feeder, then buy/sell; the pet card must still show its
    next reload, and the feeder must still be alive afterwards.
