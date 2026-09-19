@@ -203,10 +203,14 @@ it without holding the tool start behind it.
 
 # Part 3 — the pet feeder becomes resident
 
-**Started 2026-09-20: the gate only.** `Core.PortGate` is built and tested; **nothing uses it yet**, so
-nothing about the current behaviour has changed. It went first because it is the one piece of this part
-that is verifiable without the game, and because a change to `LauncherService`'s single-tool core
-touches the code the live pet feeder runs from — which is not something to do half-checked.
+**Built 2026-09-20 on branch `v2-resident-pet`, not merged** — deliberately, because it rewrites the
+code path the live pet feeder runs from and none of it can be live-verified until the player's run
+ends. The same shape as the tuner-spring work, which sat unmerged until it could be tested. Nothing on
+`main` depends on it.
+
+**Verified:** Release build clean, 109/109 tests, `Core.PortGate`'s 9 tests mutation-checked.
+**Not verified: the launcher has not been run at all** — every claim below about behaviour is reasoning
+from the code, and the live steps at the end are the ones that matter.
 
 ## Context
 
@@ -270,6 +274,30 @@ The gate is deliberately **not a lock around each serial write**, and the waitin
 cursor is still wrong; the gate only makes them take turns, which is why the pet feeder defers for a
 whole reload instead of sharing one.
 
+**Deviations from the plan above, all decided while building it:**
+
+- **`ResidentId`/`ResidentState` did not get added.** `StateFor(id)` already answers both, and the card
+  loop wants the per-id form — `ResidentState` had no caller, so it would have been dead API. The
+  public shape is `StateFor(id)` plus the `ResidentId` constant. `IsRunning(id)` was likewise written
+  and then deleted for the same reason: the pet asks the **gate**, not `_running`, because `_running`
+  is only safe on the dispatcher thread and the pet runs on its own.
+- **`_startInProgress` stayed global, not per-slot.** One port, one boot delay, and two concurrent
+  starts must still not both open it — so a single flag is the correct shape, not a limitation. The
+  plan's per-slot version would have allowed exactly the double-open the flag exists to prevent. Its
+  wart is unchanged: a Start during another start is still a silent no-op.
+- **The gate is released in the stop *continuation*, not at `Cancel()`.** Releasing at the moment a
+  stop is requested would let the pet start clicking while the dying tool is still sending its last
+  command. The cost is real and recorded in the code: a loop that never exits keeps the game, and the
+  pet says `waiting for <tool>` on its card until it goes.
+- **`_currentId` is never the resident.** The pet is background furniture, not a run the player is
+  watching, and mini mode keys off `CurrentId` — collapsing the window onto a schedule that runs for
+  days would hide everything else for the length of it. A pet running alone therefore leaves the window
+  full size, which is the one behaviour change nothing in the table above predicted.
+- **The keeper is a predicate, not a name.** `StopAll(keep:)`, not `StopAll(keeper:)`, because starting
+  the pet must stop a *previous pet* while keeping every other tool — the two cases need opposite
+  rules, and a single "keeper id" cannot express both. Leaving it as a name reintroduced the
+  orphaned-loop bug for the pet card's own Start.
+
 Serial writes stay direct and unlocked: the gate is the guarantee, and a write lock would imply a safety
 this design does not provide — two tools *taking turns* on the cursor is still wrong, which is why the
 pet feeder defers rather than interleaves.
@@ -294,9 +322,11 @@ overwrites every non-current card with `"stopped"` on every tick — **a running
 `:690-724`), which collapses the second running tool; and the Hold Space status (`:538-542`) and toggle
 (`:294-301`), which key on the single `CurrentId`.
 
-**5. Docs and comments asserting the invariant** — `MainWindow.xaml.cs:62`, `:508-511`, `:692-694`;
-`LauncherService.cs:17`, `:107`, `:118-123`, `:190-192`; `ToolState.cs:10-13`; `README.md:41`;
-`USER_GUIDE.md:11, :69`; `PLAN-WATCHER.md:18`.
+**5. Docs and comments asserting the invariant** — done: `MainWindow.xaml.cs:62` and the mini-mode
+comment, `LauncherService`'s class summary, `ToolState.cs`'s ownership model, `README.md:41`,
+`USER_GUIDE.md:11` and `:69`, `PLAN-WATCHER.md:18`. `PLAN-WATCHER` keeps its reasoning and gains the
+exception, because the argument it makes — *a tool holds the port for its whole run, so the watcher must
+not* — is unaffected by the pet feeder waiting instead of being killed.
 
 ## Verification
 
@@ -314,3 +344,13 @@ overwrites every non-current card with `"stopped"` on every tick — **a running
    nothing is clicked while the other tool runs, and the reload happens once it stops.
 5. **Live, Quit:** with the feeder resident and a buy run going, Quit must stop the buy run and **not**
    the feeder.
+
+**Not covered by any of the above, and worth knowing before trusting it:**
+
+- **Starting the pet while a tool runs** (the reverse direction): the pet must join without stopping
+  that tool, and its first "look" must wait rather than read a screen the other tool is covering.
+- **Starting the pet twice:** the second Start must replace the first, not leave two loops. This is the
+  case that produced the keeper bug, and it is exactly what a test cannot reach.
+- **Stopping the pet mid-reload:** its own claim must be handed back by its `finally`, not by the
+  launcher, or the gate leaks and nothing can start until the launcher restarts.
+

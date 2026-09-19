@@ -59,7 +59,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static readonly string[] RequireGradeOptions = { "None", "N", "G", "DG", "XG", "SG" };
 
     private readonly LauncherService _service;
-    // id -> its card Border, so mini mode can show only the running tool's card.
+    // id -> its card Border, so mini mode can show only the running tool's card. Keyed by id because
+    // more than one card can be live at once — the resident Pet Feeder plus whichever foreground tool
+    // is going — so "the running tool" is a per-card question, not a single value.
     private readonly Dictionary<string, Border> _toolCards = new();
     private readonly Dictionary<string, TextBlock> _statusBlocks = new();
     private readonly DispatcherTimer _timer;

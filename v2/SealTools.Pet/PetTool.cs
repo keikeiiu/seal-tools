@@ -131,15 +131,23 @@ public sealed class PetTool : ToolBase
     /// and until the board could be asked there was no way to tell an old sketch from a failure.</summary>
     private readonly string? _firmware;
 
+    /// <summary>Who else is driving the game, or null when this tool was handed no gate. Claimed
+    /// around each look and each reload, and never held in between — the whole reason this tool can be
+    /// resident is that it holds nothing while it waits.</summary>
+    private readonly PortGate? _gate;
+
     public PetTool(AppConfig cfg, AttributesConfig attrs, string rootDir, Action? persistState = null,
-        string? firmware = null)
-        : base(cfg.Hotkeys)
+        string? firmware = null, PortGate? gate = null)
+        // The only tool that ignores the quit hotkey: it is resident, so one Quit press meant for a
+        // foreground run must not end a schedule that is feeding four pets. Its own Stop still works.
+        : base(cfg.Hotkeys, ignoresQuitHotkey: true)
     {
         _cfg = cfg;
         _attrs = attrs;
         _rootDir = rootDir;
         _persistState = persistState;
         _firmware = firmware;
+        _gate = gate;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -172,11 +180,42 @@ public sealed class PetTool : ToolBase
         //
         // The look returns the SCHEDULE, not just the flags: each row's next reload is worked out from
         // what was read about it, and a row it could not read falls back to the configured cycle.
-        var next = InspectRows(ser, state);
+        //
+        // It also opens the breeder and clicks, so it needs the game — and it is the first thing that
+        // can be deferred. A run started while another tool is busy therefore starts and WAITS to look,
+        // rather than reporting rows it never read.
+        var looked = ClaimGame(state,
+            () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
+        Dictionary<PetSlotConfig, DateTime> next;
+        try
+        {
+            next = looked ? InspectRows(ser, state) : new Dictionary<PetSlotConfig, DateTime>();
+        }
+        finally
+        {
+            // In a finally like the reload's, and for the same reason: a throw out of the look would
+            // otherwise leak the claim and nothing could ever take the game again.
+            ReleaseGame();
+        }
+
+        // Stopped while waiting to look. Nothing is scheduled and nothing was fed, so the run ends —
+        // and Running has to be cleared here because this return is above the try/finally that does it
+        // for every other exit, which would otherwise leave the card claiming "● RUNNING" for a tool
+        // that is already gone.
+        if (!looked)
+        {
+            state.Message = "Stopped before it could read the rows.";
+            state.Running = false;
+            return 0;
+        }
         var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);
 
         try
         {
+            // QuitPressed stays false for this tool by construction — it is the one tool that ignores
+            // the quit hotkey, so that a press meant for a foreground run cannot end a schedule that
+            // is feeding four pets. The check is kept because the loop should stop on a stop, whatever
+            // sets the flag; the cancellation token is the one that actually arrives.
             while (!QuitPressed && !ct.IsCancellationRequested)
             {
                 var live = next.Keys.ToList();
@@ -189,7 +228,25 @@ public sealed class PetTool : ToolBase
                 var row = live.OrderBy(r => next[r]).First();
                 if (!SleepUntil(next[row], ct)) break;
 
-                if (ReloadRow(ser, state, row, out var error))
+                // The row is due, but the game may belong to another tool. Deferring here needs no
+                // bookkeeping at all: next[row] is left in the past, so the next pass picks this same
+                // row again — which is why the wait belongs here and not in the scheduler. It is
+                // never a silent wait; see WaitingForRow.
+                var due = next[row];
+                if (!ClaimGame(state, () => WaitingForRow(row, due, GameOwner), ct)) break;
+
+                bool ok;
+                string error;
+                try
+                {
+                    ok = ReloadRow(ser, state, row, out error);
+                }
+                finally
+                {
+                    ReleaseGame();
+                }
+
+                if (ok)
                 {
                     failures[row] = 0;
                     next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
@@ -226,6 +283,65 @@ public sealed class PetTool : ToolBase
         Console.WriteLine("Pet tool done.");
         return 0;
     }
+
+    /// <summary>The owner name this tool claims the game under — the same as its tool id, so a card
+    /// that says it is waiting for "gem" names the tool the player just started.</summary>
+    private const string GateOwner = "pet";
+
+    /// <summary>Who holds the game while this tool is waiting, for the line on the card. "?" only when
+    /// there is no gate at all, in which case nothing is ever waiting.</summary>
+    private string GameOwner => _gate?.Owner ?? "?";
+
+    /// <summary>Waits for the game to be free and takes it, or false when the run was cancelled while
+    /// waiting. Returns true immediately when no gate was handed in.
+    ///
+    /// This is what makes the feeder resident: it needs the game for about thirty seconds at a time,
+    /// five times a day, so rather than the launcher stopping it to run something else, it steps aside
+    /// and comes back. It is never a silent wait — the card says which tool it is waiting for, because
+    /// a stalled pet feeder and a broken one look identical otherwise.</summary>
+    private bool ClaimGame(ToolState state, Func<string> waiting, CancellationToken ct)
+    {
+        var gate = _gate;
+        if (gate == null || gate.TryAcquire(GateOwner)) return true;
+
+        var said = "";
+        while (!gate.TryAcquire(GateOwner))
+        {
+            if (ct.IsCancellationRequested) return false;
+
+            var message = waiting();
+            state.Message = message;
+            // Only on a change: the wait can last for hours, and a line every two seconds would bury
+            // the reload history that this log exists to keep.
+            if (message != said)
+            {
+                said = message;
+                Console.WriteLine(message);
+                Log("  " + message);
+            }
+
+            if (!SleepUntil(DateTime.Now.AddSeconds(2), ct)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>What to say while a row waits for the game, including how long its food lasts.
+    ///
+    /// When the food actually runs out is exactly computable with no new state: a row is scheduled at
+    /// (fill + LoadMinutes + WaitAfterEmpty), so the last WaitAfterEmpty of that window is the time it
+    /// spends empty. Until then, waiting costs the pet nothing — and after it, the card has to say so,
+    /// because "starving quietly" and "feeding fine" look the same from outside.</summary>
+    private string WaitingForRow(PetSlotConfig row, DateTime dueAt, string owner)
+    {
+        var slack = dueAt.AddMinutes(-WaitAfterEmptyMinutes) - DateTime.Now;
+        return slack > TimeSpan.Zero
+            ? $"{NameOf(row)} is due — waiting for {owner} ({slack.TotalMinutes:0} min of food left)"
+            : $"{NameOf(row)} is OUT of food — still waiting for {owner}";
+    }
+
+    /// <summary>Gives the game back. Always called — a tool that dies holding the gate would leave the
+    /// launcher waiting on it for the rest of the session.</summary>
+    private void ReleaseGame() => _gate?.Release(GateOwner);
 
     /// <summary>Why a run can't start, or null when it can. Checked before anything moves, so a
     /// half-calibrated setup says what is missing instead of clicking into empty screen.</summary>

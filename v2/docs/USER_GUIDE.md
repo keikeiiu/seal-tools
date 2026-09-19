@@ -8,7 +8,10 @@ Installing for the first time? Start with [INSTALL.md](INSTALL.md). For *why* th
 the way they do, see [COORDINATES.md](COORDINATES.md); for the step-by-step calibration flow,
 [CALIBRATION.md](CALIBRATION.md); for which setting lives in which file, [CONFIG.md](CONFIG.md).
 
-> **Only one tool runs at a time.** They all share the single Arduino COM port.
+> **One tool at a time — except the Pet Feeder.** All tools share the single Arduino COM port, so
+> starting one stops the previous one. The **Pet Feeder** is the exception: it is *resident*, so
+> starting another tool leaves it running on its schedule, and it waits for the game if a reload comes
+> due while that tool is using it.
 
 ---
 
@@ -66,7 +69,10 @@ window position. Next launch reopens where you left it.
 
 ### While a tool runs (mini mode)
 
-Only one tool can run at a time, so while one is running the window shows **just that tool's card**:
+While a *foreground* tool is running the window shows **just that tool's card** — the one whose Start
+you pressed last. The Pet Feeder never takes this over: it runs for days at a time, and collapsing the
+window onto it would hide everything else for the length of a schedule. Its card still shows live in the
+normal layout, so "● RUNNING" there really does mean it is feeding:
 
 ```
 ┌─────────────────────────────────────────────────────┐

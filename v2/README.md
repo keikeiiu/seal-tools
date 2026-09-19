@@ -38,7 +38,10 @@ Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 | **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points, moving between them with the Arduino (closed loop by default, hand-tuned counts available via `gem.move_mode`). Combines each grade until the result box reads empty, then advances; ends after the last grade. |
 | **Skill Spammer** | Presses configured keys, each on its own cooldown. |
 
-Only one tool runs at a time (they share the single Arduino COM port).
+At most one tool runs at a time (they share the single Arduino COM port) — with one exception: the
+**Pet Feeder** is resident. It holds nothing between reloads, so starting another tool leaves it
+running, and it waits for the game when a reload comes due while that tool is mid-run. Starting a
+second *foreground* tool still stops the first.
 
 ---
 

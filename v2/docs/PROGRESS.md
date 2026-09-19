@@ -9,6 +9,61 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 (5) — the pet feeder becomes resident, on a branch
+
+**The feature the player asked for**: *"while pet tool running we could very well need to buy sell and
+spam, and some gem compose."* Built on `v2-resident-pet`, **not merged** — it rewrites the exact code
+path the live pet feeder runs from, and it cannot be live-verified until that run ends. Same shape as
+the tuner-spring work.
+
+**The whole rule is two lines.** Starting anything else displaces every other tool *except* the pet;
+starting the pet displaces only a *previous pet*. Both are `StopAll(keep:)` predicates rather than a
+"keeper id", and that is not style — a single keeper name **cannot express both**, and writing it as one
+reintroduced a real bug: pressing Start on the Pet card twice left the first pet loop alive and
+orphaned, still clicking, with no way to stop it. The predicate was the fix, not a tidy-up.
+
+**The gate is what makes the pet's decision safe to make off the dispatcher.** `_running` is a plain
+`Dictionary` — safe only because only the UI thread touches it. The pet runs on its own thread and has
+to ask "is the game free?", so it asks `Core.PortGate` instead, where the check and the claim are one
+operation under a lock. That is also why `IsRunning(id)` was written and then **deleted**: it would have
+been a second, unsafely-threaded way to ask the same question.
+
+**Two decisions with a cost, both recorded where they bite rather than only here:**
+
+- **The gate is handed back in the stop *continuation*, not at `Cancel()`.** Releasing the moment a stop
+  is requested would let the pet start clicking while the dying tool is still sending its last command.
+  The cost is that a loop which never exits keeps the game — and the pet says `waiting for <tool>` on its
+  card for as long as that lasts, which is the honest reading rather than a silent overlap.
+- **`_currentId` is deliberately never the resident.** Mini mode keys off it, and collapsing the window
+  onto a schedule that runs for days would hide everything else for the length of it. **A pet feeder
+  running alone therefore no longer shrinks the window** — the one behaviour change the plan's table did
+  not predict, and the right one, because the old collapse was justified by "only one tool can run, so
+  nothing is hidden that could be used anyway". That justification is exactly what residency deletes.
+
+**And the plan was wrong about `_startInProgress`.** It said the flag should become per-slot. It should
+not: one port, one boot delay, and two concurrent starts must still not both open it, so a single flag is
+the correct shape rather than a limitation. The per-slot version would have allowed the double-open the
+flag exists to prevent. Its wart is unchanged — a Start during another start is still a silent no-op.
+
+**Also worth naming:** the deferral sits exactly where the plan said, between `SleepUntil(next[row])` and
+the reload, and it needs no bookkeeping at all — `next[row]` is left in the past so the next pass picks
+the same row again. What it does need is a *voice*: the card says which tool it is waiting for and how
+long the row's food lasts, and past that point says `OUT of food`, because a starving pet and a feeding
+one look identical from outside. The moment is derived from `next[row] − WaitAfterEmptyMinutes` with no
+new state.
+
+**Two bugs found by reading my own diff rather than by a test**, both in code no test can reach: the
+early return when a run is stopped while waiting to look never cleared `state.Running`, so the card would
+have claimed `● RUNNING` for a tool that was already gone; and the initial look's release was not in a
+`finally`, so a throw out of it leaked the gate and nothing could ever take the game again.
+
+**Verified:** Release build clean, 109/109 tests. **Not verified: the launcher has not been run at all.**
+Every behavioural claim here is reasoning from the code. The live steps — including three cases no plan
+row covers (starting the pet while a tool runs, starting the pet twice, stopping it mid-reload) — are at
+the end of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md).
+
+---
+
 ## 2026-09-20 (4) — Part 3's gate, and stopping short of the wiring on purpose
 
 **Only the first slice of [Part 3](PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,

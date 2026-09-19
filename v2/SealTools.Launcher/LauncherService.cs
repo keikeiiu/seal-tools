@@ -36,11 +36,18 @@ public sealed class LauncherService : IDisposable
         public Task Task { get; set; } = Task.CompletedTask;
     }
 
+    /// <summary>The one tool that stays resident while other tools come and go. It holds nothing
+    /// between reloads — it needs the game for ~30 s, five times a day — so it is the tool that WAITS,
+    /// and every other Start leaves it alone. See <see cref="StopAll"/> for the rule and
+    /// docs/PLAN-RESIDENT-PET.md for why the tuner is deliberately not in this class.</summary>
+    public const string ResidentId = "pet";
+
     private readonly string _rootDir;
     private readonly ConfigLoader _loader;
     private readonly Dictionary<string, RunningTool> _running = new();
-    /// <summary>Which running tool the UI calls "current". The others are running but not it — the
-    /// resident pet feeder, once it stops being killed by every other Start.</summary>
+    /// <summary>Which running tool the UI calls "current". Deliberately never the resident tool: it is
+    /// background furniture rather than a run the player is watching, and the UI keys mini mode and the
+    /// Hold Space card off this. The pet's own card still shows live, via <see cref="StateFor"/>.</summary>
     private string? _currentId;
     /// <summary>True while StartToolAsync is between its first line and the tool actually running.</summary>
     private bool _startInProgress;
@@ -85,8 +92,10 @@ public sealed class LauncherService : IDisposable
     /// kind of lie this replaces.</summary>
     public ToolState? StateFor(string id) => _running.TryGetValue(id, out var r) ? r.State : null;
 
-    /// <summary>Whether that tool is running right now.</summary>
-    public bool IsRunning(string id) => _running.ContainsKey(id);
+    /// <summary>Who is driving the game — the launcher for a foreground tool, or the pet feeder while
+    /// it reloads. Thread-safe, unlike <see cref="_running"/>: the pet tool asks this from its own
+    /// thread, so the "is it free?" check and the claim have to be one operation.</summary>
+    public PortGate Gate { get; } = new();
 
     /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
@@ -241,14 +250,35 @@ public sealed class LauncherService : IDisposable
 
     private async Task<bool> StartToolCoreAsync(string id)
     {
-        // Everything that has to give way to this start, stopped before anything else is touched.
-        // Today that is everything; see StopAll.
-        foreach (var stopping in StopAll())
+        // What gives way, which is the whole of residency in two lines:
+        //
+        //  - starting anything else displaces every other tool EXCEPT the pet, so a run can be driven
+        //    while the pets keep their schedule;
+        //  - starting the pet displaces only a PREVIOUS PET, so it neither kills a run in progress nor
+        //    leaves its own earlier loop orphaned — writing to the shared port with no way to stop it.
+        var stopping = id == ResidentId
+            ? StopAll(keep: running => running != ResidentId)
+            : StopAll(keep: running => running == ResidentId);
+        foreach (var t in stopping)
         {
             // Wait for each loop to leave the shared serial port before this one starts writing to
             // it — otherwise their byte streams can interleave. Bounded, so a wedged tool can't hang
             // the UI's Start click.
-            await Task.WhenAny(stopping, Task.Delay(3000));
+            await Task.WhenAny(t, Task.Delay(3000));
+        }
+
+        // A foreground tool owns the game for its whole run, so it has to wait for a reload in
+        // progress rather than interrupt one — and a reload is the one place a half-finished sequence
+        // leaves a pet unfed. Bounded and reported: the reload takes ~30 s, and a Start that waited
+        // silently and then did nothing would be indistinguishable from a broken button.
+        if (id != ResidentId && !await WaitForGameAsync(id))
+        {
+            // Said, not left null: the Start handler shows this in a dialog, and a silent null there
+            // reads as "Arduino not found", which would be a wrong explanation for a cancelled start.
+            LastArduinoError = _startCancelled
+                ? "Start cancelled."
+                : $"The pet feeder is still using the game ({Gate.Owner}) — {id} was not started.";
+            return false;
         }
 
         var ser = await ArduinoPortAsync();
@@ -256,9 +286,14 @@ public sealed class LauncherService : IDisposable
         // _startCancelled instead. Honour it rather than starting the tool anyway.
         if (ser == null || _startCancelled)
         {
+            // The claim is the launcher's, not the tool's, so a start that gives up has to hand it
+            // back — the pet feeder waits on this and would otherwise never reload again.
+            if (id != ResidentId) Gate.Release(id);
             return false;
         }
-        _currentId = id;
+        // The resident tool never becomes "current": it is background furniture, and the UI keys mini
+        // mode and the Hold Space card off this. Its card still shows live through StateFor.
+        if (id != ResidentId) _currentId = id;
         // Starting a hold takes the spacebar over deliberately, so any standing "the release failed"
         // warning describes a state that no longer applies — it would otherwise sit red on the status
         // line for the rest of the session, after the player had already dealt with it.
@@ -302,25 +337,43 @@ public sealed class LauncherService : IDisposable
         return true;
     }
 
-    /// <summary>Stops every running tool but <paramref name="keeper"/>. Returns one task per stopped
-    /// tool, each completed once that loop has left the port.
-    ///
-    /// The start path wants everything gone (today <paramref name="keeper"/> is always null, which is
-    /// what keeps the current behaviour: pressing Start on any tool stops whatever was running). A
-    /// previous instance of the SAME tool counts — pressing Start on a tool that is already running
-    /// restarts it, and leaving the old loop alive would orphan it writing to the shared port with no
-    /// way to stop it. Shutdown wants everything gone without exception. The pet feeder has to be a
-    /// keeper on the start path and not at shutdown, and this is the single expression of that rule.
+    /// <summary>How long a foreground Start waits for the pet feeder to finish a reload before giving
+    /// up and saying so. A reload takes ~30 s, so the rest is slack rather than a measured worst case —
+    /// long enough not to cut off a reload that is merely slow, short enough that a wedged one is not
+    /// an unkillable Start click.</summary>
+    private const int GameWaitMs = 45_000;
+
+    /// <summary>Waits for the game to be free and CLAIMS it for <paramref name="id"/>, or false when
+    /// the wait ran out or a Stop arrived. The claim happens inside the loop's own check, so there is
+    /// no window between "it is free" and "take it".</summary>
+    private async Task<bool> WaitForGameAsync(string id)
+    {
+        for (var waited = 0; waited < GameWaitMs; waited += 250)
+        {
+            if (_startCancelled) return false;
+            if (Gate.TryAcquire(id)) return true;
+
+            // The only channel to the Start handler, which shows it if this ends in failure. Cleared
+            // by ArduinoPortAsync on the way out, so a wait that succeeds leaves nothing behind.
+            LastArduinoError = $"Waiting for the pet feeder to finish its reload ({Gate.Owner})…";
+            await Task.Delay(250);
+        }
+        return false;
+    }
+
+    /// <summary>Stops every running tool that <paramref name="keep"/> does not name, and returns one
+    /// task per stopped tool, each completed once that loop has left the port. A null predicate keeps
+    /// nothing, which is what shutdown wants.
     ///
     /// Materialised, and every stop issued before any of them is awaited: a lazily-evaluated version
     /// would only cancel the second tool after the first had finished leaving, which is needless
     /// waiting rather than a safety property.</summary>
-    private List<Task> StopAll(string? keeper = null)
+    private List<Task> StopAll(Func<string, bool>? keep = null)
     {
         var stopping = new List<Task>();
         foreach (var id in _running.Keys.ToList())
         {
-            if (id == keeper) continue;
+            if (keep?.Invoke(id) == true) continue;
             if (StopTool(id, fromStart: true) is { } t) stopping.Add(t);
         }
         return stopping;
@@ -361,8 +414,18 @@ public sealed class LauncherService : IDisposable
 
         // Dispose the CTS only after the tool thread has fully exited — the tool loop reads
         // ct.IsCancellationRequested, which throws ObjectDisposedException on a disposed CTS.
+        //
+        // The gate is handed back here too, and NOT at the Cancel above: releasing the moment a stop
+        // is requested would let the pet feeder start clicking while this tool is still sending its
+        // last command. The cost is that a tool loop which never exits keeps the game — and the pet
+        // feeder says "waiting for <tool>" on its card the whole time, which is the honest reading
+        // rather than a silent overlap. The pet's own claims are not the launcher's to release.
         return running.Task.ContinueWith(
-            _ => running.Cts.Dispose(),
+            _ =>
+            {
+                running.Cts.Dispose();
+                if (target != ResidentId) Gate.Release(target);
+            },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
@@ -458,7 +521,7 @@ public sealed class LauncherService : IDisposable
         // The firmware report goes in because a pet run lasts days and its log is the only record
         // left afterwards — and it is the one run where a board that ignored a command looks exactly
         // like a board that acted on it.
-        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport).Run(ser, state, ct),
+        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport, Gate).Run(ser, state, ct),
         _ => 1,
     };
 

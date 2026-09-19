@@ -16,7 +16,9 @@ Goal: notice two things about the game while you are not looking, and either act
 ## The constraint that decides the architecture
 
 **One Arduino port, one tool at a time.** `LauncherService` holds a single `SerialPort`, and starting a
-second tool is refused. So:
+second tool is refused. (Since 2026-09-20 the **Pet Feeder** is resident and is the one exception — it
+waits for the game rather than being stopped by another Start. That does not change the reasoning
+below: a tool still holds the port for its whole run, which is what the watcher must not do.) So:
 
 - **The watcher is not a tool card.** A tool holds the port for its whole run; the watcher must *poll
   without the port* and only take it in order to act. It is therefore a launcher-level service with a

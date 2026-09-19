@@ -11,6 +11,10 @@ namespace SealTools.Core;
 // 750 ms DispatcherTimer). Every field is only ever value/reference REPLACED, never mutated
 // in place, so reads are atomic. Attributes is an immutable snapshot — the tool replaces the
 // whole list each attempt and the UI enumerates the reference it read, so no lock is needed.
+//
+// One of these per running tool, not one per launcher: the resident Pet Feeder runs alongside a
+// foreground tool, and each owns its own instance. The model above is per instance and is unchanged
+// by that — what the launcher must not do is read a tool's state from a thread that is not the UI's.
 public sealed class ToolState
 {
     private string[] _attributes = Array.Empty<string>();

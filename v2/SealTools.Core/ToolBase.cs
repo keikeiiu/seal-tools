@@ -11,11 +11,25 @@ public abstract class ToolBase
 {
     private readonly HotkeysConfig _hotkeys;
 
-    protected ToolBase(HotkeysConfig hotkeys) => _hotkeys = hotkeys;
+    protected ToolBase(HotkeysConfig hotkeys, bool ignoresQuitHotkey = false)
+    {
+        _hotkeys = hotkeys;
+        IgnoresQuitHotkey = ignoresQuitHotkey;
+    }
 
     // Set by SleepCheck when the quit/pause hotkey is seen; the tools poll these each tick.
     protected bool QuitPressed { get; set; }
     protected bool PauseRequested { get; set; }
+
+    /// <summary>When true, SleepCheck never raises <see cref="QuitPressed"/>, so this tool can only be
+    /// stopped by its own Stop button.
+    ///
+    /// The quit hotkey is read from GLOBAL OS key state, which was fine while only one tool could run:
+    /// the press meant "stop the tool". With the pet feeder resident there are two loops, and one press
+    /// would stop BOTH — so quitting a buy run would silently end a schedule that is feeding four pets.
+    /// The pet feeder is the tool that sets this; the hotkey stays fully in charge of the foreground
+    /// tool, which is what it was for.</summary>
+    protected bool IgnoresQuitHotkey { get; }
 
     protected void SleepCheck(double seconds)
     {
@@ -24,7 +38,7 @@ public abstract class ToolBase
         for (int i = 0; i < steps; i++)
         {
             Thread.Sleep(ms);
-            if (Hotkeys.IsDown(_hotkeys.Quit)) { QuitPressed = true; return; }
+            if (!IgnoresQuitHotkey && Hotkeys.IsDown(_hotkeys.Quit)) { QuitPressed = true; return; }
             if (Hotkeys.IsDown(_hotkeys.Pause)) { PauseRequested = true; }
         }
     }
