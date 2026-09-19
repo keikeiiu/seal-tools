@@ -223,6 +223,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>This row's food-slot count — 2 on the free row, 5 on a paid one.</summary>
     private Wpf.Ui.Controls.TextBox? _petStacksBox;
 
+    /// <summary>The stored empty-slot reference for the row being edited, shown on Calibrate Pet so
+    /// it can be looked at rather than trusted.</summary>
+    private Image? _petEmptySlotPreview;
+    private TextBlock? _petEmptySlotLabel;
+
     /// <summary>One boarding tick per row, on the Pet tab — the tool's one piece of state it cannot
     /// read for itself, and a per-run fact rather than a calibration.</summary>
     private StackPanel? _petBoardingTicks;
@@ -5014,11 +5019,36 @@ public partial class MainWindow : FluentWindow, IDisposable
         emptySlot.Click += (_, _) => PetCaptureEmptySlot();
         emptySlot.Margin = new Thickness(0, 0, 6, 0);   // first in the row: no leading gap
 
+        // The stored reference, shown for the row being edited. A crop nobody can see is a crop
+        // nobody can check — and this one decides whether a row is read as boarding, which decides
+        // whether the tool presses its toggle at all. The live run that went wrong was reading three
+        // empty rows as occupied against references that were not what anyone thought they were.
+        _petEmptySlotPreview = new Image
+        {
+            Width = 72,
+            Height = 72,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        _petEmptySlotLabel = Mono();
+
         var save = MakeInlineButton("Save Calibration", ControlAppearance.Primary);
         save.Click += (_, _) => PetSave();
         var saveRow = new StackPanel { Orientation = Orientation.Horizontal };
         saveRow.Children.Add(emptySlot);
         saveRow.Children.Add(save);
+        var previewRow = new StackPanel { Orientation = Orientation.Horizontal };
+        _petEmptySlotPreview.Margin = new Thickness(0, 8, 10, 0);
+        previewRow.Children.Add(_petEmptySlotPreview);
+        previewRow.Children.Add(_petEmptySlotLabel);
+
+        panel.Children.Add(Section("The empty-slot reference",
+            Hint("What the tool compares each row's pet slot against, for the row selected above. " +
+                 "It should show an EMPTY slot of that row — if it shows a pet, or an older window " +
+                 "layout, or nothing at all, re-capture it: this is what decides whether the tool " +
+                 "thinks a row is boarding, which decides whether it presses that row's toggle."),
+            previewRow));
+
         panel.Children.Add(Section("Save",
             Hint("Capture empty pet slot — with the breeder OPEN and NO pet in it. This is the " +
                  "reference the tool compares against after every placement, so it can tell a pet that " +
@@ -5792,6 +5822,50 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
+    /// <summary>Draws the empty-slot reference for the row being edited, with its size against the
+    /// box it is meant to match.
+    ///
+    /// The size comparison is the useful part: a reference taken before its box was re-drawn is a
+    /// crop of the wrong region, and that is what a live run measured as "a pet is in there" on three
+    /// empty rows. The image alone would not say so — both look like an empty slot — but the two
+    /// numbers side by side do.</summary>
+    private void RefreshPetEmptySlotPreview()
+    {
+        if (_petEmptySlotPreview == null || _petEmptySlotLabel == null) return;
+
+        var row = EditRow(_service.Config.Pet);
+        var box = BagGrid.IsValidRect(row.BoardingPetSlot) ? row.BoardingPetSlot : null;
+
+        try
+        {
+            using var mat = IconMatch.FromBase64(row.PetSlotEmptyPng);
+            _petEmptySlotPreview.Source = mat == null ? null : MatToBitmapSource(mat);
+
+            if (mat == null)
+            {
+                _petEmptySlotLabel.Text = "No reference stored for this row." + Environment.NewLine +
+                    "Press Capture empty pet slot with the row EMPTY.";
+                return;
+            }
+
+            var mismatch = box == null || box[2] != mat.Width || box[3] != mat.Height
+                ? "  ← taken at a different size than the box; re-capture it"
+                : "  (matches the slot box)";
+
+            _petEmptySlotLabel.Text =
+                $"Row {_service.Config.Pet.Slots.IndexOf(row) + 1}: " +
+                $"{mat.Width}x{mat.Height}{mismatch}" + Environment.NewLine +
+                (box == null
+                    ? "The pet slot box is not marked for this row."
+                    : $"Slot box: {box[2]}x{box[3]} at ({box[0]},{box[1]})");
+        }
+        catch
+        {
+            _petEmptySlotPreview.Source = null;
+            _petEmptySlotLabel.Text = "The stored reference would not decode — re-capture it.";
+        }
+    }
+
     /// <summary>Fills the Pet tab's checklist. Its own items only — see where the section is built for
     /// why the two tabs are kept apart.</summary>
     private void RefreshPetSessionChecklist()
@@ -5928,6 +6002,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petStacksBox.Text = pet.Slots[_petEditRow].Stacks.ToString(CultureInfo.InvariantCulture);
             _petStacksBox.TextChanged += PetStacksChanged;
         }
+
+        RefreshPetEmptySlotPreview();
 
         // The boarding ticks are on the Pet tab and there is one per row, so adding a row has to
         // produce another tick — a panel built once at startup could not show a row that did not exist
@@ -6661,6 +6737,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petHint!.Text = $"Empty slot stored for the row you are editing ({rect.Width}x" +
                 $"{rect.Height}). The tool checks after every placement that a pet actually went in, " +
                 "and reads this to decide whether a row needs reloading at all. Save to keep it.";
+            RefreshPetEmptySlotPreview();
             RefreshPetChecklist();
         }
         catch (Exception ex)
