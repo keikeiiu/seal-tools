@@ -9,6 +9,78 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 — the feeder ran all four rows, and three of my own conclusions were wrong
+
+**A long evening of live testing, and the theme is measurements overturning things I had already written
+down.** The run itself ended the session working: **all four rows reloaded at 21:56** and **row 1 again on
+schedule at 01:22:44**, unattended, with the icon scan finding `match 0` and a runner-up at `0.019`.
+
+### `MatchLimit` was a guess that had been costing half of every scan
+
+The player's scan found **6 of their 10 pets**. The crops were right; measured against their own pages,
+the pets scored **0.000–0.150** and everything else in the bag **0.831 and up**. The limit was **0.12** —
+the composer's empty-box number, carried over with the reasoning that strict is safe because a near-miss
+right-clicks the wrong item. Sound reasoning, an unmeasured number, and it was throwing away four pets a
+scan. It is **0.5** now: not tuned until the answer came out right, but placed in the middle of a gap
+from 0.32 to 0.83.
+
+**And the fix that looked obvious was wrong.** "The neighbours leak into the cell" suggested comparing
+only the middle — at coverage 0.7 *every* pet scored 0.84+, strictly worse, because an offset is a
+translation of the whole image and cropping harder does not chase one. Sweeping the search radius 3
+through 10 then showed it was **not an offset problem at all** — identical scores — so the threshold was
+the whole of it.
+
+### A capture is a picture of whatever is in front
+
+Rows failed with *"No queued pet is in the bag — the closest match was 0.915"*. The player found the
+cause: **their game window was not focused**, so every page was captured as whatever covered it. The
+verdict was right and the image was wrong, and those are indistinguishable in a log. Three guards now:
+a foreground check on the feeder read and the bag scan, and **parking the cursor off the bag** before
+each capture — a pet under the pointer reads as a different pet, which is the "park the cursor" item
+TODO has carried for weeks, arriving with a measurement attached.
+
+### Three of my own conclusions, corrected
+
+- **"Row 1's reference is genuinely a different pet"** — no. It was **the mouse arrow** over part of the
+  portrait; I had read a capture artefact as a fact about the game, twice.
+- **"All four rows have distinct empty-slot references"** — no. My extraction used `\s*` before the
+  value, which matches a newline, so for three empty ones it read the *next line's* first token and
+  hashed `boarding_running:` four times. I compared four copies of the same string and called them
+  distinct.
+- **The shared empty-slot reference** — the real bug underneath. One crop for all four rows read **three
+  empty rows as occupied**, so the tool left four starving pets in the bag and did nothing, then started
+  an **empty boarding** on one of them — which the game answered with an error box blocking every click.
+  Each row has its own reference now, and the reload **checks that the end press worked** rather than
+  assuming it.
+
+### And the projection bug, for the second time
+
+`LocalPetSlot.ToConfig()` — the **load** path — never copied `PetSlotEmptyPng`. So every launcher start
+discarded each row's reference and the next save wrote the blank back. Row 1 survived only because the
+migration re-supplies it, which made the loss look like "rows 2–4 have no reference" rather than like a
+projection bug. The reflection guard covered `LocalPet` but **not the nested types**; my first attempt at
+fixing the guard compared through `From`, which never calls `ToConfig`, so deleting the field left it
+green. It compares the stored object against the config now, and is mutation-checked.
+
+### And the co-run question, answered by the game rather than by us
+
+The player asked whether the pet feeder could stay resident while other tools come and go. The
+investigation is in [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md), and the answer is **not about our
+code**: the boarding window and the **tuner's** window cannot both be open, and the tuner's must be
+closed first — so there is never a moment where two tools drive the game, and the cursor-lease design
+that asymmetry seemed to want has no subject. The tuner stays a manual schedule; everything else is
+plannable, because the pet feeder holds nothing between reloads. **Nothing is built.**
+
+**Also found while exploring it: the Hold Space toggle inverts.** Its guard asks `CurrentId` *and*
+`Running == true`; when `Running` has gone false with space still held, the press falls to the `else` and
+**re-holds** the key. v2.9.1's tag carries identical code, so the older launcher on the other PC is a red
+herring.
+
+**Left open:** the three parts of `PLAN-RESIDENT-PET.md`; the feeder-count read built but never verified
+against a live feeder; one pet still unexplained at 0.320 against the crops; and ~57 food cells a day.
+
+---
+
 ## 2026-09-19 (5) — the four-row build, and a matcher that was only finding half the pets
 
 **The longest session yet, and the one that built the multi-pet feature end to end.** Four rows
