@@ -386,6 +386,7 @@ public class ConfigLoaderTests
                             new() { 250, 210, 60, 60 },
                             new() { 320, 210, 60, 60 },
                         },
+                        PetSlotEmptyPng = "row-slot-png",
                         Stacks = 5,
                         BoardingRunning = true,
                     },
@@ -449,7 +450,6 @@ public class ConfigLoaderTests
             FeedIcon = new List<int> { 3, 4 },
             CloseButton = new List<int> { 5, 6 },
             PageTabs = new List<List<int>> { new() { 7, 8 } },
-            PetSlotEmptyPng = "empty-slot-png",
             BagGrid = new List<int> { 25, 26, 27, 28 },
             BagSlot = new List<int> { 29, 30, 31, 32 },
             FoodSlots = new List<List<int>> { new() { 0, 33 } },
@@ -466,6 +466,7 @@ public class ConfigLoaderTests
                     BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
                     FeederSlots = new List<List<int>> { new() { 17, 18, 19, 20 } },
                     Stacks = 5,
+                    PetSlotEmptyPng = "empty-slot-png",
                     BoardingRunning = true,
                 },
             },
@@ -523,7 +524,6 @@ public class ConfigLoaderTests
             FeedIcon = new List<int> { 3, 4 },
             CloseButton = new List<int> { 5, 6 },
             PageTabs = new List<List<int>> { new() { 7, 8 } },
-            PetSlotEmptyPng = "empty-slot-png",
             BagGrid = new List<int> { 25, 26, 27, 28 },
             BagSlot = new List<int> { 29, 30, 31, 32 },
             FoodSlots = new List<List<int>> { new() { 0, 33 } },
@@ -652,7 +652,8 @@ public class ConfigLoaderTests
         "  food_cells: [[1, 63], [1, 62]]\n" +
         "  food_cells_used: 11\n" +
         "  pet_icon_rect: [36, 37, 38, 39]\n" +
-        "  pet_icon_png: 'iVBORw0KGgo='\n";
+        "  pet_icon_png: 'iVBORw0KGgo='\n" +
+        "  pet_slot_empty_png: 'row-one-empty'\n";
 
     // The player's ACTUAL pre-rows pet block, copied field for field from their local.yaml on
     // 2026-09-19 — including the empty values, which is the part a hand-written fixture gets wrong.
@@ -721,6 +722,12 @@ public class ConfigLoaderTests
             Assert.Equal(2, slot.Stacks);
             Assert.True(slot.BoardingRunning);
             Assert.Equal(2, slot.FeederSlots.Count);
+
+            // The empty-slot reference used to be ONE crop for the whole tool, and it is per row now.
+            // A file written before that carries it at the top level, and it belongs to row 1 —
+            // which is the row it was taken from, which is why row 1 was the only one that read
+            // correctly on the live run that found this.
+            Assert.Equal("row-one-empty", slot.PetSlotEmptyPng);
 
             // The renames. `pet_cell` and `food_cells` are also stranded keys, one level down.
             Assert.Equal(new List<int> { 1, 2 }, pet.ReturnSlot);

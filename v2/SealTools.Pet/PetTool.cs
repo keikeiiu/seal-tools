@@ -771,7 +771,7 @@ public sealed class PetTool : ToolBase
         var pet = _cfg.Pet;
         if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
 
-        using var reference = IconMatch.FromBase64(pet.PetSlotEmptyPng);
+        using var reference = IconMatch.FromBase64(row.PetSlotEmptyPng);
         if (reference == null) return null;
 
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);

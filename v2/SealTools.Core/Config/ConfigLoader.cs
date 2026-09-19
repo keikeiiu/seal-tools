@@ -115,6 +115,12 @@ public sealed class ConfigLoader
 
         // `pet_cell` and `food_cells` were renamed to `return_slot` and `food_slots`, so their VALUES
         // are stranded under keys nothing maps to — the same silent loss, one level down.
+        // The empty-slot reference used to be ONE crop for the whole tool. It is per row now, because
+        // one crop shared by four rows read three of them wrong — see PetSlotConfig.PetSlotEmptyPng.
+        // A file written before that carries it at the top level, where it belongs to row 1.
+        if (pet.Slots.Count > 0 && string.IsNullOrWhiteSpace(pet.Slots[0].PetSlotEmptyPng))
+            pet.Slots[0].PetSlotEmptyPng = old.PetSlotEmptyPng;
+
         if (pet.ReturnSlot is not { Count: 2 } && old.PetCell is { Count: 2 }) pet.ReturnSlot = old.PetCell;
         if (pet.FoodSlots.Count == 0 && old.FoodCells is { Count: > 0 }) pet.FoodSlots = old.FoodCells;
         if (pet.FoodSlotsUsed == 0 && old.FoodCellsUsed is { } used and > 0) pet.FoodSlotsUsed = used;
@@ -132,6 +138,7 @@ public sealed class ConfigLoader
             FeederSlots = new List<List<int>?> { old.FeederSlotA, old.FeederSlotB }
                 .Where(IsValidRect).Select(r => r!).ToList(),
             Stacks = 2,
+            PetSlotEmptyPng = old.PetSlotEmptyPng,
             BoardingRunning = old.BoardingRunning ?? false,
         });
     }
@@ -248,7 +255,6 @@ public sealed class ConfigLoader
             if (IsPoint(pet.FeedIcon)) defaults.Pet.FeedIcon = pet.FeedIcon;
             if (IsPoint(pet.CloseButton)) defaults.Pet.CloseButton = pet.CloseButton;
             if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
-            if (!string.IsNullOrWhiteSpace(pet.PetSlotEmptyPng)) defaults.Pet.PetSlotEmptyPng = pet.PetSlotEmptyPng;
             // The boarding bag's grid, deliberately separate from BuySell's — the bag sits somewhere
             // else in this flow, so borrowing those numbers would aim every cell at the wrong item.
             if (BagGrid.IsValidRect(pet.BagGrid)) defaults.Pet.BagGrid = pet.BagGrid;
@@ -393,6 +399,7 @@ public sealed class ConfigLoader
         public List<int>? BoardingPetSlot { get; set; }
         public List<List<int>>? FeederSlots { get; set; }
         public int? Stacks { get; set; }
+        public string? PetSlotEmptyPng { get; set; }
         public bool? BoardingRunning { get; set; }
 
         /// <summary>The live shape, from the stored one. A missing `stacks` means TWO — the free
@@ -425,7 +432,6 @@ public sealed class ConfigLoader
         public List<int>? FeedIcon { get; set; }
         public List<int>? CloseButton { get; set; }
         public List<List<int>>? PageTabs { get; set; }
-        public string? PetSlotEmptyPng { get; set; }
         public List<int>? BagGrid { get; set; }
         public List<int>? BagSlot { get; set; }
         public List<List<int>>? FoodSlots { get; set; }
@@ -486,7 +492,6 @@ public sealed class ConfigLoader
             t.FeedIcon = p.FeedIcon;
             t.CloseButton = p.CloseButton;
             t.PageTabs = p.PageTabs;
-            t.PetSlotEmptyPng = p.PetSlotEmptyPng;
             t.BagGrid = p.BagGrid;
             t.BagSlot = p.BagSlot;
             t.MaxButton = p.MaxButton;
@@ -502,6 +507,7 @@ public sealed class ConfigLoader
                     BoardingPetSlot = src.BoardingPetSlot,
                     FeederSlots = src.FeederSlots,
                     Stacks = src.Stacks,
+                    PetSlotEmptyPng = src.PetSlotEmptyPng,
                     BoardingRunning = running,
                 });
             }
@@ -554,6 +560,7 @@ public sealed class ConfigLoader
     /// </summary>
     public sealed class LocalPetLegacy
     {
+        public string? PetSlotEmptyPng { get; set; }
         public List<int>? ToggleLabel { get; set; }
         public List<int>? BoardingPetSlot { get; set; }
         public List<int>? FeederSlotA { get; set; }

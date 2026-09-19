@@ -94,6 +94,23 @@ public sealed class PetSlotConfig
     /// per row means different reload intervals, so the schedule is per row too.</summary>
     public int Stacks { get; set; } = 2;
 
+    /// <summary>THIS ROW's pet slot as it looks EMPTY, cropped from a capture as a base64 PNG.
+    ///
+    /// The reference for "did the pet actually go in?" — and for "is one in there now", which is what
+    /// a run looks at before deciding whether a row needs reloading. A right-click can fail to
+    /// register; measured on a live 12-hour run, where roughly half the boarded time was lost to
+    /// reloads that loaded food into an empty slot and reported success. The placement itself is
+    /// verified, so the click was on target. The only way to know is to look at the result.
+    ///
+    /// PER ROW, and it was one crop shared by all four until a live run proved that wrong: rows 2-4
+    /// reported "a pet is in the loader" while every one of them was empty, so the tool left four
+    /// starving pets alone and did nothing. Row 1 was right, because the shared crop was taken from
+    /// row 1. The paid rows' empty slot does not render like the free row's, and a wrong reading in
+    /// that direction is the one that looks like "nothing to do here".
+    ///
+    /// Capture each with that row empty, before a pet goes in.</summary>
+    public string? PetSlotEmptyPng { get; set; }
+
     /// <summary>Whether boarding is running on THIS row right now — i.e. the pet is in the loader
     /// rather than in the bag.
     ///
@@ -187,16 +204,6 @@ public sealed class PetConfig
     /// The tool drives as many as are configured, one at a time — the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
     public List<PetSlotConfig> Slots { get; set; } = new();
-
-    /// <summary>The pet slot as it looks EMPTY, cropped from a capture and stored as a base64 PNG.
-    ///
-    /// The reference for "did the pet actually go in?". A right-click can fail to register — measured
-    /// on a live 12-hour run, where roughly half the boarded time was lost to reloads that loaded food
-    /// into an empty slot and reported success — and the placement itself is verified, so the click
-    /// was on target. Which means the only way to know is to look at the result.
-    ///
-    /// Capture it with the breeder empty, before a pet goes in.</summary>
-    public string? PetSlotEmptyPng { get; set; }
 
     /// <summary>How unlike the empty reference a slot must look before it counts as occupied, as a
     /// fraction of differing pixels. Deliberately low: the composer measured an empty box against

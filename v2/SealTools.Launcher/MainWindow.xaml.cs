@@ -5679,7 +5679,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             Mark(tabs == 3, $"bag page tabs       (click) {tabs}/3"),
             Mark(BagGrid.IsValidRect(pet.BagGrid), "bag grid area        (drag)"),
             Mark(BagGrid.IsValidRect(pet.BagSlot), "one bag slot         (drag)"),
-            Mark(!string.IsNullOrEmpty(pet.PetSlotEmptyPng), "empty-slot reference (capture)"),
         };
         // THIS TAB'S ITEMS ONLY. The return slot, the food cells and the queue are the Pet tab's, and
         // reporting them here made a per-run gap look like a calibration gap — the two tabs are meant
@@ -5706,6 +5705,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                       $"{(i == _petEditRow ? "   ← editing" : "")}");
             lines.Add(Mark(BagGrid.IsValidRect(row.ToggleLabel), "start/end button     (drag)"));
             lines.Add(Mark(BagGrid.IsValidRect(row.BoardingPetSlot), "pet slot             (drag)"));
+            lines.Add(Mark(!string.IsNullOrEmpty(row.PetSlotEmptyPng),
+                "empty slot reference (capture)"));
             lines.Add(Mark(counts >= row.Stacks, $"food counts          (drag) {counts}/{row.Stacks}"));
         }
 
@@ -6656,9 +6657,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             using var full = BitmapSourceToMat(_petScreenshot);
             using var crop = new OpenCvSharp.Mat(full, rect);
-            pet.PetSlotEmptyPng = IconMatch.ToBase64(crop);
-            _petHint!.Text = $"Empty pet slot stored ({rect.Width}x{rect.Height}). The tool will now " +
-                "check after every placement that a pet actually went in. Save to keep it.";
+            EditRow(pet).PetSlotEmptyPng = IconMatch.ToBase64(crop);
+            _petHint!.Text = $"Empty slot stored for the row you are editing ({rect.Width}x" +
+                $"{rect.Height}). The tool checks after every placement that a pet actually went in, " +
+                "and reads this to decide whether a row needs reloading at all. Save to keep it.";
             RefreshPetChecklist();
         }
         catch (Exception ex)
