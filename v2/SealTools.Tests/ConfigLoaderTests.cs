@@ -595,6 +595,62 @@ public class ConfigLoaderTests
         Assert.True(calibrationOnly.Queue is null or { Count: 0 });
     }
 
+    // The guard above walks LocalPet's properties, and that was NOT ENOUGH.
+    //
+    // LocalPetSlot is the row — a nested type with its own hand-written projection — and
+    // PetSlotEmptyPng was missing from it. So every load dropped each row's empty-slot reference and
+    // the next save wrote the blank back. Row 1 survived only because the migration re-supplies it
+    // from the old top-level value, which made the loss look like "rows 2-4 have no reference"
+    // rather than like a projection bug — and the run that followed read three empty rows as
+    // occupied and started an empty boarding on one of them.
+    //
+    // A field list is only as good as the widest thing it is checked against. This is the nested
+    // types, by reflection, so a field added to a ROW or a QUEUE ENTRY and forgotten in its
+    // projection fails here rather than in a live run.
+    // COMPARED AGAINST THE STORED OBJECT, not against From() — and the first version of this test got
+    // that wrong. It went through LocalPet.From, which builds the stored rows directly and never
+    // calls ToConfig at all, so deleting the offending field from ToConfig left the test green. The
+    // direction that matters is the LOAD: what the file holds, against what the app ends up with.
+    [Fact]
+    public void EveryNestedPetFieldIsCopied()
+    {
+        var stored = new ConfigLoader.LocalPetSlot
+        {
+            ToggleLabel = new List<int> { 1, 2, 3, 4 },
+            BoardingPetSlot = new List<int> { 5, 6, 7, 8 },
+            FeederSlots = new List<List<int>> { new() { 9, 10 } },
+            Stacks = 5,
+            PetSlotEmptyPng = "row-empty-png",
+            BoardingRunning = true,
+        };
+        var live = stored.ToConfig();
+
+        foreach (var prop in typeof(ConfigLoader.LocalPetSlot).GetProperties())
+        {
+            var target = typeof(PetSlotConfig).GetProperty(prop.Name);
+            Assert.True(target != null, $"LocalPetSlot.{prop.Name} has no PetSlotConfig counterpart");
+            Assert.True(Equals(prop.GetValue(stored), target!.GetValue(live)),
+                $"LocalPetSlot.{prop.Name} is not carried into the config, so every LOAD drops it " +
+                "and the next save writes the blank back");
+        }
+
+        var storedEntry = new ConfigLoader.LocalPetQueueEntry
+        {
+            Label = "a pet",
+            Rect = new List<int> { 11, 12, 13, 14 },
+            Png = "icon-png",
+        };
+        var liveEntry = storedEntry.ToConfig();
+
+        foreach (var prop in typeof(ConfigLoader.LocalPetQueueEntry).GetProperties())
+        {
+            var target = typeof(PetQueueEntry).GetProperty(prop.Name);
+            Assert.True(target != null, $"LocalPetQueueEntry.{prop.Name} has no counterpart");
+            Assert.True(Equals(prop.GetValue(storedEntry), target!.GetValue(liveEntry)),
+                $"LocalPetQueueEntry.{prop.Name} is not carried into the config");
+        }
+    }
+
     /// <summary>And the scoping has to be REAL, or it is just a union with extra steps: a calibration
     /// save must not disturb the run's half, because that is the whole reason for splitting them.</summary>
     [Fact]

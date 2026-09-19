@@ -403,13 +403,23 @@ public sealed class ConfigLoader
         public bool? BoardingRunning { get; set; }
 
         /// <summary>The live shape, from the stored one. A missing `stacks` means TWO — the free
-        /// row's count, which is the only row a file written before the rows existed can describe.</summary>
+        /// row's count, which is the only row a file written before the rows existed can describe.
+        ///
+        /// EVERY field, and `PetSlotEmptyPng` was not — which meant every load silently dropped each
+        /// row's empty-slot reference, and the next save wrote the blank back. Row 1 survived only
+        /// because the migration re-supplies it from the old top-level value, so the loss looked like
+        /// "rows 2-4 have no reference" rather than like a projection bug. The live run that followed
+        /// read three empty rows as occupied and started an empty boarding on one of them.
+        ///
+        /// `EveryNestedPetFieldIsCopied` walks this type by reflection now, so the omission cannot
+        /// happen a third time.</summary>
         public PetSlotConfig ToConfig() => new()
         {
             ToggleLabel = ToggleLabel,
             BoardingPetSlot = BoardingPetSlot,
             FeederSlots = FeederSlots ?? new(),
             Stacks = Stacks ?? 2,
+            PetSlotEmptyPng = PetSlotEmptyPng,
             BoardingRunning = BoardingRunning ?? false,
         };
     }
