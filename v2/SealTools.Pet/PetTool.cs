@@ -324,7 +324,8 @@ public sealed class PetTool : ToolBase
         {
             foreach (var row in _cfg.Pet.Slots)
             {
-                var empty = PetSlotIsEmpty(row);
+                var difference = PetSlotDifference(row);
+                var empty = difference is { } d ? d <= _cfg.Pet.PetSlotOccupiedAbove : (bool?)null;
                 switch (empty)
                 {
                     case true:
@@ -341,6 +342,13 @@ public sealed class PetTool : ToolBase
                             $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
                         break;
                 }
+
+                if (difference is { } diff)
+                    Log($"  {NameOf(row)}: slot differs from its empty reference by {diff:0.###} " +
+                        $"(occupied above {_cfg.Pet.PetSlotOccupiedAbove:0.###})" +
+                        (diff > _cfg.Pet.PetSlotOccupiedAbove && diff < 0.25
+                            ? "  ← marginal: if this row is EMPTY, re-capture its reference"
+                            : ""));
 
                 // Only worth reading a feeder on a row that is actually boarding — an empty one has
                 // nothing loaded and will be filled in a moment anyway.
@@ -492,6 +500,28 @@ public sealed class PetTool : ToolBase
                 row.BoardingRunning = false;
                 _persistState?.Invoke();
                 SleepCheck(Math.Max(EndWait, ActionWait));
+
+                // CHECK THE EFFECT, do not assume it. That press is a TOGGLE, so if the row's state
+                // was misread it does the opposite — and it has already done exactly that on a live
+                // run: a row that read "occupied" but was stopped got a boarding STARTED on it, with
+                // no pet, which the game answered with an error box sitting over the window and
+                // blocking every click after it.
+                //
+                // The pet has to have come back to the bag for the press to have been the right one.
+                // An Enter first, because a dialog raised by a bad press would otherwise swallow the
+                // read — and Enter on no dialog is a no-op, the same reasoning the open uses.
+                Enter(ser, out _);
+                SleepCheck(ActionWait);
+
+                if (PetSlotIsEmpty(row) == false)
+                {
+                    error = $"{NameOf(row)}: the pet did NOT come back out of the loader after " +
+                            "pressing the end button — so that press did the opposite of what was " +
+                            "asked and a boarding may now be running with nothing in it. Stopping " +
+                            "rather than clicking on: check the row in the game, and re-capture its " +
+                            "empty-slot reference on Calibrate Pet if the slot is empty.";
+                    return false;
+                }
             }
 
             state.Message = $"{NameOf(row)}: placing the pet…";
@@ -766,9 +796,24 @@ public sealed class PetTool : ToolBase
     /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
     /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
     /// otherwise work.</summary>
-    private bool? PetSlotIsEmpty(PetSlotConfig row)
+    private bool? PetSlotIsEmpty(PetSlotConfig row) => PetSlotDifference(row) is { } d
+        ? d <= _cfg.Pet.PetSlotOccupiedAbove
+        : null;
+
+    /// <summary>How unlike the row's empty reference its slot looks right now, or null when it cannot
+    /// be told — no reference captured, no window, an unreadable grab.
+    ///
+    /// Split out from the yes/no so the NUMBER can be logged. A slot that reads "occupied" by a hair
+    /// is a reference that no longer matches its box — a re-drawn box leaves the crop stale, and the
+    /// comparison can only resize, not re-aim — and that failure is invisible in a boolean: it looks
+    /// exactly like a pet being there. It cost a live run an empty boarding started on a row with no
+    /// pet, which the game answered with an error box over everything.
+    ///
+    /// The threshold it is compared against is deliberately LOW, because the cost of the strict
+    /// direction is a retry and the cost of the loose direction is not noticing a pet that never went
+    /// in. PetSlotOccupiedAbove carries that reasoning.</summary>
+    private double? PetSlotDifference(PetSlotConfig row)
     {
-        var pet = _cfg.Pet;
         if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
 
         using var reference = IconMatch.FromBase64(row.PetSlotEmptyPng);
@@ -783,8 +828,7 @@ public sealed class PetTool : ToolBase
         if (cap == null) return null;
 
         using var now = cap.Image;
-        var difference = IconMatch.DifferingFraction(reference, now);
-        return difference <= pet.PetSlotOccupiedAbove;
+        return IconMatch.DifferingFraction(reference, now);
     }
 
     /// <summary>One transaction per stack, filling as many of the row's slots as it holds — see
