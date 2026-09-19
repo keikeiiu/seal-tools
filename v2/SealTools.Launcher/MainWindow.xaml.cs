@@ -299,7 +299,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // the tool's loop has flagged itself running is not the button's business.
             if (_service.CurrentId == "holdspace")
             {
-                _ = _service.StopTool();
+                _ = _service.StopTool("holdspace");
             }
             else if (!await _service.StartToolAsync("holdspace"))
                 MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -384,7 +384,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
 
             var stopButton = MakeButton("Stop", ControlAppearance.Danger);
-            stopButton.Click += (_, _) => _service.StopTool();
+            // This card's tool, named — not "whatever is running". With the pet feeder resident it
+            // will be possible for more than one tool to be alive, and a Stop that killed a tool other
+            // than the one whose card was clicked would be a way to lose a run by aiming at the wrong
+            // button.
+            stopButton.Click += (_, _) => _service.StopTool(id);
 
             var buttons = new StackPanel
             {
@@ -508,13 +512,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void RefreshStatus()
     {
-        var state = _service.CurrentState;
-
         // Mini mode: while a tool runs, the window shows only that tool's card so it takes a corner
-        // rather than the whole left edge. Only one tool can run at a time, so nothing is hidden
-        // that could be used anyway.
+        // rather than the whole left edge.
         // Hold Space has no card (it's a top-row button), so it doesn't shrink the window to a card.
-        _miniToolId = state is { Running: true } && _service.CurrentId != "holdspace"
+        _miniToolId = _service.CurrentState is { Running: true } && _service.CurrentId != "holdspace"
             ? _service.CurrentId : null;
         ApplyWindowLayout();
 
@@ -525,7 +526,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                 continue;
             }
 
-            if (_service.CurrentId == id && state != null)
+            // Asked per id rather than compared against one "current" tool: the pet feeder can be
+            // running while another tool is, and the old else-branch would have written "stopped"
+            // over the card of a tool that was feeding pets at that moment.
+            if (_service.StateFor(id) is { } state)
             {
                 block.Text = FormatStatus(state);
                 block.Foreground = state.Running
@@ -546,7 +550,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // stays on Running: "holding" means the key is down, and the tool only believes that while
         // its loop says so.
         bool holdLoaded = _service.CurrentId == "holdspace";
-        bool holding = holdLoaded && state?.Running == true;
+        bool holding = holdLoaded && _service.StateFor("holdspace") is { Running: true };
         HoldSpaceToggle.Content = holdLoaded ? "Stop Space" : "Hold Space";
         HoldSpaceToggle.Appearance = holdLoaded ? ControlAppearance.Danger : ControlAppearance.Secondary;
         HoldSpaceToggle.ToolTip = holdLoaded

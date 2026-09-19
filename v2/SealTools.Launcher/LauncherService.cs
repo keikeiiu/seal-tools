@@ -14,16 +14,33 @@ using GemComposerTool = SealTools.GemComposer.GemComposer;
 namespace SealTools.Launcher;
 
 /// <summary>
-/// Owns the config, the attribute dictionary, and the single running tool (one Arduino COM port).
+/// Owns the config, the attribute dictionary, and the running tools (one Arduino COM port).
 /// Control is in-memory (CancellationToken), state is a shared <see cref="ToolState"/>.
 /// </summary>
 public sealed class LauncherService : IDisposable
 {
+    /// <summary>One tool's live run. These were four parallel fields (`_cts` / `_toolTask` / `_state` /
+    /// `_currentId`), which quietly encoded "there is only ever one tool" in the shape of the class
+    /// rather than in a rule anyone could read. The pet feeder becoming resident breaks that, so the
+    /// four travel together now — a stop is then "cancel this one" instead of "null all of them", and
+    /// the question "is THAT tool still running?" is answerable.
+    ///
+    /// <see cref="Task"/> is assigned immediately after the record is registered, in the same
+    /// synchronous block, so a stop can never observe the record without it — see the note where the
+    /// start builds one.</summary>
+    private sealed class RunningTool
+    {
+        public required string Id { get; init; }
+        public required CancellationTokenSource Cts { get; init; }
+        public required ToolState State { get; init; }
+        public Task Task { get; set; } = Task.CompletedTask;
+    }
+
     private readonly string _rootDir;
     private readonly ConfigLoader _loader;
-    private CancellationTokenSource? _cts;
-    private Task? _toolTask;
-    private ToolState? _state;
+    private readonly Dictionary<string, RunningTool> _running = new();
+    /// <summary>Which running tool the UI calls "current". The others are running but not it — the
+    /// resident pet feeder, once it stops being killed by every other Start.</summary>
     private string? _currentId;
     /// <summary>True while StartToolAsync is between its first line and the tool actually running.</summary>
     private bool _startInProgress;
@@ -56,11 +73,20 @@ public sealed class LauncherService : IDisposable
     /// <summary>The OCR attribute dictionary from attributes.yaml.</summary>
     public AttributesConfig Attributes { get; }
 
-    /// <summary>The id of the currently-launched tool, or null when idle.</summary>
+    /// <summary>The id of the tool the UI calls current, or null when there is none.</summary>
     public string? CurrentId => _currentId;
 
-    /// <summary>The live state of the currently-launched tool, or null when idle.</summary>
-    public ToolState? CurrentState => _state;
+    /// <summary>The live state of the current tool, or null when there is none.</summary>
+    public ToolState? CurrentState => _currentId is { } id ? StateFor(id) : null;
+
+    /// <summary>The live state of one tool, or null when that tool is not running. The card loop asks
+    /// this per id rather than reading one "current" tool, because the pet feeder can be running while
+    /// another tool is — and a card that read "stopped" while its tool was feeding pets is exactly the
+    /// kind of lie this replaces.</summary>
+    public ToolState? StateFor(string id) => _running.TryGetValue(id, out var r) ? r.State : null;
+
+    /// <summary>Whether that tool is running right now.</summary>
+    public bool IsRunning(string id) => _running.ContainsKey(id);
 
     /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
@@ -215,13 +241,14 @@ public sealed class LauncherService : IDisposable
 
     private async Task<bool> StartToolCoreAsync(string id)
     {
-        var stopped = StopTool(fromStart: true);
-        if (stopped != null)
+        // Everything that has to give way to this start, stopped before anything else is touched.
+        // Today that is everything; see StopAll.
+        foreach (var stopping in StopAll())
         {
-            // Wait for the previous tool loop to leave the shared serial port before this one
-            // starts writing to it — otherwise their byte streams can interleave. Bounded, so a
-            // wedged tool can't hang the UI's Start click.
-            await Task.WhenAny(stopped, Task.Delay(3000));
+            // Wait for each loop to leave the shared serial port before this one starts writing to
+            // it — otherwise their byte streams can interleave. Bounded, so a wedged tool can't hang
+            // the UI's Start click.
+            await Task.WhenAny(stopping, Task.Delay(3000));
         }
 
         var ser = await ArduinoPortAsync();
@@ -236,12 +263,17 @@ public sealed class LauncherService : IDisposable
         // warning describes a state that no longer applies — it would otherwise sit red on the status
         // line for the rest of the session, after the player had already dealt with it.
         if (id == "holdspace") LastSpaceReleaseError = null;
-        _cts = new CancellationTokenSource();
-        _state = new ToolState { Running = true };
-        var ct = _cts.Token;
-        var state = _state;
 
-        _toolTask = Task.Run(() =>
+        var cts = new CancellationTokenSource();
+        var state = new ToolState { Running = true };
+        var ct = cts.Token;
+        var entry = new RunningTool { Id = id, Cts = cts, State = state };
+
+        // Registered BEFORE the loop is started, and with no await between the two, so a Stop from
+        // the UI cannot fall between them and miss a tool that is already running. (The whole block
+        // is synchronous on the dispatcher thread, which is what makes that safe.)
+        _running[id] = entry;
+        entry.Task = Task.Run(() =>
         {
             try
             {
@@ -270,50 +302,67 @@ public sealed class LauncherService : IDisposable
         return true;
     }
 
-    /// <summary>Stops the current tool and releases the Arduino COM port. Returns a task that
-    /// completes once the tool loop has exited and its CTS is disposed — await it before starting
-    /// another tool, since all tools share one serial port. Null when nothing was running.</summary>
-    public Task? StopTool(bool fromStart = false)
+    /// <summary>Stops every running tool but <paramref name="keeper"/>. Returns one task per stopped
+    /// tool, each completed once that loop has left the port.
+    ///
+    /// The start path wants everything gone (today <paramref name="keeper"/> is always null, which is
+    /// what keeps the current behaviour: pressing Start on any tool stops whatever was running). A
+    /// previous instance of the SAME tool counts — pressing Start on a tool that is already running
+    /// restarts it, and leaving the old loop alive would orphan it writing to the shared port with no
+    /// way to stop it. Shutdown wants everything gone without exception. The pet feeder has to be a
+    /// keeper on the start path and not at shutdown, and this is the single expression of that rule.
+    ///
+    /// Materialised, and every stop issued before any of them is awaited: a lazily-evaluated version
+    /// would only cancel the second tool after the first had finished leaving, which is needless
+    /// waiting rather than a safety property.</summary>
+    private List<Task> StopAll(string? keeper = null)
     {
-        var cts = _cts;
-        var task = _toolTask;
-        var id = _currentId;
-        if (cts == null)
+        var stopping = new List<Task>();
+        foreach (var id in _running.Keys.ToList())
         {
-            // Nothing running, but a start may be sitting on the port wait with no tool installed
-            // yet. Flag it so the start bails on resume, instead of launching a tool the user has
-            // already asked to stop. StartToolAsync's own StopTool call passes fromStart: true, or
+            if (id == keeper) continue;
+            if (StopTool(id, fromStart: true) is { } t) stopping.Add(t);
+        }
+        return stopping;
+    }
+
+    /// <summary>Stops a tool and releases the Arduino COM port. Returns a task that completes once the
+    /// tool loop has exited and its CTS is disposed — await it before starting another tool, since all
+    /// tools share one serial port. Null when that tool was not running.
+    ///
+    /// <paramref name="id"/> names which tool; null means the one the UI calls current, which is what
+    /// the Stop buttons mean.</summary>
+    public Task? StopTool(string? id = null, bool fromStart = false)
+    {
+        var target = id ?? _currentId;
+        if (target == null || !_running.TryGetValue(target, out var running))
+        {
+            // Nothing running in that slot, but a start may be sitting on the port wait with no tool
+            // installed yet. Flag it so the start bails on resume, instead of launching a tool the
+            // user has already asked to stop. StartToolAsync's own stop passes fromStart: true, or
             // it would cancel itself here.
             if (_startInProgress && !fromStart) _startCancelled = true;
             return null;
         }
 
-        // Null the fields first so a re-entrant call (e.g. StartTool -> StopTool) sees no
-        // current tool and doesn't double-cancel.
-        _cts = null;
-        _toolTask = null;
-        _state = null;
-        _currentId = null;
+        // Deregister first so a re-entrant call (e.g. StartTool -> StopTool) sees no such tool and
+        // doesn't double-cancel.
+        _running.Remove(target);
+        if (_currentId == target) _currentId = null;
 
         // A tool that holds a key down must not depend on its own finally to let go of it. The loop
         // that would send the release is what a stop is interrupting, and the case that matters is
         // exactly the one where its own write threw — so every stop path (the card's Stop, the
         // toggle, Quit, Dispose) releases from here instead. "U" is idempotent in the firmware, so
         // the tool's own release arriving too is harmless.
-        if (HeldKeys.NeedsSpaceRelease(id)) ReleaseSpace();
+        if (HeldKeys.NeedsSpaceRelease(target)) ReleaseSpace();
 
-        cts.Cancel();
-
-        if (task == null)
-        {
-            cts.Dispose();
-            return null;
-        }
+        running.Cts.Cancel();
 
         // Dispose the CTS only after the tool thread has fully exited — the tool loop reads
         // ct.IsCancellationRequested, which throws ObjectDisposedException on a disposed CTS.
-        return task.ContinueWith(
-            _ => cts.Dispose(),
+        return running.Task.ContinueWith(
+            _ => running.Cts.Dispose(),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
@@ -444,10 +493,15 @@ public sealed class LauncherService : IDisposable
         try
         {
             _diagnosticOcr?.Dispose();
-            var stopped = StopTool();
-            // Let the tool loop leave the port before we close it, or its last write throws on a
-            // disposed SerialPort and gets logged as a spurious crash. Bounded — shutdown wins.
-            try { stopped?.Wait(TimeSpan.FromSeconds(3)); } catch { /* the tool logs its own failure */ }
+            // Every tool, not just the current one. Slots make "everything" expressible, and a
+            // shutdown that left a loop writing to a port this method is about to close would be the
+            // sort of thing that gets logged as a spurious crash on the way out.
+            foreach (var stopped in StopAll())
+            {
+                // Let each loop leave the port before we close it, or its last write throws on a
+                // disposed SerialPort and gets logged as a spurious crash. Bounded — shutdown wins.
+                try { stopped.Wait(TimeSpan.FromSeconds(3)); } catch { /* the tool logs its own failure */ }
+            }
         }
         finally
         {
