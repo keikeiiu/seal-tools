@@ -893,6 +893,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             var lines = new List<string>
             {
                 $"Expected: VID 0x{_service.Config.Arduino.Vid:X4}  PID {string.Join("/", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}",
+                // The board is asked once, when the port is opened, so before any tool has run there
+                // is nothing to report yet — and that is a different thing from a board that stayed
+                // silent, which the report says in its own words.
+                $"Firmware: {_service.FirmwareReport ?? "not asked yet (opens with the first tool)"}",
             };
             if (devices.Count == 0) lines.Add("(no serial ports detected)");
             foreach (var d in devices)

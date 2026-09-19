@@ -96,12 +96,91 @@ public sealed class LauncherService : IDisposable
         catch (Exception ex)
         {
             _arduino = null;
+            // A failed open is not a board that has told us anything; a report left over from an
+            // earlier port must not be shown as though it were about this one.
+            FirmwareLevel = null;
+            FirmwareReport = null;
             LastArduinoError = $"Could not open {port}: {ex.Message}";
             return null;
         }
 
         await Task.Delay(2000); // one-time boot delay after the serial open (non-blocking)
+
+        // Ask the board what it is running, once per open — the one moment nothing else can be
+        // writing, because StartToolCoreAsync has already waited for the previous tool to leave.
+        // Off the dispatcher: ReadLine blocks its thread until the timeout, and a frozen window on
+        // every cold start is not a price worth paying for a diagnostic.
+        FirmwareLevel = await Task.Run(() => QueryFirmwareVersion(_arduino));
+        FirmwareReport = FirmwareVersion.Describe(FirmwareLevel);
+        Console.WriteLine($"[arduino] firmware {FirmwareReport}");
         return _arduino;
+    }
+
+    /// <summary>The firmware protocol level the board reported when the port was opened, or null when
+    /// it reported nothing — see <see cref="FirmwareVersion"/> for why the silence is an answer and
+    /// not a failed read. Also null before the port has been opened at all.</summary>
+    public int? FirmwareLevel { get; private set; }
+
+    /// <summary>The sentence to show for <see cref="FirmwareLevel"/>, or null when the board has not
+    /// been asked yet.</summary>
+    public string? FirmwareReport { get; private set; }
+
+    /// <summary>How long to wait for the board's reply before asking again, and then before giving up.
+    /// The sketch's `setup()` sits in a 3 s delay while the launcher's boot wait is only 2 s, so on a
+    /// board that has just been flashed or plugged in the first `V` can land before `loop()` is
+    /// running. The bytes are not lost — they wait in the USB CDC buffer — but the reply is late, so
+    /// the window has to reach past that 3 s mark or a board that is merely slow to start reads as
+    /// an old one, which is the exactly wrong conclusion from the right evidence.</summary>
+    private const int FirmwareReadMs = 1500;
+
+    /// <summary>Sends `V` and reads one line back, twice. Null means the board did not answer, which
+    /// for this command is the answer: the sketch that predates it writes nothing at all.</summary>
+    private static int? QueryFirmwareVersion(SerialPort? port)
+    {
+        if (port is not { IsOpen: true }) return null;
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                port.Write(FirmwareVersion.Query + "\n");
+            }
+            catch
+            {
+                // The port went away mid-query. Nothing to report as a version, and the tool start
+                // that follows will fail on its own write with a real message.
+                return null;
+            }
+
+            if (ReadLineQuietly(port, FirmwareReadMs) is { } line && FirmwareVersion.Parse(line) is { } level)
+            {
+                return level;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>ReadLine with the exception turned into a null, on a timeout that does not outlive the
+    /// call — the port's own ReadTimeout is 1 s and is left as it was found.</summary>
+    private static string? ReadLineQuietly(SerialPort port, int timeoutMs)
+    {
+        var was = port.ReadTimeout;
+        try
+        {
+            port.ReadTimeout = timeoutMs;
+            return port.ReadLine();
+        }
+        catch
+        {
+            // TimeoutException for the silence this exists to detect; anything else is a port that
+            // has gone away, which reads the same way — no version.
+            return null;
+        }
+        finally
+        {
+            try { port.ReadTimeout = was; } catch { /* port closed meanwhile */ }
+        }
     }
 
     /// <summary>Launches a tool (stopping the current one first) and starts it rolling.
@@ -327,7 +406,10 @@ public sealed class LauncherService : IDisposable
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
         "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
-        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState).Run(ser, state, ct),
+        // The firmware report goes in because a pet run lasts days and its log is the only record
+        // left afterwards — and it is the one run where a board that ignored a command looks exactly
+        // like a board that acted on it.
+        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport).Run(ser, state, ct),
         _ => 1,
     };
 

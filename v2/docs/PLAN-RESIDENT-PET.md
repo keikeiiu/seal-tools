@@ -1,9 +1,14 @@
 # Plan — running tools alongside the pet feeder
 
-Status: **Part 1 built 2026-09-20 (compile + tests only, not live-verified); Parts 2 and 3 planned.**
+Status: **Parts 1 and 2 built 2026-09-20 (compile + tests only, not live-verified); Part 3 planned.**
 Three parts, in the order they should be built. Part 1 is a live bug and the smallest. Part 2 needs a
 reflash, which also delivers one of Part 1's cases. Part 3 is the feature the player actually asked
 for, and depends on neither.
+
+Part 2 is the one that **cannot be verified by building it**: a board without `V` cannot report
+anything, so the change is only observable after a flash. Until then the launcher's half is safe
+against an old board — an unrecognised letter is ignored by the sketch, which is exactly the silence
+the launcher reads as "predates version reporting".
 
 The origin, 2026-09-20:
 
@@ -105,6 +110,9 @@ toggle's guard and the status line are a compile check and nothing more. Live, i
 
 # Part 2 — the firmware reports its version
 
+**Built 2026-09-20.** The sketch compiles for the Pro Micro (`arduino-cli compile --fqbn
+arduino:avr:micro`, 11878 bytes / 41 % of flash). Nothing has run on a board.
+
 ## Why
 
 The other PC's board is probably running an older sketch, and **there is no way to ask it**. The
@@ -118,30 +126,42 @@ host-side path at all, and neither the player nor this tool can tell whether tha
 **Firmware** (`arduino/seal_mouse/seal_mouse.ino`) — the first thing the sketch has ever written *back*:
 
 ```
-#define FW_VERSION 3        // a PROTOCOL level, not a build counter — see below
+#define FW_VERSION 1        // a PROTOCOL level, not a build counter — see below
 …
-V            →  Serial.println("V 3");
+V            →  Serial.print("V "); Serial.println(FW_VERSION);
 ```
 
-**Launcher** — after the port opens (`LauncherService.ArduinoPortAsync`, `:77-105`), send `V` and read a
+**Launcher** — after the port opens (`LauncherService.ArduinoPortAsync`), send `V` and read a
 line back:
 
-- **a reply arrives** → keep it, show it on the Arduino tab beside the existing Diagnose, and log it as
+- **a reply arrives** → keep it, show it on the Arduino tab beside the existing Diagnose, and log it on
   the pet run's first line
-- **nothing arrives** → *"the board did not answer — its firmware predates version reporting"*
+- **nothing arrives** → *"did not answer — its firmware predates version reporting"*
 
 **That second line is the point.** Today the question has no answer; afterwards, silence is a definite
 **no**, and a current board prints its number.
 
-## Two details that will bite otherwise
+The parsing and the sentences live in `Core.FirmwareVersion`, not in the launcher — `LauncherService`
+is unreachable from the test project, and "is this line a version reply, or is it something else that
+happened to arrive?" is the decision worth pinning. The launcher half is only the write and the read.
 
-- **The board resets when the port opens.** `setup()` waits `delay(3000)` (`seal_mouse.ino:106`) and the
-  launcher only waits 2 s (`LauncherService.cs:103`), so the query can arrive before the board is
-  listening. Send, wait, **retry once** — otherwise a silence that is only timing reads as "old board",
-  which is the exact wrong conclusion from the wrong evidence.
-- **The number must mean something.** A build counter tells you nothing. `3` meaning *"has the host-gone
-  release and the `V` command"* — incremented when behaviour changes — is what makes the answer
-  actionable. A date stamp works too, if it is compared against something.
+## Deviations and corrections, 2026-09-20
+
+- **The level is 1, not 3.** The plan's `3` was counting back over behaviour changes that predate
+  reporting — but no board in the field can report anything, so levels 2 and 3 cannot exist and cannot
+  be told apart from 1. A future reader would go looking for two sketches that were never flashed. The
+  *meaning* is what the plan was right about: a protocol level, bumped when the board's behaviour
+  changes, so the number answers "does this board have the feature I need?" and not "how old is it?".
+- **"The board resets when the port opens" is not true of this board**, and the sketch is more
+  forgiving than the plan assumed. `Arduino.Open`'s own comment records that the 32U4 does *not* reset
+  on DTR, and `setup()` calls `Serial.begin(115200)` *before* its `delay(3000)` — so a `V` written
+  during that delay waits in the USB CDC buffer and is read the moment `loop()` starts. It is not
+  lost. The retry is kept anyway, because it is cheap and it is the DTR-resetting case that would
+  genuinely lose it; what actually matters is the **read window**, which is sized to reach past the
+  3 s mark. That is the failure the plan named, and the fix is the timeout rather than the retry.
+- **The pet-run log line is wired through the constructor** (`PetTool(..., firmware:)`) rather than
+  read from the service, because a tool has no reference to it. It lands on the existing `run started`
+  line in `pet.log`.
 
 ## What it buys
 
@@ -158,8 +178,26 @@ killed-launcher case.
 
 ## Verification
 
-Flash this PC's board, open the Arduino tab, and confirm it prints a version. Then flash the other PC's
-and confirm the same — and if the launcher is killed while holding space, the key must be released.
+**Done:** 10 tests on the parse and the sentences, mutation-checked (loosening the two-token rule makes
+`"V 1 extra"` parse and the suite fails). The sketch compiles for the Pro Micro. Release build clean.
+
+**Not done — this needs a board, and it needs the port.** In order:
+
+1. Flash this PC's board (this needs the launcher stopped — it holds the port open for its lifetime).
+2. Open the Arduino tab. It must read *"Firmware: protocol level 1 (current)"*. If it says **not asked
+   yet**, the port has not been opened: press a tool's Start or a test button and Refresh.
+3. **The silence case is the one worth forcing**, and it is the harder one to test because it needs a
+   board that predates `V`. If no old board is to hand, it can be simulated by flashing a sketch whose
+   `V` branch is removed — the launcher must say *"did not answer — its firmware predates version
+   reporting"* and must NOT say "not asked yet", which is the state it confuses with a silent board if
+   the query never runs.
+4. Then the other PC's board, and confirm the same — and if the launcher is killed while holding space,
+   the key must be released (the host-gone release, which the reflash also delivers).
+
+**Open question the flash will answer:** how much the cold start slows down. The query adds up to two
+1.5 s read windows on the *first* port open of a launcher session, and nothing thereafter — but that is
+arithmetic, not a measurement. If 3 s on a cold start is objectionable, the fix is to send `V` and read
+it without holding the tool start behind it.
 
 ---
 

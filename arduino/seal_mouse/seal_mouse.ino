@@ -19,9 +19,12 @@
 //   W ms         wait ms (1-9999)
 //   Q n / Z n    mouse wheel up / down, n notches (1-400)
 //   P / U        hold / release the spacebar (auto-pickup)
+//   V            report the firmware's protocol level — the only thing this sketch writes BACK
 //
 // An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
 // nothing is guessed at. The launcher validates before sending; this is the second line of defence.
+// That "unrecognised is ignored" rule is what lets the launcher send V to an OLD board safely: the
+// old sketch ignores it and stays silent, which is the answer the launcher wants.
 
 // ── Key hold durations (ms) ──────────────────
 // Uppercase K/F = human-like hold (30-80ms), lowercase k/f = fast hold.
@@ -47,6 +50,18 @@
 // NOTE: this and WHEEL_NOTCH_GAP_MS are coupled. "Ten seconds" is only 400 notches AT 25ms; lengthen
 // the gap to stop a game coalescing fast events and the same ceiling buys proportionally fewer.
 #define WHEEL_MAX_NOTCHES  400
+
+// ── Firmware version ─────────────────────────
+// A PROTOCOL LEVEL, not a build counter: it is bumped when the board's BEHAVIOUR changes, so that
+// "does this board have the host-gone release?" has an answer other than a guess. A build number or
+// a date would tell the launcher nothing it could act on.
+//
+//   1  the first level that can be reported: has the host-gone release (below) and answers 'V'
+//
+// It starts at 1 rather than counting back over the changes that predate it — no board in the field
+// can report anything at all, so levels 2 and 3 could not exist and could not be told apart. The
+// host treats SILENCE as "predates version reporting", which is a definite no rather than an error.
+#define FW_VERSION 1
 
 // ── Held-key failsafe ────────────────────────
 // 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held
@@ -236,6 +251,13 @@ void loop() {
         else if (type == 'U') {
             Keyboard.release(' ');
             spaceHeld = false;
+        }
+        // Report the protocol level. The ONLY reply this sketch sends — everything else is one-way,
+        // which is why a silent board could never be distinguished from a board that ignored a
+        // command. Keep the "V <n>" shape: the host parses the two tokens, not a prose string.
+        else if (type == 'V') {
+            Serial.print("V ");
+            Serial.println(FW_VERSION);
         }
     }
 }

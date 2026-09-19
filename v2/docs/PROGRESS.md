@@ -9,6 +9,49 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 (3) — Part 2: the board can finally be asked a question
+
+**Goal.** The second part of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — a `V` command, so that a
+board can report what it is running. Every command until now went one way, which is why "did the board
+ignore that, or did it act and nothing happened?" had no answer: both look like nothing.
+
+**The valuable half is the silence.** The sketch that predates `V` writes nothing at all, so a board
+that stays quiet is a definite **no**, not a failed read. That is only true because the sketch ignores
+unrecognised letters — which is also what makes the launcher's half **safe to ship before the flash**:
+sending `V` to an old board costs nothing and produces exactly the silence the code is written to read.
+
+**Two corrections to the plan, both in the file now.**
+
+- **The level starts at 1, not 3.** The plan's `3` was counting back over behaviour changes that predate
+  reporting — but no board can report anything today, so levels 2 and 3 cannot exist and cannot be told
+  apart. A future reader would hunt for two sketches that were never flashed. The plan's *reasoning*
+  about the number was right and is what stands: a protocol level, bumped when behaviour changes, so the
+  number answers "does this board have the feature I need?" rather than "how old is it?".
+- **"The board resets when the port opens" is not true here.** `Arduino.Open`'s own comment already
+  records that the 32U4 does not reset on DTR, and `setup()` calls `Serial.begin()` **before** its
+  `delay(3000)` — so a `V` written during that delay sits in the USB CDC buffer and is read as soon as
+  `loop()` starts. It is not lost. The retry stayed (cheap, and it is the DTR-resetting case that would
+  lose it), but the thing that actually decides this is the **read window**, sized to reach past the 3 s
+  mark. The plan named the right failure and reached for the wrong fix.
+
+**The decision went to `Core` again**, for the same reason as Part 1: "is this line a version reply, or
+something else that happened to arrive?" is the part worth pinning, and `LauncherService` is not
+reachable from the test project. 10 tests, mutation-checked — loosening the two-token rule lets
+`"V 1 extra"` parse and the suite fails.
+
+**And the sketch was compiled, not eyeballed.** The Arduino IDE ships `arduino-cli` at
+`resources/app/lib/backend/resources/arduino-cli.exe` (the user libraries are under
+`Arduino15/libraries`, so it needs `--libraries` to find `Mouse.h`). `arduino-cli compile --fqbn
+arduino:avr:micro` → 11878 bytes, 41 % of flash. Note that this is a **compile**, not an upload: the
+running launcher holds the port, so nothing has touched a board.
+
+**Verified:** Release build clean, 100/100 tests, sketch compiles. **Not verified:** that a board
+answers at all. It cannot be — a board without `V` has nothing to say, so the change is only
+observable after a flash, and a flash needs the port. The steps are in the plan, including how to force
+the silence case without an old board.
+
+---
+
 ## 2026-09-20 (2) — Part 1 of the resident-pet plan: the Hold Space toggle stops inverting
 
 **Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — the live bug

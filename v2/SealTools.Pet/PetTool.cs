@@ -125,13 +125,21 @@ public sealed class PetTool : ToolBase
     private readonly AttributesConfig _attrs;
     private readonly string _rootDir;
 
-    public PetTool(AppConfig cfg, AttributesConfig attrs, string rootDir, Action? persistState = null)
+    /// <summary>What the board said it was running when the port was opened, or null when it said
+    /// nothing. Recorded on the run's first log line because a run lasts days and the log is what is
+    /// left afterwards: a stuck spacebar or a command the board ignored is unanswerable without it,
+    /// and until the board could be asked there was no way to tell an old sketch from a failure.</summary>
+    private readonly string? _firmware;
+
+    public PetTool(AppConfig cfg, AttributesConfig attrs, string rootDir, Action? persistState = null,
+        string? firmware = null)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
         _attrs = attrs;
         _rootDir = rootDir;
         _persistState = persistState;
+        _firmware = firmware;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -144,7 +152,8 @@ public sealed class PetTool : ToolBase
             return 0;
         }
 
-        Log($"run started — {_cfg.Pet.Slots.Count} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
+        Log($"run started — board firmware {_firmware ?? "not reported"}, " +
+            $"{_cfg.Pet.Slots.Count} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
             $"{WaitAfterEmptyMinutes:0} min after empty: " +
             string.Join(", ", _cfg.Pet.Slots.Select(r =>
                 $"{NameOf(r)} every {CycleMinutesFor(r):0} min " +
