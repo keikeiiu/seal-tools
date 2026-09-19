@@ -71,13 +71,27 @@ public sealed class PetTool : ToolBase
     private const int MaxFailures = 3;
 
     /// <summary>How unlike the pet a cell may look and still be clicked, as a fraction of pixels that
-    /// differ. Deliberately strict: a near-miss right-clicks some other item, which has no undo. This
-    /// wants measuring against a real farming bag rather than trusting — see the plan's open question.
+    /// differ.
+    ///
+    /// MEASURED, finally, after being a guess for a long time. It was 0.12 — the composer's empty-box
+    /// number carried over, on the reasoning that strict is safe because a near-miss right-clicks some
+    /// other item and there is no undo. Against the player's real bag (2026-09-19, ten pets across
+    /// three pages) that was simply too tight, and it was costing them four pets on every scan:
+    ///
+    ///     the pets         0.000 – 0.150     (one at 0.320)
+    ///     everything else  0.831 and up
+    ///
+    /// Half a bag of pets read as "not the pet" while the nearest non-pet was five times further away.
+    /// The offset search covers a shift; this covers the rest — the same portrait rendered a few
+    /// percent differently, which no amount of searching can align.
+    ///
+    /// 0.5 sits in the middle of a gap from 0.32 to 0.83, so it is not a threshold tuned until the
+    /// answer came out right — it is one placed where the measurements left room.
     ///
     /// PUBLIC so the Pet tab's "scan the bag" reports against the number the tool actually uses. A
     /// diagnostic with its own copy of a threshold is a diagnostic that can agree with a run and be
     /// wrong about it.</summary>
-    public const double MatchLimit = 0.12;
+    public const double MatchLimit = 0.5;
 
     /// <summary>The reload's own log. Written because the card's message is the only other record of a
     /// reload, and it is overwritten by the next line and gone once the tool stops — so a failure that
