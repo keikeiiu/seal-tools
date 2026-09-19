@@ -1,8 +1,9 @@
 # Plan — running tools alongside the pet feeder
 
-Status: **planned 2026-09-20, nothing built.** Three parts, in the order they should be built. Part 1
-is a live bug and the smallest. Part 2 needs a reflash, which also delivers one of Part 1's cases.
-Part 3 is the feature the player actually asked for, and depends on neither.
+Status: **Part 1 built 2026-09-20 (compile + tests only, not live-verified); Parts 2 and 3 planned.**
+Three parts, in the order they should be built. Part 1 is a live bug and the smallest. Part 2 needs a
+reflash, which also delivers one of Part 1's cases. Part 3 is the feature the player actually asked
+for, and depends on neither.
 
 The origin, 2026-09-20:
 
@@ -11,6 +12,9 @@ The origin, 2026-09-20:
 ---
 
 # Part 1 — the Hold Space toggle inverts instead of stopping
+
+**Built 2026-09-20.** Built as written below, with one correction the code forced (the fourth note
+under *The changes*) and one addition (a fourth change, the toggle's own label).
 
 ## What the player reports
 
@@ -59,7 +63,16 @@ unconditionally, is **only reachable from that same branch** — so it can never
    business, and asking is what causes the inversion.
 3. **`ReleaseSpace` stops swallowing its exception** (`:248`). It is `try { … } catch { }` while the
    tool's own `Release()` reports on the card (`HoldSpace.cs:32`). The path that must never fail silently
-   is the silent one.
+   is the silent one. **Corrected while building:** that second half is not true — Hold Space has **no
+   card** (it is the top-right button, and `Tools` does not contain it), so `state.Message`, which only
+   `FormatStatus` renders, has nowhere to be drawn. The tool's release message is written and never
+   read; the service's was the *only* one with a surface, and it was the one throwing the report away.
+   `LauncherService.LastSpaceReleaseError` is now that surface, rendered on the status line beside the
+   toggle.
+4. **The toggle's label follows the same question as its guard.** It keyed on `holding` — `CurrentId`
+   *and* `Running` — so in exactly the state the bug creates it read **"Hold Space"** while pressing it
+   now stops. Text and action key on `CurrentId` alike. The dot stays on `Running`: "holding" is a claim
+   about the key being down, and the tool only knows that while its loop says so.
 
 ## Behaviour after
 
@@ -72,11 +85,21 @@ unconditionally, is **only reachable from that same branch** — so it can never
 
 ## Verification
 
-`LauncherService` is not reachable from the test project, so the release-on-stop rule wants its decision
-— *"which ids need a `U` when stopped"* — as a small testable predicate in `Core`.
+**Done:** the release-on-stop rule is `Core.HeldKeys.NeedsSpaceRelease` — LauncherService is not
+reachable from the test project, so the decision is somewhere that is. Three tests pin it, including
+one that lists every tool id `StartToolAsync` accepts and asserts none of them holds a key, so a new
+tool cannot start holding one without a test failing. Build clean, 84/84 pass.
 
-Live: start hold space, confirm the spacebar is held; press the card's Stop; confirm it is released.
-Then stop it with the toggle while `Running` is false and confirm it releases rather than re-holding.
+**Not done — this part has never run.** `MainWindow` is unreachable from the test project, so the
+toggle's guard and the status line are a compile check and nothing more. Live, in order:
+
+1. Start hold space; confirm the spacebar is held.
+2. Press the toggle once. It must release, and the button must read **"Stop Space"** throughout.
+3. Stop it *without* the toggle — the Quit hotkey, or closing the launcher — and confirm the key comes
+   up. This is the case that is new: the tool's `finally` used to be the only path.
+4. The inversion itself needs `Running == false` with space still held, which only happens when a
+   release write fails. It can be faked by unplugging the board mid-hold; without that, note that the
+   guard no longer *can* take the start branch while `CurrentId == "holdspace"`, which is the whole fix.
 
 ---
 

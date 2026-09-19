@@ -153,6 +153,10 @@ public sealed class LauncherService : IDisposable
             return false;
         }
         _currentId = id;
+        // Starting a hold takes the spacebar over deliberately, so any standing "the release failed"
+        // warning describes a state that no longer applies — it would otherwise sit red on the status
+        // line for the rest of the session, after the player had already dealt with it.
+        if (id == "holdspace") LastSpaceReleaseError = null;
         _cts = new CancellationTokenSource();
         _state = new ToolState { Running = true };
         var ct = _cts.Token;
@@ -194,6 +198,7 @@ public sealed class LauncherService : IDisposable
     {
         var cts = _cts;
         var task = _toolTask;
+        var id = _currentId;
         if (cts == null)
         {
             // Nothing running, but a start may be sitting on the port wait with no tool installed
@@ -210,6 +215,13 @@ public sealed class LauncherService : IDisposable
         _toolTask = null;
         _state = null;
         _currentId = null;
+
+        // A tool that holds a key down must not depend on its own finally to let go of it. The loop
+        // that would send the release is what a stop is interrupting, and the case that matters is
+        // exactly the one where its own write threw — so every stop path (the card's Stop, the
+        // toggle, Quit, Dispose) releases from here instead. "U" is idempotent in the firmware, so
+        // the tool's own release arriving too is harmless.
+        if (HeldKeys.NeedsSpaceRelease(id)) ReleaseSpace();
 
         cts.Cancel();
 
@@ -243,9 +255,34 @@ public sealed class LauncherService : IDisposable
         return Core.BagGrid.Disagreement(bs.BagGrid!, bs.BagSlot!);
     }
 
-    /// <summary>Releases the spacebar directly, independent of the Hold Space tool's loop — so a stop
-    /// click can never leave the key stuck down.</summary>
-    public void ReleaseSpace() { try { _arduino?.Write("U\n"); } catch { } }
+    /// <summary>Why the last <see cref="ReleaseSpace"/> failed, or null when the last one succeeded.
+    /// Hold Space is the one tool with no card of its own — its state.Message has nowhere to be drawn
+    /// — so this property is its only report surface, and the status line beside the toggle renders
+    /// it. A release that fails leaves a real key down on the player's keyboard: not something to log
+    /// and move past.</summary>
+    public string? LastSpaceReleaseError { get; private set; }
+
+    /// <summary>Releases the spacebar directly, independent of the Hold Space tool's loop, so every
+    /// stop path can let go of it rather than only the toggle button. Returns null on success or the
+    /// failure message, and records the same on <see cref="LastSpaceReleaseError"/>.
+    ///
+    /// This used to swallow its exception, which made it the one path that failed silently — while
+    /// the tool's own copy of the same write, the one that is only reachable when the loop is not
+    /// being interrupted, was the one that reported. That is backwards.</summary>
+    public string? ReleaseSpace()
+    {
+        try
+        {
+            _arduino?.Write("U\n");
+            LastSpaceReleaseError = null;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LastSpaceReleaseError = ex.Message;
+            return ex.Message;
+        }
+    }
 
     /// <summary>Persists machine-specific coordinates (local.yaml) written by the calibrator.</summary>
     public void SaveLocal(ConfigLoader.LocalOverrides local) => _loader.SaveLocal(local);

@@ -291,9 +291,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         RestoreUiState();
         HoldSpaceToggle.Click += async (_, _) =>
         {
-            if (_service.CurrentId == "holdspace" && _service.CurrentState?.Running == true)
+            // "Is hold space the tool that is loaded?" is the whole question, and it is the only one
+            // the button may ask. The guard used to require Running == true as well, and that is what
+            // inverted the toggle: a release that threw leaves Running false with the spacebar still
+            // down (HoldSpace sets Running before it writes), the press then fell to the else, and the
+            // else STARTS hold space — re-holding the key the press was meant to let go of. Whether
+            // the tool's loop has flagged itself running is not the button's business.
+            if (_service.CurrentId == "holdspace")
             {
-                _service.ReleaseSpace();
                 _ = _service.StopTool();
             }
             else if (!await _service.StartToolAsync("holdspace"))
@@ -535,11 +540,36 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         // Hold Space's small card (top-right) flips between Hold Space and Stop Space as it runs.
-        bool holding = _service.CurrentId == "holdspace" && state?.Running == true;
-        HoldSpaceStatus.Text = holding ? "● holding" : "● idle";
-        HoldSpaceStatus.Foreground = holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
-        HoldSpaceToggle.Content = holding ? "Stop Space" : "Hold Space";
-        HoldSpaceToggle.Appearance = holding ? ControlAppearance.Danger : ControlAppearance.Secondary;
+        //
+        // The button follows the same question its click handler asks — is hold space loaded — so it
+        // can never read "Hold Space" while pressing it would stop. The dot is the narrower claim and
+        // stays on Running: "holding" means the key is down, and the tool only believes that while
+        // its loop says so.
+        bool holdLoaded = _service.CurrentId == "holdspace";
+        bool holding = holdLoaded && state?.Running == true;
+        HoldSpaceToggle.Content = holdLoaded ? "Stop Space" : "Hold Space";
+        HoldSpaceToggle.Appearance = holdLoaded ? ControlAppearance.Danger : ControlAppearance.Secondary;
+        HoldSpaceToggle.ToolTip = holdLoaded
+            ? "Stop holding the spacebar and release the key"
+            : "Hold the spacebar to auto-pick up items";
+
+        // A failed release is a real key left down on the player's keyboard, and Hold Space is the one
+        // tool with no card for state.Message to land on — this line is its only report surface, so it
+        // takes precedence over the idle/holding reading.
+        var releaseErr = _service.LastSpaceReleaseError;
+        if (releaseErr != null)
+        {
+            HoldSpaceStatus.Text = "● space may be stuck";
+            HoldSpaceStatus.Foreground = Res("SystemFillColorCriticalBrush");
+            HoldSpaceStatus.ToolTip = $"The release write failed ({releaseErr}).\n" +
+                "Tap the spacebar once in game to clear it.";
+        }
+        else
+        {
+            HoldSpaceStatus.Text = holding ? "● holding" : "● idle";
+            HoldSpaceStatus.Foreground = holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
+            HoldSpaceStatus.ToolTip = null;
+        }
     }
 
     private static string FormatStatus(ToolState state)

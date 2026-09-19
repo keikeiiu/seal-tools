@@ -9,6 +9,51 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 (2) — Part 1 of the resident-pet plan: the Hold Space toggle stops inverting
+
+**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — the live bug
+on the other PC, where the Hold Space toggle will not stop and the spacebar stays held.
+
+**The bug is an inversion, and the guard was asking one question too many.** `CurrentId == "holdspace"`
+*and* `Running == true` — and when a release write has failed, `Running` is already false while the key
+is still down (`HoldSpace` sets `Running` **before** it writes the release), so the press fell to the
+`else`, which starts hold space and **re-holds the key the press was meant to let go of**.
+
+**The fix that matters is the service, not the button.** `StopTool` now releases the spacebar whenever
+the tool it is stopping holds a key, so the card's Stop, the toggle, another tool's Start, the Quit path
+and `Dispose` all release — instead of the toggle being the only path that could, and the tool's own
+`finally` being the only release when the loop is not what is being interrupted. The firmware's `U` is
+idempotent, so the two releases arriving together are harmless.
+
+**The decision went to `Core`, deliberately.** `LauncherService` is not reachable from the test project,
+so *"which ids need a `U` when stopped"* is `Core.HeldKeys.NeedsSpaceRelease`. One of its three tests
+lists every id `StartToolAsync` accepts and asserts none holds a key — a new tool cannot start doing so
+without that test failing.
+
+**And the plan was wrong about where a failed release gets reported.** It said the tool's `Release()`
+"reports on the card" and the service's copy was the silent one. The reverse is true: **Hold Space has
+no card** — it is the top-right button, and `Tools` does not contain it — so the `state.Message` that
+`HoldSpace.cs:32` sets is written and never rendered by anything. The service's swallow was therefore
+the *only* release path with any chance of being seen, and it was the one discarding the error. The
+message now lands on `LauncherService.LastSpaceReleaseError`, drawn on the status line beside the toggle
+as `● space may be stuck`, and cleared when a fresh hold is started (the state that warning describes is
+over). This is the fourth time this session-family that a message was written to a surface that does not
+exist.
+
+**One addition the bug implied rather than the plan naming it.** The toggle's *label* keyed on the same
+two-part `holding` test as its guard, so in exactly the broken state it read **"Hold Space"** while
+pressing it now stops. Label and guard key on `CurrentId` together; the dot stays on `Running`, because
+"holding" is a claim about the key being down and the tool only knows that while its loop says so.
+
+**Verified:** Release build clean, 84/84 tests pass (3 new). **Not verified:** this part has never run.
+`MainWindow` is unreachable from the test project, so the guard and the status line are a compile check
+only — the same standing limitation as the Buy tab's picker. The live steps are in the plan.
+
+**The run was not disturbed.** The pet feeder was live throughout; the compile check was `-c Release`
+and the Debug output it is running from was never touched.
+
+---
+
 ## 2026-09-20 — the feeder ran all four rows, and three of my own conclusions were wrong
 
 **A long evening of live testing, and the theme is measurements overturning things I had already written
