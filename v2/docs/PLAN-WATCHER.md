@@ -29,6 +29,51 @@ second tool is refused. So:
 > interleaving commands on one serial line and deciding which wins — a much larger change, with
 > failure modes that are hard to reason about from a log.
 
+### Revisited 2026-09-20, for the pet feeder — and the reason is the GAME, not us
+
+The question came back the other way round: could the **pet feeder** stay resident while other tools
+are started and stopped around it? The pet tool needs roughly **30 seconds, about five times a day**;
+the tuner wants to run for **a day** at 12,000 springs. That asymmetry looked like it wanted a cursor
+lease — the mouse is the real shared resource, `HidPointer.To` is a closed loop against the global
+cursor, and two such loops feed on each other's moves.
+
+**That design is dead, and the reason is not ours to fix.** The player, 2026-09-20:
+
+> you need to close the tuner before even you can open the pet window
+
+**The boarding window and the tuner's window cannot both be open, and the tuner's must be CLOSED
+before the other opens.** So there is never a moment where two tools drive the game, and the whole
+lease/arbitration question — cursor locking, per-unit yield boundaries, a "can this tool yield"
+contract — has no subject. Each tool either has the screen or does not.
+
+**What the real problem turns out to be: the tuner cannot start itself.** The player puts the item to
+tune and the springs in by hand, so a tuner that is stopped cannot come back without them.
+
+**And the player has decided not to build that** (2026-09-20): *"I dont wnat to build the logic to
+close and start the tuner again, now the open of the tuner and setup are all manual."* That is the
+honest call — opening the tuner and setting it up is a manual, in-game sequence, and automating it is
+a feature the size of the pet tool's whole placement flow, for a tool that already works.
+
+**So the pet feeder and the tuner do not share a session, and nothing is being built to make them.**
+What is left is a schedule, and it already works today:
+
+| | |
+|---|---|
+| A paid row holds | 1,500 items at 3/min = **8 h 20 m** |
+| A free row holds | 600 items = **3 h 20 m** |
+| The pet tool needs | ~30 s, about five times a day |
+
+**Run the tuner for up to ~8 hours, then run the pet tool for a minute, then the tuner again.** Starting
+the pet tool is cheap by design: it looks at every row first and reloads only what is due, so it does
+not disturb a feeder that is still full, and it can be stopped as soon as it reports a reload.
+
+**The caveat that decides whether this is enough:** the player's tuner sessions are ~12,000 springs,
+about a day. That is longer than a paid row's load, so a full day's session will need the pet fed
+partway through — either by stopping the tuner for a minute, or by hand.
+
+Everything above about the serial port still stands and is untouched: two tools writing at once was
+never on the table here, and this design never has them both driving the game.
+
 ## How it watches while another tool is running
 
 **Watching needs no Arduino at all.** Detection is pure screen reading — a capture, then OCR or a
