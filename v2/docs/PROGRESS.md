@@ -16,6 +16,13 @@ spam, and some gem compose."* Built on `v2-resident-pet`, **not merged** — it 
 path the live pet feeder runs from, and it cannot be live-verified until that run ends. Same shape as
 the tuner-spring work.
 
+**It opens with a refactor that changes no behaviour** (`2b426c6`): `_cts` / `_toolTask` / `_state` /
+`_currentId` were four parallel fields that encoded "there is only ever one tool" in the shape of the
+class rather than in a rule anyone could read. They travel together as a `RunningTool` keyed by id now,
+so a stop is "cancel this one" and "is THAT tool still running?" is answerable. Also decided there:
+`_startInProgress` **stays** global, not per-slot as the plan wanted — one port, one boot delay, and
+two concurrent starts must still not both open it.
+
 **The whole rule is two lines.** Starting anything else displaces every other tool *except* the pet;
 starting the pet displaces only a *previous pet*. Both are `StopAll(keep:)` predicates rather than a
 "keeper id", and that is not style — a single keeper name **cannot express both**, and writing it as one
