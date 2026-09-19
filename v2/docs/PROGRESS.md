@@ -39,10 +39,20 @@ separation now 0.000 against 0.830 — so `MatchLimit` stays at 0.12 and nothing
 sweep of radii 0/2/3/4/5/6 on the real bag: 0 found three, everything from 2 up found six with
 identical scores. Three, at a squared cost per cell.
 
-**The seventh is genuinely different**, and worth stating because "it found 6 of 7" invites the
-assumption that the last is another matcher failure: at every offset it sits at 0.320, and the bag
-image shows its sprite drawn **smaller**, with the cell's frame visible around it where the others
-fill theirs. It wants its own capture.
+**And the seventh was the CURSOR** (player, 2026-09-19). I had written it up as a genuinely different
+pet — its sprite "drawn smaller, with the cell's frame visible around it" — and that was a bad read of
+my own evidence: what I took for a smaller sprite was part of the portrait covered by the mouse arrow.
+The capture reads the screen, so the pointer lands in the image, and a pet under it differs at every
+offset. It was never a different pet.
+
+Both bag captures now move the cursor to the buy/sell inert point first — the scan and the reload's own
+pet search. This is the "park the cursor" idea that had been sitting in TODO.md, arriving with a
+measurement attached rather than as a precaution.
+
+**The lesson, and it is the second time today:** I read a difference in a picture as a fact about the
+game when it was a fact about my own capture. `TODO.md` has carried "park the cursor off the OCR bands
+— needs a measurement first" for weeks; the measurement turned out to be a pet I had already declared
+different.
 
 ### The rest, in order
 

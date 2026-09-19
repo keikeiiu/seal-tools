@@ -37,8 +37,12 @@ needs new machinery, just a small driver per feature.
   nothing is left to submit — a capture/OCR check on the list, or a fixed cap — so it stops rather
   than clicking empty rows.
 - [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
-- [ ] **Park the cursor off the OCR bands** before a capture — the pointer's pixels sit in the crop
-  today. Needs a measurement first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+- [~] **Park the cursor before a capture.** Done for the BAG captures (2026-09-19): the icon scan
+  and the reload's own pet search both move the pointer to the buy/sell inert point first. Not
+  because it was suspected — the player's seventh pet read as a "different image" at every offset,
+  and part of its portrait was the mouse arrow. **Still open for the OCR bands**: the tuner's read
+  regions and the feeder counts can have the pointer in them too, and that one wants a measurement
+  first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
 
 ## Needs a live check before any code change
 

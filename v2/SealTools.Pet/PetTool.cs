@@ -554,6 +554,24 @@ public sealed class PetTool : ToolBase
         return false;
     }
 
+    /// <summary>Moves the cursor out of the bag before a capture.
+    ///
+    /// The scan reads the SCREEN, so whatever is under the pointer lands in the image — and a pet the
+    /// cursor covers is a pet the matcher cannot see. The player's bag had exactly this and it read as
+    /// a matcher failure for a while: their seventh pet "differed" at every offset, because part of its
+    /// portrait was the mouse arrow. It was not a different pet at all.
+    ///
+    /// The point is the buy/sell one, reused rather than re-marked: it is already calibrated, already
+    /// documented as somewhere nothing responds to a click, and it sits outside the bag grid.
+    ///
+    /// Best-effort — a cursor that will not move is not a reason to skip a scan, and the failure it
+    /// would cause (one more pet missed) is the one this is trying to avoid anyway.</summary>
+    private void ParkCursor(SerialPort ser)
+    {
+        if (_cfg.BuySell.ScrollPoint is { Count: 2 } p)
+            PlaceOn(ser, p[0], p[1], out _);
+    }
+
     /// <summary>Looks for a queued pet across every calibrated bag page, by icon.
     ///
     /// This is what §13 calls the icon scan, and it exists because POSITION cannot be trusted: a pet
@@ -590,6 +608,10 @@ public sealed class PetTool : ToolBase
             if (!IsPoint(pet.PageTabs[p])) continue;
             if (!SelectPage(ser, p, out why)) return false;
             SleepCheck(PageWait);
+
+            // Off the bag, so the pointer is not sitting on a pet's portrait when the page is read.
+            ParkCursor(ser);
+            SleepCheck(ClickWait);
 
             var cap = ScreenCapture.CaptureClient(hwnd);
             if (cap == null) { why = "the bag couldn't be captured"; return false; }

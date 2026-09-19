@@ -6400,6 +6400,16 @@ public partial class MainWindow : FluentWindow, IDisposable
                 HidPointer.Click(ser);
                 await Task.Delay(900);
 
+                // Move the cursor OFF the bag before capturing. The capture reads the screen, so a
+                // pet under the pointer is a pet the matcher cannot see — the player's seventh pet
+                // "differed at every offset" because part of its portrait was the mouse arrow, and it
+                // read as a matcher failure rather than as the pointer being in the way.
+                if (_service.Config.BuySell.ScrollPoint is { Count: 2 } park)
+                {
+                    TryPlace(ser, park[0], park[1], out _);
+                    await Task.Delay(250);
+                }
+
                 var page = p;
                 var cap = await WithLauncherHiddenAsync(() =>
                 {
