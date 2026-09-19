@@ -279,7 +279,18 @@ public sealed class PetConfig
 
     // ── Behaviour ───────────────────────────────────────────────────────────
 
-    /// <summary>How many minutes to wait AFTER the feeder should be empty before reloading.
+    /// <summary>Reload every row the moment a run starts, instead of opening the breeder to see what
+    /// is already going on and leaving the feeding rows alone.
+    ///
+    /// OFF by default, and the default is the safe one: looking first means a run cannot disturb a
+    /// feed that is already running. Turning it on is for the case looking first cannot help with —
+    /// **rows that are boarding on a PART-FULL feeder**. The tool reads whether a pet is in the
+    /// loader, not how much food is left, so a half-fed row and a freshly-loaded one look identical
+    /// to it, and the half-fed one would be left to run dry for a whole cycle. Nothing is wasted by
+    /// forcing it: ending boarding returns the leftover food with the pet.
+    ///
+    /// The count on a row would settle this properly. Until that is read, this is the player's.</summary>
+    public bool ReloadOnStart { get; set; }
     ///
     /// The cycle is `load_minutes + this`. On the free row the default is 2 stacks = 600 items at
     /// 3/min = 200 minutes, so the default of 5 reloads every 205; a paid row's 5 stacks make it 505.

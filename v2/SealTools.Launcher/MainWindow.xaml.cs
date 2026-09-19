@@ -238,6 +238,9 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// merely counted.</summary>
     private WrapPanel? _petQueuePanel;
 
+    /// <summary>Reload every row on start rather than looking first — see where it is built.</summary>
+    private CheckBox? _petReloadOnStart;
+
     /// <summary>Suppresses the tick handlers while the panel is being rebuilt, or repopulating it
     /// would write every row's value straight back.</summary>
     private bool _syncingPetRow;
@@ -5174,6 +5177,28 @@ public partial class MainWindow : FluentWindow, IDisposable
         // One tick per configured row, rebuilt when the rows change.
         _petBoardingTicks = new StackPanel();
 
+        // The override for the one case looking first cannot cover. Reading the boarding slot says a
+        // pet is in the loader; it does not say how much food is left, so a half-fed row and a
+        // freshly-loaded one are indistinguishable to the tool — and the half-fed one would be left
+        // alone for a whole cycle and run dry. Nothing is wasted by forcing the reload early: ending
+        // boarding returns the leftover food with the pet.
+        _petReloadOnStart = new CheckBox
+        {
+            Content = "Reload every row when the run starts (instead of leaving a feeding row alone)",
+            IsChecked = _service.Config.Pet.ReloadOnStart,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        _petReloadOnStart.Checked += (_, _) =>
+        {
+            _service.Config.Pet.ReloadOnStart = true;
+            PetSessionSave(_petTabHint!);
+        };
+        _petReloadOnStart.Unchecked += (_, _) =>
+        {
+            _service.Config.Pet.ReloadOnStart = false;
+            PetSessionSave(_petTabHint!);
+        };
+
         panel.Children.Add(Section("Boarding state",
             Hint("Tick each row that is boarding RIGHT NOW — the pet is in the loader rather than in " +
                  "the bag. The reload has to END boarding to get the pet back before it can put it in " +
@@ -5184,8 +5209,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "and LOOKS at each row's pet slot, so a row that is already feeding is left alone " +
                  "rather than ended and redone — a pet in the loader is visible, and an empty one " +
                  "settles the question the other way. These ticks are the fallback for a row whose " +
-                 "slot cannot be read, and the tool keeps them up to date after every reload."),
-            _petBoardingTicks));
+                 "slot cannot be read, and the tool keeps them up to date after every reload.\n" +
+                 "RELOAD EVERY ROW ON START is the override for what looking cannot see. The slot " +
+                 "says a pet is in the loader; it does not say how much FOOD is left — so a row " +
+                 "whose feeder ran dry overnight looks exactly like one that was just filled, and " +
+                 "would be left alone to starve for a whole cycle. Tick this when a feeder is " +
+                 "part-used or empty and let the run reload them all. Nothing is wasted: ending " +
+                 "boarding returns the leftover food with the pet."),
+            _petBoardingTicks,
+            _petReloadOnStart));
 
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read

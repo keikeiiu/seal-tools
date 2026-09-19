@@ -156,9 +156,17 @@ public sealed class PetTool : ToolBase
         // wants. So it is logged as the assumption it is.
         InspectRows(ser, state);
 
+        // Looking first tells the tool WHICH ROWS ARE BOARDING; it cannot tell how full a feeder is,
+        // because the counts are not read. So a row boarding on a part-full feeder looks exactly like
+        // one just loaded, and would be left to run dry for a whole cycle. This is the override for
+        // that case, and it is the player's to set: reload everything on start, whatever the look
+        // says. Nothing is wasted by it — ending boarding returns the leftover food with the pet.
+        if (_cfg.Pet.ReloadOnStart)
+            Log("start: reload-on-start is on — every row reloads now regardless of what the look found");
+
         var next = _cfg.Pet.Slots.ToDictionary(
             r => r,
-            r => r.BoardingRunning
+            r => !_cfg.Pet.ReloadOnStart && r.BoardingRunning
                 ? DateTime.Now.AddMinutes(CycleMinutesFor(r))
                 : DateTime.Now);
         var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);

@@ -257,6 +257,7 @@ public sealed class ConfigLoader
             if (pet.FoodSlotsUsed is { } used and >= 0) defaults.Pet.FoodSlotsUsed = used;
             if (pet.ActionWaitMs is { } wait and > 0) defaults.Pet.ActionWaitMs = wait;
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
+            if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
 
@@ -431,6 +432,7 @@ public sealed class ConfigLoader
         public int? FoodSlotsUsed { get; set; }
         public int? ActionWaitMs { get; set; }
         public int? WaitAfterEmptyMinutes { get; set; }
+        public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
         public List<int>? MaxButton { get; set; }
         public List<LocalPetSlot>? Slots { get; set; }
@@ -521,6 +523,7 @@ public sealed class ConfigLoader
             t.ReturnSlot = p.ReturnSlot;
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
+            t.ReloadOnStart = p.ReloadOnStart;
 
             t.Queue = p.Queue.Select(q => new LocalPetQueueEntry
             {
