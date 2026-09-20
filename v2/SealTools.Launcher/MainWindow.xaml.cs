@@ -5046,12 +5046,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the row's food-slot count, so a five-slot paid row is one drag rather than five. " +
                  "It is also the whole of the count calibration: the box the feed counts are read " +
                  "from is DERIVED inside each slot, so there is nothing else to draw." + Environment.NewLine +
-                 "On the capture — green the start button, blue the pet slot, yellow a food slot as " +
-                 "DERIVED from its strip, yellow-green the strip itself, PURPLE the count slot you " +
-                 "drew, and MAGENTA the crop the count is actually read from. The magenta on the " +
-                 "purple slot is the one Test read checks; the rest are the same crop worked out for " +
-                 "each slot of the row you are editing. If they sit on the food icon rather than on " +
-                 "the digits, move the count crop with the number on the Pet tab."),
+                 "On the capture — green the start button, blue the pet slot, YELLOW a food slot as " +
+                 "DERIVED from its strip, yellow-green the strip itself, and PURPLE the count slot. " +
+                 "Two boxes on a food slot, and that is all: one derived from the strip and one the " +
+                 "count slot. Nothing derived is drawn, so what you see is what you marked."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -5804,34 +5802,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             Box(canvas, shot, strip!, i == _petEditRow ? Brushes.YellowGreen : Faint(Brushes.YellowGreen));
         }
 
-        // The count slot you drew, and THE READ REGIONS DERIVED FROM IT.
+        // The count slot you drew — and NOTHING DERIVED FROM IT.
         //
-        // The magenta boxes are the point of this whole drawing: they are exactly what the OCR is
-        // pointed at, computed the same way a run computes them. Nothing else on this screen answers
-        // "will it read the number?" — a strip in the right place puts them on the digits, and one that
-        // does not puts them on the food icon, where no amount of tuning the confidence finds a number.
+        // Deriving anything else onto the capture was tried and taken back out. The read crop used to
+        // be drawn here too, per slot, on the theory that it answers "will it read the number?" before
+        // a run does — but it put a THIRD and FOURTH box on a food slot that should show two, and the
+        // player said so: one box derived from the strip, one the count slot, and nothing else. The
+        // read crop is not a mark anybody drew, and the Test read reports what it reads.
         //
-        // The count slot is drawn because it was NOT, for one revision, and the player drew one and
-        // reported the overlay "not shown" — the mark was saved and simply never painted.
-        //
-        // Regions only on the edited row: they are derived per slot, so drawing all four rows would be
-        // seventeen boxes saying the same thing louder and less clearly.
-        var editRow = EditRow(pet);
+        // The count slot is drawn at all because it was NOT, for one revision: the field was removed
+        // and restored, the drawing line only removed, so a mark that saved correctly was invisible
+        // and was reported as the overlay "not shown".
         if (BagGrid.IsValidRect(pet.FeederCountSlot))
-        {
             Box(canvas, shot, pet.FeederCountSlot!, Brushes.MediumPurple);
-            // And the crop it will actually be read with, so the one slot Test read verifies on shows
-            // its own region rather than only the derived rows' above.
-            if (FeederLayout.ReadRegion(pet.FeederCountSlot, pet.FeederCountLeftFraction) is { } r)
-                Box(canvas, shot, r, Brushes.Magenta);
-        }
-
-        if (FeederLayout.SlotBoxes(editRow.FeederStrip, editRow.Stacks) is { } derivedSlots)
-        {
-            foreach (var slot in derivedSlots)
-                if (FeederLayout.ReadRegion(slot, pet.FeederCountLeftFraction) is { } region)
-                    Box(canvas, shot, region, Brushes.Magenta);
-        }
 
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
