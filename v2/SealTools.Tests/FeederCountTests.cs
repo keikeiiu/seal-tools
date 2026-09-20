@@ -10,43 +10,6 @@ namespace SealTools.Tests;
 // starve or overfeeds it, so the parsing and the agreement are worth pinning.
 public class FeederCountTests
 {
-    // A slot 66 wide at (100,200) — the free row's measured size.
-    private static List<int> Slot() => new() { 100, 200, 66, 56 };
-
-    [Fact]
-    public void TheCropTakesTheRightHandSideOfTheSlotAtFullHeight()
-    {
-        var crop = FeederCount.Crop(Slot(), FeederCount.CropLeft)!;
-
-        Assert.Equal(4, crop.Count);
-        Assert.Equal(200, crop[1]);          // top unchanged
-        Assert.Equal(56, crop[3]);           // FULL height — half height finds no text at all, measured
-        Assert.Equal(166, crop[0] + crop[2]); // right edge is the slot's
-        Assert.True(crop[0] > 100, "the crop must start inside the slot, not at its left edge");
-    }
-
-    [Fact]
-    public void TheSecondCropIsToTheRightOfTheFirst()
-    {
-        // The pair only detects clipping if they actually differ.
-        var a = FeederCount.Crop(Slot(), FeederCount.CropLeft)!;
-        var b = FeederCount.Crop(Slot(), FeederCount.CropLeftShifted)!;
-
-        Assert.True(b[0] > a[0]);
-        Assert.True(b[2] < a[2]);
-    }
-
-    [Fact]
-    public void ABadSlotBoxIsNotACrop()
-    {
-        // A half-marked or zero-area row must produce no reading rather than a crop of nothing, which
-        // would read as "0 items" and schedule a reload that is not needed.
-        Assert.Null(FeederCount.Crop(null!, FeederCount.CropLeft));
-        Assert.Null(FeederCount.Crop(new List<int>(), FeederCount.CropLeft));
-        Assert.Null(FeederCount.Crop(new List<int> { 1, 2, 3 }, FeederCount.CropLeft));
-        Assert.Null(FeederCount.Crop(new List<int> { 0, 0, 0, 0 }, FeederCount.CropLeft));
-    }
-
     [Fact]
     public void TheBestScoringLineWinsNotTheFirst()
     {

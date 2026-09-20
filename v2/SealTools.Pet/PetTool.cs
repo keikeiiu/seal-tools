@@ -376,6 +376,21 @@ public sealed class PetTool : ToolBase
                        "nothing to click for that row. Untick it on the Pet tab to leave it alone.";
         }
 
+        // A DRAG has to name the box it drops into, and the food strip is what says where the boxes
+        // are. Right-click does not need it — it lets the game choose, which is the entire difference
+        // between the two modes — so this is required only when the drag is the mode.
+        if (FoodLoadMode.IsDrag(pet.FoodLoadMode))
+        {
+            for (int i = 0; i < pet.Slots.Count; i++)
+            {
+                if (!pet.Slots[i].Enabled) continue;
+                if (FeederLayout.SlotBoxes(pet.Slots[i].FeederStrip, pet.Slots[i].Stacks) is null)
+                    return $"Row {i + 1}'s food strip isn't drawn — Calibrate Pet. The food load is " +
+                           "set to drag, which has to name the box it drops into, and the strip is " +
+                           "what says where the boxes are.";
+            }
+        }
+
         // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
         // page the tool cannot reach. Checked here rather than discovered mid-flow: the reload closes
         // the window on any failure, so a bad page surfaced as "it opened and then shut again" with
@@ -544,7 +559,9 @@ public sealed class PetTool : ToolBase
     /// here that cannot be undone.</summary>
     private int? ReadFeederCounts(OcrEngine ocr, PetSlotConfig row)
     {
-        if (row.FeederSlots.Count == 0) return null;
+        // The row's slots, derived from the strip the player dragged rather than from one box per
+        // slot. No strip means no reading, which the caller treats as "assume a full load".
+        if (FeederLayout.SlotBoxes(row.FeederStrip, row.Stacks) is not { } slots) return null;
 
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
@@ -557,7 +574,7 @@ public sealed class PetTool : ToolBase
         var total = 0;
         var counted = 0;
 
-        foreach (var box in row.FeederSlots)
+        foreach (var box in slots)
         {
             if (FeederCountOf(ocr, box) is not { } n) continue;
             total += n;
@@ -574,17 +591,21 @@ public sealed class PetTool : ToolBase
 
     /// <summary>One food slot's count, or null when it cannot be read with confidence.
     ///
-    /// Two crops a few pixels apart, and the number only counts when BOTH return the same thing. That
-    /// is not belt-and-braces: the measured failure of a slightly-too-tight crop is a confident WRONG
-    /// number — "300" came back as "0" at 0.56 and "84" as "4" at 0.89 — and clipping changes the
-    /// answer between two crops while a genuine read does not. See <see cref="FeederCount"/>.</summary>
+    /// The region comes from the REFERENCE the player dragged — one slot and the count box on it —
+    /// applied to this slot. Two crops a few pixels apart are then read, and the number only counts
+    /// when BOTH return the same thing. That is not belt-and-braces: the measured failure of a
+    /// slightly-wrong crop is a confident WRONG number — "300" came back as "0" at 0.56 and "84" as
+    /// "4" at 0.89 — and clipping changes the answer between two crops while a genuine read does not.
+    /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.</summary>
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         var pet = _cfg.Pet;
-        if (FeederCount.Crop(slotBox!, pet.FeederCountCropLeft) is not { } a) return null;
-        if (FeederCount.Crop(slotBox!, pet.FeederCountCropLeftShifted) is not { } b) return null;
+        if (FeederLayout.CountRegion(slotBox, pet.FeederCountSlot, pet.FeederCountText) is not { } region)
+            return null;
 
-        return FeederCount.Agreed(ReadStack(ocr, a), ReadStack(ocr, b));
+        return FeederCount.Agreed(
+            ReadStack(ocr, region),
+            ReadStack(ocr, FeederLayout.Shift(region, pet.FeederCountShiftPx)));
     }
 
     /// <summary>One crop, read to a number.</summary>
@@ -1055,9 +1076,9 @@ public sealed class PetTool : ToolBase
                 // cannot be used to do this.
                 if (FeederSlotCentre(row, stack) is not { } slot)
                 {
-                    error = $"{NameOf(row)}: food load is set to drag but this row has no food box " +
-                            $"marked for stack {stack + 1} — re-calibrate the row on Calibrate Pet, or " +
-                            "set the Pet tab's food load back to right-click.";
+                    error = $"{NameOf(row)}: food load is set to drag but this row's food strip does " +
+                            $"not divide into {row.Stacks} slot(s) — draw the strip on Calibrate Pet, " +
+                            "or set the Pet tab's food load back to right-click.";
                     return false;
                 }
                 if (!DragFood(ser, bagCell, slot, index, page, stack, out error)) return false;
@@ -1085,17 +1106,17 @@ public sealed class PetTool : ToolBase
     }
 
     /// <summary>The centre of THIS ROW's food box for <paramref name="stack"/>, or null when the row
-    /// has no box marked for it.
+    /// has no strip to divide.
     ///
-    /// The boxes are the ones calibrated on Calibrate Pet — one per food slot, dragged around the
-    /// food item's icon in each. `FeederSlots[i]` frames slot i, so its centre is the middle of the
-    /// slot, which is what a drop needs. Null rather than a guess: a drag that releases over whatever
-    /// happens to be there is the one failure here that can lose an item.</summary>
+    /// The box comes from the row's strip divided by its stack count — one drag instead of one box per
+    /// slot. Its centre is what a drop needs. Null rather than a guess: a drag that releases over
+    /// whatever happens to be there is the one failure here that can lose an item.</summary>
     private static List<int>? FeederSlotCentre(PetSlotConfig row, int stack)
     {
-        if (stack >= row.FeederSlots.Count) return null;
-        var box = row.FeederSlots[stack];
-        if (box is not { Count: 4 }) return null;
+        if (FeederLayout.SlotBoxes(row.FeederStrip, row.Stacks) is not { } slots) return null;
+        if (stack >= slots.Count) return null;
+
+        var box = slots[stack];
         return new List<int> { box[0] + box[2] / 2, box[1] + box[3] / 2 };
     }
 

@@ -35,12 +35,26 @@ Every other count region is `slotBox + (refText − refSlot)`, so the position i
 proportioned, and a resolution where the digits render at a different relative size is expressed
 exactly rather than approximated.
 
-**Built so far: `Core.FeederLayout`, with 10 tests — the derivation only, NOT yet wired to config, the
-calibrator or the read.** Two decisions in it worth naming: the slot segments are computed on the SLOT
-EDGES with integer arithmetic rather than by dividing the width and re-multiplying, because rounding
-the width first leaves a sliver unclaimed at the right end — which is precisely where the count is read
-from; and a missing reference returns null rather than a region at (0,0), so an un-migrated config reads
-as "nothing to read" instead of reading the top-left corner of the screen.
+**Built, wired, and green: `Core.FeederLayout` plus every consumer.** Two decisions in the derivation
+worth naming: the slot segments are computed on the SLOT EDGES with integer arithmetic rather than by
+dividing the width and re-multiplying, because rounding the width first leaves a sliver unclaimed at the
+right end — which is precisely where the count is read from; and a missing reference returns null rather
+than a region at (0,0), so an un-migrated config reads as "nothing to read" instead of reading the
+top-left corner of the screen.
+
+**What the wiring replaced.** `PetSlotConfig.FeederSlots` (the fourteen boxes) became `FeederStrip`
+(one per row), and `FeederCountCropLeft`/`CropLeftShifted` became `FeederCountSlot`/`FeederCountText`
+plus a pixel shift. The food drag, the count read and the Test read all derive from those now, so none
+of them can drift from the calibration. `Ready()` gained its own check: a DRAG has to name the box, so
+in drag mode a row with no strip is refused before the run starts rather than failing three times and
+being dropped — right-click is untouched, because letting the game choose the box is the whole
+difference between the modes.
+
+**A legacy config keeps working, approximately.** A file written before the rows existed migrates its
+two old boxes into one strip by taking their SPAN. That is deliberately an approximation — those boxes
+framed the numbers, not the slots, so the span runs between the digits and comes out a little narrow —
+and it is carried only because without it such a file could not load food at all. The migration test
+asserts the span and says why.
 
 **The one number that eats into this, recorded before it bites:** dividing a strip into five is out by a
 pixel or two, because the player's own row 2 slots measured 62, 64, 66 and 62 apart rather than evenly.

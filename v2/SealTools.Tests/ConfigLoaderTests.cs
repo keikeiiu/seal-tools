@@ -381,11 +381,7 @@ public class ConfigLoaderTests
                     {
                         ToggleLabel = new List<int> { 590, 200, 120, 30 },
                         BoardingPetSlot = new List<int> { 190, 210, 60, 60 },
-                        FeederSlots = new List<List<int>>
-                        {
-                            new() { 250, 210, 60, 60 },
-                            new() { 320, 210, 60, 60 },
-                        },
+                        FeederStrip = new List<int> { 250, 210, 130, 60 },
                         PetSlotEmptyPng = "row-slot-png",
                         Stacks = 5,
                         BoardingRunning = true,
@@ -408,7 +404,7 @@ public class ConfigLoaderTests
             var slot = Assert.Single(cfg.Pet.Slots);
             Assert.Equal(new List<int> { 590, 200, 120, 30 }, slot.ToggleLabel);
             Assert.Equal(new List<int> { 190, 210, 60, 60 }, slot.BoardingPetSlot);
-            Assert.Equal(2, slot.FeederSlots.Count);
+            Assert.Equal(new List<int> { 250, 210, 130, 60 }, slot.FeederStrip);
             Assert.Equal(5, slot.Stacks);
             Assert.True(slot.BoardingRunning);
 
@@ -461,8 +457,9 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
-            FeederCountCropLeft = 0.33,
-            FeederCountCropLeftShifted = 0.66,
+            FeederCountSlot = new List<int> { 21, 22, 23, 24 },
+            FeederCountText = new List<int> { 25, 26, 27, 28 },
+            FeederCountShiftPx = 4,
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
@@ -470,7 +467,7 @@ public class ConfigLoaderTests
                 {
                     ToggleLabel = new List<int> { 9, 10, 11, 12 },
                     BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
-                    FeederSlots = new List<List<int>> { new() { 17, 18, 19, 20 } },
+                    FeederStrip = new List<int> { 17, 18, 19, 20 },
                     Stacks = 5,
                     PetSlotEmptyPng = "empty-slot-png",
                     BoardingRunning = true,
@@ -541,8 +538,9 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
-            FeederCountCropLeft = 0.33,
-            FeederCountCropLeftShifted = 0.66,
+            FeederCountSlot = new List<int> { 21, 22, 23, 24 },
+            FeederCountText = new List<int> { 25, 26, 27, 28 },
+            FeederCountShiftPx = 4,
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
@@ -550,7 +548,7 @@ public class ConfigLoaderTests
                 {
                     ToggleLabel = new List<int> { 9, 10, 11, 12 },
                     BoardingPetSlot = new List<int> { 13, 14, 15, 16 },
-                    FeederSlots = new List<List<int>> { new() { 17, 18, 19, 20 } },
+                    FeederStrip = new List<int> { 17, 18, 19, 20 },
                     Stacks = 5,
                     BoardingRunning = true,
                 },
@@ -669,7 +667,7 @@ public class ConfigLoaderTests
             Enabled = false,
             ToggleLabel = new List<int> { 1, 2, 3, 4 },
             BoardingPetSlot = new List<int> { 5, 6, 7, 8 },
-            FeederSlots = new List<List<int>> { new() { 9, 10 } },
+            FeederStrip = new List<int> { 9, 10, 11, 12 },
             Stacks = 5,
             PetSlotEmptyPng = "row-empty-png",
             BoardingRunning = true,
@@ -828,7 +826,14 @@ public class ConfigLoaderTests
             Assert.Equal(new List<int> { 240, 247, 64, 70 }, slot.BoardingPetSlot);
             Assert.Equal(2, slot.Stacks);
             Assert.True(slot.BoardingRunning);
-            Assert.Equal(2, slot.FeederSlots.Count);
+
+            // The strip is the SPAN of the two old boxes — `feeder_slot_a` [344,262,67,56] and
+            // `feeder_slot_b` [412,259,63,60] — which is an APPROXIMATION and deliberately so: those
+            // two framed the numbers, not the slots, so the span runs between the digits and comes out
+            // a little narrow. It is carried because a pre-rows file could not load food at all
+            // without it, and a narrow strip still puts a click inside the slot. Redrawing it is the
+            // first thing to do on such a machine, and the migrator says so.
+            Assert.Equal(new List<int> { 344, 259, 131, 60 }, slot.FeederStrip);
 
             // The empty-slot reference used to be ONE crop for the whole tool, and it is per row now.
             // A file written before that carries it at the top level, and it belongs to row 1 —

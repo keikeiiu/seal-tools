@@ -135,8 +135,12 @@ public sealed class ConfigLoader
         {
             ToggleLabel = old.ToggleLabel,
             BoardingPetSlot = old.BoardingPetSlot,
-            FeederSlots = new List<List<int>?> { old.FeederSlotA, old.FeederSlotB }
-                .Where(IsValidRect).Select(r => r!).ToList(),
+            // The old flat config held two COUNT boxes — boxes around the numbers — not slot boxes, so
+            // their span is an APPROXIMATION of the strip the new calibration asks for: it runs between
+            // the two numbers rather than between the two slots. Carried anyway, because without it a
+            // pre-rows file could not load food at all, and a strip that is a little narrow still puts
+            // a click inside the slot. Redrawing it is the first thing to do on such a machine.
+            FeederStrip = SpanOf(old.FeederSlotA, old.FeederSlotB),
             Stacks = 2,
             PetSlotEmptyPng = old.PetSlotEmptyPng,
             BoardingRunning = old.BoardingRunning ?? false,
@@ -144,6 +148,20 @@ public sealed class ConfigLoader
     }
 
     private static bool IsValidRect(List<int>? r) => BagGrid.IsValidRect(r);
+
+    /// <summary>The smallest rect containing both, or null when neither is usable. Used only by the
+    /// pre-rows migration, to squeeze a strip out of two boxes it was never really made of.</summary>
+    private static List<int>? SpanOf(List<int>? a, List<int>? b)
+    {
+        if (!IsValidRect(a)) return IsValidRect(b) ? b : null;
+        if (!IsValidRect(b)) return a;
+
+        var left = Math.Min(a![0], b![0]);
+        var top = Math.Min(a[1], b[1]);
+        var right = Math.Max(a[0] + a[2], b[0] + b[2]);
+        var bottom = Math.Max(a[1] + a[3], b[1] + b[3]);
+        return new List<int> { left, top, right - left, bottom - top };
+    }
 
 
     // A config written before presets existed has a flat `spammer.keys` list. Move it into a preset
@@ -265,8 +283,9 @@ public sealed class ConfigLoader
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
             if (!string.IsNullOrWhiteSpace(pet.FoodLoadMode)) defaults.Pet.FoodLoadMode = pet.FoodLoadMode;
-            if (pet.FeederCountCropLeft is { } fcl) defaults.Pet.FeederCountCropLeft = fcl;
-            if (pet.FeederCountCropLeftShifted is { } fcs) defaults.Pet.FeederCountCropLeftShifted = fcs;
+            if (IsPoint(pet.FeederCountSlot)) defaults.Pet.FeederCountSlot = pet.FeederCountSlot;
+            if (IsPoint(pet.FeederCountText)) defaults.Pet.FeederCountText = pet.FeederCountText;
+            if (pet.FeederCountShiftPx is { } fsp and > 0) defaults.Pet.FeederCountShiftPx = fsp;
             if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
@@ -402,7 +421,7 @@ public sealed class ConfigLoader
         public bool? Enabled { get; set; }
         public List<int>? ToggleLabel { get; set; }
         public List<int>? BoardingPetSlot { get; set; }
-        public List<List<int>>? FeederSlots { get; set; }
+        public List<int>? FeederStrip { get; set; }
         public int? Stacks { get; set; }
         public string? PetSlotEmptyPng { get; set; }
         public bool? BoardingRunning { get; set; }
@@ -424,7 +443,7 @@ public sealed class ConfigLoader
             Enabled = Enabled ?? true,
             ToggleLabel = ToggleLabel,
             BoardingPetSlot = BoardingPetSlot,
-            FeederSlots = FeederSlots ?? new(),
+            FeederStrip = FeederStrip,
             Stacks = Stacks ?? 2,
             PetSlotEmptyPng = PetSlotEmptyPng,
             BoardingRunning = BoardingRunning ?? false,
@@ -459,10 +478,13 @@ public sealed class ConfigLoader
         /// on the Pet tab, beside the timing boxes, because it belongs to running a feed rather than
         /// to calibrating one.</summary>
         public string? FoodLoadMode { get; set; }
-        /// <summary>The feeder-count reading parameters — see <see cref="PetConfig"/>. Session half,
-        /// like FoodLoadMode: the Pet tab owns the run and these are run-time numbers.</summary>
-        public double? FeederCountCropLeft { get; set; }
-        public double? FeederCountCropLeftShifted { get; set; }
+        /// <summary>The feeder-count reference — see <see cref="PetConfig"/>. Calibration half: it is
+        /// dragged on Calibrate Pet like every other box.</summary>
+        public List<int>? FeederCountSlot { get; set; }
+        public List<int>? FeederCountText { get; set; }
+        /// <summary>Session-free too — set beside the reference, and a pixel count rather than a
+        /// proportion.</summary>
+        public int? FeederCountShiftPx { get; set; }
         public double? FeederCountMinScore { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
@@ -521,6 +543,9 @@ public sealed class ConfigLoader
             t.BagGrid = p.BagGrid;
             t.BagSlot = p.BagSlot;
             t.MaxButton = p.MaxButton;
+            t.FeederCountSlot = p.FeederCountSlot;
+            t.FeederCountText = p.FeederCountText;
+            t.FeederCountShiftPx = p.FeederCountShiftPx;
 
             var merged = new List<LocalPetSlot>();
             for (int i = 0; i < p.Slots.Count; i++)
@@ -535,7 +560,7 @@ public sealed class ConfigLoader
                     Enabled = src.Enabled,
                     ToggleLabel = src.ToggleLabel,
                     BoardingPetSlot = src.BoardingPetSlot,
-                    FeederSlots = src.FeederSlots,
+                    FeederStrip = src.FeederStrip,
                     Stacks = src.Stacks,
                     PetSlotEmptyPng = src.PetSlotEmptyPng,
                     BoardingRunning = running,
@@ -560,8 +585,6 @@ public sealed class ConfigLoader
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
             t.FoodLoadMode = p.FoodLoadMode;
-            t.FeederCountCropLeft = p.FeederCountCropLeft;
-            t.FeederCountCropLeftShifted = p.FeederCountCropLeftShifted;
             t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 

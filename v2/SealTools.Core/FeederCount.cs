@@ -7,8 +7,8 @@ namespace SealTools.Core;
 // Reading a food stack's count off the boarding window, for the row scheduling that wants it.
 //
 // READ FROM A CROP, NOT FROM THE SLOT. The detector finds no text in a whole-slot image — the food
-// icon fills the frame and it returns nothing at all — but it reads the same digits perfectly from
-// the slot's RIGHT portion at FULL HEIGHT. Both halves of that are measured:
+// icon fills the frame and it returns nothing at all — but it reads the same digits perfectly from a
+// crop of the slot's right side at FULL HEIGHT. Both halves of that are measured:
 //
 //   whole slot (198x168)      -> 0 boxes
 //   right portion, full height -> "84" at 0.99, and "300" at 1.00 on a second sample
@@ -31,20 +31,12 @@ namespace SealTools.Core;
 // A row scheduled from that starves or over-feeds. So a read is only accepted when TWO crops, a few
 // pixels apart, return the same number: clipping changes the answer, a genuine read does not.
 //
-// The shift is small — three percent, about two pixels — because a wider pair does not fit inside the
-// measured overlap. That makes the check weaker than it should be, and it is the reason this is wired
-// into the Pet tab's Test read first and NOT into scheduling: how often it holds on real slots is
-// something to measure, not to assume.
+// WHERE that crop is is not this class's business any more: it is measured, not proportioned. The
+// player drags one reference slot and the count region on it, and FeederLayout applies that offset to
+// every slot in every row — see FeederLayout, and the six-drag calibration it describes. This class
+// only owns what is done with the text once a crop has been taken.
 public static class FeederCount
 {
-    /// <summary>Where the crop starts, as a fraction of the slot box's width. The RIGHT edge is the
-    /// slot's, because the digits are right-aligned against it.</summary>
-    public const double CropLeft = 0.42;
-
-    /// <summary>The second read, shifted right. Equal to the first on a genuine read; different when
-    /// the first clipped a digit.</summary>
-    public const double CropLeftShifted = 0.45;
-
     /// <summary>The most items a stack can hold — a MAX load. A number above this is a misread, not a
     /// count, and is rejected rather than scheduled from.</summary>
     public const int MaxStack = 300;
@@ -55,17 +47,6 @@ public static class FeederCount
     /// of the crop's window (0.72 was seen there), which is the right call — a marginal crop is the
     /// one that clips a digit.</summary>
     public const double MinScore = 0.75;
-
-    /// <summary>The crop for one food slot: <paramref name="left"/> across the slot's width, the
-    /// slot's full height, running to its right edge.</summary>
-    public static List<int>? Crop(List<int> slotBox, double left)
-    {
-        if (slotBox is not { Count: 4 }) return null;
-        if (!BagGrid.IsValidRect(slotBox)) return null;
-
-        var x0 = slotBox[0] + (int)Math.Round(slotBox[2] * left);
-        return new List<int> { x0, slotBox[1], Math.Max(1, slotBox[0] + slotBox[2] - x0), slotBox[3] };
-    }
 
     /// <summary>The number out of one read: the digits of the BEST-scoring line above
     /// <paramref name="minScore"/>, or null.

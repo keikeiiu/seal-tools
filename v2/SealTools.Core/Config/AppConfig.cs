@@ -94,23 +94,17 @@ public sealed class PetSlotConfig
     /// <see cref="PetConfig.ReturnSlot"/>, which is where the pet sits in the BAG.</summary>
     public List<int>? BoardingPetSlot { get; set; }
 
-    /// <summary>This row's food boxes in the boarding window, as boxes — ONE PER FOOD SLOT, so two on
-    /// the free row and five on a paid one, matching <see cref="Stacks"/>. The player drags each box
-    /// around the FOOD ITEM'S ICON drawn in that slot (confirmed 2026-09-20), so a box's centre is the
-    /// middle of the slot.
+    /// <summary>THIS ROW's food slots, as ONE STRIP dragged across them all — divided by
+    /// <see cref="Stacks"/> into that many slot boxes by <see cref="Core.FeederLayout"/>.
     ///
-    /// CORRECTED — this comment used to say they framed the food COUNT number, "normally two, and NOT
-    /// Stacks wide, which is two whether the row holds two stacks or five". That is wrong on both
-    /// counts and it is the kind of wrong that costs a session: the live calibration holds 2 / 5 / 5 /
-    /// 5 of them, and they measure ~63x56 px where a count box would be a fraction of that. It was
-    /// believed, and a drag was briefly designed around a target that does not exist.
+    /// It replaces one hand-drawn box per slot (2 + 5 + 5 + 5 = fourteen, all the same shape
+    /// repeated). Dragged as a strip because the slots in a row are evenly laid out and the player's
+    /// own boxes already differed by only a pixel or two — close enough for the FOOD DRAG, which is
+    /// what these are for.
     ///
-    /// What the drag needs them for: `FeederSlots[i]` is the destination for stack i. That is the one
-    /// way to put food in a NAMED box, because a right-click cannot — see <see cref="Core.FoodLoadMode"/>.
-    ///
-    /// Nothing READS them yet (the counts they were meant to be read for are still unread — the reload
-    /// schedules by arithmetic, PLAN-PET-AUTOFEED.md §2). They are the drag's targets first.</summary>
-    public List<List<int>> FeederSlots { get; set; } = new();
+    /// Null on any config written before this existed, which reads as "no slots" rather than as a row
+    /// of boxes at (0,0) that the tool would then click and load food into.</summary>
+    public List<int>? FeederStrip { get; set; }
 
     /// <summary>How many food stacks this row holds — 2 on the free row, 5 on a paid one. Different
     /// per row means different reload intervals, so the schedule is per row too.</summary>
@@ -243,21 +237,30 @@ public sealed class PetConfig
 
     // ── Reading the food counts ─────────────────────────────────────────────
     //
-    // CONFIG, not constants, and the reason is that this must be tunable on another PC. The crop is a
-    // FRACTION of the slot box, so it should be resolution-independent — but that assumes the game
-    // draws the number at a size that scales with the slot, and nobody has measured a second machine.
-    // If that assumption is wrong anywhere, the fix has to be a field rather than a rebuild.
+    // WHERE the count is read from is MEASURED, not proportioned. An earlier revision expressed it as
+    // a fraction of the slot box (0.42 across to the right edge) on the reasoning that a fraction is
+    // resolution-independent — which is only true if the game draws the number at a size PROPORTIONAL
+    // to the slot. If it draws the digits at a fixed size while the slot scales, the fraction is right
+    // on one machine and wrong on another, and nobody had measured a second machine.
     //
-    // All three default to the values measured on the reference machine (2026-09-21), where the
-    // tolerances are narrow enough that they are worth being able to shift without a compiler.
+    // So the player drags a reference: one slot, and the count region on it. Every other slot in every
+    // row gets slotBox + (FeederCountText − FeederCountSlot), which is the same measurement without the
+    // assumption.
 
-    /// <summary>Where the count crop starts, as a fraction of the slot box's width. The crop runs to
-    /// the slot's right edge at full height, because the digits are right-aligned there.</summary>
-    public double FeederCountCropLeft { get; set; } = Core.FeederCount.CropLeft;
+    /// <summary>ONE food slot, dragged as the anchor for every count region.</summary>
+    public List<int>? FeederCountSlot { get; set; }
 
-    /// <summary>The second read, shifted right. Equal to the first on a genuine read and different
-    /// when the first clipped a digit — the check that catches a confidently wrong number.</summary>
-    public double FeederCountCropLeftShifted { get; set; } = Core.FeederCount.CropLeftShifted;
+    /// <summary>The count region ON that slot, dragged. Its offset from <see cref="FeederCountSlot"/>
+    /// is what carries to every other slot. Full height, and a little wider than the digits: a crop
+    /// cut down to the digits alone finds nothing at all — measured — exactly like keeping the food
+    /// icon does.</summary>
+    public List<int>? FeederCountText { get; set; }
+
+    /// <summary>How far right the SECOND read is shifted, in pixels. The two must agree before a
+    /// number is taken, because the measured failure of a slightly-wrong crop is a confidently wrong
+    /// count — a full 300 read as 0 — and clipping changes the answer between two crops while a
+    /// genuine read does not.</summary>
+    public int FeederCountShiftPx { get; set; } = 3;
 
     /// <summary>How confident the reader must be for a line to count as the number.</summary>
     public double FeederCountMinScore { get; set; } = Core.FeederCount.MinScore;
