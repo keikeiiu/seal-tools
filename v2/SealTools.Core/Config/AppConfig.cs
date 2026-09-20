@@ -250,6 +250,15 @@ public sealed class PetConfig
     // What replaced both is the fraction read at several offsets with a vote, so the constant only has
     // to be roughly right.
 
+    /// <summary>ONE whole food slot, dragged as the reference for the count read.
+    ///
+    /// It exists to be EXACT. The slots the feed drag uses are derived by dividing a strip, which on a
+    /// five-slot paid row can be a pixel or two out — and the band of read positions that works is only
+    /// a few pixels wide, so those two pixels matter. This one is drawn, so it is where the read
+    /// position is checked against something solid: Test read uses THIS slot, not a derived one, so
+    /// what is verified is what was drawn.</summary>
+    public List<int>? FeederCountSlot { get; set; }
+
     /// <summary>WHERE each slot's count is read from: this far across the slot, running to the slot's
     /// own right edge at its full height. THE ONE NUMBER THE WHOLE COUNT READ COMES DOWN TO, which is
     /// why it is a setting rather than a constant — a machine whose slots or digits sit differently

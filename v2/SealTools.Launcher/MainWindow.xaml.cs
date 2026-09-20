@@ -5024,8 +5024,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         // row's stack count, so a 5-slot row is one gesture instead of five that all have to agree
         // about where the row starts.
         drawFeeder.Click += (_, _) => PetArmDrag("feederstrip");
+        var drawCountSlot = MakeButton("Draw count slot", ControlAppearance.Secondary);
+        drawCountSlot.Click += (_, _) => PetArmDrag("countslot");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
+        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder, drawCountSlot })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             boxRow.Children.Add(b);
@@ -5719,6 +5721,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                     $"{EditRow(pet).Stacks} slot(s). The food DRAG drops each stack at a slot's " +
                     "centre, so a pixel or two out is harmless here.";
                 break;
+            case "countslot":
+                pet.FeederCountSlot = rect;
+                _petDragTarget = null;
+                _petHint!.Text = $"Count reference slot {rect[2]}x{rect[3]}. Test read checks the " +
+                    "count crop on THIS slot, so it is worth drawing one the number is actually in.";
+                break;
             case "grid":
                 pet.BagGrid = rect;
                 _petDragTarget = "slot";
@@ -6356,9 +6364,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         // to read two of them and quietly imply the row was empty of the other three.
         var row = EditRow(pet);
         var boxes = new List<(string What, List<int> Box)>();
+        // THE DRAWN COUNT SLOT FIRST, when there is one: it is exact, where a slot derived from a strip
+        // can be a pixel or two out on a five-slot row — and the band of read positions that works is
+        // only a few pixels wide, so those pixels decide it. What is verified is then what was drawn.
+        if (BagGrid.IsValidRect(pet.FeederCountSlot))
+            boxes.Add(("count slot (drawn)", pet.FeederCountSlot!));
         for (int f = 0; f < Math.Max(1, row.Stacks); f++)
             if (BagGrid.IsValidRect(FeederAt(row, f)))
-                boxes.Add(($"slot {f + 1}", FeederAt(row, f)!));
+                boxes.Add(($"slot {f + 1} (derived)", FeederAt(row, f)!));
 
         // WHICH ROW this reads is Calibrate Pet's selected row, not anything on this tab — a coupling
         // that has already cost one confused report ("it says I don't have the config"), because the

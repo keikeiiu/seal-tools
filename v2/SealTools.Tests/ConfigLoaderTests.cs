@@ -467,6 +467,7 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
+            FeederCountSlot = new List<int> { 11, 12, 13, 14 },
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
@@ -545,6 +546,7 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
+            FeederCountSlot = new List<int> { 11, 12, 13, 14 },
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
