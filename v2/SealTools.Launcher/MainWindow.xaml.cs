@@ -5033,7 +5033,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "DRAW THE COUNT BOX THE FULL HEIGHT OF THE SLOT, a little wider than the digits. A " +
                  "tight box around the number alone reads NOTHING — measured — exactly like keeping " +
                  "the food icon does; the detector wants the whole slot height to find the text at " +
-                 "all. If Test read comes back empty, that box is the first thing to widen."),
+                 "all. If Test read comes back empty, that box is the first thing to widen." +
+                 Environment.NewLine +
+                 "On the capture — green the start button, blue the pet slot, yellow a food slot as " +
+                 "DERIVED from its strip, yellow-green the strip itself, purple the count reference " +
+                 "slot, and MAGENTA the boxes the OCR actually reads, on the row you are editing. If " +
+                 "the magenta lands on the food icon rather than on the digits, the count box is in " +
+                 "the wrong place and no amount of tuning the confidence will find a number in it."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -5782,6 +5788,38 @@ public partial class MainWindow : FluentWindow, IDisposable
                 if (BagGrid.IsValidRect(FeederAt(row, f)))
                     Box(canvas, shot, FeederAt(row, f)!, countBrush);
         }
+
+        // THE STRIPS — the marks the slots above are derived from, drawn for every row so a strip that
+        // is in the wrong place is visible rather than only inferable from where its slots landed.
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var strip = pet.Slots[i].FeederStrip;
+            if (!BagGrid.IsValidRect(strip)) continue;
+            Box(canvas, shot, strip!, i == _petEditRow ? Brushes.YellowGreen : Faint(Brushes.YellowGreen));
+        }
+
+        // The reference pair, and THE REGIONS THEY DERIVE.
+        //
+        // The magenta boxes are the point of this whole drawing: they are exactly what the OCR is
+        // pointed at, on the row being edited, computed the same way a run computes them. Nothing else
+        // on this screen answers "will it read the number?" — a strip in the right place with the
+        // right offset gives boxes sitting on the digits, and one that does not puts them on the food
+        // icon, where no amount of tuning the confidence will find a number.
+        //
+        // Only the edited row's, because the reference is shared: seventeen magenta boxes across four
+        // rows would say the same thing louder and less clearly.
+        var editRow = EditRow(pet);
+        if (FeederLayout.SlotBoxes(editRow.FeederStrip, editRow.Stacks) is { } derivedSlots)
+        {
+            foreach (var slot in derivedSlots)
+                if (FeederLayout.CountRegion(slot, pet.FeederCountSlot, pet.FeederCountText) is { } region)
+                    Box(canvas, shot, region, Brushes.Magenta);
+        }
+
+        if (BagGrid.IsValidRect(pet.FeederCountSlot))
+            Box(canvas, shot, pet.FeederCountSlot!, Brushes.MediumPurple);
+        if (BagGrid.IsValidRect(pet.FeederCountText))
+            Box(canvas, shot, pet.FeederCountText!, Brushes.Magenta);
 
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
