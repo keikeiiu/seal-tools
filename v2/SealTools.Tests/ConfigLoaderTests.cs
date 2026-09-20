@@ -375,6 +375,12 @@ public class ConfigLoaderTests
                 BagSlot = new List<int> { 660, 150, 51, 51 },
                 FoodSlots = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
                 ReturnSlot = new List<int> { 1, 2 },
+                // The count reference. It is a RECTANGLE, and the loader applied the "is this a point"
+                // predicate to it — Count == 2, which a rect never is — so both boxes were written on
+                // save and silently DISCARDED on every load. The player's symptom was the Test read
+                // telling them to draw boxes they had already drawn.
+                FeederCountSlot = new List<int> { 345, 259, 68, 58 },
+                FeederCountText = new List<int> { 366, 294, 47, 22 },
                 Slots = new List<ConfigLoader.LocalPetSlot>
                 {
                     new()
@@ -395,6 +401,8 @@ public class ConfigLoaderTests
             Assert.Equal(new List<int> { 815, 1735 }, cfg.Pet.MenuButton);
             Assert.Equal(new List<int> { 900, 1400 }, cfg.Pet.FeedIcon);
             Assert.Equal(new List<int> { 1, 2 }, cfg.Pet.ReturnSlot);
+            Assert.Equal(new List<int> { 345, 259, 68, 58 }, cfg.Pet.FeederCountSlot);
+            Assert.Equal(new List<int> { 366, 294, 47, 22 }, cfg.Pet.FeederCountText);
             Assert.Equal(3, cfg.Pet.PageTabs.Count);
             Assert.Equal(2, cfg.Pet.FoodSlots.Count);
             Assert.Equal(new List<int> { 660, 150, 408, 408 }, cfg.Pet.BagGrid);
@@ -405,6 +413,18 @@ public class ConfigLoaderTests
             Assert.Equal(new List<int> { 590, 200, 120, 30 }, slot.ToggleLabel);
             Assert.Equal(new List<int> { 190, 210, 60, 60 }, slot.BoardingPetSlot);
             Assert.Equal(new List<int> { 250, 210, 130, 60 }, slot.FeederStrip);
+
+            // The count REFERENCE, which is the one that got away. It is a RECTANGLE, and the loader
+            // applied the "is this a point" predicate to it — Count == 2, which a rect never is — so
+            // both boxes were written to local.yaml on save and silently DISCARDED on every load. The
+            // player's symptom was the Test read telling them to draw boxes they had already drawn,
+            // and it looked like the tool forgetting a setting rather than a load predicate being
+            // wrong for the shape.
+            //
+            // Asserted here rather than only in a unit test of the predicate, because the direction
+            // that matters is the ROUND TRIP: written by SaveLocal, read back by Load.
+            Assert.Equal(new List<int> { 345, 259, 68, 58 }, cfg.Pet.FeederCountSlot);
+            Assert.Equal(new List<int> { 366, 294, 47, 22 }, cfg.Pet.FeederCountText);
             Assert.Equal(5, slot.Stacks);
             Assert.True(slot.BoardingRunning);
 

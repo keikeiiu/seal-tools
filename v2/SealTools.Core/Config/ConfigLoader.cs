@@ -283,8 +283,12 @@ public sealed class ConfigLoader
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
             if (!string.IsNullOrWhiteSpace(pet.FoodLoadMode)) defaults.Pet.FoodLoadMode = pet.FoodLoadMode;
-            if (IsPoint(pet.FeederCountSlot)) defaults.Pet.FeederCountSlot = pet.FeederCountSlot;
-            if (IsPoint(pet.FeederCountText)) defaults.Pet.FeederCountText = pet.FeederCountText;
+            // IsValidRect, NOT IsPoint. These are RECTANGLES, and IsPoint means "exactly two values" —
+            // so the point predicate is false for them, every time, and both were written to local.yaml
+            // on save and silently DISCARDED on every load. The neighbouring MaxButton line is a
+            // genuine point, and copying its predicate without reading it is how this happened.
+            if (IsValidRect(pet.FeederCountSlot)) defaults.Pet.FeederCountSlot = pet.FeederCountSlot;
+            if (IsValidRect(pet.FeederCountText)) defaults.Pet.FeederCountText = pet.FeederCountText;
             if (pet.FeederCountShiftPx is { } fsp and > 0) defaults.Pet.FeederCountShiftPx = fsp;
             if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
