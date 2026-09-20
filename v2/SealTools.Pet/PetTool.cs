@@ -996,6 +996,7 @@ public sealed class PetTool : ToolBase
         var pet = _cfg.Pet;
 
         var stacks = Math.Max(1, row.Stacks);
+        var drag = FoodLoadMode.IsDrag(pet.FoodLoadMode);
         for (int stack = 0; stack < stacks; stack++)
         {
             var cell = NextFoodCell(pet);
@@ -1016,7 +1017,25 @@ public sealed class PetTool : ToolBase
                 return false;
             }
             var (cx, cy) = centres[index];
-            if (!Click(ser, new List<int> { cx, cy }, right: true, $"FOOD cell {index} (page {page + 1})", out error)) return false;
+            var bagCell = new List<int> { cx, cy };
+
+            if (drag)
+            {
+                // The row's OWN box for this stack, named. See FoodLoadMode for why a right-click
+                // cannot be used to do this.
+                if (FeederSlotCentre(row, stack) is not { } slot)
+                {
+                    error = $"{NameOf(row)}: food load is set to drag but this row has no food box " +
+                            $"marked for stack {stack + 1} — re-calibrate the row on Calibrate Pet, or " +
+                            "set the Pet tab's food load back to right-click.";
+                    return false;
+                }
+                if (!DragFood(ser, bagCell, slot, index, page, stack, out error)) return false;
+            }
+            else if (!Click(ser, bagCell, right: true, $"FOOD cell {index} (page {page + 1})", out error))
+            {
+                return false;
+            }
 
             SleepCheck(ActionWait);
             if (!Click(ser, EffectiveMax()!, right: false, "MAX", out error)) return false;
@@ -1033,6 +1052,68 @@ public sealed class PetTool : ToolBase
         }
 
         return true;
+    }
+
+    /// <summary>The centre of THIS ROW's food box for <paramref name="stack"/>, or null when the row
+    /// has no box marked for it.
+    ///
+    /// The boxes are the ones calibrated on Calibrate Pet — one per food slot, dragged around the
+    /// food item's icon in each. `FeederSlots[i]` frames slot i, so its centre is the middle of the
+    /// slot, which is what a drop needs. Null rather than a guess: a drag that releases over whatever
+    /// happens to be there is the one failure here that can lose an item.</summary>
+    private static List<int>? FeederSlotCentre(PetSlotConfig row, int stack)
+    {
+        if (stack >= row.FeederSlots.Count) return null;
+        var box = row.FeederSlots[stack];
+        if (box is not { Count: 4 }) return null;
+        return new List<int> { box[0] + box[2] / 2, box[1] + box[3] / 2 };
+    }
+
+    /// <summary>Drags one bag stack onto one named food box: place on the bag cell, press, move to the
+    /// box, release. The caller then MAXes and Enters as it always did — the drag replaces only the
+    /// gesture that chose the destination, not the count dialog behind it.
+    ///
+    /// The release is in a `finally` and that is not tidiness. A left button left down follows the
+    /// player's REAL cursor and drops the stack on whatever it is next over — and a failure part way
+    /// through the move is exactly when that would happen, so the failure path is the one that must
+    /// release, not the one that must not.</summary>
+    private bool DragFood(SerialPort ser, List<int> bagCell, List<int> slot, int index, int page,
+        int stack, out string error)
+    {
+        if (!PlaceOn(ser, bagCell[0], bagCell[1], out error))
+        {
+            Log($"  FAILED moving to FOOD cell {index} (page {page + 1}) at " +
+                $"({bagCell[0]},{bagCell[1]}): {error}");
+            return false;
+        }
+        SleepCheck(ClickWait);
+
+        // Re-aim before pressing, for the same reason Click does: the wait exists so the game is ready,
+        // and something else moves the cursor during it. A press meant for the bag cell but delivered
+        // beside it picks up nothing and drags nothing.
+        if (!PlaceOn(ser, bagCell[0], bagCell[1], out error))
+        {
+            Log($"  FAILED re-aiming at FOOD cell {index} before dragging: {error}");
+            return false;
+        }
+
+        HidPointer.LeftDown(ser);
+        Log($"  drag: picked up FOOD cell {index} (page {page + 1}) at ({bagCell[0]},{bagCell[1]})");
+        try
+        {
+            if (!PlaceOn(ser, slot[0], slot[1], out error))
+            {
+                Log($"  FAILED dragging stack {stack + 1} to its box at ({slot[0]},{slot[1]}): {error}");
+                return false;
+            }
+            SleepCheck(ClickWait);
+            Log($"  drag: stack {stack + 1} onto the row's food box {stack + 1} at ({slot[0]},{slot[1]})");
+            return true;
+        }
+        finally
+        {
+            HidPointer.LeftUp(ser);
+        }
     }
 
     /// <summary>The next marked food cell, and the first one NOT yet used.

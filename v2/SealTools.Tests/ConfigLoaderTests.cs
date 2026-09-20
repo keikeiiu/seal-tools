@@ -458,6 +458,7 @@ public class ConfigLoaderTests
             MaxButton = new List<int> { 40, 41 },
             WaitAfterEmptyMinutes = 3,
             ActionWaitMs = 1234,
+            FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             Slots = new List<PetSlotConfig>
             {
                 new()
@@ -532,6 +533,7 @@ public class ConfigLoaderTests
             MaxButton = new List<int> { 40, 41 },
             WaitAfterEmptyMinutes = 3,
             ActionWaitMs = 1234,
+            FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             Slots = new List<PetSlotConfig>
             {
                 new()

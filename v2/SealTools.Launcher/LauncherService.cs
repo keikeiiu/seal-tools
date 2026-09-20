@@ -291,13 +291,23 @@ public sealed class LauncherService : IDisposable
             if (id != ResidentId) Gate.Release(id);
             return false;
         }
+        // A drag needs firmware 2. On an older board 'L' and 'l' are ignored — the button is never
+        // pressed, the stack is never picked up, and it looks exactly like a mis-aimed drag, with food
+        // silently not loaded. Refuse the start instead: this is the one place the board's version
+        // changes behaviour rather than being printed, which is why the level says what it means.
+        if (id == ResidentId && FoodLoadMode.Complaint(Config.Pet.FoodLoadMode, FirmwareLevel) is { } complaint)
+        {
+            LastArduinoError = complaint;
+            return false;
+        }
+
         // The resident tool never becomes "current": it is background furniture, and the UI keys mini
         // mode and the Hold Space card off this. Its card still shows live through StateFor.
         if (id != ResidentId) _currentId = id;
         // Starting a hold takes the spacebar over deliberately, so any standing "the release failed"
         // warning describes a state that no longer applies — it would otherwise sit red on the status
         // line for the rest of the session, after the player had already dealt with it.
-        if (id == "holdspace") LastSpaceReleaseError = null;
+        if (id == "holdspace") LastReleaseError = null;
 
         var cts = new CancellationTokenSource();
         var state = new ToolState { Running = true };
@@ -408,7 +418,7 @@ public sealed class LauncherService : IDisposable
         // exactly the one where its own write threw — so every stop path (the card's Stop, the
         // toggle, Quit, Dispose) releases from here instead. "U" is idempotent in the firmware, so
         // the tool's own release arriving too is harmless.
-        if (HeldKeys.NeedsSpaceRelease(target)) ReleaseSpace();
+        if (HeldKeys.NeedsReleaseOnStop(target)) ReleaseHeld();
 
         running.Cts.Cancel();
 
@@ -446,31 +456,39 @@ public sealed class LauncherService : IDisposable
         return Core.BagGrid.Disagreement(bs.BagGrid!, bs.BagSlot!);
     }
 
-    /// <summary>Why the last <see cref="ReleaseSpace"/> failed, or null when the last one succeeded.
+    /// <summary>Why the last <see cref="ReleaseHeld"/> failed, or null when the last one succeeded.
     /// Hold Space is the one tool with no card of its own — its state.Message has nowhere to be drawn
     /// — so this property is its only report surface, and the status line beside the toggle renders
-    /// it. A release that fails leaves a real key down on the player's keyboard: not something to log
-    /// and move past.</summary>
-    public string? LastSpaceReleaseError { get; private set; }
+    /// it. A release that fails leaves a real key or mouse button down on the player's machine: not
+    /// something to log and move past.</summary>
+    public string? LastReleaseError { get; private set; }
 
-    /// <summary>Releases the spacebar directly, independent of the Hold Space tool's loop, so every
-    /// stop path can let go of it rather than only the toggle button. Returns null on success or the
-    /// failure message, and records the same on <see cref="LastSpaceReleaseError"/>.
+    /// <summary>Lets go of everything a tool can hold down — the spacebar and the left mouse button —
+    /// directly and independent of any tool's loop, so every stop path can release rather than only
+    /// the toggle button. Returns null on success or the failure message, and records the same on
+    /// <see cref="LastReleaseError"/>.
+    ///
+    /// BOTH commands, always, rather than whichever the stopping tool happens to use. They are
+    /// idempotent in the firmware — releasing a spacebar that is not held is a no-op, and so is
+    /// releasing a button that is not pressed — and a board too old to know 'l' ignores it. Picking
+    /// between them would mean the release path had to be right about which tool was stopping, and
+    /// being wrong about that is exactly how a release path comes to fail.
     ///
     /// This used to swallow its exception, which made it the one path that failed silently — while
     /// the tool's own copy of the same write, the one that is only reachable when the loop is not
     /// being interrupted, was the one that reported. That is backwards.</summary>
-    public string? ReleaseSpace()
+    public string? ReleaseHeld()
     {
         try
         {
-            _arduino?.Write("U\n");
-            LastSpaceReleaseError = null;
+            _arduino?.Write("U\n");   // spacebar
+            _arduino?.Write("l\n");   // left mouse button (firmware 2)
+            LastReleaseError = null;
             return null;
         }
         catch (Exception ex)
         {
-            LastSpaceReleaseError = ex.Message;
+            LastReleaseError = ex.Message;
             return ex.Message;
         }
     }

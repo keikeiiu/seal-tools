@@ -21,7 +21,12 @@ public static class FirmwareVersion
 
     /// <summary>The protocol level this host knows about. A board reporting less is missing something;
     /// one reporting more is newer than this launcher.</summary>
-    public const int Current = 1;
+    public const int Current = 2;
+
+    /// <summary>The level that added L/l — hold and release the left mouse button, which is what a
+    /// drag is made of. Below it the letters are ignored and the item is never picked up, which looks
+    /// exactly like a mis-aimed drag: see <see cref="FoodLoadMode"/>.</summary>
+    public const int DragLevel = 2;
 
     /// <summary>Reads the level out of a reply line — "V 1" gives 1. Null when the line is not a
     /// version reply at all, which is the case that must not be mistaken for a level: a board that

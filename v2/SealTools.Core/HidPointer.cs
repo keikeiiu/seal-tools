@@ -190,4 +190,24 @@ public static class HidPointer
 
     /// <summary>HID right-click at the current cursor position (clears a stuck resource gem).</summary>
     public static void RightClick(SerialPort ser) => ser.Write("R\n");
+
+    // ── The two halves of a drag ────────────────────────────────────────────
+    //
+    // Click is press → hold 50-150 ms → release inside the firmware, all in one frame; it cannot be
+    // anything but a click. A drag needs the button held ACROSS a move, and the host is what drives
+    // the move (its own "D" commands, or a closed-loop placement in between). So these two split
+    // Click apart and the host owns the timing.
+    //
+    // Requires firmware level 2 — see FirmwareVersion. On an older board the letters are ignored, the
+    // button is never pressed, and the item is never picked up, which looks exactly like a mis-aimed
+    // drag. That is why the pet tool refuses to drag below level 2 rather than trying and hoping.
+
+    /// <summary>Presses and HOLDS the left button. Always paired with <see cref="LeftUp"/>, and a
+    /// caller that can fail in between must release in a `finally` — a button left down follows the
+    /// player's real cursor and drops whatever it is over on the next press.</summary>
+    public static void LeftDown(SerialPort ser) => ser.Write("L\n");
+
+    /// <summary>Releases the left button. Idempotent in the firmware, so sending it when the button
+    /// was never down — or twice — is harmless.</summary>
+    public static void LeftUp(SerialPort ser) => ser.Write("l\n");
 }

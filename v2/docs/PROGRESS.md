@@ -9,6 +9,60 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-20 (6) — the food boxes are one queue, and a right-click cannot name one
+
+**The player found it in the game, and it is a design error rather than a quirk.** A right-click drops a
+food stack into the **earliest empty box in the boarder**, and every row's boxes are one queue ordered
+top-down — so a stack meant for a lower row lands in an upper row's box whenever that row has run dry.
+The tool has never looked at where the food went; it counts the clicks it sent and calls the reload
+complete, so this has been silently possible for as long as four rows have existed.
+
+**How it survived four-row testing, from the log rather than from reasoning.** When rows come due
+together the loop reloads them 1→2→3→4 — the 21:56 and 22:00 reloads on 2026-09-19, and 06:23–06:26 on
+2026-09-20 — so each row's food lands correctly because everything above it was *just* refilled. The
+failure needs a LOWER row reloaded while an UPPER row has an empty box: a window only
+`wait_after_empty_minutes` wide (5), because the reload is scheduled that far past the feeder emptying.
+**Row 1 is never exposed, and the player's own words were "the first row was fine because it is the
+first row".** That is the whole explanation, and it came out of reading `pet.log` for the redundant
+case rather than from any theory of mine.
+
+**And the code's own comment was wrong about the thing the fix needed.** `FeederSlots` is documented as
+framing the food COUNT, "normally two, and NOT Stacks wide, which is two whether the row holds two
+stacks or five". The live config holds 2/5/5/5 of them at ~63×56 px, where a count box would be a
+fraction of that. I asked rather than assumed — the answer is that the player drags each box around the
+**food item's icon** in the slot — and a drag was briefly designed around a target that does not exist.
+Comment corrected, and the measurement recorded in it.
+
+**The fix is a setting, and it has to be.** `pet.food_load_mode`: **right_click** (the game picks the box
+— works on every board ever flashed) or **drag** (the row's own box is named). Drag needs firmware 2 and
+the `L`/`l` commands, which is why it cannot be the default. And because an old board **ignores** those
+letters — the button is never pressed, the stack is never picked up, and it looks exactly like a
+mis-aimed drag — the tool **refuses to start** a drag-mode feeder on a board that cannot drag instead of
+running one that silently loads nothing. That refusal is the first place `FirmwareVersion` changes
+behaviour rather than being printed, which is what Part 2's number was for.
+
+**Two hazards that come with it, both handled:**
+
+- **A held mouse button is the stuck-spacebar bug wearing a different hat**, and worse — a left button
+  left down follows the player's *real* cursor and drops whatever it is over on the next press. Three
+  layers: the drag releases in a `finally`, so a failed move still lets go; `StopTool` now releases the
+  mouse as well as the spacebar, so every stop path does; and the firmware's host-gone failsafe releases
+  it too. `HeldKeys` grew from "needs a `U`" to "can leave something held", and `ReleaseSpace` became
+  `ReleaseHeld`, sending **both** commands always — choosing between them would mean the release path
+  had to be right about which tool was stopping, and being wrong about that is how a release path fails.
+- **A bad release can lose an item**, which nothing else in this tool can do. Not measured yet, and the
+  plan says so: a deliberate mis-drag before this runs unattended.
+
+**Verified:** sketch compiles for the Pro Micro via arduino-cli (11948 bytes, 41 %), Release build
+clean, **126/126 tests** (10 new on the mode and the board check). The projection guard is
+mutation-checked — deleting `t.FoodLoadMode = p.FoodLoadMode` fails two tests, which matters because
+that projection has silently dropped a field twice. **Not verified: nothing has been flashed and the
+launcher has not been run.** The drag path has never moved a real cursor.
+
+**On branch `v2-pet-drag`, not merged** — it cannot do anything until a board is reflashed.
+
+---
+
 ## 2026-09-20 (5) — the pet feeder becomes resident, on a branch
 
 **The feature the player asked for**: *"while pet tool running we could very well need to buy sell and

@@ -19,6 +19,7 @@
 //   W ms         wait ms (1-9999)
 //   Q n / Z n    mouse wheel up / down, n notches (1-400)
 //   P / U        hold / release the spacebar (auto-pickup)
+//   L / l        hold / release the LEFT MOUSE BUTTON — the two halves of a drag
 //   V            report the firmware's protocol level — the only thing this sketch writes BACK
 //
 // An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
@@ -57,20 +58,29 @@
 // a date would tell the launcher nothing it could act on.
 //
 //   1  the first level that can be reported: has the host-gone release (below) and answers 'V'
+//   2  adds L / l — hold and release the left mouse button, so the host can DRAG
 //
 // It starts at 1 rather than counting back over the changes that predate it — no board in the field
 // can report anything at all, so levels 2 and 3 could not exist and could not be told apart. The
 // host treats SILENCE as "predates version reporting", which is a definite no rather than an error.
-#define FW_VERSION 1
+//
+// Level 2 is the first time the number is load-bearing rather than informational: a host that drags
+// on a level-1 board sends 'L' and 'l', gets silence, and the item is never picked up — which looks
+// exactly like a mis-aimed drag. The pet tool's food-load mode is what reads this.
+#define FW_VERSION 2
 
 // ── Held-key failsafe ────────────────────────
-// 'P' presses the spacebar and leaves it held until 'U'. If the host disappears while it is held
-// — the launcher crashed or was killed — nothing would ever send that 'U' and the key would stay
-// down on the host until the device is unplugged. `Serial` is false once the host closes the port
-// (the same signal the usual `while (!Serial)` wait uses), so the loop releases everything when
-// that happens. The app holds the port open for its whole lifetime, so this only fires when it is
-// genuinely gone.
+// 'P' presses the spacebar and 'L' presses the left mouse button, and each leaves it held until 'U'
+// or 'l'. If the host disappears while either is down — the launcher crashed or was killed — nothing
+// would ever send the release, and the key or the button would stay down on the host until the device
+// is unplugged. `Serial` is false once the host closes the port (the same signal the usual
+// `while (!Serial)` wait uses), so the loop releases everything when that happens. The app holds the
+// port open for its whole lifetime, so this only fires when it is genuinely gone.
+//
+// A stuck left button is worse than a stuck spacebar: it follows the real cursor and drops whatever
+// it is over on the next press. Both are covered here for that reason.
 static bool spaceHeld = false;
+static bool leftHeld = false;
 
 // ── Bezier human-like mouse movement ─────────
 float cubicBezier(float p0, float p1, float p2, float p3, float t) {
@@ -128,10 +138,12 @@ void setup() {
 void loop() {
     static char buf[32];  // fixed buffer — no heap allocation (avoids String fragmentation)
 
-    // Host gone while a key is being held: release it rather than leave it stuck down.
-    if (!Serial && spaceHeld) {
-        Keyboard.releaseAll();
+    // Host gone while something is held: release it rather than leave it stuck down.
+    if (!Serial && (spaceHeld || leftHeld)) {
+        Keyboard.releaseAll();          // covers 'P' and anything else Keyboard.press left down
+        Mouse.release(MOUSE_LEFT);      // covers 'L'
         spaceHeld = false;
+        leftHeld = false;
     }
 
     if (Serial.available() > 0) {
@@ -251,6 +263,22 @@ void loop() {
         else if (type == 'U') {
             Keyboard.release(' ');
             spaceHeld = false;
+        }
+        // Hold / release the left mouse button — the two halves of a drag.
+        //
+        // Not a new mechanism so much as 'C' split in two: 'C' is press, hold 50-150 ms, release, all
+        // in one frame, which is a click and cannot be anything else. A drag needs the button held
+        // across a MOVE, and the host drives the move as its own 'D' commands in between. So the host
+        // owns the timing and this only owns the button.
+        //
+        // Lowercase 'l' releases, uppercase 'L' holds, matching 'K'/'k' and 'F'/'f'.
+        else if (type == 'L') {
+            Mouse.press(MOUSE_LEFT);
+            leftHeld = true;
+        }
+        else if (type == 'l') {
+            Mouse.release(MOUSE_LEFT);
+            leftHeld = false;
         }
         // Report the protocol level. The ONLY reply this sketch sends — everything else is one-way,
         // which is why a silent board could never be distinguished from a board that ignored a

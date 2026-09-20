@@ -264,6 +264,7 @@ public sealed class ConfigLoader
             if (pet.ActionWaitMs is { } wait and > 0) defaults.Pet.ActionWaitMs = wait;
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
+            if (!string.IsNullOrWhiteSpace(pet.FoodLoadMode)) defaults.Pet.FoodLoadMode = pet.FoodLoadMode;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
 
@@ -448,6 +449,10 @@ public sealed class ConfigLoader
         public int? FoodSlotsUsed { get; set; }
         public int? ActionWaitMs { get; set; }
         public int? WaitAfterEmptyMinutes { get; set; }
+        /// <summary>right_click | drag — see <see cref="Core.FoodLoadMode"/>. Session half: it is set
+        /// on the Pet tab, beside the timing boxes, because it belongs to running a feed rather than
+        /// to calibrating one.</summary>
+        public string? FoodLoadMode { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
         public List<int>? MaxButton { get; set; }
@@ -539,6 +544,7 @@ public sealed class ConfigLoader
             t.ReturnSlot = p.ReturnSlot;
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
+            t.FoodLoadMode = p.FoodLoadMode;
             t.ReloadOnStart = p.ReloadOnStart;
 
             t.Queue = p.Queue.Select(q => new LocalPetQueueEntry

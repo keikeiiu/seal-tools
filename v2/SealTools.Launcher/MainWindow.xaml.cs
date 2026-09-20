@@ -559,16 +559,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? "Stop holding the spacebar and release the key"
             : "Hold the spacebar to auto-pick up items";
 
-        // A failed release is a real key left down on the player's keyboard, and Hold Space is the one
-        // tool with no card for state.Message to land on — this line is its only report surface, so it
-        // takes precedence over the idle/holding reading.
-        var releaseErr = _service.LastSpaceReleaseError;
+        // A failed release is a real key or mouse button left down on the player's machine, and Hold
+        // Space is the one tool with no card for state.Message to land on — this line is the only
+        // report surface either of them has, so it takes precedence over the idle/holding reading.
+        // Worded for the input rather than for the spacebar now that a stuck LEFT BUTTON is one of
+        // the two cases: it is worse, not merely similar, because it follows the real cursor.
+        var releaseErr = _service.LastReleaseError;
         if (releaseErr != null)
         {
-            HoldSpaceStatus.Text = "● space may be stuck";
+            HoldSpaceStatus.Text = "● input may be stuck";
             HoldSpaceStatus.Foreground = Res("SystemFillColorCriticalBrush");
             HoldSpaceStatus.ToolTip = $"The release write failed ({releaseErr}).\n" +
-                "Tap the spacebar once in game to clear it.";
+                "Tap the spacebar, and click once, in game to clear whichever is down.";
         }
         else
         {
@@ -5224,6 +5226,31 @@ public partial class MainWindow : FluentWindow, IDisposable
                 _service.Config.Pet.ActionWaitMs = ms;
         };
 
+        // How a food stack gets into the boarding window, and the two options are not equivalents.
+        // Right-click lets the GAME choose the box — the earliest empty one — and every row's boxes
+        // are one queue ordered top-down, so a stack meant for a lower row lands in an upper row's box
+        // whenever that row has run dry. Drag names the row's own box and needs firmware 2, which is
+        // why the choice is here rather than hard-coded: a board that has not been reflashed still has
+        // to be able to feed.
+        var loadMode = new ComboBox { MinWidth = 240, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var mode in SealTools.Core.FoodLoadMode.All)
+        {
+            loadMode.Items.Add(mode == SealTools.Core.FoodLoadMode.Drag
+                ? "Drag to the row's own box (needs firmware 2)"
+                : "Right-click — the game picks the box");
+        }
+        loadMode.SelectedIndex = SealTools.Core.FoodLoadMode.IsDrag(_service.Config.Pet.FoodLoadMode) ? 1 : 0;
+        loadMode.SelectionChanged += (_, _) =>
+        {
+            if (loadMode.SelectedIndex < 0) return;
+            _service.Config.Pet.FoodLoadMode = SealTools.Core.FoodLoadMode.All[loadMode.SelectedIndex];
+            // Say so at once rather than at the next Start: the board's firmware decides whether this
+            // is even possible, and a mode that silently cannot work is the failure being avoided.
+            _petHint!.Text = SealTools.Core.FoodLoadMode.Complaint(
+                _service.Config.Pet.FoodLoadMode, _service.FirmwareLevel)
+                ?? $"Food load set to {_service.Config.Pet.FoodLoadMode} — Save to keep it.";
+        };
+
         panel.Children.Add(Section("Timing",
             Hint($"Wait after empty — how many minutes PAST the feeder emptying to reload. The load " +
                  $"is {_service.Config.Pet.LoadMinutesFor(EditRow(_service.Config.Pet))} minutes, so a " +
@@ -5236,7 +5263,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "Action wait — the pause after EACH step of a reload before the next one. Too short " +
                  "and a click does not register, which costs a whole cycle."),
             LabeledField("Wait after empty (min)", marginBox),
-            LabeledField("Action wait (ms)", waitBox)));
+            LabeledField("Action wait (ms)", waitBox),
+            LabeledField("Food load", loadMode)));
 
         // Boarding state belongs HERE, not under Calibrate, and it is the same argument §13 makes for
         // the queue: whether a pet is in the loader RIGHT NOW is a per-RUN fact, and Calibrate is a

@@ -748,6 +748,39 @@ The three paid rows also print `該欄位約29日23時…後到期`, so the wind
 
 Recorded because these are measurements now, not guesses, and several of them were wrong in the design.
 
+**A right-click cannot choose a food box, and that is a design error, not a quirk (player, 2026-09-20).**
+The reload puts a food stack in by right-clicking the bag cell, and the game drops it into the
+**EARLIEST empty food box in the boarder**. Every row's boxes are one queue ordered top-down, so a stack
+intended for a lower row lands in an upper row's box whenever that row has run dry — and the tool never
+knew, because it has never looked at where the food went; it counts the clicks it sent and calls the
+reload complete.
+
+This section's own §4 says the food slots are **per row**, and they are — each row renders and owns its
+own boxes (`PetSlotConfig.FeederSlots`, 2 / 5 / 5 / 5). But *rendering* per row is not *addressing* per
+row: the gesture has no way to name one.
+
+**How it survived four-row testing.** When rows come due together the loop reloads them in the order
+1→2→3→4 (the 21:56 and 06:23 runs on 2026-09-19/20 both did), and each row's food lands correctly
+because everything above it has just been refilled. The failure needs a LOWER row reloaded while an
+UPPER row has an empty box — a window only `WaitAfterEmptyMinutes` wide (5 minutes), because the reload
+is scheduled that far past the feeder emptying. Rare, compounding, and invisible in the log. Row 1 is
+never exposed, which is why it has never once failed.
+
+**Measured, not reasoned:** `FeederSlots` frames the food ITEM'S ICON in each slot, one per stack —
+asked and confirmed, because the code said otherwise. The comment claimed they framed the food COUNT and
+were "two whether the row holds two stacks or five"; the live config holds 2/5/5/5 of them at ~63x56 px,
+where a count box would be a fraction of that. Corrected in `AppConfig.cs`.
+
+**The fix is a choice, on the Pet tab.** `pet.food_load_mode`: **right_click** (the game picks the box —
+works on every board ever flashed) or **drag** (the row's own box is named). A drag needs firmware 2 and
+the `L`/`l` commands, so it cannot be the default; and because an old board IGNORES those letters, the
+tool refuses to start a drag-mode feeder on a board that cannot drag rather than running one that
+silently loads nothing. `FoodLoadMode` owns that decision and states it in the message.
+
+**Not yet measured, and needs to be before this runs unattended:** what a MIS-AIMED drag does. Every
+other failure in this tool costs a cycle. A drag that releases off-target can put the stack in the wrong
+box, or outside the boarder entirely — nowhere else here can a failure lose an item.
+
 **The reload takes ~15 seconds.** Comfortably inside the 185-minute cycle, so no delay below is
 expensive and every one of them can afford to be generous.
 

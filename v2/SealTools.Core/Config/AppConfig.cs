@@ -79,15 +79,22 @@ public sealed class PetSlotConfig
     /// <see cref="PetConfig.ReturnSlot"/>, which is where the pet sits in the BAG.</summary>
     public List<int>? BoardingPetSlot { get; set; }
 
-    /// <summary>The FOOD COUNT boxes in this row, as boxes — one per food slot, each framing the
-    /// number the game draws on it. Normally two, and NOT <see cref="Stacks"/> wide: these are the
-    /// counts a row displays, which is two whether the row holds two stacks or five.
+    /// <summary>This row's food boxes in the boarding window, as boxes — ONE PER FOOD SLOT, so two on
+    /// the free row and five on a paid one, matching <see cref="Stacks"/>. The player drags each box
+    /// around the FOOD ITEM'S ICON drawn in that slot (confirmed 2026-09-20), so a box's centre is the
+    /// middle of the slot.
     ///
-    /// Boxed TIGHTLY around the digits rather than the slot: the number sits at the slot's
-    /// bottom-right and spills past its frame, so a box that frames the slot clips it.
+    /// CORRECTED — this comment used to say they framed the food COUNT number, "normally two, and NOT
+    /// Stacks wide, which is two whether the row holds two stacks or five". That is wrong on both
+    /// counts and it is the kind of wrong that costs a session: the live calibration holds 2 / 5 / 5 /
+    /// 5 of them, and they measure ~63x56 px where a count box would be a fraction of that. It was
+    /// believed, and a drag was briefly designed around a target that does not exist.
     ///
-    /// Nothing reads them yet — the reload still schedules by arithmetic. They are the reading that
-    /// would replace it (PLAN-PET-AUTOFEED.md §2), which is why they are calibrated and unread.</summary>
+    /// What the drag needs them for: `FeederSlots[i]` is the destination for stack i. That is the one
+    /// way to put food in a NAMED box, because a right-click cannot — see <see cref="Core.FoodLoadMode"/>.
+    ///
+    /// Nothing READS them yet (the counts they were meant to be read for are still unread — the reload
+    /// schedules by arithmetic, PLAN-PET-AUTOFEED.md §2). They are the drag's targets first.</summary>
     public List<List<int>> FeederSlots { get; set; } = new();
 
     /// <summary>How many food stacks this row holds — 2 on the free row, 5 on a paid one. Different
@@ -204,6 +211,15 @@ public sealed class PetConfig
     /// The tool drives as many as are configured, one at a time — the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
     public List<PetSlotConfig> Slots { get; set; } = new();
+
+    /// <summary>How a food stack gets into the boarding window: <c>right_click</c> (the game picks the
+    /// box — the earliest empty one, which is the whole problem) or <c>drag</c> (the row's own box is
+    /// named). See <see cref="Core.FoodLoadMode"/>, which owns the reasoning.
+    ///
+    /// Defaults to right_click because that works on every board ever flashed, and a default that
+    /// silently did nothing on an un-reflashed board would be the worst of the two failures. Set on
+    /// the Pet tab, per machine, since it depends on the board's firmware.</summary>
+    public string FoodLoadMode { get; set; } = Core.FoodLoadMode.RightClick;
 
     /// <summary>How unlike the empty reference a slot must look before it counts as occupied, as a
     /// fraction of differing pixels. Deliberately low: the composer measured an empty box against
