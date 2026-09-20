@@ -50,6 +50,7 @@ public static class WindowFinder
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
 
+
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
@@ -70,6 +71,7 @@ public static class WindowFinder
     /// <summary>The current foreground window, or <see cref="IntPtr.Zero"/>. Callers that read the
     /// screen need this: a screen grab shows whatever is in front, not a chosen window.</summary>
     public static IntPtr ForegroundWindow() => GetForegroundWindow();
+
 
     // Title of the current foreground window ("" if none). Diagnostic aid for focus issues.
     public static string ForegroundTitle()

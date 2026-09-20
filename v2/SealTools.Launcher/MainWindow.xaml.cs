@@ -6394,25 +6394,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        // THE GAME MUST BE IN FRONT, and the RUN already refuses when it is not — PetTool's read
-        // returns null for anything but the foreground window. This diagnostic did not, so it happily
-        // measured whatever else was on screen and reported black-on-white Chinese characters at 0.99
-        // confidence as if they were a stack count. A diagnostic that is MORE permissive than the run
-        // is worse than none: it can be confidently wrong in exactly the case the run would refuse.
-        var gameHwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
-        if (gameHwnd == IntPtr.Zero || WindowFinder.IsMinimized(gameHwnd))
-        {
-            hint.Text = "Game window not found (or minimized) — open and restore it first.";
-            return;
-        }
-        if (WindowFinder.ForegroundWindow() != gameHwnd)
-        {
-            hint.Text = "The game is not the window in front, and this is a SCREEN GRAB — it would " +
-                        "read whatever is. Click into the game so the boarding window is in front, " +
-                        "then press Test read. (A run refuses in this case; so does this now.)";
-            return;
-        }
-
         var report = new List<string>();
         var total = 0;
         var counted = 0;
