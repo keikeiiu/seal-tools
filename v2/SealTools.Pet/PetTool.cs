@@ -555,18 +555,21 @@ public sealed class PetTool : ToolBase
         if (WindowFinder.ForegroundWindow() != hwnd) return null;
 
         var total = 0;
+        var counted = 0;
 
         foreach (var box in row.FeederSlots)
         {
             if (FeederCountValue(ocr, box) is not { } n) continue;
             total += n;
+            counted++;
         }
 
-        // Zero is a real reading — an empty feeder — but it is also what "nothing was read" would
-        // sum to if every slot returned zero, so the two cannot be told apart from the total alone.
-        // Only a total of zero from slots that all READ zero is meaningful; the rest is the caller's
-        // null. Callers treat null as "assume a full load", which reloads on the configured cycle.
-        return row.FeederSlots.Count == 0 ? null : total;
+        // NOTHING read is null; ZERO is a real reading meaning an empty feeder. Summing into a total
+        // that starts at zero conflates them, and the two mean opposite things downstream: null says
+        // "assume a full load and keep to the cycle", zero says "reload NOW". A partial read understates
+        // deliberately — a row that reads half its slots looks emptier than it is, and reloading early
+        // is nearly free because ending boarding returns the leftover food with the pet.
+        return counted == 0 ? null : total;
     }
 
     /// <summary>One food slot's count, or null when it cannot be read with confidence.
