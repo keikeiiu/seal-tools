@@ -9,6 +9,65 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (4) — the count IS readable: derived region, four offsets, a vote
+
+**The read works now, and getting there killed two designs.** The count had to be read from the right
+part of a slot, and both attempts to let the player say where failed — the second one only after it was
+built.
+
+**The measurement that settled it, on the player's own slots:**
+
+```
+                        "138"                      "300"
+as drawn (21px tall)    nothing / "3" @0.99 (wrong) nothing
+full slot height        nothing, then reads        reads @0.99
+left edge swept:  0-12px off the crop   wrong or nothing
+                 13-22px                reads at EVERY upscale 2..6
+                 23px and beyond        junk
+```
+
+Two things fall out. **Height is not negotiable**: a crop 21px tall inside a 58px slot found ZERO
+detected boxes while holding a perfectly legible number, and read it the moment it was taken at the
+slot's full height. And **the left edge has a band about THREE PIXELS wide** — outside it the failure is
+not blank, it is a confident wrong number: a clipped `138` came back as **`3` at 0.99**, the same
+confidence as a correct read.
+
+**So both attempts to hand it to the player were wrong, and the second one was mine.**
+
+1. **A fraction of the slot** (`0.42`). The player pushed back — *"u think it would be consistent on
+   every pc?"* — and was right in principle: a fraction is resolution-independent only if the game draws
+   the number proportionally to the slot, and nobody had measured a second machine.
+2. **A dragged count box**, on the reasoning that a measured position beats an assumed proportion. The
+   reasoning was sound; the gesture was not. **Asked twice to put a box into a three-pixel band, the
+   player missed it twice** — and no instruction makes that a fair thing to ask. The player's own
+   conclusion, after two failures: *"do we need that count box?"*
+
+**What replaced it: the fraction, read at several offsets, with a vote.** `ReadLeftFraction` (0.40, the
+middle of the measured 38.9-43.5% band) from each slot's 40% mark to its own right edge at full height —
+and `ReadOffsets` reads it at 0.24 / 0.32 / 0.40 / 0.48, `FeederCount.Vote` taking the value at least two
+readings agree on. **The constant only has to be roughly right**, which is what makes a fitted number
+acceptable here and was not acceptable on its own. Offsets are spread WIDE (8% of a slot, enough to move
+a clip into the clear) and biased LEFT, because the two directions fail differently — too far left
+swallows the food icon and the detector finds nothing, which the score gate rejects; too far right CLIPS,
+which is the one failure that returns a plausible wrong number.
+
+**A tie votes nothing**, not the lower number: two readings saying 138 and two saying 300 means the
+offsets straddle a clip, and picking either would be a guess wearing a vote's clothes.
+
+**Calibration is now FOUR drags — the strips — and nothing else.** The reference slot and count box are
+gone from the config, the calibrator, both save projections and the tests. The derived regions are drawn
+on the capture (magenta; the faint one is the widest offset) so a wrong strip is visible before a run.
+
+**Also fixed: the Test read hid and showed the launcher once per CROP** — six flashes and six 300 ms
+compositor waits per press. It is hidden once for the whole read now.
+
+**Verified:** Release build clean, **154/154** tests; the vote is mutation-checked (letting a single
+reading carry, or breaking a tie by value, fails two). **Not verified:** none of this has read a live
+slot yet — the four-offset vote and the derived region have only been exercised against the two saved
+crops from the last run.
+
+---
+
 ## 2026-09-21 (3) — six drags instead of twenty, and the fraction is the player's idea to kill
 
 **The player's correction, and it is a better design than mine.** I had the count read as a *fraction*

@@ -3514,6 +3514,28 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // CopyFromScreen reads the actual screen, so anything covering the game — this launcher window
     // in particular — ends up in the capture. Hide the launcher for the grab, then restore it.
+    /// <summary>The same, for a body that AWAITS. Added because the per-crop hide/show flashed the
+    /// window once per crop and paid a 300 ms compositor wait each time — six of them for one Test
+    /// read. The launcher only needs to be off screen while pixels are being taken, and one hidden
+    /// window can cover all of them.</summary>
+    private async Task<T> WithLauncherHiddenAsync<T>(Func<Task<T>> capture)
+    {
+        var wasVisible = Visibility == Visibility.Visible;
+        if (wasVisible)
+        {
+            Visibility = Visibility.Hidden;
+            await Task.Delay(300);
+        }
+        try
+        {
+            return await capture();
+        }
+        finally
+        {
+            if (wasVisible) Visibility = Visibility.Visible;
+        }
+    }
+
     private async Task<T> WithLauncherHiddenAsync<T>(Func<T> capture)
     {
         var wasVisible = Visibility == Visibility.Visible;
@@ -5002,12 +5024,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         // row's stack count, so a 5-slot row is one gesture instead of five that all have to agree
         // about where the row starts.
         drawFeeder.Click += (_, _) => PetArmDrag("feederstrip");
-        var drawRefSlot = MakeButton("Draw count slot", ControlAppearance.Secondary);
-        drawRefSlot.Click += (_, _) => PetArmDrag("countslot");
-        var drawRefText = MakeButton("Draw count box", ControlAppearance.Secondary);
-        drawRefText.Click += (_, _) => PetArmDrag("counttext");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder, drawRefSlot, drawRefText })
+        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             boxRow.Children.Add(b);
@@ -5023,23 +5041,14 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "a right-click that missed leaves an empty slot and a window that otherwise looks " +
                  "perfectly normal.\n" +
                  "Food strip — ONE box across all of this row's food slots. The tool divides it by " +
-                 "the row's food-slot count, so a five-slot paid row is one drag rather than five." +
-                 Environment.NewLine +
-                 "Count slot and count box — the two that say WHERE the number is inside a slot, and " +
-                 "they are only dragged ONCE, on any one slot: the tool applies their offset to every " +
-                 "slot in every row. Drawing them instead of configuring a fraction is the point — a " +
-                 "fraction assumes the game draws the number at a size proportional to the slot, and " +
-                 "nobody has measured that on a second machine." + Environment.NewLine +
-                 "DRAW THE COUNT BOX THE FULL HEIGHT OF THE SLOT, a little wider than the digits. A " +
-                 "tight box around the number alone reads NOTHING — measured — exactly like keeping " +
-                 "the food icon does; the detector wants the whole slot height to find the text at " +
-                 "all. If Test read comes back empty, that box is the first thing to widen." +
-                 Environment.NewLine +
+                 "the row's food-slot count, so a five-slot paid row is one drag rather than five. " +
+                 "It is also the whole of the count calibration: the box the feed counts are read " +
+                 "from is DERIVED inside each slot, so there is nothing else to draw." + Environment.NewLine +
                  "On the capture — green the start button, blue the pet slot, yellow a food slot as " +
-                 "DERIVED from its strip, yellow-green the strip itself, purple the count reference " +
-                 "slot, and MAGENTA the boxes the OCR actually reads, on the row you are editing. If " +
-                 "the magenta lands on the food icon rather than on the digits, the count box is in " +
-                 "the wrong place and no amount of tuning the confidence will find a number in it."),
+                 "DERIVED from its strip, yellow-green the strip itself, and magenta the boxes the " +
+                 "feed counts are read from on the row you are editing: the solid one is what a run " +
+                 "uses, the faint one the widest of the offsets it votes across. If they sit on the " +
+                 "food icon rather than on the digits, the strip is in the wrong place."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -5360,11 +5369,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             return box;
         }
 
-        // The count REGION is dragged on Calibrate Pet, not configured here — see the six-drag note
-        // there. What is left to tune is how far the second read is shifted and how sure the reader
-        // must be, and both are numbers rather than geometry.
-        var shiftBox = Num(_service.Config.Pet.FeederCountShiftPx,
-            v => _service.Config.Pet.FeederCountShiftPx = Math.Max(1, (int)Math.Round(v)));
+        // WHERE the count is read from is not configured here or dragged anywhere — it is derived from
+        // each slot: from FeederLayout.ReadLeftFraction across to the slot's right edge, at full height,
+        // voted across ReadOffsets. What is left to tune is only how sure the reader must be.
         var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
             v => _service.Config.Pet.FeederCountMinScore = v);
 
@@ -5386,7 +5393,6 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the number at a size proportional to the slot, and nobody has measured that on a " +
                  "second machine."),
             testRead,
-            LabeledField("Second read shift (px)", shiftBox),
             LabeledField("Min score", minScoreBox)));
 
         // ── THE QUEUE ────────────────────────────────────────────────────────
@@ -5709,19 +5715,6 @@ public partial class MainWindow : FluentWindow, IDisposable
                     $"{EditRow(pet).Stacks} slot(s). The food DRAG drops each stack at a slot's " +
                     "centre, so a pixel or two out is harmless here.";
                 break;
-            case "countslot":
-                pet.FeederCountSlot = rect;
-                _petDragTarget = null;
-                _petHint!.Text = $"Count reference slot {rect[2]}x{rect[3]}. Now draw the COUNT BOX " +
-                    "on this same slot — FULL HEIGHT of the slot, a little wider than the digits.";
-                break;
-            case "counttext":
-                pet.FeederCountText = rect;
-                _petDragTarget = null;
-                _petHint!.Text = $"Count box {rect[2]}x{rect[3]} — its offset from the reference slot " +
-                    "carries to every slot in every row. Press Test read with the boarding window " +
-                    "open to see whether it reads.";
-                break;
             case "grid":
                 pet.BagGrid = rect;
                 _petDragTarget = "slot";
@@ -5802,24 +5795,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         //
         // The magenta boxes are the point of this whole drawing: they are exactly what the OCR is
         // pointed at, on the row being edited, computed the same way a run computes them. Nothing else
-        // on this screen answers "will it read the number?" — a strip in the right place with the
-        // right offset gives boxes sitting on the digits, and one that does not puts them on the food
-        // icon, where no amount of tuning the confidence will find a number.
+        // on this screen answers "will it read the number?" — a strip in the right place gives boxes
+        // sitting on the digits, and one that does not puts them on the food icon, where no amount of
+        // tuning the confidence will find a number.
         //
-        // Only the edited row's, because the reference is shared: seventeen magenta boxes across four
-        // rows would say the same thing louder and less clearly.
+        // Only the edited row's: the regions are derived from each slot, so showing all four rows would
+        // draw seventeen boxes that say the same thing louder and less clearly.
+        //
+        // The OUTER pair of the read offsets is drawn, not just the nominal one — the read votes across
+        // four, and seeing the widest and narrowest of them says how much room the number has before
+        // one of them starts clipping it.
         var editRow = EditRow(pet);
         if (FeederLayout.SlotBoxes(editRow.FeederStrip, editRow.Stacks) is { } derivedSlots)
         {
+            var widest = FeederLayout.ReadOffsets.Min();
+            var narrowest = FeederLayout.ReadOffsets.Max();
             foreach (var slot in derivedSlots)
-                if (FeederLayout.CountRegion(slot, pet.FeederCountSlot, pet.FeederCountText) is { } region)
-                    Box(canvas, shot, region, Brushes.Magenta);
+            {
+                if (FeederLayout.ReadRegion(slot, widest) is { } outer)
+                    Box(canvas, shot, outer, Faint(Brushes.Magenta));
+                if (FeederLayout.ReadRegion(slot, narrowest) is { } inner)
+                    Box(canvas, shot, inner, Brushes.Magenta);
+            }
         }
-
-        if (BagGrid.IsValidRect(pet.FeederCountSlot))
-            Box(canvas, shot, pet.FeederCountSlot!, Brushes.MediumPurple);
-        if (BagGrid.IsValidRect(pet.FeederCountText))
-            Box(canvas, shot, pet.FeederCountText!, Brushes.Magenta);
 
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
@@ -6385,93 +6383,67 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        // The region is derived from the reference, so a missing reference is the other way this
-        // reads nothing, and it is worth saying which.
-        if (!BagGrid.IsValidRect(pet.FeederCountSlot) || !BagGrid.IsValidRect(pet.FeederCountText))
-        {
-            hint.Text = "Draw the count slot and count box on Calibrate Pet first — that pair is what " +
-                        "says where the number sits inside a slot, for every slot and row.";
-            return;
-        }
-
         var report = new List<string>();
         var total = 0;
         var counted = 0;
+        int? agreed = null;
         try
         {
-            foreach (var (what, box) in boxes)
+            // THE LAUNCHER IS HIDDEN ONCE FOR THE WHOLE READ. It hides for a screen grab because the
+            // capture reads whatever is in front — but doing that per CROP flashed the window six
+            // times a press and paid a 300ms compositor wait each time. Every crop is read inside one
+            // hidden window now.
+            await WithLauncherHiddenAsync(async () =>
             {
-                // TWO crops, a few pixels apart, read through the same code a run uses. The number is
-                // only taken when both agree, because the measured failure of a slightly-too-tight
-                // crop is a confident WRONG number — "300" came back as "0", "84" as "4" — and
-                // clipping changes the answer between two crops while a genuine read does not.
-                var reads = new List<string>();
-                int? agreed = null;
-                try
+                foreach (var (what, box) in boxes)
                 {
-                    var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                    var pair = new List<int?>();
-                    // The region comes from the DRAGGED reference — the same derivation a run uses,
-                    // so this diagnostic cannot agree with itself and be wrong about the run.
-                    var baseRegion = SealTools.Core.FeederLayout.CountRegion(
-                        box, pet.FeederCountSlot, pet.FeederCountText);
-                    foreach (var (label, region) in new[]
-                             {
-                                 ("a", baseRegion),
-                                 ("b", baseRegion is null ? null
-                                     : SealTools.Core.FeederLayout.Shift(baseRegion, pet.FeederCountShiftPx)),
-                             })
+                    var reads = new List<string>();
+                    var readings = new List<int?>();
+                    try
                     {
-                        if (region is null) { pair.Add(null); continue; }
-                        var regionConfig = new RegionConfig
-                        { Left = region[0], Top = region[1], Width = region[2], Height = region[3] };
-                        // Each read leaves its upscaled region behind, so a blank result can be told
-                        // apart from a wrong region by looking at the file rather than arguing.
-                        var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
-                            "reads", $"{what.Replace(" ", "")}{label}_{stamp}.png");
-                        var lines = await WithLauncherHiddenAsync(
-                            () => _service.ReadTextScored(regionConfig, 3, debugPath, pet.FeederCountMinScore));
-                        var shown = lines.Count == 0
-                            ? "(nothing)"
-                            : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                        var n = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
-                        pair.Add(n);
-                        reads.Add($"{label}:{shown}{(n is { } v ? $"={v}" : "")}");
+                        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+                        var n = 0;
+                        foreach (var offset in SealTools.Core.FeederLayout.ReadOffsets)
+                        {
+                            // The region is DERIVED from the slot, exactly as a run derives it, so this
+                            // diagnostic cannot agree with itself and be wrong about the run.
+                            if (SealTools.Core.FeederLayout.ReadRegion(box, offset) is not { } region)
+                            {
+                                reads.Add($"o{offset:0.00}:nogap");
+                                readings.Add(null);
+                                continue;
+                            }
+                            var regionConfig = new RegionConfig
+                            { Left = region[0], Top = region[1], Width = region[2], Height = region[3] };
+                            // Each read leaves its upscaled region behind, so a blank result can be
+                            // told apart from a wrong region by looking at the file.
+                            var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
+                                "reads", $"{what.Replace(" ", "")}o{n}_{stamp}.png");
+                            n++;
+                            var lines = await Task.Run(() => _service.ReadTextScored(
+                                regionConfig, 3, debugPath, pet.FeederCountMinScore));
+                            var shown = lines.Count == 0
+                                ? "(nothing)"
+                                : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
+                            var parsed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
+                            readings.Add(parsed);
+                            reads.Add($"o{offset:0.00}:{shown}{(parsed is { } v ? $"={v}" : "")}");
+                        }
+                        agreed = SealTools.Core.FeederCount.Vote(readings);
                     }
-                    agreed = SealTools.Core.FeederCount.Agreed(pair[0], pair[1]);
-
-                    // And the same box at the SLOT'S FULL HEIGHT. Cutting a count crop down to the
-                    // digits is the natural gesture and the one shape measured to read NOTHING — a
-                    // crop holding a legible "174" found zero boxes at 22px tall inside a 58px slot.
-                    // Reported beside the drawn box so that costs one press, not a redraw and a guess.
-                    if (baseRegion is not null && BagGrid.IsValidRect(box))
+                    catch (Exception ex)
                     {
-                        var tall = SealTools.Core.FeederLayout.FullHeight(baseRegion, box);
-                        var tallRegion = new RegionConfig
-                        { Left = tall[0], Top = tall[1], Width = tall[2], Height = tall[3] };
-                        var stamp2 = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                        var tallPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
-                            "reads", $"{what.Replace(" ", "")}full_{stamp2}.png");
-                        var tallLines = await WithLauncherHiddenAsync(
-                            () => _service.ReadTextScored(tallRegion, 3, tallPath, pet.FeederCountMinScore));
-                        var tallText = tallLines.Count == 0
-                            ? "(nothing)"
-                            : string.Join(" | ", tallLines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                        var tallN = SealTools.Core.FeederCount.Parse(tallLines, pet.FeederCountMinScore);
-                        reads.Add($"full-height:{tallText}{(tallN is { } tv ? $"={tv}" : "")}");
+                        reads.Add("read failed: " + ex.Message);
                     }
-                }
-                catch (Exception ex)
-                {
-                    reads.Add("read failed: " + ex.Message);
-                }
 
-                if (agreed is { } value) { total += value; counted++; }
-                report.Add($"row {_petEditRow + 1} {what}: {string.Join("  ", reads)}" +
-                           (agreed is { } v3
-                               ? $"  -> {v3}"
-                               : "  -> NO AGREEMENT (a run would assume a full load)"));
-            }
+                    if (agreed is { } value) { total += value; counted++; }
+                    report.Add($"row {_petEditRow + 1} {what} [{string.Join("  ", reads)}]" +
+                               (agreed is { } v3
+                                   ? $"  -> {v3}"
+                                   : "  -> NO READING (a run would assume a full load)"));
+                }
+                return true;
+            });
         }
         catch (Exception ex)
         {

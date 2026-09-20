@@ -375,15 +375,6 @@ public class ConfigLoaderTests
                 BagSlot = new List<int> { 660, 150, 51, 51 },
                 FoodSlots = new List<List<int>> { new() { 0, 5 }, new() { 1, 12 } },
                 ReturnSlot = new List<int> { 1, 2 },
-                // The count reference. It is a RECTANGLE, and the loader applied the "is this a point"
-                // predicate to it — Count == 2, which a rect never is — so both boxes were written on
-                // save and silently DISCARDED on every load. The player's symptom was the Test read
-                // telling them to draw boxes they had already drawn.
-                // Arbitrary on purpose. Borrowing the player's real coordinates made the test read
-                // as though it depended on their calibration; all it needs is a rectangle that is not
-                // two values long, which is exactly what the old predicate got wrong.
-                FeederCountSlot = new List<int> { 11, 12, 13, 14 },
-                FeederCountText = new List<int> { 21, 22, 23, 24 },
                 Slots = new List<ConfigLoader.LocalPetSlot>
                 {
                     new()
@@ -424,8 +415,6 @@ public class ConfigLoaderTests
             //
             // Asserted here rather than only in a unit test of the predicate, because the direction
             // that matters is the ROUND TRIP: written by SaveLocal, read back by Load.
-            Assert.Equal(new List<int> { 11, 12, 13, 14 }, cfg.Pet.FeederCountSlot);
-            Assert.Equal(new List<int> { 21, 22, 23, 24 }, cfg.Pet.FeederCountText);
             Assert.Equal(5, slot.Stacks);
             Assert.True(slot.BoardingRunning);
 
@@ -478,9 +467,6 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
-            FeederCountSlot = new List<int> { 21, 22, 23, 24 },
-            FeederCountText = new List<int> { 25, 26, 27, 28 },
-            FeederCountShiftPx = 4,
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
@@ -559,9 +545,6 @@ public class ConfigLoaderTests
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
             // Non-default on purpose: against the defaults this would pass whether or not either
             // half copied the field, which is the trap this guard's own comment warns about.
-            FeederCountSlot = new List<int> { 21, 22, 23, 24 },
-            FeederCountText = new List<int> { 25, 26, 27, 28 },
-            FeederCountShiftPx = 4,
             FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {

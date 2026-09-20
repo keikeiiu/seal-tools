@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using SealTools.Core;
 using Xunit;
@@ -50,30 +51,43 @@ public class FeederCountTests
     }
 
     [Fact]
-    public void TwoReadsMustAgreeOrThereIsNoNumber()
+    public void TheValueTwoReadingsAgreeOnWins()
     {
-        Assert.Equal(300, FeederCount.Agreed(300, 300));
-        Assert.Equal(0, FeederCount.Agreed(0, 0));
+        Assert.Equal(300, FeederCount.Vote(new int?[] { 300, 300, null }));
     }
 
     [Fact]
-    public void AClipIsCaughtBecauseTheTwoCropsDisagree()
+    public void ASingleReadingIsNotEnoughToCarryIt()
     {
-        // This is the whole point of reading twice. "300" clipped on the left reads "00" or "0";
-        // "84" clipped reads "4". Both are plausible integers, and only the disagreement gives
-        // them away.
-        Assert.Null(FeederCount.Agreed(0, 300));
-        Assert.Null(FeederCount.Agreed(4, 84));
+        // One confident wrong answer must not win alone. A CLIPPED crop scores as highly as a correct
+        // one — a clipped "138" came back as "3" at 0.99 — so confidence cannot break the tie and the
+        // count has to.
+        Assert.Null(FeederCount.Vote(new int?[] { 300, null, null, null }));
+        Assert.Null(FeederCount.Vote(new int?[] { 3 }));
     }
 
     [Fact]
-    public void OneFailedReadIsNoRead()
+    public void TheMajorityWinsOverAMinorityOfWrongReads()
     {
-        // Either crop failing means the other cannot be trusted either — a blank beside a number is
-        // as likely to be a clipped crop as a clean one.
-        Assert.Null(FeederCount.Agreed(null, 300));
-        Assert.Null(FeederCount.Agreed(300, null));
-        Assert.Null(FeederCount.Agreed(null, null));
+        // The measured shape: a couple of offsets clip or swallow the icon and return junk, while the
+        // ones that land in the band agree. The gate has already dropped the junk; this is the vote.
+        Assert.Equal(138, FeederCount.Vote(new int?[] { 138, 138, null, 851 }));
+    }
+
+    [Fact]
+    public void ATieIsNoReadingRatherThanAGuess()
+    {
+        // Two against two resolves to nothing on purpose: "no reading" makes the caller fall back to
+        // the fixed cycle it used before any of this existed, while a wrong number feeds the pet
+        // wrongly.
+        Assert.Null(FeederCount.Vote(new int?[] { 138, 138, 300, 300 }));
+    }
+
+    [Fact]
+    public void NothingReadIsNothing()
+    {
+        Assert.Null(FeederCount.Vote(new int?[] { null, null, null, null }));
+        Assert.Null(FeederCount.Vote(Array.Empty<int?>()));
     }
 
     [Fact]

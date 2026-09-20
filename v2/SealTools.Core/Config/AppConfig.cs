@@ -237,30 +237,18 @@ public sealed class PetConfig
 
     // ── Reading the food counts ─────────────────────────────────────────────
     //
-    // WHERE the count is read from is MEASURED, not proportioned. An earlier revision expressed it as
-    // a fraction of the slot box (0.42 across to the right edge) on the reasoning that a fraction is
-    // resolution-independent — which is only true if the game draws the number at a size PROPORTIONAL
-    // to the slot. If it draws the digits at a fixed size while the slot scales, the fraction is right
-    // on one machine and wrong on another, and nobody had measured a second machine.
+    // Almost nothing is configured here any more. WHERE the count is read from is DERIVED from each
+    // slot by Core.FeederLayout — a fraction across the slot to its right edge, at full height, read at
+    // several offsets and voted on. That went through two revisions to get to:
     //
-    // So the player drags a reference: one slot, and the count region on it. Every other slot in every
-    // row gets slotBox + (FeederCountText − FeederCountSlot), which is the same measurement without the
-    // assumption.
-
-    /// <summary>ONE food slot, dragged as the anchor for every count region.</summary>
-    public List<int>? FeederCountSlot { get; set; }
-
-    /// <summary>The count region ON that slot, dragged. Its offset from <see cref="FeederCountSlot"/>
-    /// is what carries to every other slot. Full height, and a little wider than the digits: a crop
-    /// cut down to the digits alone finds nothing at all — measured — exactly like keeping the food
-    /// icon does.</summary>
-    public List<int>? FeederCountText { get; set; }
-
-    /// <summary>How far right the SECOND read is shifted, in pixels. The two must agree before a
-    /// number is taken, because the measured failure of a slightly-wrong crop is a confidently wrong
-    /// count — a full 300 read as 0 — and clipping changes the answer between two crops while a
-    /// genuine read does not.</summary>
-    public int FeederCountShiftPx { get; set; } = 3;
+    //   * a fraction of the slot box, which is resolution-independent only if the game draws the number
+    //     PROPORTIONALLY to the slot — an assumption nobody had tested on a second machine;
+    //   * then a dragged count BOX, on the reasoning that a measured position beats an assumed
+    //     proportion. The reasoning was right and the drag was not: the band of left edges that reads
+    //     correctly measured about THREE PIXELS wide, and the player, asked twice, missed it twice.
+    //
+    // What replaced both is the fraction read at several offsets with a vote, so the constant only has
+    // to be roughly right.
 
     /// <summary>How confident the reader must be for a line to count as the number.</summary>
     public double FeederCountMinScore { get; set; } = Core.FeederCount.MinScore;

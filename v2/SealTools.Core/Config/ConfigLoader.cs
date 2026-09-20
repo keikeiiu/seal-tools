@@ -287,9 +287,6 @@ public sealed class ConfigLoader
             // so the point predicate is false for them, every time, and both were written to local.yaml
             // on save and silently DISCARDED on every load. The neighbouring MaxButton line is a
             // genuine point, and copying its predicate without reading it is how this happened.
-            if (IsValidRect(pet.FeederCountSlot)) defaults.Pet.FeederCountSlot = pet.FeederCountSlot;
-            if (IsValidRect(pet.FeederCountText)) defaults.Pet.FeederCountText = pet.FeederCountText;
-            if (pet.FeederCountShiftPx is { } fsp and > 0) defaults.Pet.FeederCountShiftPx = fsp;
             if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
@@ -482,13 +479,9 @@ public sealed class ConfigLoader
         /// on the Pet tab, beside the timing boxes, because it belongs to running a feed rather than
         /// to calibrating one.</summary>
         public string? FoodLoadMode { get; set; }
-        /// <summary>The feeder-count reference — see <see cref="PetConfig"/>. Calibration half: it is
-        /// dragged on Calibrate Pet like every other box.</summary>
-        public List<int>? FeederCountSlot { get; set; }
-        public List<int>? FeederCountText { get; set; }
-        /// <summary>Session-free too — set beside the reference, and a pixel count rather than a
-        /// proportion.</summary>
-        public int? FeederCountShiftPx { get; set; }
+        /// <summary>How sure the reader must be for a line to count as the count. The only part of the
+        /// feeder-count reading that is a setting: where the count is read from is derived from each
+        /// slot by <see cref="Core.FeederLayout"/>.</summary>
         public double? FeederCountMinScore { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
@@ -547,8 +540,6 @@ public sealed class ConfigLoader
             t.BagGrid = p.BagGrid;
             t.BagSlot = p.BagSlot;
             t.MaxButton = p.MaxButton;
-            t.FeederCountSlot = p.FeederCountSlot;
-            t.FeederCountText = p.FeederCountText;
 
             var merged = new List<LocalPetSlot>();
             for (int i = 0; i < p.Slots.Count; i++)
@@ -592,7 +583,6 @@ public sealed class ConfigLoader
             // a scalar carried by the wrong half is a setting that saves fine from one screen and
             // silently reverts from the other, which is the ActionWaitMs bug exactly. The pair above
             // is drawn on Calibrate Pet, so it belongs to that half instead.
-            t.FeederCountShiftPx = p.FeederCountShiftPx;
             t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 

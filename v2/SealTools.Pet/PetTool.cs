@@ -599,13 +599,17 @@ public sealed class PetTool : ToolBase
     /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.</summary>
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
-        var pet = _cfg.Pet;
-        if (FeederLayout.CountRegion(slotBox, pet.FeederCountSlot, pet.FeederCountText) is not { } region)
-            return null;
+        // One reading per offset, then a VOTE — not a pair-comparison with a few pixels between them.
+        // The band of left edges that reads correctly is about three pixels wide, so a single region
+        // is a coin toss and two adjacent ones can clip the same digit and agree on the same wrong
+        // number. Spread wide, the offset that lands in the band supplies the answer and the rest
+        // abstain or are outvoted.
+        var readings = new List<int?>();
+        foreach (var offset in FeederLayout.ReadOffsets)
+            if (FeederLayout.ReadRegion(slotBox, offset) is { } region)
+                readings.Add(ReadStack(ocr, region));
 
-        return FeederCount.Agreed(
-            ReadStack(ocr, region),
-            ReadStack(ocr, FeederLayout.Shift(region, pet.FeederCountShiftPx)));
+        return FeederCount.Vote(readings);
     }
 
     /// <summary>One crop, read to a number.</summary>

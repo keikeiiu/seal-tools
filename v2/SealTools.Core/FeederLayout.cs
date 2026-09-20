@@ -3,25 +3,19 @@ using System.Collections.Generic;
 
 namespace SealTools.Core;
 
-// Where a boarding row's food slots are, and where the count is inside them — derived from SIX drags
-// instead of twenty.
+// Where a boarding row's food slots are, and where the count sits inside them — FOUR drags, and nothing
+// else.
 //
 // The calibration it replaces was one hand-drawn box per food slot: 2 on the free row and 5 on each
-// paid one, fourteen boxes, all of them the same shape repeated. And it carried two fractions
-// (FeederCount.CropLeft) for where the count sits inside a slot, which were measured on ONE machine
-// and assumed to hold on every other — an assumption nobody had tested, which is the kind this project
-// has paid for repeatedly.
+// paid one, fourteen boxes, all of them the same shape repeated. A middle revision asked for six drags
+// — the four strips plus a reference slot and a count box drawn on it — on the reasoning that a
+// MEASURED offset beats a proportional one. That reasoning was sound and the drag was not: the band of
+// left edges that reads correctly is about THREE PIXELS wide, and the player, asked twice to draw a box
+// into it, missed it twice. What replaced it is ReadLeftFraction plus ReadOffsets — a fitted constant
+// read at several offsets — which is the same measured answer without an aiming problem.
 //
-// The six drags:
-//
-//   4  a strip across each row's food slots      -> every slot box, divided by the row's stack count
-//   1  ONE reference slot                        -> the anchor
-//   1  the count region on that reference slot    -> its offset and size
-//
-// The last two are what replace the fractions. The offset from the reference slot to its count box is
-// a MEASURED position rather than a guessed proportion, so it survives a resolution where the digits
-// are drawn at a different size relative to the slot — which is exactly the case a fraction cannot
-// express and the reason this exists.
+//   4  a strip across each row's food slots  ->  every slot box, divided by the row's stack count,
+//                                                and every count region derived inside them
 public static class FeederLayout
 {
     /// <summary>The slot boxes of one row, from a strip dragged across its food slots.
@@ -54,41 +48,61 @@ public static class FeederLayout
         return result;
     }
 
-    /// <summary>The count region for one slot: the reference offset applied to that slot.
+    /// <summary>Where the count is read from inside a slot, as a fraction of the slot's width. The
+    /// region runs from here to the slot's own right edge, at the slot's full height.
     ///
-    /// The offset is <paramref name="refText"/> relative to <paramref name="refSlot"/> — the two boxes
-    /// the player drew — and it is added to the slot being read. A duplicate of the reference slot's
-    /// own box, so the reference slot reads identically whether it is reached by derivation or drawn.
+    /// MEASURED on the player's own slots (2026-09-21), by sweeping a real crop's left edge and
+    /// reading the result at upscales 2 through 6:
     ///
-    /// Null when any of the three is missing: a slot with no count region reads as nothing, which the
-    /// caller already treats as "assume a full load".</summary>
-    public static List<int>? CountRegion(List<int>? slot, List<int>? refSlot, List<int>? refText)
+    ///     trim of the crop       "138"                  "300"
+    ///     0 - 12 px (native)     wrong or nothing       reads
+    ///     13 - 22 px             reads at every scale   reads at every scale
+    ///     23 px and beyond       junk                   reads, then junk
+    ///
+    /// so the working left edge is slot_left + 25.3 .. 28.3 px of a 65 px slot, i.e. 38.9 - 43.5%.
+    /// 0.40 sits inside that with room either side. The right edge is the slot's own, because the
+    /// digits were measured ENDING 5px inside it — an earlier revision took the region 3px past the
+    /// frame on the theory that the number spills, which it does not here, and an absolute overhang
+    /// would not have survived another machine anyway.
+    ///
+    /// IT IS A FITTED CONSTANT from two numbers on one row of one machine, and it is only safe to use
+    /// because of <see cref="ReadOffsets"/>: see there.</summary>
+    public const double ReadLeftFraction = 0.40;
+
+    /// <summary>The left edges the count is read at, as fractions of the slot's width, with
+    /// <see cref="ReadRegion"/> producing one region per entry and the results put to
+    /// <see cref="FeederCount.Vote"/>.
+    ///
+    /// THIS IS WHAT MAKES <see cref="ReadLeftFraction"/> SAFE TO BE FITTED. The band that reads
+    /// correctly is a few pixels wide; a fraction measured on one machine may miss it on another,
+    /// because nothing here has established whether the game draws the digits proportionally to the
+    /// slot or at a fixed size. Reading at a spread of left edges means the constant only has to be
+    /// roughly right — the offset that lands in the band provides the answer and the others abstain
+    /// or are outvoted.
+    ///
+    /// SPREAD WIDE, and biased left, for two reasons. Wide, because clipping produces a CONFIDENT
+    /// wrong answer — a clipped "138" came back as "3" at 0.99, indistinguishable by score from a
+    /// correct read — so offsets a few pixels apart can agree on the same clipped value; eight percent
+    /// of a slot is enough to move a clip into the clear. Biased left, because the two directions fail
+    /// differently: too far left swallows the food icon and the detector finds nothing, which the
+    /// score gate rejects and the caller treats as "no reading"; too far right CLIPS, which is the one
+    /// failure that returns a plausible wrong number.</summary>
+    public static readonly double[] ReadOffsets = { 0.24, 0.32, 0.40, 0.48 };
+
+    /// <summary>The region a count is read from for one slot at one offset: from that fraction of the
+    /// slot's width to the slot's RIGHT EDGE, at the slot's FULL HEIGHT.
+    ///
+    /// Full height is not a preference. Measured: a crop cut down to the digits alone finds NOTHING —
+    /// a box holding a perfectly legible "174" returned zero detected boxes at 21px tall inside a
+    /// 58px slot — and the same crop at full height reads it.</summary>
+    public static List<int>? ReadRegion(List<int>? slot, double leftFraction)
     {
         if (slot is not { Count: 4 } || !BagGrid.IsValidRect(slot)) return null;
-        if (refSlot is not { Count: 4 } || !BagGrid.IsValidRect(refSlot)) return null;
-        if (refText is not { Count: 4 } || !BagGrid.IsValidRect(refText)) return null;
 
-        return new List<int>
-        {
-            slot[0] + (refText[0] - refSlot[0]),
-            slot[1] + (refText[1] - refSlot[1]),
-            refText[2],
-            refText[3],
-        };
+        var left = slot[0] + (int)Math.Round(slot[2] * leftFraction);
+        var right = slot[0] + slot[2];
+        if (right - left < 4) return null;
+
+        return new List<int> { left, slot[1], right - left, slot[3] };
     }
-
-    /// <summary>The same region shifted right — the second read, which must agree with the first.
-    /// Clipping a digit changes the answer between the two; a genuine read does not.</summary>
-    public static List<int> Shift(List<int> region, int pixels) =>
-        new() { region[0] + pixels, region[1], region[2], region[3] };
-
-    /// <summary>The same region at the SLOT'S FULL HEIGHT, keeping its width and its left edge.
-    ///
-    /// A diagnostic variant, not something a run uses. Cutting a count crop down to the digits is the
-    /// natural thing to draw and it is the one shape measured to read NOTHING — a crop holding a
-    /// perfectly legible "174" came back with zero detected boxes because its height was 22px inside a
-    /// 58px slot. The Test read reports this variant beside the drawn box so that discovery takes one
-    /// press rather than a redraw and a guess.</summary>
-    public static List<int> FullHeight(List<int> region, List<int> slot) =>
-        new() { region[0], slot[1], region[2], slot[3] };
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using SealTools.Core;
@@ -71,70 +72,65 @@ public class FeederLayoutTests
     }
 
     [Fact]
-    public void TheCountRegionIsTheReferenceOffsetAppliedToTheSlot()
+    public void TheReadRegionRunsFromTheFractionToTheSlotsRightEdge()
     {
-        // The reference slot at 349 and its count text at 371 — 22px in, 20px down from the top.
-        var refSlot = new List<int> { 349, 454, 64, 57 };
-        var refText = new List<int> { 371, 474, 40, 30 };
-        var other = new List<int> { 541, 454, 64, 57 };
-
-        var region = FeederLayout.CountRegion(other, refSlot, refText)!;
-
-        Assert.Equal(541 + 22, region[0]);
-        Assert.Equal(474, region[1]);
-        Assert.Equal(40, region[2]);
-        Assert.Equal(30, region[3]);
-    }
-
-    [Fact]
-    public void TheReferenceSlotReadsTheSameAsItself()
-    {
-        // The identity case, and it is the one that proves the offset is an offset: deriving the
-        // reference slot's own region must give back the box the player drew.
-        var refSlot = new List<int> { 349, 454, 64, 57 };
-        var refText = new List<int> { 371, 474, 40, 30 };
-
-        Assert.Equal(refText, FeederLayout.CountRegion(refSlot, refSlot, refText));
-    }
-
-    [Fact]
-    public void AMissingReferenceYieldsNoRegion()
-    {
-        // No reference drawn yet is the state every existing config is in, and it must read as
-        // "nothing to read" rather than as a region at (0,0).
-        var slot = new List<int> { 349, 454, 64, 57 };
-
-        Assert.Null(FeederLayout.CountRegion(slot, null, new List<int> { 1, 2, 3, 4 }));
-        Assert.Null(FeederLayout.CountRegion(slot, new List<int> { 1, 2, 3, 4 }, null));
-        Assert.Null(FeederLayout.CountRegion(null, new List<int> { 1, 2, 3, 4 }, new List<int> { 1, 2, 3, 4 }));
-    }
-
-    [Fact]
-    public void TheFullHeightVariantKeepsTheWidthAndTakesTheSlotsHeight()
-    {
-        // The diagnostic that turns "my crop reads nothing" into one press instead of a redraw: a
-        // drawn box 22px tall inside a 58px slot found zero boxes holding a legible "174".
-        var drawn = new List<int> { 367, 295, 47, 22 };
         var slot = new List<int> { 346, 260, 65, 58 };
 
-        var tall = FeederLayout.FullHeight(drawn, slot);
+        var region = FeederLayout.ReadRegion(slot, FeederLayout.ReadLeftFraction)!;
 
-        Assert.Equal(367, tall[0]);      // same left edge
-        Assert.Equal(47, tall[2]);       // same width
-        Assert.Equal(260, tall[1]);      // the slot's top
-        Assert.Equal(58, tall[3]);       // and its full height
+        Assert.Equal(346 + (int)Math.Round(65 * 0.40), region[0]);   // ~40% across
+        Assert.Equal(411, region[0] + region[2]);                    // the slot's own right edge
+        Assert.Equal(260, region[1]);                                // the slot's top
+        Assert.Equal(58, region[3]);                                 // and FULL HEIGHT
     }
 
     [Fact]
-    public void TheSecondReadIsTheFirstShiftedRight()
+    public void TheReadRegionIsFullHeightBecauseAHalfHeightOneReadsNothing()
     {
-        var region = new List<int> { 371, 474, 40, 30 };
+        // The single most expensive measurement in this feature: a crop holding a perfectly legible
+        // "174" returned ZERO detected boxes at 21px tall inside a 58px slot, and read at 1.00 the
+        // moment it was taken at the slot's full height. A region that inherited a drawn box's height
+        // would reintroduce exactly that.
+        var slot = new List<int> { 346, 260, 65, 58 };
 
-        var shifted = FeederLayout.Shift(region, 3);
+        Assert.Equal(slot[3], FeederLayout.ReadRegion(slot, 0.40)![3]);
+    }
 
-        Assert.Equal(374, shifted[0]);
-        Assert.Equal(region[1], shifted[1]);
-        Assert.Equal(region[2], shifted[2]);
-        Assert.Equal(region[3], shifted[3]);
+    [Fact]
+    public void EveryOffsetProducesARegionInsideTheSlot()
+    {
+        var slot = new List<int> { 346, 260, 65, 58 };
+        var right = slot[0] + slot[2];
+
+        foreach (var offset in FeederLayout.ReadOffsets)
+        {
+            var r = FeederLayout.ReadRegion(slot, offset)!;
+            Assert.True(r[0] > slot[0], $"offset {offset} starts at or before the slot's left edge");
+            Assert.Equal(right, r[0] + r[2]);                        // never past the right edge
+            Assert.True(r[2] > 0);
+        }
+    }
+
+    [Fact]
+    public void TheOffsetsSpanEnoughGroundToCoverAMachineDifference()
+    {
+        // The whole justification for a fitted fraction. Clipping returns a CONFIDENT wrong answer, so
+        // offsets a few pixels apart can agree on the same clipped value — the spread has to be wide
+        // enough that a clip at one lands in the clear at another, and wide enough to cover a machine
+        // where the number sits at a different proportion of the slot.
+        var slot = new List<int> { 346, 260, 65, 58 };
+        var spans = FeederLayout.ReadOffsets.Select(o => FeederLayout.ReadRegion(slot, o)![0]).ToList();
+
+        Assert.True(spans.Max() - spans.Min() >= 12,
+            $"offsets only span {spans.Max() - spans.Min()}px of a {slot[2]}px slot");
+        Assert.True(spans.Distinct().Count() == FeederLayout.ReadOffsets.Length);
+    }
+
+    [Fact]
+    public void ABadSlotIsNotAReadRegion()
+    {
+        Assert.Null(FeederLayout.ReadRegion(null, 0.40));
+        Assert.Null(FeederLayout.ReadRegion(new List<int> { 1, 2, 3 }, 0.40));
+        Assert.Null(FeederLayout.ReadRegion(new List<int> { 0, 0, 0, 0 }, 0.40));
     }
 }
