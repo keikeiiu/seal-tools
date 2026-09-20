@@ -9,6 +9,35 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (5) — and then the player asked why it needed any of that
+
+**"we tested if we have the correct crop that we can read it anyway? why need this much logic?"** — and
+they were right, so most of (4) came back out the same night.
+
+**We had established exactly that.** Given the correct crop the count reads at 0.99-1.00 at every
+upscale, stably. So the run needs **one read of one crop**, and the four offsets and the majority vote
+were compensating for a crop nobody had found yet — machinery in every read for a problem that belongs
+in the calibration that finds the crop.
+
+**Removed:** `FeederLayout.ReadOffsets`, the multi-offset read, `FeederCount.Vote` and its five tests.
+The read is `ReadRegion(slot, fraction)` → `Parse`, once. 154 tests became 148 and the code lost the
+whole voting apparatus.
+
+**What is left is one number**, which is what the entire feature comes down to: how far across the slot
+the count is read from. `FeederCountLeftFraction`, a **setting on the Pet tab** rather than a constant,
+because the band that reads is a few pixels wide — the scan that measured it found 0.369-0.431 ("138")
+and 0.323-0.477 ("300"), so 0.40 sits in the overlap, and a machine outside it has to be able to move
+it without a rebuild. That was the player's objection to a constant two designs ago, and it survives the
+simplification.
+
+**So the calibration is now four strips and a number.** The count slot and the count box are both gone
+— the former because row 1's first slot is derived exactly (130 ÷ 2), the latter because a box cannot be
+drawn into a three-pixel band and no longer needs to be.
+
+**Verified:** Release build clean, 148/148. **Not verified live.**
+
+---
+
 ## 2026-09-21 (4) — the count IS readable: derived region, four offsets, a vote
 
 **The read works now, and getting there killed two designs.** The count had to be read from the right
