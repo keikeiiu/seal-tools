@@ -51,46 +51,6 @@ public class FeederCountTests
     }
 
     [Fact]
-    public void TheValueTwoReadingsAgreeOnWins()
-    {
-        Assert.Equal(300, FeederCount.Vote(new int?[] { 300, 300, null }));
-    }
-
-    [Fact]
-    public void ASingleReadingIsNotEnoughToCarryIt()
-    {
-        // One confident wrong answer must not win alone. A CLIPPED crop scores as highly as a correct
-        // one — a clipped "138" came back as "3" at 0.99 — so confidence cannot break the tie and the
-        // count has to.
-        Assert.Null(FeederCount.Vote(new int?[] { 300, null, null, null }));
-        Assert.Null(FeederCount.Vote(new int?[] { 3 }));
-    }
-
-    [Fact]
-    public void TheMajorityWinsOverAMinorityOfWrongReads()
-    {
-        // The measured shape: a couple of offsets clip or swallow the icon and return junk, while the
-        // ones that land in the band agree. The gate has already dropped the junk; this is the vote.
-        Assert.Equal(138, FeederCount.Vote(new int?[] { 138, 138, null, 851 }));
-    }
-
-    [Fact]
-    public void ATieIsNoReadingRatherThanAGuess()
-    {
-        // Two against two resolves to nothing on purpose: "no reading" makes the caller fall back to
-        // the fixed cycle it used before any of this existed, while a wrong number feeds the pet
-        // wrongly.
-        Assert.Null(FeederCount.Vote(new int?[] { 138, 138, 300, 300 }));
-    }
-
-    [Fact]
-    public void NothingReadIsNothing()
-    {
-        Assert.Null(FeederCount.Vote(new int?[] { null, null, null, null }));
-        Assert.Null(FeederCount.Vote(Array.Empty<int?>()));
-    }
-
-    [Fact]
     public void TheGateSitsInsideTheMeasuredGap()
     {
         // Real counts measured 0.90-1.00; everything the icon produced scored at most 0.63. The gate

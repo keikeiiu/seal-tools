@@ -250,6 +250,13 @@ public sealed class PetConfig
     // What replaced both is the fraction read at several offsets with a vote, so the constant only has
     // to be roughly right.
 
+    /// <summary>WHERE each slot's count is read from: this far across the slot, running to the slot's
+    /// own right edge at its full height. THE ONE NUMBER THE WHOLE COUNT READ COMES DOWN TO, which is
+    /// why it is a setting rather than a constant — a machine whose slots or digits sit differently
+    /// moves it without a rebuild. See <see cref="Core.FeederLayout.ReadLeftFraction"/> for what was
+    /// measured to land on 0.40.</summary>
+    public double FeederCountLeftFraction { get; set; } = Core.FeederLayout.ReadLeftFraction;
+
     /// <summary>How confident the reader must be for a line to count as the number.</summary>
     public double FeederCountMinScore { get; set; } = Core.FeederCount.MinScore;
 

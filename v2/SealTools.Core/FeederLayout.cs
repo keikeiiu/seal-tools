@@ -11,8 +11,9 @@ namespace SealTools.Core;
 // — the four strips plus a reference slot and a count box drawn on it — on the reasoning that a
 // MEASURED offset beats a proportional one. That reasoning was sound and the drag was not: the band of
 // left edges that reads correctly is about THREE PIXELS wide, and the player, asked twice to draw a box
-// into it, missed it twice. What replaced it is ReadLeftFraction plus ReadOffsets — a fitted constant
-// read at several offsets — which is the same measured answer without an aiming problem.
+// into it, missed it twice. An earlier revision read four offsets and voted, which was papering over
+// a crop nobody had found yet: given the RIGHT crop the count reads at 0.99-1.00 at every upscale, so
+// the run needs one read and the searching belongs in finding the fraction.
 //
 //   4  a strip across each row's food slots  ->  every slot box, divided by the row's stack count,
 //                                                and every count region derived inside them
@@ -65,32 +66,14 @@ public static class FeederLayout
     /// frame on the theory that the number spills, which it does not here, and an absolute overhang
     /// would not have survived another machine anyway.
     ///
-    /// IT IS A FITTED CONSTANT from two numbers on one row of one machine, and it is only safe to use
-    /// because of <see cref="ReadOffsets"/>: see there.</summary>
+    /// MEASURED, and then measured again: a scan of every left edge a pixel apart on two real crops
+    /// read correctly at 0.369-0.431 ("138") and 0.323-0.477 ("300"), so 0.40 sits inside the overlap
+    /// with room either side. It is a SETTING rather than a constant so another machine can move it
+    /// without a rebuild — this is the one number the whole count read comes down to.</summary>
     public const double ReadLeftFraction = 0.40;
 
-    /// <summary>The left edges the count is read at, as fractions of the slot's width, with
-    /// <see cref="ReadRegion"/> producing one region per entry and the results put to
-    /// <see cref="FeederCount.Vote"/>.
-    ///
-    /// THIS IS WHAT MAKES <see cref="ReadLeftFraction"/> SAFE TO BE FITTED. The band that reads
-    /// correctly is a few pixels wide; a fraction measured on one machine may miss it on another,
-    /// because nothing here has established whether the game draws the digits proportionally to the
-    /// slot or at a fixed size. Reading at a spread of left edges means the constant only has to be
-    /// roughly right — the offset that lands in the band provides the answer and the others abstain
-    /// or are outvoted.
-    ///
-    /// SPREAD WIDE, and biased left, for two reasons. Wide, because clipping produces a CONFIDENT
-    /// wrong answer — a clipped "138" came back as "3" at 0.99, indistinguishable by score from a
-    /// correct read — so offsets a few pixels apart can agree on the same clipped value; eight percent
-    /// of a slot is enough to move a clip into the clear. Biased left, because the two directions fail
-    /// differently: too far left swallows the food icon and the detector finds nothing, which the
-    /// score gate rejects and the caller treats as "no reading"; too far right CLIPS, which is the one
-    /// failure that returns a plausible wrong number.</summary>
-    public static readonly double[] ReadOffsets = { 0.24, 0.32, 0.40, 0.48 };
-
-    /// <summary>The region a count is read from for one slot at one offset: from that fraction of the
-    /// slot's width to the slot's RIGHT EDGE, at the slot's FULL HEIGHT.
+    /// <summary>The region a count is read from: from that fraction of the slot's width to the slot's
+    /// RIGHT EDGE, at the slot's FULL HEIGHT.
     ///
     /// Full height is not a preference. Measured: a crop cut down to the digits alone finds NOTHING —
     /// a box holding a perfectly legible "174" returned zero detected boxes at 21px tall inside a

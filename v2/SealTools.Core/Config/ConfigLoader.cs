@@ -287,6 +287,7 @@ public sealed class ConfigLoader
             // so the point predicate is false for them, every time, and both were written to local.yaml
             // on save and silently DISCARDED on every load. The neighbouring MaxButton line is a
             // genuine point, and copying its predicate without reading it is how this happened.
+            if (pet.FeederCountLeftFraction is { } fcl) defaults.Pet.FeederCountLeftFraction = fcl;
             if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
@@ -482,6 +483,7 @@ public sealed class ConfigLoader
         /// <summary>How sure the reader must be for a line to count as the count. The only part of the
         /// feeder-count reading that is a setting: where the count is read from is derived from each
         /// slot by <see cref="Core.FeederLayout"/>.</summary>
+        public double? FeederCountLeftFraction { get; set; }
         public double? FeederCountMinScore { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
@@ -583,6 +585,7 @@ public sealed class ConfigLoader
             // a scalar carried by the wrong half is a setting that saves fine from one screen and
             // silently reverts from the other, which is the ActionWaitMs bug exactly. The pair above
             // is drawn on Calibrate Pet, so it belongs to that half instead.
+            t.FeederCountLeftFraction = p.FeederCountLeftFraction;
             t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 

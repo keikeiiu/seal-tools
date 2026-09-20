@@ -597,19 +597,23 @@ public sealed class PetTool : ToolBase
     /// slightly-wrong crop is a confident WRONG number — "300" came back as "0" at 0.56 and "84" as
     /// "4" at 0.89 — and clipping changes the answer between two crops while a genuine read does not.
     /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.</summary>
+    /// <summary>One food slot's count, or null when it cannot be read.
+    ///
+    /// ONE read of ONE crop, because that is what the measurements showed is needed: given the right
+    /// crop the count reads at 0.99-1.00 at every upscale. An earlier revision read four crops and
+    /// voted, which was papering over a crop nobody had found yet — the vote belonged in the
+    /// calibration that finds the crop, not in every read.
+    ///
+    /// Where the crop starts is the single number this comes down to (FeederCountLeftFraction). Get it
+    /// right and this works; get it wrong and the failure is either nothing, which falls back to the
+    /// fixed cycle, or — slightly too far right — a confidently wrong number, which is why the
+    /// measured value is a setting rather than a guess.</summary>
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
-        // One reading per offset, then a VOTE — not a pair-comparison with a few pixels between them.
-        // The band of left edges that reads correctly is about three pixels wide, so a single region
-        // is a coin toss and two adjacent ones can clip the same digit and agree on the same wrong
-        // number. Spread wide, the offset that lands in the band supplies the answer and the rest
-        // abstain or are outvoted.
-        var readings = new List<int?>();
-        foreach (var offset in FeederLayout.ReadOffsets)
-            if (FeederLayout.ReadRegion(slotBox, offset) is { } region)
-                readings.Add(ReadStack(ocr, region));
+        if (FeederLayout.ReadRegion(slotBox, _cfg.Pet.FeederCountLeftFraction) is not { } region)
+            return null;
 
-        return FeederCount.Vote(readings);
+        return ReadStack(ocr, region);
     }
 
     /// <summary>One crop, read to a number.</summary>

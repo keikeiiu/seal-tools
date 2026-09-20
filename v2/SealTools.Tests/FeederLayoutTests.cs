@@ -97,36 +97,6 @@ public class FeederLayoutTests
     }
 
     [Fact]
-    public void EveryOffsetProducesARegionInsideTheSlot()
-    {
-        var slot = new List<int> { 346, 260, 65, 58 };
-        var right = slot[0] + slot[2];
-
-        foreach (var offset in FeederLayout.ReadOffsets)
-        {
-            var r = FeederLayout.ReadRegion(slot, offset)!;
-            Assert.True(r[0] > slot[0], $"offset {offset} starts at or before the slot's left edge");
-            Assert.Equal(right, r[0] + r[2]);                        // never past the right edge
-            Assert.True(r[2] > 0);
-        }
-    }
-
-    [Fact]
-    public void TheOffsetsSpanEnoughGroundToCoverAMachineDifference()
-    {
-        // The whole justification for a fitted fraction. Clipping returns a CONFIDENT wrong answer, so
-        // offsets a few pixels apart can agree on the same clipped value — the spread has to be wide
-        // enough that a clip at one lands in the clear at another, and wide enough to cover a machine
-        // where the number sits at a different proportion of the slot.
-        var slot = new List<int> { 346, 260, 65, 58 };
-        var spans = FeederLayout.ReadOffsets.Select(o => FeederLayout.ReadRegion(slot, o)![0]).ToList();
-
-        Assert.True(spans.Max() - spans.Min() >= 12,
-            $"offsets only span {spans.Max() - spans.Min()}px of a {slot[2]}px slot");
-        Assert.True(spans.Distinct().Count() == FeederLayout.ReadOffsets.Length);
-    }
-
-    [Fact]
     public void ABadSlotIsNotAReadRegion()
     {
         Assert.Null(FeederLayout.ReadRegion(null, 0.40));

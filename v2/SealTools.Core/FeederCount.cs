@@ -70,35 +70,4 @@ public static class FeederCount
 
         return n is >= 0 and <= MaxStack ? n : null;
     }
-
-    /// <summary>The number the READINGS agree on, or null when none does.
-    ///
-    /// A vote rather than a pair-comparison, because the region's left edge has a band only a few
-    /// pixels wide where detection works and several offsets are read to cover it (see
-    /// FeederLayout.ReadOffsets). Two agreeing readings is the threshold: one confident wrong answer
-    /// is not enough to carry it, which matters because a CLIPPED read scores just as highly as a
-    /// correct one — a clipped "138" came back as "3" at 0.99.
-    ///
-    /// Ties resolve to nothing rather than to a guess. "No reading" makes the caller fall back to the
-    /// fixed cycle it used before any of this existed; a wrong number makes it feed the pet wrongly.
-    /// </summary>
-    public static int? Vote(IEnumerable<int?> readings)
-    {
-        var ranked = readings
-            .Where(r => r is not null)
-            .GroupBy(r => r!.Value)
-            .Select(g => (Value: g.Key, Count: g.Count()))
-            .OrderByDescending(g => g.Count)
-            .ToList();
-
-        if (ranked.Count == 0) return null;
-
-        // A TIE IS NO READING, not the lower number. Two readings say 138 and two say 300 means the
-        // offsets straddle something — a clip, most likely — and picking either would be a guess
-        // dressed as a vote. "No reading" costs a fallback to the fixed cycle; a wrong number feeds
-        // the pet wrongly.
-        if (ranked.Count > 1 && ranked[1].Count == ranked[0].Count) return null;
-
-        return ranked[0].Count >= 2 ? ranked[0].Value : null;
-    }
 }

@@ -5369,9 +5369,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             return box;
         }
 
-        // WHERE the count is read from is not configured here or dragged anywhere — it is derived from
-        // each slot: from FeederLayout.ReadLeftFraction across to the slot's right edge, at full height,
-        // voted across ReadOffsets. What is left to tune is only how sure the reader must be.
+        // WHERE the count is read from: this far across each slot, to the slot's right edge, at full
+        // height. THE ONE NUMBER the whole count read comes down to, and a setting because the band
+        // that reads is only a few pixels wide — a machine that lands outside it has to be able to move
+        // it. 0.40 is what was measured here.
+        var countLeftBox = Num(_service.Config.Pet.FeederCountLeftFraction,
+            v => _service.Config.Pet.FeederCountLeftFraction = Math.Clamp(v, 0.05, 0.95));
         var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
             v => _service.Config.Pet.FeederCountMinScore = v);
 
@@ -5388,11 +5391,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "again. Both must return the same number before one is taken." + Environment.NewLine +
                  "Min score — how sure the reader must be. Real counts scored 0.90-1.00 and " +
                  "everything the food icon produced scored at most 0.63." + Environment.NewLine +
-                 "WHERE the count is read from is dragged on Calibrate Pet (Draw count slot, then " +
-                 "Draw count box), not configured here — because a fraction assumes the game draws " +
-                 "the number at a size proportional to the slot, and nobody has measured that on a " +
-                 "second machine."),
+                 "Count crop starts at — how far across each food slot the number is read from, as a " +
+                 "fraction of the slot's width. The read runs from there to the slot's right edge at " +
+                 "its full height. THIS IS THE ONE NUMBER the count comes down to: measured here as " +
+                 "0.40, and a machine that reads nothing, or reads a number too short, moves it."),
             testRead,
+            LabeledField("Count crop starts at", countLeftBox),
             LabeledField("Min score", minScoreBox)));
 
         // ── THE QUEUE ────────────────────────────────────────────────────────
@@ -5802,21 +5806,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Only the edited row's: the regions are derived from each slot, so showing all four rows would
         // draw seventeen boxes that say the same thing louder and less clearly.
         //
-        // The OUTER pair of the read offsets is drawn, not just the nominal one — the read votes across
-        // four, and seeing the widest and narrowest of them says how much room the number has before
-        // one of them starts clipping it.
         var editRow = EditRow(pet);
         if (FeederLayout.SlotBoxes(editRow.FeederStrip, editRow.Stacks) is { } derivedSlots)
         {
-            var widest = FeederLayout.ReadOffsets.Min();
-            var narrowest = FeederLayout.ReadOffsets.Max();
             foreach (var slot in derivedSlots)
-            {
-                if (FeederLayout.ReadRegion(slot, widest) is { } outer)
-                    Box(canvas, shot, outer, Faint(Brushes.Magenta));
-                if (FeederLayout.ReadRegion(slot, narrowest) is { } inner)
-                    Box(canvas, shot, inner, Brushes.Magenta);
-            }
+                if (FeederLayout.ReadRegion(slot, pet.FeederCountLeftFraction) is { } region)
+                    Box(canvas, shot, region, Brushes.Magenta);
         }
 
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
@@ -6398,38 +6393,33 @@ public partial class MainWindow : FluentWindow, IDisposable
                 foreach (var (what, box) in boxes)
                 {
                     var reads = new List<string>();
-                    var readings = new List<int?>();
                     try
                     {
                         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                        var n = 0;
-                        foreach (var offset in SealTools.Core.FeederLayout.ReadOffsets)
+                        // ONE read of ONE crop — the same crop a run takes. An earlier revision read
+                        // four and voted, which was papering over a crop nobody had found yet; the
+                        // searching belongs in finding the fraction, not in every read.
+                        var region = SealTools.Core.FeederLayout.ReadRegion(
+                            box, pet.FeederCountLeftFraction);
+                        if (region is null)
                         {
-                            // The region is DERIVED from the slot, exactly as a run derives it, so this
-                            // diagnostic cannot agree with itself and be wrong about the run.
-                            if (SealTools.Core.FeederLayout.ReadRegion(box, offset) is not { } region)
-                            {
-                                reads.Add($"o{offset:0.00}:nogap");
-                                readings.Add(null);
-                                continue;
-                            }
+                            reads.Add("no region");
+                        }
+                        else
+                        {
                             var regionConfig = new RegionConfig
                             { Left = region[0], Top = region[1], Width = region[2], Height = region[3] };
-                            // Each read leaves its upscaled region behind, so a blank result can be
-                            // told apart from a wrong region by looking at the file.
+                            // Left behind so a blank result can be told from a wrong region by looking.
                             var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
-                                "reads", $"{what.Replace(" ", "")}o{n}_{stamp}.png");
-                            n++;
+                                "reads", $"{what.Replace(" ", "")}_{stamp}.png");
                             var lines = await Task.Run(() => _service.ReadTextScored(
                                 regionConfig, 3, debugPath, pet.FeederCountMinScore));
                             var shown = lines.Count == 0
                                 ? "(nothing)"
                                 : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                            var parsed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
-                            readings.Add(parsed);
-                            reads.Add($"o{offset:0.00}:{shown}{(parsed is { } v ? $"={v}" : "")}");
+                            agreed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
+                            reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}");
                         }
-                        agreed = SealTools.Core.FeederCount.Vote(readings);
                     }
                     catch (Exception ex)
                     {
