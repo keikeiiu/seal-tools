@@ -6367,10 +6367,21 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (BagGrid.IsValidRect(FeederAt(row, f)))
                 boxes.Add(($"slot {f + 1}", FeederAt(row, f)!));
 
+        // WHICH ROW this reads is Calibrate Pet's selected row, not anything on this tab — a coupling
+        // that has already cost one confused report ("it says I don't have the config"), because the
+        // selected row is easy to leave on a row that has never been drawn. So the message names it,
+        // and names which rows DO have a strip.
         if (boxes.Count == 0)
         {
-            hint.Text = "Draw the FOOD STRIP for this row on Calibrate Pet first — the slots are " +
-                        "derived from it.";
+            var ready = new List<string>();
+            for (int i = 0; i < pet.Slots.Count; i++)
+                if (FeederLayout.SlotBoxes(pet.Slots[i].FeederStrip, pet.Slots[i].Stacks) != null)
+                    ready.Add($"Row {i + 1}");
+            hint.Text = $"ROW {_petEditRow + 1} has no food strip, and the slots are derived from it. " +
+                        (ready.Count > 0
+                            ? $"Rows with a strip: {string.Join(", ", ready)} — select one on Calibrate " +
+                              "Pet and press Test read again."
+                            : "Draw one on Calibrate Pet.");
             return;
         }
 
@@ -6456,7 +6467,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 }
 
                 if (agreed is { } value) { total += value; counted++; }
-                report.Add($"{what}: {string.Join("  ", reads)}" +
+                report.Add($"row {_petEditRow + 1} {what}: {string.Join("  ", reads)}" +
                            (agreed is { } v3
                                ? $"  -> {v3}"
                                : "  -> NO AGREEMENT (a run would assume a full load)"));
