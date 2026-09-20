@@ -559,7 +559,7 @@ public sealed class PetTool : ToolBase
 
         foreach (var box in row.FeederSlots)
         {
-            if (FeederCountValue(ocr, box) is not { } n) continue;
+            if (FeederCountOf(ocr, box) is not { } n) continue;
             total += n;
             counted++;
         }
@@ -578,24 +578,23 @@ public sealed class PetTool : ToolBase
     /// is not belt-and-braces: the measured failure of a slightly-too-tight crop is a confident WRONG
     /// number — "300" came back as "0" at 0.56 and "84" as "4" at 0.89 — and clipping changes the
     /// answer between two crops while a genuine read does not. See <see cref="FeederCount"/>.</summary>
-    private static int? FeederCountValue(OcrEngine ocr, List<int>? slotBox)
+    private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
-        if (FeederCount.Crop(slotBox!, FeederCount.CropLeft) is not { } a) return null;
-        if (FeederCount.Crop(slotBox!, FeederCount.CropLeftShifted) is not { } b) return null;
+        var pet = _cfg.Pet;
+        if (FeederCount.Crop(slotBox!, pet.FeederCountCropLeft) is not { } a) return null;
+        if (FeederCount.Crop(slotBox!, pet.FeederCountCropLeftShifted) is not { } b) return null;
 
-        var first = ReadStack(ocr, a);
-        var second = ReadStack(ocr, b);
-        return FeederCount.Agreed(first, second);
+        return FeederCount.Agreed(ReadStack(ocr, a), ReadStack(ocr, b));
     }
 
     /// <summary>One crop, read to a number.</summary>
-    private static int? ReadStack(OcrEngine ocr, List<int> box)
+    private int? ReadStack(OcrEngine ocr, List<int> box)
     {
         var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
         // Scored, so the caller can pick the BEST line rather than the first survivor: this crop comes
         // back with the real count beside junk from the food icon, and which is which is the score.
-        return FeederCount.Parse(ocr.ReadLinesScored(region, 3, null, FeederCount.MinScore),
-            FeederCount.MinScore);
+        var min = _cfg.Pet.FeederCountMinScore;
+        return FeederCount.Parse(ocr.ReadLinesScored(region, 3, null, min), min);
     }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.

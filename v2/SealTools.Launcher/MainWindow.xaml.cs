@@ -5332,12 +5332,49 @@ public partial class MainWindow : FluentWindow, IDisposable
         // nobody should trust — the same reason every other calibrator has a Test button.
         var testRead = MakeButton("Test read", ControlAppearance.Secondary);
         testRead.Click += async (_, _) => await PetTestRead(hint);
+        // The reading parameters, as FIELDS — because they were measured on one machine and the
+        // assumption that they carry to another is untested. The crop is a fraction of the slot box,
+        // so it should scale; "should" is the word that has cost this project the most time.
+        Wpf.Ui.Controls.TextBox Num(double value, Action<double> set)
+        {
+            var box = UiText(value.ToString("0.###", CultureInfo.InvariantCulture));
+            box.Width = 70;
+            box.HorizontalAlignment = HorizontalAlignment.Left;
+            box.VerticalAlignment = VerticalAlignment.Center;
+            box.TextChanged += (_, _) =>
+            {
+                if (double.TryParse(box.Text.Trim(), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out var v)) set(v);
+            };
+            return box;
+        }
+
+        var cropLeftBox = Num(_service.Config.Pet.FeederCountCropLeft,
+            v => _service.Config.Pet.FeederCountCropLeft = v);
+        var cropShiftBox = Num(_service.Config.Pet.FeederCountCropLeftShifted,
+            v => _service.Config.Pet.FeederCountCropLeftShifted = v);
+        var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
+            v => _service.Config.Pet.FeederCountMinScore = v);
+
         panel.Children.Add(Section("Read the feeder",
             Hint("Open the boarding window with the food loaded, then press Test read. The tool reads " +
                  "each feeder slot and reports the text it found — the stack counts the reload " +
                  "decision will use. The slots are the boxes drawn on Calibrate Pet, so if this reads " +
-                 "nothing, check those boxes cover the numbers."),
-            testRead));
+                 "nothing, check those boxes cover the numbers." + Environment.NewLine +
+                 "It reads the slot TWICE, from two crops of its right-hand side, and only takes a " +
+                 "number when both agree. That is not caution: a slightly-too-tight crop returns a " +
+                 "confidently WRONG count — a full 300 read as 0 — and clipping changes the answer " +
+                 "between two crops while a genuine read does not." + Environment.NewLine +
+                 "Crop left / second crop — where each read starts, as a fraction of the slot box's " +
+                 "width, running to its right edge at full height. The defaults were measured here " +
+                 "and the margin is narrow: 0.40 reads neither number and 0.55 clips a digit off one. " +
+                 "If another machine reads nothing, or reports NO AGREEMENT, these are the two " +
+                 "numbers to move. Min score is how sure the reader must be; real counts scored " +
+                 "0.90-1.00 and everything the food icon produced scored at most 0.63."),
+            testRead,
+            LabeledField("Crop left", cropLeftBox),
+            LabeledField("Second crop", cropShiftBox),
+            LabeledField("Min score", minScoreBox)));
 
         // ── THE QUEUE ────────────────────────────────────────────────────────
         //
@@ -6307,8 +6344,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                     var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
                     var pair = new List<int?>();
                     foreach (var (label, left) in new[]
-                             { ("a", SealTools.Core.FeederCount.CropLeft),
-                               ("b", SealTools.Core.FeederCount.CropLeftShifted) })
+                             { ("a", pet.FeederCountCropLeft),
+                               ("b", pet.FeederCountCropLeftShifted) })
                     {
                         if (SealTools.Core.FeederCount.Crop(box, left) is not { } crop) { pair.Add(null); continue; }
                         var region = new RegionConfig
@@ -6318,11 +6355,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                         var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
                             "reads", $"{what.Replace(" ", "")}{label}_{stamp}.png");
                         var lines = await WithLauncherHiddenAsync(
-                            () => _service.ReadTextScored(region, 3, debugPath, SealTools.Core.FeederCount.MinScore));
+                            () => _service.ReadTextScored(region, 3, debugPath, pet.FeederCountMinScore));
                         var shown = lines.Count == 0
                             ? "(nothing)"
                             : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                        var n = SealTools.Core.FeederCount.Parse(lines, SealTools.Core.FeederCount.MinScore);
+                        var n = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
                         pair.Add(n);
                         reads.Add($"{label}:{shown}{(n is { } v ? $"={v}" : "")}");
                     }

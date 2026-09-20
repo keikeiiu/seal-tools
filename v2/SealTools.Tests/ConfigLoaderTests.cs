@@ -459,6 +459,11 @@ public class ConfigLoaderTests
             WaitAfterEmptyMinutes = 3,
             ActionWaitMs = 1234,
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
+            // Non-default on purpose: against the defaults this would pass whether or not either
+            // half copied the field, which is the trap this guard's own comment warns about.
+            FeederCountCropLeft = 0.33,
+            FeederCountCropLeftShifted = 0.66,
+            FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
                 new()
@@ -534,6 +539,11 @@ public class ConfigLoaderTests
             WaitAfterEmptyMinutes = 3,
             ActionWaitMs = 1234,
             FoodLoadMode = SealTools.Core.FoodLoadMode.Drag,
+            // Non-default on purpose: against the defaults this would pass whether or not either
+            // half copied the field, which is the trap this guard's own comment warns about.
+            FeederCountCropLeft = 0.33,
+            FeederCountCropLeftShifted = 0.66,
+            FeederCountMinScore = 0.55,
             Slots = new List<PetSlotConfig>
             {
                 new()

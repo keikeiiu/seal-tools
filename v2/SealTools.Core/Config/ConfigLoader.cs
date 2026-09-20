@@ -265,6 +265,9 @@ public sealed class ConfigLoader
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
             if (!string.IsNullOrWhiteSpace(pet.FoodLoadMode)) defaults.Pet.FoodLoadMode = pet.FoodLoadMode;
+            if (pet.FeederCountCropLeft is { } fcl) defaults.Pet.FeederCountCropLeft = fcl;
+            if (pet.FeederCountCropLeftShifted is { } fcs) defaults.Pet.FeederCountCropLeftShifted = fcs;
+            if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
 
@@ -456,6 +459,11 @@ public sealed class ConfigLoader
         /// on the Pet tab, beside the timing boxes, because it belongs to running a feed rather than
         /// to calibrating one.</summary>
         public string? FoodLoadMode { get; set; }
+        /// <summary>The feeder-count reading parameters — see <see cref="PetConfig"/>. Session half,
+        /// like FoodLoadMode: the Pet tab owns the run and these are run-time numbers.</summary>
+        public double? FeederCountCropLeft { get; set; }
+        public double? FeederCountCropLeftShifted { get; set; }
+        public double? FeederCountMinScore { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
         public List<int>? MaxButton { get; set; }
@@ -552,6 +560,9 @@ public sealed class ConfigLoader
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
             t.FoodLoadMode = p.FoodLoadMode;
+            t.FeederCountCropLeft = p.FeederCountCropLeft;
+            t.FeederCountCropLeftShifted = p.FeederCountCropLeftShifted;
+            t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 
             t.Queue = p.Queue.Select(q => new LocalPetQueueEntry

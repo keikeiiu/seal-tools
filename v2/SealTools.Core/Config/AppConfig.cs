@@ -241,6 +241,27 @@ public sealed class PetConfig
     /// the Pet tab, per machine, since it depends on the board's firmware.</summary>
     public string FoodLoadMode { get; set; } = Core.FoodLoadMode.RightClick;
 
+    // ── Reading the food counts ─────────────────────────────────────────────
+    //
+    // CONFIG, not constants, and the reason is that this must be tunable on another PC. The crop is a
+    // FRACTION of the slot box, so it should be resolution-independent — but that assumes the game
+    // draws the number at a size that scales with the slot, and nobody has measured a second machine.
+    // If that assumption is wrong anywhere, the fix has to be a field rather than a rebuild.
+    //
+    // All three default to the values measured on the reference machine (2026-09-21), where the
+    // tolerances are narrow enough that they are worth being able to shift without a compiler.
+
+    /// <summary>Where the count crop starts, as a fraction of the slot box's width. The crop runs to
+    /// the slot's right edge at full height, because the digits are right-aligned there.</summary>
+    public double FeederCountCropLeft { get; set; } = Core.FeederCount.CropLeft;
+
+    /// <summary>The second read, shifted right. Equal to the first on a genuine read and different
+    /// when the first clipped a digit — the check that catches a confidently wrong number.</summary>
+    public double FeederCountCropLeftShifted { get; set; } = Core.FeederCount.CropLeftShifted;
+
+    /// <summary>How confident the reader must be for a line to count as the number.</summary>
+    public double FeederCountMinScore { get; set; } = Core.FeederCount.MinScore;
+
     /// <summary>How unlike the empty reference a slot must look before it counts as occupied, as a
     /// fraction of differing pixels. Deliberately low: the composer measured an empty box against
     /// itself at 0.000 and against a gem at ~0.3, so anything above a few percent is content. The cost
