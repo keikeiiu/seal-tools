@@ -521,6 +521,9 @@ public sealed class ConfigLoader
                 var running = i < (t.Slots?.Count ?? 0) ? t.Slots![i].BoardingRunning : src.BoardingRunning;
                 merged.Add(new LocalPetSlot
                 {
+                    // Carried even though the tick is on the Pet tab: this list is REBUILT from the
+                    // fields named here, so anything left out is dropped by a Calibrate save. See
+                    // ApplySession for the other half of why this appears twice.
                     Enabled = src.Enabled,
                     ToggleLabel = src.ToggleLabel,
                     BoardingPetSlot = src.BoardingPetSlot,
@@ -560,7 +563,15 @@ public sealed class ConfigLoader
 
             if (t.Slots == null) return;
             for (int i = 0; i < p.Slots.Count && i < t.Slots.Count; i++)
+            {
                 t.Slots[i].BoardingRunning = p.Slots[i].BoardingRunning;
+                // Enabled is here AND in ApplyCalibration, and both are needed for different reasons.
+                // The tick lives on the Pet tab, so THIS is the projection that persists it — the
+                // session save is what a toggle calls. But ApplyCalibration REBUILDS the row list from
+                // the fields it names, so a field it does not carry is dropped by the next Calibrate
+                // save, which is how a setting goes missing without anything failing.
+                t.Slots[i].Enabled = p.Slots[i].Enabled;
+            }
         }
     }
 

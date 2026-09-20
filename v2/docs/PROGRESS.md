@@ -23,22 +23,47 @@ half-calibrated row no longer blocks a run that never touches it. Every consumer
 `PetConfig.ActiveRows` — iterating the raw `Slots` list is exactly how a disabled row gets clicked
 anyway, and the doc comment on the helper says so.
 
-**The tick is on Calibrate Pet, beside the row strip**, because that is where a row is selected and its
-properties edited — and because `Enabled` has to live in `ApplyCalibration`, the projection that
-REBUILDS the row list. `ApplySession` only mutates `BoardingRunning` onto rows that already exist, so a
-field kept there would be dropped by the next Calibrate save.
+**The tick is on the Pet tab, beside the one-per-row boarding ticks — and the player is why.** It was
+built on Calibrate Pet first, next to the row strip, on the reasoning that a row is selected and edited
+there. That was the wrong call: *which rows to drive* is a RUN decision (a row being fed by hand this
+week, a row still being set up), not a fact about the machine, and this project's own split is
+"Calibrate writes the machine's half, the Pet tab writes the run's". The Pet tab already had the
+precedent — a per-row boarding tick that saves on toggle.
+
+**Where the UI lives and which projection writes it are independent, and that is not obvious.** `Enabled`
+has to appear in **both** projections, for two different reasons:
+
+- **`ApplySession`** — because the tick is on the Pet tab, so the session save is what a toggle calls.
+  This is the only thing that persists it.
+- **`ApplyCalibration`** — because that one **rebuilds** the row list from the fields it names, so a
+  field it does not carry is dropped by the next Calibrate save. A setting going missing without
+  anything failing, which is this project's most expensive recurring bug.
 
 **Worth knowing for the player's actual problem:** running row 1 alone is not merely "for now" — it is
 the configuration the current code is *correct* for. The right-click food bug only bites a row with an
 empty box somewhere ABOVE it, and row 1 has nothing above it. That is why row 1 has never failed once in
 the whole log. One row makes the ordering bug unreachable, with no reflash and no drag.
 
-**Verified:** Release build clean, 126/126 tests. The nested projection guard caught the new field
+**Verified:** Release build clean, 127/127 tests. The nested projection guard caught the new field
 immediately — `EveryNestedPetFieldIsCopied` failed until `Enabled` was added to `LocalPetSlot.ToConfig`
 AND to `ApplyCalibration`, which is precisely the class of omission that has silently dropped a field
 twice in this project. The fixture uses `false` rather than the default, so the guard cannot pass
 vacuously. **Not verified:** the tick has not been clicked — `MainWindow` is unreachable from the test
 project, so it is a compile check.
+
+### And moving it to the Pet tab exposed a hole in the guards worth more than the feature
+
+Deleting `t.Slots[i].Enabled = p.Slots[i].Enabled` from **`ApplySession`** left the whole suite green.
+The two existing guards both stop short of it: `EveryNestedPetFieldIsCopied` walks the LOAD
+(`LocalPetSlot.ToConfig`), and the split test only ever asserts the **calibration** half's rows. So the
+per-row fields the **session** half owns were covered by nothing at all.
+
+That is the `ActionWaitMs` shape exactly — a field some save never wrote, so it moves in the UI, appears
+to work, and is gone by the next launcher start. It was worth a test rather than a note, because the
+tick lives on the Pet tab and `ApplySession` is therefore the *only* thing that persists it.
+`TheSessionHalfCarriesThePerRowRunFlags` now does, and is mutation-checked: removing the line fails it.
+Both flags start `null` (they are `bool?`), so writing `false`/`true` is distinguishable from the field
+never being touched — a fixture using the defaults would have passed either way.
 
 ### And a question answered while in there: the return slot is dead once a queue exists
 

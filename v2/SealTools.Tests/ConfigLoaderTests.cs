@@ -597,6 +597,42 @@ public class ConfigLoaderTests
         Assert.True(calibrationOnly.Queue is null or { Count: 0 });
     }
 
+    // The guard above reaches the OUTER LocalPet and stops there, and the split test above only ever
+    // asserts the CALIBRATION half's rows. So nothing covered the per-row fields the SESSION half
+    // owns — and the mutation check proved it: deleting `t.Slots[i].Enabled = p.Slots[i].Enabled`
+    // from ApplySession left all 126 tests green.
+    //
+    // That is the `ActionWaitMs` shape exactly — a field some save never wrote, so it moves in the UI,
+    // appears to work, and is gone by the next launcher start. Worth a test rather than a note,
+    // because the tick lives on the Pet tab, which saves through ApplySession, so this projection is
+    // the ONLY thing that persists it.
+    //
+    // The rows must already EXIST: ApplySession deliberately does not invent one, because introducing
+    // a row is not a run's business.
+    [Fact]
+    public void TheSessionHalfCarriesThePerRowRunFlags()
+    {
+        var existing = new ConfigLoader.LocalPet
+        {
+            // Both start NULL (they are bool?), so writing false/true is distinguishable from the
+            // field never being touched — a test that used the CLR defaults would pass either way.
+            Slots = new List<ConfigLoader.LocalPetSlot> { new() },
+        };
+        var cfg = new PetConfig
+        {
+            Slots = new List<PetSlotConfig>
+            {
+                new() { Enabled = false, BoardingRunning = true },
+            },
+        };
+
+        ConfigLoader.LocalPet.ApplySession(existing, cfg);
+
+        var row = Assert.Single(existing.Slots!);
+        Assert.False(row.Enabled);
+        Assert.True(row.BoardingRunning);
+    }
+
     // The guard above walks LocalPet's properties, and that was NOT ENOUGH.
     //
     // LocalPetSlot is the row — a nested type with its own hand-written projection — and

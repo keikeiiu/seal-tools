@@ -221,12 +221,6 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Rebuilt whenever a row is added, so the strip always shows exactly the rows that exist.</summary>
     private StackPanel? _petRowStrip;
-    /// <summary>Whether the tool drives the row currently selected in <see cref="RefreshPetRows"/>'s
-    /// strip. Writes straight through to that row's Enabled.</summary>
-    private CheckBox? _petRunRowBox;
-    /// <summary>True while <see cref="RefreshPetRows"/> is syncing the tick to the selected row, so
-    /// the write handler does not fire on a row the user did not touch.</summary>
-    private bool _syncingRunRow;
 
     /// <summary>This row's food-slot count — 2 on the free row, 5 on a paid one.</summary>
     private Wpf.Ui.Controls.TextBox? _petStacksBox;
@@ -4982,24 +4976,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         _petStacksBox.TextChanged += PetStacksChanged;
 
 
-        // Whether the tool drives the SELECTED row at all. Unticking is how you run fewer rows
-        // without deleting the others — which was the only way until now, and it took their
-        // calibration with it. An unticked row is not validated, not read, not scheduled and not
-        // clicked, so it can sit half-calibrated, or be a row somebody is feeding by hand.
-        _petRunRowBox = new CheckBox
-        {
-            Content = "Run this row",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(14, 0, 0, 0),
-        };
-        _petRunRowBox.Checked += (_, _) => PetRunRowChanged(true);
-        _petRunRowBox.Unchecked += (_, _) => PetRunRowChanged(false);
-
         var rowRow = new StackPanel { Orientation = Orientation.Horizontal };
         addRow.Margin = new Thickness(8, 0, 0, 0);
         rowRow.Children.Add(_petRowStrip);
         rowRow.Children.Add(addRow);
-        rowRow.Children.Add(_petRunRowBox);
 
         panel.Children.Add(Section("Breeding rows",
             Hint("The window holds four rows — one free, three behind the paid expansion — and each " +
@@ -5008,9 +4988,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "Food slots per row — 2 on the free row, 5 on a paid one. It is the row's capacity, " +
                  "not a preference, and the tool reloads each row on its own clock because of it. " +
                  "Getting it wrong reloads a row early or leaves it dry.\n" +
-                 "Run this row — off means the tool leaves the row completely alone: still calibrated, " +
-                 "still shown here, just not fed. Use it to run one row while the others are being set " +
-                 "up, or are being fed by hand."),
+                 "Whether the tool DRIVES a row is a run decision and lives on the Pet tab, with the " +
+                 "boarding ticks — not here, where the shape of the row is decided."),
             rowRow,
             LabeledField("Food slots in this row", _petStacksBox)));
 
@@ -5320,8 +5299,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             PetSessionSave(_petTabHint!);
         };
 
-        panel.Children.Add(Section("Boarding state",
-            Hint("Tick each row that is boarding RIGHT NOW — the pet is in the loader rather than in " +
+        panel.Children.Add(Section("Rows and boarding state",
+            Hint("RUN — whether the tool drives this row at all. Untick to leave a row completely " +
+                 "alone: still calibrated, still shown, just not fed. That is how you run fewer rows " +
+                 "without deleting the others. A row that is off is not validated, read, scheduled or " +
+                 "clicked, so it can sit half-set-up — or be one somebody is feeding by hand.\n" +
+                 "Tick each row that is boarding RIGHT NOW — the pet is in the loader rather than in " +
                  "the bag. The reload has to END boarding to get the pet back before it can put it in " +
                  "again, and the start/end control is one button per row: pressing it with the wrong " +
                  "idea of the state does the opposite of what the step needs, and the pet ends up in " +
@@ -6016,16 +5999,44 @@ public partial class MainWindow : FluentWindow, IDisposable
         for (int i = 0; i < pet.Slots.Count; i++)
         {
             var row = pet.Slots[i];
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(new TextBlock
+            {
+                Text = $"Row {i + 1}" + (i == 0 ? " (free, 2 stacks)" : " (paid, 5 stacks)"),
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 170,
+            });
+
+            // RUN — whether the tool drives this row at all. Here rather than on Calibrate because
+            // which rows to drive is a RUN decision (a row fed by hand this week, a row being set up),
+            // not a fact about the machine — the same reason the boarding ticks are on this tab.
+            // Unticking is how you run fewer rows without deleting the others, which was the only way
+            // before and took their calibration with it.
+            var run = new CheckBox
+            {
+                Content = "run",
+                IsChecked = row.Enabled,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                ToolTip = "Off: the tool leaves this row completely alone — still calibrated, still " +
+                          "shown here, just not fed.",
+            };
+            run.Checked += (_, _) => { if (!_syncingPetRow) { row.Enabled = true; PetSessionSave(_petTabHint!); } };
+            run.Unchecked += (_, _) => { if (!_syncingPetRow) { row.Enabled = false; PetSessionSave(_petTabHint!); } };
+            line.Children.Add(run);
+
             var tick = new CheckBox
             {
-                Content = $"Row {i + 1} is boarding now" +
-                          (i == 0 ? "  (the free row, 2 stacks)" : "  (paid, 5 stacks)"),
+                Content = "boarding now",
                 IsChecked = row.BoardingRunning,
-                Margin = new Thickness(0, 2, 0, 2),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(14, 0, 0, 0),
             };
             tick.Checked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = true; PetSessionSave(_petTabHint!); } };
             tick.Unchecked += (_, _) => { if (!_syncingPetRow) { row.BoardingRunning = false; PetSessionSave(_petTabHint!); } };
-            _petBoardingTicks.Children.Add(tick);
+            line.Children.Add(tick);
+
+            _petBoardingTicks.Children.Add(line);
         }
         _syncingPetRow = false;
         RefreshPetSessionChecklist();
@@ -6064,22 +6075,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// Rebuilt rather than appended to because the row count changes: "+ Add row" has to produce a new
     /// button, and a strip built once at startup could not show a row that was added afterwards. The
     /// same mistake the Buy tab's row picker made, and the same fix.</summary>
-    /// <summary>The Run tick was switched on the row being edited. Written straight through like
-    /// every other control on this tab — the tab's Save is what persists it.
-    ///
-    /// It also redraws the checklist, because unticking a row is the one edit here that changes what
-    /// the run will DO rather than how it is calibrated, and the checklist is where "every row is
-    /// marked" is answered. A row that is off should not be able to read as ready-to-drive.</summary>
-    private void PetRunRowChanged(bool enabled)
-    {
-        if (_syncingRunRow) return;
-        var pet = _service.Config.Pet;
-        if (_petEditRow < 0 || _petEditRow >= pet.Slots.Count) return;
-
-        pet.Slots[_petEditRow].Enabled = enabled;
-        RefreshPetChecklist();
-    }
-
     private void RefreshPetRows()
     {
         var pet = _service.Config.Pet;
@@ -6111,15 +6106,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             _petStacksBox.TextChanged -= PetStacksChanged;
             _petStacksBox.Text = pet.Slots[_petEditRow].Stacks.ToString(CultureInfo.InvariantCulture);
             _petStacksBox.TextChanged += PetStacksChanged;
-        }
-
-        // Same reason, and the same suppression: switching rows must show THAT row's tick without the
-        // write handler firing and stamping it back onto the row you just left.
-        if (_petRunRowBox != null && _petEditRow >= 0 && pet.Slots.Count > _petEditRow)
-        {
-            _syncingRunRow = true;
-            _petRunRowBox.IsChecked = pet.Slots[_petEditRow].Enabled;
-            _syncingRunRow = false;
         }
 
         RefreshPetEmptySlotPreview();
