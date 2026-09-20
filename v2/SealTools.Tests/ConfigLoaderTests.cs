@@ -585,6 +585,12 @@ public class ConfigLoaderTests
             var byCalibration = Equals(prop.GetValue(calibrationOnly), source);
             var bySession = Equals(prop.GetValue(sessionOnly), source);
 
+            // LIMIT OF THIS GUARD, and it cost a bug: "either half" is the wrong question for a field
+            // whose UI lives on ONE tab. FeederCountShiftPx was written by the CALIBRATION half while
+            // its box sits on the Pet tab, so it saved from Calibrate Pet and silently reverted from
+            // the Pet tab — and this test passed both before and after the fix. The pairing that
+            // matters is "the half whose tab edits it", which reflection cannot see. Worth a comment
+            // because the guard reads as though it covers more than it does.
             Assert.True(byCalibration || bySession,
                 $"LocalPet.{prop.Name} is in NEITHER scoped save, so no button ever writes it");
         }

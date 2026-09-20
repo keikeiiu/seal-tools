@@ -545,7 +545,6 @@ public sealed class ConfigLoader
             t.MaxButton = p.MaxButton;
             t.FeederCountSlot = p.FeederCountSlot;
             t.FeederCountText = p.FeederCountText;
-            t.FeederCountShiftPx = p.FeederCountShiftPx;
 
             var merged = new List<LocalPetSlot>();
             for (int i = 0; i < p.Slots.Count; i++)
@@ -585,6 +584,11 @@ public sealed class ConfigLoader
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
             t.FoodLoadMode = p.FoodLoadMode;
+            // Both of these are edited on the PET TAB, so the session half is what must write them —
+            // a scalar carried by the wrong half is a setting that saves fine from one screen and
+            // silently reverts from the other, which is the ActionWaitMs bug exactly. The pair above
+            // is drawn on Calibrate Pet, so it belongs to that half instead.
+            t.FeederCountShiftPx = p.FeederCountShiftPx;
             t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 
