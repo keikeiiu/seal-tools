@@ -288,6 +288,7 @@ public sealed class ConfigLoader
             // on save and silently DISCARDED on every load. The neighbouring MaxButton line is a
             // genuine point, and copying its predicate without reading it is how this happened.
             if (IsValidRect(pet.FeederCountSlot)) defaults.Pet.FeederCountSlot = pet.FeederCountSlot;
+            if (pet.FeederCountLeftFraction is { } fcl) defaults.Pet.FeederCountLeftFraction = fcl;
             if (pet.FeederCountMinScore is { } fms) defaults.Pet.FeederCountMinScore = fms;
             if (pet.ReturnSlot is { Count: 2 }) defaults.Pet.ReturnSlot = pet.ReturnSlot;
             if (IsPoint(pet.MaxButton)) defaults.Pet.MaxButton = pet.MaxButton;
@@ -484,6 +485,7 @@ public sealed class ConfigLoader
         /// feeder-count reading that is a setting: where the count is read from is derived from each
         /// slot by <see cref="Core.FeederLayout"/>.</summary>
         public List<int>? FeederCountSlot { get; set; }
+        public double? FeederCountLeftFraction { get; set; }
         public double? FeederCountMinScore { get; set; }
         public bool? ReloadOnStart { get; set; }
         public List<int>? ReturnSlot { get; set; }
@@ -587,6 +589,7 @@ public sealed class ConfigLoader
             // silently reverts from the other, which is the ActionWaitMs bug exactly. The pair above
             // is drawn on Calibrate Pet, so it belongs to that half instead.
             t.FeederCountSlot = p.FeederCountSlot;
+            t.FeederCountLeftFraction = p.FeederCountLeftFraction;
             t.FeederCountMinScore = p.FeederCountMinScore;
             t.ReloadOnStart = p.ReloadOnStart;
 

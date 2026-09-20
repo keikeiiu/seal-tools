@@ -49,51 +49,34 @@ public static class FeederLayout
         return result;
     }
 
-    /// <summary>The count region for one slot, given the reference slot you DREW and the count box on
-    /// it: the same box, moved to this slot.
+    /// <summary>Where the count is read from inside a slot: this far across it, running to its own
+    /// right edge at its FULL HEIGHT.
     ///
-    /// The offset is a measured position — where you put the box relative to a slot you drew — rather
-    /// than a proportion of the slot. That is the point of drawing it: a drawn box says exactly where
-    /// the number is, including on a machine where the digits sit differently inside the slot, which no
-    /// fraction can express.
+    /// MEASURED, and this is the only approach of four that has held. Two crops read at 0.369-0.431 of
+    /// the slot ("138" and "300"); a scan of every left edge a pixel apart put the good band there and
+    /// nowhere else. Three attempts to let the position be DRAWN instead all failed — a count box, a
+    /// count slot read as drawn, and a count slot with its offset applied — because the band is about
+    /// three pixels wide and a hand cannot put a box into three pixels. Measured four times, missed
+    /// four times.
     ///
-    /// Null when any of the three is unusable, so a half-drawn calibration reads as nothing rather than
-    /// as a region at (0,0).</summary>
-    public static List<int>? CountRegion(List<int>? slot, List<int>? drawnSlot, List<int>? countBox)
+    /// FULL HEIGHT is not a preference either. A crop cut to the digits' height finds NOTHING while
+    /// holding a perfectly legible number — measured on three separate crops ("174", "36", "18"), and
+    /// the reason is not known; the engine's own "text below ~20px" note does not explain it, since the
+    /// digits are ~66px tall upscaled.
+    ///
+    /// A SETTING rather than a constant, because the band is narrow: a machine that reads nothing, or
+    /// reads too short a number, has to be able to move it without a rebuild.</summary>
+    public const double ReadLeftFraction = 0.40;
+
+    /// <summary>The region a count is read from for one slot.</summary>
+    public static List<int>? ReadRegion(List<int>? slot, double leftFraction)
     {
         if (slot is not { Count: 4 } || !BagGrid.IsValidRect(slot)) return null;
-        if (drawnSlot is not { Count: 4 } || !BagGrid.IsValidRect(drawnSlot)) return null;
-        if (countBox is not { Count: 4 } || !BagGrid.IsValidRect(countBox)) return null;
 
-        return new List<int>
-        {
-            slot[0] + (countBox[0] - drawnSlot[0]),
-            slot[1] + (countBox[1] - drawnSlot[1]),
-            countBox[2],
-            countBox[3],
-        };
-    }
+        var left = slot[0] + (int)Math.Round(slot[2] * leftFraction);
+        var right = slot[0] + slot[2];
+        if (right - left < 4) return null;
 
-    /// <summary>The slot a drawn box belongs to: the nearest of the given slots by centre distance.
-    ///
-    /// Needed because the calibration stores boxes, not identities: nothing says which row or slot the
-    /// count box was drawn on, and the offset only means anything relative to the right one.</summary>
-    public static List<int>? NearestSlot(List<List<int>> slots, List<int>? box)
-    {
-        if (box is not { Count: 4 } || !BagGrid.IsValidRect(box) || slots.Count == 0) return null;
-
-        var cx = box[0] + box[2] / 2.0;
-        var cy = box[1] + box[3] / 2.0;
-        List<int>? best = null;
-        var bestD = double.MaxValue;
-        foreach (var s in slots)
-        {
-            if (!BagGrid.IsValidRect(s)) continue;
-            var dx = s[0] + s[2] / 2.0 - cx;
-            var dy = s[1] + s[3] / 2.0 - cy;
-            var d = dx * dx + dy * dy;
-            if (d < bestD) { bestD = d; best = s; }
-        }
-        return best;
+        return new List<int> { left, slot[1], right - left, slot[3] };
     }
 }

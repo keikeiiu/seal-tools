@@ -72,59 +72,48 @@ public class FeederLayoutTests
     }
 
     [Fact]
-    public void TheCountRegionIsTheDrawnBoxMovedOntoTheSlot()
-    {
-        // The count box is read AS DRAWN on the slot it was drawn on, and moved for every other. The
-        // offset is a measured position — where you put the box relative to a slot you drew — so it
-        // survives a machine where the digits sit differently inside the slot, which no fraction can.
-        var drawnOn = new List<int> { 344, 260, 66, 55 };
-        var countBox = new List<int> { 368, 293, 43, 22 };
-        var other = new List<int> { 410, 260, 66, 55 };
-
-        var region = FeederLayout.CountRegion(other, drawnOn, countBox)!;
-
-        Assert.Equal(410 + (368 - 344), region[0]);
-        Assert.Equal(260 + (293 - 260), region[1]);
-        Assert.Equal(43, region[2]);
-        Assert.Equal(22, region[3]);
-    }
-
-    [Fact]
-    public void TheDrawnSlotReadsBackExactlyWhatWasDrawn()
-    {
-        // The identity case, and the one that says the offset is an offset: deriving the region for the
-        // slot the box was drawn on must give back the box itself.
-        var drawnOn = new List<int> { 344, 260, 66, 55 };
-        var countBox = new List<int> { 368, 293, 43, 22 };
-
-        Assert.Equal(countBox, FeederLayout.CountRegion(drawnOn, drawnOn, countBox));
-    }
-
-    [Fact]
-    public void AMissingBoxIsNoRegion()
+    public void TheReadRegionRunsFromTheFractionToTheSlotsRightEdge()
     {
         var slot = new List<int> { 344, 260, 66, 55 };
 
-        Assert.Null(FeederLayout.CountRegion(slot, null, new List<int> { 1, 2, 3, 4 }));
-        Assert.Null(FeederLayout.CountRegion(slot, new List<int> { 1, 2, 3, 4 }, null));
-        Assert.Null(FeederLayout.CountRegion(null, new List<int> { 1, 2, 3, 4 },
-            new List<int> { 1, 2, 3, 4 }));
+        var region = FeederLayout.ReadRegion(slot, FeederLayout.ReadLeftFraction)!;
+
+        Assert.Equal(344 + (int)Math.Round(66 * 0.40), region[0]);   // 40% across
+        Assert.Equal(410, region[0] + region[2]);                    // the slot's own right edge
+        Assert.Equal(260, region[1]);                                // the slot's top
+        Assert.Equal(55, region[3]);                                 // and FULL HEIGHT
     }
 
     [Fact]
-    public void TheNearestSlotFindsWhereTheBoxWasDrawn()
+    public void TheReadRegionIsFullHeightBecauseAShortOneReadsNothing()
     {
-        // The calibration stores boxes, not identities: nothing says which slot the count box belongs
-        // to, and the offset only means anything against the right one.
-        var slots = new List<List<int>>
-        {
-            new() { 344, 260, 66, 55 },
-            new() { 410, 260, 66, 55 },
-        };
+        // The most expensive measurement in this feature, and unexplained: a crop holding a perfectly
+        // legible number found ZERO detected boxes at digit height inside a slot — "174", "36" and "18",
+        // three separate crops, all plainly readable to the eye — and read at 1.00 at the slot's full
+        // height. Whatever the mechanism, the height comes from the slot and never from a drawn box.
+        var slot = new List<int> { 344, 260, 66, 55 };
 
-        Assert.Equal(slots[0], FeederLayout.NearestSlot(slots, new List<int> { 368, 293, 43, 22 }));
-        Assert.Equal(slots[1], FeederLayout.NearestSlot(slots, new List<int> { 430, 295, 43, 22 }));
-        Assert.Null(FeederLayout.NearestSlot(slots, null));
-        Assert.Null(FeederLayout.NearestSlot(new List<List<int>>(), new List<int> { 1, 2, 3, 4 }));
+        Assert.Equal(slot[3], FeederLayout.ReadRegion(slot, 0.40)![3]);
+    }
+
+    [Fact]
+    public void TheFractionIsASettingSoItHasToMoveTheRegion()
+    {
+        var slot = new List<int> { 344, 260, 66, 55 };
+
+        var narrow = FeederLayout.ReadRegion(slot, 0.55)!;
+        var wide = FeederLayout.ReadRegion(slot, 0.25)!;
+
+        Assert.True(narrow[0] > wide[0], "a larger fraction must start further right");
+        Assert.Equal(slot[0] + slot[2], narrow[0] + narrow[2]);
+        Assert.Equal(slot[0] + slot[2], wide[0] + wide[2]);
+    }
+
+    [Fact]
+    public void ABadSlotIsNotAReadRegion()
+    {
+        Assert.Null(FeederLayout.ReadRegion(null, 0.40));
+        Assert.Null(FeederLayout.ReadRegion(new List<int> { 1, 2, 3 }, 0.40));
+        Assert.Null(FeederLayout.ReadRegion(new List<int> { 0, 0, 0, 0 }, 0.40));
     }
 }

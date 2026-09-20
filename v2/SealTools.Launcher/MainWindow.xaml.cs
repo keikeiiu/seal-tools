@@ -5370,6 +5370,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             return box;
         }
 
+        // WHERE the count is read from: this far across each slot, to the slot's right edge, at full
+        // height. THE ONE NUMBER the read comes down to, and a setting because the band that works is
+        // only a few pixels wide.
+        var countLeftBox = Num(_service.Config.Pet.FeederCountLeftFraction,
+            v => _service.Config.Pet.FeederCountLeftFraction = Math.Clamp(v, 0.05, 0.95));
         var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
             v => _service.Config.Pet.FeederCountMinScore = v);
 
@@ -5386,10 +5391,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "again. Both must return the same number before one is taken." + Environment.NewLine +
                  "Min score — how sure the reader must be. Real counts scored 0.90-1.00 and " +
                  "everything the food icon produced scored at most 0.63." + Environment.NewLine +
-                 "The count is read from the COUNT SLOT you drew on Calibrate Pet — that box, " +
-                 "moved onto each slot in turn. Nothing is proportioned: the pixels read on any row " +
-                 "are the pixels you drew."),
+                 "Count crop starts at — how far across each food slot the number is read from, as a " +
+                 "fraction of the slot's width, running to its right edge at the slot's full height. " +
+                 "THE ONE NUMBER the count comes down to: measured here as 0.40. A box drawn by hand " +
+                 "could not hit it — the band that reads is about three pixels wide and it was missed " +
+                 "four times — which is why the position is computed from the slot instead."),
             testRead,
+            LabeledField("Count crop starts at", countLeftBox),
             LabeledField("Min score", minScoreBox)));
 
         // ── THE QUEUE ────────────────────────────────────────────────────────
@@ -6349,14 +6357,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         // EVERY count on the row being edited, not the first two. A paid row has five, so this used
         // to read two of them and quietly imply the row was empty of the other three.
         var row = EditRow(pet);
-        // Which slot the count box was drawn on — the offset means nothing without it.
-        var allSlots = new List<List<int>>();
-        foreach (var r in pet.Slots)
-        {
-            if (!r.Enabled) continue;
-            if (FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks) is { } sl) allSlots.AddRange(sl);
-        }
-        var drawnOn = FeederLayout.NearestSlot(allSlots, pet.FeederCountSlot);
 
         var boxes = new List<(string What, List<int> Box)>();
         // THE DRAWN COUNT SLOT FIRST, when there is one: it is exact, where a slot derived from a strip
@@ -6404,13 +6404,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                     try
                     {
                         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                        // THE BOX ITSELF, read as drawn. For the count slot that is exactly the
-                        // rectangle you dragged; for every other slot it is that same rectangle moved
-                        // there — so this reports what a run would read, pixel for pixel, with nothing
-                        // proportioned in between.
-                        var region = what.StartsWith("count slot", StringComparison.Ordinal)
-                            ? box
-                            : SealTools.Core.FeederLayout.CountRegion(box, drawnOn, pet.FeederCountSlot);
+                        // 40% across the slot to its own right edge, full height — computed from the
+                        // slot, exactly as a run computes it. The count slot is checked on its own
+                        // geometry; every other entry on its derived one.
+                        var region = SealTools.Core.FeederLayout.ReadRegion(
+                            box, pet.FeederCountLeftFraction);
 
                         if (region is null)
                         {

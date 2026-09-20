@@ -610,31 +610,18 @@ public sealed class PetTool : ToolBase
         return ReadStack(ocr, region);
     }
 
-    /// <summary>Where to read a given slot: THE COUNT SLOT YOU DREW, moved onto it.
+    /// <summary>Where to read a given slot: this far across it, to its own right edge, at its full
+    /// height.
     ///
-    /// The count slot is not a target the read is aimed through — it IS the read region. Whatever you
-    /// drew around the number is OCR'd exactly as drawn, and every other slot gets that same box moved
-    /// from the slot you drew it on. Nothing is proportioned and nothing is derived: the pixels read on
-    /// row 3 slot 4 are the pixels you drew on row 1 slot 1.
+    /// The position is COMPUTED from the slot rather than taken from a box the player drew, and that
+    /// is the outcome of four attempts. Three of them put the read position under a hand-drawn box —
+    /// a count box, a count slot read as drawn, and a count slot applied by offset — and all three
+    /// failed, because the band of positions that reads is about three pixels wide and a hand cannot
+    /// put a box into three pixels. Measured four times, missed four times.
     ///
-    /// Null when the count slot is missing, which the caller treats as "no reading".</summary>
-    private List<int>? RegionFor(List<int>? slotBox)
-    {
-        var pet = _cfg.Pet;
-        if (!BagGrid.IsValidRect(pet.FeederCountSlot)) return null;
-
-        // Which slot it was drawn on: the nearest of every enabled row's slots. The calibration stores
-        // boxes, not identities, and the offset only means anything against the right one.
-        var all = new List<List<int>>();
-        foreach (var row in pet.Slots)
-        {
-            if (!row.Enabled) continue;
-            if (FeederLayout.SlotBoxes(row.FeederStrip, row.Stacks) is { } slots) all.AddRange(slots);
-        }
-        if (FeederLayout.NearestSlot(all, pet.FeederCountSlot) is not { } drawnOn) return null;
-
-        return FeederLayout.CountRegion(slotBox, drawnOn, pet.FeederCountSlot);
-    }
+    /// Null when the slot or the setting is unusable, which the caller treats as no reading.</summary>
+    private List<int>? RegionFor(List<int>? slotBox) =>
+        FeederLayout.ReadRegion(slotBox, _cfg.Pet.FeederCountLeftFraction);
 
     /// <summary>One crop, read to a number.</summary>
     private int? ReadStack(OcrEngine ocr, List<int> box)
