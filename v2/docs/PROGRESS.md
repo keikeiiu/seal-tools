@@ -9,6 +9,52 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 — "run only row 1" had no expression, so it has one now
+
+**The tool drove every row it was configured with, and there was no way to say otherwise.** `Ready()`
+demanded every row be fully marked, and the UI could ADD rows but never remove one — so the only way to
+run a single row was to delete the others from `local.yaml`, which takes their calibration with it. The
+player asked for exactly this, to keep feeding while the four-row placement bug is unexplained.
+
+**`PetSlotConfig.Enabled`, defaulting ON**, so every existing file describes exactly what it used to do.
+An unticked row is **invisible rather than skipped**: not validated, not read, not scheduled, not
+clicked. `Ready()` only demands the geometry of the rows it will actually drive, which also means a
+half-calibrated row no longer blocks a run that never touches it. Every consumer goes through
+`PetConfig.ActiveRows` — iterating the raw `Slots` list is exactly how a disabled row gets clicked
+anyway, and the doc comment on the helper says so.
+
+**The tick is on Calibrate Pet, beside the row strip**, because that is where a row is selected and its
+properties edited — and because `Enabled` has to live in `ApplyCalibration`, the projection that
+REBUILDS the row list. `ApplySession` only mutates `BoardingRunning` onto rows that already exist, so a
+field kept there would be dropped by the next Calibrate save.
+
+**Worth knowing for the player's actual problem:** running row 1 alone is not merely "for now" — it is
+the configuration the current code is *correct* for. The right-click food bug only bites a row with an
+empty box somewhere ABOVE it, and row 1 has nothing above it. That is why row 1 has never failed once in
+the whole log. One row makes the ordering bug unreachable, with no reflash and no drag.
+
+**Verified:** Release build clean, 126/126 tests. The nested projection guard caught the new field
+immediately — `EveryNestedPetFieldIsCopied` failed until `Enabled` was added to `LocalPetSlot.ToConfig`
+AND to `ApplyCalibration`, which is precisely the class of omission that has silently dropped a field
+twice in this project. The fixture uses `false` rather than the default, so the guard cannot pass
+vacuously. **Not verified:** the tick has not been clicked — `MainWindow` is unreachable from the test
+project, so it is a compile check.
+
+### And a question answered while in there: the return slot is dead once a queue exists
+
+Asked by the player. `PlacePet` branches on `Queue.Count > 0` first, and the comment is explicit:
+*"THE QUEUE IS THE ANSWER when it exists, and there is deliberately NO fallback to the return slot if it
+finds nothing."* So the return slot is read **only when there is no queue at all** — with pet icons
+captured it is never consulted, and `Ready()` accepts either one. It is a fallback for the no-queue case,
+not a second opinion.
+
+**One reason to clear it anyway:** `Ready()` still validates the return slot's PAGE when it is marked,
+even for a run that will never read it. So a stale mark pointing at a bag page whose tab is no longer
+calibrated will block the start of a run that does not use it. A mark you do not need can only cause
+trouble.
+
+---
+
 ## 2026-09-20 (6) — the food boxes are one queue, and a right-click cannot name one
 
 **The player found it in the game, and it is a design error rather than a quirk.** A right-click drops a

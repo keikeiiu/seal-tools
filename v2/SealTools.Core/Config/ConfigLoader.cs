@@ -396,6 +396,7 @@ public sealed class ConfigLoader
     /// <summary>One breeding row, as it is written to local.yaml.</summary>
     public sealed class LocalPetSlot
     {
+        public bool? Enabled { get; set; }
         public List<int>? ToggleLabel { get; set; }
         public List<int>? BoardingPetSlot { get; set; }
         public List<List<int>>? FeederSlots { get; set; }
@@ -416,6 +417,8 @@ public sealed class ConfigLoader
         /// happen a third time.</summary>
         public PetSlotConfig ToConfig() => new()
         {
+            // Missing means ON, so a file written before this existed keeps driving its rows.
+            Enabled = Enabled ?? true,
             ToggleLabel = ToggleLabel,
             BoardingPetSlot = BoardingPetSlot,
             FeederSlots = FeederSlots ?? new(),
@@ -518,6 +521,7 @@ public sealed class ConfigLoader
                 var running = i < (t.Slots?.Count ?? 0) ? t.Slots![i].BoardingRunning : src.BoardingRunning;
                 merged.Add(new LocalPetSlot
                 {
+                    Enabled = src.Enabled,
                     ToggleLabel = src.ToggleLabel,
                     BoardingPetSlot = src.BoardingPetSlot,
                     FeederSlots = src.FeederSlots,

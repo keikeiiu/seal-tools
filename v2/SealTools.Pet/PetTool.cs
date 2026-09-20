@@ -161,9 +161,9 @@ public sealed class PetTool : ToolBase
         }
 
         Log($"run started — board firmware {_firmware ?? "not reported"}, " +
-            $"{_cfg.Pet.Slots.Count} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
+            $"{_cfg.Pet.ActiveRows.Count()} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
             $"{WaitAfterEmptyMinutes:0} min after empty: " +
-            string.Join(", ", _cfg.Pet.Slots.Select(r =>
+            string.Join(", ", _cfg.Pet.ActiveRows.Select(r =>
                 $"{NameOf(r)} every {CycleMinutesFor(r):0} min " +
                 $"({PetConfig.LoadItemsFor(r)} items, {r.Stacks} stacks)")));
 
@@ -208,7 +208,7 @@ public sealed class PetTool : ToolBase
             state.Running = false;
             return 0;
         }
-        var failures = _cfg.Pet.Slots.ToDictionary(r => r, _ => 0);
+        var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
 
         try
         {
@@ -359,15 +359,21 @@ public sealed class PetTool : ToolBase
         if (_cfg.Pet.Slots.Count == 0)
             return "No breeding row is set up — Calibrate Pet. Each row needs its start/end button " +
                    "and its pet slot marked.";
+        if (!_cfg.Pet.ActiveRows.Any())
+            return "Every row is unticked — nothing to feed. Tick a row on the Pet tab.";
 
-        // EVERY row, not the first. The tool drives them all, so a row with no button marked would
-        // otherwise be discovered mid-run — as a click at (0,0) or at whatever the empty box's centre
-        // works out to, during an unattended run.
+        // EVERY row the tool DRIVES, not just the first. A row with no button marked would otherwise
+        // be discovered mid-run — as a click at (0,0) or at whatever the empty box's centre works out
+        // to, during an unattended run.
+        //
+        // Only the ticked ones: a row that is switched off is not driven, so demanding it be fully
+        // calibrated is what used to make a half-set-up row block a run that never touches it.
         for (int i = 0; i < _cfg.Pet.Slots.Count; i++)
         {
+            if (!_cfg.Pet.Slots[i].Enabled) continue;
             if (!BagGrid.IsValidRect(_cfg.Pet.Slots[i].ToggleLabel))
                 return $"Row {i + 1}'s start/end button isn't marked — Calibrate Pet. The tool has " +
-                       "nothing to click for that row, and it drives every configured row.";
+                       "nothing to click for that row. Untick it on the Pet tab to leave it alone.";
         }
 
         // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
@@ -436,7 +442,7 @@ public sealed class PetTool : ToolBase
         if (!OpenBoarding(ser, out var error))
         {
             Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            foreach (var row in _cfg.Pet.Slots)
+            foreach (var row in _cfg.Pet.ActiveRows)
                 schedule[row] = ScheduleFor(row, null);
             return schedule;
         }
@@ -447,7 +453,9 @@ public sealed class PetTool : ToolBase
         OcrEngine? ocr = null;
         try
         {
-            foreach (var row in _cfg.Pet.Slots)
+            // ActiveRows, not Slots: a row with its tick off is meant to be invisible, and reading
+            // its slot is the first thing that would act on it.
+            foreach (var row in _cfg.Pet.ActiveRows)
             {
                 var difference = PetSlotDifference(row);
                 var empty = difference is { } d ? d <= _cfg.Pet.PetSlotOccupiedAbove : (bool?)null;

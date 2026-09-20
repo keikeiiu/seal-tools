@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 
 namespace SealTools.Core.Config;
 
@@ -70,6 +71,20 @@ public sealed class TooltipConfig
 /// rather than of the tool — and why a row's reload interval differs from its neighbour's.</summary>
 public sealed class PetSlotConfig
 {
+    /// <summary>Whether the tool drives THIS row at all. Defaults to on, so every file written before
+    /// this existed describes exactly what it used to do.
+    ///
+    /// It exists because "drive fewer rows" had no expression. The tool drove every row in
+    /// <see cref="PetConfig.Slots"/> — <c>Ready()</c> even insists every one of them is fully marked —
+    /// and nothing in the UI could remove a row, so the only way to run one row was to delete the
+    /// others from local.yaml, taking their calibration with them.
+    ///
+    /// A disabled row is INVISIBLE, not merely skipped: it is not validated, not read, not scheduled
+    /// and not clicked. That is the point — a row still being set up has half its geometry missing,
+    /// and demanding it be finished before anything can run is what made a partly-configured row
+    /// block the whole tool.</summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>The 開始代養 / 結束代養 button, as a box — the tool CLICKS its centre to start or end
     /// boarding on THIS row. Its label is not read.</summary>
     public List<int>? ToggleLabel { get; set; }
@@ -211,6 +226,11 @@ public sealed class PetConfig
     /// The tool drives as many as are configured, one at a time — the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
     public List<PetSlotConfig> Slots { get; set; } = new();
+
+    /// <summary>The rows the tool actually drives. Every consumer must go through this rather than
+    /// <see cref="Slots"/>: a row with its tick off is meant to be invisible, and iterating the raw
+    /// list is exactly how one gets clicked anyway. See <see cref="PetSlotConfig.Enabled"/>.</summary>
+    public IEnumerable<PetSlotConfig> ActiveRows => Slots.Where(r => r.Enabled);
 
     /// <summary>How a food stack gets into the boarding window: <c>right_click</c> (the game picks the
     /// box — the earliest empty one, which is the whole problem) or <c>drag</c> (the row's own box is

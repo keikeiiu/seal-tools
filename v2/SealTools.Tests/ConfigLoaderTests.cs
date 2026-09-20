@@ -618,6 +618,9 @@ public class ConfigLoaderTests
     {
         var stored = new ConfigLoader.LocalPetSlot
         {
+            // false, not the default: a fixture that used the default would pass whether or not the
+            // projection copied it — the trap the outer guard's own round-trip test fell into.
+            Enabled = false,
             ToggleLabel = new List<int> { 1, 2, 3, 4 },
             BoardingPetSlot = new List<int> { 5, 6, 7, 8 },
             FeederSlots = new List<List<int>> { new() { 9, 10 } },
