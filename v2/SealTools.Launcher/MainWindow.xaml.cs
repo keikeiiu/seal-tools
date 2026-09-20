@@ -6428,6 +6428,27 @@ public partial class MainWindow : FluentWindow, IDisposable
                         reads.Add($"{label}:{shown}{(n is { } v ? $"={v}" : "")}");
                     }
                     agreed = SealTools.Core.FeederCount.Agreed(pair[0], pair[1]);
+
+                    // And the same box at the SLOT'S FULL HEIGHT. Cutting a count crop down to the
+                    // digits is the natural gesture and the one shape measured to read NOTHING — a
+                    // crop holding a legible "174" found zero boxes at 22px tall inside a 58px slot.
+                    // Reported beside the drawn box so that costs one press, not a redraw and a guess.
+                    if (baseRegion is not null && BagGrid.IsValidRect(box))
+                    {
+                        var tall = SealTools.Core.FeederLayout.FullHeight(baseRegion, box);
+                        var tallRegion = new RegionConfig
+                        { Left = tall[0], Top = tall[1], Width = tall[2], Height = tall[3] };
+                        var stamp2 = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+                        var tallPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
+                            "reads", $"{what.Replace(" ", "")}full_{stamp2}.png");
+                        var tallLines = await WithLauncherHiddenAsync(
+                            () => _service.ReadTextScored(tallRegion, 3, tallPath, pet.FeederCountMinScore));
+                        var tallText = tallLines.Count == 0
+                            ? "(nothing)"
+                            : string.Join(" | ", tallLines.Select(l => $"{l.Text}@{l.Score:0.00}"));
+                        var tallN = SealTools.Core.FeederCount.Parse(tallLines, pet.FeederCountMinScore);
+                        reads.Add($"full-height:{tallText}{(tallN is { } tv ? $"={tv}" : "")}");
+                    }
                 }
                 catch (Exception ex)
                 {

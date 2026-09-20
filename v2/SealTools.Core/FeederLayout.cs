@@ -81,4 +81,14 @@ public static class FeederLayout
     /// Clipping a digit changes the answer between the two; a genuine read does not.</summary>
     public static List<int> Shift(List<int> region, int pixels) =>
         new() { region[0] + pixels, region[1], region[2], region[3] };
+
+    /// <summary>The same region at the SLOT'S FULL HEIGHT, keeping its width and its left edge.
+    ///
+    /// A diagnostic variant, not something a run uses. Cutting a count crop down to the digits is the
+    /// natural thing to draw and it is the one shape measured to read NOTHING — a crop holding a
+    /// perfectly legible "174" came back with zero detected boxes because its height was 22px inside a
+    /// 58px slot. The Test read reports this variant beside the drawn box so that discovery takes one
+    /// press rather than a redraw and a guess.</summary>
+    public static List<int> FullHeight(List<int> region, List<int> slot) =>
+        new() { region[0], slot[1], region[2], slot[3] };
 }

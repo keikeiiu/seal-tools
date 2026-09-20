@@ -110,6 +110,22 @@ public class FeederLayoutTests
     }
 
     [Fact]
+    public void TheFullHeightVariantKeepsTheWidthAndTakesTheSlotsHeight()
+    {
+        // The diagnostic that turns "my crop reads nothing" into one press instead of a redraw: a
+        // drawn box 22px tall inside a 58px slot found zero boxes holding a legible "174".
+        var drawn = new List<int> { 367, 295, 47, 22 };
+        var slot = new List<int> { 346, 260, 65, 58 };
+
+        var tall = FeederLayout.FullHeight(drawn, slot);
+
+        Assert.Equal(367, tall[0]);      // same left edge
+        Assert.Equal(47, tall[2]);       // same width
+        Assert.Equal(260, tall[1]);      // the slot's top
+        Assert.Equal(58, tall[3]);       // and its full height
+    }
+
+    [Fact]
     public void TheSecondReadIsTheFirstShiftedRight()
     {
         var region = new List<int> { 371, 474, 40, 30 };
