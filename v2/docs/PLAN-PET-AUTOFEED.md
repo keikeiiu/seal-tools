@@ -384,9 +384,34 @@ only thing lost is the ability to notice an early stop — and the toggle read c
 poll later. What the schedule genuinely cannot do is tell you the pet needs food *before* the boarding
 window is opened; it does not need to, because opening it is cheap and causes nothing.
 
-**Open:** whether the carried pet and the boarded pet can be different at all, and what the `目錄` red
-means if they can. If the icon is also the carried pet's, then nothing on the main screen says anything
-about the boarded one, and the schedule is not merely the cheapest trigger but the *only* one.
+**ANSWERED (player, 2026-09-20): the `目錄` red `!` IS a signal about the boarded pet, and the
+assumption above is wrong.** The badge means "some sub-menu item has an update", and the pet sub-menu is
+one of the things that sets it — it appears **when a feeder runs dry** and when **a pet levels up**
+(+6 → +7, for instance). The pet's own sub-menu entry carries the same `!`. It clears when you click
+through to the sub-menu item that has it, which the tool's own reload does anyway (`目錄` → the feed
+icon), so it behaves as an **edge** rather than an accumulating flag. And while the player is away the
+pet is usually the only thing producing it.
+
+So the sentence this section used to end on — *"nothing on the main screen says anything about the
+boarded one, and the schedule is not merely the cheapest trigger but the only one"* — does not hold. The
+schedule is still the cheapest, and still the thing that bounds the reload; it is no longer the only
+possible one.
+
+**What that could buy, and the rule that makes it safe.** `wait_after_empty_minutes` exists purely to
+guarantee the feeder IS empty when the stacks go in — because "what the game does with a top-up onto a
+partial stack is unknown" — and it is paid for with that many minutes of nothing fed, every cycle, every
+row. A game-reported "it is dry" replaces the guess with an observation, so the reload can happen when
+it is actually dry instead of a configured interval later.
+
+**The safety rule, if this is built:** the badge may only ever make the tool act **sooner**. The
+schedule stays as an upper bound on the reload time, so a badge that never lights, or a read that
+fails, costs nothing but the status quo — it can never leave a pet unfed. The timer keeps its
+`wait_after_empty` backstop for the same reason: a reload triggered by the timer alone still cannot
+prove the feeder is empty.
+
+**Also unanswered, and it decides whether the badge is usable as a poll:** whether the tool's own
+`目錄` + feed-icon clicks clear it as reliably as a human's do. If they do not, the badge stays lit after
+the first dry feeder and stops carrying information.
 
 ### Recommendation: A primary, B as backstop — not one path
 
