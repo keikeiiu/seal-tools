@@ -9,6 +9,47 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (3) — six drags instead of twenty, and the fraction is the player's idea to kill
+
+**The player's correction, and it is a better design than mine.** I had the count read as a *fraction*
+of the slot box — `0.42` across to the right edge — and put it in config so another PC could move it.
+Their objection: *"u think it would be consistent on every pc? why dont let me drag on one reference
+slot and u calculate how much u need to cut."*
+
+**They are right, and the honest answer to the first half is that I do not know.** A fraction is
+resolution-independent only if the game draws the number at a size *proportional* to the slot. If it
+draws the digits at a fixed size while the slot scales, `0.42` is right on this machine and wrong on a
+smaller or larger one. I have measured exactly one machine, and carrying an unmeasured assumption to
+another PC is the specific error this file records over and over. A dragged reference is a
+**measurement**; a fraction is a guess wearing a decimal point.
+
+**Six drags, replacing fourteen hand-drawn boxes and both fractions:**
+
+| | |
+|---|---|
+| 4 | a strip across each row's food slots — divided by that row's stack count (2/5/5/5) |
+| 1 | ONE reference slot — the anchor |
+| 1 | the count region on that reference slot — its offset and size |
+
+Every other count region is `slotBox + (refText − refSlot)`, so the position is measured rather than
+proportioned, and a resolution where the digits render at a different relative size is expressed
+exactly rather than approximated.
+
+**Built so far: `Core.FeederLayout`, with 10 tests — the derivation only, NOT yet wired to config, the
+calibrator or the read.** Two decisions in it worth naming: the slot segments are computed on the SLOT
+EDGES with integer arithmetic rather than by dividing the width and re-multiplying, because rounding
+the width first leaves a sliver unclaimed at the right end — which is precisely where the count is read
+from; and a missing reference returns null rather than a region at (0,0), so an un-migrated config reads
+as "nothing to read" instead of reading the top-left corner of the screen.
+
+**The one number that eats into this, recorded before it bites:** dividing a strip into five is out by a
+pixel or two, because the player's own row 2 slots measured 62, 64, 66 and 62 apart rather than evenly.
+Harmless for the food DRAG — a 64px slot does not care about 2px — and survivable for the count read,
+whose individual crops tolerate 7–10px. But the crops' COMMON window measured only ~3px, so this is the
+thinnest part of the chain and the first thing to suspect if reads start disagreeing.
+
+---
+
 ## 2026-09-21 (2) — the feeder count IS readable, but only from the right crop
 
 **It was never the model or the font.** The whole-slot image the tool has been feeding the OCR returns
