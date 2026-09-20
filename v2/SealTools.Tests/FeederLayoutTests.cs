@@ -72,35 +72,59 @@ public class FeederLayoutTests
     }
 
     [Fact]
-    public void TheReadRegionRunsFromTheFractionToTheSlotsRightEdge()
+    public void TheCountRegionIsTheDrawnBoxMovedOntoTheSlot()
     {
-        var slot = new List<int> { 346, 260, 65, 58 };
+        // The count box is read AS DRAWN on the slot it was drawn on, and moved for every other. The
+        // offset is a measured position — where you put the box relative to a slot you drew — so it
+        // survives a machine where the digits sit differently inside the slot, which no fraction can.
+        var drawnOn = new List<int> { 344, 260, 66, 55 };
+        var countBox = new List<int> { 368, 293, 43, 22 };
+        var other = new List<int> { 410, 260, 66, 55 };
 
-        var region = FeederLayout.ReadRegion(slot, FeederLayout.ReadLeftFraction)!;
+        var region = FeederLayout.CountRegion(other, drawnOn, countBox)!;
 
-        Assert.Equal(346 + (int)Math.Round(65 * 0.40), region[0]);   // ~40% across
-        Assert.Equal(411, region[0] + region[2]);                    // the slot's own right edge
-        Assert.Equal(260, region[1]);                                // the slot's top
-        Assert.Equal(58, region[3]);                                 // and FULL HEIGHT
+        Assert.Equal(410 + (368 - 344), region[0]);
+        Assert.Equal(260 + (293 - 260), region[1]);
+        Assert.Equal(43, region[2]);
+        Assert.Equal(22, region[3]);
     }
 
     [Fact]
-    public void TheReadRegionIsFullHeightBecauseAHalfHeightOneReadsNothing()
+    public void TheDrawnSlotReadsBackExactlyWhatWasDrawn()
     {
-        // The single most expensive measurement in this feature: a crop holding a perfectly legible
-        // "174" returned ZERO detected boxes at 21px tall inside a 58px slot, and read at 1.00 the
-        // moment it was taken at the slot's full height. A region that inherited a drawn box's height
-        // would reintroduce exactly that.
-        var slot = new List<int> { 346, 260, 65, 58 };
+        // The identity case, and the one that says the offset is an offset: deriving the region for the
+        // slot the box was drawn on must give back the box itself.
+        var drawnOn = new List<int> { 344, 260, 66, 55 };
+        var countBox = new List<int> { 368, 293, 43, 22 };
 
-        Assert.Equal(slot[3], FeederLayout.ReadRegion(slot, 0.40)![3]);
+        Assert.Equal(countBox, FeederLayout.CountRegion(drawnOn, drawnOn, countBox));
     }
 
     [Fact]
-    public void ABadSlotIsNotAReadRegion()
+    public void AMissingBoxIsNoRegion()
     {
-        Assert.Null(FeederLayout.ReadRegion(null, 0.40));
-        Assert.Null(FeederLayout.ReadRegion(new List<int> { 1, 2, 3 }, 0.40));
-        Assert.Null(FeederLayout.ReadRegion(new List<int> { 0, 0, 0, 0 }, 0.40));
+        var slot = new List<int> { 344, 260, 66, 55 };
+
+        Assert.Null(FeederLayout.CountRegion(slot, null, new List<int> { 1, 2, 3, 4 }));
+        Assert.Null(FeederLayout.CountRegion(slot, new List<int> { 1, 2, 3, 4 }, null));
+        Assert.Null(FeederLayout.CountRegion(null, new List<int> { 1, 2, 3, 4 },
+            new List<int> { 1, 2, 3, 4 }));
+    }
+
+    [Fact]
+    public void TheNearestSlotFindsWhereTheBoxWasDrawn()
+    {
+        // The calibration stores boxes, not identities: nothing says which slot the count box belongs
+        // to, and the offset only means anything against the right one.
+        var slots = new List<List<int>>
+        {
+            new() { 344, 260, 66, 55 },
+            new() { 410, 260, 66, 55 },
+        };
+
+        Assert.Equal(slots[0], FeederLayout.NearestSlot(slots, new List<int> { 368, 293, 43, 22 }));
+        Assert.Equal(slots[1], FeederLayout.NearestSlot(slots, new List<int> { 430, 295, 43, 22 }));
+        Assert.Null(FeederLayout.NearestSlot(slots, null));
+        Assert.Null(FeederLayout.NearestSlot(new List<List<int>>(), new List<int> { 1, 2, 3, 4 }));
     }
 }

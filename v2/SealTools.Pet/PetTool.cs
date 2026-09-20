@@ -600,20 +600,40 @@ public sealed class PetTool : ToolBase
     /// <summary>One food slot's count, or null when it cannot be read.
     ///
     /// ONE read of ONE crop, because that is what the measurements showed is needed: given the right
-    /// crop the count reads at 0.99-1.00 at every upscale. An earlier revision read four crops and
-    /// voted, which was papering over a crop nobody had found yet — the vote belonged in the
-    /// calibration that finds the crop, not in every read.
-    ///
-    /// Where the crop starts is the single number this comes down to (FeederCountLeftFraction). Get it
-    /// right and this works; get it wrong and the failure is either nothing, which falls back to the
-    /// fixed cycle, or — slightly too far right — a confidently wrong number, which is why the
-    /// measured value is a setting rather than a guess.</summary>
+    /// crop the count reads at 0.99-1.00 at every upscale. Two earlier revisions did more — four crops
+    /// with a majority vote, and before that a proportional fraction of the slot — and both were
+    /// machinery around a crop nobody had found yet. The crop is found now: it is the count slot the
+    /// player drew.</summary>
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
-        if (FeederLayout.ReadRegion(slotBox, _cfg.Pet.FeederCountLeftFraction) is not { } region)
-            return null;
-
+        if (RegionFor(slotBox) is not { } region) return null;
         return ReadStack(ocr, region);
+    }
+
+    /// <summary>Where to read a given slot: THE COUNT SLOT YOU DREW, moved onto it.
+    ///
+    /// The count slot is not a target the read is aimed through — it IS the read region. Whatever you
+    /// drew around the number is OCR'd exactly as drawn, and every other slot gets that same box moved
+    /// from the slot you drew it on. Nothing is proportioned and nothing is derived: the pixels read on
+    /// row 3 slot 4 are the pixels you drew on row 1 slot 1.
+    ///
+    /// Null when the count slot is missing, which the caller treats as "no reading".</summary>
+    private List<int>? RegionFor(List<int>? slotBox)
+    {
+        var pet = _cfg.Pet;
+        if (!BagGrid.IsValidRect(pet.FeederCountSlot)) return null;
+
+        // Which slot it was drawn on: the nearest of every enabled row's slots. The calibration stores
+        // boxes, not identities, and the offset only means anything against the right one.
+        var all = new List<List<int>>();
+        foreach (var row in pet.Slots)
+        {
+            if (!row.Enabled) continue;
+            if (FeederLayout.SlotBoxes(row.FeederStrip, row.Stacks) is { } slots) all.AddRange(slots);
+        }
+        if (FeederLayout.NearestSlot(all, pet.FeederCountSlot) is not { } drawnOn) return null;
+
+        return FeederLayout.CountRegion(slotBox, drawnOn, pet.FeederCountSlot);
     }
 
     /// <summary>One crop, read to a number.</summary>

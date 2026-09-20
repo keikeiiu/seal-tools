@@ -49,43 +49,51 @@ public static class FeederLayout
         return result;
     }
 
-    /// <summary>Where the count is read from inside a slot, as a fraction of the slot's width. The
-    /// region runs from here to the slot's own right edge, at the slot's full height.
+    /// <summary>The count region for one slot, given the reference slot you DREW and the count box on
+    /// it: the same box, moved to this slot.
     ///
-    /// MEASURED on the player's own slots (2026-09-21), by sweeping a real crop's left edge and
-    /// reading the result at upscales 2 through 6:
+    /// The offset is a measured position — where you put the box relative to a slot you drew — rather
+    /// than a proportion of the slot. That is the point of drawing it: a drawn box says exactly where
+    /// the number is, including on a machine where the digits sit differently inside the slot, which no
+    /// fraction can express.
     ///
-    ///     trim of the crop       "138"                  "300"
-    ///     0 - 12 px (native)     wrong or nothing       reads
-    ///     13 - 22 px             reads at every scale   reads at every scale
-    ///     23 px and beyond       junk                   reads, then junk
-    ///
-    /// so the working left edge is slot_left + 25.3 .. 28.3 px of a 65 px slot, i.e. 38.9 - 43.5%.
-    /// 0.40 sits inside that with room either side. The right edge is the slot's own, because the
-    /// digits were measured ENDING 5px inside it — an earlier revision took the region 3px past the
-    /// frame on the theory that the number spills, which it does not here, and an absolute overhang
-    /// would not have survived another machine anyway.
-    ///
-    /// MEASURED, and then measured again: a scan of every left edge a pixel apart on two real crops
-    /// read correctly at 0.369-0.431 ("138") and 0.323-0.477 ("300"), so 0.40 sits inside the overlap
-    /// with room either side. It is a SETTING rather than a constant so another machine can move it
-    /// without a rebuild — this is the one number the whole count read comes down to.</summary>
-    public const double ReadLeftFraction = 0.40;
-
-    /// <summary>The region a count is read from: from that fraction of the slot's width to the slot's
-    /// RIGHT EDGE, at the slot's FULL HEIGHT.
-    ///
-    /// Full height is not a preference. Measured: a crop cut down to the digits alone finds NOTHING —
-    /// a box holding a perfectly legible "174" returned zero detected boxes at 21px tall inside a
-    /// 58px slot — and the same crop at full height reads it.</summary>
-    public static List<int>? ReadRegion(List<int>? slot, double leftFraction)
+    /// Null when any of the three is unusable, so a half-drawn calibration reads as nothing rather than
+    /// as a region at (0,0).</summary>
+    public static List<int>? CountRegion(List<int>? slot, List<int>? drawnSlot, List<int>? countBox)
     {
         if (slot is not { Count: 4 } || !BagGrid.IsValidRect(slot)) return null;
+        if (drawnSlot is not { Count: 4 } || !BagGrid.IsValidRect(drawnSlot)) return null;
+        if (countBox is not { Count: 4 } || !BagGrid.IsValidRect(countBox)) return null;
 
-        var left = slot[0] + (int)Math.Round(slot[2] * leftFraction);
-        var right = slot[0] + slot[2];
-        if (right - left < 4) return null;
+        return new List<int>
+        {
+            slot[0] + (countBox[0] - drawnSlot[0]),
+            slot[1] + (countBox[1] - drawnSlot[1]),
+            countBox[2],
+            countBox[3],
+        };
+    }
 
-        return new List<int> { left, slot[1], right - left, slot[3] };
+    /// <summary>The slot a drawn box belongs to: the nearest of the given slots by centre distance.
+    ///
+    /// Needed because the calibration stores boxes, not identities: nothing says which row or slot the
+    /// count box was drawn on, and the offset only means anything relative to the right one.</summary>
+    public static List<int>? NearestSlot(List<List<int>> slots, List<int>? box)
+    {
+        if (box is not { Count: 4 } || !BagGrid.IsValidRect(box) || slots.Count == 0) return null;
+
+        var cx = box[0] + box[2] / 2.0;
+        var cy = box[1] + box[3] / 2.0;
+        List<int>? best = null;
+        var bestD = double.MaxValue;
+        foreach (var s in slots)
+        {
+            if (!BagGrid.IsValidRect(s)) continue;
+            var dx = s[0] + s[2] / 2.0 - cx;
+            var dy = s[1] + s[3] / 2.0 - cy;
+            var d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = s; }
+        }
+        return best;
     }
 }
