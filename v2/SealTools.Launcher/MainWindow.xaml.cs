@@ -5047,10 +5047,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "It is also the whole of the count calibration: the box the feed counts are read " +
                  "from is DERIVED inside each slot, so there is nothing else to draw." + Environment.NewLine +
                  "On the capture — green the start button, blue the pet slot, yellow a food slot as " +
-                 "DERIVED from its strip, yellow-green the strip itself, and magenta the boxes the " +
-                 "feed counts are read from on the row you are editing: the solid one is what a run " +
-                 "uses, the faint one the widest of the offsets it votes across. If they sit on the " +
-                 "food icon rather than on the digits, the strip is in the wrong place."),
+                 "DERIVED from its strip, yellow-green the strip itself, PURPLE the count slot you " +
+                 "drew, and MAGENTA the crop the count is actually read from. The magenta on the " +
+                 "purple slot is the one Test read checks; the rest are the same crop worked out for " +
+                 "each slot of the row you are editing. If they sit on the food icon rather than on " +
+                 "the digits, move the count crop with the number on the Pet tab."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -5803,18 +5804,28 @@ public partial class MainWindow : FluentWindow, IDisposable
             Box(canvas, shot, strip!, i == _petEditRow ? Brushes.YellowGreen : Faint(Brushes.YellowGreen));
         }
 
-        // The reference pair, and THE REGIONS THEY DERIVE.
+        // The count slot you drew, and THE READ REGIONS DERIVED FROM IT.
         //
         // The magenta boxes are the point of this whole drawing: they are exactly what the OCR is
-        // pointed at, on the row being edited, computed the same way a run computes them. Nothing else
-        // on this screen answers "will it read the number?" — a strip in the right place gives boxes
-        // sitting on the digits, and one that does not puts them on the food icon, where no amount of
-        // tuning the confidence will find a number.
+        // pointed at, computed the same way a run computes them. Nothing else on this screen answers
+        // "will it read the number?" — a strip in the right place puts them on the digits, and one that
+        // does not puts them on the food icon, where no amount of tuning the confidence finds a number.
         //
-        // Only the edited row's: the regions are derived from each slot, so showing all four rows would
-        // draw seventeen boxes that say the same thing louder and less clearly.
+        // The count slot is drawn because it was NOT, for one revision, and the player drew one and
+        // reported the overlay "not shown" — the mark was saved and simply never painted.
         //
+        // Regions only on the edited row: they are derived per slot, so drawing all four rows would be
+        // seventeen boxes saying the same thing louder and less clearly.
         var editRow = EditRow(pet);
+        if (BagGrid.IsValidRect(pet.FeederCountSlot))
+        {
+            Box(canvas, shot, pet.FeederCountSlot!, Brushes.MediumPurple);
+            // And the crop it will actually be read with, so the one slot Test read verifies on shows
+            // its own region rather than only the derived rows' above.
+            if (FeederLayout.ReadRegion(pet.FeederCountSlot, pet.FeederCountLeftFraction) is { } r)
+                Box(canvas, shot, r, Brushes.Magenta);
+        }
+
         if (FeederLayout.SlotBoxes(editRow.FeederStrip, editRow.Stacks) is { } derivedSlots)
         {
             foreach (var slot in derivedSlots)
