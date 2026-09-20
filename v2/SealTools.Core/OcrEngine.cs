@@ -116,7 +116,8 @@ public sealed class OcrEngine : IDisposable
     /// No retry loop and no confirmation: those exist in <see cref="Scan(OcrGeometry)"/> to keep a
     /// bad read from advancing the composer, and a caller that has its own sense of a good read
     /// should not pay for them.</summary>
-    public IReadOnlyList<string> ReadLines(RegionConfig region, int upscale = 3, string? saveDebug = null)
+    public IReadOnlyList<string> ReadLines(RegionConfig region, int upscale = 3, string? saveDebug = null,
+        double minScore = 0)
     {
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return Array.Empty<string>();
@@ -125,6 +126,54 @@ public sealed class OcrEngine : IDisposable
         if (cap == null) return Array.Empty<string>();
 
         using var mat = cap.Image;
+        return Recognise(mat, upscale, saveDebug, minScore)
+            .Select(l => l.Text).ToList();
+    }
+
+    /// <summary>The same read as <see cref="ReadLines"/>, but with each line's confidence kept.
+    ///
+    /// A caller that must CHOOSE between lines needs this: the feeder counts come back with the real
+    /// number beside junk from the food icon, and which one is real is exactly the score. Dropping
+    /// low-scoring lines (what <see cref="ReadLines"/> can do) is not enough when the junk outscores a
+    /// genuine reading taken at a bad crop.</summary>
+    public IReadOnlyList<(string Text, double Score)> ReadLinesScored(RegionConfig region,
+        int upscale = 3, string? saveDebug = null, double minScore = 0)
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
+            return Array.Empty<(string, double)>();
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, region);
+        if (cap == null) return Array.Empty<(string, double)>();
+
+        using var mat = cap.Image;
+        return Recognise(mat, upscale, saveDebug, minScore);
+    }
+
+    /// <summary>Reads an image FROM DISK with the same detector and recogniser the live reads use —
+    /// no screen involved.
+    ///
+    /// It exists because a blank read has two very different causes and the saved debug crop only
+    /// answers one of them: the region may be wrong, or the recogniser may be unable to see text that
+    /// is plainly there. Running the engine on the very image it was given separates those — if it
+    /// reads nothing from its own input, the region was never the problem and re-drawing boxes is
+    /// wasted effort. That question was being answered by argument until this existed.
+    ///
+    /// Used by the offline diagnosis of the feeder counts, and by anything else that wants to know
+    /// whether the reader can see a thing before wiring it into a run.</summary>
+    public IReadOnlyList<string> ReadImageFile(string path, int upscale = 3, double minScore = 0)
+    {
+        using var mat = Cv2.ImRead(path, ImreadModes.Color);
+        if (mat.Empty()) return Array.Empty<string>();
+        return Recognise(mat, upscale, null, minScore).Select(l => l.Text).ToList();
+    }
+
+    /// <summary>The recognition body, on an image already in memory. Shared so that reading the screen
+    /// and reading a file cannot drift apart — a diagnostic that used its own copy of the pipeline
+    /// could agree with itself and be wrong about the run.</summary>
+    private List<(string Text, double Score)> Recognise(Mat mat, int upscale, string? saveDebug,
+        double minScore)
+    {
         InitOcr();
 
         // Upscaled before recognition. The detector is trained on ordinary screen text; a game's stack
@@ -157,8 +206,12 @@ public sealed class OcrEngine : IDisposable
         // RowHeight only groups glyphs into lines here; nothing is filtered by position, because the
         // whole region is the thing being read.
         var lines = BuildLines(items, Math.Max(8, _cfg.Tuner.Ocr.RowHeight))
-            .Select(line => (Text: _cleaner.Clean(line.text), line.conf))
+            .Select(line => (Text: _cleaner.Clean(line.text), Score: (double)line.conf))
             .Where(line => line.Text.Length > 0)
+            // A caller that KNOWS what it is reading can say how sure it needs the reader to be. The
+            // feeder counts need it: a real count scores ~1.00 while the junk beside it scores
+            // 0.1-0.6, and picking by score is only meaningful if the low ones are droppable.
+            .Where(line => line.Score >= minScore)
             .ToList();
 
         // Written beside the image when one was asked for. The image says what the reader was GIVEN;
@@ -166,9 +219,9 @@ public sealed class OcrEngine : IDisposable
         // Confidence is kept because a line read at 0.3 is a line to distrust even when it looks right.
         if (!string.IsNullOrEmpty(saveDebug))
             File.WriteAllText(Path.ChangeExtension(saveDebug, ".txt"),
-                string.Join(Environment.NewLine, lines.Select(l => $"{l.conf:0.00}	{l.Text}")) + Environment.NewLine);
+                string.Join(Environment.NewLine, lines.Select(l => $"{l.Score:0.00}	{l.Text}")) + Environment.NewLine);
 
-        return lines.Select(l => l.Text).ToList();
+        return lines;
     }
 
     private ScanResult? ScanOnce(OcrGeometry ocr, IntPtr hwnd, bool forceCapture)

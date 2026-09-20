@@ -9,6 +9,53 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (2) — the feeder count IS readable, but only from the right crop
+
+**It was never the model or the font.** The whole-slot image the tool has been feeding the OCR returns
+**zero detected boxes** — not a bad read, no read — and the same engine reads the same digits
+**perfectly** from the slot's right half at full height: `84` at 0.99, `300` at 1.00. Every earlier
+conclusion I drew about "PP-OCRv4 cannot read this font" was wrong, and wrong in a specific way worth
+naming: **I tested the image the tool was asking for, not the image the reader needed.**
+
+**Two things fall out of that immediately, and both are counter-intuitive:**
+
+- **Tighter is worse, not better.** Cutting the height off the crop finds nothing at all, exactly like
+  including the icon does. So the rule is not "less clutter"; it is a particular shape.
+- **The failure outside the window is a confident WRONG number.** At a slightly tighter crop `84` comes
+  back as **`4` at 0.89**, and `300` as **`0` at 0.56** — a full stack read as empty. That is far more
+  dangerous than the blank read we had, and it is why the count is read TWICE from two crops a few
+  pixels apart and only accepted when both agree.
+
+**The window is narrow and that is the honest headline.** Digits are right-aligned and grow leftward,
+so the crop a two-digit count needs is not the one a three-digit count needs:
+
+```
+"84"  correct for a left edge of 0.404 - 0.505 of the slot's width
+"300" correct for                      0.29  - 0.45
+```
+
+The overlap is about **three native pixels**. `FeederCount.CropLeft = 0.42` sits in it, with the second
+read at 0.45 — a three-percent shift, small because a wider pair does not fit inside the overlap. That
+makes the agreement check **weaker than it should be**, and it is exactly why this is wired into the
+Pet tab's Test read and not into scheduling: how often it holds on real slots is a measurement, not an
+assumption.
+
+**The confidence gate is measured, not chosen.** A genuine count scores 0.90–1.00; everything the food
+icon produces scores at most 0.63 in the same crop. 0.75 sits in that gap — and it also rejects a
+genuine read taken at the very edge of the window, which is the right call, since a marginal crop is the
+one that clips.
+
+**Also fixed while here:** `OcrEngine.ReadLines` returned only text, so a caller that has to CHOOSE
+between lines could not. `ReadLinesScored` now keeps each line's confidence, because the junk beside a
+real count can outscore one taken at a bad crop — so "drop the weak lines" was not enough.
+
+**Verified:** Release build clean, 144/144 tests (17 new). The agreement rule is mutation-checked:
+replacing it with "take whichever read succeeded" fails two tests, which is the clipped-digit case.
+**Not verified against a live slot, and deliberately not yet wired into scheduling** — the run path
+falls back to a full-load assumption whenever the two crops disagree.
+
+---
+
 ## 2026-09-21 — "run only row 1" had no expression, so it has one now
 
 **The tool drove every row it was configured with, and there was no way to say otherwise.** `Ready()`

@@ -555,24 +555,44 @@ public sealed class PetTool : ToolBase
         if (WindowFinder.ForegroundWindow() != hwnd) return null;
 
         var total = 0;
-        var counted = 0;
 
         foreach (var box in row.FeederSlots)
         {
-            if (!BagGrid.IsValidRect(box)) continue;
-
-            var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
-            var digits = new string(string.Join("", ocr.ReadLines(region, 3)).Where(char.IsDigit).ToArray());
-            if (digits.Length == 0) continue;
-
-            if (int.TryParse(digits, CultureInfo.InvariantCulture, out var n))
-            {
-                total += n;
-                counted++;
-            }
+            if (FeederCountValue(ocr, box) is not { } n) continue;
+            total += n;
         }
 
-        return counted == 0 ? null : total;
+        // Zero is a real reading — an empty feeder — but it is also what "nothing was read" would
+        // sum to if every slot returned zero, so the two cannot be told apart from the total alone.
+        // Only a total of zero from slots that all READ zero is meaningful; the rest is the caller's
+        // null. Callers treat null as "assume a full load", which reloads on the configured cycle.
+        return row.FeederSlots.Count == 0 ? null : total;
+    }
+
+    /// <summary>One food slot's count, or null when it cannot be read with confidence.
+    ///
+    /// Two crops a few pixels apart, and the number only counts when BOTH return the same thing. That
+    /// is not belt-and-braces: the measured failure of a slightly-too-tight crop is a confident WRONG
+    /// number — "300" came back as "0" at 0.56 and "84" as "4" at 0.89 — and clipping changes the
+    /// answer between two crops while a genuine read does not. See <see cref="FeederCount"/>.</summary>
+    private static int? FeederCountValue(OcrEngine ocr, List<int>? slotBox)
+    {
+        if (FeederCount.Crop(slotBox!, FeederCount.CropLeft) is not { } a) return null;
+        if (FeederCount.Crop(slotBox!, FeederCount.CropLeftShifted) is not { } b) return null;
+
+        var first = ReadStack(ocr, a);
+        var second = ReadStack(ocr, b);
+        return FeederCount.Agreed(first, second);
+    }
+
+    /// <summary>One crop, read to a number.</summary>
+    private static int? ReadStack(OcrEngine ocr, List<int> box)
+    {
+        var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
+        // Scored, so the caller can pick the BEST line rather than the first survivor: this crop comes
+        // back with the real count beside junk from the food icon, and which is which is the score.
+        return FeederCount.Parse(ocr.ReadLinesScored(region, 3, null, FeederCount.MinScore),
+            FeederCount.MinScore);
     }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.

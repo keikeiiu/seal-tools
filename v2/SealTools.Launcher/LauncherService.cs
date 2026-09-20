@@ -515,6 +515,15 @@ public sealed class LauncherService : IDisposable
         return _diagnosticOcr.ReadLines(region, upscale, saveDebug);
     }
 
+    /// <summary>Like <see cref="ReadText"/>, but keeps each line's confidence — for a caller that has
+    /// to choose between lines rather than merely drop weak ones.</summary>
+    public IReadOnlyList<(string Text, double Score)> ReadTextScored(RegionConfig region, int upscale = 3,
+        string? saveDebug = null, double minScore = 0)
+    {
+        _diagnosticOcr ??= new OcrEngine(Config, Attributes, _rootDir);
+        return _diagnosticOcr.ReadLinesScored(region, upscale, saveDebug, minScore);
+    }
+
     /// <summary>Deletes the debug OCR capture images (logs/captures/*.png). Returns the number removed.</summary>
     public int CleanupCaptures()
     {

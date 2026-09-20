@@ -6296,23 +6296,48 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             foreach (var (what, box) in boxes)
             {
-                var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
-                // Each read leaves its upscaled region behind, so a blank result can be told apart
-                // from a wrong region by looking at the file rather than by arguing about it.
-                var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                var debugPath = System.IO.Path.Combine(
-                    AppContext.BaseDirectory, "logs", "reads", $"{what.Replace(" ", "")}_{stamp}.png");
-                var lines = await WithLauncherHiddenAsync(() => _service.ReadText(region, 3, debugPath));
-                var joined = string.Join(" | ", lines);
+                // TWO crops, a few pixels apart, read through the same code a run uses. The number is
+                // only taken when both agree, because the measured failure of a slightly-too-tight
+                // crop is a confident WRONG number — "300" came back as "0", "84" as "4" — and
+                // clipping changes the answer between two crops while a genuine read does not.
+                var reads = new List<string>();
+                int? agreed = null;
+                try
+                {
+                    var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+                    var pair = new List<int?>();
+                    foreach (var (label, left) in new[]
+                             { ("a", SealTools.Core.FeederCount.CropLeft),
+                               ("b", SealTools.Core.FeederCount.CropLeftShifted) })
+                    {
+                        if (SealTools.Core.FeederCount.Crop(box, left) is not { } crop) { pair.Add(null); continue; }
+                        var region = new RegionConfig
+                        { Left = crop[0], Top = crop[1], Width = crop[2], Height = crop[3] };
+                        // Each read leaves its upscaled region behind, so a blank result can be told
+                        // apart from a wrong region by looking at the file rather than arguing.
+                        var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
+                            "reads", $"{what.Replace(" ", "")}{label}_{stamp}.png");
+                        var lines = await WithLauncherHiddenAsync(
+                            () => _service.ReadTextScored(region, 3, debugPath, SealTools.Core.FeederCount.MinScore));
+                        var shown = lines.Count == 0
+                            ? "(nothing)"
+                            : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
+                        var n = SealTools.Core.FeederCount.Parse(lines, SealTools.Core.FeederCount.MinScore);
+                        pair.Add(n);
+                        reads.Add($"{label}:{shown}{(n is { } v ? $"={v}" : "")}");
+                    }
+                    agreed = SealTools.Core.FeederCount.Agreed(pair[0], pair[1]);
+                }
+                catch (Exception ex)
+                {
+                    reads.Add("read failed: " + ex.Message);
+                }
 
-                // The number is what matters, so it is parsed rather than echoed: a slot reading "270"
-                // and one reading "27O" look identical in a report and behave completely differently.
-                var digits = new string(joined.Where(char.IsDigit).ToArray());
-                var parsed = int.TryParse(digits, out var n) ? n : (int?)null;
-                if (parsed is { } value) { total += value; counted++; }
-
-                report.Add($"{what}: {(joined.Length == 0 ? "(nothing)" : joined)}" +
-                           (parsed is { } v2 ? $" -> {v2}" : " -> not a number"));
+                if (agreed is { } value) { total += value; counted++; }
+                report.Add($"{what}: {string.Join("  ", reads)}" +
+                           (agreed is { } v3
+                               ? $"  -> {v3}"
+                               : "  -> NO AGREEMENT (a run would assume a full load)"));
             }
         }
         catch (Exception ex)
