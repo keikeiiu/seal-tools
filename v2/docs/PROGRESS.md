@@ -49,9 +49,21 @@ invisible on a picture and obvious in that column.
 to sit on the Pet tab while reading the row selected on Calibrate Pet — state you cannot see from where
 the button is, which had already produced one confused report.
 
-**Verified live:** the Test read returns `300` at 1.00 on row 1's slots, and `150`/`153` on rows 3 and
-4. **Not yet verified:** the run actually scheduling from the counts — see the note below, because
-`reload_on_start` still overrides it.
+**Verified live, including the part that matters — a run scheduling from the counts.** The Test read
+returns `300` at 1.00 on row 1's slots and `150`/`153` on rows 3 and 4; and then, started for real:
+
+```
+Row 1: 300 item(s) left in the feeder — reloading in 105 min
+```
+
+which is `300 / 3 per minute + 5 minutes after empty`, to the minute. **And the other path in the same
+log**, two attempts earlier, when the read failed: *"the feeder counts couldn't be read — assuming a
+full load, so reloading in 205 min"* — the configured cycle. Both are now proven on live data, and the
+tool says WHICH it used, so a fallback cannot pass for a reading.
+
+Also in that log, unplanned: *"board firmware did not answer — its firmware predates version
+reporting"* — Part 2's `V` command doing its job, and answering the sticky-spacebar question with a
+definite no from the other side of the port.
 
 **And one crash, mine, from the tool built to fix the last problem:** the geometry editor indexed a
 NULLABLE read region with `!`, and a half-typed width makes it null — `344` passes through `3`. It died
