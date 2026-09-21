@@ -9,6 +9,41 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-22 (26) — the return slot is tried FIRST, and hovered to decide
+
+**The player's ordering, and it is the cheap one:** *"when we need to reboard, look for the return slot
+first; if the return slot is not a pet we can board, then do the page scanning."*
+
+The return slot is **one cell and one hover** against a **three-page scan and three captures** — and it
+is where the pet this row was just feeding comes back to, so it is both the cheapest thing to check and
+the likeliest thing to board.
+
+**This reverses what the code did, deliberately.** It was the queue first with *"deliberately NO fallback
+to the return slot"* — the reasoning being that right-clicking a marked cell on the assumption that it
+holds the pet is the guess the icon matching exists to replace. That reasoning held while the slot was
+**assumed empty**, and it is not: the pet the reload just ending put back is sitting in it.
+
+**The hover IS the decision**, which is why the guard now runs on both kinds of candidate:
+
+```
+return slot, nothing readable there  →  nothing to right-click; scan instead
+return slot, a pet at +5 40%         →  board it
+return slot, a pet at +9 100%        →  finished; scan for one that can be fed
+no return slot marked                →  scan, as before
+```
+
+**One asymmetry kept on purpose.** A *matched* candidate still boards when its panel cannot be read —
+unknown must never remove a boarding — but the return slot does **not**, because it is a fixed cell that
+is normally empty, so no panel there means nothing to click rather than that we do not know. It only
+applies when the tooltip is calibrated; without one the slot is used as it was before.
+
+**The failure message now says which shape it is** — pets found and all finished, or nothing found at
+all — because they need different fixes.
+
+**Verified:** Release build clean, 0 warnings; 172/172 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (25) — "no pet available to feed" is a WAIT, not a failure
 
 **Live, and the player called it:** row 3 was empty, the bag held only `+9/100%` pets, and the guard
