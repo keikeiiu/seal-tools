@@ -1253,34 +1253,37 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        List<PetCandidate> candidates;
+        // THE RETURN SLOT IS TRIED FIRST (player, 2026-09-22). It is ONE cell and one hover against a
+        // three-page scan, and it is where the pet this row was just feeding comes back to — so it is
+        // both the cheapest thing to check and the likeliest thing to board.
+        //
+        // The guard below decides whether it is usable: a cell holding a pet that can still be fed is
+        // boarded, and anything else — no pet there at all, or one already finished — falls through to
+        // the scan. This is the reverse of what the code used to do, which was the queue first with
+        // deliberately NO fallback to the return slot; that reasoning held while the slot was assumed
+        // empty, and it is not.
+        var candidates = new List<PetCandidate>();
+        if (pet.ReturnSlot is { Count: 2 } back && back[1] >= 0 && back[1] < centres.Count)
+        {
+            Log($"  trying the return slot first: page {back[0] + 1}, cell {back[1]}");
+            candidates.Add(new PetCandidate(-1, back[0], back[1], 0, "the return slot"));
+        }
 
-        if (pet.Queue.Count > 0)
+        // …THEN THE SCAN, for the case the slot could not answer. A pet that is not in the bag either
+        // finished and was mailed or was never there, which is the honest end state and is reported as
+        // a WAIT rather than as a failure — see the caller.
+        var why = "the queue has no icons in it";
+        if (pet.Queue.Count > 0) candidates.AddRange(FindQueuedPetCandidates(ser, out why));
+
+        if (candidates.Count == 0)
         {
-            // THE QUEUE IS THE ANSWER when it exists, and there is deliberately NO fallback to the
-            // return slot if it finds nothing. A pet that is not in the bag either finished and was
-            // mailed or was never there — and right-clicking a marked cell on the assumption that it
-            // holds the pet is exactly the guess the icon matching exists to replace. Failing here
-            // says so on the card and makes the reload stop, which is §13's honest end state.
-            candidates = FindQueuedPetCandidates(ser, out var why);
-            if (candidates.Count == 0)
-            {
-                error = $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet " +
-                        "finished it was mailed, so this is the queue being empty of live pets — " +
-                        "capture the next one's icon on the Pet tab.";
-                nothingToBoard = true;   // a WAIT, not a fault — see the caller
-                return false;
-            }
-        }
-        else if (pet.ReturnSlot is { Count: 2 } back)
-        {
-            Log($"  no queue captured — placing from the return slot, page {back[0] + 1}, cell {back[1]}");
-            candidates = new List<PetCandidate> { new PetCandidate(-1, back[0], back[1], 0, "the return slot") };
-        }
-        else
-        {
-            error = "Neither a queued pet icon nor a return slot is set — there is nothing to " +
-                    "right-click. Mark the return slot or capture a pet icon, on the Pet tab.";
+            error = pet.ReturnSlot is not { Count: 2 }
+                ? "Neither a queued pet icon nor a return slot is set — there is nothing to " +
+                  "right-click. Mark the return slot or capture a pet icon, on the Pet tab."
+                : $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished " +
+                  "it was mailed, so this is the queue being empty of live pets — capture the next " +
+                  "one's icon on the Pet tab.";
+            nothingToBoard = true;   // a WAIT, not a fault — see the caller
             return false;
         }
 
@@ -1318,8 +1321,11 @@ public sealed class PetTool : ToolBase
                 // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
                 // direction this whole tool treats as the unrecoverable one.
                 PetPanel? boarded = null;
-                if (cand.Entry >= 0 && _cfg.Tooltip.IsSet)
+                if (_cfg.Tooltip.IsSet)
                 {
+                    // BOTH KINDS ARE HOVERED NOW — the return slot as well as a matched cell — because
+                    // for the slot the hover IS the decision: nothing there means nothing to
+                    // right-click, and a pet there that has finished means trying the scan instead.
                     ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
                     boarded = ReadHoverPanel(ocr, ser, cx, cy);
 
@@ -1327,7 +1333,19 @@ public sealed class PetTool : ToolBase
                     {
                         refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
                         Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
-                            $"{boarded.Describe()} — NOT boarding it, trying the next queued pet");
+                            $"{boarded.Describe()} — NOT boarding it, trying the next one");
+                        continue;
+                    }
+
+                    // THE RETURN SLOT MUST ACTUALLY HOLD A PET. A matched candidate boards even when its
+                    // panel cannot be read — unknown must never remove a boarding — but the slot is a
+                    // fixed cell that is normally empty, so NO PANEL there means there is nothing to
+                    // click rather than that we do not know. Right-clicking an empty cell is the guess
+                    // the icon matching exists to avoid.
+                    if (boarded == null && cand.Entry < 0)
+                    {
+                        Log($"  nothing in the return slot (page {cand.Page + 1}, cell {cand.Cell}) — " +
+                            "scanning for a queued pet instead");
                         continue;
                     }
 
@@ -1377,9 +1395,15 @@ public sealed class PetTool : ToolBase
             // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
             // there, they are simply all finished, and the fix is a different one — capture the icon of
             // a pet that still needs feeding.
-            error = "Every queued pet reads +9/100% — there is nothing here that can be boarded. " +
-                    "Refused " + string.Join("; ", refused) + ". Capture the icon of a pet that can " +
-                    "still be fed, on the Pet tab.";
+            // Nothing usable, and the two shapes of that need different sentences: pets WERE found and
+            // every one has finished, or nothing was found at all — the return slot empty and no queued
+            // icon matching anything in the bag.
+            error = refused.Count > 0
+                ? "Every pet that could be boarded reads +9/100%. Refused " +
+                  string.Join("; ", refused) + ". Capture the icon of a pet that can still be fed, " +
+                  "on the Pet tab."
+                : "The return slot holds no pet, and no queued icon matched one in the bag. Capture " +
+                  "the icon of a pet that can still be fed, on the Pet tab.";
             nothingToBoard = true;   // a WAIT, not a fault — see the caller
             return false;
         }
