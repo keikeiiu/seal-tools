@@ -9,6 +9,46 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (21) — scope 4a: the feeding arithmetic, and the table that answers it
+
+**The formula was already in the repo** — `PET-DATA.md`, scraped 2026-09-15 and measured per level on
+2026-09-16 — and its own opening line says it exists so *"how long until this pet is done"* is a per-pet
+number rather than a rule of thumb. Nothing read it. Now `PetFeeding` does.
+
+```
+cost(+n)      = wyz × (1 + n/10)      n = 0 … 9
+to +9 / 100%  = wyz × 14.5            the +9 bar fills too — 14.5, not 9
+```
+
+**It collapses to one line, because the table already carries the total.** Whatever fraction of the
+total *value* is left is the same fraction of the total *minutes* — both describe the same run — so no
+per-item value and no per-minute rate has to be derived or configured:
+
+```
+minutes = remainingValue / line.TotalValue × line.Minutes
+```
+
+**The measured example the whole thing was for:** a stage-6 pet at `+9` 10 % has 8,892 of its 75,400
+feeding value left, so it is done in **~99 minutes** — where the configured cycle would have waited
+**505**. That is the player's *"if the pet is already +9 80 % you don't need another 2 hours"*, as
+arithmetic.
+
+**Two things the data taught, both found by tests failing rather than by reasoning:**
+
+- **The stage-7 `.G` pets sit at 33000 and cannot be boarded.** Left in, seven of the sixty-nine
+  `(species, stage)` pairs are ambiguous. They are dropped on load.
+- **`(species, stage)` does NOT identify a pet — it identifies a `wyz`.** A line holds several pets at
+  the same stage, all sharing one figure. The first version of the test asserted uniqueness and failed;
+  what holds, and what is now pinned, is that every row in a group agrees on `wyz` **and** on the total
+  value and minutes — or the answer would depend on which row was found first.
+
+The shipped csv is parsed by a test rather than trusted: it asserts the full table loads and every group
+agrees, from the real file, so it cannot rot while a fixture keeps passing.
+
+**Verified:** Release build clean, 0 warnings; **158/158** tests (nine added).
+
+---
+
 ## 2026-09-21 (20) — scopes 2 and 3: the visit, and a schedule re-derived on every look
 
 **One open does every row that is due.** Four rows due at once used to be four opens and three closes —
