@@ -27,6 +27,13 @@ public sealed class ToolState
     public string? Current { get; set; }
     public string FilterStatus { get; set; } = "";
 
+    // The tool's STANDING plan, as opposed to Message which is about the last thing that happened.
+    // The pet feeder is the reason it exists: a reload is hours apart, so a card that only reported
+    // the last event said nothing at all for most of the run. Schedule is the text; NextActionAt is
+    // the moment, so the card can count down to it while the UI ticks.
+    public string? Schedule { get; set; }
+    public DateTime? NextActionAt { get; set; }
+
     // One-off user-visible notice shown on the launcher card — for things the user must see but
     // that would otherwise only reach Console.WriteLine, which is invisible in the published
     // WinExe (no console attached). Null/empty when there is nothing to report.

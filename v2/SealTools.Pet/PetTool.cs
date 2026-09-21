@@ -210,6 +210,33 @@ public sealed class PetTool : ToolBase
         }
         var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
 
+        // THE CARD'S STANDING LINE. A reload is hours apart, so a card that only reported the last
+        // thing that happened said nothing at all for most of a run — the player asked for "which row
+        // is running and how long until the rerun", and both are known here. The MOMENT goes on the
+        // state rather than a countdown, so the card can recompute the wait on every UI tick instead
+        // of showing a number that was true when it was written.
+        void PublishSchedule()
+        {
+            var boarding = next.Keys.Where(r => r.BoardingRunning).Select(NameOf).ToList();
+            if (next.Count == 0)
+            {
+                state.Schedule = "no rows scheduled";
+                state.NextActionAt = null;
+                return;
+            }
+
+            var soonest = next.OrderBy(kv => kv.Value).First();
+            var queued = next.Count - 1;
+            state.NextActionAt = soonest.Value;
+            state.Schedule = (boarding.Count > 0
+                    ? $"boarding {string.Join(", ", boarding)}"
+                    : "nothing boarding") +
+                $"  ·  next {NameOf(soonest.Key)} at {soonest.Value:HH:mm}" +
+                (queued > 0 ? $"  ·  {queued} more queued" : "");
+        }
+
+        PublishSchedule();
+
         try
         {
             // QuitPressed stays false for this tool by construction — it is the one tool that ignores
@@ -251,6 +278,7 @@ public sealed class PetTool : ToolBase
                     failures[row] = 0;
                     next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
                     state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}.";
+                    PublishSchedule();
                     Console.WriteLine(state.Message);
                     Beep(523, 100);
                 }
@@ -269,9 +297,11 @@ public sealed class PetTool : ToolBase
                         Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
                             "rows carry on");
                         next.Remove(row);
+                        PublishSchedule();
                         continue;
                     }
                     next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                    PublishSchedule();
                 }
             }
         }

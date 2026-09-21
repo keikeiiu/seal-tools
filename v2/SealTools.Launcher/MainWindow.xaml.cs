@@ -585,6 +585,23 @@ public partial class MainWindow : FluentWindow, IDisposable
     private static string FormatStatus(ToolState state)
     {
         var lines = new List<string> { state.Running ? "● RUNNING" : "● paused" };
+
+        // The standing plan, with the wait recomputed every tick rather than stored — the tool sets the
+        // MOMENT and the card does the arithmetic, so a run that is hours from its next reload counts
+        // down instead of showing a number that was true when it was written.
+        if (!string.IsNullOrEmpty(state.Schedule))
+        {
+            var wait = "";
+            if (state.NextActionAt is { } at)
+            {
+                var left = at - DateTime.Now;
+                wait = left <= TimeSpan.Zero
+                    ? "   (due now)"
+                    : $"   (in {(left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes:00}m" : $"{left.Minutes}m {left.Seconds:00}s")})";
+            }
+            lines.Add(state.Schedule + wait);
+        }
+
         if (!string.IsNullOrEmpty(state.Grade)) lines.Add($"Grade: {state.Grade}");
         if (state.Remaining.HasValue) lines.Add($"Remaining: {state.Remaining}");
         if (state.Attempt > 0) lines.Add($"Attempt: {state.Attempt}");
