@@ -191,8 +191,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Which single point the calibrator is waiting for — see <see cref="PetArmPoint"/>.</summary>
     private string? _petPointTarget;
     private TextBlock? _petChecklist;
-    /// <summary>The per-row geometry listing — see RefreshPetGeometry.</summary>
-    private TextBlock? _petGeometry;
+    /// <summary>The per-row geometry editor — see RefreshPetGeometry.</summary>
+    private StackPanel? _petGeometry;
     /// <summary>Which bag page the cell picker edits, and whether a click marks food or the pet.</summary>
     private int _petPickPage;
 
@@ -5021,13 +5021,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         // and where each slot's count crop begins. The capture shows the boxes; this says what they
         // ARE, which is the thing to read when one row behaves differently from its neighbours. A crop
         // starting a pixel right of another row's is the whole of a "this row reads nothing" report.
-        _petGeometry = Mono();
-        _petGeometry.Text = "nothing drawn yet";
-        panel.Children.Add(Section("Row geometry",
-            Hint("What each row's strip divides into, and where the count crop starts on every slot. " +
-                 "Read down the crop column across rows: an outlier there is a row whose slots landed " +
-                 "differently, which is what a row that reads nothing while its neighbours read looks " +
-                 "like."),
+        _petGeometry = new StackPanel();
+        panel.Children.Add(Section("Row geometry — nudged by typing",
+            Hint("Each row's strip, in pixels, as four editable numbers: x, y, width, height. Change " +
+                 "one and the slots and crops beside it update as you type." + Environment.NewLine +
+                 "This exists because a capture answers \"is the box in the right place?\" and cannot " +
+                 "answer \"is this row a pixel out from its neighbours?\" — which is how a row reads " +
+                 "nothing while the rows above and below it read: row 2's crops started 1-2px right of " +
+                 "row 3's, and its widest number ran past the crop's left edge." + Environment.NewLine +
+                 "Read down the crop column across rows. An outlier there is a row whose strip landed " +
+                 "differently, and nudging ITS x is the targeted fix — moving the shared Count crop " +
+                 "number instead shifts every row, including the ones already reading."),
             _petGeometry));
 
         var drawToggle = MakeButton("Draw start button", ControlAppearance.Secondary);
@@ -5841,35 +5845,81 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         if (_petGeometry == null) return;
         var pet = _service.Config.Pet;
-        var lines = new List<string>();
+        _petGeometry.Children.Clear();
 
+        if (pet.Slots.Count == 0)
+        {
+            _petGeometry.Children.Add(new TextBlock
+            {
+                Text = "no rows yet — add one above",
+                Foreground = Res("TextFillColorSecondaryBrush"),
+            });
+            return;
+        }
+
+        // The four numbers of a row's strip, EDITABLE. Redrawing a strip by mouse cannot put it a pixel
+        // where it was before; the hand-tune this exists for is the one between two rows, and typing a
+        // number is the only way to do it exactly. The readout beside them updates as you type rather
+        // than rebuilding the panel, which would take the focus out of the box mid-keystroke.
         for (int i = 0; i < pet.Slots.Count; i++)
         {
             var r = pet.Slots[i];
-            var tag = r.Enabled ? "" : "   (not run)";
-            if (FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks) is not { } slots)
+            var index = i;
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(new TextBlock
             {
-                lines.Add($"row {i + 1}  strip  not drawn{tag}");
-                lines.Add("");
-                continue;
+                Text = $"row {index + 1}" + (r.Enabled ? "" : " (not run)"),
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 96,
+            });
+
+            var readout = Mono();
+            readout.Margin = new Thickness(16, 0, 0, 0);
+            readout.VerticalAlignment = VerticalAlignment.Center;
+
+            void Sync()
+            {
+                var stamp = FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks);
+                readout.Text = stamp is null
+                    ? "no strip — draw one, or type four numbers"
+                    : string.Join("   ", stamp.Select((sl, f) =>
+                        $"s{f + 1} x={sl[0]} crop={FeederLayout.ReadRegion(sl, pet.FeederCountLeftFraction)![0]}"));
+                RefreshPetChecklist();
+                PetRedrawOverlay();
             }
 
-            var st = r.FeederStrip!;
-            lines.Add($"row {i + 1}  strip  [{st[0],4},{st[1],4}] {st[2],3}x{st[3],-3}" +
-                      $"  -> {slots.Count} slot(s){tag}");
-            for (int f = 0; f < slots.Count; f++)
+            var boxes = new Wpf.Ui.Controls.TextBox[4];
+            var labels = new[] { "x", "y", "w", "h" };
+            for (int k = 0; k < 4; k++)
             {
-                var s2 = slots[f];
-                var crop = FeederLayout.ReadRegion(s2, pet.FeederCountLeftFraction)!;
-                lines.Add($"         slot {f + 1}  [{s2[0],4},{s2[1],4}] {s2[2],3}x{s2[3],-3}" +
-                          $"  crop starts x={crop[0],4}  ({crop[2]} wide)");
+                var slot = k;
+                var box = UiText((r.FeederStrip is { Count: 4 } cur ? cur[slot] : 0)
+                    .ToString(CultureInfo.InvariantCulture));
+                box.Width = 52;
+                box.Margin = new Thickness(4, 0, 0, 0);
+                box.VerticalAlignment = VerticalAlignment.Center;
+                box.TextChanged += (_, _) =>
+                {
+                    if (!int.TryParse(box.Text.Trim(), NumberStyles.Integer,
+                            CultureInfo.InvariantCulture, out var v)) return;
+                    var rect = r.FeederStrip is { Count: 4 } c ? new List<int>(c) : new List<int> { 0, 0, 0, 0 };
+                    rect[slot] = v;
+                    r.FeederStrip = rect;
+                    Sync();
+                };
+                boxes[k] = box;
+                line.Children.Add(new TextBlock
+                {
+                    Text = labels[k], VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                });
+                line.Children.Add(box);
             }
-            lines.Add("");
+
+            line.Children.Add(readout);
+            _petGeometry.Children.Add(line);
+            Sync();
         }
-
-        _petGeometry.Text = lines.Count == 0
-            ? "no rows yet — add one above"
-            : string.Join(Environment.NewLine, lines).TrimEnd();
     }
 
     /// <summary>Draws every slot centre the grid implies — the check that the bag really is uniform,
