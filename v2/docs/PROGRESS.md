@@ -9,6 +9,36 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (15) — the run needed the same fix the sweep got: every cell, not the best one
+
+**Starting the run would have boarded nothing**, and the sweep's own report said so before it happened.
+
+The run kept one cell per icon — `scores[0]`, the best match. With 8 pets across 2 icons, the
+best-matching instance of *each* icon was a **finished** one:
+
+```
+A cell 3, match 0.000, +9 100%   -> skipped
+B cell 2, match 0.000, +9 100%   -> skipped
+```
+
+Both skipped, the candidate list exhausted, row unboarded — with a `+0` `A` one cell away and three
+feedable `B`s on the next page. **"Try the next one" cannot work if the run does not know a next one
+exists**, and (13) fixed exactly this in the sweep without fixing it in the run.
+
+The run now takes **every cell under the limit per icon**, best first, so the guard walks a real list:
+
+```
+A cell 3  +9 100%  -> skip
+A cell 4  +0 0.06% -> board
+```
+
+Cost: ~1.5 s per candidate skipped, for a few candidates. The best/runner-up logging is unchanged —
+it still reports how close the call was for the icon's best cell.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (14) — "+99": the growth pattern read two digits where the game shows one
 
 **The sweep's report, read for the first time as a file** (`logs\reads\scan_20260921_152331.txt`), found
