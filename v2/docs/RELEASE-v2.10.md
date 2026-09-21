@@ -105,7 +105,7 @@ tool chose rather than one read off the screen at an uncertain moment.
 - **[PET-DATA.md](PET-DATA.md)** — all 327 normal pets with their boarding food, per-feed counts and
   the time to `+9`. The per-level 喂养值 cost was measured on the live site, not inferred: it rises by a
   tenth of the base each level, so a full stage is `base × 12.6`.
-- **[PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md)** and **[PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md)** —
+- **[PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md)** and **[PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md)** —
   the designs, including what the live runs corrected.
 - **[../game-knowledge/](../../game-knowledge/)** — a new folder for facts about the *game* rather than
   the tool: mechanics, NPCs, quests. Nothing there ships and nothing is built against it.

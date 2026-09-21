@@ -214,7 +214,7 @@ wrong item**, and unlike a mis-aimed sale there is no undo. Two things follow:
 - the lock is a **prerequisite**, not a nicety, and the watcher should say so if it cannot be assumed;
 - the handover dialog names the item, so if a cheap confirmation is ever wanted, that is the natural
   place to check before confirming — OCR on the dialog, not on the bag. (The project deliberately has
-  no bag OCR; see [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
+  no bag OCR; see [PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
 
 #### Backing out of a dialog
 

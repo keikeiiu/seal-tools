@@ -73,7 +73,7 @@ beside the shop window. So this feature carries its own two-corner bag calibrati
 Past that it works the same way: you mark **every slot holding pet food — around ten of them, not two**
 — and that selection is the inventory. The tool consumes them highest index first and knows both where
 to click and how many are left, with no bag OCR anywhere: the project has none by design (see
-[PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
+[PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
 failure surface for something you can simply point at.
 
 **Highest index first, for the same reason `SellPass` does it.** Consuming from the top is correct
@@ -240,7 +240,7 @@ not.
 So there are two ways to handle the returned pet and both are bad:
 
 - **Find it** — which needs bag OCR, and this project has none by design
-  ([PLAN-BUY-SELL.md](PLAN-BUY-SELL.md)).
+  ([PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md)).
 - **Reserve a slot** — which only works while nothing else changes the bag, and the whole premise is
   that the character is farming.
 
@@ -510,7 +510,7 @@ edge case — which is why the comparison is inclusive.
 So the check is on **growth and EXP together** — `+9` and `EXP >= 100` — and reading the growth alone
 would stop feeding a pet that has not finished, the opposite of the failure this guard exists to
 prevent. Both are on the pet's panel as `+N` and `[..%]`, and both read cleanly
-(see [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md)).
+(see [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md)).
 
 ---
 
@@ -1002,7 +1002,7 @@ start and close                       the start button → the X
 Everything except "which cell does the pet come from" is the existing reload, unchanged.
 
 **The remaining time is a by-product of the same read.** `wyz` is what makes it computable, and where
-it comes from is [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md) open question 4 — the panel itself, if it
+it comes from is [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md) open question 4 — the panel itself, if it
 states the current level's 所需喂养值; the pet's name against the 327-entry table; or two reads a cycle
 apart. Worth stating as a goal here because it makes the *schedule* honest: today the cycle is
 `LoadItems ÷ ItemsPerMinute`, one rate for every pet, where PET-DATA's table gives 2/1/3/4 items per

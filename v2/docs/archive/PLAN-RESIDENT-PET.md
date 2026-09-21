@@ -1,5 +1,9 @@
 # Plan — running tools alongside the pet feeder
 
+> **ARCHIVED 2026-09-22 — built and released in v2.11.** Kept for the reasoning, not as a plan. How it
+> works now is in [DESIGN.md](../DESIGN.md); the verification it was still waiting on is tracked in
+> [TODO.md](../TODO.md).
+
 Status: **ALL THREE PARTS BUILT AND RELEASED in v2.11 (2026-09-21).** This document is kept for the
 reasoning, not as a plan — what is left is verification, and the open items are at the foot of it.
 Three parts, in the order they should be built. Part 1 is a live bug and the smallest. Part 2 needs a
@@ -224,7 +228,7 @@ time, so nothing is hidden that could be used anyway."*
 game: the boarding window and the tuner's window cannot both be open, and the tuner's must be closed
 first. The tuner also runs ~a day — longer than a feeder load — and the player has decided against
 automating its setup. **The tuner stays a manual schedule; out of scope.** See
-[PLAN-WATCHER.md](PLAN-WATCHER.md) for the recorded reasoning.
+[PLAN-WATCHER.md](../PLAN-WATCHER.md) for the recorded reasoning.
 
 Every other tool is different in one decisive way: **the pet feeder holds nothing between reloads.** It
 needs the game ~30 seconds, five times a day. So no lease, no yield boundaries, no cursor arbitration —

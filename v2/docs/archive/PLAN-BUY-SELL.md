@@ -1,8 +1,11 @@
 # Buy / Sell tool — plan
 
+> **ARCHIVED 2026-09-22 — built and shipped.** Kept for the reasoning, not as a plan. How it works now
+> is in [DESIGN.md](../DESIGN.md); what is still open is in [TODO.md](../TODO.md).
+
 Status: **built, and both halves verified on the live game** (2026-09-14), shipped in v2.9. This
 document began as a design record and some sections still read as forward-looking — the flow
-descriptions are accurate, the open questions are not all still open. See [PROGRESS.md](PROGRESS.md)
+descriptions are accurate, the open questions are not all still open. See [PROGRESS.md](../PROGRESS.md)
 for what has actually been done.
 
 Goal: bulk-buy the items you re-buy constantly, and bulk-sell what you don't keep, without repeating
