@@ -9,6 +9,44 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (8) — the hover read finally gets a consumer: which pets can still be fed
+
+**The bag holds a mix of +9/100% pets and +0 pets, and the player needs to find the +0 ones.** The
+read that exists for it has been a capability with no consumer since 2026-09-18, waiting on exactly
+this.
+
+**The reason it matters is not wasted food.** Boarding an already-finished pet raises an **error
+dialog**, and a blocking modal wedges everything after it — so a finished pet is a stuck run, not a
+bad reload. That is what turned "nice to have" into the next thing built.
+
+**Nothing new was needed.** `PetPanel.IsFinished` (`Growth == 9 && Exp >= 100`) already existed and was
+already tested; so did the hover (a MOVE, never a click — a click on a bag pet switches the equipped
+pet), the calibrated tooltip region, `BagGrid.Centres`, the page tabs and the OCR read. `IsFinished`
+was called from nowhere in the run, and `PetPanel.Parse` from exactly one place.
+
+**The parser is the filter, and that is forced rather than chosen.** The icon matcher only knows pets
+that are already queued — and the pets this exists to find are precisely the ones nobody has queued
+yet. So the scan hovers every cell and lets `Parse` decide: a +0 pet renders no `+N` at all and reads
+as growth 0 (measured, 2026-09-19), while an empty cell or a stack of food simply does not parse as a
+pet panel.
+
+**A failed read is reported as neither, never as finished.** Skipping a pet that needed feeding is the
+one outcome here that cannot be undone — the same reasoning that makes `IsFinished` `==` and not `>=`.
+Unknown stays unknown.
+
+**Two choices worth knowing:** the launcher hides **once per page**, not once per cell (the per-crop
+hide pays a 300 ms compositor wait, which over 192 cells is a minute of flicker for nothing), and the
+focus click happens **once** rather than through `FocusThenHover`, which clicks the focus point on
+every call because it was written for a single read. Pages are reported as they finish so a four-minute
+scan is not four minutes of a window that looks hung.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — no hover has
+been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](PLAN-PET-BOARD-CHECK.md), which also
+records what is deliberately *not* in v1: queueing the feedable pets, and the run-side guard (whose
+blind-`Enter` dismissal is unverified for *this* dialog — Enter may confirm it rather than dismiss it).
+
+---
+
 ## 2026-09-21 (7) — released as v2.11
 
 **Merged to main and packaged.** `v2-pet-drag` fast-forwarded onto `main`, which is now 119 commits past
