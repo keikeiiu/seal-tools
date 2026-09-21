@@ -9,6 +9,39 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (16) — the guard slept for eleven and a half minutes on its first hover
+
+**`SleepCheck` takes SECONDS and I passed `HoverDelayMs` — milliseconds — as 700.** It does not sleep a
+little long. It computes `steps = 700 / 0.05 = 14000` and sleeps `14000 × 50 ms`:
+
+```
+2026-09-21 15:32:27   found a queued pet: page 2, cell 2, match 0
+                      ... 700 seconds of nothing ...
+```
+
+The live run sat wedged exactly there — **responding, 0% CPU, no error** — which is why it read as
+"stopped" rather than as a crash. Nothing in the log said a word, because nothing was wrong except the
+unit.
+
+**The trap is that the same number is right one file over.** The launcher's own hover uses
+`await Task.Delay(... HoverDelayMs)`, and `Task.Delay` DOES take milliseconds. Only the tool-side
+`SleepCheck` takes seconds, and nothing in the name or the signature stops you passing the other one.
+
+**Also verified live in the same run**, and this one is good news: the start line now reads
+
+```
+run started — board firmware protocol level 2 (current)
+```
+
+**The reflash took** — the board answers `V` — which closes the "flash both boards" item's first half.
+And the icon scan found **8 candidates** on the player's bag, which is the every-cell fix working where
+one winner used to be.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live** — the corrected
+hover has not been tried.
+
+---
+
 ## 2026-09-21 (15) — the run needed the same fix the sweep got: every cell, not the best one
 
 **Starting the run would have boarded nothing**, and the sweep's own report said so before it happened.
