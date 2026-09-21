@@ -9,6 +9,27 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (7) — released as v2.11
+
+**Merged to main and packaged.** `v2-pet-drag` fast-forwarded onto `main`, which is now 119 commits past
+the v2.10 tag — the release notes are [RELEASE-v2.11.md](RELEASE-v2.11.md) and they are the record of
+what changed, so this is only about the packaging.
+
+**The verification the v2.9 incident demands was run first**, because an incremental `dotnet publish`
+silently drops the 11 native OCR DLLs and the exe is 182 MB either way: the public zip's file list
+diffed against v2.10 gives **17 files against 17, no additions and no losses**, with `onnxruntime.dll`,
+`OpenCvSharpExtern.dll` and `libSkiaSharp.dll` all present and no `.pdb` or `.lib` strays. The public
+zip carries the three config templates and no `local.yaml`; the local zip carries the full `config\`
+with the four calibration screenshots.
+
+**Two features ship inert**, and both say so in the release notes rather than in a commit nobody reads:
+food-by-drag and the firmware `V` command need firmware 2, so until the board is flashed they fall back
+to exactly today's behaviour — right-click loading, and a board that cannot be asked its version. Which
+is the shape Part 2 was designed for: a board cannot report anything, including its own age, so the
+release cannot be wrong about it — only silent.
+
+---
+
 ## 2026-09-21 (6) — the count read works, and it took five designs to get one
 
 **It reads. All slots, at 1.00.** That is the outcome; the route there is the useful part, because
