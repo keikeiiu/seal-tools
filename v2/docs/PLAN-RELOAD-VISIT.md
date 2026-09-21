@@ -127,11 +127,62 @@ biggest single saving left, and it is the same "look first" move the schedule al
 deliberately rather than only when a bag has been left un-fed. Without it, the new path would be
 untestable outside a cold start, which is how it would rot.
 
-## 6. Order of work
+## 6. The schedule must be RE-MEASURED, not fixed at run start
 
-1. **Page tracking (a)** — small, safe, pays immediately, removes the kind of click that failed today.
+**What happens now.** `next[row]` is computed once, at run start, by `InspectRows` — from a reading of
+every row. After that, only the row that was just reloaded gets a new value, and it is
+`now + CycleMinutesFor(row)` (PetTool.cs:285). **Every other row keeps a time derived from a reading
+that may be hours old.**
+
+**Why that is wrong, in the player's words:** *"sometimes some rows may be due soon — let's say the row
+is on +9 and it is loaded, we cannot revisit this after 10 hours."* Concretely, three things change a
+row's real state and none of them is noticed until its own timer fires:
+
+- the pet reaches `+10` and is mailed, so the row is empty and needs a new pet;
+- the feeder runs dry early (a short load, a missed drag, a pet eating faster);
+- a row that failed and was retried is now fed, while a row that succeeded may not need touching.
+
+**The change.** A **visit re-reads every row and re-derives every row's `next`** — including the rows it
+did not act on. The schedule becomes a per-row *measurement* rather than a per-row *assumption*, which
+is the same move this tool already made once ("look first, don't reload first", PetTool.cs:175), applied
+to the timer instead of to the reload.
+
+**What is already per row, and stays:** `next[row]`, the cycles (`205` vs `505` min), `RetryMinutes`,
+`MaxFailures`, and the failure counting. Nothing about this section makes the clocks more separate —
+they are already separate. What changes is that each one is **re-derived from a fresh reading**.
+
+## 7. The `+9` case — needs a rule only the player can give
+
+**The tool already reads the boarded pet's growth and EXP%** — the guard hovers the pet and parses the
+panel before it right-clicks (bc6f438). **Nothing uses those two numbers beyond skip-or-board.**
+
+If a pet at `+9` with a low EXP% will finish before the food runs out, then: the pet is mailed, the row
+is empty, and today nothing notices for up to **505 minutes**. That is the case the player is pointing
+at, and it is not solvable by reasoning about the tool — it needs the game's arithmetic:
+
+| question | why it matters |
+|---|---|
+| **How do we know when a `+9` pet finishes?** | the whole point — an EXP-per-minute or EXP-per-item figure, or an ETA the game shows |
+| **Does the panel or the boarding window state it?** | if yes, it is a capture region, not a table |
+| **If it is a rate, what is it?** | `EXP%` per food item, or per minute — with the rate, `(100 − EXP) / rate` is the time to finish |
+| **When the pet finishes, what should the row do?** | come back with a new pet immediately, or at the next cycle? |
+
+**Until that is answered, the honest fallback is a floor:** never schedule a row further out than the
+soonest thing that could change it — the food running out, or (if the EXP% is high) a much nearer
+re-check. That is deliberately not a rule, and it should not be built as one.
+
+## 8. Order of work
+
+1. **Page tracking (§3a)** — small, safe, pays immediately, removes the kind of click that failed today.
    Independently valuable, so it lands on its own.
-2. **The visit (c)** — the restructure, with the single-row path provably unchanged.
-3. **The remembered pet cell (b)** — the biggest saving, and the one that most wants (1) in place first.
+2. **The remembered pet cell (§3b)** — also small-ish, also pays every reload, and no reason to wait
+   for the restructure.
+3. **The visit (§2)** — the restructure, with the single-row path provably unchanged.
+4. **Re-measured schedule (§6)** — needs the visit, because re-deriving every row's `next` means
+   reading every row, which is what a visit does. Doing it before the visit would mean two readers
+   again.
+5. **The `+9` rule (§7)** — blocked on the player's answer, and worth having the answers before any of
+   it is designed.
 
-Each its own commit, each verified by the Release build and the test suite.
+Each its own commit, each verified by the Release build and the test suite. Each is independently
+useful: stopping after any of them leaves the tool working and faster.
