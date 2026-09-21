@@ -299,57 +299,76 @@ public sealed class PetTool : ToolBase
                     break;
                 }
 
-                var row = live.OrderBy(r => next[r]).First();
-                if (!SleepUntil(next[row], ct)) break;
+                var soonest = live.OrderBy(r => next[r]).First();
+                if (!SleepUntil(next[soonest], ct)) break;
 
-                // The row is due, but the game may belong to another tool. Deferring here needs no
-                // bookkeeping at all: next[row] is left in the past, so the next pass picks this same
-                // row again — which is why the wait belongs here and not in the scheduler. It is
-                // never a silent wait; see WaitingForRow.
-                var due = next[row];
-                if (!ClaimGame(state, () => WaitingForRow(row, due, GameOwner), ct)) break;
+                // EVERY ROW DUE NOW goes into ONE visit, in ROW ORDER — the player's "row 1, row 2,
+                // row 3". Normally that is one row and the visit is exactly what it always was; a cold
+                // start, or RELOAD EVERY ROW ON START, makes it four — which used to be four opens.
+                var ordered = _cfg.Pet.ActiveRows.ToList();
+                var now = DateTime.Now;
+                var batch = live.Where(r => next[r] <= now)
+                                .OrderBy(r => ordered.IndexOf(r))
+                                .ToList();
+                if (batch.Count == 0) batch.Add(soonest);
 
-                bool ok;
-                string error;
+                // The soonest row is due, but the game may belong to another tool. Deferring here needs
+                // no bookkeeping at all: next[row] is left in the past, so the next pass picks this same
+                // row again — which is why the wait belongs here and not in the scheduler. It is never
+                // a silent wait; see WaitingForRow.
+                if (!ClaimGame(state, () => WaitingForRow(soonest, next[soonest], GameOwner), ct)) break;
+
+                VisitResult visited;
                 try
                 {
-                    ok = ReloadRow(ser, state, row, out error);
+                    visited = Visit(ser, state, batch);
                 }
                 finally
                 {
                     ReleaseGame();
                 }
 
-                if (ok)
-                {
-                    failures[row] = 0;
-                    next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
-                    state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}.";
-                    PublishSchedule();
-                    Console.WriteLine(state.Message);
-                    Beep(523, 100);
-                }
-                else
-                {
-                    failures[row]++;
-                    state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {error}";
-                    Console.WriteLine(state.Message);
-                    Beep(200, 400);
+                // THE RE-MEASURE, for every row the visit did NOT act on. A row it did reload gets its
+                // next from the reload below, because the reading was taken BEFORE the reload and
+                // describes the state that reload just replaced.
+                foreach (var (readRow, readNext) in visited.Schedule)
+                    if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
+                        next[readRow] = readNext;
 
-                    // A row that keeps failing is DROPPED rather than taking the run with it. With
-                    // four rows that matters: one bad calibration should not stop the other three
-                    // being fed, and previously any row reaching MaxFailures stopped everything.
-                    if (failures[row] >= MaxFailures)
+                foreach (var (row, result) in visited.Rows)
+                {
+                    if (!next.ContainsKey(row)) continue;
+
+                    if (result.Ok)
                     {
-                        Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
-                            "rows carry on");
-                        next.Remove(row);
-                        PublishSchedule();
-                        continue;
+                        failures[row] = 0;
+                        next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
+                        state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}.";
+                        Console.WriteLine(state.Message);
                     }
-                    next[row] = DateTime.Now.AddMinutes(RetryMinutes);
-                    PublishSchedule();
+                    else
+                    {
+                        failures[row]++;
+                        state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {result.Error}";
+                        Console.WriteLine(state.Message);
+
+                        // A row that keeps failing is DROPPED rather than taking the run with it. With
+                        // four rows that matters: one bad calibration should not stop the other three
+                        // being fed, and previously any row reaching MaxFailures stopped everything.
+                        if (failures[row] >= MaxFailures)
+                        {
+                            Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
+                                "rows carry on");
+                            next.Remove(row);
+                            continue;
+                        }
+                        next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                    }
                 }
+
+                PublishSchedule();
+                if (visited.Rows.Values.All(r => r.Ok)) Beep(523, 100);
+                else Beep(200, 400);
             }
         }
         finally
@@ -527,21 +546,50 @@ public sealed class PetTool : ToolBase
     /// blind reload would have disturbed for no reason.</summary>
     private Dictionary<PetSlotConfig, DateTime> InspectRows(SerialPort ser, ToolState state)
     {
-        var schedule = new Dictionary<PetSlotConfig, DateTime>();
         state.Message = "Checking what is already running…";
         Log("start: opening the breeder to check each row (no reload)");
 
         if (!OpenBoarding(ser, out var error))
         {
             Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            foreach (var row in _cfg.Pet.ActiveRows)
-                schedule[row] = ScheduleFor(row, null);
-            return schedule;
+            return UnreadSchedule();
         }
 
+        // Every exit past this point closes the window — the look is a visit like any other.
+        try
+        {
+            return ReadRows(ser);
+        }
+        finally
+        {
+            CloseBoarding(ser);
+        }
+    }
+
+    /// <summary>The schedule for a look that could not happen: every row falls back to its configured
+    /// cycle. A null count already means "could not read", which <see cref="ScheduleFor"/> treats as a
+    /// full load.</summary>
+    private Dictionary<PetSlotConfig, DateTime> UnreadSchedule()
+    {
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null);
+        return schedule;
+    }
+
+    /// <summary>Reads every active row's slot and feeder — the LOOK, with the boarding window already
+    /// OPEN. Split out of <see cref="InspectRows"/> for one reason: a visit has to read the rows it is
+    /// about to act on, and it must not open the window a second time to do it. There is deliberately
+    /// ONE reader — two would eventually disagree about what a row's state is.
+    ///
+    /// It WRITES the rows: BoardingRunning is set from what the slot says. The schedule comes back so
+    /// the caller can re-derive every row's next from THIS reading rather than from an old one.</summary>
+    private Dictionary<PetSlotConfig, DateTime> ReadRows(SerialPort ser)
+    {
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+
         // The engine is built here and disposed with the look, rather than held for the life of the
-        // run: the counts are wanted at start, and an ONNX session parked in memory for days to be
-        // used once is a cost with nothing buying it.
+        // run: the counts are wanted once per visit, and an ONNX session parked in memory for days to
+        // be used once is a cost with nothing buying it.
         OcrEngine? ocr = null;
         try
         {
@@ -595,7 +643,6 @@ public sealed class PetTool : ToolBase
         finally
         {
             ocr?.Dispose();
-            CloseBoarding(ser);
         }
 
         return schedule;
@@ -732,27 +779,102 @@ public sealed class PetTool : ToolBase
         return Math.Max(5, full + WaitAfterEmptyMinutes);
     }
 
-    // ── One reload ──────────────────────────────────────────────────────────
+    // ── One visit ───────────────────────────────────────────────────────────
 
-    /// <summary>One reload of ONE ROW — the sequence is unchanged from the single-row tool; what is
-    /// new is that the row is a parameter rather than whatever the config happened to name. The rows
-    /// are serviced one at a time, which is the player's own ordering constraint (2026-09-19): each
-    /// row is offloaded and re-boarded before the next is touched.</summary>
-    private bool ReloadRow(SerialPort ser, ToolState state, PetSlotConfig row, out string error)
+    /// <summary>What one visit to the boarding window did, per row, and the schedule it read.
+    ///
+    /// The schedule covers EVERY active row, not just the rows the visit touched, because a visit
+    /// re-derives each row's next from what it just read. A row whose pet has finished, or whose feeder
+    /// ran dry early, is then noticed on the visit that happens to be nearby instead of whenever its
+    /// own hours-old timer comes round.</summary>
+    private sealed record VisitResult(
+        Dictionary<PetSlotConfig, (bool Ok, string Error)> Rows,
+        Dictionary<PetSlotConfig, DateTime> Schedule);
+
+    /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
+    /// are due — one at a time, in row order — and close once.
+    ///
+    /// WHY A VISIT EXISTS. The reading was already batched — one open reads every row — and the ACTING
+    /// was not: the reload opened and closed around a single row. Four rows due at once was four
+    /// opens and three closes, nine window operations where one would do, and two of a live run's four
+    /// failed on exactly that reopen.
+    ///
+    /// THE SINGLE-ROW CASE IS THE POINT. Most of the day one row comes due on its own, and this then
+    /// does what it always did: open, that row, close. The batching changes nothing about it, which is
+    /// the constraint the whole restructure is judged against.
+    ///
+    /// A ROW THAT FAILS DOES NOT TAKE THE VISIT WITH IT. Each row is reported separately, the rest are
+    /// still attempted, and the window closes once at the end either way.</summary>
+    private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch)
     {
-        error = "";
+        var results = new Dictionary<PetSlotConfig, (bool Ok, string Error)>();
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
 
-        // Each step names itself on the card as it runs. Without this a failure reads as "it opened
-        // the window and then closed it again", because the close below is the cleanup and it is the
-        // only thing the eye catches.
-        state.Message = $"{NameOf(row)}: opening the boarding window…";
-        Log($"reload {NameOf(row)}: opening the boarding window");
-        if (!OpenBoarding(ser, out error)) { Log("  FAILED opening: " + error); return false; }
+        state.Message = batch.Count > 1
+            ? $"Opening the breeder for {batch.Count} rows…"
+            : $"{NameOf(batch[0])}: opening the boarding window…";
+        Log($"visit: opening the breeder once for {batch.Count} row(s) — " +
+            string.Join(", ", batch.Select(NameOf)));
+
+        if (!OpenBoarding(ser, out var openError))
+        {
+            Log("  FAILED opening: " + openError);
+            foreach (var row in batch) results[row] = (false, openError);
+
+            // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
+            // returning the fallback schedule here would OVERWRITE every other row's measured next with
+            // "assume a full load", turning one failed open into a run-wide loss of what was known.
+            return new VisitResult(results, new Dictionary<PetSlotConfig, DateTime>());
+        }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
+            // READ FIRST, and read EVERYTHING — the due rows to act on, and the rest because this
+            // reading is also what re-derives their next.
+            schedule = ReadRows(ser);
+
+            foreach (var row in batch)
+            {
+                var ok = ReloadRowInPlace(ser, state, row, out var rowError);
+                results[row] = (ok, rowError);
+
+                if (!ok)
+                    Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
+            }
+        }
+        finally
+        {
+            CloseBoarding(ser);
+        }
+
+        return new VisitResult(results, schedule);
+    }
+
+    // ── One reload ──────────────────────────────────────────────────────────
+
+    /// <summary>Reloads ONE ROW, with the boarding window ALREADY OPEN.
+    ///
+    /// The open and the close used to live here, and that is the whole reason a row was a window visit:
+    /// the loop called this once per row and every call opened and closed. They belong to
+    /// <see cref="Visit"/> now, so rows that come due together are done in ONE open. Everything between
+    /// them — ending a boarding, placing the pet, loading the food, starting — is unchanged.
+    ///
+    /// The rows are still serviced one at a time, which is the player's own ordering constraint
+    /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
+    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row, out string error)
+    {
+        error = "";
+
+        // A plain block rather than a try/finally: there is nothing to clean up per row any more, and
+        // the braces are kept so this stays a reviewable diff against the method it was — this is the
+        // most heavily live-tested code in the tool and a reindent would bury the real change.
+        {
+            // Each step names itself on the card as it runs. Without this a failure reads as "it opened
+            // the window and then closed it again", because the close is the cleanup and it is the only
+            // thing the eye catches.
+            state.Message = $"{NameOf(row)}: reloading…";
             // The pet has to be IN THE BAG before it can be put back, and while boarding runs it is
             // in the loader instead. So a reload off a running boarding starts by ending it — which is
             // also what returns the leftover food. Skipped when boarding is already stopped, because
@@ -824,10 +946,6 @@ public sealed class PetTool : ToolBase
 
             Log("  reload complete");
             return true;
-        }
-        finally
-        {
-            CloseBoarding(ser);
         }
     }
 

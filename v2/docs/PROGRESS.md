@@ -9,6 +9,48 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (20) — scopes 2 and 3: the visit, and a schedule re-derived on every look
+
+**One open does every row that is due.** Four rows due at once used to be four opens and three closes —
+nine window operations where one would do — and two of a live run's four failed on the reopen. Now the
+loop collects every row whose `next` is in the past, orders them **row 1, 2, 3**, and hands them to one
+visit: open once, do them all, close once.
+
+**Scopes 2 and 3 collapsed into one change.** The visit has to read every row to decide what to do, and
+that same read is what re-derives every row's time — so batching the acting and re-measuring the
+schedule are the same code. Splitting them would have meant a visit that reads and then ignores what it
+read.
+
+**What moved:**
+
+| before | after |
+|---|---|
+| `InspectRows` — open, read, close | `InspectRows` = open + `ReadRows` + close; **`ReadRows`** is the look with the window already open |
+| `ReloadRow` — open, one row, close | **`ReloadRowInPlace`** — one row, window already open, no open or close |
+| — | **`Visit`** — owns the open and the close for the whole batch |
+
+**The subtlety worth recording.** A row the visit *acted on* takes its next from the reload; a row it did
+**not** touch takes its next from the read. That split is not fussiness: the reading happens **before**
+the reload, so for a row that was just reloaded it describes the state the reload replaced. Applying it
+there would schedule the next reload from a stale tray.
+
+**A bug caught in review, before it ran.** The open-failure path returned the *fallback* schedule for
+every active row — which the loop would then have applied to rows it had not read, overwriting each one's
+measured time with "assume a full load". A single failed open would have quietly discarded everything the
+run knew. It now returns **nothing**, so a look that did not happen re-derives nothing.
+
+**A side benefit, not designed for:** the read now refreshes `BoardingRunning` immediately before the
+reload, so the "end boarding first" decision uses the state as it *is*. At 15:32 that decision ran off a
+tick that could have been hours old.
+
+**Unchanged, deliberately:** the per-row failure counting and `MaxFailures`, `RetryMinutes`, the `+9/100%`
+guard, the drag check, and the row order. The single-row case — the normal one — goes through the same
+path it always did; the only addition is the read, a few seconds before a reload that takes minutes.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live.**
+
+---
+
 ## 2026-09-21 (19) — scope 1: the bag page is not re-clicked when it is already showing
 
 **Measured, not assumed.** All **22 marked food cells are on one page**, and `SelectPage` ran before
