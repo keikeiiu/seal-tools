@@ -9,6 +9,44 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (18) — verified live: a finished pet is skipped, and a row feeds end to end
+
+**The first clean run.** Row 2, five stacks, all five dragged first time and boarding started:
+
+```
+16:06:02   the bag cell is 0.099 different at the drop, before the count dialog
+16:06:06   the bag cell is 0.822 different from before the drag    ← the stack left
+…
+16:06:30   starting boarding
+16:06:31   click the start button at (746,851)
+16:06:33   reload complete
+```
+
+**Three things were proved on that run, and all three were guesses this morning:**
+
+- **The guard skips a finished pet and boards the next one** — `A at page 2 cell 2 reads +9, 100% ←
+  finished (+10) — NOT boarding it, trying the next queued pet`, then cell 4, then the right-click.
+- **The drag check works, and its numbers are not marginal.** At the drop the cell reads **0.078–0.123**
+  (the stack is lifted and the game gives it back); after the count it reads **0.81–0.82** when the
+  stack left, and exactly **0.000** when it did not. The threshold at 0.10 sits inside a gap an order of
+  magnitude wide, and the failing case is zero rather than near the line.
+- **The drag itself is sound** — five in a row at the first attempt, no re-drag.
+
+**And the check earned its place on its first run, by catching a real failure.** A drag was attempted on
+`page 2, cell 15` — **a marked food cell with no food in it.** Three identical attempts, each reading
+`0.000` afterwards. Before the check existed, that reload would have clicked MAX and pressed Enter at a
+count dialog that was never raised, carried on, and reported success.
+
+**The cause is the one already written up as Issue C in ANALYSIS-FOOD-LOAD.md:** `NextFoodCell` walks
+the marked list as a **cursor** — "cell 2/23, now 3/23" — and a cursor cannot know that a cell it is
+pointing at is empty. The fix is the move this tool has already made once for rows: **look before
+acting** — check the cell holds something, and step to the next marked one if it does not.
+
+**Still open:** that cell cursor is unchanged, so the next reload can walk onto an empty cell again.
+Everything else on the food path is now checked.
+
+---
+
 ## 2026-09-21 (17) — the food drag gets a look, a re-drag, and honest logging
 
 **Every other risky action in this tool checks its own effect.** The pet placement looks at the slot and
