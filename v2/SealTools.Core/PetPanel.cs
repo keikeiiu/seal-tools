@@ -31,7 +31,11 @@ public sealed record PetPanel(int? Stage, int Growth, double Exp)
     ///
     /// EQUALS, not at-least, and that is the fail-safe choice: 9 is the game's maximum, so a growth
     /// above it can only be a misread — and "at least 9" would answer "finished" to a garbage panel,
-    /// which is the one direction that makes the tool stop feeding a pet that still needs it.</summary>
+    /// which is the one direction that makes the tool stop feeding a pet that still needs it.
+    ///
+    /// EQUALS stays safe because the growth can only ever be 0-9: <see cref="GrowthPattern"/> reads ONE
+    /// digit, so a panel that reads a digit too many yields the leading digit rather than a number above
+    /// the maximum. The "garbage panel" this guards against is one with no growth at all.</summary>
     public bool IsFinished => Growth == MaxGrowth && Exp >= FinishedExp;
 
     /// <summary>For a log line or the Test read. Deliberately not the record's default ToString —
@@ -115,8 +119,19 @@ public sealed record PetPanel(int? Stage, int Growth, double Exp)
 
     // Not followed by a % — that would be an EXP-shaped number, and the growth is the one with the
     // plus in front of it and nothing behind it.
+    //
+    // ONE digit, not two, because the game's growth IS one digit: it shows +0 … +9 and nothing else.
+    // Allowing two cost the finished test both ways round, and both were measured:
+    //
+    //   "+9" read as "+99"      -> 99, and IsFinished wants EXACTLY 9, so a finished +9/100% pet came
+    //                              back NOT finished and the run would have right-clicked it into the
+    //                              error dialog (live, 2026-09-21)
+    //   "+15 Days"              -> 15, the paid extension's DURATION label, which is not a growth at all
+    //
+    // With one digit the first reads 9 and the second reads 1. The second is still not the pet's real
+    // growth — but nothing acts on growth except the finished test, and 1 is never 9.
     private static readonly Regex GrowthPattern =
-        new(@"\+\s*(\d{1,2})(?!\s*%)", RegexOptions.Compiled);
+        new(@"\+\s*(\d)(?!\s*%)", RegexOptions.Compiled);
 
     // The opening bracket is required and the closing one is not: it is the opening plus the % that
     // say "EXP bar", and a lost trailing glyph should not cost the whole reading.

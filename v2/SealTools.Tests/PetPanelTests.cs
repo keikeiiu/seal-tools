@@ -57,6 +57,26 @@ public class PetPanelTests
         Assert.True(panel!.IsFinished);
     }
 
+    /// <summary>A growth read one digit too long reads as its FIRST digit — which for "+99" is the 9
+    /// that is really there, so a finished pet still reads as finished.
+    ///
+    /// MEASURED live, 2026-09-21: a +9/100% pet came back as "+99, 100%" (the sweep's report is
+    /// logs\reads\scan_20260921_152331.txt) and the owner confirmed the pet is +9/100%. Because
+    /// IsFinished wants EQUALS 9, 99 fell through as NOT finished and the run would have right-clicked
+    /// a pet that cannot be boarded, straight into the error dialog.
+    ///
+    /// The two-digit pattern was what allowed it, and it was wrong in both directions: it also read the
+    /// paid extension's "+15 Days" duration label as a growth of 15. See GrowthPattern.</summary>
+    [Fact]
+    public void AGrowthReadOneDigitTooLongStillReadsTheDigit()
+    {
+        var panel = P("（6）真蔚蓝凤凰+99[100%]");
+
+        Assert.NotNull(panel);
+        Assert.Equal(PetPanel.MaxGrowth, panel!.Growth);
+        Assert.True(panel.IsFinished);
+    }
+
     /// <summary>Both halves must hold. Each of these is finished by one number and not the other,
     /// and reading either alone would get the pet fed forever or dropped while it still needs food.</summary>
     [Theory]
