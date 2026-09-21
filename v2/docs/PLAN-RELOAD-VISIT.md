@@ -230,7 +230,46 @@ rather than a half-finished one.
 guess at both halves of the question: how much is really in there, and how much the pet really needs.
 This replaces it with a reading of the first and the table's answer to the second.
 
-## 9. Order of work
+## 9. Advanced: feed only the stacks the pet actually needs
+
+> *"If we know it only needs 1 stack, why do we feed 5?"*
+
+It falls out of the same arithmetic, and it pays twice.
+
+```
+items_needed   = remaining 喂养值 / per-item value      e.g. 296
+stacks_needed  = ceil(items_needed / MaxStack)          e.g. ceil(296/300) = 1
+stacks_to_feed = min(row.Stacks, stacks_needed)         e.g. min(5, 1) = 1
+```
+
+**Round UP, never down.** A stack is indivisible — the MAX dialog takes all 300 — so 1 stack for a pet
+that needs 296 leaves 4 items spare. The pet never runs dry and the residue is harmless. Rounding down
+would starve it by a few items, and `LoadFood` builds its stacks in a loop, so a short load would simply
+stop feeding mid-pet.
+
+**It saves the resource that actually runs out.** From this morning: **~57 food cells a day** against a
+64-cell bag, with 8 cells left. Feeding one stack instead of five is a 5× saving on exactly the reloads
+that are *most common* — most of a pet's life is spent near the top of its bar.
+
+**It cuts the actions with it.** Five drags become one on those reloads, which is the other goal, and
+each drag is a cursor placement that can miss.
+
+**And it makes the two halves of §8 converge.** Feed only what is needed and the food and the pet run
+out at almost the same moment, so "whichever runs out first" stops being a choice.
+
+**For a `+0` pet nothing changes** — it needs 9 stacks and the row holds 5, so it still gets all five.
+One code path, both cases:
+
+| pet | needs | feeds | next check |
+|---|---|---|---|
+| `+0` — 2,514 items | 9 stacks | **5** (all the row holds) | the food runs out |
+| `+9` 10% — 296 items | 1 stack | **1** | the pet finishes |
+
+**The risk, stated:** an under-feed leaves a pet dry until the next check. Rounding up makes that
+impossible in the arithmetic, and §8's rule already covers the case where the reading was wrong — the
+check comes when the food runs out, and the row is refilled.
+
+## 10. Order of work
 
 1. **Page tracking (§3a)** — small, safe, pays immediately, removes the kind of click that failed today.
    Independently valuable, so it lands on its own.
@@ -242,6 +281,9 @@ This replaces it with a reading of the first and the table's answer to the secon
    again.
 5. **The real next time (§7, §8)** — the formula, `wyz` on the queue entry, and the `min` rule. Wants
    §4 in place, since the number it computes has to be re-derived on every visit to be worth anything.
+6. **Feed only what is needed (§9)** — falls out of 5, and pays in food and in actions. Last because it
+   is the only one that changes how much the pet is given, and a wrong `wyz` would then under-feed
+   rather than merely mis-schedule.
 
 Each its own commit, each verified by the Release build and the test suite. Each is independently
 useful: stopping after any of them leaves the tool working and faster.
