@@ -13,7 +13,7 @@ echo [!] Unknown mode "%MODE%". Usage: publish.bat [public^|local]
 exit /b 1
 :mode_ok
 
-set RELTAG=v2.10
+set RELTAG=v2.11
 set PUB=SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish
 :: The sketch lives at the repo root, beside v2\ - not under it. This script is run from v2\.
 :: Arduino needs the .ino inside a folder of the same name, so the zip keeps the folder.
