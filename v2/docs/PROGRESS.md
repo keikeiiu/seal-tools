@@ -13,6 +13,49 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-22 (29) — the launcher UI, measured ([ANALYSIS-UI.md](ANALYSIS-UI.md))
+
+**Goal:** turn a UI audit into something durable, and decide where it belongs. Nothing in the code
+changed; the deliverable is a document plus a verdict to come.
+
+**Where it went, and why not a new plan.** [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md) already owns "the
+launcher UI rework", and its Progress table turned out to be the *current* one: steps 0–9 shipped and
+the `NavigationView` rail was tried and reverted. [TODO.md](TODO.md) and `v2/README.md` both still
+described that work as not started, so those were corrected. What remains open in the plan is the
+button label/weight convention — so a second plan would have been two documents for one question,
+which is the fault this session already spent a commit repairing. The measurement went into
+`ANALYSIS-UI.md` instead, in the format `ANALYSIS-FOOD-LOAD.md` established, and the plan, the TODO
+entry and the README's doc list all point at it.
+
+**What was actually measured** (counted, not estimated — the file is 8,160 lines):
+
+- **The calibration canvas is copy-pasted five times**: the canvas, the overlay grid and 18 event
+  wirings are re-built in every calibrate tab. This is the largest duplication in the file and it is
+  why four of the five biggest methods are calibrate tabs.
+- **Four button factories, one of which exists to undo another** — `MakeInlineButton` removes the
+  10 px top margin `MakeButton` applies.
+- **Blocking on the dispatcher: 18 `Thread.Sleep` calls, 5,500 ms, across 6 `async void` handlers.**
+  This corrects TODO.md's "roughly 18 s for a full cycle" — 5.5 s is the sleeps and the rest is
+  `HidPointer.To` blocking in `WaitForCursorToSettle`. The part not recorded anywhere: being
+  `async void`, an exception inside them is unobservable.
+- **Accessibility: 2 calls in 8,160 lines** (both `AutomationProperties.SetName` on two test buttons),
+  zero `AccessKey`, zero `KeyboardNavigation`.
+- **The only data binding in the app is the Attributes grid's three columns**; status is a 750 ms
+  `DispatcherTimer` reading `ToolState` on the UI thread while tools write it — and the audit of Core
+  found the "reads are atomic" comment untrue for its nullable-struct members. Polling is a fine
+  choice; depending on a claim that does not hold is not.
+
+**What I recommended, and what I argued against.** The order: extract the canvas, collapse the button
+factories, then accessibility and the layout constants as tabs are touched. Explicitly *not* proposed:
+an MVVM rewrite or converting tabs to XAML — the plan priced that alternative and left it reversible,
+and the reasoning embedded in this file's comments is what a rewrite would destroy.
+
+**Left open:** whether the dispatcher-blocking handlers are in scope. It is the only item that changes
+observable behaviour, and it touches the window of a feeder that runs for days, so it is the player's
+call rather than mine.
+
+---
+
 ## 2026-09-22 (28) — documentation audit: the docs had drifted from the tree
 
 **Goal:** check the docs against the code rather than against each other, and correct what no longer

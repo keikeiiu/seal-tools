@@ -57,12 +57,17 @@ v2/
   docs/CURSOR-INVESTIGATION.md  # why the cursor is placed with the Arduino, not SetCursorPos
   docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
   docs/PROGRESS.md       # dated log of what was done and why (append per session)
-  docs/PLAN-TUNER-SPRING.md  # planned: tuner spring placement + cursor guard (not built)
-  docs/PLAN-UI-CLEANUP.md    # planned: launcher UI rework — study/decide before coding
+  docs/DESIGN.md         # how it works and why — the doc a plan's reasoning graduates into
+  docs/PET-TAB-DESIGN.md # the Pet tab, the schedule and the reload flow
+  docs/ANALYSIS-UI.md    # the launcher UI, measured — the start for a next UI pass
+  docs/PLAN-TUNER-SPRING.md  # the tuner spring + cursor guard reasoning (built; shipped in v2.4)
+  docs/PLAN-UI-CLEANUP.md    # launcher UI rework — steps 0-9 shipped, shell reverted
   docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features
   docs/HANDOVER.md       # prompt for the next session: state, conventions, open threads
+  docs/TODO.md           # what is still open
   docs/CALIBRATION.md    # per-machine calibration guide
   docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
+  docs/archive/          # finished plans, kept for their reasoning
   publish.bat            # build + package the .exe
 ```
 
@@ -228,6 +233,7 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
   (in `Directory.Build.props`). Build must be 0 warnings / 0 errors.
 - `dotnet format` applied.
 - Public methods carry XML docs; disposables use `using`/`Dispose`.
+- CI (`.github/workflows/build.yml`) runs the same build + test on Windows for every push to `main`.
 
 ---
 

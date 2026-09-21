@@ -16,10 +16,15 @@ why is in [DESIGN.md](DESIGN.md)**; the design guardrails (things not to reverse
   [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
 - [ ] **A full tuner run and a composer cycle in the current build.** The residency work rewrote the
   shared Start/Stop path and only the pet tool has exercised it — see [HANDOVER.md](HANDOVER.md).
-- [ ] **UI cleanup (tabs, buttons, text-box layout).** Make the launcher readable: one tab one job,
-  controls grouped by intent, advanced/diagnostic bits behind a toggle, one shared row builder.
-  **Study first** — the target structure has to be agreed before any code, or the layout churn gets
-  redone. Inventory, problems, principles, five open questions and the tab-by-tab method:
+- [~] **UI cleanup (tabs, buttons, text-box layout).** The **WPF-UI rebuild shipped** — the plan's
+  steps 0–9 are done (palette to theme brushes, then `Hotkeys`, `Arduino`, `Setup`, `Gem`, `Spammer`,
+  `Attributes`, `Tuner`, `Calibrate Tuner`, `Calibrate Gem` rebuilt on `ui:Card`/`ui:` controls), and
+  the `NavigationView` rail was **tried and reverted** — the tab strip read better and clicking a rail
+  item did not switch the page. What is left of that plan is the button label/weight convention.
+  **For a next pass**, the measured start is [ANALYSIS-UI.md](ANALYSIS-UI.md): extract the calibration
+  canvas (copy-pasted 5×), collapse the four button factories into one, and the two cross-cutting
+  items the earlier plan never covered — accessibility, and the status poll's dependency on a
+  `ToolState` thread-safety claim that does not hold. Plan and its reasoning:
   [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
 
 ## Ideas for later (captured, not designed)

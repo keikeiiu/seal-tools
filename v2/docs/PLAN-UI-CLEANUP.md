@@ -4,6 +4,12 @@ Planning note, 2026-09-10 (revised with the answers so far). The goal is a launc
 cleanly: each tab doing one job, controls grouped by intent, one row builder instead of hand-rolled
 grids, and buttons whose labels say what they do.
 
+> **Status: steps 0–9 shipped; the shell was tried and reverted (see Progress below).** What remains
+> here is the button label/weight convention. The measurement for a *next* pass — the capture canvas
+> extracted, one button factory, accessibility, and the dispatcher/poll questions — is
+> [ANALYSIS-UI.md](ANALYSIS-UI.md), which counts the current file rather than proposing a different
+> direction.
+
 ## Answers so far
 
 | question | answer |

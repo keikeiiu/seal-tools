@@ -175,5 +175,6 @@ measured per-level cost that decides how long a pet still needs.
 | calibrating a machine | [CALIBRATION.md](CALIBRATION.md) |
 | the composer's hand-tuned move sets | [MOVE-SETS.md](MOVE-SETS.md) |
 | the guardrails, in full | [REVIEW.md](REVIEW.md) |
+| the launcher UI, measured (for a next UI pass) | [ANALYSIS-UI.md](ANALYSIS-UI.md) |
 | how to use it | [USER_GUIDE.md](USER_GUIDE.md) |
 | finished plans, with their reasoning | [archive/](archive/README.md) |
