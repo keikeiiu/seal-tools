@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO.Ports;
 using System.Threading;
+using OpenCvSharp;
 using SealTools.Core;
 using SealTools.Core.Config;
 
@@ -46,6 +47,31 @@ public sealed class PetTool : ToolBase
 
     /// <summary>After a click, before looking at the slot. The game needs a moment to move the pet.</summary>
     private const double PlaceSettle = 0.9;
+
+    /// <summary>How long the left button is HELD before the cursor starts moving, on a food drag.
+    ///
+    /// The drag used to press and move in the same frame. The player watched the first drag of a
+    /// reload miss while the second, a second later, worked — and the log agrees they differ: the
+    /// first presses and drops inside the same second. A human drag holds still for a moment before
+    /// pulling; this is that moment. It is a GUESS at the size, and the log now records enough
+    /// (landed positions per move, plus whether the bag cell actually emptied) for it to be corrected
+    /// from evidence rather than argued about.</summary>
+    private const double DragGrabWait = 0.35;
+
+    /// <summary>How many times a food drag is re-attempted when the bag cell still holds its stack.
+    /// The same reasoning as <see cref="PlaceAttempts"/>: the failure is intermittent, the cursor is
+    /// verified on target, so a retry is the fix and the count only bounds it.</summary>
+    private const int FoodDragAttempts = 3;
+
+    /// <summary>How much the dragged bag cell must change for the stack to count as moved.
+    ///
+    /// MEASURED on the bag itself: a cell holding something differs from an empty one by 0.47 and up,
+    /// while two empty cells differ by 0.000. 0.10 sits well inside that gap, and the direction matters
+    /// — reading a successful drag as FAILED would re-drag a cell that is already empty, which picks up
+    /// nothing and then fires a MAX click and an Enter at a dialog that is not there. So the bar for
+    /// "it moved" is deliberately low, and the number is logged either way so it can be corrected from
+    /// real drags rather than from this note.</summary>
+    private const double BagCellChangedAbove = 0.10;
 
     /// <summary>The buffer after each action on the pet, from config. Every step in a reload changes the
     /// breeder's state, and the next click is aimed at a window still absorbing the last one.</summary>
@@ -999,6 +1025,7 @@ public sealed class PetTool : ToolBase
         if (!tip.IsSet) return null;
 
         if (!PlaceOn(ser, cx, cy, out _)) return null;
+        Log($"  hovering ({cx},{cy}) for the panel — landed {CursorWhere()}");
 
         // The panel only exists while the cursor RESTS, so the calibrated delay is the read's
         // precondition rather than a nicety.
@@ -1250,36 +1277,90 @@ public sealed class PetTool : ToolBase
             var (cx, cy) = centres[index];
             var bagCell = new List<int> { cx, cy };
 
+            List<int>? slot = null;
             if (drag)
             {
                 // The row's OWN box for this stack, named. See FoodLoadMode for why a right-click
                 // cannot be used to do this.
-                if (FeederSlotCentre(row, stack) is not { } slot)
+                if (FeederSlotCentre(row, stack) is not { } box)
                 {
                     error = $"{NameOf(row)}: food load is set to drag but this row's food strip does " +
                             $"not divide into {row.Stacks} slot(s) — draw the strip on Calibrate Pet, " +
                             "or set the Pet tab's food load back to right-click.";
                     return false;
                 }
-                if (!DragFood(ser, bagCell, slot, index, page, stack, out error)) return false;
+                slot = box;
             }
-            else if (!Click(ser, bagCell, right: true, $"FOOD cell {index} (page {page + 1})", out error))
+
+            // A DRAG IS CHECKED AND RE-DRAGGED; a right-click is not. The game chooses the box for a
+            // right-click, so there is no cell it can be said to have left, and no way to look. The drag
+            // names a cell, so the cell can be looked at.
+            var attempts = drag ? FoodDragAttempts : 1;
+            var moved = false;
+
+            for (var attempt = 1; attempt <= attempts && !moved; attempt++)
             {
+                using var before = drag ? CaptureBagCell(bagCell) : null;
+
+                if (drag)
+                {
+                    if (!DragFood(ser, bagCell, slot!, index, page, stack, attempt, out error)) return false;
+                }
+                else if (!Click(ser, bagCell, right: true, $"FOOD cell {index} (page {page + 1})", out error))
+                {
+                    return false;
+                }
+
+                // MEASUREMENT, no decision taken on it. The decision below is made after the count is
+                // confirmed, because that is certainly when the stack is gone — but if the cell already
+                // reads empty at the drop, then a missed drag could be caught BEFORE the MAX click and
+                // the Enter, which are input this tool currently fires at a dialog a missed drag never
+                // raised. One live run's numbers answer which of the two it is; nothing needs guessing.
+                if (drag && before != null)
+                {
+                    using var mid = CaptureBagCell(bagCell);
+                    if (mid != null)
+                        Log($"  the bag cell is {IconMatch.DifferingFraction(before, mid):0.###} different " +
+                            "at the drop, before the count dialog");
+                }
+
+                SleepCheck(ActionWait);
+                if (!Click(ser, EffectiveMax()!, right: false, "MAX", out error)) return false;
+                SleepCheck(ActionWait);
+
+                // ONE Enter, not two. The sell flow's second Enter dismisses a confirmation this dialog
+                // does not have, so sending it would press an Enter into whatever follows.
+                if (!Enter(ser, out error)) return false;
+                // Logged because it is the one action with nothing to see: a keypress has no cursor
+                // movement and no visible effect of its own, so a reload that skipped it would read
+                // exactly like one that sent it.
+                Log("  enter (confirms the count dialog — no second one: this dialog has no confirmation)");
+                SleepCheck(ActionWait);
+
+                if (!drag) { moved = true; break; }
+
+                var emptied = BagCellEmptied(bagCell, before);
+                if (emptied == null)
+                {
+                    // UNKNOWN IS NOT FAILURE. Re-dragging a cell that is already empty picks up nothing
+                    // and then fires a MAX click and an Enter at a dialog that is not there — worse than
+                    // the missed drag it would be trying to fix.
+                    Log("  the bag cell couldn't be compared — carrying on without a re-drag");
+                    moved = true;
+                    break;
+                }
+
+                moved = emptied.Value;
+                if (!moved && attempt < attempts)
+                    Log($"  the stack is STILL in the bag — re-dragging ({attempt + 1} of {attempts})");
+            }
+
+            if (!moved)
+            {
+                error = $"{NameOf(row)}: stack {stack + 1} would not leave the bag after {attempts} " +
+                        "drag(s) — the cell still holds it, so nothing was loaded for that stack.";
                 return false;
             }
-
-            SleepCheck(ActionWait);
-            if (!Click(ser, EffectiveMax()!, right: false, "MAX", out error)) return false;
-            SleepCheck(ActionWait);
-
-            // ONE Enter, not two. The sell flow's second Enter dismisses a confirmation this dialog
-            // does not have, so sending it would press an Enter into whatever follows.
-            if (!Enter(ser, out error)) return false;
-            // Logged because it is the one action with nothing to see: a keypress has no cursor
-            // movement and no visible effect of its own, so a reload that skipped it would read
-            // exactly like one that sent it.
-            Log("  enter (confirms the count dialog — no second one: this dialog has no confirmation)");
-            SleepCheck(ActionWait);
         }
 
         return true;
@@ -1309,7 +1390,7 @@ public sealed class PetTool : ToolBase
     /// through the move is exactly when that would happen, so the failure path is the one that must
     /// release, not the one that must not.</summary>
     private bool DragFood(SerialPort ser, List<int> bagCell, List<int> slot, int index, int page,
-        int stack, out string error)
+        int stack, int attempt, out string error)
     {
         if (!PlaceOn(ser, bagCell[0], bagCell[1], out error))
         {
@@ -1317,6 +1398,8 @@ public sealed class PetTool : ToolBase
                 $"({bagCell[0]},{bagCell[1]}): {error}");
             return false;
         }
+        Log($"  drag[{attempt}] onto FOOD cell {index} (page {page + 1}) at ({bagCell[0]},{bagCell[1]})" +
+            $" — landed {CursorWhere()}");
         SleepCheck(ClickWait);
 
         // Re-aim before pressing, for the same reason Click does: the wait exists so the game is ready,
@@ -1329,7 +1412,11 @@ public sealed class PetTool : ToolBase
         }
 
         HidPointer.LeftDown(ser);
-        Log($"  drag: picked up FOOD cell {index} (page {page + 1}) at ({bagCell[0]},{bagCell[1]})");
+        Log($"  drag[{attempt}] leftdown at {CursorWhere()}");
+
+        // HOLD before pulling. Not a nicety: this is what the player's eye caught — the first drag
+        // pressed and moved in the same frame and picked nothing up. See DragGrabWait.
+        SleepCheck(DragGrabWait);
         try
         {
             if (!PlaceOn(ser, slot[0], slot[1], out error))
@@ -1338,13 +1425,72 @@ public sealed class PetTool : ToolBase
                 return false;
             }
             SleepCheck(ClickWait);
-            Log($"  drag: stack {stack + 1} onto the row's food box {stack + 1} at ({slot[0]},{slot[1]})");
+
+            // "leftup", not "dropped" and not "stack N onto": those were claims about the game made at
+            // the moment the frames were sent, and a drag that picked up nothing logged exactly the same
+            // lines as one that worked. What is logged here is what this code DID; whether the stack
+            // moved is answered by the caller, which looks at the bag cell.
+            Log($"  drag[{attempt}] leftup at {CursorWhere()} — sent stack {stack + 1} toward the row's " +
+                $"food box {stack + 1} at ({slot[0]},{slot[1]})");
             return true;
         }
         finally
         {
             HidPointer.LeftUp(ser);
         }
+    }
+
+    /// <summary>Where the cursor actually is, for the log — the position the placement aims in, so the
+    /// goal and the landing can be compared.
+    ///
+    /// The step logs used to record only where the cursor was SENT. A move that landed somewhere else
+    /// read identically to one that hit, which is the whole reason a failing run is hard to diagnose:
+    /// the numbers on the line were the intent, not the outcome.</summary>
+    private static string CursorWhere()
+    {
+        var p = WindowFinder.LogicalCursorPosition();
+        return p is { } at ? $"({at.X},{at.Y})" : "(cursor position unreadable)";
+    }
+
+    /// <summary>One bag cell's pixels, centred on <paramref name="centre"/> at the grid's pitch — the
+    /// same crop the icon capture uses. Null when the window or the grab is unavailable, which the
+    /// caller reads as "don't know" rather than as "it moved" or "it didn't".</summary>
+    private Mat? CaptureBagCell(List<int> centre)
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        if (!BagGrid.IsValidRect(_cfg.Pet.BagGrid)) return null;
+
+        var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
+        var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = centre[0] - w / 2,
+            Top = centre[1] - h / 2,
+            Width = w,
+            Height = h,
+        });
+        return cap?.Image;
+    }
+
+    /// <summary>Whether the stack left the bag cell, or null when it cannot be told.
+    ///
+    /// THE LOOK the food load never had. Every other risky action in this tool checks its own effect —
+    /// the pet placement looks at the slot, the toggle checks it did not do the opposite, the feeder
+    /// counts refuse to judge a capture that is not the game. The drag sent its frames and asserted
+    /// success, so a missed drag was invisible: the run went on to click MAX and press Enter at a count
+    /// dialog that was never raised, and the food simply was not there.</summary>
+    private bool? BagCellEmptied(List<int> centre, Mat? before)
+    {
+        if (before == null) return null;
+        using var after = CaptureBagCell(centre);
+        if (after == null) return null;
+
+        var changed = IconMatch.DifferingFraction(before, after);
+        Log($"  the bag cell is {changed:0.###} different from before the drag " +
+            $"(moved above {BagCellChangedAbove:0.###})");
+        return changed > BagCellChangedAbove;
     }
 
     /// <summary>The next marked food cell, and the first one NOT yet used.
