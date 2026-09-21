@@ -1,5 +1,8 @@
 # Reading the hover tooltip — plan
 
+> **ARCHIVED 2026-09-22 — built and shipped.** Kept for the reasoning, not as a plan. How it works now
+> is in [DESIGN.md](../DESIGN.md); what is still open is in [TODO.md](../TODO.md).
+
 Status: **calibrated, reading, and now parsed — verified live 2026-09-18, parser added 2026-09-19.**
 The Calibrate Tooltip tab measures the offset, hovers with the Arduino, and reads the panel; a Test read
 reports what the OCR saw, saved beside the image. `PetPanel` turns those lines into
@@ -9,10 +12,10 @@ whether the panel states more than the three values the parser wants.
 
 What is still NOT built: anything that **acts** on a read. The guard that stops the feeder reloading a
 finished pet, and the queue that boards the next one, are both designed (§13 of
-[PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md)) and neither is wired in.
+[PLAN-PET-AUTOFEED.md](../PLAN-PET-AUTOFEED.md)) and neither is wired in.
 
 A general capability, not a pet-feature detail, which is why it has its own document rather than a
-section in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md).
+section in [PLAN-PET-AUTOFEED.md](../PLAN-PET-AUTOFEED.md).
 
 Goal: **read what the game shows when you hover an item.** The pet tool wants to know a pet's stage,
 growth and EXP — to decide what to board and to know when it is finished; the same read gives the food's
@@ -79,7 +82,7 @@ portable `defaults.yaml` — the same rule the bag grids and the OCR band alread
 
 | Read | Enables |
 |---|---|
-| A pet's **stage, growth and EXP** | "where is this pet" and "is it done" — the automatic direction in [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md) §11, and the guard that stops the feeder reloading a finished pet |
+| A pet's **stage, growth and EXP** | "where is this pet" and "is it done" — the automatic direction in [PLAN-PET-AUTOFEED.md](../PLAN-PET-AUTOFEED.md) §11, and the guard that stops the feeder reloading a finished pet |
 | A food stack's count | knowing when the feeder runs dry instead of predicting it, which is the single biggest accuracy upgrade available to that tool |
 | Anything else's tooltip | whatever wants it next, for the cost of a parser rather than a calibration |
 
@@ -130,7 +133,7 @@ correctly reliably**, and there is no way to tell which kind you have without te
 repeatedly. Digits and punctuation have shown no such variance.
 
 **Which kills the original plan for this read.** The idea was to resolve a pet's stage from its NAME
-via the scraped table in [PET-DATA.md](PET-DATA.md) — but that table is Simplified (it comes from the
+via the scraped table in [PET-DATA.md](../PET-DATA.md) — but that table is Simplified (it comes from the
 Simplified data site, see [[seal-game-data-source]]) and the game is not, so even a *perfect* read would
 not match. Two independent reasons the lookup could not work.
 
@@ -173,7 +176,7 @@ every other. Two options, and the choice is about how often it gets re-tuned:
 
    **But the same read found the route that works, and it is better than expected.** The NAME reads
    cleanly and matches the scraped table exactly: the panel's `真蔚蓝米鲁` is character-for-character the
-   `真蔚蓝米鲁` of [PET-DATA.md](PET-DATA.md) id 24759, stage 6, `wyz` 5200. The script mismatch this
+   `真蔚蓝米鲁` of [PET-DATA.md](../PET-DATA.md) id 24759, stage 6, `wyz` 5200. The script mismatch this
    document warned about **does not apply to the read**, because RapidOCR outputs Simplified and the
    table is Simplified — the two agree. (The warning was about the game *displaying* Traditional, which
    it does; it is the *recogniser* that normalises, and `text_fixes` only converts the pairs it lists.)

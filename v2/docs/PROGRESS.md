@@ -1111,13 +1111,13 @@ have claimed `● RUNNING` for a tool that was already gone; and the initial loo
 **Verified:** Release build clean, 109/109 tests. **Not verified: the launcher has not been run at all.**
 Every behavioural claim here is reasoning from the code. The live steps — including three cases no plan
 row covers (starting the pet while a tool runs, starting the pet twice, stopping it mid-reload) — are at
-the end of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md).
+the end of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md).
 
 ---
 
 ## 2026-09-20 (4) — Part 3's gate, and stopping short of the wiring on purpose
 
-**Only the first slice of [Part 3](PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
+**Only the first slice of [Part 3](archive/PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
 so nothing about the tool's behaviour has changed — deliberately, and this is the entry that explains
 why the rest was not written.
 
@@ -1150,7 +1150,7 @@ none of it is written.
 
 ## 2026-09-20 (3) — Part 2: the board can finally be asked a question
 
-**Goal.** The second part of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — a `V` command, so that a
+**Goal.** The second part of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md) — a `V` command, so that a
 board can report what it is running. Every command until now went one way, which is why "did the board
 ignore that, or did it act and nothing happened?" had no answer: both look like nothing.
 
@@ -1193,7 +1193,7 @@ the silence case without an old board.
 
 ## 2026-09-20 (2) — Part 1 of the resident-pet plan: the Hold Space toggle stops inverting
 
-**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) — the live bug
+**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md) — the live bug
 on the other PC, where the Hold Space toggle will not stop and the spacebar stays held.
 
 **The bug is an inversion, and the guard was asking one question too many.** `CurrentId == "holdspace"`
@@ -1292,7 +1292,7 @@ green. It compares the stored object against the config now, and is mutation-che
 ### And the co-run question, answered by the game rather than by us
 
 The player asked whether the pet feeder could stay resident while other tools come and go. The
-investigation is in [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md), and the answer is **not about our
+investigation is in [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md), and the answer is **not about our
 code**: the boarding window and the **tuner's** window cannot both be open, and the tuner's must be
 closed first — so there is never a moment where two tools drive the game, and the cursor-lease design
 that asymmetry seemed to want has no subject. The tuner stays a manual schedule; everything else is
@@ -1528,7 +1528,7 @@ and varies 27× within a single stage, so two stage-6 pets cannot be told apart 
 ways to get it, in the order they would be tried: the panel itself, if it states the current level's
 所需喂养值 (then `wyz = that ÷ (1 + growth/10)`, one read, no table); the pet's name against the
 327-entry table; or two reads a cycle apart, which measure the rate and so `wyz`, with no table at all.
-The open question is now item 4 of [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md).
+The open question is now item 4 of [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md).
 
 **The Pet tab's Test read is how that question gets answered.** It hovers the marked PET cell on its
 marked page, reads the panel at the calibrated offset, and reports the raw lines, the parse, and
