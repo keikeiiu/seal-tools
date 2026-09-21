@@ -725,6 +725,12 @@ public sealed class PetTool : ToolBase
     /// configured cycle follows, and for the same reason: reloading onto a part-used slot is the case
     /// whose behaviour is unknown.
     ///
+    /// **ZERO IS RELOAD NOW, with no margin.** The wait exists to arrive *after* a tray that still has
+    /// food in it has drained; a tray already reading zero IS past empty, so there is nothing to wait
+    /// for. The player asked the obvious question — *"if we know it is empty, why wait another 5
+    /// minutes?"* — and the answer was that it was sleep for its own sake. The five minutes cost the pet
+    /// food, which is the opposite of what a margin is for.
+    ///
     /// Null means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
     /// (fall back to the configured cycle, which assumes a full load). The two are different and the
     /// caller logs which.</summary>
@@ -733,6 +739,7 @@ public sealed class PetTool : ToolBase
         if (_cfg.Pet.ReloadOnStart) return DateTime.Now;
         if (!row.BoardingRunning) return DateTime.Now;
         if (itemsLeft is not { } items) return DateTime.Now.AddMinutes(CycleMinutesFor(row));
+        if (items <= 0) return DateTime.Now;
 
         var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
         return DateTime.Now.AddMinutes(Math.Max(0, items / (double)rate) + WaitAfterEmptyMinutes);
