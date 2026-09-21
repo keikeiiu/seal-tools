@@ -40,6 +40,13 @@ public sealed class PetTool : ToolBase
 
     private const double RetryMinutes = 5;
 
+    /// <summary>How long a row waits when the BAG holds no pet that can be fed — see
+    /// <see cref="RowOutcome.NothingToBoard"/>. Longer than <see cref="RetryMinutes"/> because it is not
+    /// a fault to be recovered from: nothing changes until the player puts a feedable pet in the bag,
+    /// or an existing one is taken out of a loader and becomes boardable again. Half an hour is a
+    /// compromise between noticing soon and opening the window on a bag that has not changed.</summary>
+    private const double NoPetRetryMinutes = 30;
+
     /// <summary>How many times to re-click the pet before giving up. More than one because the failure
     /// is intermittent rather than a wrong calibration — the cursor is verified on target — so a retry
     /// is the fix and the count only bounds it.</summary>
@@ -414,6 +421,18 @@ public sealed class PetTool : ToolBase
                                         (result.PetMinutes is { } m && m < loaded
                                             ? $" (the pet finishes first, in {m:0} min)"
                                             : "");
+                        Console.WriteLine(state.Message);
+                    }
+                    else if (result.NothingToBoard)
+                    {
+                        // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
+                        // or none is in there. The player may simply not have another yet, and a row
+                        // must not be counted against, or dropped, for the state of the bag.
+                        failures[row] = 0;
+                        next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
+                        state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
+                        Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
+                            $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
                         Console.WriteLine(state.Message);
                     }
                     else
@@ -946,8 +965,13 @@ public sealed class PetTool : ToolBase
 
     /// <summary>One row's result from a visit. <paramref name="PetMinutes"/> is how long the pet that
     /// was boarded still needs, or null when that could not be answered — the caller falls back to the
-    /// configured cycle either way.</summary>
-    private sealed record RowOutcome(bool Ok, string Error, double? PetMinutes);
+    /// configured cycle either way.
+    ///
+    /// <paramref name="NothingToBoard"/> says the row could not be filled because the BAG holds no
+    /// feedable pet — every queued one has finished, or none is in there at all. That is a WAIT, not a
+    /// fault: the player may simply not have another pet yet, and a row must not be counted against, or
+    /// dropped, for the state of the bag.</summary>
+    private sealed record RowOutcome(bool Ok, string Error, double? PetMinutes, bool NothingToBoard);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
     /// are due — one at a time, in row order — and close once.
@@ -977,7 +1001,7 @@ public sealed class PetTool : ToolBase
         if (!OpenBoarding(ser, out var openError))
         {
             Log("  FAILED opening: " + openError);
-            foreach (var row in batch) results[row] = new RowOutcome(false, openError, null);
+            foreach (var row in batch) results[row] = new RowOutcome(false, openError, null, false);
 
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
@@ -995,8 +1019,9 @@ public sealed class PetTool : ToolBase
 
             foreach (var row in batch)
             {
-                var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes);
-                results[row] = new RowOutcome(ok, rowError, petMinutes);
+                var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes,
+                    out var nothingToBoard);
+                results[row] = new RowOutcome(ok, rowError, petMinutes, nothingToBoard);
 
                 if (!ok)
                     Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
@@ -1022,10 +1047,11 @@ public sealed class PetTool : ToolBase
     /// The rows are still serviced one at a time, which is the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
     private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row,
-        out string error, out double? petMinutes)
+        out string error, out double? petMinutes, out bool nothingToBoard)
     {
         error = "";
         petMinutes = null;
+        nothingToBoard = false;
 
         // A plain block rather than a try/finally: there is nothing to clean up per row any more, and
         // the braces are kept so this stays a reviewable diff against the method it was — this is the
@@ -1085,7 +1111,11 @@ public sealed class PetTool : ToolBase
 
             state.Message = $"{NameOf(row)}: placing the pet…";
             Log("  placing the pet");
-            if (!PlacePet(ser, row, out error)) { Log("  FAILED placing the pet: " + error); return false; }
+            if (!PlacePet(ser, row, out error, out nothingToBoard))
+            {
+                Log("  FAILED placing the pet: " + error);
+                return false;
+            }
 
             // HOW LONG THIS PET NEEDS, from the panel the guard just read and the line its queue entry
             // names. Asked HERE, while the pet that was boarded is still the one the fields describe —
@@ -1170,9 +1200,10 @@ public sealed class PetTool : ToolBase
     /// not necessarily land here. IconMatch exists for exactly that case and is deliberately not wired
     /// in yet — proving the rest of the flow end to end is worth more than solving the hard case
     /// first.</summary>
-    private bool PlacePet(SerialPort ser, PetSlotConfig row, out string error)
+    private bool PlacePet(SerialPort ser, PetSlotConfig row, out string error, out bool nothingToBoard)
     {
         error = "";
+        nothingToBoard = false;
         var pet = _cfg.Pet;
 
         // Cleared FIRST, so whatever the reload reads after this is about THIS pet or is nothing. A
@@ -1202,6 +1233,7 @@ public sealed class PetTool : ToolBase
                 error = $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet " +
                         "finished it was mailed, so this is the queue being empty of live pets — " +
                         "capture the next one's icon on the Pet tab.";
+                nothingToBoard = true;   // a WAIT, not a fault — see the caller
                 return false;
             }
         }
@@ -1313,6 +1345,7 @@ public sealed class PetTool : ToolBase
             error = "Every queued pet reads +9/100% — there is nothing here that can be boarded. " +
                     "Refused " + string.Join("; ", refused) + ". Capture the icon of a pet that can " +
                     "still be fed, on the Pet tab.";
+            nothingToBoard = true;   // a WAIT, not a fault — see the caller
             return false;
         }
         finally
