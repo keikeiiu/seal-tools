@@ -208,6 +208,12 @@ public sealed class PetTool : ToolBase
             state.Running = false;
             return 0;
         }
+
+        // THE CHECKING LINE COMES OFF NOW. InspectRows sets "Checking what is already running…" so the
+        // card says something while it clicks, and nothing ever cleared it — so a run that had finished
+        // looking sat there claiming to be looking, for as long as its first reload was away. A
+        // progress note is not a state, and on this tool the gap between the two is hours.
+        state.Message = null;
         var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
 
         // THE CARD'S STANDING LINE. A reload is hours apart, so a card that only reported the last

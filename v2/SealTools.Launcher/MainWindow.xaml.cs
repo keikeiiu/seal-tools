@@ -516,11 +516,15 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void RefreshStatus()
     {
-        // Mini mode: while a tool runs, the window shows only that tool's card so it takes a corner
-        // rather than the whole left edge.
-        // Hold Space has no card (it's a top-row button), so it doesn't shrink the window to a card.
-        _miniToolId = _service.CurrentState is { Running: true } && _service.CurrentId != "holdspace"
-            ? _service.CurrentId : null;
+        // Mini mode: while tools run the window shows only their cards, so it takes a corner rather
+        // than the whole left edge. EVERY running tool, not just the current one — the resident pet
+        // feeder runs beside a foreground tool, and collapsing to the foreground one alone hid the
+        // feeder's card and the schedule line on it.
+        // Hold Space has no card (it's a top-row button), so it never shrinks the window to a card.
+        _miniToolIds.Clear();
+        foreach (var (id, _) in Tools)
+            if (id != "holdspace" && _service.StateFor(id) is { Running: true })
+                _miniToolIds.Add(id);
         ApplyWindowLayout();
 
         foreach (var (id, _) in Tools)
@@ -535,7 +539,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             // over the card of a tool that was feeding pets at that moment.
             if (_service.StateFor(id) is { } state)
             {
-                block.Text = FormatStatus(state);
+                var text = FormatStatus(state);
+
+                // THE RESIDENT MARKER, on the one card whose tool is not stopped by starting another.
+                // Said only while it runs, because that is when the difference matters: this card
+                // reading RUNNING beside another tool's card reading RUNNING looks like a bug unless
+                // something says it is the design.
+                if (id == LauncherService.ResidentId && state.Running)
+                    text += Environment.NewLine + "◆ resident — another tool's Start does not stop it";
+
+                block.Text = text;
                 block.Foreground = state.Running
                     ? Res("SystemFillColorSuccessBrush")
                     : Res("SystemFillColorCriticalBrush");
@@ -653,7 +666,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     // for one task — dragging a capture canvas on a screen too small to show the cards and the canvas
     // at once — and a launcher that opened with its status cards missing would read as broken.</summary>
     private bool _toolsCollapsed;
-    private string? _miniToolId;
+    /// <summary>Every tool whose card mini mode keeps on screen. A LIST because more than one tool can
+    /// genuinely be running — the resident pet feeder alongside whatever else the player started — and
+    /// showing only the current one hid the feeder's card, and with it the standing schedule line that
+    /// is the only evidence it is still working. At most two, so the window still fits a corner.</summary>
+    private readonly List<string> _miniToolIds = new();
     private bool _layoutApplied;
     private bool _appliedExpanded;
     private bool _appliedMini;
@@ -725,7 +742,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         try
         {
             if (WindowState != WindowState.Normal) return; // maximized/minimized: keep the last real size
-            if (_configExpanded && _miniToolId == null && Height > _collapsedHeight)
+            if (_configExpanded && _miniToolIds.Count == 0 && Height > _collapsedHeight)
                 _configExpandedHeight = Height;
 
             var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
@@ -749,7 +766,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Cards-hidden counts as "not mini": mini mode shows ONE card and sizes the window to it, so
         // the two cannot both apply — collapsing the cards would otherwise shrink the window to a
         // height for a card that is not on screen.
-        bool mini = _miniToolId != null && !_toolsCollapsed;
+        bool mini = _miniToolIds.Count > 0 && !_toolsCollapsed;
         if (_layoutApplied && mini == _appliedMini && _configExpanded == _appliedExpanded
             && _toolsCollapsed == _appliedToolsCollapsed) return;
 
@@ -763,10 +780,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         ToolsToggle.Content = (_toolsCollapsed ? "▸  " : "▾  ") + "Tools";
 
         foreach (var (id, card) in _toolCards)
-            card.Visibility = !mini || id == _miniToolId ? Visibility.Visible : Visibility.Collapsed;
+            card.Visibility = !mini || _miniToolIds.Contains(id) ? Visibility.Visible : Visibility.Collapsed;
 
         // Measured AFTER the visibility change, so this is the height of the cards actually on
-        // screen — all of them normally, one of them in mini mode.
+        // screen — all of them normally, the running ones in mini mode.
         double collapsed = MeasureCardsHeight();
         _collapsedHeight = collapsed;
 
