@@ -9,6 +9,40 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (14) — "+99": the growth pattern read two digits where the game shows one
+
+**The sweep's report, read for the first time as a file** (`logs\reads\scan_20260921_152331.txt`), found
+**8 cells — exactly what the owner sees with their eye**: 3 × `B` on page 1, 3 × `A` and 2 × `B` on
+page 2, nothing on page 3. The finding and the reading both work.
+
+**And in that report was the failure the owner had been describing all along:**
+
+```
+B at cell 64 (match 0.13)  stage 6, +99, 100%   ← FEEDABLE
+```
+
+**`+99` is not a growth.** The game shows `+0 … +9` and nothing else, and the owner confirmed that pet
+is **+9/100%** — finished. `IsFinished` wants *exactly* 9, so 99 fell straight through as feedable and
+the run would have right-clicked a pet that cannot be boarded, into the error dialog.
+
+**The cause was the pattern, not the value:** `GrowthPattern` was `\+(\d{1,2})` — **two** digits. One
+digit is what the game ever shows. And two digits was wrong in *both* directions, the second of which
+was already pinned by a test nobody had connected to a live read: `+15 Days`, the paid extension's
+**duration** label, read as a growth of 15.
+
+**One digit fixes both at once.** `+99` reads 9 → finished, which is right; `+15 Days` reads 1 → not
+finished, which is the expectation `GrowthAboveTheMaximumIsNeverFinished` already held.
+
+**Clamping was my first attempt and it was worse.** Clamping anything above the maximum down to the
+maximum fixed `+99` and broke `+15 Days` — a +3 pet with a full bar would have been called finished and
+stopped being fed, which is the one direction this tool refuses. The test caught it. **A wrong value and
+a wrong pattern look identical in the symptom and need opposite fixes; the pattern is where the
+authority is.**
+
+**Verified:** Release build clean, 0 warnings; **149/149** tests (one added).
+
+---
+
 ## 2026-09-21 (13) — one icon is a KIND of pet, and the sweep was taking only one cell
 
 **The player's bag: 8 pets, 2 icons.** The report from `Scan the bag for these pets` — 3×`B` on page 1,
