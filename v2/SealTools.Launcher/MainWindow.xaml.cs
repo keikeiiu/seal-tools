@@ -7038,8 +7038,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             report.Add($"  page {p + 1}: {pageFeedable} feedable, {pageFinished} finished — {detect}");
             report.AddRange(pageLines);
 
-            // Shown per PAGE, so a five-minute scan is not five minutes of a window that looks hung.
+            // Shown per PAGE, so a long scan is not minutes of a window that looks hung.
             result.Text = string.Join(Environment.NewLine, report);
+            WriteScanReport(result.Text);
         }
 
         if (writeQueue)
@@ -7062,6 +7063,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             report.Add("");
             report.Add($"  queue: {replaced} icon(s) replaced by {harvested.Count} harvested here");
             result.Text = string.Join(Environment.NewLine, report);
+            WriteScanReport(result.Text);
 
             hint.Text = $"{feedable} feedable, {finished} finished. The queue now holds " +
                         $"{harvested.Count} icon(s), rebuilt from what is actually in the bag — the " +
@@ -7075,6 +7077,31 @@ public partial class MainWindow : FluentWindow, IDisposable
         hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
                     "Nothing was changed: this is the read-only scan. \"Scan + rebuild the queue\" " +
                     "writes what it finds.";
+    }
+
+    /// <summary>Writes a bag scan's report to logs\reads, beside every other diagnostic's evidence.
+    ///
+    /// The card's message is overwritten by the next thing and gone when the tab changes, and a report
+    /// that only exists on screen cannot be compared with the bag tomorrow or read by anyone not sitting
+    /// in front of it — and a scan is evidence about a queue that may be wrong, which is the one case
+    /// where reading it later actually matters.
+    ///
+    /// ONE writer for both scans. "Scan the bag for these pets" had its own inline copy of this and the
+    /// feedable sweep was written with a second, differently-named one; two ways of recording one kind
+    /// of evidence is how they come to differ. Best-effort — evidence must never fail a scan.</summary>
+    private static void WriteScanReport(string text)
+    {
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs", "reads");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, $"scan_{DateTime.Now:yyyyMMdd_HHmmss}.txt"),
+                text + Environment.NewLine);
+        }
+        catch
+        {
+            // ignore — see the summary.
+        }
     }
 
     /// <summary>Every number in a read, with a few characters either side of it.
@@ -7320,21 +7347,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 report.Add($"    {i + 1}. {pet.Queue[i].Label ?? "(no name)"}: {totals[i]} cell(s)");
 
             hint.Text = string.Join(Environment.NewLine, report);
-
-            // The same report, written down. The card's message is overwritten by the next thing and
-            // gone when the tab changes, and a scan is evidence about a queue that may be wrong — the
-            // one case where reading it later actually matters.
-            try
-            {
-                var dir = Path.Combine(AppContext.BaseDirectory, "logs", "reads");
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, $"scan_{DateTime.Now:yyyyMMdd_HHmmss}.txt"),
-                    hint.Text + Environment.NewLine);
-            }
-            catch
-            {
-                // As above — the report is on screen either way.
-            }
+            WriteScanReport(hint.Text);
         }
         catch (Exception ex)
         {
