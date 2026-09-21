@@ -191,6 +191,8 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>Which single point the calibrator is waiting for — see <see cref="PetArmPoint"/>.</summary>
     private string? _petPointTarget;
     private TextBlock? _petChecklist;
+    /// <summary>The per-row geometry listing — see RefreshPetGeometry.</summary>
+    private TextBlock? _petGeometry;
     /// <summary>Which bag page the cell picker edits, and whether a click marks food or the pet.</summary>
     private int _petPickPage;
 
@@ -5015,6 +5017,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             rowRow,
             LabeledField("Food slots in this row", _petStacksBox)));
 
+        // THE NUMBERS THE MARKS RESOLVE TO, per row, in pixels — the strip, each slot it divides into,
+        // and where each slot's count crop begins. The capture shows the boxes; this says what they
+        // ARE, which is the thing to read when one row behaves differently from its neighbours. A crop
+        // starting a pixel right of another row's is the whole of a "this row reads nothing" report.
+        _petGeometry = Mono();
+        _petGeometry.Text = "nothing drawn yet";
+        panel.Children.Add(Section("Row geometry",
+            Hint("What each row's strip divides into, and where the count crop starts on every slot. " +
+                 "Read down the crop column across rows: an outlier there is a row whose slots landed " +
+                 "differently, which is what a row that reads nothing while its neighbours read looks " +
+                 "like."),
+            _petGeometry));
+
         var drawToggle = MakeButton("Draw start button", ControlAppearance.Secondary);
         drawToggle.Click += (_, _) => PetArmDrag("toggle");
         var drawPetSlot = MakeButton("Draw pet slot", ControlAppearance.Secondary);
@@ -5818,6 +5833,45 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPetChecklist();
     }
 
+    /// <summary>The per-row geometry, in pixels: the strip, every slot it divides into, and where each
+    /// slot's count crop begins. Shown because a capture answers "is the box in the right place?" and
+    /// this answers "what does it resolve to?" — and when one row reads nothing while its neighbours
+    /// read, the cause is usually visible here as a crop starting a pixel or two right of theirs.</summary>
+    private void RefreshPetGeometry()
+    {
+        if (_petGeometry == null) return;
+        var pet = _service.Config.Pet;
+        var lines = new List<string>();
+
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var r = pet.Slots[i];
+            var tag = r.Enabled ? "" : "   (not run)";
+            if (FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks) is not { } slots)
+            {
+                lines.Add($"row {i + 1}  strip  not drawn{tag}");
+                lines.Add("");
+                continue;
+            }
+
+            var st = r.FeederStrip!;
+            lines.Add($"row {i + 1}  strip  [{st[0],4},{st[1],4}] {st[2],3}x{st[3],-3}" +
+                      $"  -> {slots.Count} slot(s){tag}");
+            for (int f = 0; f < slots.Count; f++)
+            {
+                var s2 = slots[f];
+                var crop = FeederLayout.ReadRegion(s2, pet.FeederCountLeftFraction)!;
+                lines.Add($"         slot {f + 1}  [{s2[0],4},{s2[1],4}] {s2[2],3}x{s2[3],-3}" +
+                          $"  crop starts x={crop[0],4}  ({crop[2]} wide)");
+            }
+            lines.Add("");
+        }
+
+        _petGeometry.Text = lines.Count == 0
+            ? "no rows yet — add one above"
+            : string.Join(Environment.NewLine, lines).TrimEnd();
+    }
+
     /// <summary>Draws every slot centre the grid implies — the check that the bag really is uniform,
     /// and the only way to see it is.</summary>
     private void PetShowCentres()
@@ -6194,6 +6248,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The checklist marks which row is being edited and lists them all, so it has to follow the
         // selection and the row count rather than only the marks.
         RefreshPetChecklist();
+        RefreshPetGeometry();
     }
 
     private void PetStacksChanged(object sender, TextChangedEventArgs e)
