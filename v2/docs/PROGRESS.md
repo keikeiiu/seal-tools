@@ -9,6 +9,41 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (11) — the sweep stops hovering all 64 cells
+
+**Four and a half minutes to discover that most cells are empty.** The sweep hovered every cell on
+every page and let the OCR tell it what was there. The player's answer was the right one: *don't skip
+the empty ones, FIND the cells that hold something and ask only those.*
+
+**The mechanism needs no calibration and assumes nothing.** A bag is mostly empty, and an empty bag
+slot renders identically in every cell — so **the closest-matching pair of cells on a page are both
+empty, and that pair IS the page's empty reference**. Every other cell is then measured against it with
+`IconMatch.DifferingFraction` under `PetSlotOccupiedAbove`, which is the *same primitive and the same
+number* the boarding slot already uses for "is there something in this slot". Nothing new was invented;
+an existing measured rule was pointed at a second question.
+
+**It returns every occupied cell, pet or not.** Food and loot get hovered and rejected by the parser,
+which costs one hover each. Telling a pet's portrait from a stack of food is a harder problem than the
+one being solved, and `PetPanel.Parse` already solves it exactly.
+
+**The margin is a number in the log, not a claim.** Each page reports *busiest empty*, *quietest
+occupied*, the threshold and the empty floor — so the gap the threshold sits in is visible. This is the
+`MatchLimit` lesson applied before the fact rather than after: `0.12` was inherited, cost half of every
+scan, and the truth (0.0–0.15 against 0.83+) only came out because someone measured. If the gap here is
+thin, the log says so on the first sweep.
+
+**It falls back to the slow path, never to a wrong answer:** no page image means every cell is asked.
+
+**Also fixed: a name collision I introduced.** There was already a `PetScanBag(TextBlock hint)` — the
+older report of where the *queued* pets are — and the sweep was added as an overload of it. Two methods,
+one name, different jobs: it compiled, which is exactly why it would have bitten later. The sweep is now
+`PetScanFeedable`, and the doc comment says which question each one answers.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — the detector has
+never seen a bag.
+
+---
+
 ## 2026-09-21 (10) — the sweep can now rebuild the queue
 
 **The scan found the feedable pets, and the run still could not use the answer.** The queue held icons

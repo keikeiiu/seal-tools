@@ -5602,8 +5602,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         // result off the screen, and the two answer different questions.
         var scanResult = Mono();
         scanResult.Margin = new Thickness(0, 8, 0, 0);
-        scanFeedable.Click += async (_, _) => await PetScanBag(hint, scanResult, writeQueue: false);
-        scanQueue.Click += async (_, _) => await PetScanBag(hint, scanResult, writeQueue: true);
+        scanFeedable.Click += async (_, _) => await PetScanFeedable(hint, scanResult, writeQueue: false);
+        scanQueue.Click += async (_, _) => await PetScanFeedable(hint, scanResult, writeQueue: true);
         panel.Children.Add(Section("Find the pets that can still be fed",
             Hint("Hovers EVERY cell of every bag page and reports each pet's growth and EXP, so the " +
                  "ones at +9/100% — already finished, and an error dialog if boarded — can be told " +
@@ -6795,7 +6795,10 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// and not `>=` in the first place. Unknown stays unknown.
     ///
     /// READ-ONLY. It moves the cursor and reads; it boards nothing, queues nothing and saves nothing.</summary>
-    private async Task PetScanBag(TextBlock hint, TextBlock result, bool writeQueue)
+    /// <summary>Sweeps the bag for pets that can still be fed, and optionally rebuilds the queue from
+    /// them. Distinct from <see cref="PetScanBag"/>, which reports where the QUEUED pets are: this one
+    /// finds pets nobody has captured yet, which is the question a stale queue cannot answer.</summary>
+    private async Task PetScanFeedable(TextBlock hint, TextBlock result, bool writeQueue)
     {
         var pet = _service.Config.Pet;
         var tip = _service.Config.Tooltip;
@@ -6846,10 +6849,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         var feedablePets = new List<(int Page, int Cell, PetPanel Panel)>();
         var harvested = new List<PetQueueEntry>();
 
-        hint.Text = $"Scanning {tabs.Count} page(s) × {centres.Count} cells, about " +
-                    $"{tabs.Count * centres.Count * (tip.HoverDelayMs + 700) / 60000.0:0.#} min. " +
-                    "The window hides while it works and comes back at the end of each page. " +
-                    "Nothing is clicked in the bag — a click would switch the equipped pet.";
+        hint.Text = $"Sweeping {tabs.Count} bag page(s). Each page is photographed once, and only the " +
+                    "cells holding something are hovered and read — so it takes seconds a page, not " +
+                    "the 90 it would take to ask all 64 cells. The window hides while it works and " +
+                    "comes back at the end of each page. Nothing is clicked in the bag — a click " +
+                    "would switch the equipped pet.";
         result.Text = "";
 
         // Focus ONCE. FocusThenHover clicks the focus point on every call, because it was written for
@@ -6877,24 +6881,38 @@ public partial class MainWindow : FluentWindow, IDisposable
             var pageFeedable = 0;
             var pageFinished = 0;
 
-            // THE CLEAN PAGE IMAGE, taken BEFORE any hover. The tooltip follows the cursor, so an icon
-            // cropped from the screen while a panel is up has that panel over its neighbours — and the
-            // icon scan already documents the cost of a pointer over a portrait ("a pet the cursor
-            // covers is a pet the matcher cannot see"). One grab per page, with the cursor parked off
-            // the bag, is the source for every icon this page contributes.
-            (BitmapSource Image, DisplayInfo Display)? shot = null;
-            if (writeQueue)
+            // THE CLEAN PAGE IMAGE, taken BEFORE any hover, and taken ALWAYS — it is now two things.
+            // It is the source for every icon this page contributes (the tooltip follows the cursor, so
+            // an icon cropped while a panel is up has that panel over its neighbours), and it is what
+            // decides WHICH cells are worth hovering at all.
+            TryPlace(ser, focusPoint[0], focusPoint[1], out _);
+            await Task.Delay(250);
+            var shot = await CaptureScreenshotAsync();
+
+            // WHICH CELLS TO ASK. Hovering all 64 cells to discover that most of them are empty costs
+            // about 90 s a page, and the page image already answers the question: an empty bag slot
+            // renders the same in every cell, so the cells that differ from that rendering are the ones
+            // holding something. No image means no detector, so every cell is asked — the slow path
+            // stays the fallback rather than becoming a wrong answer.
+            var probe = new List<int>();
+            var detect = "no page image — every cell asked";
+            if (shot is { } pageShot)
             {
-                TryPlace(ser, focusPoint[0], focusPoint[1], out _);
-                await Task.Delay(250);
-                shot = await CaptureScreenshotAsync();
+                using var page4 = BitmapSourceToMat(pageShot.Image);
+                probe = OccupiedCells(page4, centres, pet.BagGrid!,
+                    _service.Config.Pet.PetSlotOccupiedAbove, out detect);
+            }
+            if (probe.Count == 0)
+            {
+                for (int i = 0; i < centres.Count; i++) probe.Add(i);
+                detect += "  (nothing detected — asking every cell)";
             }
 
             // ONE hide for the page rather than one per cell: the hide costs a compositor wait, and
             // 64 of them would cost a minute of flicker for nothing.
             await WithLauncherHiddenAsync(async () =>
             {
-                for (int cell = 0; cell < centres.Count; cell++)
+                foreach (var cell in probe)
                 {
                     var (cx, cy) = centres[cell];
                     if (!TryPlace(ser, cx, cy, out _)) continue;
@@ -6979,6 +6997,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
 
             report.Add($"  page {p + 1}: {pageFeedable} feedable, {pageFinished} finished");
+            report.Add($"    looked at {probe.Count} of {centres.Count} cells — {detect}");
             report.AddRange(pageLines);
 
             // Shown per PAGE, so a five-minute scan is not five minutes of a window that looks hung.
@@ -7018,6 +7037,101 @@ public partial class MainWindow : FluentWindow, IDisposable
         hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
                     "Nothing was changed: this is the read-only scan. \"Scan + rebuild the queue\" " +
                     "writes what it finds.";
+    }
+
+    /// <summary>Which of one page's cells hold something, read off the PAGE IMAGE rather than off the
+    /// OCR — so the sweep hovers the handful of cells that can answer, instead of all 64.
+    ///
+    /// The trick is that a bag is mostly EMPTY, and empty cells render identically: two cells that
+    /// match each other to within a hair are both empty, and that pair is the page's own empty
+    /// reference. Nothing needs calibrating and nothing needs assuming about where the pets are. Every
+    /// cell is then measured against it with the same primitive the boarding slot uses
+    /// (<see cref="IconMatch.DifferingFraction"/> against an empty crop) under the same threshold, so
+    /// "there is something in this cell" means the same thing here as it does there.
+    ///
+    /// It returns EVERY cell above the threshold, pet or not: food and loot get hovered and rejected by
+    /// the parser, which costs one hover each. Telling a pet's portrait from a stack of food would be a
+    /// harder problem than the one this solves, and the parser already solves it exactly.
+    ///
+    /// The numbers come back in <paramref name="summary"/> so the separation is VISIBLE rather than
+    /// assumed — the floor is the empty-pair score, and the first occupied cell's distance from it is
+    /// the margin the threshold is sitting in. If that margin is thin, the log will say so before
+    /// anybody trusts it.</summary>
+    private static List<int> OccupiedCells(Mat page, IReadOnlyList<(int X, int Y)> centres,
+        IReadOnlyList<int> grid, double threshold, out string summary)
+    {
+        var occupied = new List<int>();
+        var crops = new List<Mat>();
+        var of = new List<int>();
+        var pitchX = (int)Math.Round(BagGrid.PitchX(grid));
+        var pitchY = (int)Math.Round(BagGrid.PitchY(grid));
+
+        try
+        {
+            for (int i = 0; i < centres.Count; i++)
+            {
+                var (cx, cy) = centres[i];
+                var box = new OpenCvSharp.Rect(cx - pitchX / 2, cy - pitchY / 2, pitchX, pitchY);
+                if (box.X < 0 || box.Y < 0 ||
+                    box.Right > page.Width || box.Bottom > page.Height) continue;
+
+                crops.Add(new Mat(page, box));
+                of.Add(i);
+            }
+
+            if (crops.Count < 2)
+            {
+                summary = "too few cells in the page image to compare";
+                return occupied;
+            }
+
+            // The empty floor: the closest pair on the page. Two empty cells sit on top of each other.
+            var floor = double.MaxValue;
+            var reference = 0;
+            for (int i = 0; i < crops.Count && floor > 0.005; i++)
+            {
+                for (int j = i + 1; j < crops.Count && floor > 0.005; j++)
+                {
+                    var d = IconMatch.DifferingFraction(crops[i], crops[j]);
+                    if (d < floor) { floor = d; reference = i; }
+                }
+            }
+
+            // Both sides of the judgement, so the MARGIN is a number rather than an assurance: the
+            // busiest cell called empty and the quietest cell called occupied are what the threshold
+            // sits between, and a thin gap there is the thing to see before trusting any of this.
+            var busiestEmpty = 0.0;
+            var quietestFull = double.MaxValue;
+
+            for (int i = 0; i < crops.Count; i++)
+            {
+                var d = i == reference ? 0 : IconMatch.DifferingFraction(crops[reference], crops[i]);
+                if (d > threshold)
+                {
+                    occupied.Add(of[i]);
+                    quietestFull = Math.Min(quietestFull, d);
+                }
+                else
+                {
+                    busiestEmpty = Math.Max(busiestEmpty, d);
+                }
+            }
+
+            summary = $"{crops.Count} cells cropped, {occupied.Count} hold something — " +
+                      $"busiest empty {busiestEmpty:0.###}, quietest occupied " +
+                      $"{(quietestFull == double.MaxValue ? "n/a" : quietestFull.ToString("0.###", CultureInfo.InvariantCulture))}, " +
+                      $"threshold {threshold:0.###}, empty floor {floor:0.###}";
+            return occupied;
+        }
+        catch (Exception ex)
+        {
+            summary = "the page image couldn't be measured (" + ex.Message + ")";
+            return occupied;
+        }
+        finally
+        {
+            foreach (var c in crops) c.Dispose();
+        }
     }
 
     /// <summary>Every number in a read, with a few characters either side of it.
