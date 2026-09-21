@@ -9,6 +9,43 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (23) — an empty feeder reads as "no digits", and the tool called that a full load
+
+**The bug that left a pet unfed.** Row 1's feeder ran dry. Both its slots read *nothing*, the tool said
+*"the feeder counts couldn't be read — assuming a full load"*, and scheduled the row **205 minutes** into
+the future. The row went unfed and the tool planned to wait until 20:42.
+
+**The read was correct. The interpretation was wrong**, and the crops prove it — both are blank cells,
+no food and no digits:
+
+```
+empty cell    0.0 %          warm pixels (R − B > 40)   ← both slots of the dry row
+has food     30.4 – 37.0 %                              ← every slot of a full one
+```
+
+**The code even states the distinction, and the distinction was unreachable.** Its comment reads
+*"NOTHING read is null; ZERO is a real reading meaning an empty feeder… null says 'assume a full load',
+zero says 'reload NOW'."* But **ZERO can never be produced**: an empty slot has no digits to read, so
+every empty feeder arrives as "nothing" and lands in the *assume a full load* branch. The one case that
+most needs reloading now was the one case that always waited.
+
+**The fix uses pixels the tool was already holding.** When the OCR returns no number, the slot's crop is
+measured for food colour: bare beige scores 0.0 %, an ochre icon 30 %+, and the threshold sits at 2 % —
+an order of magnitude inside the gap either way. Empty is then a **real reading of zero**, which the
+existing null-versus-zero logic already treats as *reload now*.
+
+**It costs a screen grab only on the slots that failed to read**, and the number is logged either way,
+so whether the threshold is sitting in a gap or on a cliff is visible rather than asserted.
+
+**Three theories died on the way here**, all recorded above: the two-digit crop theory (row 2 read `81`,
+two digits, perfectly), the fraction too-far-left theory (real, and fixed to 0.45 — but it never
+explained row 1, whose slots were empty), and the "read is flaky" theory (the read was never flaky;
+there was simply nothing to read).
+
+**Verified:** Release build clean, 0 warnings; **162/162** tests (four added). **Not verified live.**
+
+---
+
 ## 2026-09-21 (22) — scope 4b: the next check is computed from the pet that was boarded
 
 **The chain is complete and it runs on data the tool already had.** The guard reads the boarded pet's

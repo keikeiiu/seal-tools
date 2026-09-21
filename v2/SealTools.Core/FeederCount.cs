@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using OpenCvSharp;
 
 namespace SealTools.Core;
 
@@ -47,6 +48,49 @@ public static class FeederCount
     /// of the crop's window (0.72 was seen there), which is the right call — a marginal crop is the
     /// one that clips a digit.</summary>
     public const double MinScore = 0.75;
+
+    /// <summary>The fraction of a crop that looks like FOOD — strongly red over blue.
+    ///
+    /// IT ANSWERS THE ONE QUESTION THE OCR CANNOT. An empty slot holds no digits, so it reads as
+    /// "nothing" — exactly like a crop the reader failed on — and the tool resolved that ambiguity the
+    /// wrong way round, as "assume a full load". Live, 2026-09-21: a row whose feeder had run dry was
+    /// scheduled 205 minutes into the future and left its pet unfed, while both its slots showed a
+    /// perfectly blank cell.
+    ///
+    /// MEASURED, on the crops the failed reads saved:
+    ///
+    ///     empty       0.0 %            (both slots of a dry row)
+    ///     has food   30.4 – 37.0 %     (every slot of a full one)
+    ///
+    /// The icon is ochre — high red, low blue — and an empty cell is bare. Three statistics separate
+    /// them; this is the widest margin and the easiest to explain, which is why it is the one used.
+    /// OpenCV is BGR, so channel 2 is red and channel 0 is blue.</summary>
+    public static double WarmFraction(Mat image, int redOverBlue = 40, int inset = 4)
+    {
+        if (image.Empty() || image.Width <= inset * 2 || image.Height <= inset * 2) return 0;
+
+        // Inset for the same reason IconMatch insets: the cell's border sits in the same place in every
+        // slot, and its pixels say nothing about what is inside.
+        using var inner = new Mat(image, new Rect(inset, inset, image.Width - inset * 2, image.Height - inset * 2));
+        var split = inner.Split();
+        try
+        {
+            using var diff = new Mat();
+            Cv2.Subtract(split[2], split[0], diff);   // R − B, saturating at 0 rather than wrapping
+            using var mask = new Mat();
+            Cv2.Threshold(diff, mask, redOverBlue, 255, ThresholdTypes.Binary);
+            return Cv2.CountNonZero(mask) / (double)(inner.Rows * inner.Cols);
+        }
+        finally
+        {
+            foreach (var channel in split) channel.Dispose();
+        }
+    }
+
+    /// <summary>Below this, a slot holds no food. 2 % against a measured 0.0 % for empty and 30.4 % for
+    /// a full one — an order of magnitude inside the gap in both directions, so it is not a line
+    /// anything sits near.</summary>
+    public const double EmptySlotBelow = 0.02;
 
     /// <summary>The number out of one read: the digits of the BEST-scoring line above
     /// <paramref name="minScore"/>, or null.
