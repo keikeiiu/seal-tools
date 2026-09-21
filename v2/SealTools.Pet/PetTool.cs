@@ -642,7 +642,7 @@ public sealed class PetTool : ToolBase
     private Dictionary<PetSlotConfig, DateTime> UnreadSchedule()
     {
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
-        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null);
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null);
         return schedule;
     }
 
@@ -695,18 +695,24 @@ public sealed class PetTool : ToolBase
 
                 // Only worth reading a feeder on a row that is actually boarding — an empty one has
                 // nothing loaded and will be filled in a moment anyway.
-                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null); continue; }
+                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null, null); continue; }
 
                 ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
                 var left = ReadFeederCounts(ocr, row);
-                schedule[row] = ScheduleFor(row, left);
+                var eta = ReadEta(ocr, row);
+                schedule[row] = ScheduleFor(row, left, eta);
+
+                // The time line is quoted RAW, because it is a sentence rather than a number and the
+                // only way to know the region found it is to see what it read. A row whose line is
+                // missing here reads as the food figure, which is what happened before it existed.
+                var quoted = eta is null ? "  [no time line read]" : $"  [{eta.Line}]";
 
                 if (left is { } items)
                     Log($"  {NameOf(row)}: {items} item(s) left in the feeder — reloading in " +
-                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min");
+                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
                 else
-                    Log($"  {NameOf(row)}: the feeder counts couldn't be read — assuming a full " +
-                        $"load, so reloading in {CycleMinutesFor(row):0} min");
+                    Log($"  {NameOf(row)}: the feeder counts couldn't be read — reloading in " +
+                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
             }
             _persistState?.Invoke();
         }
@@ -734,15 +740,44 @@ public sealed class PetTool : ToolBase
     /// Null means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
     /// (fall back to the configured cycle, which assumes a full load). The two are different and the
     /// caller logs which.</summary>
-    private DateTime ScheduleFor(PetSlotConfig row, int? itemsLeft)
+    private DateTime ScheduleFor(PetSlotConfig row, int? itemsLeft, FeederEta.Reading? eta)
     {
         if (_cfg.Pet.ReloadOnStart) return DateTime.Now;
         if (!row.BoardingRunning) return DateTime.Now;
-        if (itemsLeft is not { } items) return DateTime.Now.AddMinutes(CycleMinutesFor(row));
-        if (items <= 0) return DateTime.Now;
+
+        // THE GAME'S OWN COMPLETION TIME, when it gives one. A pet that finishes is MAILED, so the row
+        // will be empty then and wants a new one — the case that otherwise waits out a whole cycle with
+        // nothing boarding, which is exactly what row 3 was doing at 17:47: six hours scheduled, a pet
+        // fourteen minutes from done. Read live; see FeederEta.
+        var finish = FeederEta.CompletionMinutes(eta);
+
+        if (itemsLeft is not { } items)
+        {
+            // No counts. A finish time is still a real answer, and a far better one than the cycle.
+            return finish is { } f
+                ? DateTime.Now.AddMinutes(f + WaitAfterEmptyMinutes)
+                : DateTime.Now.AddMinutes(CycleMinutesFor(row));
+        }
+
+        if (itemsLeft <= 0) return DateTime.Now;
 
         var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
-        return DateTime.Now.AddMinutes(Math.Max(0, items / (double)rate) + WaitAfterEmptyMinutes);
+        var food = Math.Max(0, itemsLeft.Value / (double)rate);
+
+        // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself.
+        return DateTime.Now.AddMinutes(
+            (finish is { } fin ? Math.Min(food, fin) : food) + WaitAfterEmptyMinutes);
+    }
+
+    /// <summary>The row's time line — the game's own statement of when this boarding completes. Null
+    /// when there is nothing readable there, which the schedule answers with the food figure.</summary>
+    private static FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row)
+    {
+        if (FeederLayout.EtaRegion(row.FeederStrip) is not { } region) return null;
+
+        return FeederEta.Parse(ocr.ReadLines(
+            new RegionConfig { Left = region[0], Top = region[1], Width = region[2], Height = region[3] },
+            3, null));
     }
 
     /// <summary>How many food items are left in a row, read off the counts the game draws on each of

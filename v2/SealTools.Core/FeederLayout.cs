@@ -68,6 +68,38 @@ public static class FeederLayout
     /// reads too short a number, has to be able to move it without a rebuild.</summary>
     public const double ReadLeftFraction = 0.40;
 
+    /// <summary>Where a row's TIME line is read from — the text under its food slots, derived from the
+    /// strip the same way the count crop is.
+    ///
+    /// MEASURED on the live window, in the config's own coordinates, on two rows that agree:
+    ///
+    ///     row 2  slots end 516   text at 527 / 550      (+11 / +34)
+    ///     row 3  slots end 705   text at 715 / 737      (+10 / +32)
+    ///
+    /// **DERIVED AS RATIOS OF THE SLOT HEIGHT, not as fixed pixels**, and that is the point: the strip
+    /// is calibrated per machine, so a PC whose slots are taller gets a proportionally lower and taller
+    /// region without anything to calibrate or drag. A fixed `+32` would be right here and wrong on any
+    /// screen whose UI scales.
+    ///
+    /// The width is deliberately generous — the OCR ignores background — because the text is longer on
+    /// some rows than others and a tight box would clip the number off the end.
+    ///
+    /// Null when the strip is unusable, so a half-calibrated row yields no region rather than one at
+    /// (0,0).</summary>
+    public static List<int>? EtaRegion(List<int>? strip)
+    {
+        if (strip is not { Count: 4 } || !BagGrid.IsValidRect(strip)) return null;
+
+        var h = strip[3];
+        return new List<int>
+        {
+            strip[0] - (int)Math.Round(h * 0.10),
+            strip[1] + strip[3] + (int)Math.Round(h * 0.53),
+            (int)Math.Round(h * 4.7),
+            (int)Math.Round(h * 0.40),
+        };
+    }
+
     /// <summary>The region a count is read from for one slot.</summary>
     public static List<int>? ReadRegion(List<int>? slot, double leftFraction)
     {
