@@ -9,6 +9,38 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (10) — the sweep can now rebuild the queue
+
+**The scan found the feedable pets, and the run still could not use the answer.** The queue held icons
+of pets that had finished and been mailed, so the icon scan matched nothing and nothing boarded. The
+missing link was turning "this cell holds a pet that can still be fed" into "the queue knows this pet".
+
+**A second button, `Scan + rebuild the queue`** — the same sweep, then it replaces the queue with an
+icon for every pet that read as feedable. Finished pets get no icon, so the run cannot board one by
+accident; that is the guard from (9) with nothing left to guard against.
+
+**Icons come from a CLEAN page image, taken before any hover.** This is the part that is easy to get
+wrong: the tooltip follows the cursor, so an icon cropped from the screen while a panel is up has that
+panel lying over its neighbours. It is the same trap the icon scan already documents — *"a pet the
+cursor covers is a pet the matcher cannot see"*, which once cost a whole pet's worth of matching. So:
+park the cursor, grab the page once, then hover. The crop itself is the **same recipe the single-icon
+capture uses — `Pitch`, not the slot size** — so a swept icon and a hand-captured one are the same
+pixels and the matcher cannot tell them apart.
+
+**Labels say where, not what.** The panel states growth and EXP and no name, so a harvested entry is
+labelled `page 2, cell 3` — which is at least what the report above it is talking about.
+
+**The guard that matters: it never writes on nothing harvested.** A failed capture, or a page whose
+crops would not come out, must not be allowed to clear a queue the player built by hand. Replacing a
+queue with an empty one is the worst outcome available here and it is one edit away.
+
+**A separate button, not a checkbox on the existing one.** A scan you press to look at must not quietly
+rewrite the queue.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (9) — the run refuses to board a +9/100% pet, and tries the next one
 
 **A finished pet cannot be placed.** The right-click simply does not put it in the slot, and a live run
