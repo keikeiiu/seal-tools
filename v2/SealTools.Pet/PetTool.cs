@@ -1002,7 +1002,13 @@ public sealed class PetTool : ToolBase
 
         // The panel only exists while the cursor RESTS, so the calibrated delay is the read's
         // precondition rather than a nicety.
-        SleepCheck(tip.HoverDelayMs);
+        //
+        // MILLISECONDS to SECONDS, and it is not cosmetic: SleepCheck takes seconds, and passing 700
+        // to it does not sleep a little long — it computes 14000 steps of 50 ms and sleeps for ELEVEN
+        // AND A HALF MINUTES. A live run sat wedged exactly here, idle at 0% CPU, on the first hover
+        // of the guard. The launcher's own hover uses Task.Delay, which does take milliseconds, so the
+        // same number is right there and wrong here.
+        SleepCheck(tip.HoverDelayMs / 1000.0);
 
         var region = new RegionConfig
         {
