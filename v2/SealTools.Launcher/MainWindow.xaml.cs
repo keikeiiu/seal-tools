@@ -260,6 +260,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>The queue on the Pet tab: the label field, the preview of the last crop, and the list.</summary>
     private Wpf.Ui.Controls.TextBox? _petQueueLabel;
+    private ComboBox? _petQueueSpecies;
     private Image? _petQueuePreview;
     private TextBlock? _petQueueList;
 
@@ -2836,6 +2837,24 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Absolute path of a calibration reference image (co-located with config/local.yaml).
     private static string CalibrationImagePath(string fileName)
         => Path.Combine(FindRootDir(), "config", fileName);
+
+    /// <summary>The feeding table — the scraped csv that ships in docs/.</summary>
+    private static string PetDataPath() => Path.Combine(FindRootDir(), "docs", "pet-data.csv");
+
+    /// <summary>The pet lines a queued pet can be named as, with "no feeding estimate" FIRST.
+    ///
+    /// Index 0 is deliberately the null choice: a pet nobody has named still queues and still boards —
+    /// it just gets the configured cycle instead of a computed one. Refusing to queue it would make the
+    /// table a prerequisite for feeding, and it is not one.</summary>
+    private static List<string> PetSpecies()
+    {
+        var items = new List<string> { "(no feeding estimate)" };
+        items.AddRange(PetFeeding.Load(PetDataPath())
+            .Select(l => l.Species)
+            .Distinct()
+            .OrderBy(s => s, StringComparer.Ordinal));
+        return items;
+    }
 
     // Environment block recorded with a calibration (physical pixels). See docs/COORDINATES.md.
     private static CalibrationInfo ToCalibration(DisplayInfo d) => new()
@@ -5503,6 +5522,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         queueLabel.VerticalAlignment = VerticalAlignment.Center;
         _petQueueLabel = queueLabel;
 
+        // WHICH PET LINE — the feeding table's own `species`, named ONCE here, because the icon is the
+        // identity and this rides along with it. It is the thing that turns "+9 10%" into a number of
+        // minutes: the base feeding value is fixed by species and stage, and the player confirmed it
+        // appears nowhere in the game. ELEVEN options, not three hundred and twenty-seven — a line
+        // holds many pets and they share one figure.
+        var queueSpecies = new ComboBox { MinWidth = 200, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var species in PetSpecies())
+            queueSpecies.Items.Add(species);
+        queueSpecies.SelectedIndex = 0;
+        _petQueueSpecies = queueSpecies;
+
         // MakeInlineButton, not MakeButton — this repo already learned this one twice. MakeButton
         // carries a 10px TOP margin meant for a button standing alone, so two of them in a row sit at
         // different heights the moment one has its margin overridden and the other does not. That is
@@ -5557,6 +5587,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the bag can be rearranged and the queue still works. With no icons captured the " +
                  "tool falls back to the return slot."),
             LabeledField("Name for the next one", queueLabel),
+            LabeledField("Which pet line", queueSpecies),
             queueButtons,
             _petQueuePanel,
             _petQueueList));
@@ -7419,6 +7450,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             pet.Queue.Add(new PetQueueEntry
             {
                 Label = string.IsNullOrWhiteSpace(_petQueueLabel?.Text) ? null : _petQueueLabel!.Text.Trim(),
+                // Index 0 is "(no feeding estimate)" — see PetSpecies. Anything else is a real line.
+                Species = _petQueueSpecies?.SelectedIndex > 0
+                    ? _petQueueSpecies.Items[_petQueueSpecies.SelectedIndex] as string
+                    : null,
                 Rect = new List<int> { box.X, box.Y, box.Width, box.Height },
                 Png = IconMatch.ToBase64(crop),
             });

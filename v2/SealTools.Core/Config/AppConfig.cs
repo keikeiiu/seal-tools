@@ -163,6 +163,19 @@ public sealed class PetQueueEntry
 
     /// <summary>The icon itself, cropped at <see cref="Rect"/>.</summary>
     public string? Png { get; set; }
+
+    /// <summary>Which pet LINE this is, named once when the icon is captured — the table's own
+    /// `species` column, one of eleven.
+    ///
+    /// It is here, on the icon, because the icon IS the identity: the pet is found by matching this
+    /// crop, so the species rides along with the thing that is already unique. The alternative was
+    /// matching the panel's NAME against the table, and the game's Chinese is Traditional while the
+    /// table's is Simplified — a near-miss would attach another pet's feeding value to a schedule that
+    /// then looks right.
+    ///
+    /// Null is allowed and means "no estimate": the schedule falls back to the configured cycle, which
+    /// is what the tool did before any of this existed.</summary>
+    public string? Species { get; set; }
 }
 
 /// <summary>Geometry for the pet food auto-replacement tool — the boarding (代養) flow. Every value
