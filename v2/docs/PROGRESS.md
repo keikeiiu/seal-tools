@@ -9,6 +9,36 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (12) — the sweep is rebuilt on the matcher that was already there
+
+**I invented a mechanism that already existed, and the player had to say so three times** — *"we had
+this logic in the flow"*, *"we always knew where the pet icons are"* — before I went and looked.
+
+**`IconMatch.ScoreAll(bag, grid, icon)` already answers "which bag cell holds this pet".** One capture
+per page, matched against the stored queue icon, no hovering at all. The run uses it before every
+boarding, and there was already a **"Scan the bag for these pets"** button sitting on the same tab
+doing it on demand. `OccupiedCells` — the closest-pair empty-reference detector from (11) — was a
+second answer to a question the codebase had already answered, and a worse one: it hovered cells to
+learn what the matcher gets from one screenshot.
+
+**Measured, the detector did work** — replayed over the live page captures it split 39 cells at exactly
+`0.000` from 25 at `0.47`+, and every threshold from 0.05 to 0.30 agreed. **That is not the point.**
+Being right does not justify a parallel mechanism: the next change to either one would have left two
+things that had to agree and no reason to.
+
+**What the sweep is now: find, then hover.** Photograph each page, `ScoreAll` each queued icon, and
+hover **only the cells that matched** to read the panel. The finding is the existing matcher; the new
+part is only the hover. About **130 lines came back out.**
+
+**What is genuinely given up, stated plainly:** the sweep can no longer *discover* a pet that has never
+been captured. It reports on the pets in the queue and nothing else. That is the honest scope, and it
+matches what the tool can actually do — discovering an unknown pet needs its icon, which is the manual
+"Mark a pet to queue" step.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (11) — the sweep stops hovering all 64 cells
 
 **Four and a half minutes to discover that most cells are empty.** The sweep hovered every cell on

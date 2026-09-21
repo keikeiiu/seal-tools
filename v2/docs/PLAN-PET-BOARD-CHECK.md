@@ -28,34 +28,44 @@ Nothing here is new machinery. The pieces have been sitting unused since 2026-09
 
 ## Design
 
-A **"Scan bag for feedable pets"** button. For each calibrated page, for each cell in the grid:
+**Find with the matcher that already exists, then hover only what it found.**
 
-1. move the cursor onto the cell (a MOVE — never a click);
-2. wait `hover_delay_ms` for the game's tooltip;
-3. OCR the calibrated tooltip region;
-4. `PetPanel.Parse` it.
+`IconMatch.ScoreAll(bag, grid, icon)` already answers "which bag cell holds this pet" — one capture per
+page, matched against the stored queue icon, no hovering. The run uses it before every boarding, and
+"Scan the bag for these pets" already exposes it on the same tab. **There is deliberately only one
+answer in this codebase to "where is this pet"**: an earlier revision of this plan added a second one
+(a pixel detector that decided which cells looked occupied), it was a duplicate of a working
+mechanism, and it came back out.
+
+So, for each calibrated page:
+
+1. switch to the page, park the cursor off the bag, and capture the client **once**;
+2. `ScoreAll` each queued icon against that capture, and keep the best cell per icon under
+   `PetTool.MatchLimit` — the run's own limit;
+3. **hover only those cells** (a MOVE — never a click), wait `hover_delay_ms`, OCR the calibrated
+   tooltip region, and `PetPanel.Parse` it.
 
 Then classify:
 
 - **finished** — parsed, and `IsFinished`;
-- **feedable** — parsed, and not finished (this is where a +0 pet lands; a +0 renders no `+N` at all
-  and the parser reads the missing growth as 0, which is measured, not assumed);
-- **not a pet** — `Parse` returned null. Empty cells and food items land here, which is exactly why
-  the parser is the filter: the icon matcher only knows pets already queued, and the +0 ones are
-  precisely the ones not known yet.
+- **feedable** — parsed, and not finished (a +0 pet renders no `+N` at all and the parser reads the
+  missing growth as 0, which is measured, not assumed);
+- **matched but unreadable** — `Parse` returned null on a cell the matcher found. Reported as neither:
+  it is never called finished, because skipping a pet that needed feeding cannot be undone.
 
-Report a line per pet plus a total, and save nothing.
+Report a line per pet plus a total, and save nothing unless the queue is being rebuilt.
 
 ## Cost
 
-About **1.5 s per cell** (hover delay + OCR), so ~90 s per page and ~4½ min for three. It is a
-deliberate button, not something a run does. The launcher hides **once per page** rather than once per
-cell: the per-crop hide flashes the window and pays a 300 ms compositor wait each time, which over 192
-cells would cost a minute of pure flicker for nothing.
+A handful of hovers per page — the pets in the queue, not 64 cells. Seconds, not minutes. The launcher
+hides **once per page** rather than once per hover, and the capture is taken before any hovering
+because the tooltip follows the cursor and would lie over the neighbouring cells.
 
-Rejected for v1: an empty-cell pixel skip (the trick the boarding slot uses). It would cut most of the
-time, but it needs an empty-cell reference crop, and there is no reason to add a calibration before
-measuring whether the plain scan is fast enough.
+## Scope, stated plainly
+
+This reports on **pets already in the queue**. It cannot discover a pet that has never been captured —
+that needs its icon, which is the manual "Mark a pet to queue" step. Finding unknown pets was the
+premise of the duplicate detector, and it came back out with it.
 
 ## The failure direction — the part that matters
 
