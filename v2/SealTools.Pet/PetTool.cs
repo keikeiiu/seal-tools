@@ -574,12 +574,21 @@ public sealed class PetTool : ToolBase
         var total = 0;
         var counted = 0;
 
-        foreach (var box in slots)
+        // EVERY SLOT LOGGED, not just the total. The total cannot say whether a slot was missed, read
+        // as zero, or read wrong — and that is the difference between "the feeder holds 300" and "one
+        // of its two slots did not read, so the tool thinks it holds 300". It cost a live round trip:
+        // row 1's slots showed 105 and 300, the tool scheduled from 300, and the log had nothing to
+        // say about which slot had gone missing.
+        var seen = new List<string>();
+        for (int i = 0; i < slots.Count; i++)
         {
-            if (FeederCountOf(ocr, box) is not { } n) continue;
-            total += n;
-            counted++;
+            var n = FeederCountOf(ocr, slots[i]);
+            seen.Add(n is { } v ? v.ToString(CultureInfo.InvariantCulture) : "—");
+            if (n is { } value) { total += value; counted++; }
         }
+
+        Log($"  feeder counts: [{string.Join(" / ", seen)}] -> {total} " +
+            $"({(counted == 0 ? "nothing read" : $"{counted} of {slots.Count} slots read")})");
 
         // NOTHING read is null; ZERO is a real reading meaning an empty feeder. Summing into a total
         // that starts at zero conflates them, and the two mean opposite things downstream: null says
