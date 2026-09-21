@@ -1,88 +1,85 @@
 # Handover — paste this into a new session
 
-Written 2026-09-20, at the end of the session that built the four-row Pet Feeder end to end and watched
-it feed for the first time. Copy the block below as the first message of the next session.
+Written 2026-09-21, at the end of the session that shipped **v2.11**: the Pet Feeder went from one row
+to four, learned to read how much food is left and schedule its reload from that, became resident, and
+the count read was rebuilt four times until one held. Copy the block below as the first message.
 
 ---
 
 > Continue Seal Tools v2. Read `v2/docs/PROGRESS.md` first (newest entry first — it records what was
-> decided and why, which the code and commit titles don't), then `v2/docs/TODO.md` for what is open. Do
-> not re-derive what those say.
+> decided and why, which the code and commit titles don't), then `v2/docs/TODO.md`. Do not re-derive
+> what those say.
 >
-> **A pet feeder is RUNNING LIVE as you read this.** PID and start time are in the launcher's process;
-> its log is `SealTools.Launcher/bin/Debug/net8.0-windows/logs/pet.log`. **Do not stop the launcher, and
+> **A pet feeder is RUNNING LIVE as you read this.** `SealTools.Launcher` PID 35532, started 10:48:58;
+> its log is `SealTools.Launcher/bin/Debug/net8.0-windows/logs/pet.log`. **Do not stop the launcher and
 > do not build Debug into it** — that kills the run. A **Release** build works while it runs and is the
-> compile check. If you need to restart it for a real reason, ask the player first.
+> compile check. Restarting it needs the player's agreement.
 >
-> **Where things are.** `main` is at **v2.10 plus ~49 commits**, none of it released — the Pet Feeder
-> grew from one row to four, gained an icon queue and a feeder-count read, and is now genuinely feeding
-> four pets on a schedule. `v2.10` is tagged; nothing since is.
+> **Where things are.** `main` is at the **v2.11 release** (tagged and pushed, 119 commits past v2.10);
+> nothing is unreleased. The branch `v2-pet-drag` is fully merged and can be deleted. `gh` is
+> authenticated now, which it was not for v2.10.
 >
-> **What is planned and NOT built: `v2/docs/PLAN-RESIDENT-PET.md`**, three parts in order.
+> **Everything planned is built.** `PLAN-RESIDENT-PET.md`'s three parts all shipped in v2.11 — that
+> document is now reasoning rather than a plan. What is left is verification and the items below.
 >
-> 1. **Hold Space's toggle inverts instead of stopping** — a live bug on the other PC. The guard asks
->    `CurrentId == "holdspace"` *and* `Running == true`, and when `Running` has gone false with space
->    still held the press falls to the `else` and **re-holds it**. Not a version difference — v2.9.1's
->    tag carries the identical code. The fix that matters is `StopTool` releasing space on every stop
->    path, not just that button's.
-> 2. **Firmware version reporting** — a `V` command, because a board currently cannot be asked anything
->    and the other PC's may predate the host-gone release. The valuable output is the *silence*: no
->    answer is a definite no. Needs a reflash, so it only makes the *next* flash verifiable.
-> 3. **The pet feeder becomes resident** — the player wants buy/sell, spam and compose to run **while**
->    the pet keeps its schedule. Nothing to do with the cursor-lease design I abandoned: that was for
->    the **tuner**, whose window the game will not open alongside the boarding window. See
->    `PLAN-WATCHER.md` for that reasoning.
+> **Open, in value order:**
 >
-> **Traps that cost real time this session — all four are already written into PROGRESS or the plan, but
-> they will cost you again if you skim.**
->
-> - **A hand-written config projection drops a field on LOAD, silently.** It happened twice:
->   `LocalPet.From`, then `LocalPetSlot.ToConfig`. The symptom is that a setting "was never saved" when
->   it *was* — every load discards it and the next save writes the blank back. The reflection test only
->   guarded the outer type; it covers the nested ones now.
-> - **A capture reads the SCREEN.** Whatever is in front is what gets matched — a log that says "no pet
->   in the bag" can be the right verdict from the wrong image. Three things now refuse or correct for
->   it: a foreground guard on the feeder read and the bag scan, and parking the cursor off the bag
->   (a pet under the pointer reads as a *different pet*, which cost an hour).
-> - **Numbers picked by reasoning were wrong; numbers measured were right.** `MatchLimit` was 0.12 by
->   inheritance and cost half of every scan — the real separation is 0.0–0.15 against 0.83+. And when a
->   match failed, the fix that looked obvious (compare only the middle of the cell) made it *strictly
->   worse*; only the measurement said so.
-> - **The EXP% is per LEVEL, not per stage** — the plan said otherwise and was wrong. Four rows of live
->   evidence, matching the game's own ETA to the minute.
->
-> **How I want you to work** (unchanged, and it still matters most):
->
-> - Commit every small victory as it lands, one concern per commit, saying *why* and **what was
->   measured** — the style of the existing commits.
-> - Keep `v2/docs/PROGRESS.md` current in the same session. Update the plan doc in the same commit as
->   the change, and **correct the plan when the live game proves it wrong** — it did three times today.
-> - Ask when a request is ambiguous.
-> - **Say plainly what you verified live and what you only reasoned about.** Several "obvious" causes
->   today were wrong, and two were conclusions I had already written down.
->
-> **Open threads, in value order:**
->
-> 1. **The three parts of `PLAN-RESIDENT-PET.md`**, in the order written.
-> 2. **The feeder-count read is built and never verified against a live feeder.** It reads each row's
->    number boxes and schedules from them; a row it cannot read falls back to a full-load assumption and
->    says so. The Pet tab's **Test read** is how to check the regions before trusting a run.
-> 3. **One pet still reads low** (0.320 against the crops, where its neighbours are 0.000) and nobody
->    has confirmed whether that is a rendering difference or something in the way. It counts now, so it
->    is not urgent — but it is unexplained.
-> 4. **~57 food cells a day** across four rows, against a 64-cell bag holding the pets. Restocking and
->    re-marking is a daily chore, not a one-off, and a reload that runs out of cells is the one that
+> 1. **Row 1 slot 1 intermittently reads nothing.** Visible in the log as
+>    `feeder counts: [— / 300] -> 300 (1 of 2 slots read)` — seen twice, and the schedule then runs
+>    early (105 min instead of 132). Harmless to the pet and it costs food cells sooner. The **row
+>    geometry** pane on Calibrate Pet shows the per-row crop pixels and lets you nudge the strip's `x`
+>    by typing; the Test read pane shows every slot's raw reading. Start there.
+> 2. **`Food load → Drag` and the firmware `V` command need a reflash** and are inert until then. Both
+>    default to today's behaviour. Flash `arduino/seal_mouse/seal_mouse.ino` (FW_VERSION 2) on both
+>    boards; the Arduino tab then reports what each board says. The other PC's board is the one worth
+>    flashing — an old board has no host-gone release, so a killed launcher leaves the spacebar down.
+> 3. **The tuner and composer have NOT been started live in this build.** The residency work rewrote
+>    the shared Start/Stop path (`LauncherService`: per-tool records, slot-aware `StopTool`, the port
+>    gate), and only the pet tool has exercised it. Give the tuner a short supervised run before
+>    trusting it — the visible surface is a Start, a Stop, and two cards.
+> 4. **The feeder has not actually run resident beside another tool.** The deferral, the waiting card
+>    message and the Quit-hotkey rule are all compile-checked only. Start the feeder, then start
+>    buy/sell, and watch that the feeder's card keeps its standing line.
+> 5. **One pet reads low at 0.320** against the crops where its neighbours are 0.000. It counts now, so
+>    it is not urgent, and nobody has confirmed whether it is a rendering difference or something in
+>    the way.
+> 6. **~57 food cells a day** across four rows, against a 64-cell bag holding the pets. `local.yaml` had
+>    **8 of 15 cells left** when this was written. A reload that runs out of cells is the one that
 >    leaves a pet unboarded.
-> 5. `text_fixes` in `attributes.yaml` still wants filling from the OCR logs — the Simplified pairs
->    (`藍 → 藍`, `鳳 → 鳳`) are measured and missing.
+> 7. **`text_fixes` in `attributes.yaml` still wants filling** from the OCR logs.
 >
-> **Two gotchas from earlier sessions that still bite:**
+> **Traps that cost real time — all written into PROGRESS, but they will cost you again if you skim.**
 >
-> - **A launcher startup crash shows no window and logs to `bin/.../logs/error.log`, NOT `v2/logs`.**
->   Process alive + empty `MainWindowTitle` = the constructor threw and `App` swallowed it.
-> - **A Python write that opens with `'w'` truncates before it can fail.** One did, and a commit
->   recorded 130 deleted lines. Write to a temp path, or build the whole string before opening.
+> - **A crop cut to the digits' height finds NOTHING.** Measured on three separate crops, each holding a
+>   perfectly legible number, each returning zero detected boxes. **The mechanism is not known** — the
+>   engine's own "text below ~20px" note does not explain it, since the digits are ~66px tall upscaled.
+>   Full slot height is a measured rule with no explanation, and it is written down as one.
+> - **The band of read positions that works is about three pixels wide.** Outside it, one direction
+>   finds nothing and the other returns a **confidently wrong number** — a clipped `138` came back as
+>   `3` at 0.99, the same confidence as a correct read. Four attempts to let a human put that position
+>   in by drawing a box all failed. It is computed now, and `Count crop starts at` is a setting.
+> - **A hand-written config projection drops a field on LOAD, silently** — three times across two
+>   sessions (`LocalPet.From`, `LocalPetSlot.ToConfig`, and `IsPoint` used on a rectangle). **And
+>   removing a config field deletes the player's stored value on the next save**, which is how the
+>   player's drawn count slot was lost.
+> - **A capture reads the SCREEN.** Whatever is in front is what gets matched, so a log saying "no pet
+>   in the bag" can be the right verdict from the wrong image. Three things now refuse or correct for
+>   it: foreground guards, parking the cursor off the bag, and the Test read refusing to judge a
+>   capture that is not the game.
+> - **Numbers picked by reasoning were wrong; numbers measured were right.** `MatchLimit` was 0.12 by
+>   inheritance and cost half of every scan — the real separation is 0.0–0.15 against 0.83+.
+> - **The EXP% is per LEVEL, not per stage.** Four rows of live evidence, matching the game's own ETA
+>   to the minute.
+> - **`SealTools.Pet/PetTool.cs` is LF while `MainWindow.xaml.cs` is CRLF.** A multi-line patch written
+>   against the wrong one silently does nothing — which cost an hour of "fixes that appeared to do
+>   nothing". Match the file's own endings.
 >
-> **Do not trust the plan over the game.** Everything in `PLAN-PET-AUTOFEED.md` that says "verified" was
-> verified with the player watching; everything else is design, and this session found three places
-> where the design was simply wrong.
+> **How I want you to work (unchanged, and it still matters most):**
+>
+> - Commit every small victory as it lands, one concern per commit, saying why and what was measured.
+> - Keep `PROGRESS.md` current in the same session; update the plan in the same commit as the change,
+>   and **correct the plan when the game proves it wrong** — it did again here.
+> - **Present the plan before editing.** The player asked for this explicitly and it was earned: one
+>   patch of mine duplicated 535 lines of `MainWindow.xaml.cs`, and fixing forward made it worse.
+> - **Ask when a request is ambiguous**, and say plainly what you verified live and what you only
+>   reasoned about. Several "obvious" causes were wrong here, and one of them was written into a plan.

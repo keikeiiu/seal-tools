@@ -11,6 +11,8 @@ guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
   merged. `tuner.spring_mode` (manual/hid) + `spring_point`, a 4th Calibrate Tuner step + Test Click,
   and `tuner.mouse_guard` (off/stop/recenter). **Not verified live** — see the warp question below.
   Plan + the two data questions: [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+- [ ] **A full tuner run and a composer cycle in the current build.** The residency work rewrote the
+  shared Start/Stop path and only the pet tool has exercised it — see [HANDOVER.md](HANDOVER.md).
 - [ ] **UI cleanup (tabs, buttons, text-box layout).** Make the launcher readable: one tab one job,
   controls grouped by intent, advanced/diagnostic bits behind a toggle, one shared row builder.
   **Study first** — the target structure has to be agreed before any code, or the layout churn gets
@@ -37,11 +39,9 @@ needs new machinery, just a small driver per feature.
   nothing is left to submit — a capture/OCR check on the list, or a fixed cap — so it stops rather
   than clicking empty rows.
 - [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
-- [~] **Park the cursor before a capture.** Done for the BAG captures (2026-09-19): the icon scan
-  and the reload's own pet search both move the pointer to the buy/sell inert point first. Not
-  because it was suspected — the player's seventh pet read as a "different image" at every offset,
-  and part of its portrait was the mouse arrow. **Still open for the OCR bands**: the tuner's read
-  regions and the feeder counts can have the pointer in them too, and that one wants a measurement
+- [~] **Park the cursor before a capture.** Done for the BAG captures (2026-09-19) and for the feeder
+  counts (2026-09-21, where the read also refuses when the game is not in front). **Still open for the
+  OCR bands**: the tuner's read regions can have the pointer in them, and that one wants a measurement
   first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
 
 ## Needs a live check before any code change
