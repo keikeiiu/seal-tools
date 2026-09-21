@@ -9,6 +9,43 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (17) — the food drag gets a look, a re-drag, and honest logging
+
+**Every other risky action in this tool checks its own effect.** The pet placement looks at the slot and
+retries three times; the boarding toggle checks it did not do the opposite; the feeder counts refuse to
+judge a capture that is not the game. **The food drag asserted success** — it sent the frames, logged
+`"picked up"` and `"stack 1 onto"`, and the run went on to click MAX and press Enter at a count dialog
+that a missed drag never raised. So a missed drag lost food *and* fired a stray click and keypress into
+the game, and neither was visible in the log.
+
+**What the log now records, per action:**
+
+- **where the cursor LANDED**, not just where it was sent — `landed (1313,267)` on every move. The step
+  logs used to print the intent, so a move that landed elsewhere read identically to one that hit.
+- the drag as **what it did** — `leftdown at (…)`, `leftup at (…)` — rather than "picked up", which was
+  a claim about the game made at send time.
+- the bag cell's difference **at the drop** and again **after the count**, both as numbers.
+
+**What it does about it:** the dragged bag cell is compared with how it looked before the drag. If it
+did not change, the drag is re-attempted, up to three times.
+
+**Unknown is not failure**, and that direction is deliberate: re-dragging a cell that is already empty
+picks nothing up and then fires MAX and Enter at a dialog that is not there — worse than the missed
+drag it would be fixing.
+
+**A hold between the press and the pull** (`DragGrabWait`, 0.35 s). The player watched the first drag
+miss and the second work, and the log agrees they differ: the first presses and drops inside the same
+second. The drag used to press and move in the same frame. **The size is a guess** — but the landed
+positions and the two cell-difference numbers are now in the log, so it can be corrected from evidence.
+
+**One measurement with no decision taken on it** (yet): the cell's difference *at the drop, before the
+count*. If the cell already reads empty then, a missed drag can be caught **before** the MAX click and
+the Enter — which are the stray input. One run's numbers answer which of the two it is.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (16) — the guard slept for eleven and a half minutes on its first hover
 
 **`SleepCheck` takes SECONDS and I passed `HoverDelayMs` — milliseconds — as 700.** It does not sleep a
