@@ -8,7 +8,13 @@
 [COORDINATES.md](COORDINATES.md)；逐步校正流程請看 [CALIBRATION.md](CALIBRATION.md)；哪個設定放在哪個檔案請看
 [CONFIG.md](CONFIG.md)。
 
-> 所有工具共用同一個 Arduino COM 埠，所以**同一時間只能跑一個工具**。
+> ⚠ **本文件落後於程式。** 這份翻譯對應的是 **v2.9.1** 的內容（五張卡片、十二個分頁）。目前的版本是
+> **v2.11**：**六張卡片、十五個分頁**。其中 **Pet Feeder（寵物餵食）**，以及 `Pet`、`Calibrate Pet`、
+> `Calibrate Tooltip` 三個分頁**還沒有中文說明** — 需要這些內容請看英文版
+> [USER_GUIDE.md](USER_GUIDE.md)。其餘章節仍然正確，只是畫面上的卡片與分頁比文中描述的多。
+
+> 所有工具共用同一個 Arduino COM 埠，所以**同一時間只能跑一個工具** — 例外是 **Pet Feeder**：它是常駐
+> 的，啟動其他工具時它會繼續跑自己的排程；如果它的餵食時間到了而遊戲正被其他工具使用，它會等對方用完。
 
 > 介面上的按鈕名稱仍是英文。本文以**英文原名**標示，後面附上中文說明。
 
@@ -18,7 +24,10 @@
 
 啟動器一開始只顯示工具卡片。設定分頁會收著，等到真的要設定東西時再打開：
 
-![啟動器剛開啟的樣子：五張工具卡片、Configuration 展開箭頭，以及 Hold Space 與釘選按鈕](images/launcher-cards.png)
+![啟動器剛開啟的樣子：工具卡片、Configuration 展開箭頭，以及 Hold Space 與釘選按鈕](images/launcher-cards.png)
+
+*（本頁的兩張截圖來自 **v2.9.1**，當時是五張卡片、十二個分頁；現在是六張卡片、十五個分頁，多了 Pet
+Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。卡片以外的部分沒有改變。）*
 
 每張卡片就是一個工具：名稱、即時狀態，以及 **Start** / **Stop**。Buy Items 是唯一比較高的卡片 —
 它的品項與數量位於 Start/Stop **上方**，因為這些必須在執行前決定，而不是執行中。卡片下方左邊是

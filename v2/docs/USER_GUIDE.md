@@ -20,8 +20,12 @@ the way they do, see [COORDINATES.md](COORDINATES.md); for the step-by-step cali
 The launcher opens as just the tool cards. The configuration tabs stay out of the way until you need
 them:
 
-![The launcher as it opens: five tool cards, a Configuration chevron, and the Hold Space and pin
+![The launcher as it opens: tool cards, a Configuration chevron, and the Hold Space and pin
 buttons](images/launcher-cards.png)
+
+*(The two screenshots on this page are from **v2.9.1** — five cards and twelve tabs. The app now opens
+with **six** cards and fifteen tabs; the Pet Feeder card and the `Pet`, `Calibrate Pet` and
+`Calibrate Tooltip` tabs are newer than the pictures. Everything outside the cards is unchanged.)*
 
 Each card is one tool: its name, its live status, and **Start** / **Stop**. Buy Items is the only card
 taller than the rest — its item and count sit **above** Start/Stop, because they have to be set before
@@ -29,7 +33,7 @@ the run rather than during it. Below the cards are **▸ Tools** and **▸ Confi
 and **Hold Space** and the pin on the right.
 
 **Hide the cards with ▸ Tools** when you need the window for something else — it is for calibration
-on a small screen, where the five cards take height that the capture canvas needs more. It opens the
+on a small screen, where the six cards take height that the capture canvas needs more. It opens the
 configuration tabs at the same time, because hiding the cards only makes sense when you are using
 them, and collapsing Configuration again brings the cards back. The window is never left showing
 neither. *(That is the pair: hiding the cards opens the tabs, closing the tabs restores the cards.)*
@@ -37,21 +41,29 @@ neither. *(That is the pair: hiding the cards opens the tabs, closing the tabs r
 **▸ Configuration** expands every tab and grows the window to fit. Clicking it again collapses them
 and returns the window to the size it had before.
 
-![The same window with Configuration expanded: five cards, both rows of tabs, and the Tuner tab's
+![The same window with Configuration expanded: the cards, both rows of tabs, and the Tuner tab's
 Goal card below](images/launcher-expanded.png)
 
-At the default window width the twelve tabs **wrap onto two rows**, and they do not wrap in reading
-order — `Tuner` sits on the *second* row, with the calibration and config tabs above it. Measured at
-a window `619` logical px wide (which is `929` physical at 150 % scaling):
+There are **fifteen tabs**, and at the default window width they **wrap onto two rows** — and they do
+not wrap in reading order, so `Tuner` can end up on the *second* row with the calibration and config
+tabs above it. How they wrap depends on the window width; what is fixed is the order they are
+**defined** in, which is also the order they are listed in this document:
 
-| | |
-|---|---|
-| Row 1 | Calibrate Tuner · Calibrate Gem · Buy / Sell · Arduino · Setup · Hotkeys |
-| Row 2 | Tuner · Gem · Spammer · Buy · Sell · Attributes |
+`Tuner` · `Gem` · `Spammer` · `Buy` · `Sell` · `Pet` · `Attributes` · `Calibrate Tuner` ·
+`Calibrate Gem` · `Buy / Sell` · `Calibrate Pet` · `Calibrate Tooltip` · `Arduino` · `Setup` ·
+`Hotkeys`
 
-That is only how they are *drawn*. The tabs are **defined** in the order Tuner, Gem, Spammer, Buy,
-Sell, Attributes, Calibrate Tuner, Calibrate Gem, Buy / Sell, Arduino, Setup, Hotkeys — which is also
-the order they are listed in this document. Widen the window and the wrapping changes.
+> The two-row example that used to be here was measured at a window `619` logical px wide (`929`
+> physical at 150 % scaling) when there were twelve tabs — before the Pet work added `Pet`,
+> `Calibrate Pet` and `Calibrate Tooltip`. The measurement is gone rather than adjusted, because a
+> guessed table is worse than none; re-measure if the wrap is ever worth documenting again.
+
+> **Three of the fifteen tabs are not written up below yet:** **Pet**, **Calibrate Pet** and
+> **Calibrate Tooltip** — all three belong to the Pet Feeder. Until they are, the feeder's own
+> on-screen hints and [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md) are the description of what is on them,
+> and [RELEASE-v2.10.md](RELEASE-v2.10.md) / [RELEASE-v2.11.md](RELEASE-v2.11.md) cover what they do
+> and why. Stated here rather than left silent, because the line above this file's title says "every
+> card, tab and button" and it would not be true.
 
 ### The window chrome
 
@@ -542,7 +554,7 @@ Type a key name: `F1`–`F24`, `Esc`, `CapsLock`, `Space`, `Tab`, `Enter`, or a 
    real grade, the count and three attribute lines) → **Save Tuner**.
 4. **Calibrate Gem** → **Capture gem window** → click the points and drag the result box →
    **Save Gem Composer** → **Send** one tuned route, or **Run** one arduino route.
-5. **Calibrate Buy / Sell** → **Capture bag window** → draw the grid area and one slot → **Show 64
+5. **Buy / Sell** → **Capture bag window** → draw the grid area and one slot → **Show 64
    centres** and check the dots sit on the slots → drag the list region → mark the focus point and
    MAX → **Save Calibration**.
 6. **Arduino** → **Refresh** → **Send a test click**.
@@ -552,7 +564,7 @@ Type a key name: `F1`–`F24`, `Esc`, `CapsLock`, `Space`, `Tab`, `Enter`, or a 
 - **Calibrate Tuner** → **Check OCR** straight away — it tests the saved geometry and prints the
   matcher and filter result.
 - **Calibrate Gem** → **Place cursor + click** a point, and **Check Result Colour** for empty detection.
-- **Calibrate Buy / Sell** → **Show 64 centres** and look at where the dots land.
+- **Buy / Sell** → **Show 64 centres** and look at where the dots land.
 
 **Setting up a new buy item**
 

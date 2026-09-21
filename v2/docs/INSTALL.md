@@ -37,9 +37,9 @@ firmware zip:
 
 | File | What it is | When you want it |
 |---|---|---|
-| `SealTools-v2.10.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
-| `SealTools-v2.10-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
-| `SealTools-v2.10-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
+| `SealTools-v2.11.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
+| `SealTools-v2.11-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
+| `SealTools-v2.11-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
 
 > ⚠ **Do not use the `-local` zip on a different machine.** It carries coordinates measured on the PC
 > it was built from. On a machine with a different resolution, DPI scale or game client size, every
@@ -92,13 +92,13 @@ those two look identical later.
 
 ## 3. Install the app
 
-1. Unzip `SealTools-v2.10.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
+1. Unzip `SealTools-v2.11.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
    installer and nothing is written outside the folder.
 2. Run `SealTools.Launcher.exe`.
    **Recommended: right-click → Run as administrator.** The app opens a serial port, and on some
    setups the global hotkeys need elevation too.
 
-The launcher opens as five tool cards with **▸ Configuration** below them. The config tabs are
+The launcher opens as six tool cards with **▸ Configuration** below them. The config tabs are
 hidden until you need them.
 
 ![The launcher on first run](images/launcher-cards.png)
@@ -129,8 +129,13 @@ Full walkthrough: [CALIBRATION.md](CALIBRATION.md). The short version:
    a real grade, the count and three attribute lines) → **Save Tuner**.
 3. **Calibrate Gem** → **Capture gem window** → click the points and drag the result box →
    **Save Gem Composer**.
-4. **Calibrate Buy / Sell** → **Capture bag window** (shop open, bag open) → draw the bag grid and one
+4. **Buy / Sell** → **Capture bag window** (shop open, bag open) → draw the bag grid and one
    slot → drag the shop list region → mark the focus point and MAX → **Save Calibration**.
+
+If you are going to run the **Pet Feeder**, two more tabs are its calibration — **Calibrate Pet** (the
+boarding window's geometry and the bag it opens) and **Calibrate Tooltip** (the hover-panel offset it
+reads a pet's growth from). The other tools do not need them, and the feeder refuses to start until
+its own are done.
 
 Before calibrating anything that clicks, do the two prerequisites:
 
@@ -161,8 +166,8 @@ Do these in order. Each one is read-only or costs nothing:
    → **Send a test click** → a click fires at the cursor.
 2. **Calibrate Tuner** → **Check OCR** on a real item. It prints the grade, the spring count and the
    three attribute lines, and what the filter made of them.
-3. **Calibrate Gem** → **Test Click** a point, and **Check Result Colour**.
-4. **Calibrate Buy / Sell** → **Show 64 centres**. The magenta dots must sit on the bag slots.
+3. **Calibrate Gem** → **Place cursor + click** on a point, and **Check Result Colour**.
+4. **Buy / Sell** → **Show 64 centres**. The magenta dots must sit on the bag slots.
 5. **Sell** tab → pick a few slots → **Dry run**. It moves the cursor to each slot in the order it
    would sell them, and **clicks nothing**.
 6. **Buy** tab → pick an item → **Dry run**. It scrolls and parks the cursor on the row. With the list

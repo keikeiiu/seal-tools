@@ -4,6 +4,13 @@ Written 2026-09-21, at the end of the session that shipped **v2.11**: the Pet Fe
 to four, learned to read how much food is left and schedule its reload from that, became resident, and
 the count read was rebuilt four times until one held. Copy the block below as the first message.
 
+> **This is a snapshot and it has an age.** The two things below that go stale fastest, and what they
+> actually were when this was last checked (2026-09-22): **`main` is no longer "at the v2.11 release"**
+> — it is ~80 commits past the tag, with that work unreleased, so re-run `git log` rather than
+> trusting the count here. **The running-process details (PID, start time) are from the session that
+> wrote this**, not from whatever is running now — check with `Get-Process SealTools*` before you
+> assume the feeder in the log is the one you are looking at.
+
 ---
 
 > Continue Seal Tools v2. Read `v2/docs/PROGRESS.md` first (newest entry first — it records what was
@@ -15,9 +22,10 @@ the count read was rebuilt four times until one held. Copy the block below as th
 > do not build Debug into it** — that kills the run. A **Release** build works while it runs and is the
 > compile check. Restarting it needs the player's agreement.
 >
-> **Where things are.** `main` is at the **v2.11 release** (tagged and pushed, 119 commits past v2.10);
-> nothing is unreleased. The branch `v2-pet-drag` is fully merged and can be deleted. `gh` is
-> authenticated now, which it was not for v2.10.
+> **Where things are.** The last **release** is **v2.11** (tagged and pushed, 121 commits past v2.10)
+> — but `main` is *ahead* of that tag, so there is unreleased work; `git log v2.11..main` is the real
+> answer and the count here is only true as of 2026-09-22. The branch `v2-pet-drag` is fully merged and
+> can be deleted. `gh` is authenticated now, which it was not for v2.10.
 >
 > **Everything planned is built.** `PLAN-RESIDENT-PET.md`'s three parts all shipped in v2.11 — that
 > document is now reasoning rather than a plan. What is left is verification and the items below.

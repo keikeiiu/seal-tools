@@ -3,7 +3,7 @@
 The tools locate things on screen by **pixel coordinates** that depend on the monitor resolution,
 Windows display scale, the game window size, and where the window sits. **They are not automatic** —
 each machine must be calibrated once. v2 keeps every machine-specific value in a single file,
-`config/local.yaml` (gitignored), written by the launcher's three calibration tabs.
+`config/local.yaml` (gitignored), written by the launcher's calibration tabs.
 
 Everything else (the `.exe`, models, behavior flags) is portable.
 
@@ -27,10 +27,12 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 
 1. If `config/local.yaml` is missing, `ConfigLoader` seeds it from `config/local.yaml.example`
    automatically. (You can also copy it by hand.)
-2. Open the launcher and go to the **Calibrate Tuner**, **Calibrate Gem** and **Buy / Sell** tabs.
+2. Open the launcher and go to the tabs for the tools you intend to run — **Calibrate Tuner**,
+   **Calibrate Gem**, **Buy / Sell**, and for the feeder **Calibrate Pet** and **Calibrate Tooltip**.
+   Each one calibrates only its own tool; none of them requires the others.
 
 > The seeded values are v1 window-relative measurements. They are a starting point only and **will
-> be off** until you recalibrate — expect to do both tabs once per machine.
+> be off** until you recalibrate — expect to do each tab once per machine.
 
 > A `local.yaml` written before the physical-pixel change holds **logical** coordinates, which are
 > wrong in the new space — recalibrate. Hand-tuned `gem.movements` (HID counts) are unaffected.
@@ -62,9 +64,10 @@ calibration, so a different machine can tell whether it must recalibrate. See `d
    then drag a box around the **composed result gem**.
 4. **Save Gem Composer** — writes `gem.grade_positions`, `gem.resource_gems` and
    `gem.result_gem_area` to `local.yaml`. It then asks whether the result box is currently **empty**;
-   answer **Yes** to sample the empty-box colour reference (`gem.empty_signature`), which is what
-   empty-result detection compares against. Answer No and empty detection stays off until you re-save
-   with the box empty.
+   answer **Yes** and it saves the empty-box crop to `config/calib_gem_result.png` and samples the
+   colour reference (`gem.empty_signature`). **The crop is what empty-result detection actually
+   compares against** — the signature is only the fallback for when the crop is missing, so answering
+   **No** leaves the weaker test in place. See [CONFIG.md](CONFIG.md#the-empty-detection-fields-gem).
 5. **Composer moves are saved separately.** The **Moves — tuned (hand-tuned counts)** grid holds the
    raw `dx`/`dy` counts the composer sends for each route (grade → Register, Register → Combine, and
    so on). Edit them and press **Save tuned counts** to write `gem.movements` to `local.yaml`.
@@ -88,7 +91,7 @@ calibration, so a different machine can tell whether it must recalibrate. See `d
 - **Run one full cycle** — one whole composer cycle using the arduino moves; 21 real clicks. Use it to
   check that move set survives a real run before switching the composer over to it.
 
-## 4. Calibrate Buy / Sell
+## 4. Buy / Sell (the shop and the bag)
 
 Two activities that share one tab, because they are measured from the same frame: **capture with the
 shop open, the bag open, and the count dialog showing.**
@@ -138,7 +141,29 @@ shop open, the bag open, and the count dialog showing.**
 > job. A preset's scroll means "notches down from the top", so a list left part-way down puts the item
 > that much further off, and nothing detects it. Scroll it there yourself before a run or a dry run.
 
-## 5. Prerequisite: fixed Windows pointer precision (Gem Composer)
+## 5. Calibrate Pet and Calibrate Tooltip
+
+Two tabs that belong to the **Pet Feeder** and to nothing else. Skip them unless you run it.
+
+- **Calibrate Pet** measures the boarding window's geometry — the 目錄 button, the pet feed icon, the
+  window's **X**, the bag's page tabs, the per-row start/end toggle, the boarding pet slot, the two
+  feeder slots, and the **boarding bag's own** 8 × 8 grid (it is *not* the shop's bag grid — the bag
+  sits somewhere else on this screen, and sharing the numbers aims every click at the wrong item).
+  It also carries a **row geometry** pane that shows each row's crop pixels, and a **Test read** pane
+  that prints every slot's raw reading.
+- **Calibrate Tooltip** measures the offset and shape of the **hover panel** — the box the feeder reads
+  a pet's growth and EXP% from before boarding it. Without it the feeder still runs, but it cannot tell
+  a finished pet from a feedable one and will board the finished one.
+
+> **A step-by-step walkthrough for these two is not written yet** — this is a statement of what they
+> calibrate, not a procedure. What they measure and why is in
+> [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md) and the two release notes
+> ([RELEASE-v2.10.md](RELEASE-v2.10.md), [RELEASE-v2.11.md](RELEASE-v2.11.md)); the tabs' own on-screen
+> hints carry the order to click in, and the feeder refuses to start until its calibration is complete.
+
+---
+
+## 6. Prerequisite: fixed Windows pointer precision (Gem Composer)
 
 The game is an OS-cursor title (early Windows, not raw-input), so the on-screen distance a relative
 `D dx dy` travels depends on the Windows pointer-precision mapping. With "Enhance pointer precision"
@@ -192,7 +217,7 @@ averages the whole box and is the weaker test. With `gem.save_empty_captures: tr
 writes the crop plus a line to `<bin>\logs\empty_check.txt` (`diff=0.000 threshold=0.01 empty=True`)
 — that is the number to look at if detection ever misbehaves.
 
-## 6. Files written by calibration
+## 7. Files written by calibration
 
 | File | Written by |
 |------|-----------|
@@ -204,7 +229,7 @@ writes the crop plus a line to `<bin>\logs\empty_check.txt` (`diff=0.000 thresho
 The Buy / Sell tab writes **only** `local.yaml` — it saves no screenshot. Every mark it records is
 verifiable on screen instead, by the 64 slot centres and the derived shop rows.
 
-## 7. Removed v1 mechanisms (do not look for them)
+## 8. Removed v1 mechanisms (do not look for them)
 
 The old Python build's calibration aids no longer exist in v2, and older copies of this document
 described them:

@@ -17,8 +17,25 @@
 > **v2.1 (2026-09-09).** The state described here is tagged `v2.1`: capture, cursor, tuner OCR and
 > the composer verified on a live game, plus spammer presets and the Setup tab.
 
-Current state of the fix work. Every row is **one commit**. Build is clean (`0 warnings / 0 errors`)
-and all tests pass at every step. Nothing is pushed; the branch is ahead of `origin/v2-saving-attempt`.
+> ## ⚠ Historical snapshot — stopped at v2.4 (2026-09-12). Not current.
+>
+> This was the running status of the fix work on the branch `v2-saving-attempt`. **That work is
+> finished, merged, and eight releases behind where the project now is.** What it says about its own
+> state is no longer true, in two ways that matter if you read it as current:
+>
+> - **"Nothing is pushed"** — `main` is at **v2.11**, tagged and pushed. `git log` is the record.
+> - **"`v2/dist/` is read-only — never modify it; it holds the only intact copy of the calibration"**
+>   (≈line 132) — **false and no longer a safe instruction.** `v2/dist/` now holds release `.zip`s and
+>   nothing else. The live calibration is **`v2/config/local.yaml`**, and `SealTools-v2.3-local.zip` in
+>   `dist/` is a dated backup of it, not the source of truth.
+>
+> **Use instead:** [PROGRESS.md](PROGRESS.md) for what was done and when, [DESIGN.md](DESIGN.md) for
+> how it works now, [TODO.md](TODO.md) for what is open. The per-pass commit list below is kept only
+> as the reasoning for changes that are already in the code.
+
+What follows is the state of the fix work **at the time it was written** — every row is one commit,
+and the build was clean (`0 warnings / 0 errors`) with all tests passing at every step. Read it as
+history, not as a description of the tree.
 
 For the original design review and the guardrails that must not be reversed, see
 [REVIEW.md](REVIEW.md). For the config file split, see [CONFIG.md](CONFIG.md). For per-machine

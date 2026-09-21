@@ -1,24 +1,11 @@
 # Seal Tools v2 (C# / .NET WPF)
 
-**Version 2.3** (2026-09-11) — the launcher adopts WPF-UI properly. Every tab was rebuilt on the
-theme's own controls and cards, the window opens as just the tool cards with the configuration
-tabs behind a chevron, and it can be pinned above the game and shrunk to the running tool's card so
-the status stays visible while you play. Window placement and size are remembered. Two real bugs
-were found on the way: the move-set selector disabled the control needed to switch back, and the
-empty check compared the result box's *border*, so a moved game window stalled the composer.
+**Version 2.11** (2026-09-21) — the current release; see the tag `v2.11`.
 
-**Version 2.2** (2026-09-10) — the cursor is positioned by the **Arduino** in a closed loop instead
-of `SetCursorPos` (which this process is intermittently refused — see
-[docs/CURSOR-INVESTIGATION.md](docs/CURSOR-INVESTIGATION.md)), the Gem Composer moves between
-calibrated points instead of hand-tuned counts by default ([docs/MOVE-SETS.md](docs/MOVE-SETS.md)),
-empty-result detection compares **pixels** against the saved empty crop instead of a colour average,
-and a composer run is N → G → DG **once** and ends.
-
-**Version 2.1** (2026-09-09) — the first release verified end to end on a live game: physical-pixel
-coordinates with the measured display environment stored alongside the calibration, a **Setup** tab,
-spammer **presets**, and both the Magic Tuner and the Gem Composer confirmed working. See
-[docs/STATUS.md](docs/STATUS.md) for the change list and [docs/COORDINATES.md](docs/COORDINATES.md)
-for the coordinate model.
+The **version history is not repeated here.** It lives in one place —
+[../README.md](../README.md#version-history) has the one-line-per-release table, and
+[docs/PROGRESS.md](docs/PROGRESS.md) has the dated reasoning behind each. This file kept its own copy
+until v2.11 and the copy had gone eight releases stale, which is the argument for not having two.
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Python build with a
 **native Windows desktop app** (WPF + WPF-UI) that ships as a **single self-contained `.exe`**.
@@ -30,13 +17,16 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Pyth
 
 ## What it does
 
-Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
+Five tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR. The
+launcher shows them as **six cards** — Buy Items and Sell Items are one tool with a card each:
 
-| Tool | What it does |
-|------|--------------|
-| **Magic Tuner** | Rolls the 發條 (magic tuning) UI — Arduino click+Enter, OCR reads the grade (N/G/DG/XG/SG) + 3 attribute lines, matches them against a config dictionary, applies filter rules, stops at the target grade. |
-| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points, moving between them with the Arduino (closed loop by default, hand-tuned counts available via `gem.move_mode`). Combines each grade until the result box reads empty, then advances; ends after the last grade. |
-| **Skill Spammer** | Presses configured keys, each on its own cooldown. |
+| Tool | Card(s) | What it does |
+|------|---------|--------------|
+| **Magic Tuner** | Magic Tuner | Rolls the 發條 (magic tuning) UI — Arduino click+Enter, OCR reads the grade (N/G/DG/XG/SG) + 3 attribute lines, matches them against a config dictionary, applies filter rules, stops at the target grade. |
+| **Gem Composer** | Gem Composer | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points, moving between them with the Arduino (closed loop by default, hand-tuned counts available via `gem.move_mode`). Combines each grade until the result box reads empty, then advances; ends after the last grade. |
+| **Skill Spammer** | Skill Spammer | Presses configured keys, each on its own cooldown. |
+| **Buy / Sell** | Buy Items · Sell Items | Bulk-buys the items you go through constantly, and sells the bag slots you mark on an 8×8 grid. |
+| **Pet Feeder** | Pet Feeder | Keeps a boarded pet fed while you are not watching, reloading the feeder on a per-row schedule. **Resident** — starting another tool leaves it running. |
 
 At most one tool runs at a time (they share the single Arduino COM port) — with one exception: the
 **Pet Feeder** is resident. It holds nothing between reloads, so starting another tool leaves it
@@ -50,12 +40,16 @@ second *foreground* tool still stops the first.
 ```
 v2/
   SealTools.sln
-  SealTools.Core/        # config loader, Arduino serial, Win32 window/DPI, hotkeys, screen capture, file logging, ToolState
-  SealTools.Tuner/       # OcrEngine (RapidOCRSharpOnnx), AttrMatcher, TextCleaner, SealTuner
+  SealTools.Core/        # config loader/validator, Arduino serial, Win32 window/DPI, hotkeys, screen capture,
+                         # file logging, ToolState, and everything shared: OcrEngine (RapidOCRSharpOnnx),
+                         # TextCleaner, IconMatch, PetPanel, FeederLayout/FeederCount/FeederEta, BagGrid
+  SealTools.Tuner/       # SealTuner, AttrMatcher
   SealTools.GemComposer/ # GemComposer
-  SealTools.Spammer/     # SkillSpammer
+  SealTools.Spammer/     # SkillSpammer, HoldSpace
+  SealTools.Shop/        # ShopTool (buy + sell)
+  SealTools.Pet/         # PetTool (the resident feeder)
   SealTools.Launcher/    # WPF-UI desktop app (the UI + tool lifecycle)
-  SealTools.Tests/       # xUnit tests (config loader)
+  SealTools.Tests/       # xUnit tests — 172 cases across 17 files
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/INSTALL.md        # install: board, firmware, app, first calibration, updating
@@ -106,14 +100,20 @@ v2/
 
 ## Calibration workflow (per machine)
 
-The calibrator is in the launcher, split into **two separate tabs** because the two tools use
-different game screens:
+The calibrator is in the launcher, split into **one tab per game screen** — five of them:
 
 1. **Calibrate Tuner** — open the 發條 window → **Capture** → **drag a box** around the grade + 3 attribute lines
    → **Check OCR** (verify it reads the correct grade + attributes) → **Save Tuner**.
 2. **Calibrate Gem** — open the gem-combine window → **Capture** → **click** N / G / DG / Register / Combine,
    the 3 resource slots, and **drag a box** around the composed result gem → **Save Gem Composer**.
-   Composer moves (raw `dx`/`dy`) are saved separately with **Save Composer Moves**.
+   Composer moves (raw `dx`/`dy`) are saved separately with **Save tuned counts**.
+3. **Buy / Sell** — the shop list, the bag grid, the MAX button and the scroll point.
+4. **Calibrate Pet** — the 目錄 button, the feed icon, the boarding window's X, the page tabs, the start/end
+   toggle, the boarding pet slot, the feeder slots, and the boarding bag's **own** grid.
+5. **Calibrate Tooltip** — the hover-panel offset, so the feeder can read a pet's growth and EXP% before
+   boarding it.
+
+You only need the tabs for the tools you actually run.
 
 Coordinates are **client-area-relative physical pixels** (game window client top-left = origin). The
 process runs **DPI-unaware**, so captures and measurements switch one thread to per-monitor-aware
@@ -136,7 +136,7 @@ to be reproducible the pointer must be in a fixed, linear state — same on ever
 1. **Disable acceleration:** `Settings → Bluetooth & devices → Mouse → Additional mouse options →
    Pointer Options →` uncheck **"Enhance pointer precision"**, and leave the speed notch where it is.
 2. **Hand-tune the raw `dx`/`dy`** in the Gem calibrate tab's **Composer moves** grid until **Test Move**
-   lands on its target, then **Save Composer Moves**.
+   lands on its target, then **Save tuned counts**.
 
 There is no scale factor to measure and none is stored: the raw counts *are* the tuning. (An earlier
 build computed moves as `(point − Register) × scale / 100`; that approach was removed because it made the
@@ -169,12 +169,24 @@ Guardrails — each of these was tried and is wrong:
 
 ## Logging (for future reference)
 
-Written next to the exe under `logs/`:
+Under `logs/`, and **the two groups are in different places** — worth knowing before you go looking:
+
+`logs/` beside `config/` (the app root, found by walking up for `config/defaults.yaml`):
 
 - `run_<timestamp>.jsonl` + `run_<timestamp>.txt` — every tuner attempt (grade, remaining, matched attributes).
 - `ocr_log.jsonl` — every OCR scan.
+- `ocr_errors.jsonl` — OCR scans that threw, kept apart from the successes.
 - `captures/capture_<timestamp>.png` — the OCR capture region (when `save_captures: true`).
+
+`logs/` next to the exe (`AppContext.BaseDirectory`):
+
+- `pet.log` — the feeder's own log, one line per decision.
+- `reads/` — the crops the feeder saved for a read, and its scan reports.
 - `error.log` — any unhandled startup exception (helps diagnose silent crashes).
+
+In a dev tree these are two different directories (`v2/logs/` and
+`SealTools.Launcher/bin/<config>/net8.0-windows/logs/`); in a published build, where the exe sits
+beside `config/`, they are the same one.
 
 ---
 
@@ -219,32 +231,21 @@ The published `publish\` folder is the distributable: `SealTools.Launcher.exe` +
 
 ---
 
-## Progress log
+## Progress, and what is open
 
-**Done:**
-- Config layer (externalized, validated) + unit tests.
-- OCR pipeline (capture → RapidOCR → grade color + OCR → line reconstruction → attribute match + filter).
-- All three tools ported to C#, config-driven, client-area-relative, in-memory control/state.
-- WPF-UI launcher: tool cards + live status (structured multi-line), config editing tabs, attribute list,
-  calibrator (two tabs: Tuner drag-box + Gem click-points, with Check OCR).
-- File logging (run logs + ocr log).
-- Self-contained single-file publish.
-- Lint/analyzers clean, `dotnet format` applied.
-- Fix pass on branch `v2-saving-attempt` — `docs/STATUS.md` has the full commit list and the items
-  still deferred.
+Not kept here. This file carried its own progress log and list of open gaps until v2.11, and both had
+gone stale against the work — so the answer lives in the documents that own it:
 
-**Known gaps / to verify (next):**
-- The tuner's `remaining_y` band (spring count) is derived proportionally and may need a manual nudge per machine.
-- Gem composer moves are raw hand-tuned `dx`/`dy` per route (saved by **Save Composer Moves**); verify them
-  with the **Test Move** button after turning pointer acceleration off.
-- Calibration and OCR still need a real end-to-end pass on a live game.
-- Capture uses `CopyFromScreen` in **physical pixels** everywhere (calibration, OCR, composer), on a
-  thread briefly switched to per-monitor-aware. `PrintWindow` was measured to return a **black frame**
-  for this game; do not reintroduce it. The launcher hides itself for the grab, so you no longer have
-  to move windows — but keep the game unobstructed by anything else.
-- Coordinates in an existing `local.yaml` written before this change are **logical**, not physical —
-  recalibrate once (see `docs/COORDINATES.md`). Hand-tuned `gem.movements` are HID counts and survive.
-- OCR row-bucket pooling: a fixed `row_height` grid can merge two attribute rows — needs real unconfirmed
-  frames as evidence before changing (see `docs/REVIEW.md`).
-- Check-in remains the standalone Python script (`v1/checkin/checkin.py`) — out of scope for v2.
-- `v1/skill_spammer/skill_spammer_config.yaml` has an unrelated uncommitted modification — not part of v2.
+- **What was done, and why** — [docs/PROGRESS.md](docs/PROGRESS.md), dated, newest first.
+- **How it works now** — [docs/DESIGN.md](docs/DESIGN.md).
+- **What is still open** — [docs/TODO.md](docs/TODO.md).
+- **The guardrails** (measured rules that look like improvements to reverse) — [docs/REVIEW.md](docs/REVIEW.md)
+  Part D and [docs/DESIGN.md](docs/DESIGN.md) §5.
+
+Two things from the old local list stay here because they are cheap to get wrong and expensive to
+rediscover:
+
+- **Capture is `CopyFromScreen` in physical pixels** everywhere, on a thread briefly switched to
+  per-monitor-aware. `PrintWindow` returns a **black frame** for this game — do not reintroduce it.
+- **A `local.yaml` written before v2.1 holds logical, not physical, coordinates** — recalibrate once
+  (see [docs/COORDINATES.md](docs/COORDINATES.md)). Hand-tuned `gem.movements` are HID counts and survive.

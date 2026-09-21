@@ -28,8 +28,10 @@ overlay created from `local.yaml.example`).
 - `tuner.ocr.*` — OCR region + sub-bands
 - `gem.grade_positions`, `gem.resource_gems`, `gem.result_gem_area`
 - `gem.movements.*` — hand-tuned HID deltas
-- `gem.empty_signature` — the sampled empty-box colour (filled by the calibrator)
-- `gem.empty_distance` — colour-distance threshold tuned against the empty signature
+- `gem.empty_signature` — the sampled empty-box colour. **The fallback**, used only when the saved
+  empty crop below is missing
+- `gem.empty_distance` — the difference threshold: pixels-vs-crop when the crop exists, colour distance
+  against the signature when it does not
 - `arduino.port` (optional override)
 - `spammer.active` + `spammer.presets.*` — **your own** key rotations. Not machine-specific, but
   personal: `defaults.yaml` is the file `publish.bat public` copies into the release, so a preset
@@ -75,7 +77,7 @@ want to hand-edit either file, back it up first, and put enduring notes in this 
 - The launcher's **Save** writes the portable sections to `defaults.yaml` (`SaveDefaults`) and the
   machine-specific parts to `local.yaml` (`SaveLocal`).
 - The gem calibrator's **Save Gem Composer** writes positions / resource gems / result-area /
-  `empty_signature` / `empty_distance` to `local.yaml`. **Save Composer Moves** writes
+  the empty crop / `empty_signature` / `empty_distance` to `local.yaml`. **Save tuned counts** writes
   `gem.movements` separately, and **Save Coordinates** writes the typed-in positions. `empty_mode` /
   `empty_streak` live in `defaults.yaml`.
 - The spammer tab's **Save Preset** writes `spammer.active` + `spammer.presets` to `local.yaml`.
@@ -90,8 +92,13 @@ want to hand-edit either file, back it up first, and put enduring notes in this 
 |---|---|---|
 | `empty_mode` | `defaults.yaml` | what to do when the result box is empty |
 | `empty_streak` | `defaults.yaml` | consecutive empty reads before acting |
-| `empty_distance` | `local.yaml` | colour-distance threshold below which the box is "empty" |
-| `empty_signature` | `local.yaml` | the sampled empty-box colour reference |
+| `empty_distance` | `local.yaml` | the difference threshold below which the box is "empty" |
+| *(the saved empty crop)* | `config/calib_gem_result.png` — an image, not a YAML key | **the primary test**: the fraction of pixels differing from the saved empty-box crop. Colour- and shape-blind, so any gem reads the same. Measured empty `0.000` against a gem at `0.357`, threshold `0.18` |
+| `empty_signature` | `local.yaml` | **the fallback**, used only when the crop is missing: the average colour of the empty box. The weaker test — a gem whose colour is close to the empty slot's can hide in it |
+
+`GemComposer.IsResultBoxEmpty` uses the crop when it exists and the signature otherwise, and answers
+"not empty" when neither is available, so the composer never advances a grade on a missing reference.
+Both are written by **Save Gem Composer**; [CALIBRATION.md](CALIBRATION.md) covers the capture itself.
 
 > Note on capture: everything uses `CopyFromScreen` (a screen region) — the calibrator's **Capture**
 > button, OCR and the composer loop. `PrintWindow` was tried for calibration and returns a **black

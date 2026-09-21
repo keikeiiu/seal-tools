@@ -1,4 +1,4 @@
-# Seal Tools v2.10 (C# / .NET 8 WPF)
+# Seal Tools v2.11 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -8,19 +8,20 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 ## Download
 
-**Take the latest — [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip).**
+**Take the latest — [SealTools-v2.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11.zip).**
 Self-contained (exe + OCR models + config templates) — unzip and run. Installation, including flashing
 the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
 
-Older releases are kept only when they are a useful fallback — there is currently one:
+Older releases are kept only when they are a useful fallback:
 
 | Version | File | |
 |---|---|---|
-| **v2.9.1** | [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip) | Latest |
+| **v2.10** | [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip) | The Pet Feeder's first build |
+| v2.9.1 | [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip) | The last build before the Pet Feeder |
 | v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | The last build before buy/sell |
 
 **Firmware.** The Arduino sketch ships alongside the app, not inside it:
-[SealTools-v2.9.1-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1-firmware.zip).
+[SealTools-v2.11-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11-firmware.zip).
 Unzip it and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. From v2.9 on this is published with
 every release — before that it was only in the repo, so a downloaded zip had no way to flash a board.
 
@@ -36,6 +37,8 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 | Version | Date | What it added |
 |---|---|---|
+| **v2.11** | 2026-09-21 | **The Pet Feeder grows up.** One boarding row becomes **four**, each with its own schedule — the free row holds two food stacks and a paid one five, so one clock for both would reload a paid row half full or leave the free row dry for five hours. It **reads how much food is left** in the feeder and schedules the reload from that number rather than from arithmetic, and it finds a pet by **its icon** across the bag rather than by the cell it used to sit in. It is now **resident**: starting another tool no longer kills it, and it waits for the game if a reload comes due mid-run. Two items wait on an optional firmware reflash, and both fall back to today's behaviour until you flash. |
+| v2.10 | 2026-09-17 | **The Pet Feeder** — a new tool that keeps a boarded pet fed while you are not watching. It is the first thing in the suite that acts on a timer rather than on a button press. Two tabs come with it: **Calibrate Pet** (the 目錄 button, the feed icon, the start/end toggle, the feeder slots and the boarding bag's *own* 8×8 grid) and **Pet** (which cells hold food, marked per run because the selection changes with what the character has been doing). |
 | **v2.9.1** | 2026-09-15 | Hot fix on v2.9, driven by setting it up on a second PC. **`▸ Tools` hides the tool cards**, so the capture canvas gets the whole window on a screen too small to show both. Three layout defects fixed, all found by looking at a narrow window: the Spammer tab's **Save Preset** sat above the cards it saves, its **Delete** button was clipped mid-word, and the key row's **Fast** tick box drew with no right border. Also corrects the Buy/Sell calibration hint, which still described two row clicks from a design replaced by one dragged region. |
 | v2.9 | 2026-09-14 | **Buy and Sell.** Bulk-buy the items you re-buy constantly and bulk-sell what you don't keep, both verified on a live game. Buy items are presets (row, scroll, usual count) kept in `local.yaml`; the sell selection is deliberately never saved. **First release to ship the Arduino firmware** — before this the sketch was only in the repo, so a downloaded zip had no way to flash a board. |
 | v2.6 | 2026-09-13 | Safety and correctness pass, none of it visible: one tool start at a time, a stop during a cold start honoured, a failed config save reported instead of leaving the click looking inert, and the tuner stopping on a failed OCR read rather than below the target grade. Spammer presets left in `defaults.yaml` are now adopted into `local.yaml` instead of being deleted by the next save from any other tab. Hold Space releases the spacebar on stop; the firmware releases held keys when the host disappears. *(No release published; tag only.)* |
@@ -47,16 +50,18 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 ## Quick start
 
-1. Unzip `SealTools-v2.9.zip`.
+1. Unzip `SealTools-v2.11.zip`.
 2. Run `SealTools.Launcher.exe` — **as Administrator** is recommended (serial access; on some setups the in-game hotkeys need it too). On first run it auto-creates `config\local.yaml` from the example.
-3. Use the in-app **Calibrate** tabs (Tuner + Gem) to set your machine's coordinates once.
+3. Use the in-app calibration tabs — **Calibrate Tuner**, **Calibrate Gem**, **Buy / Sell**, **Calibrate
+   Pet**, **Calibrate Tooltip** — to set your machine's coordinates once. You only calibrate the tools
+   you actually use.
 
 > **Hotkeys need the launcher focused:** the game's anti-cheat blocks background key reads, so
 > F11/F12/CapsLock do nothing while you are in-game — click the launcher first, then the key.
 
 ## What's inside
 
-Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
+Six tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
 
 | Tool | What it does |
 |------|--------------|
@@ -65,11 +70,13 @@ Three tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 | **Skill Spammer** | Presses configured keys, each on its own cooldown. |
 | **Buy** | Re-buys the items you go through constantly: right-click the shop row, MAX, Enter, Enter, for the count set on the card. |
 | **Sell** | Sells the bag slots you click on an 8×8 grid, highest slot first, with a per-run cap and a dry run that clicks nothing. |
+| **Pet Feeder** | Keeps a boarded pet fed while you are not watching. It reloads the feeder on a per-row schedule worked out from how much food is left, and it is **resident** — starting another tool leaves it running. |
 
 ## Full docs
 
 - **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)** — board, app, first calibration, updating.
 - **[v2/docs/USER_GUIDE.md](v2/docs/USER_GUIDE.md)** — every card, tab and button explained.
+- **[v2/docs/DESIGN.md](v2/docs/DESIGN.md)** — how it works and why, in one place.
 - **[v2/docs/CALIBRATION.md](v2/docs/CALIBRATION.md)** — per-machine calibration walkthrough.
 - **[v2/docs/MOVE-SETS.md](v2/docs/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
 - **[v2/docs/PROGRESS.md](v2/docs/PROGRESS.md)** — dated log of what was done and why.

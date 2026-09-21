@@ -1,31 +1,36 @@
 # The Pet tab, and how the schedule and the reload flow work
 
 **What this is:** what the current code does, read off the source, for review. It proposes nothing.
-Line references are to `SealTools.Pet/PetTool.cs` and `SealTools.Launcher/MainWindow.xaml.cs`.
+The code lives in `SealTools.Pet/PetTool.cs` and `SealTools.Launcher/MainWindow.xaml.cs`.
+
+> **On line numbers.** This document used to cite a line for every claim, and those numbers rotted —
+> `PetTool.cs` has been edited since, and one cited method (`ReloadRow`) no longer existed under that
+> name. It now names **methods and UI labels** instead, which survive an edit; `PetTool.cs` is ~2000
+> lines and `MainWindow.xaml.cs` ~8200, so search for the name rather than trusting an offset.
 
 ---
 
 ## 1. The tab, section by section
 
-In the order they are built — `BuildPetTab`, MainWindow.xaml.cs:5280.
+In the order they are built — `MainWindow.BuildPetTab`.
 
-| # | Section | Line | What is in it |
-|---|---|---|---|
-| 1 | **The bag, right now** | 5344 | `Page to edit` · `Clicking a bag cell marks…` · the 64-cell bag picker · **Mark FOOD cells** / **Mark the RETURN slot** / **Mark a pet to queue** · a cell info line |
-| 2 | **Setup so far — this tab** | 5354 | the checklist of what is marked and what is missing |
-| 3 | **Ready to run** | 5363 | the readiness verdict and the **Start** |
-| 4 | **Timing** | 5417 | `Wait after empty (min)` · `Action wait (ms)` · `Food load` (right-click / drag — "needs firmware 2") |
-| 5 | **Rows and boarding state** | 5463 | the per-row **RUN** tick, the per-row **boarding right now** tick, and **RELOAD EVERY ROW ON START** |
-| 6 | **The queue — which pets to breed** | 5544 | the captured icons by label · `Name for the next one` · **Capture the marked pet's icon** / **Remove last** |
-| 7 | **Find them** | 5570 | **Scan the bag for these pets** |
-| 8 | **Read a pet's panel** | 5585 | **Test read the pet panel** |
-| 9 | **Find the pets that can still be fed** | 5607 | **Scan bag for feedable pets** / **Scan + rebuild the queue** |
-| 10 | **Save** | 5643 | writes this tab's half — the run's state, not the calibration |
+| # | Section | What is in it |
+|---|---|---|
+| 1 | **The bag, right now** | `Page to edit` · `Clicking a bag cell marks…` · the 64-cell bag picker · **Mark FOOD cells** / **Mark the RETURN slot** / **Mark a pet to queue** · a cell info line |
+| 2 | **Setup so far — this tab** | the checklist of what is marked and what is missing |
+| 3 | **Ready to run** | the readiness verdict and the **Start** |
+| 4 | **Timing** | `Wait after empty (min)` · `Action wait (ms)` · `Food load` (right-click / drag — "needs firmware 2") |
+| 5 | **Rows and boarding state** | the per-row **RUN** tick, the per-row **boarding right now** tick, and **RELOAD EVERY ROW ON START** |
+| 6 | **The queue — which pets to breed** | the captured icons by label · `Name for the next one` · **Capture the marked pet's icon** / **Remove last** |
+| 7 | **Find them** | **Scan the bag for these pets** |
+| 8 | **Read a pet's panel** | **Test read the pet panel** |
+| 9 | **Find the pets that can still be fed** | **Scan bag for feedable pets** / **Scan + rebuild the queue** |
+| 10 | **Save** | writes this tab's half — the run's state, not the calibration |
 
 **All the marking is on this tab** — the bag cells, the return slot, the pet icons. I had this wrong in
 the first draft of this document.
 
-**The two ticks are a fallback, not the source of truth.** The hint at 5464 says it: the tool opens the
+**The two ticks are a fallback, not the source of truth.** The hint there says it: the tool opens the
 breeder at start and *looks* at each row's pet slot, so a row already feeding is left alone. The ticks
 settle the rows whose slot could not be read, and the tool keeps them up to date after every reload.
 **RELOAD EVERY ROW ON START** is the override for what looking cannot see: the slot says a pet is in
@@ -36,7 +41,7 @@ the loader, it does not say how much *food* is left.
 ## 2. Two paths through the same window
 
 ```
-        THE LOOK  (InspectRows, PetTool.cs:487)      THE RELOAD  (ReloadRow, PetTool.cs:700)
+        THE LOOK  (InspectRows)          THE RELOAD  (ReloadRowInPlace)
         ───────────────────────────────────          ─────────────────────────────────────
   once, at run start                             once per row, at that row's own time
 
@@ -60,19 +65,19 @@ may have been hours earlier.
 ## 3. The schedule
 
 ```
-Run()                                                PetTool.cs:153
+Run()
  │  log "run started — board firmware <n>, N row(s) at 3/min, plus 5 min after empty: …"
  │
  ├─ ok = ClaimGame() .............. waits for another tool to finish, if one owns the game
  ├─ next = ok ? InspectRows() : {}         ← the LOOK; one window visit for all rows
  ├─ PublishSchedule()                      ← card: "boarding R1 · next R2 at 19:40 · 2 more queued"
  │
- └─ while (!QuitPressed && !ct.IsCancellationRequested)      PetTool.cs:250
+ └─ while (!QuitPressed && !ct.IsCancellationRequested)
       │
       ├─ row = live.OrderBy(r => next[r]).First()      ← the SOONEST due row
       ├─ if (!SleepUntil(next[row], ct)) break          ← hours, typically
       ├─ ClaimGame(state, …)                            ← yields mid-wait if another tool starts
-      ├─ try   ok = ReloadRow(row)
+      ├─ try   ok = ReloadRowInPlace(row)
       │  finally ReleaseGame()
       │
       ├─ ok  → failures[row] = 0
@@ -84,7 +89,7 @@ Run()                                                PetTool.cs:153
 
 **One schedule per row.** The free row holds 2 food stacks and a paid row 5, so a full load lasts 200
 minutes on one and 500 on the other; one clock for both would reload a paid row while half full, or
-leave the free row dry for five hours (PetTool.cs:170).
+leave the free row dry for five hours.
 
 ### Where `next[row]` comes from
 
@@ -96,7 +101,7 @@ CycleMinutesFor(row) = LoadMinutesFor(row) + WaitAfterEmptyMinutes
 
 `MaxStack = 300` (`FeederCount`). So the number is arithmetic about **food**, with no pet in it.
 
-`ScheduleFor(row, itemsLeft)` (PetTool.cs:573) sets it three ways:
+`ScheduleFor(row, itemsLeft)` sets it three ways:
 
 | read | `next[row]` | card/log |
 |---|---|---|
@@ -111,7 +116,7 @@ A fourth: `ReloadOnStart` returns `now` for every row, so all of them are due at
 ## 4. Inside one reload
 
 ```
-ReloadRow(row)                                       PetTool.cs:700
+ReloadRowInPlace(row)
  │
  ├─ "opening the boarding window…"   目錄 → the feed icon → Enter
  ├─ try
@@ -129,10 +134,10 @@ ReloadRow(row)                                       PetTool.cs:700
  └─ finally: CloseBoarding(ser)          ← EVERY exit closes the window
 ```
 
-The close is in a `finally` and the comment at 709 says why: leaving the window up would sit on the
+The close is in a `finally` and the comment there says why: leaving the window up would sit on the
 game through a 205-minute wait and the next cycle would click 目錄 behind it.
 
-**The open and the close are inside `ReloadRow`, and the loop calls it once per row — so N rows due at
+**The open and the close are inside `ReloadRowInPlace`, and the loop calls it once per row — so N rows due at
 once is N opens and N-1 closings.** Today's run did four in a row:
 
 ```
@@ -147,9 +152,9 @@ found four due rows with no wait between them. In normal running one row comes d
 ## 5. The pet placement, in detail
 
 ```
-PlacePet(row, out error)                             PetTool.cs:845
+PlacePet(row, out error)
  │
- ├─ candidates = FindQueuedPetCandidates()           PetTool.cs:1066
+ ├─ candidates = FindQueuedPetCandidates()
  │     for EACH page: SelectPage → ParkCursor → capture
  │       for EACH queued icon: ScoreAll(bag, grid, icon)
  │         EVERY cell ≤ MatchLimit  →  a candidate (page, cell, score, label)

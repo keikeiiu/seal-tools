@@ -13,6 +13,59 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-22 (28) — documentation audit: the docs had drifted from the tree
+
+**Goal:** check the docs against the code rather than against each other, and correct what no longer
+described the thing. No code was changed; the defects the audit turned up went into
+[TODO.md](TODO.md#from-the-2026-09-22-audit--found-not-fixed) instead, split into what was read out of
+the source and what still needs reproducing.
+
+**The pattern worth naming:** every stale doc was stale in the same direction — it described the state
+at the moment it was written and nothing updated it when the next release landed. Four documents each
+announced a *different* "latest" version (v2/README v2.3, top-level README v2.10, STATUS v2.4,
+HANDOVER v2.11). The fix that follows from that is structural, not cosmetic:
+
+- **A changelog in two places rots in one of them.** `v2/README.md` carried its own version history
+  that had gone **eight releases** stale. It now points at the single history (top-level README) plus
+  PROGRESS. Same for its "progress log / known gaps" section, which was v2.3-era and duplicated
+  TODO.md — including an item TODO.md had already recorded as resolved.
+- **A line number in a doc is a claim with a short half-life.** `PET-TAB-DESIGN.md` cited a line for
+  every claim and promised they were accurate; `PetTool.cs` has been edited since, and it cited a
+  method (`ReloadRow`) that does not exist — the real name is `ReloadRowInPlace`. It now names methods
+  and UI labels, which survive an edit.
+- **A snapshot needs to say it is one.** `STATUS.md` stopped at v2.4 but reads as current, and it
+  still tells the reader that `v2/dist/` "holds the only intact copy of the calibration" — which is
+  now false and was the kind of instruction that loses a calibration if followed. It has the same
+  historical banner `REVIEW.md` already had, with that specific claim called out.
+
+**Corrected, with the evidence behind each:** the top-level README's version, download and firmware
+links (v2.11 is the latest release, `gh release list`), its missing v2.10/v2.11 history rows, and
+"Three tools" against six cards; `v2/README.md`'s banner, architecture tree (it put `OcrEngine` and
+`TextCleaner` in `Tuner` — both are in `Core`) and the two log locations, which really are two
+different directories and were documented as one; `INSTALL.md`'s v2.10 filenames, card count, a
+"Test Click" that is called **Place cursor + click** in Calibrate Gem, and **Buy / Sell** (not
+"Calibrate Buy / Sell"); `CONFIG.md` and `v2/README.md`'s **Save tuned counts**, which three docs
+called "Save Composer Moves" — `PLAN-UI-CLEANUP.md` had already recorded that rename, so the docs had
+been told and did not follow. Also `CONFIG.md`'s empty-detection section, which described the colour
+signature as the primary test when the saved crop (`config/calib_gem_result.png`) is primary and the
+signature is the fallback.
+
+**The gap that is a real gap, not drift:** `USER_GUIDE.md` opens "every card, tab and button" and had
+**twelve tabs and five cards**; the app has **fifteen and six**. `Pet`, `Calibrate Pet` and
+`Calibrate Tooltip` were undocumented in both the English and the zh-TW guide. Both now say so
+explicitly and point at the design doc and the release notes; the full sections are still to write,
+and the zh-TW mirror is a translation of the pre-Pet revision throughout. The screenshots are v2.9.1
+and captioned as such rather than retaken — a fresh capture means poking the window of a feeder that
+is running live.
+
+**Also:** deleted `v2/docs/images$name.png` — 66 KB of junk from a shell variable that never expanded.
+
+**Left open:** the three guide sections (and the zh-TW mirror); everything in the new TODO audit
+section, above all the four unreachable `PetConfig` properties, which are live settings the tool
+reads and no config file can carry.
+
+---
+
 ## 2026-09-22 (27) — session close, and a git mistake worth not repeating
 
 **Landed and merged to `main`** as `e059c45` (PR #3, a **merge commit**): a window open now finishes
