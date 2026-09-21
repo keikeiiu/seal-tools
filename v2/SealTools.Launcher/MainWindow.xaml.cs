@@ -5880,10 +5880,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             void Sync()
             {
                 var stamp = FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks);
+                // ReadRegion is NULLABLE and a half-typed width makes it null — "344" passes through
+                // "3". Marking it non-null here crashed the launcher twice while the player typed,
+                // which is the worst moment for it: it takes the box they are editing away with it.
                 readout.Text = stamp is null
                     ? "no strip — draw one, or type four numbers"
                     : string.Join("   ", stamp.Select((sl, f) =>
-                        $"s{f + 1} x={sl[0]} crop={FeederLayout.ReadRegion(sl, pet.FeederCountLeftFraction)![0]}"));
+                        FeederLayout.ReadRegion(sl, pet.FeederCountLeftFraction) is { } c
+                            ? $"s{f + 1} x={sl[0]} crop={c[0]}"
+                            : $"s{f + 1} x={sl[0]} crop=—"));
                 RefreshPetChecklist();
                 PetRedrawOverlay();
             }
