@@ -5595,11 +5595,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         // food and raise an error dialog if boarded, with +0 pets that need it — see
         // docs/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
         var scanFeedable = MakeButton("Scan bag for feedable pets", ControlAppearance.Secondary);
+        // The destructive twin, and deliberately a SEPARATE button rather than a checkbox on the one
+        // beside it: a scan you press to look at must not quietly rewrite the queue.
+        var scanQueue = MakeButton("Scan + rebuild the queue", ControlAppearance.Primary);
         // Its own pane, not the Test read one above: this reports a cell per line and would push that
         // result off the screen, and the two answer different questions.
         var scanResult = Mono();
         scanResult.Margin = new Thickness(0, 8, 0, 0);
-        scanFeedable.Click += async (_, _) => await PetScanBag(hint, scanResult);
+        scanFeedable.Click += async (_, _) => await PetScanBag(hint, scanResult, writeQueue: false);
+        scanQueue.Click += async (_, _) => await PetScanBag(hint, scanResult, writeQueue: true);
         panel.Children.Add(Section("Find the pets that can still be fed",
             Hint("Hovers EVERY cell of every bag page and reports each pet's growth and EXP, so the " +
                  "ones at +9/100% — already finished, and an error dialog if boarded — can be told " +
@@ -5610,8 +5614,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "moves the cursor." + Environment.NewLine +
                  "A cell that reads as neither is reported as neither. A failed read is never called " +
                  "finished: skipping a pet that needed feeding is the one outcome that cannot be " +
-                 "undone. Needs the panel calibrated on Calibrate Tooltip."),
+                 "undone. Needs the panel calibrated on Calibrate Tooltip." + Environment.NewLine +
+                 "\"Scan + rebuild the queue\" does the same sweep and then REPLACES the queue with an " +
+                 "icon for every pet that can still be fed — the finished ones get no icon, so the run " +
+                 "can no longer board one by accident. The old queue is dropped (it holds icons of " +
+                 "pets that have been mailed), and nothing is written if no icon could be cropped."),
             scanFeedable,
+            scanQueue,
             scanResult));
 
         // LAST, deliberately: everything above is an input and this is the button that keeps it.
@@ -6786,7 +6795,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// and not `>=` in the first place. Unknown stays unknown.
     ///
     /// READ-ONLY. It moves the cursor and reads; it boards nothing, queues nothing and saves nothing.</summary>
-    private async Task PetScanBag(TextBlock hint, TextBlock result)
+    private async Task PetScanBag(TextBlock hint, TextBlock result, bool writeQueue)
     {
         var pet = _service.Config.Pet;
         var tip = _service.Config.Tooltip;
@@ -6832,6 +6841,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         var finished = 0;
         var notPets = 0;
 
+        // The feedable cells, per page, and the icons cropped from them. Both are only used when the
+        // queue is being rebuilt, and both are collected across pages so the write happens once.
+        var feedablePets = new List<(int Page, int Cell, PetPanel Panel)>();
+        var harvested = new List<PetQueueEntry>();
+
         hint.Text = $"Scanning {tabs.Count} page(s) × {centres.Count} cells, about " +
                     $"{tabs.Count * centres.Count * (tip.HoverDelayMs + 700) / 60000.0:0.#} min. " +
                     "The window hides while it works and comes back at the end of each page. " +
@@ -6862,6 +6876,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             var pageLines = new List<string>();
             var pageFeedable = 0;
             var pageFinished = 0;
+
+            // THE CLEAN PAGE IMAGE, taken BEFORE any hover. The tooltip follows the cursor, so an icon
+            // cropped from the screen while a panel is up has that panel over its neighbours — and the
+            // icon scan already documents the cost of a pointer over a portrait ("a pet the cursor
+            // covers is a pet the matcher cannot see"). One grab per page, with the cursor parked off
+            // the bag, is the source for every icon this page contributes.
+            (BitmapSource Image, DisplayInfo Display)? shot = null;
+            if (writeQueue)
+            {
+                TryPlace(ser, focusPoint[0], focusPoint[1], out _);
+                await Task.Delay(250);
+                shot = await CaptureScreenshotAsync();
+            }
 
             // ONE hide for the page rather than one per cell: the hide costs a compositor wait, and
             // 64 of them would cost a minute of flicker for nothing.
@@ -6908,9 +6935,48 @@ public partial class MainWindow : FluentWindow, IDisposable
                         feedable++;
                         pageFeedable++;
                         pageLines.Add($"    cell {cell + 1,2}  {panel.Describe()}   ← FEEDABLE");
+                        feedablePets.Add((p, cell, panel));
                     }
                 }
             });
+
+            // Icons come out of the clean image taken above, using the SAME crop the Pet tab's single
+            // capture uses — Pitch, not the slot size — so a swept icon and a hand-captured one are
+            // the same pixels and the matcher cannot tell them apart.
+            if (writeQueue && shot is { } clean)
+            {
+                using var full = BitmapSourceToMat(clean.Image);
+                foreach (var (fp, fcell, fpanel) in feedablePets.Where(f => f.Page == p))
+                {
+                    var (fx, fy) = centres[fcell];
+                    var box = new OpenCvSharp.Rect(
+                        fx - (int)Math.Round(BagGrid.PitchX(pet.BagGrid!) / 2),
+                        fy - (int)Math.Round(BagGrid.PitchY(pet.BagGrid!) / 2),
+                        (int)Math.Round(BagGrid.PitchX(pet.BagGrid!)),
+                        (int)Math.Round(BagGrid.PitchY(pet.BagGrid!)));
+
+                    if (box.X < 0 || box.Y < 0 ||
+                        box.Right > full.Width || box.Bottom > full.Height) continue;
+
+                    try
+                    {
+                        using var crop = new Mat(full, box);
+                        harvested.Add(new PetQueueEntry
+                        {
+                            // No name is available from the panel — it states growth and EXP, not what
+                            // the pet is called — so the label carries where it was seen, which is what
+                            // the report above is talking about.
+                            Label = $"page {fp + 1}, cell {fcell + 1}",
+                            Rect = new List<int> { box.X, box.Y, box.Width, box.Height },
+                            Png = IconMatch.ToBase64(crop),
+                        });
+                    }
+                    catch
+                    {
+                        // One crop that will not come out must not cost the whole sweep.
+                    }
+                }
+            }
 
             report.Add($"  page {p + 1}: {pageFeedable} feedable, {pageFinished} finished");
             report.AddRange(pageLines);
@@ -6919,9 +6985,39 @@ public partial class MainWindow : FluentWindow, IDisposable
             result.Text = string.Join(Environment.NewLine, report);
         }
 
+        if (writeQueue)
+        {
+            // NEVER on nothing harvested. A capture that failed, or a page whose crops would not come
+            // out, must not be allowed to clear a queue the player built by hand — replacing a queue
+            // with an empty one is the worst outcome here, and it is one edit away.
+            if (harvested.Count == 0)
+            {
+                hint.Text = $"{feedable} feedable, {finished} finished, but no icon could be cropped " +
+                            "— the queue was left exactly as it was.";
+                return;
+            }
+
+            var replaced = pet.Queue.Count;
+            pet.Queue.Clear();
+            pet.Queue.AddRange(harvested);
+            PetSessionSave(hint);
+
+            report.Add("");
+            report.Add($"  queue: {replaced} icon(s) replaced by {harvested.Count} harvested here");
+            result.Text = string.Join(Environment.NewLine, report);
+
+            hint.Text = $"{feedable} feedable, {finished} finished. The queue now holds " +
+                        $"{harvested.Count} icon(s), rebuilt from what is actually in the bag — the " +
+                        "run boards these and skips any that has finished since." +
+                        (feedable > harvested.Count
+                            ? $" {feedable - harvested.Count} feedable pet(s) could not be cropped."
+                            : "");
+            return;
+        }
+
         hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
-                    "Nothing was changed: board the feedable ones yourself, or say the word and this " +
-                    "can be made to queue them.";
+                    "Nothing was changed: this is the read-only scan. \"Scan + rebuild the queue\" " +
+                    "writes what it finds.";
     }
 
     /// <summary>Every number in a read, with a few characters either side of it.
