@@ -164,6 +164,58 @@ public sealed class PetTool : ToolBase
     /// because reopening brings the bag up on whatever page it likes — so the assumption only ever
     /// covers the seconds between one stack and the next.</summary>
     private int _bagPage = -1;
+
+    /// <summary>What the guard read about the pet it just boarded, and which line that pet is.
+    ///
+    /// Set by <see cref="RememberBoarded"/> when the pet actually goes in, and read immediately after by
+    /// the reload to work out when this row next needs looking at. Fields rather than out-parameters
+    /// only because the pair would otherwise be threaded through three signatures for a value whose
+    /// life is three lines; both are CLEARED at the start of every placement, so a stale pair can never
+    /// be read as this pet's.</summary>
+    private PetPanel? _boardedPanel;
+    private string? _boardedSpecies;
+
+    /// <summary>The feeding table — scraped, measured, and the player's chosen source for `wyz`:
+    /// *"the base feeding value is predetermined, nowhere can you find it in the game."* Loaded once
+    /// per run rather than kept in memory for the life of the process.</summary>
+    private IReadOnlyList<PetFeeding.Line> _feeding = Array.Empty<PetFeeding.Line>();
+
+    /// <summary>Records what was read about the pet that just went into the loader. See
+    /// <see cref="_boardedPanel"/>.</summary>
+    private void RememberBoarded(int entry, PetPanel? panel)
+    {
+        _boardedPanel = panel;
+        _boardedSpecies = entry >= 0 && entry < _cfg.Pet.Queue.Count
+            ? _cfg.Pet.Queue[entry].Species
+            : null;
+    }
+
+    /// <summary>How long the pet that was just boarded still needs, or null when that cannot be
+    /// answered — no species named for its queue entry, no panel read for it, or no row for that line
+    /// at its stage.
+    ///
+    /// NULL IS THE NORMAL CASE AND IS NOT AN ERROR. A queue entry with no line named is allowed, and a
+    /// pet the tool could not read a panel for boards anyway. Both fall back to the configured cycle,
+    /// which is what the tool did before any of this existed.</summary>
+    private double? MinutesForBoardedPet()
+    {
+        if (_boardedPanel is not { } panel || _feeding.Count == 0) return null;
+
+        var line = PetFeeding.Find(_feeding, _boardedSpecies, panel.Stage ?? -1);
+        var minutes = PetFeeding.MinutesToFinish(line, panel.Growth, panel.Exp);
+
+        if (minutes is { } m)
+            Log($"  {line!.Name} ({line.Species} +{line.Stage}) at +{panel.Growth} " +
+                $"{panel.Exp:0.##}% — {m:0} min of feeding left" +
+                (m < 1 ? "  ← done, or within a minute of it" : ""));
+        else
+            Log($"  no feeding estimate — " + (_boardedSpecies == null
+                ? "no pet line is named for this queue entry"
+                : $"the table has no {_boardedSpecies} at stage " +
+                  $"{(panel.Stage is { } s ? s.ToString(CultureInfo.InvariantCulture) : "?")}"));
+
+        return minutes;
+    }
     private readonly string _rootDir;
 
     /// <summary>What the board said it was running when the port was opened, or null when it said
@@ -200,6 +252,10 @@ public sealed class PetTool : ToolBase
             state.Running = false;
             return 0;
         }
+
+        // THE FEEDING TABLE, once per run. A missing or unreadable table costs the COMPUTED schedule
+        // and nothing else: every pet still boards and still gets fed, on the configured cycle.
+        _feeding = PetFeeding.Load(System.IO.Path.Combine(_rootDir, "docs", "pet-data.csv"));
 
         Log($"run started — board firmware {_firmware ?? "not reported"}, " +
             $"{_cfg.Pet.ActiveRows.Count()} row(s) at {_cfg.Pet.ItemsPerMinute}/min, plus " +
@@ -342,8 +398,22 @@ public sealed class PetTool : ToolBase
                     if (result.Ok)
                     {
                         failures[row] = 0;
-                        next[row] = DateTime.Now.AddMinutes(CycleMinutesFor(row));
-                        state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}.";
+
+                        // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
+                        // The pet's figure came from the panel the guard read and the line its queue
+                        // entry names; the food's is the full load that was just put in. With no pet
+                        // figure this is CycleMinutesFor exactly as before — no line named, no panel
+                        // read, or no row for that line at that stage all land here.
+                        var loaded = _cfg.Pet.LoadMinutesFor(row);
+                        var wait = result.PetMinutes is { } needs
+                            ? Math.Max(0, Math.Min(needs, loaded))
+                            : loaded;
+                        next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
+
+                        state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
+                                        (result.PetMinutes is { } m && m < loaded
+                                            ? $" (the pet finishes first, in {m:0} min)"
+                                            : "");
                         Console.WriteLine(state.Message);
                     }
                     else
@@ -788,8 +858,13 @@ public sealed class PetTool : ToolBase
     /// ran dry early, is then noticed on the visit that happens to be nearby instead of whenever its
     /// own hours-old timer comes round.</summary>
     private sealed record VisitResult(
-        Dictionary<PetSlotConfig, (bool Ok, string Error)> Rows,
+        Dictionary<PetSlotConfig, RowOutcome> Rows,
         Dictionary<PetSlotConfig, DateTime> Schedule);
+
+    /// <summary>One row's result from a visit. <paramref name="PetMinutes"/> is how long the pet that
+    /// was boarded still needs, or null when that could not be answered — the caller falls back to the
+    /// configured cycle either way.</summary>
+    private sealed record RowOutcome(bool Ok, string Error, double? PetMinutes);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
     /// are due — one at a time, in row order — and close once.
@@ -807,7 +882,7 @@ public sealed class PetTool : ToolBase
     /// still attempted, and the window closes once at the end either way.</summary>
     private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch)
     {
-        var results = new Dictionary<PetSlotConfig, (bool Ok, string Error)>();
+        var results = new Dictionary<PetSlotConfig, RowOutcome>();
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
 
         state.Message = batch.Count > 1
@@ -819,7 +894,7 @@ public sealed class PetTool : ToolBase
         if (!OpenBoarding(ser, out var openError))
         {
             Log("  FAILED opening: " + openError);
-            foreach (var row in batch) results[row] = (false, openError);
+            foreach (var row in batch) results[row] = new RowOutcome(false, openError, null);
 
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
@@ -837,8 +912,8 @@ public sealed class PetTool : ToolBase
 
             foreach (var row in batch)
             {
-                var ok = ReloadRowInPlace(ser, state, row, out var rowError);
-                results[row] = (ok, rowError);
+                var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes);
+                results[row] = new RowOutcome(ok, rowError, petMinutes);
 
                 if (!ok)
                     Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
@@ -863,9 +938,11 @@ public sealed class PetTool : ToolBase
     ///
     /// The rows are still serviced one at a time, which is the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
-    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row, out string error)
+    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row,
+        out string error, out double? petMinutes)
     {
         error = "";
+        petMinutes = null;
 
         // A plain block rather than a try/finally: there is nothing to clean up per row any more, and
         // the braces are kept so this stays a reviewable diff against the method it was — this is the
@@ -926,6 +1003,11 @@ public sealed class PetTool : ToolBase
             state.Message = $"{NameOf(row)}: placing the pet…";
             Log("  placing the pet");
             if (!PlacePet(ser, row, out error)) { Log("  FAILED placing the pet: " + error); return false; }
+
+            // HOW LONG THIS PET NEEDS, from the panel the guard just read and the line its queue entry
+            // names. Asked HERE, while the pet that was boarded is still the one the fields describe —
+            // everything downstream of the food load has moved on. See PLAN-RELOAD-VISIT §7 and §8.
+            petMinutes = MinutesForBoardedPet();
 
             state.Message = $"{NameOf(row)}: loading the food…";
             Log("  loading the food");
@@ -1010,6 +1092,11 @@ public sealed class PetTool : ToolBase
         error = "";
         var pet = _cfg.Pet;
 
+        // Cleared FIRST, so whatever the reload reads after this is about THIS pet or is nothing. A
+        // pair left over from the previous row would otherwise be read as this one's.
+        _boardedPanel = null;
+        _boardedSpecies = null;
+
         var centres = BagGrid.Centres(pet.BagGrid!);
         if (centres.Count == 0)
         {
@@ -1080,20 +1167,21 @@ public sealed class PetTool : ToolBase
                 // the read throws, the panel doesn't parse) falls through to the click. The guard may
                 // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
                 // direction this whole tool treats as the unrecoverable one.
+                PetPanel? boarded = null;
                 if (cand.Entry >= 0 && _cfg.Tooltip.IsSet)
                 {
                     ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
-                    var panel = ReadHoverPanel(ocr, ser, cx, cy);
+                    boarded = ReadHoverPanel(ocr, ser, cx, cy);
 
-                    if (panel is { IsFinished: true })
+                    if (boarded is { IsFinished: true })
                     {
                         refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
                         Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
-                            $"{panel.Describe()} — NOT boarding it, trying the next queued pet");
+                            $"{boarded.Describe()} — NOT boarding it, trying the next queued pet");
                         continue;
                     }
 
-                    if (panel == null)
+                    if (boarded == null)
                         Log("  the hover panel couldn't be read — boarding this one as before");
                 }
 
@@ -1114,6 +1202,7 @@ public sealed class PetTool : ToolBase
                     {
                         case false:
                             if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
+                            RememberBoarded(cand.Entry, boarded);
                             return true;
 
                         case null:
@@ -1121,6 +1210,7 @@ public sealed class PetTool : ToolBase
                             // refusing to run because a safety net is absent would be worse than the
                             // thing it guards.
                             Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
+                            RememberBoarded(cand.Entry, boarded);
                             return true;
 
                         default:

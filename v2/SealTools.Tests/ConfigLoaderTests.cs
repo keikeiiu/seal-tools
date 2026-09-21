@@ -482,7 +482,11 @@ public class ConfigLoaderTests
             },
             Queue = new List<PetQueueEntry>
             {
-                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png" },
+                // A REAL species, in Chinese, deliberately: this is a value the player picks from the
+                // feeding table, so the test proves the YAML round-trip carries non-ASCII as well as
+                // proving the field survives the projection.
+                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png",
+                        Species = "黑龙类" },
             },
         };
 
@@ -515,6 +519,10 @@ public class ConfigLoaderTests
         var queued = Assert.Single(local.Queue!);
         Assert.Equal("p", queued.Label);
         Assert.Equal("icon-png", queued.Png);
+        // SAVE direction. `Species` decides the feeding estimate, and a projection that drops it on
+        // save would look exactly like a pet nobody had named — the schedule would fall back to the
+        // configured cycle with nothing saying why.
+        Assert.Equal("黑龙类", queued.Species);
     }
 
     // The launcher has a Save on each pet tab and the two are SCOPED: Calibrate Pet writes the
@@ -559,7 +567,11 @@ public class ConfigLoaderTests
             },
             Queue = new List<PetQueueEntry>
             {
-                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png" },
+                // A REAL species, in Chinese, deliberately: this is a value the player picks from the
+                // feeding table, so the test proves the YAML round-trip carries non-ASCII as well as
+                // proving the field survives the projection.
+                new() { Label = "p", Rect = new List<int> { 36, 37, 38, 39 }, Png = "icon-png",
+                        Species = "黑龙类" },
             },
         };
 
@@ -698,6 +710,9 @@ public class ConfigLoaderTests
             Label = "a pet",
             Rect = new List<int> { 11, 12, 13, 14 },
             Png = "icon-png",
+            // Non-null on purpose: the loop below compares the two objects field by field, so a null
+            // here would pass whether or not the projection carried it.
+            Species = "黑龙类",
         };
         var liveEntry = storedEntry.ToConfig();
 

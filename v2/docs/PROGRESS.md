@@ -9,6 +9,36 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (22) — scope 4b: the next check is computed from the pet that was boarded
+
+**The chain is complete and it runs on data the tool already had.** The guard reads the boarded pet's
+growth and EXP% (`bc6f438`); the queue entry names the pet's LINE; the table turns those into minutes.
+
+```
+next[row] = min(the pet's remaining minutes, what was just loaded) + WaitAfterEmptyMinutes
+```
+
+**Whichever runs out first**, which is the player's rule — and a fresh reload is always a full load, so
+the food half is `LoadMinutesFor`. **A null pet figure leaves the arithmetic exactly as it was** —
+`CycleMinutesFor`, i.e. loaded + margin — so nothing regresses when no line is named, no panel was read,
+or the table has no row for that line at that stage. Null is the normal case, not an error.
+
+**The identification decision, made concrete.** The queue entry carries `Species` — one of **eleven**
+lines, not 327 pets, because a line holds many pets and they share one figure. It is picked once, when
+the icon is captured, because the icon IS the identity: the pet is found by matching that crop, so the
+species rides with the thing that is already unique. Matching the panel's NAME to the table was the
+alternative and is blocked — Traditional game text against Simplified site data.
+
+**The projection got all three places**, which is the point: `PetQueueEntry.Species`,
+`LocalPetQueueEntry.Species` + `ToConfig()`, and the save direction in `AppliedSession`. This projection
+has silently dropped a field **three times across two sessions**, so both directions are now pinned by
+tests using a **real non-ASCII species** — a null in the fixture would have passed whether or not the
+field was carried.
+
+**Verified:** Release build clean, 0 warnings; 158/158 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (21) — scope 4a: the feeding arithmetic, and the table that answers it
 
 **The formula was already in the repo** — `PET-DATA.md`, scraped 2026-09-15 and measured per level on

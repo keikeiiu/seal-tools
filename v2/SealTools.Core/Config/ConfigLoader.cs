@@ -459,7 +459,13 @@ public sealed class ConfigLoader
         public List<int>? Rect { get; set; }
         public string? Png { get; set; }
 
-        public PetQueueEntry ToConfig() => new() { Label = Label, Rect = Rect, Png = Png };
+        /// <summary>The pet LINE, for the feeding table — see <see cref="PetQueueEntry.Species"/>.
+        /// EVERY field must be listed in BOTH directions; this projection has silently dropped one
+        /// before, on load, three times across two sessions.</summary>
+        public string? Species { get; set; }
+
+        public PetQueueEntry ToConfig() =>
+            new() { Label = Label, Rect = Rect, Png = Png, Species = Species };
     }
 
     /// <summary>The pet food auto-replacement geometry (see <see cref="PetConfig"/>). Machine-specific
@@ -594,6 +600,7 @@ public sealed class ConfigLoader
                 Label = q.Label,
                 Rect = q.Rect,
                 Png = q.Png,
+                Species = q.Species,
             }).ToList();
 
             if (t.Slots == null) return;
