@@ -9,6 +9,39 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (25) — "no pet available to feed" is a WAIT, not a failure
+
+**Live, and the player called it:** row 3 was empty, the bag held only `+9/100%` pets, and the guard
+refused all four candidates — which was **correct**, there was nothing boardable. But the row was counted
+as a **failure**, and three failures drop it for the day. A tool that gives up on a row because the
+player has not caught another pet yet is punishing them for their bag.
+
+> *"If find the bag is no available pet to feed it is not error."*
+
+**The two nothing-to-board paths now say so** — no candidates matched at all, or every candidate read
+`+9/100%` — and the outcome carries a `NothingToBoard` flag rather than being lumped in with a click that
+missed. The row keeps its place: **no failure counted, no drop.**
+
+**And it waits half an hour, not five minutes.** A real failure is retried in five because it might be a
+transient miss; this cannot be, because nothing changes until a feedable pet exists. Thirty minutes is a
+compromise between noticing soon and opening the boarding window on a bag that has not changed.
+
+**Everything else that run did was right**, and it is worth recording because three separate pieces were
+being watched for the first time:
+
+- **the time line read on this machine** — `[到2為止预計所需時間：約6分]`, first try, from ratios rather
+  than pixels. The OCR even wrote `预計` in Simplified where the game has `預計` and the parser did not
+  care, which is why it anchors on `約 N分`.
+- **row 3's pet finished and was mailed** exactly as the completion line had said it would — `slot reads
+  EMPTY` — instead of the row sitting untouched until midnight.
+- **the empty-slot threshold, measured live**: `0.0 %` for the empty slot against `46.2 %` and `31.6 %`
+  for slots holding food whose number the reader missed. Both directions correct on real pixels, with the
+  line at 2 %.
+
+**Verified:** Release build clean, 0 warnings; 172/172 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (24) — the game states the next check itself, and row 3 was the proof
 
 **The boarding window writes a time line under every row's food slots**, and it changes FORM when the pet
