@@ -199,7 +199,38 @@ region; under this decision it does not.
 **Not built until that is decided.** A guessed `wyz` would put a confident wrong number on the card and
 in the schedule, which is the exact failure this repo has paid for most often.
 
-## 8. Order of work
+## 8. The rule, in the player's words, and it is simple
+
+> *"For normal runs, you calculate how much time you need for a pet to run out — let's say it is `+0`,
+> so you fill 5 stacks. Then it is easy: next check must be all 5 stacks is end. But after that you need
+> to calculate how many stacks you need and how long would it be — take the lesser one to recheck. If
+> the pet is already `+9` 80% you don't need another 2 hours."*
+
+**Whichever runs out first.**
+
+```
+items_loaded  = what is actually in the feeder   (or the full load, when the counts cannot be read)
+items_needed  = what the pet still needs         = remaining 喂养值 / that food's per-item value
+minutes       = min(items_loaded, items_needed) / items_per_minute
+next[row]     = now + minutes + WaitAfterEmptyMinutes
+```
+
+Both quantities are in 喂养值, so they compare **without converting anything** — only the winner is turned
+into minutes. The margin is the existing `WaitAfterEmptyMinutes` (5), and it is the player's deliberate
+race guard: it means the tool arrives *after* the thing has finished, so it can see a finished state
+rather than a half-finished one.
+
+| case | which wins | what the row looks like when the tool arrives |
+|---|---|---|
+| `+0`, five stacks loaded | **the food** | tray empty, pet still hungry → refill the food |
+| `+9` at 80 % | **the pet** | pet finished and mailed, tray still has food → **refill a new pet** |
+| a short load (a missed stack) | **the food** | tray empty early → refill — which is why the dry-run case heals itself |
+
+**What this replaces.** `CycleMinutesFor` assumes a FULL load — `stacks × 300 / rate + 5` — which is a
+guess at both halves of the question: how much is really in there, and how much the pet really needs.
+This replaces it with a reading of the first and the table's answer to the second.
+
+## 9. Order of work
 
 1. **Page tracking (§3a)** — small, safe, pays immediately, removes the kind of click that failed today.
    Independently valuable, so it lands on its own.
@@ -209,8 +240,8 @@ in the schedule, which is the exact failure this repo has paid for most often.
 4. **Re-measured schedule (§6)** — needs the visit, because re-deriving every row's `next` means
    reading every row, which is what a visit does. Doing it before the visit would mean two readers
    again.
-5. **The `+9` rule (§7)** — blocked on the player's answer, and worth having the answers before any of
-   it is designed.
+5. **The real next time (§7, §8)** — the formula, `wyz` on the queue entry, and the `min` rule. Wants
+   §4 in place, since the number it computes has to be re-derived on every visit to be worth anything.
 
 Each its own commit, each verified by the Release build and the test suite. Each is independently
 useful: stopping after any of them leaves the tool working and faster.
