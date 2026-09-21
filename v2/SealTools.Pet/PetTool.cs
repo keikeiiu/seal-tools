@@ -810,7 +810,48 @@ public sealed class PetTool : ToolBase
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         if (RegionFor(slotBox) is not { } region) return null;
-        return ReadStack(ocr, region);
+
+        if (ReadStack(ocr, region) is { } count) return count;
+
+        // NO NUMBER — which is either a crop the reader failed on or a slot with NOTHING IN IT, and
+        // those mean opposite things: one says "assume a full load", the other says "reload now". The
+        // pixels settle it, and the tool was already holding them. See FeederCount.WarmFraction.
+        return SlotHasNoFood(region) switch
+        {
+            true => 0,   // a REAL reading: the slot is empty, so the row is out of food
+            _ => null,   // failed, or unknowable — keep the configured cycle, as before
+        };
+    }
+
+    /// <summary>Whether the slot's crop shows a cell with no food in it — or null when that cannot be
+    /// told.
+    ///
+    /// Only consulted when the OCR found NO number, so it costs a screen grab on the slots that failed
+    /// to read rather than on every slot of every row.
+    ///
+    /// The reason it exists, live on 2026-09-21: a row whose feeder had run dry read as "the counts
+    /// couldn't be read", the tool assumed a full load, and the pet sat unfed while the row waited 205
+    /// minutes. Both its slots showed a blank cell — no digits, because there was nothing in them.</summary>
+    private bool? SlotHasNoFood(List<int> region)
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+        });
+        if (cap == null) return null;
+
+        using var img = cap.Image;
+        var warm = FeederCount.WarmFraction(img);
+
+        // Logged either way: the number is what says whether the threshold is sitting in a gap or on a
+        // cliff, and that is the difference between a measurement and a guess.
+        Log($"  a slot with no number is {warm * 100:0.0}% food-coloured " +
+            $"(empty below {FeederCount.EmptySlotBelow * 100:0.0}%)");
+
+        return warm < FeederCount.EmptySlotBelow;
     }
 
     /// <summary>Where to read a given slot: this far across it, to its own right edge, at its full
