@@ -179,17 +179,22 @@ next[row]        = remaining / (喂养值 per item) / (items per feed)  +  the 5
 - **the 5-minute margin is deliberate**, to prevent a race — so when the computed time is up the tool
   goes in and expects to find an **empty row and refill a new pet**.
 
-**One input is missing: `wyz`**, which is fixed by species and stage. Two ways to get it, and they are
-not equal:
+**`wyz` comes from the table, and the player has decided that:** *"the base feeding value is
+predetermined, nowhere can you find it in the game. We believe the data."* — so `PET-DATA.md`, scraped
+and measured, is the source and nothing needs reading off the screen for it.
 
-| | how | cost | risk |
-|---|---|---|---|
-| **from the game** | the pet page's `+0 … +9` row re-renders `所需喂养值` per level (measured, PET-DATA.md) | a capture region and a calibration | none known |
-| **from the scraped table** | `PET-DATA.md` holds 327 pets | nothing to capture | **keying it needs the pet's NAME, and the game is Traditional while the site is Simplified** — the recorded rule is never to string-match one against the other |
+**What that leaves is identification**, and it is the real work in this scope. `wyz` is fixed by species
+*and* stage, so a stage read off the panel does not pick a row. Three ways to key it:
 
-**The bag tooltip does not carry it** — checked against a real panel: stage, name, EXP%, class, level
-limit, fame limit, sell price, and no 喂养值. So this is a **new capture region** wherever it is read
-from, and that calibration is part of this scope rather than an afterthought.
+| | how | verdict |
+|---|---|---|
+| **the queue entry carries `wyz`** | when the player captures a pet's icon, they also say which pet it is; `wyz` rides with the icon | **recommended** — exact, never stale, and the one-time cost is per pet rather than per run |
+| match the panel's NAME to the table | automatic | **blocked** — Traditional game text against Simplified site data, which the recorded rule forbids |
+| convert Traditional→Simplified, then match | automatic | the OCR already mangles the game's Chinese, and a near-miss attaches the *wrong pet's* feeding value to a schedule that then looks correct |
+
+**The bag tooltip does not carry `wyz`** — checked against a real panel: stage, name, EXP%, class, level
+limit, fame limit, sell price. So if it were ever to be read from the game it would need a new capture
+region; under this decision it does not.
 
 **Not built until that is decided.** A guessed `wyz` would put a confident wrong number on the card and
 in the schedule, which is the exact failure this repo has paid for most often.
