@@ -151,25 +151,48 @@ to the timer instead of to the reload.
 `MaxFailures`, and the failure counting. Nothing about this section makes the clocks more separate —
 they are already separate. What changes is that each one is **re-derived from a fresh reading**.
 
-## 7. The `+9` case — needs a rule only the player can give
+## 7. The real next time — the formula already exists and is measured
 
-**The tool already reads the boarded pet's growth and EXP%** — the guard hovers the pet and parses the
-panel before it right-clicks (bc6f438). **Nothing uses those two numbers beyond skip-or-board.**
+**`PET-DATA.md` has it, scraped and measured on 2026-09-15/16, and it says outright that nothing reads
+it yet and that it exists so "how long until this pet is done" is a per-pet number rather than a rule
+of thumb.**
 
-If a pet at `+9` with a low EXP% will finish before the food runs out, then: the pet is mailed, the row
-is empty, and today nothing notices for up to **505 minutes**. That is the case the player is pointing
-at, and it is not solvable by reasoning about the tool — it needs the game's arithmetic:
+```
+cost(+n)      = wyz × (1 + n/10)            n = 0 … 9     (+0 → +1 costs wyz, each level +wyz/10)
+to +9 / 100%  = wyz × 14.5                                (14.5, not 9 — the +9 bar fills too)
+food items    = 喂养值 / that food's 喂养值 per item
+minutes       = food items / items per auto-feed          (2 / 1 / 3 / 4 by stage)
+```
 
-| question | why it matters |
-|---|---|
-| **How do we know when a `+9` pet finishes?** | the whole point — an EXP-per-minute or EXP-per-item figure, or an ETA the game shows |
-| **Does the panel or the boarding window state it?** | if yes, it is a capture region, not a table |
-| **If it is a rate, what is it?** | `EXP%` per food item, or per minute — with the rate, `(100 − EXP) / rate` is the time to finish |
-| **When the pet finishes, what should the row do?** | come back with a new pet immediately, or at the next cycle? |
+So for a boarded pet at `+g` with `p %`:
 
-**Until that is answered, the honest fallback is a floor:** never schedule a row further out than the
-soonest thing that could change it — the food running out, or (if the EXP% is high) a much nearer
-re-check. That is deliberately not a rule, and it should not be built as one.
+```
+remaining 喂养值 = Σ(k = g+1 … 9) wyz × (1 + k/10)  +  wyz × (1 + g/10) × (1 − p/100)
+next[row]        = remaining / (喂养值 per item) / (items per feed)  +  the 5-minute margin
+```
+
+**The player has confirmed the three things that make this the right model:**
+
+- **we know `+x` and the `%` when we board it** — and the guard already reads both (`bc6f438`);
+- **the goal is always `+9` / `100 %`**, so the row's job is "keep this pet fed until it is done", not
+  "keep food in the tray";
+- **the 5-minute margin is deliberate**, to prevent a race — so when the computed time is up the tool
+  goes in and expects to find an **empty row and refill a new pet**.
+
+**One input is missing: `wyz`**, which is fixed by species and stage. Two ways to get it, and they are
+not equal:
+
+| | how | cost | risk |
+|---|---|---|---|
+| **from the game** | the pet page's `+0 … +9` row re-renders `所需喂养值` per level (measured, PET-DATA.md) | a capture region and a calibration | none known |
+| **from the scraped table** | `PET-DATA.md` holds 327 pets | nothing to capture | **keying it needs the pet's NAME, and the game is Traditional while the site is Simplified** — the recorded rule is never to string-match one against the other |
+
+**The bag tooltip does not carry it** — checked against a real panel: stage, name, EXP%, class, level
+limit, fame limit, sell price, and no 喂养值. So this is a **new capture region** wherever it is read
+from, and that calibration is part of this scope rather than an afterthought.
+
+**Not built until that is decided.** A guessed `wyz` would put a confident wrong number on the card and
+in the schedule, which is the exact failure this repo has paid for most often.
 
 ## 8. Order of work
 
