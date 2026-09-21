@@ -1125,12 +1125,18 @@ public sealed class PetTool : ToolBase
                 var scores = IconMatch.ScoreAll(bag, pet.BagGrid!, icon);
                 if (scores.Count == 0) continue;
 
-                // EVERY under-limit match becomes a candidate, not just the global best. A pet that
-                // reads as finished has to be skipped for the next one, and the next one is only
-                // reachable if the scan kept it — one winner was all this used to return.
-                if (scores[0].Score <= MatchLimit)
-                    found.Add(new PetCandidate(i, p, scores[0].Cell, scores[0].Score,
-                        entry.Label ?? "(unlabelled)"));
+                // EVERY under-limit cell becomes a candidate, not just the best one for this icon. One
+                // icon stands for a KIND of pet and a bag holds several of each — the player's holds
+                // eight across two icons — so the best-matching instance is quite often one that has
+                // FINISHED while its siblings still want feeding. Keeping only scores[0] left the guard
+                // nothing to fall through to: both winners read +9/100%, both were skipped, and the row
+                // went unboarded with four feedable pets one cell away.
+                foreach (var (cell, score) in scores)
+                {
+                    if (score > MatchLimit) break;   // sorted best first, so nothing later can qualify
+                    if (found.Any(c => c.Page == p && c.Cell == cell)) continue;
+                    found.Add(new PetCandidate(i, p, cell, score, entry.Label ?? "(unlabelled)"));
+                }
 
                 if (scores[0].Score < best)
                 {
