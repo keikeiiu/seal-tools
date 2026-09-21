@@ -874,6 +874,15 @@ public sealed class PetTool : ToolBase
 
         if (ReadStack(ocr, region) is { } count) return count;
 
+        // FAILED — save what the reader was given. A blank read has two very different causes: a crop in
+        // the wrong place, or a crop it cannot see text in. The image is the only thing that tells them
+        // apart, and until now the run threw it away, which is why a slot holding a legible 300 could
+        // read as nothing and leave three theories and no evidence.
+        //
+        // ON FAILURE ONLY, so a healthy run writes no files, and at a millisecond stamp because several
+        // slots of one row can fail inside the same second.
+        SaveFailedSlotCrop(ocr, region);
+
         // NO NUMBER — which is either a crop the reader failed on or a slot with NOTHING IN IT, and
         // those mean opposite things: one says "assume a full load", the other says "reload now". The
         // pixels settle it, and the tool was already holding them. See FeederCount.WarmFraction.
@@ -882,6 +891,34 @@ public sealed class PetTool : ToolBase
             true => 0,   // a REAL reading: the slot is empty, so the row is out of food
             _ => null,   // failed, or unknowable — keep the configured cycle, as before
         };
+    }
+
+    /// <summary>Saves the image a failed slot read was given, so a blank reading arrives with its
+    /// pixels attached. The same image the reader saw — the engine writes it upscaled, which is what
+    /// recognition actually ran on — plus the lines it made of it.
+    ///
+    /// Best-effort: evidence is a convenience and must never fail a reload.</summary>
+    private void SaveFailedSlotCrop(OcrEngine ocr, List<int> region)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "reads");
+            System.IO.Directory.CreateDirectory(dir);
+
+            var path = System.IO.Path.Combine(dir,
+                $"feeder_blank_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
+
+            ocr.ReadLinesScored(
+                new RegionConfig { Left = region[0], Top = region[1], Width = region[2], Height = region[3] },
+                3, path, _cfg.Pet.FeederCountMinScore);
+
+            Log($"  a slot read NOTHING — saved what the reader was given: " +
+                System.IO.Path.GetFileName(path));
+        }
+        catch
+        {
+            // ignore — see the summary
+        }
     }
 
     /// <summary>Whether the slot's crop shows a cell with no food in it — or null when that cannot be
