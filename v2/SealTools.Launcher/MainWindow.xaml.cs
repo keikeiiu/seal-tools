@@ -5601,7 +5601,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(Section("Find them",
             Hint("Put the boarding bag up, then press this. It opens nothing, clicks nothing and " +
                  "boards nothing — it captures each bag page and matches the crops above against all " +
-                 "64 cells, so you can see what the queue would find and how many there are.\n" +
+                 "64 cells.\n" +
+                 "It answers ONE question: which page holds how many of which pet. The scores, the " +
+                 "cells and the runner-ups behind that are in the file it writes, next to the pages " +
+                 "it captured — not on this card, where they would bury the answer.\n" +
                  "It does click the ITEM tabs, because a pet can be on any page and there is no other " +
                  "way to look at one."),
             scanBag));
@@ -7289,7 +7292,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
+        // TWO REPORTS, on purpose (player, 2026-09-22). The pane shows the DEDUCED value — which page
+        // holds how many of which pet — because that is the question a person asks. The scores, the
+        // cells and the runner-ups are the working behind it: they belong in the record, not on the
+        // card, where they bury the answer under numbers nobody reads at a glance.
         var report = new List<string>();
+        var raw = new List<string>();
         var totals = new int[pet.Queue.Count];
 
         try
@@ -7341,15 +7349,17 @@ public partial class MainWindow : FluentWindow, IDisposable
                 if (cap == null) { report.Add($"page {p + 1}: couldn't capture the bag"); continue; }
 
                 using var bag = cap.Image;
-                var pageLines = new List<string>();
+                var pageCounts = new List<string>();
 
                 for (int i = 0; i < pet.Queue.Count; i++)
                 {
                     var entry = pet.Queue[i];
+                    var label = entry.Label ?? "(no name)";
+
                     using var icon = IconMatch.FromBase64(entry.Png);
                     if (icon == null)
                     {
-                        pageLines.Add($"    {i + 1}. {entry.Label ?? "(no name)"} — crop wouldn't decode");
+                        raw.Add($"  page {p + 1}  {label} — crop wouldn't decode");
                         continue;
                     }
 
@@ -7357,28 +7367,36 @@ public partial class MainWindow : FluentWindow, IDisposable
                     var hits = scores.Where(s => s.Score <= SealTools.Pet.PetTool.MatchLimit).ToList();
                     totals[i] += hits.Count;
 
-                    if (scores.Count == 0) { pageLines.Add($"    {i + 1}. {entry.Label ?? "(no name)"} — no cells scored"); continue; }
+                    // THE DEDUCED VALUE — how many of THIS pet are on THIS page. It is what the pane
+                    // says, because it is what a person wants to know; everything below is the working
+                    // behind it and goes to the file.
+                    if (hits.Count > 0) pageCounts.Add($"{label} ×{hits.Count}");
+
+                    if (scores.Count == 0) { raw.Add($"  page {p + 1}  {label} — no cells scored"); continue; }
 
                     var runner = scores.Count > 1 ? scores[1].Score : double.NaN;
-                    pageLines.Add(
-                        $"    {i + 1}. {entry.Label ?? "(no name)"} — best {scores[0].Score:0.###} at cell " +
-                        $"{scores[0].Cell}" +
+                    raw.Add(
+                        $"  page {p + 1}  {label} — best {scores[0].Score:0.###} at cell {scores[0].Cell}" +
                         (hits.Count > 1 ? $", {hits.Count} cells under the limit" : ", nothing else close") +
-                        (double.IsNaN(runner) ? "" : $"; runner-up {runner:0.###}"));
+                        (double.IsNaN(runner) ? "" : $"; runner-up {runner:0.###}") +
+                        (hits.Count > 0 ? $"   cells: {string.Join(",", hits.Select(h => h.Cell))}" : ""));
                 }
 
-                report.Add($"page {p + 1}:");
-                report.AddRange(pageLines);
+                report.Add($"page {p + 1}:  " +
+                    (pageCounts.Count == 0 ? "no queued pet here" : string.Join(",   ", pageCounts)));
             }
 
             report.Add("");
-            report.Add($"Limit {SealTools.Pet.PetTool.MatchLimit:0.###} — a cell at or under it is a pet " +
-                       "the tool would board. Below each row is the TOTAL across all pages:");
-            for (int i = 0; i < pet.Queue.Count; i++)
-                report.Add($"    {i + 1}. {pet.Queue[i].Label ?? "(no name)"}: {totals[i]} cell(s)");
+            report.Add(string.Join("    ", pet.Queue.Select((e, i) =>
+                $"{e.Label ?? "(no name)"} ×{totals[i]}")) +
+                $"      (limit {SealTools.Pet.PetTool.MatchLimit:0.###})");
 
             hint.Text = string.Join(Environment.NewLine, report);
-            WriteScanReport(hint.Text);
+
+            // The file keeps BOTH: the answer at the top, the working under it.
+            WriteScanReport(hint.Text + Environment.NewLine + Environment.NewLine +
+                            "raw — the scores and cells behind the counts above:" + Environment.NewLine +
+                            string.Join(Environment.NewLine, raw));
         }
         catch (Exception ex)
         {
