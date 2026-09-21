@@ -5062,7 +5062,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // check on the MARKS, which is this tab's subject — and it reads every enabled row, so one
         // press answers whether all of them will read.
         var testRead = MakeButton("Test read", ControlAppearance.Secondary);
-        testRead.Click += async (_, _) => await PetTestRead(_petHint!);
+        // The result goes UNDER the button, in its own monospaced pane. It used to be written into the
+        // shared hint line — a single paragraph at the bottom of a long tab, overwritten by whatever
+        // the next action felt like saying, and impossible to read when it is twelve slots' worth of
+        // readings. A result you have to hunt for is a result nobody checks.
+        var readResult = Mono();
+        readResult.Margin = new Thickness(0, 8, 0, 0);
+        testRead.Click += async (_, _) => await PetTestRead(_petHint!, readResult);
 
         Wpf.Ui.Controls.TextBox Num(double value, Action<double> set)
         {
@@ -5099,6 +5105,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "Min score — how sure the reader must be. Real counts scored 0.90-1.00 and " +
                  "everything the food icon produced scored at most 0.63."),
             testRead,
+            readResult,
             LabeledField("Count crop starts at", countLeftBox),
             LabeledField("Min score", minScoreBox)));
 
@@ -6340,7 +6347,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// The launcher is hidden for the read because the capture reads the screen: whatever is on top is
     /// what lands in the image, and a count read off the launcher would be a plausible-looking number
     /// that means nothing.</summary>
-    private async Task PetTestRead(TextBlock hint)
+    private async Task PetTestRead(TextBlock hint, TextBlock result)
     {
         var pet = _service.Config.Pet;
 
@@ -6374,9 +6381,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var report = new List<string>();
+        var lines = new List<string>();
         var total = 0;
         var counted = 0;
+        var read = 0;
         int? agreed = null;
         try
         {
@@ -6423,10 +6431,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                     }
 
                     if (agreed is { } value) { total += value; counted++; }
-                    report.Add($"{what} [{string.Join("  ", reads)}]" +
-                               (agreed is { } v3
-                                   ? $"  -> {v3}"
-                                   : "  -> NO READING (a run would assume a full load)"));
+                    read++;
+
+                    // One line per slot, in columns: label, the number, then what the reader actually
+                    // saw so a clip or an icon is visible rather than inferred from a blank.
+                    var seen = reads.Count == 0 ? "" : string.Join("  ", reads);
+                    lines.Add($"{(agreed is { } vk ? vk.ToString(CultureInfo.InvariantCulture).PadLeft(4)
+                                                 : "   —"),4}  {what,-14}  {seen}");
                 }
                 return true;
             });
@@ -6437,11 +6448,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        hint.Text = string.Join("; ", report) +
-            (counted > 0
-                ? $". Total {total} items."
-                : ". Nothing parsed. Each read saved what the OCR saw to logs\reads — open one to see " +
-                  "whether the box is in the wrong place or the number is too small to read.");
+        result.Text = lines.Count == 0
+            ? "(nothing to read — no ticked row has a strip)"
+            : string.Join(Environment.NewLine, lines) + Environment.NewLine + new string('─', 34) +
+              Environment.NewLine +
+              $"{counted}/{read} slots read, {total} items total";
+
+        hint.Text = "";
     }
 
     /// <summary>Hovers the marked pet cell and reports the whole panel — the read the feeder's guard
