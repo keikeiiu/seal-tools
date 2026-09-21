@@ -516,15 +516,24 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     private void RefreshStatus()
     {
-        // Mini mode: while tools run the window shows only their cards, so it takes a corner rather
-        // than the whole left edge. EVERY running tool, not just the current one — the resident pet
-        // feeder runs beside a foreground tool, and collapsing to the foreground one alone hid the
-        // feeder's card and the schedule line on it.
+        // Mini mode: while a tool runs the window shows only the cards that matter, so it takes a
+        // corner rather than the whole left edge.
+        //
+        // THE FOREGROUND TOOL DECIDES WHETHER IT SHRINKS; the resident pet only rides along. Both
+        // halves are load-bearing. The pet alone must NOT shrink the window — it runs for days, and
+        // collapsing onto it would hide every other card for the length of a schedule. But the pet
+        // must be VISIBLE when something else is running, because its card carries the standing
+        // schedule line, which is the only evidence the feeder is still on time.
+        //
         // Hold Space has no card (it's a top-row button), so it never shrinks the window to a card.
         _miniToolIds.Clear();
-        foreach (var (id, _) in Tools)
-            if (id != "holdspace" && _service.StateFor(id) is { Running: true })
-                _miniToolIds.Add(id);
+        var current = _service.CurrentId;
+        if (current != null && current != "holdspace" && _service.StateFor(current) is { Running: true })
+        {
+            _miniToolIds.Add(current);
+            if (_service.StateFor(LauncherService.ResidentId) is { Running: true })
+                _miniToolIds.Add(LauncherService.ResidentId);
+        }
         ApplyWindowLayout();
 
         foreach (var (id, _) in Tools)
