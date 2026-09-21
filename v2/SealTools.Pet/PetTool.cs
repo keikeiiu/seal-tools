@@ -847,7 +847,14 @@ public sealed class PetTool : ToolBase
         error = "";
         var pet = _cfg.Pet;
 
-        int page, cell;
+        var centres = BagGrid.Centres(pet.BagGrid!);
+        if (centres.Count == 0)
+        {
+            error = "The bag grid isn't calibrated — there is nothing to right-click.";
+            return false;
+        }
+
+        List<PetCandidate> candidates;
 
         if (pet.Queue.Count > 0)
         {
@@ -856,20 +863,19 @@ public sealed class PetTool : ToolBase
             // mailed or was never there — and right-clicking a marked cell on the assumption that it
             // holds the pet is exactly the guess the icon matching exists to replace. Failing here
             // says so on the card and makes the reload stop, which is §13's honest end state.
-            if (!FindQueuedPet(ser, out page, out cell, out var score, out var why))
+            candidates = FindQueuedPetCandidates(ser, out var why);
+            if (candidates.Count == 0)
             {
                 error = $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet " +
                         "finished it was mailed, so this is the queue being empty of live pets — " +
                         "capture the next one's icon on the Pet tab.";
                 return false;
             }
-            Log($"  found a queued pet: page {page + 1}, cell {cell}, match {score:0.###}");
         }
         else if (pet.ReturnSlot is { Count: 2 } back)
         {
-            page = back[0];
-            cell = back[1];
-            Log($"  no queue captured — placing from the return slot, page {page + 1}, cell {cell}");
+            Log($"  no queue captured — placing from the return slot, page {back[0] + 1}, cell {back[1]}");
+            candidates = new List<PetCandidate> { new PetCandidate(-1, back[0], back[1], 0, "the return slot") };
         }
         else
         {
@@ -878,53 +884,142 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        // After a scan the bag is left on whichever page was swept last, so the page the cell lives on
-        // has to be brought back up before anything is clicked on it.
-        if (!SelectPage(ser, page, out error)) return false;
-
-        var centres = BagGrid.Centres(pet.BagGrid!);
-        if (cell < 0 || cell >= centres.Count)
+        // Built once for the placement and disposed with it — the same lifetime rule InspectRows
+        // follows. LAZY, because a placement with nothing to check should not pay for an ONNX session.
+        OcrEngine? ocr = null;
+        try
         {
-            error = $"The return slot ({cell}) is outside the bag grid.";
+            var refused = new List<string>();
+
+            foreach (var cand in candidates)
+            {
+                if (cand.Cell < 0 || cand.Cell >= centres.Count)
+                {
+                    error = $"Cell {cand.Cell} is outside the bag grid.";
+                    return false;
+                }
+
+                // After a scan the bag is left on whichever page was swept last, so the page the cell
+                // lives on has to be brought back up before anything is clicked on it.
+                if (!SelectPage(ser, cand.Page, out error)) return false;
+
+                var (cx, cy) = centres[cand.Cell];
+
+                if (cand.Entry >= 0)
+                    Log($"  found a queued pet: page {cand.Page + 1}, cell {cand.Cell}, match {cand.Score:0.###}");
+
+                // THE +9/100% GUARD. A finished pet cannot be boarded: the right-click simply does not
+                // place it, which in a live run looked like "the pet did not go in after 3 right-clicks"
+                // — three attempts spent on a pet that could never go in — and boarding one raises the
+                // error dialog that wedges everything after it.
+                //
+                // UNKNOWN BOARDS AS BEFORE. A null panel (no tooltip calibrated, the cursor won't move,
+                // the read throws, the panel doesn't parse) falls through to the click. The guard may
+                // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
+                // direction this whole tool treats as the unrecoverable one.
+                if (cand.Entry >= 0 && _cfg.Tooltip.IsSet)
+                {
+                    ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
+                    var panel = ReadHoverPanel(ocr, ser, cx, cy);
+
+                    if (panel is { IsFinished: true })
+                    {
+                        refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
+                        Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
+                            $"{panel.Describe()} — NOT boarding it, trying the next queued pet");
+                        continue;
+                    }
+
+                    if (panel == null)
+                        Log("  the hover panel couldn't be read — boarding this one as before");
+                }
+
+                // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost
+                // roughly half its boarded time to reloads that loaded food into an empty slot and
+                // reported success — and the placement is verified to within 2px, so the cursor was on
+                // target when the click went out. An intermittent action cannot be made reliable by
+                // aiming better; it can only be checked and repeated.
+                for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
+                {
+                    if (!Click(ser, new List<int> { cx, cy }, right: true,
+                            $"the PET at cell {cand.Cell} (page {cand.Page + 1})", out error))
+                        return false;
+
+                    SleepCheck(Math.Max(PlaceSettle, ActionWait));
+
+                    switch (PetSlotIsEmpty(row))
+                    {
+                        case false:
+                            if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
+                            return true;
+
+                        case null:
+                            // No reference, or the region couldn't be read. Unknown is NOT failure —
+                            // refusing to run because a safety net is absent would be worse than the
+                            // thing it guards.
+                            Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
+                            return true;
+
+                        default:
+                            Log($"  pet slot is still EMPTY after attempt {attempt}");
+                            break;
+                    }
+                }
+
+                error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
+                        "empty. Nothing was loaded. Check the return slot on the Pet tab.";
+                return false;
+            }
+
+            // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
+            // there, they are simply all finished, and the fix is a different one — capture the icon of
+            // a pet that still needs feeding.
+            error = "Every queued pet reads +9/100% — there is nothing here that can be boarded. " +
+                    "Refused " + string.Join("; ", refused) + ". Capture the icon of a pet that can " +
+                    "still be fed, on the Pet tab.";
             return false;
         }
-
-        var (cx, cy) = centres[cell];
-
-        // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost roughly half
-        // its boarded time to reloads that loaded food into an empty slot and reported success — and
-        // the placement is verified to within 2px, so the cursor was on target when the click went out.
-        // An intermittent action cannot be made reliable by aiming better; it can only be checked and
-        // repeated.
-        for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
+        finally
         {
-            if (!Click(ser, new List<int> { cx, cy }, right: true,
-                    $"the PET at cell {cell} (page {page + 1})", out error))
-                return false;
-
-            SleepCheck(Math.Max(PlaceSettle, ActionWait));
-
-            switch (PetSlotIsEmpty(row))
-            {
-                case false:
-                    if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
-                    return true;
-
-                case null:
-                    // No reference, or the region couldn't be read. Unknown is NOT failure — refusing
-                    // to run because a safety net is absent would be worse than the thing it guards.
-                    Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
-                    return true;
-
-                default:
-                    Log($"  pet slot is still EMPTY after attempt {attempt}");
-                    break;
-            }
+            ocr?.Dispose();
         }
+    }
 
-        error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
-                "empty. Nothing was loaded. Check the return slot on the Pet tab.";
-        return false;
+    /// <summary>Reads the hover panel of the bag cell at (cx, cy), or null when it cannot be read.
+    ///
+    /// A MOVE onto the cell and never a click, for the reason FocusThenHover gives on the launcher
+    /// side: a click on a pet in the bag SWITCHES THE EQUIPPED PET, so clicking to measure would
+    /// change the very thing being measured.
+    ///
+    /// Null covers every way this can fail to produce an answer — no tooltip calibrated, the cursor
+    /// won't move, the read throws, the panel doesn't parse. The caller boards as before on null.</summary>
+    private PetPanel? ReadHoverPanel(OcrEngine ocr, SerialPort ser, int cx, int cy)
+    {
+        var tip = _cfg.Tooltip;
+        if (!tip.IsSet) return null;
+
+        if (!PlaceOn(ser, cx, cy, out _)) return null;
+
+        // The panel only exists while the cursor RESTS, so the calibrated delay is the read's
+        // precondition rather than a nicety.
+        SleepCheck(tip.HoverDelayMs);
+
+        var region = new RegionConfig
+        {
+            Left = cx + tip.OffsetX,
+            Top = cy + tip.OffsetY,
+            Width = tip.Width,
+            Height = tip.Height,
+        };
+
+        try
+        {
+            return PetPanel.Parse(ocr.ReadLines(region, 3, null));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>Moves the cursor out of the bag before a capture.
@@ -958,19 +1053,21 @@ public sealed class PetTool : ToolBase
     ///
     /// No result means every queued pet is absent from the bag — not "the search failed". A pet that
     /// finished is mailed and gone, so there is nothing in the bag to find.</summary>
-    private bool FindQueuedPet(SerialPort ser, out int page, out int cell, out double score, out string why)
+    /// <summary>One place a queued pet was found: which queue entry, where it is, and how well it
+    /// matched. The ENTRY matters because the guard below has to name the pet it refused to board.</summary>
+    private readonly record struct PetCandidate(int Entry, int Page, int Cell, double Score, string Label);
+
+    private List<PetCandidate> FindQueuedPetCandidates(SerialPort ser, out string why)
     {
-        page = 0;
-        cell = -1;
-        score = 1;
         why = "";
+        var found = new List<PetCandidate>();
 
         var pet = _cfg.Pet;
-        if (!BagGrid.IsValidRect(pet.BagGrid)) { why = "the bag grid isn't calibrated"; return false; }
+        if (!BagGrid.IsValidRect(pet.BagGrid)) { why = "the bag grid isn't calibrated"; return found; }
 
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
-        { why = "the game window isn't open"; return false; }
+        { why = "the game window isn't open"; return found; }
 
         // A capture reads the SCREEN, so anything in front of the game is what gets matched. The
         // player found this the hard way: their game window was not focused, so every page was
@@ -981,7 +1078,7 @@ public sealed class PetTool : ToolBase
         if (WindowFinder.ForegroundWindow() != hwnd)
         {
             why = "the game isn't the front window, so the capture would be of whatever is";
-            return false;
+            return found;
         }
 
         // The best and the next best, kept together so the log can show how close the call was.
@@ -991,7 +1088,7 @@ public sealed class PetTool : ToolBase
         for (int p = 0; p < pet.PageTabs.Count; p++)
         {
             if (!IsPoint(pet.PageTabs[p])) continue;
-            if (!SelectPage(ser, p, out why)) return false;
+            if (!SelectPage(ser, p, out why)) return found;
             SleepCheck(PageWait);
 
             // Off the bag, so the pointer is not sitting on a pet's portrait when the page is read.
@@ -999,7 +1096,7 @@ public sealed class PetTool : ToolBase
             SleepCheck(ClickWait);
 
             var cap = ScreenCapture.CaptureClient(hwnd);
-            if (cap == null) { why = "the bag couldn't be captured"; return false; }
+            if (cap == null) { why = "the bag couldn't be captured"; return found; }
 
             // Saved, for the same reason the Pet tab's scan saves its own: a scan that finds nothing
             // is indistinguishable from a scan that looked at the wrong thing, and the image is the
@@ -1017,8 +1114,9 @@ public sealed class PetTool : ToolBase
             }
 
             using var bag = cap.Image;
-            foreach (var entry in pet.Queue)
+            for (int i = 0; i < pet.Queue.Count; i++)
             {
+                var entry = pet.Queue[i];
                 using var icon = IconMatch.FromBase64(entry.Png);
                 if (icon == null) continue;
 
@@ -1027,23 +1125,33 @@ public sealed class PetTool : ToolBase
                 var scores = IconMatch.ScoreAll(bag, pet.BagGrid!, icon);
                 if (scores.Count == 0) continue;
 
+                // EVERY under-limit match becomes a candidate, not just the global best. A pet that
+                // reads as finished has to be skipped for the next one, and the next one is only
+                // reachable if the scan kept it — one winner was all this used to return.
+                if (scores[0].Score <= MatchLimit)
+                    found.Add(new PetCandidate(i, p, scores[0].Cell, scores[0].Score,
+                        entry.Label ?? "(unlabelled)"));
+
                 if (scores[0].Score < best)
                 {
                     runnerUp = Math.Min(best, scores.Count > 1 ? scores[1].Score : double.MaxValue);
                     best = scores[0].Score;
-                    page = p;
-                    cell = scores[0].Cell;
-                    why = entry.Label ?? "(unlabelled)";
                 }
             }
         }
 
-        score = best;
-        if (best <= MatchLimit)
+        // BEST FIRST. The tool boards the best match it has and only falls through to a worse one when
+        // the better one turns out to be unboardable, so the order is the whole point of the list.
+        found.Sort((a, b) => a.Score.CompareTo(b.Score));
+
+        if (found.Count > 0)
         {
-            Log($"  icon scan: best {best:0.###} at page {page + 1} cell {cell} ({why}), runner-up " +
-                $"{(runnerUp == double.MaxValue ? "n/a" : runnerUp.ToString("0.###", CultureInfo.InvariantCulture))}");
-            return true;
+            var top = found[0];
+            Log($"  icon scan: best {top.Score:0.###} at page {top.Page + 1} cell {top.Cell} " +
+                $"({top.Label}), runner-up " +
+                $"{(runnerUp == double.MaxValue ? "n/a" : runnerUp.ToString("0.###", CultureInfo.InvariantCulture))}" +
+                (found.Count > 1 ? $", {found.Count} candidate(s)" : ""));
+            return found;
         }
 
         Log($"  icon scan found nothing within {MatchLimit:0.###}: best was " +
@@ -1051,7 +1159,7 @@ public sealed class PetTool : ToolBase
             $"{pet.Queue.Count} icon(s) and {pet.PageTabs.Count} page(s)");
         why = $"the closest match was {(best == double.MaxValue ? "nothing" : best.ToString("0.###", CultureInfo.InvariantCulture))}, " +
               $"and anything above {MatchLimit:0.###} is too unlike the pet to click";
-        return false;
+        return found;
     }
 
     /// <summary>Whether this row's pet slot in the boarding window still looks empty.

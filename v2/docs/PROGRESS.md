@@ -9,6 +9,43 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (9) — the run refuses to board a +9/100% pet, and tries the next one
+
+**A finished pet cannot be placed.** The right-click simply does not put it in the slot, and a live run
+at 13:58 spent three attempts on one and reported *"the pet did not go in after 3 right-clicks"* — which
+reads as an intermittent click failure and is not one. Boarding one also raises the error dialog that
+wedges everything after it.
+
+**`FindQueuedPet` returned ONE winner**, so there was no "next one" to fall back to. It now returns a
+**best-first candidate list** — every queued icon whose best cell scores at or under `MatchLimit` — and
+`PlacePet` walks it: switch to the candidate's page, hover its cell, read the panel, and **skip it if it
+reads finished**, boarding the first pet that can still be fed. Same page loop and same page captures as
+before; the only new cost is about 1.5 s per candidate tried.
+
+**Unknown boards as before, and that was the player's call, not mine.** A null panel — no tooltip
+calibrated, the cursor won't move, the read throws, the panel doesn't parse — falls through to the
+click. The guard may only ever REMOVE a boarding. My instinct was the opposite (refuse on doubt,
+because a finished pet wedges the run), and it was overruled for a reason worth keeping: inventing a
+skip is the direction that leaves a pet unfed.
+
+**The hover is a MOVE, never a click** — a click on a pet in the bag SWITCHES THE EQUIPPED PET, so
+clicking to measure would change the thing being measured. Same rule as `FocusThenHover`.
+
+**The OcrEngine is built lazily and disposed with the placement**, following `InspectRows`: a placement
+with nothing to check should not pay for an ONNX session.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — and it cannot be,
+without a run.
+
+**Not covered, deliberately:** the return-slot path is not guarded. It is documented as kept empty, so
+there is normally no pet there to check, and guarding it would be a behaviour change beyond the ask.
+
+**And this alone does not get the +0 pet fed.** Today's queue holds icons of pets that finished and were
+mailed, so the guard finds only finished pets and boards nothing — better than three wasted right-clicks,
+still an unboarded row. For it to help, the +0 pet has to be IN the queue.
+
+---
+
 ## 2026-09-21 (8) — the hover read finally gets a consumer: which pets can still be fed
 
 **The bag holds a mix of +9/100% pets and +0 pets, and the player needs to find the +0 ones.** The
