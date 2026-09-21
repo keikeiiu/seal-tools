@@ -13,6 +13,45 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-22 (27) — session close, and a git mistake worth not repeating
+
+**Landed and merged to `main`** as `e059c45` (PR #3, a **merge commit**): a window open now finishes
+every row that is due; every visit re-derives every row's schedule; the game's own time line is read and
+its completion form drives the next check; the feeding table and the pet-based figure; the return slot
+tried first and hovered to decide; an empty feeder read as a real zero; a tray at zero reloading now;
+"no pet available" as a wait rather than a failure; the deduped bag scan; and the docs restructure
+(`DESIGN.md`, `docs/archive/`). 172 tests, Release solution clean.
+
+**MY MISTAKE, recorded because the next session will otherwise repeat it.** PR #2 was merged with
+`gh pr merge --rebase` — my own choice, offered as a recommendation, not something the player asked for.
+GitHub replayed **38** commits rather than the 15 on the branch, because the 23 already on local `main`
+had **never been pushed**, so as far as GitHub was concerned the PR contained all of them. **Every SHA on
+`main` changed.** PROGRESS cites commit IDs, so the written record stopped resolving to the mainline —
+a record that cannot be checked is worth very little.
+
+**The player's words, which are now the rule: *"never rebase... just normal pull request"*** and
+*"we could lose commits"*. It is enforced in the repo now — no force-pushes. A diverged branch is
+resolved by **merging**, never by rewriting, and that is how this was fixed: PR #3 with `--merge` joined
+the two histories, so `bc6f438`, `967cc9f` and `f682b31` resolve from `main` again with nothing rewritten.
+`origin/backup-local-main` (`110c51a`) and `origin/v2-reload-visit` (`1218c57`) both still hold the
+originals. **`v2-reload-visit` was NOT deleted.**
+
+**Left open, in the order they matter:**
+
+1. **The docs still present v2.11 as the last release**, while `main` is dozens of commits past it — the
+   last two days of feeder work is unreleased and `HANDOVER.md` reads as though everything planned
+   shipped. A note, or a release.
+2. **The `USER_GUIDE` pass** — the drag food mode, the bag scan, the return-slot order and the computed
+   schedule are all absent from it, in both languages.
+3. **Naming the pet line on entries that already exist** — without it the computed next-check is inert
+   for every pet already queued. Plan: [PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md).
+4. **The intermittent slot read** — the crop is saved on exactly that failure now; the next one brings
+   its evidence.
+5. **The cursor placement failures** — biggest cost of the session, no cause attached, and the cursor
+   trace needs explaining before it can be seen.
+
+---
+
 ## 2026-09-22 (26) — the return slot is tried FIRST, and hovered to decide
 
 **The player's ordering, and it is the cheap one:** *"when we need to reboard, look for the return slot
