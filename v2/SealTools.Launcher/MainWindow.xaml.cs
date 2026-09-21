@@ -6918,11 +6918,17 @@ public partial class MainWindow : FluentWindow, IDisposable
                     var scores = IconMatch.ScoreAll(bag, pet.BagGrid!, icon);
                     if (scores.Count == 0) continue;
 
-                    // The BEST cell that is under the run's own limit, and one hover per cell: a second
-                    // cell for the same icon is the runner-up the run logs and deliberately never clicks.
-                    if (scores[0].Score <= SealTools.Pet.PetTool.MatchLimit &&
-                        !probe.Any(q => q.Cell == scores[0].Cell))
-                        probe.Add((i, scores[0].Cell, scores[0].Score));
+                    // EVERY cell under the limit, not just the best one. One icon stands for a KIND of
+                    // pet, and a bag holds several of each — the player's holds eight pets across two
+                    // icons — so one icon legitimately matches many cells. Taking only scores[0] reports
+                    // one pet where there are five, which is exactly what it did. This is what "Scan the
+                    // bag for these pets" has always done, and the two must not disagree.
+                    foreach (var (cell, score) in scores)
+                    {
+                        if (score > SealTools.Pet.PetTool.MatchLimit) break;   // sorted best first
+                        if (probe.Any(q => q.Cell == cell)) continue;         // one hover per cell
+                        probe.Add((i, cell, score));
+                    }
                 }
 
                 detect = probe.Count == 0
