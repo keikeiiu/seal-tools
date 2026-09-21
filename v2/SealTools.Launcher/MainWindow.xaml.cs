@@ -3599,6 +3599,27 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
+    /// <summary>The same, for a body that AWAITS and returns nothing — a whole scan under ONE hidden
+    /// window, for the reason the overload above gives: the hide costs a compositor wait, and a scan
+    /// that read 64 crops would pay it 64 times.</summary>
+    private async Task WithLauncherHiddenAsync(Func<Task> body)
+    {
+        var wasVisible = Visibility == Visibility.Visible;
+        if (wasVisible)
+        {
+            Visibility = Visibility.Hidden;
+            await Task.Delay(300);
+        }
+        try
+        {
+            await body();
+        }
+        finally
+        {
+            if (wasVisible) Visibility = Visibility.Visible;
+        }
+    }
+
     // Physical-pixel capture of the whole game client, plus the display measurement taken in the
     // same peek. Null when the game window isn't open.
     private async Task<(BitmapSource Image, DisplayInfo Display)?> CaptureScreenshotAsync()
@@ -5569,6 +5590,30 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "what else the panel states besides the three values the parser wants."),
             testPanel));
 
+        // The consumer the hover read has been waiting for since 2026-09-18: not "what is this one
+        // pet", but "which of these can still be fed". The bag mixes +9/100% pets, which cannot take
+        // food and raise an error dialog if boarded, with +0 pets that need it — see
+        // docs/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
+        var scanFeedable = MakeButton("Scan bag for feedable pets", ControlAppearance.Secondary);
+        // Its own pane, not the Test read one above: this reports a cell per line and would push that
+        // result off the screen, and the two answer different questions.
+        var scanResult = Mono();
+        scanResult.Margin = new Thickness(0, 8, 0, 0);
+        scanFeedable.Click += async (_, _) => await PetScanBag(hint, scanResult);
+        panel.Children.Add(Section("Find the pets that can still be fed",
+            Hint("Hovers EVERY cell of every bag page and reports each pet's growth and EXP, so the " +
+                 "ones at +9/100% — already finished, and an error dialog if boarded — can be told " +
+                 "from the ones at +0 that still want feeding." + Environment.NewLine +
+                 "It takes about 1.5 s per cell, so roughly 90 s per page: the window hides while it " +
+                 "runs and comes back at the end of each page with that page's results. Nothing is " +
+                 "clicked in the bag — a click on a pet SWITCHES THE EQUIPPED PET, so this only ever " +
+                 "moves the cursor." + Environment.NewLine +
+                 "A cell that reads as neither is reported as neither. A failed read is never called " +
+                 "finished: skipping a pet that needed feeding is the one outcome that cannot be " +
+                 "undone. Needs the panel calibrated on Calibrate Tooltip."),
+            scanFeedable,
+            scanResult));
+
         // LAST, deliberately: everything above is an input and this is the button that keeps it.
         // It sat between the timing and the queue, so a save looked like part of one section rather
         // than the end of the page.
@@ -6723,6 +6768,160 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             hint.Text = "Read failed: " + ex.Message;
         }
+    }
+
+    /// <summary>Walks every cell of the bag and reports which pets can still be fed.
+    ///
+    /// The bag holds a mix: pets at +9/100% that cannot take food any more, and pets at +0 that need
+    /// it. Telling the two apart is not bookkeeping — boarding a FINISHED pet raises an error dialog,
+    /// and a blocking modal wedges everything after it, so a finished pet is a stuck run rather than a
+    /// wasted reload. See docs/PLAN-PET-BOARD-CHECK.md.
+    ///
+    /// The parser is the FILTER, and that is forced rather than chosen: the icon matcher only knows
+    /// pets that are already queued, and the pets this exists to find are precisely the ones nobody
+    /// has queued yet. An empty cell or a stack of food simply does not parse as a pet panel.
+    ///
+    /// A read that fails is reported as neither. It is never called finished: skipping a pet that
+    /// needed feeding is the one outcome here that cannot be undone, which is why IsFinished is `==`
+    /// and not `>=` in the first place. Unknown stays unknown.
+    ///
+    /// READ-ONLY. It moves the cursor and reads; it boards nothing, queues nothing and saves nothing.</summary>
+    private async Task PetScanBag(TextBlock hint, TextBlock result)
+    {
+        var pet = _service.Config.Pet;
+        var tip = _service.Config.Tooltip;
+
+        if (!tip.IsSet)
+        {
+            hint.Text = "No hover panel is calibrated. Calibrate Tooltip first — hover a pet, capture, " +
+                        "drag a box around the panel, Save. Without the offset this would OCR a " +
+                        "rectangle of whatever happens to sit beside the cursor.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+
+        var tabs = pet.PageTabs.Where(t => t is { Count: 2 }).ToList();
+        if (tabs.Count == 0)
+        {
+            hint.Text = "No bag page tabs are calibrated — the scan has no way to change page.";
+            return;
+        }
+
+        // The click that gives the game focus, taken from the same mark both tools use. It must be
+        // somewhere inert: this clicks it, and a click on a pet cell SWITCHES THE EQUIPPED PET.
+        if (_service.Config.BuySell.ScrollPoint is not { Count: 2 } focusPoint)
+        {
+            hint.Text = "No focus point is calibrated — mark one on Calibrate Buy/Sell.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null)
+        {
+            hint.Text = _service.LastArduinoError ?? "Arduino not found.";
+            return;
+        }
+
+        var centres = BagGrid.Centres(pet.BagGrid!);
+        var report = new List<string>();
+        var feedable = 0;
+        var finished = 0;
+        var notPets = 0;
+
+        hint.Text = $"Scanning {tabs.Count} page(s) × {centres.Count} cells, about " +
+                    $"{tabs.Count * centres.Count * (tip.HoverDelayMs + 700) / 60000.0:0.#} min. " +
+                    "The window hides while it works and comes back at the end of each page. " +
+                    "Nothing is clicked in the bag — a click would switch the equipped pet.";
+        result.Text = "";
+
+        // Focus ONCE. FocusThenHover clicks the focus point on every call, because it was written for
+        // a single read; that would be 192 needless clicks here and about a minute of waiting on them.
+        if (!TryPlace(ser, focusPoint[0], focusPoint[1], out var focusErr))
+        {
+            hint.Text = "Couldn't reach the focus point: " + focusErr;
+            return;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(400);
+
+        for (int p = 0; p < tabs.Count; p++)
+        {
+            var tab = tabs[p];
+            if (!TryPlace(ser, tab[0], tab[1], out var tabErr))
+            {
+                report.Add($"page {p + 1}: couldn't reach the tab ({tabErr})");
+                continue;
+            }
+            HidPointer.Click(ser);
+            await Task.Delay(900);
+
+            var pageLines = new List<string>();
+            var pageFeedable = 0;
+            var pageFinished = 0;
+
+            // ONE hide for the page rather than one per cell: the hide costs a compositor wait, and
+            // 64 of them would cost a minute of flicker for nothing.
+            await WithLauncherHiddenAsync(async () =>
+            {
+                for (int cell = 0; cell < centres.Count; cell++)
+                {
+                    var (cx, cy) = centres[cell];
+                    if (!TryPlace(ser, cx, cy, out _)) continue;
+
+                    // The panel only exists while the cursor RESTS on the cell, so the hover delay is
+                    // the read's precondition rather than a nicety.
+                    await Task.Delay(Math.Max(200, tip.HoverDelayMs));
+
+                    var region = new RegionConfig
+                    {
+                        Left = cx + tip.OffsetX,
+                        Top = cy + tip.OffsetY,
+                        Width = tip.Width,
+                        Height = tip.Height,
+                    };
+
+                    PetPanel? panel;
+                    try
+                    {
+                        panel = PetPanel.Parse(_service.ReadText(region, 3, null));
+                    }
+                    catch
+                    {
+                        // A read that throws is a cell we know nothing about, not a finished pet.
+                        panel = null;
+                    }
+
+                    if (panel == null) { notPets++; continue; }
+
+                    if (panel.IsFinished)
+                    {
+                        finished++;
+                        pageFinished++;
+                        pageLines.Add($"    cell {cell + 1,2}  {panel.Describe()}");
+                    }
+                    else
+                    {
+                        feedable++;
+                        pageFeedable++;
+                        pageLines.Add($"    cell {cell + 1,2}  {panel.Describe()}   ← FEEDABLE");
+                    }
+                }
+            });
+
+            report.Add($"  page {p + 1}: {pageFeedable} feedable, {pageFinished} finished");
+            report.AddRange(pageLines);
+
+            // Shown per PAGE, so a five-minute scan is not five minutes of a window that looks hung.
+            result.Text = string.Join(Environment.NewLine, report);
+        }
+
+        hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
+                    "Nothing was changed: board the feedable ones yourself, or say the word and this " +
+                    "can be made to queue them.";
     }
 
     /// <summary>Every number in a read, with a few characters either side of it.
