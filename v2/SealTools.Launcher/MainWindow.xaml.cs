@@ -5024,10 +5024,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         // row's stack count, so a 5-slot row is one gesture instead of five that all have to agree
         // about where the row starts.
         drawFeeder.Click += (_, _) => PetArmDrag("feederstrip");
-        var drawCountSlot = MakeButton("Draw count slot", ControlAppearance.Secondary);
-        drawCountSlot.Click += (_, _) => PetArmDrag("countslot");
         var boxRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder, drawCountSlot })
+        foreach (var b in new UiButton[] { drawToggle, drawPetSlot, drawFeeder })
         {
             b.Margin = new Thickness(0, 0, 6, 0);
             boxRow.Children.Add(b);
@@ -5044,12 +5042,16 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "perfectly normal.\n" +
                  "Food strip — ONE box across all of this row's food slots. The tool divides it by " +
                  "the row's food-slot count, so a five-slot paid row is one drag rather than five. " +
-                 "It is also the whole of the count calibration: the box the feed counts are read " +
-                 "from is DERIVED inside each slot, so there is nothing else to draw." + Environment.NewLine +
+                 "It is also the whole of the count calibration: the crop the feed counts are read " +
+                 "from is computed inside each slot, so there is nothing else to draw." + Environment.NewLine +
                  "On the capture — green the start button, blue the pet slot, YELLOW a food slot as " +
-                 "DERIVED from its strip, yellow-green the strip itself, and PURPLE the count slot. " +
-                 "Two boxes on a food slot, and that is all: one derived from the strip and one the " +
-                 "count slot. Nothing derived is drawn, so what you see is what you marked."),
+                 "DERIVED from its strip, and yellow-green the strip itself. Two boxes on a food " +
+                 "slot, and that is all." + Environment.NewLine +
+                 "THE MAGENTA LINE is where the OCR starts reading — everything to its right, at the " +
+                 "slot's full height, is the crop the count is read from. It is drawn where the " +
+                 "Count crop starts at number on the Pet tab puts it, so moving that number moves " +
+                 "this line. It must clear the food icon: a line through the icon is a crop the " +
+                 "reader finds nothing in."),
             LabeledField("Draw", boxRow)));
 
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
@@ -5720,12 +5722,6 @@ public partial class MainWindow : FluentWindow, IDisposable
                     $"{EditRow(pet).Stacks} slot(s). The food DRAG drops each stack at a slot's " +
                     "centre, so a pixel or two out is harmless here.";
                 break;
-            case "countslot":
-                pet.FeederCountSlot = rect;
-                _petDragTarget = null;
-                _petHint!.Text = $"Count reference slot {rect[2]}x{rect[3]}. Test read checks the " +
-                    "count crop on THIS slot, so it is worth drawing one the number is actually in.";
-                break;
             case "grid":
                 pet.BagGrid = rect;
                 _petDragTarget = "slot";
@@ -5802,19 +5798,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             Box(canvas, shot, strip!, i == _petEditRow ? Brushes.YellowGreen : Faint(Brushes.YellowGreen));
         }
 
-        // The count slot you drew — and NOTHING DERIVED FROM IT.
-        //
-        // Deriving anything else onto the capture was tried and taken back out. The read crop used to
-        // be drawn here too, per slot, on the theory that it answers "will it read the number?" before
-        // a run does — but it put a THIRD and FOURTH box on a food slot that should show two, and the
-        // player said so: one box derived from the strip, one the count slot, and nothing else. The
-        // read crop is not a mark anybody drew, and the Test read reports what it reads.
-        //
-        // The count slot is drawn at all because it was NOT, for one revision: the field was removed
-        // and restored, the drawing line only removed, so a mark that saved correctly was invisible
-        // and was reported as the overlay "not shown".
-        if (BagGrid.IsValidRect(pet.FeederCountSlot))
-            Box(canvas, shot, pet.FeederCountSlot!, Brushes.MediumPurple);
+        // THE 40% LINE — a magenta hairline at the left edge of the crop the OCR is given, on every
+        // slot of the row being edited. The read position is a NUMBER on the Pet tab and nothing on
+        // this screen said what that number MEANT: a line drawn where it lands turns "0.40" into
+        // something you can see, and moving the number moves the line.
+        var markedRow = EditRow(pet);
+        if (FeederLayout.SlotBoxes(markedRow.FeederStrip, markedRow.Stacks) is { } markedSlots)
+        {
+            foreach (var slot in markedSlots)
+                if (FeederLayout.ReadRegion(slot, pet.FeederCountLeftFraction) is { } r)
+                    VLine(canvas, shot, r[0], r[1], r[3], Brushes.Magenta);
+        }
 
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
@@ -6359,11 +6353,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var row = EditRow(pet);
 
         var boxes = new List<(string What, List<int> Box)>();
-        // THE DRAWN COUNT SLOT FIRST, when there is one: it is exact, where a slot derived from a strip
-        // can be a pixel or two out on a five-slot row — and the band of read positions that works is
-        // only a few pixels wide, so those pixels decide it. What is verified is then what was drawn.
-        if (BagGrid.IsValidRect(pet.FeederCountSlot))
-            boxes.Add(("count slot (drawn)", pet.FeederCountSlot!));
+        // EVERY food slot of the row being edited, and nothing else. The count slot was dropped: a
+        // hand-drawn box cannot land in the three-pixel band the read needs, missed four times.
         for (int f = 0; f < Math.Max(1, row.Stacks); f++)
             if (BagGrid.IsValidRect(FeederAt(row, f)))
                 boxes.Add(($"slot {f + 1} (derived)", FeederAt(row, f)!));
@@ -6405,8 +6396,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                     {
                         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
                         // 40% across the slot to its own right edge, full height — computed from the
-                        // slot, exactly as a run computes it. The count slot is checked on its own
-                        // geometry; every other entry on its derived one.
+                        // slot, exactly as a run computes it.
                         var region = SealTools.Core.FeederLayout.ReadRegion(
                             box, pet.FeederCountLeftFraction);
 
@@ -7198,6 +7188,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// A grey version would make every row look like the same kind of thing.</summary>
     private static Brush Faint(Brush b) =>
         b is SolidColorBrush s ? new SolidColorBrush(Color.FromArgb(70, s.Color.R, s.Color.G, s.Color.B)) : b;
+
+    /// <summary>A single vertical line, drawn as a hairline box — the marker for where the count read
+    /// starts inside a slot. A box rather than a Line because it goes through the same
+    /// natural-to-canvas mapping every other mark does, so it lands on the pixels it claims to.</summary>
+    private static void VLine(Canvas? canvas, BitmapSource? shot, int x, int top, int height, Brush stroke)
+        => Box(canvas, shot, new List<int> { x, top, 2, height }, stroke);
 
     private static void Box(Canvas? canvas, BitmapSource? shot, List<int> rect, Brush stroke)
     {

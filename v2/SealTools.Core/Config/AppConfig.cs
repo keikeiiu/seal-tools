@@ -250,17 +250,6 @@ public sealed class PetConfig
     // What replaced both is the fraction read at several offsets with a vote, so the constant only has
     // to be roughly right.
 
-    /// <summary>ONE whole food slot, drawn as the box the count read is VERIFIED on.
-    ///
-    /// It is drawn, so it is exact where a slot derived from a strip can be a pixel or two out on a
-    /// five-slot row. Test read reports the crop this slot produces, so what is checked is a slot the
-    /// player chose rather than a division of one.
-    ///
-    /// It is NOT the read region. Three attempts to make the drawn box BE the region all failed: the
-    /// band of read positions that works is about three pixels wide, and a hand cannot put a box into
-    /// three pixels. The read position is computed from the slot instead — see
-    /// <see cref="FeederCountLeftFraction"/>.</summary>
-    public List<int>? FeederCountSlot { get; set; }
 
     /// <summary>How far across each food slot the count is read from — the read runs from there to the
     /// slot's own right edge, at its full height. THE ONE NUMBER the read comes down to, and a setting

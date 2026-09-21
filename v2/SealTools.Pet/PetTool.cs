@@ -602,8 +602,8 @@ public sealed class PetTool : ToolBase
     /// ONE read of ONE crop, because that is what the measurements showed is needed: given the right
     /// crop the count reads at 0.99-1.00 at every upscale. Two earlier revisions did more — four crops
     /// with a majority vote, and before that a proportional fraction of the slot — and both were
-    /// machinery around a crop nobody had found yet. The crop is found now: it is the count slot the
-    /// player drew.</summary>
+    /// machinery around a crop nobody had found yet. There is nothing to search for now: the crop is
+    /// four tenths of the way across each slot, computed from the slot itself.</summary>
     private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         if (RegionFor(slotBox) is not { } region) return null;
