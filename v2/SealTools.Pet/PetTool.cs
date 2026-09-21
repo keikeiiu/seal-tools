@@ -874,23 +874,21 @@ public sealed class PetTool : ToolBase
 
         if (ReadStack(ocr, region) is { } count) return count;
 
-        // FAILED — save what the reader was given. A blank read has two very different causes: a crop in
-        // the wrong place, or a crop it cannot see text in. The image is the only thing that tells them
-        // apart, and until now the run threw it away, which is why a slot holding a legible 300 could
-        // read as nothing and leave three theories and no evidence.
+        // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
+        // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
+        // case that is genuinely odd. This order cost a live run two confusing saves before it was
+        // right: the log said "a slot read NOTHING" about a slot that was simply empty.
         //
-        // ON FAILURE ONLY, so a healthy run writes no files, and at a millisecond stamp because several
-        // slots of one row can fail inside the same second.
-        SaveFailedSlotCrop(ocr, region);
+        // NO NUMBER is either a crop the reader failed on or a slot with NOTHING IN IT, and those mean
+        // opposite things: one says "assume a full load", the other says "reload now". The pixels settle
+        // it. See FeederCount.WarmFraction.
+        if (SlotHasNoFood(region) is true) return 0;
 
-        // NO NUMBER — which is either a crop the reader failed on or a slot with NOTHING IN IT, and
-        // those mean opposite things: one says "assume a full load", the other says "reload now". The
-        // pixels settle it, and the tool was already holding them. See FeederCount.WarmFraction.
-        return SlotHasNoFood(region) switch
-        {
-            true => 0,   // a REAL reading: the slot is empty, so the row is out of food
-            _ => null,   // failed, or unknowable — keep the configured cycle, as before
-        };
+        // FOOD IS THERE AND NO NUMBER WAS READ. That one is worth its pixels: a crop in the wrong place
+        // and a crop the reader cannot see text in look identical in the log and need opposite fixes —
+        // and today a slot holding a legible 300 read as nothing and left three theories and no evidence.
+        SaveFailedSlotCrop(ocr, region);
+        return null;
     }
 
     /// <summary>Saves the image a failed slot read was given, so a blank reading arrives with its
