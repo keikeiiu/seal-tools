@@ -100,13 +100,16 @@ in the guard when two candidates share a page.
 "unknown" whenever the boarding window opens or closes, because reopening brings the bag up on whatever
 page it likes.
 
-**b. The bag is swept for the pet on every reload.** `FindQueuedPetCandidates` clicks all three tabs and
-captures all three pages to find a pet that is almost always where it was last time, and then clicks
-back to that page.
+**b. The bag is swept for the pet on every reload** — `FindQueuedPetCandidates` clicks all three tabs
+and captures all three pages to find a pet that is usually where it was last time, then clicks back to
+its page.
 
-**Fix, and only after (a):** remember the pet's last (page, cell), try that cell first — verify with the
-same panel read the guard already does — and fall back to the full sweep when it fails. This is the
-biggest single saving left, and it is the same "look first" move the schedule already made.
+**Considered and REJECTED (player, 2026-09-21): remembering the pet's last `(page, cell)` and trying it
+first.** *"If the user does anything it would fail."* Correct, and it contradicts this tool's own
+reasoning: the queue is icon-based *because* position cannot be trusted — a returned pet lands in the
+first free bag slot and the character farms throughout. A remembered cell goes stale the moment anything
+moves, and it fails in the worst way — confidently, naming a cell and right-clicking it. The sweep stays.
+It costs three tab clicks and three captures, and it is right.
 
 **c. The window opens and closes per row.** Removed by §2.
 
@@ -273,15 +276,13 @@ check comes when the food runs out, and the row is refilled.
 
 1. **Page tracking (§3a)** — small, safe, pays immediately, removes the kind of click that failed today.
    Independently valuable, so it lands on its own.
-2. **The remembered pet cell (§3b)** — also small-ish, also pays every reload, and no reason to wait
-   for the restructure.
-3. **The visit (§2)** — the restructure, with the single-row path provably unchanged.
-4. **Re-measured schedule (§6)** — needs the visit, because re-deriving every row's `next` means
+2. **The visit (§2)** — the restructure, with the single-row path provably unchanged.
+3. **Re-measured schedule (§6)** — needs the visit, because re-deriving every row's `next` means
    reading every row, which is what a visit does. Doing it before the visit would mean two readers
    again.
-5. **The real next time (§7, §8)** — the formula, `wyz` on the queue entry, and the `min` rule. Wants
-   §4 in place, since the number it computes has to be re-derived on every visit to be worth anything.
-6. **Feed only what is needed (§9)** — falls out of 5, and pays in food and in actions. Last because it
+4. **The real next time (§7, §8)** — the formula, `wyz` on the queue entry, and the `min` rule. Wants
+   §3 in place, since the number it computes has to be re-derived on every visit to be worth anything.
+5. **Feed only what is needed (§9)** — falls out of 4, and pays in food and in actions. Last because it
    is the only one that changes how much the pet is given, and a wrong `wyz` would then under-feed
    rather than merely mis-schedule.
 
