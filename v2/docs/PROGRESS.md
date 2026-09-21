@@ -9,6 +9,27 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (13) — one icon is a KIND of pet, and the sweep was taking only one cell
+
+**The player's bag: 8 pets, 2 icons.** The report from `Scan the bag for these pets` — 3×`B` on page 1,
+2×`B` and 3×`A` on page 2 — is **all eight**, so the matcher was never the problem.
+
+**The sweep was.** It kept only `scores[0]`, the single best cell per icon, so two icons could never
+report more than two pets. One icon stands for a **kind**, and a bag holds several of each: one icon
+legitimately matches many cells. It now takes **every** cell under the limit, one hover per cell —
+which is what `Scan the bag for these pets` has always done, and the two must not disagree.
+
+**And a correction this file owes.** I diagnosed the same symptom as `MatchLimit` being `0.12` — just
+inside the match band rather than in the gap between 0.20 and 0.83 — and proposed raising it to 0.25.
+`MatchLimit` **is 0.5**. The `0.12` came from *this document*, from the entry recording the value
+**before** it was changed; I read a historical note as current state and built a confident diagnosis on
+it. It was caught only by opening the file before editing, and nothing was changed. **A number quoted
+from a log is a quotation, and a quotation of a past state is not a measurement of the present one.**
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
 ## 2026-09-21 (12) — the sweep is rebuilt on the matcher that was already there
 
 **I invented a mechanism that already existed, and the player had to say so three times** — *"we had
