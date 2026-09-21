@@ -5054,6 +5054,54 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "reader finds nothing in."),
             LabeledField("Draw", boxRow)));
 
+        // ── Reading the counts ──────────────────────────────────────────────
+        //
+        // HERE, not on the Pet tab, and the reason is the row selector above: Test read reads the row
+        // being edited and the read position is a fraction of a strip's slot, so on the calibration
+        // tab "which row am I testing" is visible instead of being state on another screen. It is a
+        // check on the MARKS, which is this tab's subject — and it reads every enabled row, so one
+        // press answers whether all of them will read.
+        var testRead = MakeButton("Test read", ControlAppearance.Secondary);
+        testRead.Click += async (_, _) => await PetTestRead(_petHint!);
+
+        Wpf.Ui.Controls.TextBox Num(double value, Action<double> set)
+        {
+            var box = UiText(value.ToString("0.###", CultureInfo.InvariantCulture));
+            box.Width = 70;
+            box.HorizontalAlignment = HorizontalAlignment.Left;
+            box.VerticalAlignment = VerticalAlignment.Center;
+            box.TextChanged += (_, _) =>
+            {
+                if (double.TryParse(box.Text.Trim(), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out var v)) set(v);
+            };
+            return box;
+        }
+
+        var countLeftBox = Num(_service.Config.Pet.FeederCountLeftFraction,
+            v => _service.Config.Pet.FeederCountLeftFraction = Math.Clamp(v, 0.05, 0.95));
+        var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
+            v => _service.Config.Pet.FeederCountMinScore = v);
+
+        panel.Children.Add(Section("Read the counts",
+            Hint("Open the boarding window with FOOD IN THE SLOTS, then press Test read. It reads " +
+                 "every row that is ticked to run, on that row's own slots, and reports what the " +
+                 "reader made of each — including the empties, which are the correct answer for a " +
+                 "slot with no food in it." + Environment.NewLine +
+                 "The magenta line on the capture is where the read starts; everything to its right, " +
+                 "at the slot's full height, is the crop. If a number comes back clipped — the first " +
+                 "digit missing — the line is too far right; if nothing comes back at all, it may be " +
+                 "too far left and into the food icon." + Environment.NewLine +
+                 "Count crop starts at — how far across each slot the read begins, as a fraction of " +
+                 "the slot's width. THE ONE NUMBER the read comes down to. 0.40 is where it was " +
+                 "measured; the band that works is only a few pixels wide, so a machine where " +
+                 "numbers come back clipped or empty moves this." + Environment.NewLine +
+                 "Min score — how sure the reader must be. Real counts scored 0.90-1.00 and " +
+                 "everything the food icon produced scored at most 0.63."),
+            testRead,
+            LabeledField("Count crop starts at", countLeftBox),
+            LabeledField("Min score", minScoreBox)));
+
         var drawGrid = MakeButton("Draw grid area", ControlAppearance.Secondary);
         drawGrid.Click += (_, _) => PetArmDrag("grid");
         var drawSlot = MakeButton("Draw one slot", ControlAppearance.Secondary);
@@ -5349,58 +5397,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Without this the marks live only in memory and vanish on the next launcher start, which is
         // exactly what happened: they were marked, a run used them, and local.yaml still read
         // food_cells: [] because nothing on this tab had ever written it.
-
-        // Shows what the OCR makes of the feeder slots before anything acts on it. The counts are the
-        // reading the reload decision will hang on, and a reading nobody has looked at is a number
-        // nobody should trust — the same reason every other calibrator has a Test button.
-        var testRead = MakeButton("Test read", ControlAppearance.Secondary);
-        testRead.Click += async (_, _) => await PetTestRead(hint);
-        // The reading parameters, as FIELDS — because they were measured on one machine and the
-        // assumption that they carry to another is untested. The crop is a fraction of the slot box,
-        // so it should scale; "should" is the word that has cost this project the most time.
-        Wpf.Ui.Controls.TextBox Num(double value, Action<double> set)
-        {
-            var box = UiText(value.ToString("0.###", CultureInfo.InvariantCulture));
-            box.Width = 70;
-            box.HorizontalAlignment = HorizontalAlignment.Left;
-            box.VerticalAlignment = VerticalAlignment.Center;
-            box.TextChanged += (_, _) =>
-            {
-                if (double.TryParse(box.Text.Trim(), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out var v)) set(v);
-            };
-            return box;
-        }
-
-        // WHERE the count is read from: this far across each slot, to the slot's right edge, at full
-        // height. THE ONE NUMBER the read comes down to, and a setting because the band that works is
-        // only a few pixels wide.
-        var countLeftBox = Num(_service.Config.Pet.FeederCountLeftFraction,
-            v => _service.Config.Pet.FeederCountLeftFraction = Math.Clamp(v, 0.05, 0.95));
-        var minScoreBox = Num(_service.Config.Pet.FeederCountMinScore,
-            v => _service.Config.Pet.FeederCountMinScore = v);
-
-        panel.Children.Add(Section("Read the feeder",
-            Hint("Open the boarding window with the food loaded, then press Test read. The tool reads " +
-                 "each feeder slot and reports the text it found — the stack counts the reload " +
-                 "decision will use. The slots are the boxes drawn on Calibrate Pet, so if this reads " +
-                 "nothing, check those boxes cover the numbers." + Environment.NewLine +
-                 "It reads the slot TWICE, from two crops of its right-hand side, and only takes a " +
-                 "number when both agree. That is not caution: a slightly-too-tight crop returns a " +
-                 "confidently WRONG count — a full 300 read as 0 — and clipping changes the answer " +
-                 "between two crops while a genuine read does not." + Environment.NewLine +
-                 "Second read shift — how far right the second crop is moved before it is read " +
-                 "again. Both must return the same number before one is taken." + Environment.NewLine +
-                 "Min score — how sure the reader must be. Real counts scored 0.90-1.00 and " +
-                 "everything the food icon produced scored at most 0.63." + Environment.NewLine +
-                 "Count crop starts at — how far across each food slot the number is read from, as a " +
-                 "fraction of the slot's width, running to its right edge at the slot's full height. " +
-                 "THE ONE NUMBER the count comes down to: measured here as 0.40. A box drawn by hand " +
-                 "could not hit it — the band that reads is about three pixels wide and it was missed " +
-                 "four times — which is why the position is computed from the slot instead."),
-            testRead,
-            LabeledField("Count crop starts at", countLeftBox),
-            LabeledField("Min score", minScoreBox)));
 
         // ── THE QUEUE ────────────────────────────────────────────────────────
         //
@@ -6348,31 +6344,32 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var pet = _service.Config.Pet;
 
-        // EVERY count on the row being edited, not the first two. A paid row has five, so this used
-        // to read two of them and quietly imply the row was empty of the other three.
-        var row = EditRow(pet);
-
+        // EVERY TICKED ROW, every slot, in one press. It used to read the row being edited, which was
+        // also the row selected on this tab — state the player could not see from the Pet tab where
+        // the button lived, and a press that answered only a quarter of the question. What you want to
+        // know before starting a run is whether ALL of them read.
         var boxes = new List<(string What, List<int> Box)>();
-        // EVERY food slot of the row being edited, and nothing else. The count slot was dropped: a
-        // hand-drawn box cannot land in the three-pixel band the read needs, missed four times.
-        for (int f = 0; f < Math.Max(1, row.Stacks); f++)
-            if (BagGrid.IsValidRect(FeederAt(row, f)))
-                boxes.Add(($"slot {f + 1} (derived)", FeederAt(row, f)!));
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            var r = pet.Slots[i];
+            if (!r.Enabled) continue;
+            if (FeederLayout.SlotBoxes(r.FeederStrip, r.Stacks) is not { } slots) continue;
+            for (int f = 0; f < slots.Count; f++)
+                boxes.Add(($"row {i + 1} slot {f + 1}", slots[f]));
+        }
 
-        // WHICH ROW this reads is Calibrate Pet's selected row, not anything on this tab — a coupling
-        // that has already cost one confused report ("it says I don't have the config"), because the
-        // selected row is easy to leave on a row that has never been drawn. So the message names it,
-        // and names which rows DO have a strip.
+        // No strip anywhere is the one case that leaves nothing to read, and it is no longer a
+        // question about which row is selected — the read covers them all.
         if (boxes.Count == 0)
         {
             var ready = new List<string>();
             for (int i = 0; i < pet.Slots.Count; i++)
                 if (FeederLayout.SlotBoxes(pet.Slots[i].FeederStrip, pet.Slots[i].Stacks) != null)
                     ready.Add($"Row {i + 1}");
-            hint.Text = $"ROW {_petEditRow + 1} has no food strip, and the slots are derived from it. " +
+            hint.Text = $"No ticked row has a food strip drawn, and the slots are derived from it. " +
                         (ready.Count > 0
-                            ? $"Rows with a strip: {string.Join(", ", ready)} — select one on Calibrate " +
-                              "Pet and press Test read again."
+                            ? $"Rows with a strip: {string.Join(", ", ready)} — tick one on the Pet tab, " +
+                              "or draw the missing strips here."
                             : "Draw one on Calibrate Pet.");
             return;
         }
@@ -6426,7 +6423,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                     }
 
                     if (agreed is { } value) { total += value; counted++; }
-                    report.Add($"row {_petEditRow + 1} {what} [{string.Join("  ", reads)}]" +
+                    report.Add($"{what} [{string.Join("  ", reads)}]" +
                                (agreed is { } v3
                                    ? $"  -> {v3}"
                                    : "  -> NO READING (a run would assume a full load)"));
