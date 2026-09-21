@@ -9,6 +9,26 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (19) — scope 1: the bag page is not re-clicked when it is already showing
+
+**Measured, not assumed.** All **22 marked food cells are on one page**, and `SelectPage` ran before
+every stack — so a 5-stack row clicked that one tab five times, four of them provably redundant, each
+costing a cursor placement and about 1.2 s of waiting. Every one was also another chance for the cursor
+to miss, which is the failure that cost three rows today.
+
+**The change:** `_bagPage` remembers where the bag was put; `SelectPage` logs and returns when it is
+asked for the page already showing, and records the page when it clicks. The value is **dropped whenever
+the boarding window opens or closes**, because reopening brings the bag up on whatever page it likes.
+
+**The risk, stated rather than buried:** the page is never READ back, so this introduces a new way to be
+confidently wrong — skip a needed click and the next action aims at the wrong page. Two things bound it.
+Every page change in the tool goes through `SelectPage`, and the value is dropped at every window
+open and close — so the assumption only ever covers **the seconds between one stack and the next**.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live.**
+
+---
+
 ## 2026-09-21 (18) — verified live: a finished pet is skipped, and a row feeds end to end
 
 **The first clean run.** Row 2, five stacks, all five dragged first time and boarding started:

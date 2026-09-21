@@ -149,6 +149,21 @@ public sealed class PetTool : ToolBase
     /// rather than only a crop. Passed in the same shape <see cref="Tuner.SealTuner"/> takes them,
     /// which is the precedent for a tool owning an engine rather than borrowing the launcher's.</summary>
     private readonly AttributesConfig _attrs;
+
+    /// <summary>Which bag page the tool last put the bag on, or -1 for "don't know".
+    ///
+    /// Measured from the player's config: **all 22 marked food cells are on ONE page**, and
+    /// `SelectPage` was called before every stack — so a 5-stack row clicked that one tab five times,
+    /// four of them provably redundant. Each cost a cursor placement and about 1.2 s of waiting, and
+    /// every one was another chance for the cursor to miss.
+    ///
+    /// The risk this carries, stated: the page is never READ back, so if the bag ever moved without the
+    /// tool moving it, this would skip a tab click that was needed and the next action would aim at the
+    /// wrong page. Two things bound that. Every page change in the tool goes through
+    /// <see cref="SelectPage"/>, and the value is dropped whenever the boarding window opens or closes,
+    /// because reopening brings the bag up on whatever page it likes — so the assumption only ever
+    /// covers the seconds between one stack and the next.</summary>
+    private int _bagPage = -1;
     private readonly string _rootDir;
 
     /// <summary>What the board said it was running when the port was opened, or null when it said
@@ -839,11 +854,15 @@ public sealed class PetTool : ToolBase
         if (!Enter(ser, out error)) return false;
         Log("  enter (clears the out-of-food message if the breeder opened with one)");
         SleepCheck(ActionWait);
+
+        // The bag comes up on whatever page it likes, so anything known about the page is now wrong.
+        _bagPage = -1;
         return true;
     }
 
     private void CloseBoarding(SerialPort ser)
     {
+        _bagPage = -1;
         if (!IsPoint(_cfg.Pet.CloseButton)) return;
         // Logged even though it cannot fail the reload: it is the cleanup, and on a failed reload it
         // is the LAST thing that moves the cursor. Without a line here the log ends at the failure and
@@ -1553,10 +1572,20 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
+        // ALREADY THERE — the click is skipped, not repeated. The food loop asks for the same page once
+        // per stack and all 22 marked cells are on one page, so this is the common case rather than an
+        // optimisation for an edge. See _bagPage for what bounds the assumption.
+        if (_bagPage == page)
+        {
+            Log($"  bag page {page + 1} is already showing — no tab click");
+            return true;
+        }
+
         // Absolute tabs, not next/previous: clicking ITEM2 lands on page 2 whatever page we were on,
         // so there is no relative position to lose track of and nothing to read back.
         if (!Click(ser, tabs[page], right: false, $"the ITEM{page + 1} tab", out error)) return false;
         SleepCheck(Math.Max(PageWait, ActionWait));
+        _bagPage = page;
         return true;
     }
 
