@@ -9,6 +9,57 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (6) — the count read works, and it took five designs to get one
+
+**It reads. All slots, at 1.00.** That is the outcome; the route there is the useful part, because
+four of the five designs were mine and each failed on the same three-pixel band.
+
+**What holds: 40% across each slot to its own right edge, at the slot's full height, computed from the
+slot.** Nothing drawn. Two things about it were measured and are not negotiable:
+
+- **Full height.** A crop cut to the digits' height finds **NOTHING** while holding a perfectly legible
+  number — `174`, `36`, `18`, three separate crops, all legible to the eye, all zero detected boxes.
+  **The mechanism is not known.** The engine's own "text below ~20px" note does not explain it, because
+  the digits are ~66px tall upscaled. It is a measured rule with no explanation, and it is written down
+  as one.
+- **The left edge has a band about three pixels wide** — 0.369-0.431 of the slot. Outside it, in one
+  direction the detector finds nothing, and in the other it returns a **confidently wrong number**: a
+  clipped `138` came back as `3` at 0.99, the same confidence as a correct read.
+
+**The four failures, all the same mistake in different clothes.** A count box; a count slot read as
+drawn; a count slot applied by offset; and both of those again after redrawing. **The player missed the
+band four times, because a hand cannot put a box into three pixels** — and no instruction fixes that.
+Two of the attempts were designs I argued for, and the second one I argued for *after* the first had
+already failed.
+
+**What replaced them is computed, and the player's own conclusion.** "can you just ocr the count slot
+region now?" led to drawing it by hand, which failed; what actually works is not drawing it at all.
+`FeederCountLeftFraction` (0.40) is a SETTING on the Calibrate Pet tab rather than a constant, because a
+narrow band means another machine has to be able to move it — which was the player's objection to a
+constant two designs earlier, and it survived every rewrite since.
+
+**Two tools came out of the failures and both earn their place.** The **magenta line** on the capture
+draws where the read starts, so "0.40" stops being an abstract number; and the **row geometry editor**
+shows each row's strip as four typed numbers with its slots and crop positions beside them, because a
+capture cannot answer *"is this row a pixel out from its neighbours?"* — and that was a real failure:
+row 2's crops started 1-2px right of row 3's and its widest number ran past the crop edge, which is
+invisible on a picture and obvious in that column.
+
+**The read is also where it belongs now: Calibrate Pet, reading every ticked row in one press.** It used
+to sit on the Pet tab while reading the row selected on Calibrate Pet — state you cannot see from where
+the button is, which had already produced one confused report.
+
+**Verified live:** the Test read returns `300` at 1.00 on row 1's slots, and `150`/`153` on rows 3 and
+4. **Not yet verified:** the run actually scheduling from the counts — see the note below, because
+`reload_on_start` still overrides it.
+
+**And one crash, mine, from the tool built to fix the last problem:** the geometry editor indexed a
+NULLABLE read region with `!`, and a half-typed width makes it null — `344` passes through `3`. It died
+while the player was typing, twice. The nullable was there for a reason and I overrode it in the one
+place a transient value is guaranteed to arrive.
+
+---
+
 ## 2026-09-21 (5) — and then the player asked why it needed any of that
 
 **"we tested if we have the correct crop that we can read it anyway? why need this much logic?"** — and
