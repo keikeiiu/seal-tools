@@ -9,6 +9,49 @@ the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what
 
 ---
 
+## 2026-09-21 (24) — the game states the next check itself, and row 3 was the proof
+
+**The boarding window writes a time line under every row's food slots**, and it changes FORM when the pet
+is nearly done. Read off a live window:
+
+```
+代養完成預計所需時間：約14分        boarding COMPLETES in about 14 min   ← row 3
+到2為止預計所需時間：約 20分        reaches level 2 in about 20 min      ← rows 1, 2, 4
+該欄位約27日9時51分16 秒後到期。     the food's shelf life — not a countdown
+每1分 攝取3個。                     consumes 3 per minute
+```
+
+**Row 3 is why this matters.** Its line said the boarding completes in **14 minutes**, and the tool had the
+row scheduled for **00:31 — six hours out**. The pet would be mailed, the row would go empty, and nothing
+would look at it until midnight. That is the failure the player has been describing all day, stated by the
+game in plain text the whole time.
+
+**The rule:**
+
+```
+the line says 完成 in N min  →  next = now + N + margin        (the pet is finishing)
+otherwise                    →  next = the food figure          (which is what it did before)
+and either way               →  whichever runs out first
+```
+
+**The level form is deliberately NOT a trigger.** It resets every level and reads 20–39 minutes on a
+healthy pet, so visiting on it would visit constantly. It is parsed and quoted in the log; the food keeps
+the row fed.
+
+**The region is derived as RATIOS of the slot height**, not as pixels — `gap 0.53`, `line 0.40`,
+`width 4.7`, `x −0.10` — measured on two rows that agree (+10/+32 and +11/+34). That is the answer to
+*"how do you derive it for another PC"*: the strip is already calibrated per machine and scales with the
+UI, so a PC whose slots are taller gets a proportionally lower and taller region **with nothing new to
+calibrate or drag**. A fixed `+32` would be right here and wrong on any screen that scales.
+
+**The trap, and it was measured rather than reasoned about:** the food-expiry line carries a `約` and a
+number near a `分` too. It is excluded two ways — by 到期, and by requiring the number's unit to be 分
+(its number is followed by 日) — so a shelf life cannot be read as twenty-seven days of countdown.
+
+**Verified:** Release build clean, 0 warnings; **172/172** tests (ten added). **NOT verified live.**
+
+---
+
 ## 2026-09-21 (23) — an empty feeder reads as "no digits", and the tool called that a full load
 
 **The bug that left a pet unfed.** Row 1's feeder ran dry. Both its slots read *nothing*, the tool said
