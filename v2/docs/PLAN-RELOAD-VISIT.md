@@ -282,9 +282,10 @@ check comes when the food runs out, and the row is refilled.
    again.
 4. **The real next time (§7, §8)** — the formula, `wyz` on the queue entry, and the `min` rule. Wants
    §3 in place, since the number it computes has to be re-derived on every visit to be worth anything.
-5. **Feed only what is needed (§9)** — falls out of 4, and pays in food and in actions. Last because it
-   is the only one that changes how much the pet is given, and a wrong `wyz` would then under-feed
-   rather than merely mis-schedule.
+**SIDELINED (player, 2026-09-21): feed only what is needed (§9).** Nice to have, not now. It is the one
+scope that changes *how much* the pet is given, so a wrong `wyz` would under-feed rather than merely
+mis-schedule — it wants §4 in production first, and the food saving is measured in cells per day rather
+than in anything the pet feels.
 
 Each its own commit, each verified by the Release build and the test suite. Each is independently
 useful: stopping after any of them leaves the tool working and faster.
