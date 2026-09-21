@@ -1,7 +1,8 @@
 # Seal Tools v2 — Open Work
 
-What is still open. Completed fixes and their commits are in [STATUS.md](STATUS.md); the design
-guardrails (things not to reverse) are in [REVIEW.md](REVIEW.md).
+What is still open. Completed fixes and their commits are in [STATUS.md](STATUS.md); **how it works and
+why is in [DESIGN.md](DESIGN.md)**; the design guardrails (things not to reverse) are in
+[REVIEW.md](REVIEW.md); finished plans, with their reasoning, are in [archive/](archive/README.md).
 
 ---
 

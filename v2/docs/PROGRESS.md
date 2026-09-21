@@ -7,6 +7,10 @@ the code or the commit titles. One entry per session or per landed victory, newe
 decided and why, what was measured, what is still open. Link to the commit and to the doc that owns
 the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what the code already says.
 
+**This is the HISTORY, not the current truth.** When a change lands, what it means for how the tool
+works belongs in [DESIGN.md](DESIGN.md) — this file records what was done and when, and a reader looking
+for "how does this work" should never have to reconstruct it from a hundred dated entries.
+
 ---
 
 ## 2026-09-22 (26) — the return slot is tried FIRST, and hovered to decide
