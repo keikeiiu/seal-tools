@@ -50,19 +50,25 @@ been told and did not follow. Also `CONFIG.md`'s empty-detection section, which 
 signature as the primary test when the saved crop (`config/calib_gem_result.png`) is primary and the
 signature is the fallback.
 
-**The gap that is a real gap, not drift:** `USER_GUIDE.md` opens "every card, tab and button" and had
+**The gap that was a real gap, not drift:** `USER_GUIDE.md` opens "every card, tab and button" and had
 **twelve tabs and five cards**; the app has **fifteen and six**. `Pet`, `Calibrate Pet` and
-`Calibrate Tooltip` were undocumented in both the English and the zh-TW guide. Both now say so
-explicitly and point at the design doc and the release notes; the full sections are still to write,
-and the zh-TW mirror is a translation of the pre-Pet revision throughout. The screenshots are v2.9.1
-and captioned as such rather than retaken — a fresh capture means poking the window of a feeder that
-is running live.
+`Calibrate Tooltip` were undocumented in both the English and the zh-TW guide.
+
+**Those three sections are now written**, in both guides, from the tab builders themselves rather than
+from the release notes — the guide's job is what each control does, and only the code knows that. The
+zh-TW sections are new translations, not edits of the older ones. What is still behind in the zh-TW
+guide is the *pre-Pet* body: it describes five cards and twelve tabs in places, and its banner now
+says so plainly and defers to the English version rather than pretending to be level.
+
+**The screenshots are v2.9.1** and captioned as such rather than retaken. A fresh capture means
+poking the window of a feeder that is running live, which is not worth it for two pictures whose only
+difference is card and tab counts.
 
 **Also:** deleted `v2/docs/images$name.png` — 66 KB of junk from a shell variable that never expanded.
 
-**Left open:** the three guide sections (and the zh-TW mirror); everything in the new TODO audit
-section, above all the four unreachable `PetConfig` properties, which are live settings the tool
-reads and no config file can carry.
+**Left open:** everything in the new TODO audit section, above all the four unreachable `PetConfig`
+properties, which are live settings the tool reads and no config file can carry — and the zh-TW
+guide's older body, which wants a pass of its own.
 
 ---
 

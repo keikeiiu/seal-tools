@@ -58,13 +58,6 @@ tabs above it. How they wrap depends on the window width; what is fixed is the o
 > `Calibrate Pet` and `Calibrate Tooltip`. The measurement is gone rather than adjusted, because a
 > guessed table is worse than none; re-measure if the wrap is ever worth documenting again.
 
-> **Three of the fifteen tabs are not written up below yet:** **Pet**, **Calibrate Pet** and
-> **Calibrate Tooltip** — all three belong to the Pet Feeder. Until they are, the feeder's own
-> on-screen hints and [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md) are the description of what is on them,
-> and [RELEASE-v2.10.md](RELEASE-v2.10.md) / [RELEASE-v2.11.md](RELEASE-v2.11.md) cover what they do
-> and why. Stated here rather than left silent, because the line above this file's title says "every
-> card, tab and button" and it would not be true.
-
 ### The window chrome
 
 | Control | What it does |
@@ -114,6 +107,11 @@ starting it does not shrink the window.
 
 Starting a tool makes it act immediately — there is no separate "go" step. A running tuner or composer
 can be paused with its hotkey (see the **Hotkeys** tab).
+
+**The Pet Feeder's card is different in two ways.** It is *resident*, so starting another tool leaves
+it running (see [The window](#while-a-tool-runs-mini-mode) above), and its live status is a **standing
+line** rather than a run counter — `boarding Row 1  ·  next Row 2 at 19:40  ·  2 more queued`, built
+from the boarding state and the schedule on the **Pet** tab.
 
 ### Buy Items has extra controls on its card
 
@@ -316,6 +314,131 @@ bag does compact.
 
 ---
 
+## Pet tab
+
+The Pet Feeder's run state: **where the food is and which pets to breed**. It is not calibration —
+the machine's geometry is on **Calibrate Pet**, and the two are separate on purpose. The grid is
+measured once; where the food is changes with whatever the character has been doing, which is the
+rule the Sell screen already states — a selection carried over from last time is a selection nobody
+re-checked.
+
+Read [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md) for how the schedule and the reload actually work.
+
+### The bag, right now
+
+| Control | What it does |
+|---|---|
+| **Page 1 / 2 / 3** | Which bag page the grid below is editing. The tab **opens on the page your marks are actually on** — it used to open on page 1 regardless, which showed an empty grid and read as "my marks are gone". |
+| **Mark FOOD cells** | Clicking a bag cell now marks it as holding pet food. One pool for all rows. |
+| **Mark the RETURN slot** | Clicking a cell marks **where a boarded pet comes back to** — one cell, kept empty. |
+| **Mark a pet to queue** | Clicking a cell marks **the pet you want to breed**. A queued pet sits in a cell that *holds* a pet, so it is not the same thing as the return slot. |
+| The 64-cell picker | The same widget the Sell screen uses, over this screen's own selection. **A click toggles** — so re-clicking a marked cell removes it. |
+| Cell info line | What the cell under the cursor is currently marked as. |
+
+Re-mark these whenever the bag changes. A stale mark means the tool right-clicks whatever has taken
+that slot since. The three mark modes are stacked vertically rather than in a row because three
+buttons across do not wrap — on a narrow launcher, the third one simply ran off the edge.
+
+### Setup so far — this tab
+
+This tab's own checklist, and only its own items. It is the counterpart of Calibrate Pet's — that one
+is what is true of the *machine*, this one is what is true of *this run*. Saving with a gap is
+allowed: the tool says what is missing rather than clicking into empty screen.
+
+### Ready to run
+
+The readiness verdict. **Start** is on the Pet Feeder card, not here.
+
+### Timing
+
+| Control | What it does |
+|---|---|
+| **Wait after empty (min)** | How many minutes **past** the feeder emptying to reload. Positive on purpose: reloading after it empties guarantees it *is* empty when the stacks go in, and what the game does with a top-up onto a partial stack is unknown. The cost is that many minutes with nothing fed — `1`–`2` covers any drift. A negative value reloads early and **discards food**. |
+| **Action wait (ms)** | The pause after *each step* of a reload before the next. Too short and a click does not register, which costs a whole cycle. |
+| **Food load** | `Right-click — the game picks the box` (the earliest empty box; with everything in one queue ordered top-down, a stack meant for a lower row can land in an upper row's box when that one has run dry) or `Drag to the row's own box`, which names the row's own box and **needs firmware 2**. The choice is here rather than hard-coded so a board that has not been reflashed can still feed. |
+
+### Rows and boarding state
+
+| Control | What it does |
+|---|---|
+| **RUN** (per row) | Whether the tool drives that row **at all**. Untick to leave a row alone — still calibrated, still shown, just not fed. That is how you run fewer rows without deleting the others. A row that is off is not validated, read, scheduled or clicked, so it may sit half-set-up, or be one somebody is feeding by hand. |
+| **boarding right now** (per row) | Tick each row where a pet is in the loader *now*. The reload has to **end** boarding to get the pet back before it can put it in again, and the start/end control is one button per row — pressing it with the wrong idea of the state does the opposite of what the step needs. |
+| **Reload every row when the run starts** | The override for what *looking* cannot see. The slot says a pet is in the loader; it does **not** say how much food is left, so a feeder that ran dry overnight looks exactly like one just filled, and would be left alone to starve for a whole cycle. Nothing is wasted by forcing it: ending boarding returns the leftover food with the pet. |
+
+**You do not have to get the boarding ticks right.** When the tool starts it opens the breeder once and
+*looks* at each row's pet slot, so a row already feeding is left alone rather than ended and redone.
+The ticks are the fallback for a row whose slot cannot be read, and the tool keeps them up to date
+after every reload.
+
+While the run is up, the card carries a standing line built from exactly this state — e.g.
+`boarding Row 1  ·  next Row 2 at 19:40  ·  2 more queued`. It is a *moment* rather than a countdown,
+so the card recomputes the wait on every UI tick instead of showing a number that was true when it
+was written.
+
+### The queue — which pets to breed
+
+| Control | What it does |
+|---|---|
+| **Name for the next one** | A label for the pet you are about to capture. |
+| **Which pet line** | The feeding table's own `species` — the thing that turns `+9 10%` into a number of minutes. Eleven options, not one per pet: a line holds many pets and they share one figure. |
+| **Capture the marked pet's icon** | Photographs the pet in the cell you marked with **Mark a pet to queue**. The crop is taken from the marked cell, so there is nothing to aim. |
+| **Remove last** | Drops the last queued icon. |
+| Thumbnails | The captures themselves, not just a count — they are the same pixels the scan scores against. A wrong crop matches nothing, which is safe but silent, and a run that never finds a pet is hard to tell from an empty queue. |
+| Queue list | The queued pets by label. |
+
+**A pet is found by its portrait, not by its position.** A returning pet lands in the **first free bag
+slot** and the character farms in between, so the cell it was taken from means nothing by the time it
+comes back. The icon is the pet's own portrait, matched across all 64 cells — so the bag can be
+rearranged and the queue still works. With no icons captured the tool falls back to the return slot.
+
+When a pet finishes it is **mailed** and leaves the bag, so a queued pet that can be found is by
+definition not finished: the tool boards the first match and needs no other test. Any pet of the right
+kind is a harmless substitute, because an idle breeder is wasted time.
+
+### Find them
+
+| Control | What it does |
+|---|---|
+| **Scan the bag for these pets** | Puts the boarding bag up and matches the crops above against all 64 cells of every page. It **opens nothing, clicks nothing and boards nothing** — except the `ITEM` page tabs, because a pet can be on any page and there is no other way to look at one. |
+
+It answers one question: *which page holds how many of which pet*. The scores, the cells and the
+runner-ups are in the file it writes, next to the pages it captured — not on this card, where they
+would bury the answer.
+
+### Read a pet's panel
+
+| Control | What it does |
+|---|---|
+| **Test read the pet panel** | Hovers the pet you marked with **Mark a pet to queue** and reports what the OCR makes of the hover panel. Needs the panel calibrated on **Calibrate Tooltip**. |
+
+The pet has to *be* in that cell — one that is in the loader instead leaves the cell empty and the
+read finds nothing. The dump of every number is deliberate: it is how what else the panel states gets
+found out.
+
+### Find the pets that can still be fed
+
+| Control | What it does |
+|---|---|
+| **Scan bag for feedable pets** | Hovers **every cell of every bag page** and reports each pet's growth and EXP, so the ones at `+9/100%` — already finished, and an error dialog if boarded — can be told from the ones at `+0` that still want feeding. Read-only. |
+| **Scan + rebuild the queue** | The same sweep, then **replaces the queue** with an icon for every pet that can still be fed. The finished ones get no icon, so the run can no longer board one by accident. The old queue is dropped — it holds icons of pets that have been mailed — and nothing is written if no icon could be cropped. |
+
+It takes roughly **1.5 s per cell**, so around **90 s per page**: the window hides while it runs and
+comes back at the end of each page with that page's results. **Nothing is clicked in the bag** — a
+click on a pet *switches the equipped pet*, so this only ever moves the cursor. A cell that reads as
+neither is reported as neither: a failed read is never called finished, because skipping a pet that
+needed feeding is the one outcome here that cannot be undone.
+
+The destructive scan is a **separate button** rather than a checkbox on the one beside it, so a scan
+you press to look at cannot quietly rewrite the queue.
+
+### Save
+
+Writes the marks, the timings and the boarding state to `config/local.yaml`. It is called **Save**,
+not *Save Calibration*, because this tab holds the run's state rather than the machine's — the two
+Saves are scoped to their own halves.
+
+---
+
 ## Attributes tab
 
 A read-only view of the OCR attribute dictionary (`config/attributes.yaml`): **Name** (what a filter
@@ -481,6 +604,165 @@ screen.
 It clicks the focus point first, because you have just been clicking the launcher and the wheel needs
 the game focused. One command carries at most **400** notches; that is a guard against a malformed
 value wedging the board, not a limit you should meet in normal use — a real shop list needs about 60.
+
+---
+
+## Calibrate Pet tab
+
+The machine's half of the Pet Feeder: the boarding window's geometry and the bag it opens. Everything
+about the *run* — where the food is, which pets to breed — is on the **Pet** tab instead.
+
+### Capture
+
+| Control | What it does |
+|---|---|
+| **Capture game** | Screenshots the game window. **Expect two captures**, because the marks live on screens that cannot both be up: **first** open the icon panel (click 目錄) and mark those two points; **then** open the boarding window and press Capture again. |
+
+Marks already placed are **kept** — each one is written as you make it — so re-capturing only swaps the
+background. The capture reads the screen, so keep the game visible and the launcher out of the way.
+
+### How it gets to the feeder
+
+| Control | What it does |
+|---|---|
+| **Mark 目錄** | The button in the bottom-left icon cluster. It opens a panel of eight round icons. |
+| **Mark pet feed icon** | The chick holding a bottle, in that panel. |
+| **Mark boarding X** | The boarding window's close button. |
+
+Both of the first two are **points** — they never move, so nothing has to be found. **Do not mark the
+pet cartoon image on the main screen**: that opens the manual feeding window, a different system
+holding a different food.
+
+### Bag pages
+
+| Control | What it does |
+|---|---|
+| **Mark ITEM1 / ITEM2 / ITEM3** | The bag's three page tabs. |
+
+They are **absolute** tabs — clicking one lands on that page whatever page you were on. That is why
+they are three marks rather than a next/previous pair: there is nothing to read back and nothing to
+lose count of.
+
+### Breeding rows
+
+| Control | What it does |
+|---|---|
+| Row strip | Which row everything you drag below is recorded against. **Pick the row first.** |
+| **+ Add row** | Adds a row, up to four. |
+| **Food slots in this row** | `2` on the free row, `5` on a paid one. |
+
+The window holds **four rows — one free, three behind the paid expansion** — and each has its **own**
+start button, pet slot and food boxes. The slot count is the row's *capacity*, not a preference, and
+the tool reloads each row on its own clock because of it: getting it wrong reloads a row early or
+leaves it dry. Whether the tool **drives** a row is a run decision and lives on the Pet tab, with the
+boarding ticks — not here, where the shape of the row is decided.
+
+### Row geometry — nudged by typing
+
+Each row's food strip in pixels, as four editable numbers: **x, y, width, height**. Change one and the
+slots and crops beside it update as you type.
+
+This exists because a capture answers *"is the box in the right place?"* and cannot answer *"is this
+row a pixel out from its neighbours?"* — which is how a row reads nothing while the rows above and
+below it read fine. It has happened: one row's crops started 1–2 px right of another's, and its widest
+number ran past the crop's left edge. **Read down the crop column across rows** — an outlier there is
+a row whose strip landed differently, and nudging *its* x is the targeted fix. Moving the shared
+**Count crop starts at** number instead shifts every row, including the ones already reading.
+
+### Starting boarding
+
+| Control | What it does |
+|---|---|
+| **Draw start button** | A box around the one reading 開始代養 or 結束代養. The tool clicks its centre once the food is loaded. It is one button that both starts and ends boarding, but **the label is not read** — the schedule already decides when to reload, so there is nothing to ask. |
+| **Draw pet slot** | The square the pet lands in. An empty-check crop, and the one that answers *"did the pet actually go in?"* before any food is loaded — a right-click that missed leaves an empty slot and a window that otherwise looks perfectly normal. |
+| **Draw food strip** | **ONE** box across all of this row's food slots. The tool divides it by the row's slot count, so a five-slot paid row is one drag rather than five that all have to agree about where the row starts. |
+
+The strip is also the **whole of the count calibration**: the crop each feed count is read from is
+computed inside each slot, so there is nothing else to draw. On the capture — **green** the start
+button, **blue** the pet slot, **yellow** a food slot as derived from its strip, **yellow-green** the
+strip itself. Two boxes on a food slot, and that is all.
+
+**The magenta line** is where the OCR starts reading: everything to its right, at the slot's full
+height, is the crop. It is drawn where **Count crop starts at** puts it, so moving that number moves
+the line. It must clear the food icon — a line through the icon is a crop the reader finds nothing in.
+
+### Read the counts
+
+| Control | What it does |
+|---|---|
+| **Test read** | Open the boarding window **with food in the slots**, then press this. It reads every row that is ticked to run, on that row's own slots, and reports what the reader made of each — including the empties, which are the correct answer for a slot with no food. |
+| **Count crop starts at** | How far across each slot the read begins, as a fraction of the slot's width. **The one number the read comes down to.** `0.40` is where it was measured, and the band that works is only a few pixels wide. |
+| **Min score** | How sure the reader must be. Real counts scored **0.90–1.00**; everything the food icon produced scored at most **0.63**. |
+
+If a number comes back **clipped** — the first digit missing — the line is too far right; if **nothing**
+comes back at all, it may be too far left and into the food icon. The result goes into its own pane
+under the button rather than the shared hint line, because a result you have to hunt for is a result
+nobody checks.
+
+### Bag grid (this flow's own)
+
+| Control | What it does |
+|---|---|
+| **Draw grid area** | A box around the whole 8 × 8. |
+| **Draw one slot** | A second box around one slot, as the uniformity check. |
+| **Show 64 centres** | Draws where the tool would right-click. If the dots miss the slots, re-drag the grid area. |
+
+**The bag the boarding window opens is at a different place from the one the shop opens beside**, so
+this is its own calibration — the Buy/Sell numbers are **not** reused. Sharing them would aim every
+click at the wrong item.
+
+### Setup so far
+
+Filled in as you mark things. Saving with a gap is allowed — the tool says what is missing rather than
+clicking into empty screen.
+
+### The empty-slot reference
+
+What the tool compares each row's pet slot against, for the row selected above, shown as a preview.
+It should show an **empty** slot of that row: if it shows a pet, an older window layout, or nothing at
+all, re-capture it. This is what decides whether the tool thinks a row is boarding, which decides
+whether it presses that row's toggle — a live run went wrong reading three empty rows as occupied
+against references that were not what anyone thought they were.
+
+### Save
+
+| Control | What it does |
+|---|---|
+| **Capture empty pet slot** | With the breeder **open and no pet in it**. This is the reference the tool compares against after every placement, so it can tell a pet that went in from a right-click that did nothing. **Without it the check is skipped and a failed placement is invisible** — which is how a 12-hour run lost half its boarding time while reporting success. |
+| **Save Calibration** | Writes the geometry to `config/local.yaml`. |
+
+---
+
+## Calibrate Tooltip tab
+
+Measures the **hover panel** — the box the feeder reads a pet's growth and EXP% from before boarding
+it. Only the Pet Feeder uses it; the other tools do not need it.
+
+### Measure the hover panel
+
+| Control | What it does |
+|---|---|
+| **Capture game** | With the bag, or whatever holds the item, open. |
+| **Mark hover point** | Click, in the capture, the item whose panel you want. The tool will park the cursor there — so pick one that reliably shows a panel. |
+| **Hover and capture** | The tool moves the cursor there with the Arduino, clicks to give the game focus, waits for the panel, and captures again. Then **drag a box around the panel**. |
+
+The offset is worked out from the point the tool placed the cursor on, so **nothing is typed and
+nothing is eyeballed**. Size the box for the **largest** panel you care about — a pet's is bigger than
+a food item's — because a smaller panel then just leaves background behind it, which the read ignores.
+A box per item type would be tighter and would stop the offset being universal, which is the whole
+point of it.
+
+### Save and check
+
+| Control | What it does |
+|---|---|
+| **Hover delay (ms)** | How long the cursor sits on the item before the panel is read. |
+| **Save Calibration** | Writes the offset and the delay to `config/local.yaml`. |
+| **Test read** | Hovers and reads, then reports what the OCR made of the panel. |
+
+The delay is a field rather than a constant because `700` ms was measured and then immediately found
+wanting: one read caught the bag with the cursor still on it and no panel up yet, **which looks
+exactly like a wrong offset**. Raise it until **Test read** is reliable, then press Save.
 
 ---
 

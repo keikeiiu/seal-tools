@@ -155,11 +155,10 @@ Two tabs that belong to the **Pet Feeder** and to nothing else. Skip them unless
   a pet's growth and EXP% from before boarding it. Without it the feeder still runs, but it cannot tell
   a finished pet from a feedable one and will board the finished one.
 
-> **A step-by-step walkthrough for these two is not written yet** — this is a statement of what they
-> calibrate, not a procedure. What they measure and why is in
-> [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md) and the two release notes
-> ([RELEASE-v2.10.md](RELEASE-v2.10.md), [RELEASE-v2.11.md](RELEASE-v2.11.md)); the tabs' own on-screen
-> hints carry the order to click in, and the feeder refuses to start until its calibration is complete.
+**Step by step, control by control:** [USER_GUIDE.md](USER_GUIDE.md#calibrate-pet-tab) and
+[USER_GUIDE.md](USER_GUIDE.md#calibrate-tooltip-tab). For what the marks *mean* and how the tool uses
+them, see [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md). The feeder refuses to start until its own
+calibration is complete, and says what is missing when it does.
 
 ---
 
