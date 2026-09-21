@@ -1,6 +1,7 @@
 # Plan — running tools alongside the pet feeder
 
-Status: **Parts 1 and 2 built 2026-09-20 (compile + tests only, not live-verified); Part 3 planned.**
+Status: **ALL THREE PARTS BUILT AND RELEASED in v2.11 (2026-09-21).** This document is kept for the
+reasoning, not as a plan — what is left is verification, and the open items are at the foot of it.
 Three parts, in the order they should be built. Part 1 is a live bug and the smallest. Part 2 needs a
 reflash, which also delivers one of Part 1's cases. Part 3 is the feature the player actually asked
 for, and depends on neither.
@@ -203,14 +204,13 @@ it without holding the tool start behind it.
 
 # Part 3 — the pet feeder becomes resident
 
-**Built 2026-09-20 on branch `v2-resident-pet`, not merged** — deliberately, because it rewrites the
-code path the live pet feeder runs from and none of it can be live-verified until the player's run
-ends. The same shape as the tuner-spring work, which sat unmerged until it could be tested. Nothing on
-`main` depends on it.
+**RELEASED in v2.11, 2026-09-21.** Built on `v2-resident-pet`, merged into `v2-pet-drag`, and shipped.
+The pet feeder has run resident alongside nothing else yet — see the open items below — so the parts
+that ARE verified live are the ones the released run exercised.
 
-**Verified:** Release build clean, 109/109 tests, `Core.PortGate`'s 9 tests mutation-checked.
-**Not verified: the launcher has not been run at all** — every claim below about behaviour is reasoning
-from the code, and the live steps at the end are the ones that matter.
+**Verified live:** a run reading its counts and scheduling from them (`381 items -> 132 min`), and the
+feeder surviving a Start of another tool has NOT been exercised — that is the first thing to try.
+**Verified by test:** `Core.PortGate`, 9 tests, mutation-checked.
 
 ## Context
 
