@@ -7351,6 +7351,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                 using var bag = cap.Image;
                 var pageCounts = new List<string>();
 
+                // WHO CLAIMED WHICH CELL. Two queued icons can both match the same cell — different pets
+                // of one line, or one crop close to another — and then the cell is counted twice and the
+                // page totals add up to more pets than are on it. The count is per ICON, so it cannot
+                // notice that on its own; this is what does.
+                var claimed = new Dictionary<int, List<string>>();
+
                 for (int i = 0; i < pet.Queue.Count; i++)
                 {
                     var entry = pet.Queue[i];
@@ -7372,6 +7378,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                     // behind it and goes to the file.
                     if (hits.Count > 0) pageCounts.Add($"{label} ×{hits.Count}");
 
+                    foreach (var hit in hits)
+                    {
+                        if (!claimed.TryGetValue(hit.Cell, out var who)) claimed[hit.Cell] = who = new();
+                        who.Add(label);
+                    }
+
                     if (scores.Count == 0) { raw.Add($"  page {p + 1}  {label} — no cells scored"); continue; }
 
                     var runner = scores.Count > 1 ? scores[1].Score : double.NaN;
@@ -7384,6 +7396,17 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                 report.Add($"page {p + 1}:  " +
                     (pageCounts.Count == 0 ? "no queued pet here" : string.Join(",   ", pageCounts)));
+
+                // SAID OUT LOUD when it happens, because the counts above then OVERLAP: the same cell is
+                // in two icons' totals and the page holds fewer pets than they add up to. A duplicate is
+                // not necessarily wrong — two crops of one line match the same pet — but it has to be
+                // visible, or the answer reads as more pets than exist.
+                var doubled = claimed.Where(kv => kv.Value.Count > 1).ToList();
+                if (doubled.Count > 0)
+                    report.Add($"          ⚠ {doubled.Count} cell(s) claimed by more than one queued " +
+                               "pet, so the counts above overlap: " +
+                               string.Join("; ", doubled.Select(kv =>
+                                   $"cell {kv.Key} (" + string.Join(", ", kv.Value.Distinct()) + ")")));
             }
 
             report.Add("");
