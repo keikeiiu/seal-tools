@@ -150,11 +150,74 @@ retrying soon, and which should wait out a cycle.
 
 ---
 
+## 5. The return slot's species — built 2026-09-23
+
+**Why it mattered most.** The return slot is tried **first**, and it is where the pet this row just
+finished feeding comes back to — so the gap sat on the *preferred* path. Of 23 feeding-estimate failures
+with 0 successes in the live log, **10 were return-slot boardings**; the others were 7 blank-species
+entries and 6 rows whose named line has no row at the pet's stage. The summary line said "no pet line is
+named for this queue entry" for a pet that had **no entry at all**, which is what sent the first
+diagnosis after the wrong cause; the two cases say different things now.
+
+**It cannot be read, so it is remembered.** The hover panel is read off a **bag** cell (one call site),
+and a boarded pet is in the loader, not the bag — and `PetPanel` carries only stage/growth/exp anyway,
+its own comment recording that a name lookup "could not have worked" across the Simplified/Traditional
+split. But the line was **already known** when the pet went in, so `RememberBoarded` now teaches the row
+and `MinutesForBoardedPet` falls back to that memory when there is no entry. It only ever **learns**: a
+boarding with no line must not erase what the row's previous boarding established, which is the case this
+exists for. In memory, not persisted — persisting adds a field to both directions of the projection that
+has silently dropped one three times; the cost is one blind cycle after a restart.
+
+## 6. The game's own estimate, and the trap in "just look again" — 2026-09-23
+
+### It is accurate, and that is now measured
+
+**The completion line is right to the minute, and the tool's use of it works.** 2026-09-22:
+
+```
+20:54:40  Row 2: 300 item(s) left — reloading in 31 min  [代餐完成预計所需時間：約26分]
+21:25:41  visit: opening the breeder once for 1 row(s) — Row 2      ← 31 min later, to the second
+21:25:47  Row 2: slot reads EMPTY, so this row is not boarding — it will be reloaded now
+```
+
+The pet had finished and been mailed exactly when the game said it would. The level form is the norm for
+a row mid-run (`Row 1 … [到9為止…約96分]`, `Row 3 … [到8為止…約67分]`, same visit) and is ignored by
+design, because it resets every level.
+
+**And a freshly landed pet shows the level form.** In the same minute as the reload above, Row 2 read
+`1500 item(s) left — reloading in 505 min [到1為止预計所需時間：約57分]` — the level form, full-load
+fallback. So reading the line right after `StartBoarding` buys nothing, and the earlier proposal to use
+it as "another update time" is dropped. This was an inference until this log was read; it is a
+measurement now.
+
+**One thing left to instrument.** `FeederEta.Parse` returns on the **first** line carrying `約N分`. If a
+window ever states both forms at once, which one the tool gets is decided by OCR order — and a completion
+line present but never reached would look exactly like one that is absent. The tool therefore logs **every
+raw line** under the slots after landing, plus what Parse picked, so one cycle separates those two. It is
+an instrument: it schedules nothing.
+
+### The trap: "look again in 20 minutes" is not a look
+
+**A row that comes due is RELOADED** — end boarding, re-place, load food, start. So "check again sooner"
+is **a reload every N minutes**, and every reload **consumes a food cell** from the pool (2 on the free
+row, 5 on a paid one; 17 cells per full round). Probing on a short interval drains the bag roughly ten
+times faster, and **running out of cells is the one outcome that leaves a pet unboarded** — trading the
+recoverable failure for the unrecoverable one.
+
+So if a probe is ever wanted it must be **read-only**: open, read, close — no ending, no placement, no
+food. That is the shape of `InspectRows`, which already does it at run start. Not built, and now less
+necessary: §5 makes the first estimate right, and §6's measurement shows the line corrects a row at the
+moment it matters.
+
+---
+
 ## Order, and why
 
 | | scope | size | risk | why here |
 |---|---|---|---|---|
 | 1 | name the line on existing entries — **built, unverified** | small | low | switches on work already paid for; inert without it |
+| 1b | the return slot's species (§5) — **built, unverified** | small | low | the same work, on the path the tool tries *first* |
+| — | a read-only "look" instead of a reload (§6) — **not needed yet, and not proposed as a reload** | medium | medium | would trade a recoverable failure for an unrecoverable one |
 | 2 | the intermittent slot read | medium | medium | armed with evidence; the last live gap on the food path |
 | 3 | cursor placement failures | unknown | — | biggest cost, no cause — instrument first |
 | 4 | retry policy | small | low | needs a decision, not a design |

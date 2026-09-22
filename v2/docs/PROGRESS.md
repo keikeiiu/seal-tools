@@ -13,6 +13,51 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-23 (31) — the return slot's species, and a measurement that settled two arguments
+
+**Built: the row remembers what it boarded** (PLAN-PET-FEEDER-NEXT §5). The return slot is tried
+**first**, and the pet in it is the one this row just finished feeding — but the candidate is built with
+`Entry = -1`, so `_boardedSpecies` was null and the estimate was impossible **by construction**. It is
+the largest single cause: of 23 estimate failures with 0 successes, **10 were return-slot boardings**, 7
+were blank-species entries, 6 were rows whose named line has no row at the pet's stage.
+
+It cannot be read instead — the hover panel is read off a **bag** cell, and a boarded pet is in the
+loader; and `PetPanel` has no name by design, its own comment recording that a name lookup "could not
+have worked" across the Simplified/Traditional split. So the line is **remembered**: `RememberBoarded`
+teaches the row, `MinutesForBoardedPet` falls back to it, and it only ever **learns** — a boarding with
+no line must not erase what the row's previous boarding established, which is exactly the case it exists
+for. In memory, not persisted: the projection has silently dropped a field three times and this avoids
+feeding it a fourth. Also fixed the log line that said "no pet line is named for this queue entry" for a
+pet with **no entry at all** — that wording is what mis-attributed the first diagnosis.
+
+**Two arguments settled by reading the log rather than by reasoning.** Both had been decided the wrong
+way in conversation, including by me:
+
+1. **The game's completion estimate is accurate, and driving the schedule with it works.** At `20:54:40`
+   Row 2 read `代餐完成预計所需時間：約26分` and was scheduled 31 min later; at `21:25:41` — 31 minutes
+   later, to the second — the visit found `slot reads EMPTY`, the pet having finished and been mailed
+   exactly when the game said. Not an inference; the timeline is in the log.
+2. **A freshly landed pet shows the LEVEL form, not the completion form.** Row 2, in the same minute as
+   its own reload, read `[到1為止预計所需時間：約57分]` and fell back to the full load. So reading the
+   line right after `StartBoarding` buys nothing, and that proposal is **dropped**. I had asserted this as
+   fact earlier in the session and it was an inference; it is now measured.
+
+**A proposal dropped for a reason worth keeping** (PLAN-PET-FEEDER-NEXT §6): "when blind, look again in
+20 minutes" is not a look. A due row is **reloaded**, and every reload **consumes a food cell** — so
+probing on a short interval drains the bag roughly ten times faster, and running out of cells is the one
+outcome that leaves a pet unboarded. It would trade the recoverable failure for the unrecoverable one. If
+a probe is ever wanted it must be read-only: open, read, close, the shape `InspectRows` already has.
+
+**Left in as an instrument, scheduling nothing:** every raw line under the slots is now logged after
+landing, plus what `FeederEta.Parse` picked. `Parse` returns on the **first** line carrying `約N分`, so a
+completion line that is on screen but never reached would look identical to one that is absent — and only
+the raw text separates those.
+
+Release build 0 warnings / 0 errors; 172/172 tests pass. Still **not verified in the launcher**, along
+with §1's rows — the restart is the player's call.
+
+---
+
 ## 2026-09-23 (30) — the pet line, per queue entry (PLAN-PET-FEEDER-NEXT §1)
 
 **What prompted it.** The player reported the pet-finish check as "not working", and it was: the log has

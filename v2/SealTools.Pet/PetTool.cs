@@ -1204,6 +1204,49 @@ public sealed class PetTool : ToolBase
             // Let the start take before the cleanup closes the window it was pressed in.
             SleepCheck(Math.Max(StartWait, ActionWait));
 
+            // INSTRUMENT ONLY — it schedules nothing yet, on purpose. The player reports that the
+            // boarding window states a FINISHING estimate the moment a pet is landed, which would be
+            // the most accurate figure available: it is the game's own arithmetic, where the panel
+            // estimate is ours. The argument against using it was that a freshly boarded pet's line is
+            // the LEVEL form (到N為止), which drives nothing by design — but that is an INFERENCE, not a
+            // measurement, and nothing has ever logged this moment: ReadRows takes its reading BEFORE
+            // the reload, so the line it quotes describes the pet that was just taken out.
+            //
+            // So log it for a cycle and let the evidence decide. If the completion form is really here,
+            // this is the best number in the tool and it needs no species at all — which would also
+            // make it the answer for a return-slot pet.
+            try
+            {
+                using var ocr = new OcrEngine(_cfg, _attrs, _rootDir);
+                var region = FeederLayout.EtaRegion(row.FeederStrip);
+                var raw = region is null
+                    ? null
+                    : ocr.ReadLines(
+                        new RegionConfig
+                        {
+                            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+                        },
+                        3, null);
+
+                // EVERY line, not just the one Parse chose. Parse returns on the FIRST line carrying
+                // 約N分, so if the window states both the level and the completion estimate, which one
+                // the tool gets is decided by OCR order — and a completion line that is present but
+                // never reached would look exactly like one that is absent. Only the raw text
+                // separates those two, and separating them is the whole point of logging here.
+                Log("  lines under the slots: " +
+                    (raw is null ? "(no region)" : string.Join(" | ", raw.Where(l => l.Trim().Length > 0))));
+
+                var landed = FeederEta.Parse(raw);
+                Log("  → parse picked: " +
+                    (landed is null
+                        ? "nothing"
+                        : $"{landed.Line}  ({(landed.IsCompletion ? "COMPLETION — drives a schedule" : "level form — drives nothing by design")})"));
+            }
+            catch (Exception ex)
+            {
+                Log("  line after landing: couldn't read — " + ex.Message);
+            }
+
             Log("  reload complete");
             return true;
         }
