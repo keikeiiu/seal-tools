@@ -5982,6 +5982,27 @@ public partial class MainWindow : FluentWindow, IDisposable
                     VLine(canvas, shot, r[0], r[1], r[3], Brushes.Magenta);
         }
 
+        // THE TIME-LINE REGION — the box the OCR is given to read the game's own "finishes in N min"
+        // line. Same argument as the magenta line above, one step further: that one turns a NUMBER into
+        // something you can see, and this one does the same for a region that is DERIVED from the strip
+        // and therefore moves whenever the strip does.
+        //
+        // It earned its place the expensive way. A live row returned NO time line on four consecutive
+        // visits while its three neighbours read fine on those same visits, and the entire cause was its
+        // strip sitting 7 pixels high: the count crops shrugged that off, because they are read from
+        // inside a slot box ~60px tall, while this region is h*0.40 — 24px aimed at a ~10px line — and a
+        // crop that misses the text returns NOTHING rather than something wrong, which is a measured
+        // rule in this repo. Nothing on this screen said where the region had landed, so the one crop
+        // that was broken was the one crop that could not be seen.
+        //
+        // EVERY row, faint for the ones not being edited, for the same reason the strips are: a region
+        // that misses is a per-row fact, and a row you cannot see is a row you will not check.
+        for (int i = 0; i < pet.Slots.Count; i++)
+        {
+            if (FeederLayout.EtaRegion(pet.Slots[i].FeederStrip) is not { } eta) continue;
+            Box(canvas, shot, eta, i == _petEditRow ? Brushes.Cyan : Faint(Brushes.Cyan));
+        }
+
         if (BagGrid.IsValidRect(pet.BagSlot)) Box(canvas, shot, pet.BagSlot!, Brushes.HotPink);
 
         RefreshPetChecklist();
@@ -6038,7 +6059,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                     : string.Join("   ", stamp.Select((sl, f) =>
                         FeederLayout.ReadRegion(sl, pet.FeederCountLeftFraction) is { } c
                             ? $"s{f + 1} x={sl[0]} crop={c[0]}"
-                            : $"s{f + 1} x={sl[0]} crop=—"));
+                            : $"s{f + 1} x={sl[0]} crop=—"))
+                      // The time-line region, as the pixels it resolves to. It is derived from the
+                      // strip, so these move as the four numbers above are typed — which is the point:
+                      // the strip IS the setting, and this is what it produces. Shown here as well as
+                      // drawn on the capture, because a number can be compared between rows and a box
+                      // cannot.
+                      + (FeederLayout.EtaRegion(r.FeederStrip) is { } eta
+                          ? $"   time={eta[0]},{eta[1]} {eta[2]}x{eta[3]}"
+                          : "");
                 RefreshPetChecklist();
                 PetRedrawOverlay();
             }
