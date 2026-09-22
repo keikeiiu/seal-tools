@@ -13,6 +13,51 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-23 (30) — the pet line, per queue entry (PLAN-PET-FEEDER-NEXT §1)
+
+**What prompted it.** The player reported the pet-finish check as "not working", and it was: the log has
+**zero** successes — 12 `no feeding estimate`, 0 `N min of feeding left`, and `the pet finishes first`
+has **never** printed. So every reloaded row is scheduled for the full load (205 min free / 505 paid)
+however close its pet is to done. Two independent causes, both in the live config:
+
+- **Three of five queue entries held no `species` at all.** Not carelessness: the **Which pet line**
+  picker is built once per launcher start pinned to index 0 (`"(no feeding estimate)"`) and was **never
+  seeded from the config**, so the first capture after any restart wrote an entry with no line. Nothing
+  displayed the value either — the queue list printed label + rect + PNG length, the thumbnail tooltips
+  the same, and never the line — so a blank was invisible short of reading `local.yaml`.
+- **The one line that WAS named has no row at the pet's stage.** `异色鸟蛋` stops at stage 5 in
+  `docs/pet-data.csv`; the pet reads stage 6. The player's answer settles it and matches the data: the
+  colour (异色) lines **merge into their normal line**, and stage 5 already carries identical values
+  (5000 / 72500 / 4834) under both names. So a stage-6 pet is named with the **normal** line — this is a
+  wrong pick, not a scrape gap. Recorded rather than fixed: it is a game rule, and a rule that lives in
+  the game belongs in the hint text before it belongs in the matcher.
+
+**Built** (one file, `MainWindow.xaml.cs`, additive): the queue is now **one row per pet** — crop, label,
+and its own line dropdown, with a ✕ that drops that row. Plus two things the plan's §1 did not cover and
+the live config proved necessary, written up as **§1a**:
+
+- **the capture picker seeds from the last line already on the queue**, so a restart no longer starts a
+  capture on the sentinel — and it needs **no new config field**, which matters because the projection
+  trap this repo has hit three times would otherwise get another field to drop;
+- **a per-row ✕**, because "Remove last" cannot reach an entry that is not last — repairing the three
+  blanks previously meant hand-editing `local.yaml` with the launcher stopped, since a save from this tab
+  rewrites the whole queue from memory and would clobber it.
+
+Reused the existing shape rather than inventing one: [`BuildRulesEditor`](../SealTools.Launcher/MainWindow.xaml.cs)
+is already a row-per-item editor with a ✕ that removes from both the panel and the backing list, so the
+queue is a third instance of it. Chose per-entry over a "set all" control because the queue can hold two
+families at once and a bulk set would mislabel half of them silently.
+
+**Verified:** Release build 0 warnings / 0 errors, 172/172 tests. **NOT verified in the launcher** — that
+needs a restart, and a feeder run was live, which is the player's call.
+
+**Left open:** the mechanism-2 gap that no amount of naming fixes — **a pet boarded from the return slot
+is recorded `Entry = -1`, so it can never have a species**, and the return slot is tried *first*. Also the
+earlier question of whether a boarded pet should be re-checked on later visits, rather than estimated once
+at placement and never again.
+
+---
+
 ## 2026-09-22 (29) — the launcher UI, measured ([ANALYSIS-UI.md](ANALYSIS-UI.md))
 
 **Goal:** turn a UI audit into something durable, and decide where it belongs. Nothing in the code

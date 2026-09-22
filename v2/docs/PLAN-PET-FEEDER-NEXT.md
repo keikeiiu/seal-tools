@@ -4,11 +4,12 @@ Written 2026-09-22, after the session that built the visit, the game's time line
 the return-slot-first placement. Four things, in the order I would do them, with what is known and what
 still has to be measured.
 
-Nothing here is built.
+**§1 (and its 1a) is BUILT** — 2026-09-23, Release build clean, 172 tests pass. Not yet verified in the
+launcher, because that needs a restart and a feeder run was live. **§2–§4 are still nothing but a plan.**
 
 ---
 
-## 1. Name the pet line on entries that already exist
+## 1. Name the pet line on entries that already exist — built 2026-09-23
 
 **The problem, and it is the whole reason this is first: everything built for the computed next-check is
 inert for the pets already queued.** Each queue entry needs its **species** — one of eleven lines — and
@@ -30,12 +31,51 @@ already exists and already knows this half of the config.
 selector each is the same amount of screen, and it removes the question "which one am I editing?" — which
 is the class of state that has cost this project the most.
 
+**And not one "set every entry" control instead.** A bulk set is wrong the moment the queue holds two
+families: nothing stops a player breeding `鸟蛋类` and `种子类` together, because the rows simply board
+whatever is feedable, and a single control would mislabel half of them silently. A *shortcut* over the
+rows (one button that loops them) is fine and worth having once they exist; it must not be the only way
+in.
+
+### 1a. Make the line visible on the row — added 2026-09-23
+
+**The repair path above is not enough on its own, and the live config proves it.** Three of the five
+queue entries hold a blank `species`, and the reason is not carelessness: the **Which pet line** picker
+is built once per launcher start pinned to index 0 (`"(no feeding estimate)"`) and is **never seeded from
+the config**, so the first capture after any restart writes `null` unless the player remembers to re-pick.
+Repairing the entries without fixing that means re-labelling the queue after every restart.
+
+Three things, all small:
+
+- **Seed the capture-time picker from an existing entry** at build time — the last one, or the first with
+  a line. Queue entries already persist, so the value is already on disk and **no new config field is
+  needed** — which matters, because the projection is the risk (§1's warning below) and this avoids giving
+  it another field to drop.
+- **Show the line on each row.** Today the queue list prints label + rect + PNG length and the thumbnail
+  tooltips print the same — **never the species**. A blank entry is therefore invisible in the launcher,
+  and survives exactly because nothing displays it.
+- **A per-row ✕.** Only **Remove last** exists today, so an entry that is not the last one cannot be
+  removed from the UI at all — repairing the three blanks currently means hand-editing `local.yaml` with
+  the launcher stopped, because the Pet tab's save rewrites the whole queue from memory and would clobber
+  the edit.
+
+**Mechanism, and it already exists:** [`BuildRulesEditor`](../SealTools.Launcher/MainWindow.xaml.cs) is the
+factored shape for an editable row list — a row class holding its own controls plus a mapper back to the
+config type, a local `AddRow`, a `✕` that removes from **both** the panel and the backing list, an
+`+ Add`, and the caller reading the list back at save time. The Spammer key rows are the same shape, less
+factored. The queue editor should be a **third instance of that**, not a new idea — and because it edits
+only fields that already exist, it does not touch the projection.
+
 **The projection is the risk, and it is a known one.** `Species` had to be added in **three** places —
 `PetQueueEntry`, `LocalPetQueueEntry.ToConfig`, and the save direction — and this projection has silently
 dropped a field three times across two sessions. It is already pinned by tests in both directions with a
 real non-ASCII value; the UI must not be the fourth.
 
 **Size:** small. One control per entry, one write. **Risk:** low — it sets a value and saves.
+
+**Constraint:** this is launcher UI, so verifying it means rebuilding and **restarting the launcher**,
+which ends a feeder run that may be live. Build in Release (safe alongside a running instance); restart
+needs the player's agreement at a moment of their choosing.
 
 ---
 
@@ -114,7 +154,7 @@ retrying soon, and which should wait out a cycle.
 
 | | scope | size | risk | why here |
 |---|---|---|---|---|
-| 1 | name the line on existing entries | small | low | switches on work already paid for; inert without it |
+| 1 | name the line on existing entries — **built, unverified** | small | low | switches on work already paid for; inert without it |
 | 2 | the intermittent slot read | medium | medium | armed with evidence; the last live gap on the food path |
 | 3 | cursor placement failures | unknown | — | biggest cost, no cause — instrument first |
 | 4 | retry policy | small | low | needs a decision, not a design |

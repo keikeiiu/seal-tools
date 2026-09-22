@@ -243,9 +243,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The Pet tab's checklist — its own features only, like Calibrate Pet's.</summary>
     private TextBlock? _petSessionChecklist;
 
-    /// <summary>The queued pets' crops, drawn side by side so a wrong capture is visible rather than
-    /// merely counted.</summary>
-    private WrapPanel? _petQueuePanel;
+    /// <summary>The queue, one ROW per pet: its crop, its label and the feeding line it is named with,
+    /// each editable in place with a ✕ to drop that one. Vertical, because a row carries three
+    /// controls and wrapping them side by side would put a pet's identity and its line on different
+    /// lines.</summary>
+    private StackPanel? _petQueuePanel;
 
     /// <summary>Reload every row on start rather than looking first — see where it is built.</summary>
     private CheckBox? _petReloadOnStart;
@@ -5530,7 +5532,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         var queueSpecies = new ComboBox { MinWidth = 200, VerticalAlignment = VerticalAlignment.Center };
         foreach (var species in PetSpecies())
             queueSpecies.Items.Add(species);
-        queueSpecies.SelectedIndex = 0;
+
+        // Seed from the line already on the queue rather than from the sentinel. This picker is built
+        // once per launcher start, and it used to open on "(no feeding estimate)" every time — so the
+        // first capture after a restart wrote an entry with NO line, the tool logged "no pet line is
+        // named for this queue entry" for a pet that had been named on screen minutes earlier, and
+        // nothing on screen said so. The queue is persisted, so the last line actually used is already
+        // on disk and remembering it needs no new config field.
+        var seed = _service.Config.Pet.Queue.LastOrDefault(q => !string.IsNullOrEmpty(q.Species))?.Species;
+        var seedIndex = seed is null ? -1 : queueSpecies.Items.IndexOf(seed);
+        queueSpecies.SelectedIndex = seedIndex > 0 ? seedIndex : 0;
         _petQueueSpecies = queueSpecies;
 
         // MakeInlineButton, not MakeButton — this repo already learned this one twice. MakeButton
@@ -5566,7 +5577,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // the only way to know it caught the right thing is to LOOK — a wrong crop matches nothing,
         // which is safe but silent, and a run that never finds a pet is hard to tell from a queue
         // that was never filled. The thumbnails are the same pixels the scan scores against.
-        _petQueuePanel = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        _petQueuePanel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
 
         _petQueueList = Mono();
         _petQueueList.Text = "no pet icons captured yet";
@@ -5585,7 +5596,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "breeder is wasted time.\n" +
                  "What is captured is the pet's OWN PORTRAIT, matched wherever it has moved to — so " +
                  "the bag can be rearranged and the queue still works. With no icons captured the " +
-                 "tool falls back to the return slot."),
+                 "tool falls back to the return slot.\n" +
+                 "EACH ROW CARRIES ITS OWN LINE, and it can be set or changed there — the picker " +
+                 "above only decides what a NEW capture starts on. The line is what turns a pet's " +
+                 "+9 xx% into a number of minutes, so an entry holding no line gets no estimate at " +
+                 "all and its row waits out the full load instead of until the pet finishes.\n" +
+                 "Name the line the pet actually belongs to. The colour (异色) lines are listed only " +
+                 "up to the stage where they merge into their normal line, so a pet past that stage " +
+                 "takes the NORMAL line — naming it the colour one finds no row for its stage and the " +
+                 "estimate silently does nothing."),
             LabeledField("Name for the next one", queueLabel),
             LabeledField("Which pet line", queueSpecies),
             queueButtons,
@@ -6165,28 +6184,47 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// left behind would be a pet the tool is not looking for. A crop that will not decode is drawn as
     /// a blank box with its name, rather than skipped — an entry that cannot be read is exactly the
     /// one worth seeing.</summary>
-    private void RefreshPetQueueThumbs()
+    /// <summary>Draws the queue as one ROW per pet: its crop, its label, and the feeding line it is
+    /// named with — each editable in place, with a ✕ that drops that one.
+    ///
+    /// The line used to be settable only at the moment of capture, by a picker that reset on every
+    /// launcher start (see where it is seeded), and **nothing displayed it** — so an entry holding no
+    /// line was invisible in the launcher until the log said "no pet line is named for this queue
+    /// entry", or you opened local.yaml. Three of five live entries were blank for exactly that
+    /// reason. A control per entry fixes both halves at once: what is set is visible, and it can be set
+    /// after the fact.
+    ///
+    /// A row at a time rather than one control that sets them all: the queue can legitimately hold two
+    /// families at once, because the rows board whatever is feedable — and a bulk set would mislabel
+    /// half of them with nothing on screen to say so. A "set all" shortcut is fine once these rows
+    /// exist; it must not be the only way in.
+    ///
+    /// Same shape as <see cref="BuildRulesEditor"/>: a row per item, a control per field, and a ✕ that
+    /// removes that item — and it edits only fields that already exist, so the config projection the
+    /// plan warns about never sees a new one.</summary>
+    private void RefreshPetQueueRows()
     {
         if (_petQueuePanel == null) return;
         _petQueuePanel.Children.Clear();
 
         var queue = _service.Config.Pet.Queue;
-        for (int i = 0; i < queue.Count; i++)
-        {
-            var entry = queue[i];
+        var lines = PetSpecies();
 
-            var item = new StackPanel
+        foreach (var entry in queue)
+        {
+            var row = new StackPanel
             {
-                Orientation = Orientation.Vertical,
-                Margin = new Thickness(0, 0, 8, 0),
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 2, 0, 2),
             };
 
             var thumb = new Image
             {
-                Width = 48,
-                Height = 48,
+                Width = 36,
+                Height = 36,
                 Stretch = Stretch.Uniform,
-                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = $"{entry.Label ?? "(no name)"} — captured {entry.Rect?[2]}x{entry.Rect?[3]} " +
                           $"at ({entry.Rect?[0]},{entry.Rect?[1]})",
             };
@@ -6198,21 +6236,58 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             catch
             {
-                // Left blank on purpose — see the doc comment.
+                // Left blank on purpose — see the doc comment. A crop that will not decode still gets
+                // a row: dropping it silently is the invisible-entry problem this exists to end.
             }
 
-            item.Children.Add(thumb);
-            item.Children.Add(new TextBlock
-            {
-                Text = $"{i + 1}. {entry.Label ?? "(no name)"}",
-                FontSize = 11,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = Res("TextFillColorSecondaryBrush"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxWidth = 76,
-            });
+            var label = UiText(entry.Label ?? "", "name this pet");
+            label.Width = 110;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.TextChanged += (_, _) =>
+                entry.Label = string.IsNullOrWhiteSpace(label.Text) ? null : label.Text.Trim();
+            // Written as you type, SAVED when you leave the box: saving per keystroke would rewrite the
+            // config file on every character.
+            label.LostFocus += (_, _) => PetSessionSave(_petTabHint!);
 
-            _petQueuePanel.Children.Add(item);
+            var line = new ComboBox
+            {
+                MinWidth = 170,
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            foreach (var l in lines) line.Items.Add(l);
+            line.SelectedIndex = entry.Species is { } named && lines.IndexOf(named) > 0
+                ? lines.IndexOf(named)
+                : 0;
+            line.SelectionChanged += (_, _) =>
+            {
+                if (line.SelectedIndex < 0) return;
+                entry.Species = line.SelectedIndex > 0 ? line.Items[line.SelectedIndex] as string : null;
+                PetSessionSave(_petTabHint!);
+            };
+
+            // Per row, and that is the point: "Remove last" cannot reach an entry that is not last, so
+            // a bad entry early in the queue used to mean hand-editing local.yaml with the launcher
+            // stopped — a save from this tab rewrites the whole queue from memory and would clobber it.
+            var drop = new UiButton
+            {
+                Content = "✕",
+                Appearance = ControlAppearance.Secondary,
+                MinWidth = 28,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            drop.Click += (_, _) =>
+            {
+                queue.Remove(entry);
+                PetSessionSave(_petTabHint!);
+                RefreshPetQueue();
+            };
+
+            row.Children.Add(thumb);
+            row.Children.Add(label);
+            row.Children.Add(line);
+            row.Children.Add(drop);
+            _petQueuePanel.Children.Add(row);
         }
     }
 
@@ -7517,7 +7592,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var queue = _service.Config.Pet.Queue;
         if (_petQueueList == null) return;
 
-        RefreshPetQueueThumbs();
+        RefreshPetQueueRows();
 
         if (queue.Count == 0)
         {
@@ -7526,10 +7601,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        _petQueueList.Text = string.Join("\n", queue.Select((q, i) =>
-            $"  {i + 1}. {(string.IsNullOrWhiteSpace(q.Label) ? "(no label)" : q.Label)}" +
-            $"  {q.Rect?[2]}x{q.Rect?[3]} at ({q.Rect?[0]},{q.Rect?[1]})" +
-            $"  {q.Png?.Length ?? 0} chars"));
+        // No list under the rows any more: they carry the label and the line themselves, and a second
+        // copy of the same facts is one more place for them to disagree. The geometry the old list
+        // printed is on each thumbnail's tooltip.
+        _petQueueList.Text = "";
     }
 
     /// <summary>Crops the boarding window's pet slot out of the current capture and stores it as the
