@@ -217,33 +217,54 @@ moment it matters.
 neighbours read their lines on those same visits. Its next was therefore pure food arithmetic — `219
 items → 62 min` — and its pet finished in 7 minutes. The tool would have noticed about 70 minutes late.
 
-**The cause: a 7-pixel strip error.** Rows 2–4 sit exactly **189 px** apart; Row 1 sat **196** above Row
-2. At the uniform pitch its strip should have been at `y = 267`, not `260`. That one number explains the
-whole pattern:
+**The cause, after one wrong turn: a region too tight to be survivable.** The first reading of the
+evidence was a **7-pixel strip error** — rows 2–4 sit exactly 189 px apart and Row 1 sat 196 above Row 2,
+so at the uniform pitch its strip "should" have been at `y = 267` rather than `260`. Nudging it to 267
+**did** fix the read (62 min → 10) — **and moved that row's food boxes with it**, because the strip drives
+both crops. The boxes had been correctly aligned at 260. **The strip was never the problem.**
+
+What the numbers actually say: rows 2 and 3 agree on text at **+11 and +34** below their slots, and the
+region aimed a 24-tall box at **+32**. That is correct on those rows and fail-silent on the free row,
+whose extra line above the timer pushes it down to about **+57** — seven pixels outside the box, where a
+miss returns *nothing* rather than something wrong. The comparison stands: **the tool compared the wrong
+thing is not the story; the region was too exact to forgive a row that differs by a few pixels.**
+
+**Fixed by widening, not by moving anything** (`FeederLayout.EtaRegion`, `73616ea`): the band is now
+**+12 to +84** below the slots at `h = 60`, still as ratios of the slot height, and **a strict superset of
+the old band** — so no row that read before can stop reading, which is now pinned by
+`TheRegionContainsTheBandItUsedToAimAt`. Widening is free here in a way it is not for the count crops:
+`Parse` pattern-matches and skips the expiry line, and a bare count cannot match `約N分`.
+
+**The lesson worth keeping: a derived region must be TOLERANT, not exact.** The count crops survive a
+7 px strip error because they read from inside a ~60 px slot box; this one died because 24 px aimed at a
+10 px line has no slack. Anything *derived* rather than *dragged* should be sized to absorb the machine
+it lands on — and the reason it took four silent visits to find is that a crop which misses says nothing,
+so the fix was to make it **visible** (§8 above).
+
+The strip-error table, kept because it is what made the *counts* look innocent:
 
 | crop | how it is read | size | survives a 7 px strip error? |
 |---|---|---|---|
 | the feeding counts | inside the slot box | ~60 px tall | **yes** — that is why counts kept reading |
 | the time line | `EtaRegion`, derived *below* the strip | `h × 0.40` = **24 px** for a ~10 px line | **no** — and a crop that misses returns NOTHING |
 
-Changing `y` to `267` fixed it on the next look: `[代完成预計所需時間：約5分]`, and the row went from
-**62 min to 10**. So the read logic was never wrong; the region was aimed 7 px high, and **nothing on
-screen said where the region had landed.** The one broken crop was the one crop that could not be seen.
-
 **Built: draw it.** `PetRedrawOverlay` now draws the time-line region for **every** row (faint for rows
 not being edited, like the strips), in cyan, and `RefreshPetGeometry` lists the pixels it resolves to
-beside each row's slot/crop columns — the strip *is* the setting, and the readout is what it produces.
+beside each row's slot/crop columns — the strip *is* the input, and the readout is what it produces.
 This is the same argument the magenta count line already makes in its own comment: *"the read position is
 a NUMBER and nothing on this screen said what that number MEANT: a line drawn where it lands turns 0.40
-into something you can see."*
+into something you can see."* With the band now tolerated rather than exact, what the drawing is for has
+changed slightly and become more useful: it shows a region that is **off**, rather than one that must be
+nudged.
 
-**No new config field, deliberately.** `EtaRegion` is a pure function of the row's strip, so the existing
-per-row geometry pane is already the control — and Row 1 proves the lever works: nudging `y` fixed it.
-Adding a drawn box or an offset field would mean a field in **both** directions of the projection, which
-has silently dropped one three times. A hand-drawn box was also considered and rejected on precedent: the
-count crop's drawn box was tried and abandoned because its working band measured **three pixels** wide.
-The time line is the opposite case — `Parse` pattern-matches and ignores the expiry line, so slack is
-free — but visibility plus the existing numbers gets the same result with no new surface at all.
+**No new config field, and the reason survived the correction.** `EtaRegion` is a pure function of the
+row's strip, so there is nothing to store: the fix was to widen the function, not to add a knob. A
+drawn box or a per-row offset would each mean a field in **both** directions of the projection, which has
+silently dropped one three times. The hand-drawn box was also rejected on precedent — the count crop's
+drawn box was tried and abandoned when its working band measured **three pixels** wide. Note the sharp
+lesson from both: for the COUNT crop the working band really is ~3 px wide, so a fraction is the only
+workable unit; for the TIME line the box may be generous because `Parse` pattern-matches. Same tab, same
+derivation, opposite tolerance — and treating them the same is what made this cost an hour.
 
 **Still open from this:** the retry belongs in `ReadRows`, not `Visit` (the run-start look — where Row 1
 kept failing — calls `ReadRows` directly and has no retry at all), and `EtaRegion` could carry vertical
