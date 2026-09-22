@@ -182,6 +182,24 @@ public sealed class PetTool : ToolBase
     private PetPanel? _boardedPanel;
     private string? _boardedSpecies;
 
+    /// <summary>What each row last boarded — the answer for the case that has no queue entry at all:
+    /// **the pet in the return slot.**
+    ///
+    /// That pet is the one this row just finished feeding, because the reload ends the row's boarding
+    /// and the game hands the pet back to the bag before the tool looks. So its line was already known
+    /// at the moment it went in, and it cannot be re-read later: the hover panel is read off a BAG cell,
+    /// and once a pet is boarded it is in the loader, not the bag.
+    ///
+    /// ONLY EVER LEARNED, NEVER CLEARED by a boarding that had no line. A return-slot pet must not erase
+    /// what its own previous boarding established — that is exactly the case this exists for. A named
+    /// queue entry remains the authority whenever there is one.
+    ///
+    /// IN MEMORY, deliberately. Persisting it means a new field in `LocalPetSlot` and both directions
+    /// of the projection, which has silently dropped a field three times across two sessions. The cost
+    /// of not persisting is one blind cycle after a restart, and it heals as soon as any row boards
+    /// from a named queue entry.</summary>
+    private readonly Dictionary<PetSlotConfig, string> _rowSpecies = new();
+
     /// <summary>The feeding table — scraped, measured, and the player's chosen source for `wyz`:
     /// *"the base feeding value is predetermined, nowhere can you find it in the game."* Loaded once
     /// per run rather than kept in memory for the life of the process.</summary>
@@ -189,12 +207,15 @@ public sealed class PetTool : ToolBase
 
     /// <summary>Records what was read about the pet that just went into the loader. See
     /// <see cref="_boardedPanel"/>.</summary>
-    private void RememberBoarded(int entry, PetPanel? panel)
+    private void RememberBoarded(PetSlotConfig row, int entry, PetPanel? panel)
     {
         _boardedPanel = panel;
         _boardedSpecies = entry >= 0 && entry < _cfg.Pet.Queue.Count
             ? _cfg.Pet.Queue[entry].Species
             : null;
+
+        // And teach the ROW, so the pet that comes back to the return slot can still be estimated.
+        if (!string.IsNullOrEmpty(_boardedSpecies)) _rowSpecies[row] = _boardedSpecies!;
     }
 
     /// <summary>How long the pet that was just boarded still needs, or null when that cannot be
@@ -204,11 +225,16 @@ public sealed class PetTool : ToolBase
     /// NULL IS THE NORMAL CASE AND IS NOT AN ERROR. A queue entry with no line named is allowed, and a
     /// pet the tool could not read a panel for boards anyway. Both fall back to the configured cycle,
     /// which is what the tool did before any of this existed.</summary>
-    private double? MinutesForBoardedPet()
+    private double? MinutesForBoardedPet(PetSlotConfig row)
     {
         if (_boardedPanel is not { } panel || _feeding.Count == 0) return null;
 
-        var line = PetFeeding.Find(_feeding, _boardedSpecies, panel.Stage ?? -1);
+        // A pet boarded from the RETURN SLOT has no queue entry, so no line of its own — it is the pet
+        // this row just finished feeding, so the row's own memory answers instead. See _rowSpecies.
+        var species = _boardedSpecies
+            ?? (_rowSpecies.TryGetValue(row, out var remembered) ? remembered : null);
+
+        var line = PetFeeding.Find(_feeding, species, panel.Stage ?? -1);
         var minutes = PetFeeding.MinutesToFinish(line, panel.Growth, panel.Exp);
 
         if (minutes is { } m)
@@ -216,9 +242,13 @@ public sealed class PetTool : ToolBase
                 $"{panel.Exp:0.##}% — {m:0} min of feeding left" +
                 (m < 1 ? "  ← done, or within a minute of it" : ""));
         else
-            Log($"  no feeding estimate — " + (_boardedSpecies == null
-                ? "no pet line is named for this queue entry"
-                : $"the table has no {_boardedSpecies} at stage " +
+            // The old wording said "no pet line is named for this queue entry" for BOTH a blank entry and
+            // a return-slot pet — which has no entry at all. It cost a mis-attributed diagnosis, so the
+            // two cases say different things now.
+            Log($"  no feeding estimate — " + (species == null
+                ? "nothing names what was boarded: no queue entry for it, and this row has not boarded " +
+                  "a named line before"
+                : $"the table has no {species} at stage " +
                   $"{(panel.Stage is { } s ? s.ToString(CultureInfo.InvariantCulture) : "?")}"));
 
         return minutes;
@@ -1155,7 +1185,7 @@ public sealed class PetTool : ToolBase
             // HOW LONG THIS PET NEEDS, from the panel the guard just read and the line its queue entry
             // names. Asked HERE, while the pet that was boarded is still the one the fields describe —
             // everything downstream of the food load has moved on. See PLAN-RELOAD-VISIT §7 and §8.
-            petMinutes = MinutesForBoardedPet();
+            petMinutes = MinutesForBoardedPet(row);
 
             state.Message = $"{NameOf(row)}: loading the food…";
             Log("  loading the food");
@@ -1370,7 +1400,7 @@ public sealed class PetTool : ToolBase
                     {
                         case false:
                             if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
-                            RememberBoarded(cand.Entry, boarded);
+                            RememberBoarded(row, cand.Entry, boarded);
                             return true;
 
                         case null:
@@ -1378,7 +1408,7 @@ public sealed class PetTool : ToolBase
                             // refusing to run because a safety net is absent would be worse than the
                             // thing it guards.
                             Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
-                            RememberBoarded(cand.Entry, boarded);
+                            RememberBoarded(row, cand.Entry, boarded);
                             return true;
 
                         default:
