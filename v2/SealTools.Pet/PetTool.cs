@@ -437,18 +437,21 @@ public sealed class PetTool : ToolBase
                         failures[row] = 0;
 
                         // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
-                        // The pet's figure came from the panel the guard read and the line its queue
-                        // entry names; the food's is the full load that was just put in. With no pet
-                        // figure this is CycleMinutesFor exactly as before — no line named, no panel
-                        // read, or no row for that line at that stage all land here.
+                        // There are TWO pet figures now and either may be absent — the estimate from
+                        // the panel the guard read at placement, and the game's own line read after the
+                        // pet was landed. The smaller wins; the food's is the full load just put in.
+                        // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
+                        // panel read, no row for that line at that stage, and an unreadable time line
+                        // all land here.
                         var loaded = _cfg.Pet.LoadMinutesFor(row);
-                        var wait = result.PetMinutes is { } needs
-                            ? Math.Max(0, Math.Min(needs, loaded))
-                            : loaded;
+                        var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
+                            ? Math.Min(a, b)
+                            : result.PetMinutes ?? result.LandedLineMinutes;
+                        var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
                         next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
 
                         state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
-                                        (result.PetMinutes is { } m && m < loaded
+                                        (fromPet is { } m && m < loaded
                                             ? $" (the pet finishes first, in {m:0} min)"
                                             : "");
                         Console.WriteLine(state.Message);
@@ -818,6 +821,18 @@ public sealed class PetTool : ToolBase
             (finish is { } fin ? Math.Min(food, fin) : food) + WaitAfterEmptyMinutes);
     }
 
+    /// <summary>Every active row's time line, read in one pass at the END of a visit — see the call
+    /// site for why. A row whose line is unreadable maps to null, which is the ordinary case and not an
+    /// error; the caller decides what a null is worth.</summary>
+    private Dictionary<PetSlotConfig, FeederEta.Reading?> ReadAllEta()
+    {
+        var result = new Dictionary<PetSlotConfig, FeederEta.Reading?>();
+        using var ocr = new OcrEngine(_cfg, _attrs, _rootDir);
+        foreach (var row in _cfg.Pet.ActiveRows)
+            result[row] = ReadEta(ocr, row);
+        return result;
+    }
+
     /// <summary>The row's time line — the game's own statement of when this boarding completes. Null
     /// when there is nothing readable there, which the schedule answers with the food figure.</summary>
     private static FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row)
@@ -1036,7 +1051,16 @@ public sealed class PetTool : ToolBase
     /// feedable pet — every queued one has finished, or none is in there at all. That is a WAIT, not a
     /// fault: the player may simply not have another pet yet, and a row must not be counted against, or
     /// dropped, for the state of the bag.</summary>
-    private sealed record RowOutcome(bool Ok, string Error, double? PetMinutes, bool NothingToBoard);
+    private sealed record RowOutcome(
+        bool Ok,
+        string Error,
+        double? PetMinutes,
+        bool NothingToBoard,
+        // The game's own finish time, read AFTER this row was reloaded. The reading the visit took
+        // describes the pet that was just taken out, so without this a freshly landed pet has no
+        // figure from the game at all — only the panel estimate, which a pet from the return slot may
+        // not have. Null whenever the line was unreadable or said something other than a finish.
+        double? LandedLineMinutes = null);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
     /// are due — one at a time, in row order — and close once.
@@ -1090,6 +1114,43 @@ public sealed class PetTool : ToolBase
 
                 if (!ok)
                     Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
+            }
+
+            // ── THE SECOND READ, while the window is still open ──────────────
+            //
+            // The same read twice, for two different reasons, and it costs one OCR pass: no window
+            // operation, no click, no food cell.
+            //
+            //  * A row whose line could NOT be read the first time gets a second attempt. The first
+            //    read happens seconds after the breeder opens; this one happens a minute later, after
+            //    every page click and drag of the reloads. A live row read nothing on several
+            //    consecutive visits while its three neighbours read fine on those same visits, and the
+            //    only other retry was the NEXT visit — hours away. That is what this is for.
+            //  * A row this visit RELOADED has no figure from the game at all: the reading at the top
+            //    of the visit described the pet that was just taken out.
+            //
+            // BOTH PATHS ONLY EVER SHORTEN a next — the same safety rule the panel estimate follows, so
+            // a bad or absent reading here can never delay a row past what it would have been.
+            var after = ReadAllEta();
+            foreach (var (row, reading) in after)
+            {
+                var finish = FeederEta.CompletionMinutes(reading);
+
+                // A row the visit ACTED ON: hand the figure back, to be folded in with the estimate.
+                if (results.TryGetValue(row, out var outcome))
+                {
+                    results[row] = outcome with { LandedLineMinutes = finish };
+                    continue;
+                }
+
+                // A row it did NOT act on: only ever pull its next earlier. The reading from the top
+                // of the visit still stands when this one says nothing.
+                if (finish is not { } mins || !schedule.TryGetValue(row, out var current)) continue;
+                var candidate = DateTime.Now.AddMinutes(mins + WaitAfterEmptyMinutes);
+                if (candidate >= current) continue;
+
+                Log($"  {NameOf(row)}: finish line read on the second pass — {mins:0} min to go");
+                schedule[row] = candidate;
             }
         }
         finally
