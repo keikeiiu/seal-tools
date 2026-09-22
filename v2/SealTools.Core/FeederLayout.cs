@@ -81,8 +81,21 @@ public static class FeederLayout
     /// region without anything to calibrate or drag. A fixed `+32` would be right here and wrong on any
     /// screen whose UI scales.
     ///
-    /// The width is deliberately generous — the OCR ignores background — because the text is longer on
-    /// some rows than others and a tight box would clip the number off the end.
+    /// **AND DELIBERATELY GENEROUS VERTICALLY — which the numbers above are why.** Those two rows agree
+    /// on `+34`, so this used to aim a 24-tall box at it: correct on both, and fail-silent on a third.
+    /// A live row read NO time line on four consecutive visits while its neighbours read fine, and the
+    /// read never said why. It was the FREE row, and the numbers say why that matters: a row carrying an
+    /// extra line above its timer pushes the timer down, from `+34` to about `+57` — inside the old box
+    /// by 7 pixels, which is nothing, and outside it by 7 in the other direction, which is TOTAL,
+    /// because a crop that misses returns nothing rather than something wrong.
+    ///
+    /// Widening is free here in a way it is not for the count crops, for three reasons: `FeederEta.Parse`
+    /// PATTERN-MATCHES and skips the food-expiry line, so extra text is ignored rather than misread; a
+    /// bare count cannot match `約N分`, so including the numbers above is harmless; and the band is a
+    /// strict superset of the old one, so **no row that read before can stop reading**.
+    ///
+    /// The width is deliberately generous for the same reason — the text is longer on some rows than
+    /// others and a tight box would clip the number off the end.
     ///
     /// Null when the strip is unusable, so a half-calibrated row yields no region rather than one at
     /// (0,0).</summary>
@@ -94,9 +107,12 @@ public static class FeederLayout
         return new List<int>
         {
             strip[0] - (int)Math.Round(h * 0.10),
-            strip[1] + strip[3] + (int)Math.Round(h * 0.53),
+            // Just below the slots — not so high that it eats the count digits' descenders, which spill
+            // past the slot frame. A number alone cannot match, so this is belt and braces.
+            strip[1] + strip[3] + (int)Math.Round(h * 0.20),
             (int)Math.Round(h * 4.7),
-            (int)Math.Round(h * 0.40),
+            // Covers +12 to +84 below the slots at h=60: the measured +34, and the free row's ~+57.
+            (int)Math.Round(h * 1.20),
         };
     }
 

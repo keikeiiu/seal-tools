@@ -96,8 +96,9 @@ public class FeederEtaTests
     }
 
     /// <summary>The region is derived from the strip as RATIOS of its height, so a machine whose UI
-    /// scales gets a proportionally placed box with nothing to calibrate. Measured: a 60-high strip puts
-    /// the line at +32 and 24 tall, x 6 left of the strip.</summary>
+    /// scales gets a proportionally placed box with nothing to calibrate. A 60-high strip puts it 12
+    /// below the slots and 72 tall — measured positions are +34 and (on a row carrying an extra line)
+    /// about +57, and the band has to contain BOTH.</summary>
     [Fact]
     public void TheRegionIsDerivedFromTheStripAsRatios()
     {
@@ -107,9 +108,26 @@ public class FeederEtaTests
 
         Assert.NotNull(region);
         Assert.Equal(344 - 6, region![0]);
-        Assert.Equal(645 + 60 + 32, region[1]);
+        Assert.Equal(645 + 60 + 12, region[1]);
         Assert.Equal(282, region[2]);
-        Assert.Equal(24, region[3]);
+        Assert.Equal(72, region[3]);
+    }
+
+    /// <summary>Widening the band is what stops a 7-pixel difference between rows being fatal, and the
+    /// old band has to stay INSIDE the new one — a row that read before must not stop reading. This is
+    /// the regression this test exists for: the old band was +32..+56, and a live row's line was at
+    /// ~+57.</summary>
+    [Fact]
+    public void TheRegionContainsTheBandItUsedToAimAt()
+    {
+        var strip = new List<int> { 344, 645, 326, 60 };
+
+        var region = FeederLayout.EtaRegion(strip)!;
+        var top = region[1];
+        var bottom = region[1] + region[3];
+
+        Assert.True(top <= 645 + 60 + 32, "the band must still start at or above the old +32");
+        Assert.True(bottom >= 645 + 60 + 56, "and must still reach the old band's end of +56");
     }
 
     /// <summary>…and it scales: double the slots and everything below them moves and grows with it.</summary>
@@ -119,8 +137,8 @@ public class FeederEtaTests
         var tall = FeederLayout.EtaRegion(new List<int> { 344, 645, 652, 120 });
 
         Assert.NotNull(tall);
-        Assert.Equal(645 + 120 + 64, tall![1]);
-        Assert.Equal(48, tall[3]);
+        Assert.Equal(645 + 120 + 24, tall![1]);
+        Assert.Equal(144, tall[3]);
     }
 
     [Fact]
