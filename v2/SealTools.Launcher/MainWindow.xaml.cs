@@ -6635,6 +6635,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                 if (existing != null) pet.FoodSlots.Remove(existing);
                 else pet.FoodSlots.Add(new List<int> { _petPickPage, cell });
 
+                // Saved here, like the return slot above and like the food scan — the food cells are
+                // SESSION half, so an unsaved mark is a mark that silently reverts on the next launch.
+                // This branch used to be the one place on the grid that did not save, which made
+                // "click nineteen cells" and "press Scan" behave differently for no reason a player
+                // could see.
+                PetSessionSave(_petTabHint!);
+
                 // Any change to the set invalidates how far the last run got through it: cells have
                 // moved or been added, so a count carried over would skip or repeat. Re-marking means
                 // "start from the top of this list", which is the only assumption that is safe either

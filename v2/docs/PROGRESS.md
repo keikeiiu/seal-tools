@@ -13,6 +13,35 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-23 (32) — v2.12 cut
+
+**The release the previous session's open item #1 asked for:** *"The docs still present v2.11 as the last
+release, while `main` is dozens of commits past it — the last two days of feeder work is unreleased. A
+note, or a release."* It is **91 commits**, and the note is [RELEASE-v2.12.md](RELEASE-v2.12.md).
+
+**What it took beyond the code.** `publish.bat`'s `RELTAG` moved to `v2.12`; the root README's title,
+download links, firmware link, fallback table and history row were updated; `v2/README.md`'s version line
+followed. One self-inflicted bug caught on the way through: a bulk string replace left the new **v2.11**
+fallback row pointing at **v2.10**'s asset — the kind of thing that only shows up as a 404 for a user,
+so it was fixed and the row kept, since v2.11 is a real published release.
+
+**Also folded in, because shipping the food feature without it would ship a known loss:** clicking a food
+cell by hand was the *one* place on that grid that did not save. The scan saves itself, the return slot
+saves itself, and this did not — so "click nineteen cells" and "press Scan" behaved differently for no
+reason a player could see, and an unsaved mark reverts on the next launch. `TogglePetCell`'s FOOD branch
+now calls `PetSessionSave` like its neighbour.
+
+**Said plainly in the note, not left to be discovered:** the **food scan has never run against a live
+bag**. It compiles, it is unit-tested, and its first run is the player's to judge. Everything else in the
+note was verified live on 2026-09-22/23, and the note says which is which.
+
+**Left open, and it is the same list the release note ends on:** the intermittent *count* read (§2 of
+PLAN-PET-FEEDER-NEXT, crop-armed and waiting for its evidence), the cursor placement failures (§3, no
+cause attached, instrument first), the `PetConfig` properties no config file can carry, and the projection
+guard whose reach is only what its fixture remembers.
+
+---
+
 ## 2026-09-23 (31) — the return slot's species, and a measurement that settled two arguments
 
 **Built: the row remembers what it boarded** (PLAN-PET-FEEDER-NEXT §5). The return slot is tried

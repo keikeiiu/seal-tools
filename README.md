@@ -1,4 +1,4 @@
-# Seal Tools v2.11 (C# / .NET 8 WPF)
+# Seal Tools v2.12 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -8,7 +8,7 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 ## Download
 
-**Take the latest — [SealTools-v2.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11.zip).**
+**Take the latest — [SealTools-v2.12.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.12/SealTools-v2.12.zip).**
 Self-contained (exe + OCR models + config templates) — unzip and run. Installation, including flashing
 the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
 
@@ -16,12 +16,13 @@ Older releases are kept only when they are a useful fallback:
 
 | Version | File | |
 |---|---|---|
-| **v2.10** | [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip) | The Pet Feeder's first build |
+| **v2.11** | [SealTools-v2.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11.zip) | The Pet Feeder's four rows, and its first schedule |
+| v2.10 | [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip) | The Pet Feeder's first build |
 | v2.9.1 | [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip) | The last build before the Pet Feeder |
 | v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | The last build before buy/sell |
 
 **Firmware.** The Arduino sketch ships alongside the app, not inside it:
-[SealTools-v2.11-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11-firmware.zip).
+[SealTools-v2.12-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.12/SealTools-v2.12-firmware.zip).
 Unzip it and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. From v2.9 on this is published with
 every release — before that it was only in the repo, so a downloaded zip had no way to flash a board.
 
@@ -37,6 +38,7 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 | Version | Date | What it added |
 |---|---|---|
+| **v2.12** | 2026-09-23 | **The pet feeder, finished.** The reload becomes **one window visit** for every row that is due, instead of one open per row. The next check now comes from **whichever runs out first** — the food, the **game's own time line** (`代養完成預計所需時間`, which was measured agreeing to the minute), or the **pet's own need** read from its hover panel against the feeding table. The **return slot is tried first and hovered to decide**, which reverses the old queue-first order now that the slot is known to hold the pet that just came back. And the **food cells are found instead of clicked**: photograph one food item and a scan matches it across the bag grid, so a moving food supply is one press rather than nineteen careful clicks. Also: an empty feeder reads as a real zero, a tray at zero reloads now, "nothing in the bag can be fed" is a wait rather than a failure, the feeding line is settable **per queue entry** (it was capture-time only, and invisible), and the time-line read region is **drawn on the capture** so a mis-aimed one can be seen. |
 | **v2.11** | 2026-09-21 | **The Pet Feeder grows up.** One boarding row becomes **four**, each with its own schedule — the free row holds two food stacks and a paid one five, so one clock for both would reload a paid row half full or leave the free row dry for five hours. It **reads how much food is left** in the feeder and schedules the reload from that number rather than from arithmetic, and it finds a pet by **its icon** across the bag rather than by the cell it used to sit in. It is now **resident**: starting another tool no longer kills it, and it waits for the game if a reload comes due mid-run. Two items wait on an optional firmware reflash, and both fall back to today's behaviour until you flash. |
 | v2.10 | 2026-09-17 | **The Pet Feeder** — a new tool that keeps a boarded pet fed while you are not watching. It is the first thing in the suite that acts on a timer rather than on a button press. Two tabs come with it: **Calibrate Pet** (the 目錄 button, the feed icon, the start/end toggle, the feeder slots and the boarding bag's *own* 8×8 grid) and **Pet** (which cells hold food, marked per run because the selection changes with what the character has been doing). |
 | **v2.9.1** | 2026-09-15 | Hot fix on v2.9, driven by setting it up on a second PC. **`▸ Tools` hides the tool cards**, so the capture canvas gets the whole window on a screen too small to show both. Three layout defects fixed, all found by looking at a narrow window: the Spammer tab's **Save Preset** sat above the cards it saves, its **Delete** button was clipped mid-word, and the key row's **Fast** tick box drew with no right border. Also corrects the Buy/Sell calibration hint, which still described two row clicks from a design replaced by one dragged region. |
@@ -50,7 +52,7 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 ## Quick start
 
-1. Unzip `SealTools-v2.11.zip`.
+1. Unzip `SealTools-v2.12.zip`.
 2. Run `SealTools.Launcher.exe` — **as Administrator** is recommended (serial access; on some setups the in-game hotkeys need it too). On first run it auto-creates `config\local.yaml` from the example.
 3. Use the in-app calibration tabs — **Calibrate Tuner**, **Calibrate Gem**, **Buy / Sell**, **Calibrate
    Pet**, **Calibrate Tooltip** — to set your machine's coordinates once. You only calibrate the tools
