@@ -325,6 +325,22 @@ public sealed class PetConfig
     /// only thing that notices is a pet that stops being fed.</summary>
     public int FoodSlotsUsed { get; set; }
 
+    /// <summary>A crop of ONE food item from the boarding bag, as base64 PNG — the reference the food
+    /// cells are found with.
+    ///
+    /// The cells move as the player plays, and re-marking them by hand was nineteen precise clicks to
+    /// add and nineteen more to take the stale ones off. This turns that into "photograph the food
+    /// once, press Scan": the same <c>IconMatch</c> sweep the pet queue already uses, against a bag
+    /// grid that is already calibrated.
+    ///
+    /// ONE crop, because the pets are fed one stage at a time and so eat one food. Several types at
+    /// once would need one crop each — a list, deliberately not built until it is needed.
+    ///
+    /// It lives in the SESSION half of the config: it is captured on the Pet tab, so the Pet tab's Save
+    /// is the one that must persist it. A value carried by the wrong half saves from one screen and
+    /// silently reverts from the other.</summary>
+    public string? FoodIconPng { get; set; }
+
     /// <summary>The bag cell a returned pet lands in, as [page, cell] — the ROW-INDEPENDENT landing
     /// place, because the game puts it in the first free slot rather than where it came from.
     ///

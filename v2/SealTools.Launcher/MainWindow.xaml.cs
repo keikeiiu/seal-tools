@@ -266,6 +266,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Image? _petQueuePreview;
     private TextBlock? _petQueueList;
 
+    /// <summary>The food scan's side of the Pet tab: the preview of the captured food crop — so a wrong
+    /// crop is visible rather than silently matching nothing — and the last scan's findings.</summary>
+    private Image? _petFoodPreview;
+    private TextBlock? _petFoodList;
+
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
     /// <summary>The row picker on the Buy tab, kept as a field because RefreshBuyPresets fills it —
@@ -5368,6 +5373,56 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "a stale mark means it right-clicks whatever has taken that slot since."),
             cellsPanel));
 
+        // ── FINDING THE FOOD, rather than clicking it ───────────────────────
+        //
+        // Marking food cells by hand is nineteen precise clicks to add and nineteen more to take the
+        // stale ones off, and the food moves every time the player plays. The pets have had a scan
+        // since 2026-09-22 and the food is the same problem with a simpler answer — the cells are not
+        // shuffling around, they are simply DIFFERENT CELLS — so one crop of one food item finds them
+        // all through the bag grid that is already calibrated.
+        //
+        // ONE crop, because the pets are fed one stage at a time and so eat one food. Several types at
+        // once would need one crop each: a list, deliberately not built until it is needed.
+        var captureFood = MakeInlineButton("Capture food icon", ControlAppearance.Secondary);
+        captureFood.Click += async (_, _) => await PetCaptureFoodIcon(_petTabHint!);
+        var scanFood = MakeInlineButton("Scan the bag for food", ControlAppearance.Secondary);
+        scanFood.Click += async (_, _) => await PetScanFood(_petTabHint!, write: false);
+        // The destructive twin, and a SEPARATE button for the same reason the queue has one: a scan
+        // you press to LOOK at must not quietly rewrite what a run will act on.
+        var scanFoodWrite = MakeInlineButton("Scan + update the food cells", ControlAppearance.Primary);
+        scanFoodWrite.Click += async (_, _) => await PetScanFood(_petTabHint!, write: true);
+
+        captureFood.Margin = new Thickness(0, 0, 6, 0);
+        scanFood.Margin = new Thickness(0, 0, 6, 0);
+        var foodRow = new StackPanel { Orientation = Orientation.Horizontal };
+        foodRow.Children.Add(captureFood);
+        foodRow.Children.Add(scanFood);
+        foodRow.Children.Add(scanFoodWrite);
+
+        _petFoodPreview = new Image
+        {
+            Stretch = Stretch.None,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        _petFoodList = Mono();
+        _petFoodList.Text = "no food icon captured yet — mark the cells by hand, or capture one";
+
+        panel.Children.Add(Section("Food — find it instead of marking it",
+            Hint("The food cells move as you play, and re-marking them by hand is one careful click " +
+                 "per cell. This finds them: click ONE cell holding food (the one you marked most " +
+                 "recently is what gets photographed), press Capture food icon, then Scan.\n" +
+                 "Capture food icon brings that cell's bag page up itself and crops from the grid, so " +
+                 "there is nothing to aim — the same way a queued pet's icon is taken.\n" +
+                 "\"Scan the bag for food\" only LOOKS: it reports what it matched and changes nothing. " +
+                 "\"Scan + update the food cells\" is the one that replaces the marked set, and it " +
+                 "resets the used-cell count — a changed set makes the old count meaningless.\n" +
+                 "It matches the crop against all 64 cells of every page, so check the preview before " +
+                 "you trust it, and prefer a food stack that is not partly used."),
+            foodRow,
+            _petFoodPreview,
+            _petFoodList));
+
         // This tab's OWN checklist, the counterpart of Calibrate Pet's "Setup so far" — same shape,
         // same idea, and only this tab's items. What the two tabs hold is different in kind: that one
         // is what is true of the machine, this one is what is true of this run.
@@ -5700,6 +5755,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPetBoardingTicks();
         RefreshPetQueue();
         RefreshPetCells();
+        RefreshPetFood();
         RefreshPetSessionChecklist();
         RefreshPetReady();
         return MakeTab("Pet", panel);
@@ -7614,6 +7670,240 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             hint.Text = "Couldn't crop the icon: " + ex.Message;
         }
+    }
+
+    /// <summary>Crops ONE food item out of the bag and stores it as the reference the food scan matches
+    /// with.
+    ///
+    /// Taken from the MOST RECENTLY marked food cell — the one the player just clicked — so the gesture
+    /// is "click the food, then press this": no separate mode, and no second thing to keep in step. The
+    /// cell's own page is brought up first, exactly as a queued pet's icon is taken, because cropping
+    /// whatever page happened to be showing is the silent miss the tool guards against everywhere
+    /// else.</summary>
+    private async Task PetCaptureFoodIcon(TextBlock hint)
+    {
+        var pet = _service.Config.Pet;
+        if (pet.FoodSlots.Count == 0)
+        {
+            hint.Text = "Mark one FOOD cell first — click a cell holding food, then press this. The " +
+                        "crop comes from that cell, so there is nothing to aim.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+
+        var marked = pet.FoodSlots[^1];
+        if (marked is not { Count: 2 })
+        {
+            hint.Text = "The newest food mark is malformed — clear the food cells and mark one again.";
+            return;
+        }
+
+        var centres = BagGrid.Centres(pet.BagGrid!);
+        var (page, cell) = (marked[0], marked[1]);
+        if (cell < 0 || cell >= centres.Count)
+        {
+            hint.Text = $"The marked food cell ({cell}) is outside the bag grid — mark it again.";
+            return;
+        }
+        if (page < 0 || page >= pet.PageTabs.Count || pet.PageTabs[page] is not { Count: 2 } tab)
+        {
+            hint.Text = $"The marked food is on bag page {page + 1}, and that page's tab isn't " +
+                        "calibrated — mark it on Calibrate Pet.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+
+        if (!TryPlace(ser, tab[0], tab[1], out var tabError))
+        {
+            hint.Text = $"Couldn't reach the ITEM{page + 1} tab: {tabError}";
+            return;
+        }
+        HidPointer.Click(ser);
+        await Task.Delay(900);
+
+        var shot = await CaptureScreenshotAsync();
+        if (shot == null) { hint.Text = "Couldn't capture — is the game open and not minimized?"; return; }
+
+        var (cx, cy) = centres[cell];
+        var box = new OpenCvSharp.Rect(
+            cx - (int)Math.Round(BagGrid.PitchX(pet.BagGrid!) / 2),
+            cy - (int)Math.Round(BagGrid.PitchY(pet.BagGrid!) / 2),
+            (int)Math.Round(BagGrid.PitchX(pet.BagGrid!)),
+            (int)Math.Round(BagGrid.PitchY(pet.BagGrid!)));
+
+        if (box.X < 0 || box.Y < 0 ||
+            box.Right > shot.Value.Image.PixelWidth || box.Bottom > shot.Value.Image.PixelHeight)
+        {
+            hint.Text = "The marked food cell falls outside the capture — re-check the bag grid on " +
+                        "Calibrate Pet.";
+            return;
+        }
+
+        try
+        {
+            using var full = BitmapSourceToMat(shot.Value.Image);
+            using var crop = new Mat(full, box);
+
+            pet.FoodIconPng = IconMatch.ToBase64(crop);
+            PetSessionSave(hint);
+            RefreshPetFood();
+            if (_petFoodPreview != null) _petFoodPreview.Source = MatToBitmapSource(crop);
+
+            hint.Text = $"Food icon captured, {box.Width}x{box.Height} from page {page + 1}, " +
+                        $"cell {cell}. Check the preview, then Scan the bag for food.";
+        }
+        catch (Exception ex)
+        {
+            hint.Text = "Couldn't crop the food icon: " + ex.Message;
+        }
+    }
+
+    /// <summary>Sweeps every bag page for the captured food icon — the same match the pet queue uses,
+    /// against the same calibrated grid.
+    ///
+    /// Read-only unless <paramref name="write"/>; the write is a separate BUTTON rather than a flag on
+    /// this one, for the reason the queue has two: a scan you press to LOOK at must not quietly rewrite
+    /// what a run will act on.
+    ///
+    /// The limit is the pet queue's <see cref="PetTool.MatchLimit"/>. Food art is far more uniform than
+    /// a pet portrait, so a tighter limit would probably do — but too tight means MISSING cells, and
+    /// that failure is silent, which is the one direction this tool does not accept.</summary>
+    private async Task PetScanFood(TextBlock hint, bool write)
+    {
+        var pet = _service.Config.Pet;
+        if (string.IsNullOrWhiteSpace(pet.FoodIconPng))
+        {
+            hint.Text = "No food icon captured yet. Mark one cell holding food, then press " +
+                        "Capture food icon.";
+            return;
+        }
+        if (!BagGrid.IsValidRect(pet.BagGrid))
+        {
+            hint.Text = "The boarding bag grid isn't calibrated — Calibrate Pet.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+
+        var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
+        {
+            hint.Text = "Game window not found (or minimized) — open and restore the game first.";
+            return;
+        }
+
+        using var icon = IconMatch.FromBase64(pet.FoodIconPng);
+        if (icon == null) { hint.Text = "The stored food crop wouldn't decode — capture it again."; return; }
+
+        var found = new List<List<int>>();
+        var report = new List<string>();
+
+        for (int p = 0; p < pet.PageTabs.Count; p++)
+        {
+            if (pet.PageTabs[p] is not { Count: 2 } tab) continue;
+
+            if (!TryPlace(ser, tab[0], tab[1], out var err))
+            {
+                report.Add($"page {p + 1}: couldn't reach the tab ({err})");
+                continue;
+            }
+            HidPointer.Click(ser);
+            await Task.Delay(900);
+
+            // Park the cursor OFF the bag before capturing — a stack under the pointer differs at
+            // every offset, which is how a pet once "differed at every offset" and read as a matcher
+            // failure rather than as the arrow being in the picture.
+            if (_service.Config.BuySell.ScrollPoint is { Count: 2 } park)
+            {
+                TryPlace(ser, park[0], park[1], out _);
+                await Task.Delay(250);
+            }
+
+            var page = p;
+            var cap = await WithLauncherHiddenAsync(() => ScreenCapture.CaptureClient(hwnd));
+            if (cap == null) { report.Add($"page {p + 1}: couldn't capture the bag"); continue; }
+
+            using var bag = cap.Image;
+            var hits = IconMatch.ScoreAll(bag, pet.BagGrid!, icon)
+                .Where(s => s.Score <= SealTools.Pet.PetTool.MatchLimit)
+                .OrderBy(s => s.Cell)
+                .ToList();
+
+            if (hits.Count == 0) { report.Add($"page {p + 1}: nothing matched"); continue; }
+
+            // 1-based for the report — the grid is drawn as slot 1 top-left, and a list of 0-based
+            // indices is a number the player has to translate.
+            report.Add($"page {p + 1}: {hits.Count} cell(s) — " +
+                       string.Join(", ", hits.Select(h => h.Cell + 1)));
+            foreach (var hit in hits) found.Add(new List<int> { page, hit.Cell });
+        }
+
+        if (!write)
+        {
+            RefreshPetFood(report);
+            hint.Text = $"Scanned {report.Count} page(s) — nothing was changed. The findings are under " +
+                        "the buttons; if they match your bag, press Scan + update the food cells.";
+            return;
+        }
+
+        if (found.Count == 0)
+        {
+            hint.Text = "Nothing matched on any page, so the food cells were left alone. Check the " +
+                        "food crop in the preview, and that the bag was showing.";
+            RefreshPetFood(report);
+            return;
+        }
+
+        pet.FoodSlots = found;
+        // The same invariant as toggling one cell by hand: the SET changed, so how far the last run
+        // got through it means nothing any more, and a carried-over count would skip or repeat cells.
+        pet.FoodSlotsUsed = 0;
+        PetSessionSave(hint);
+        RefreshPetCells();
+        RefreshPetFood(report);
+        hint.Text = $"Food cells replaced: {found.Count} cell(s) found. The used-cell count was reset, " +
+                    "so the next run starts from the top of this list.";
+    }
+
+    /// <summary>The food crop's preview and the last scan's findings. <paramref name="report"/> is the
+    /// scan's own lines; without it, a summary of what is marked by hand.</summary>
+    private void RefreshPetFood(IReadOnlyList<string>? report = null)
+    {
+        var pet = _service.Config.Pet;
+
+        if (_petFoodPreview != null)
+        {
+            _petFoodPreview.Source = null;
+            if (!string.IsNullOrWhiteSpace(pet.FoodIconPng))
+            {
+                try
+                {
+                    using var mat = IconMatch.FromBase64(pet.FoodIconPng);
+                    if (mat != null) _petFoodPreview.Source = MatToBitmapSource(mat);
+                }
+                catch
+                {
+                    // Left blank: a crop that will not decode shows as nothing, and the scan says so
+                    // when it is pressed. Failing here would take the preview away while you look at it.
+                }
+            }
+        }
+
+        if (_petFoodList == null) return;
+
+        _petFoodList.Text = report is { Count: > 0 }
+            ? string.Join("\n", report)
+            : string.IsNullOrWhiteSpace(pet.FoodIconPng)
+                ? "no food icon captured yet — mark the cells by hand, or capture one"
+                : $"{pet.FoodSlots.Count} food cell(s) marked, {pet.FoodSlotsUsed} used. " +
+                  "Press Scan to check the crop against the bag.";
     }
 
     private void RefreshPetQueue()

@@ -279,6 +279,7 @@ public sealed class ConfigLoader
             if (BagGrid.IsValidRect(pet.BagSlot)) defaults.Pet.BagSlot = pet.BagSlot;
             if (pet.FoodSlots is { Count: > 0 }) defaults.Pet.FoodSlots = pet.FoodSlots;
             if (pet.FoodSlotsUsed is { } used and >= 0) defaults.Pet.FoodSlotsUsed = used;
+            if (!string.IsNullOrWhiteSpace(pet.FoodIconPng)) defaults.Pet.FoodIconPng = pet.FoodIconPng;
             if (pet.ActionWaitMs is { } wait and > 0) defaults.Pet.ActionWaitMs = wait;
             if (pet.WaitAfterEmptyMinutes is { } wait2) defaults.Pet.WaitAfterEmptyMinutes = wait2;
             if (pet.ReloadOnStart is { } onStart) defaults.Pet.ReloadOnStart = onStart;
@@ -480,6 +481,9 @@ public sealed class ConfigLoader
         public List<int>? BagSlot { get; set; }
         public List<List<int>>? FoodSlots { get; set; }
         public int? FoodSlotsUsed { get; set; }
+        /// <summary>A crop of one food item — the reference the food cells are found with. Session
+        /// half: it is captured on the Pet tab, so that tab's Save is what must persist it.</summary>
+        public string? FoodIconPng { get; set; }
         public int? ActionWaitMs { get; set; }
         public int? WaitAfterEmptyMinutes { get; set; }
         /// <summary>right_click | drag — see <see cref="Core.FoodLoadMode"/>. Session half: it is set
@@ -583,6 +587,7 @@ public sealed class ConfigLoader
         {
             t.FoodSlots = p.FoodSlots;
             t.FoodSlotsUsed = p.FoodSlotsUsed;
+            t.FoodIconPng = p.FoodIconPng;
             t.ReturnSlot = p.ReturnSlot;
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;

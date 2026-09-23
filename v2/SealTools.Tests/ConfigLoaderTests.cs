@@ -460,6 +460,10 @@ public class ConfigLoaderTests
             BagSlot = new List<int> { 29, 30, 31, 32 },
             FoodSlots = new List<List<int>> { new() { 0, 33 } },
             FoodSlotsUsed = 7,
+            // MUST be set here, or the loop below cannot see a missing copy: it compares
+            // LocalPet against the config, so a field this fixture omits is null on BOTH
+            // sides and passes whether or not the projection carries it.
+            FoodIconPng = "food-png",
             ReturnSlot = new List<int> { 34, 35 },
             MaxButton = new List<int> { 40, 41 },
             WaitAfterEmptyMinutes = 3,

@@ -272,6 +272,42 @@ margin so the *derived* region is forgiving too rather than demanding a pixel-ex
 
 ---
 
+## 8. Find the food instead of marking it — built 2026-09-23
+
+**The pain, in the player's words:** the pet food moves often and re-tagging it is hard. Nineteen cells
+is nineteen precise clicks to add, and nineteen more to take the stale ones off — because a stale food
+mark is worse than none: the tool right-clicks whatever is in that cell now. The Sell grid already had
+**per-row toggles** and **Select all / Clear**; the Pet tab's food grid had **none** of them and no drag,
+so it was strictly less capable than the grid it shares a widget with.
+
+**The fix, and why it is a scan rather than more buttons.** The pets have had a bag scan since
+2026-09-22, and food is the same problem with a simpler answer: the cells are not shuffling, they are
+simply **different cells**. So one crop of one food item finds them all, through the bag grid that is
+already calibrated and the `IconMatch` sweep that already exists.
+
+- **One crop**, because the pets are fed one stage at a time and so eat one food. Several types at once
+  would need one crop each — a list, deliberately not built until it is needed.
+- **Captured from the most recently marked food cell**, so the gesture is "click the food, then press
+  this": no fourth pick mode, and nothing to keep in step. The cell's page is brought up first, exactly
+  as a queued pet's icon is taken.
+- **Two buttons, not one with a flag:** `Scan the bag for food` only looks, `Scan + update the food
+  cells` replaces the set. The same split, and the same reason, as the queue's read-only scan and its
+  destructive twin — a scan you press to look at must not rewrite what a run acts on.
+- **Resets `FoodSlotsUsed`**, which is the invariant `TogglePetCell` already keeps: a changed set makes
+  the old count meaningless, and a carried-over count would skip or repeat cells.
+
+`FoodIconPng` is a new field, so it went into **both** directions of the projection plus the guard
+test's fixture — and the guard was checked by **removing the copy and watching it fail**, rather than
+assumed.
+
+**What that check exposed, and it outlives this feature:** the guard compares `LocalPet` against the
+config, so a field the **fixture omits** is null on both sides and passes whether or not the projection
+carries it. It protects only what someone remembered to add to the fixture — which is the same
+"remembered by hand" weakness that let this projection drop a field three times. Recorded in
+[TODO.md](TODO.md).
+
+---
+
 ## Order, and why
 
 | | scope | size | risk | why here |

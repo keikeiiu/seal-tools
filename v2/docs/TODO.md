@@ -88,6 +88,13 @@ them as leads rather than findings.
   `OverflowException` out of `MatchAttributes`, which nothing catches on that path.
 - **`PetConfig.FeederSlotA`/`FeederSlotB`** — see the first item; they are unreachable, not merely
   unconfigurable.
+- **The projection guard only protects what its fixture remembers.** `EveryLocalPetFieldIsCopiedFromTheConfig`
+  walks `LocalPet`'s properties and compares each against the config — so a field the **fixture omits**
+  is null on *both* sides and passes whether or not the projection carries it. Verified 2026-09-23 by
+  removing a copy and watching it fail *with* the fixture set, then removing the fixture value and
+  watching it pass silently. So the guard's reach is exactly the set of fields someone remembered —
+  the same by-hand weakness that let this projection drop a field three times. Closing it means the
+  fixture covering every field, or the test noticing a property it was never given a value for.
 
 **Reported by the audit, not reproduced (verify before acting):**
 
