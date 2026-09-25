@@ -43,6 +43,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ("buy", "Buy Items"),
         ("sell", "Sell Items"),
         ("pet", "Pet Feeder"),
+        ("quest", "Quest Hand-in"),
     };
 
     private static readonly string[] Grades = { "N", "G", "DG", "XG", "SG" };
@@ -270,6 +271,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// crop is visible rather than silently matching nothing — and the last scan's findings.</summary>
     private Image? _petFoodPreview;
     private TextBlock? _petFoodList;
+
+    /// <summary>The Quest tab's hint line, and the CURRENT flow's step rows. The rows are a field because
+    /// Save and Test one loop both read them: an edit lives in the row controls until one of those writes
+    /// it back, so anything that replays or persists the flow has to come through here.</summary>
+    private TextBlock? _questHint;
+    private List<QuestStepRow> _questStepRows = new();
 
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
@@ -833,6 +840,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         ConfigTabs.Items.Add(BuildBuyTab());
         ConfigTabs.Items.Add(BuildSellTab());
         ConfigTabs.Items.Add(BuildPetTab());
+        ConfigTabs.Items.Add(BuildQuestTab());
         ConfigTabs.Items.Add(BuildAttributesTab());
         ConfigTabs.Items.Add(BuildTunerCalibrateTab());
         ConfigTabs.Items.Add(BuildGemCalibrateTab());
@@ -5295,6 +5303,386 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPetChecklist();
         LoadPetCapture();
         return MakeTab("Calibrate Pet", panel);
+    }
+
+    /// <summary>One editable step of a quest flow. The shape <see cref="RuleRow"/> established: the row
+    /// owns its controls, and maps itself back to a config type at save time.</summary>
+    private sealed class QuestStepRow
+    {
+        public ComboBox Action { get; } = new() { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
+        public Wpf.Ui.Controls.TextBox Value { get; } = new() { Width = 44, VerticalAlignment = VerticalAlignment.Center };
+        public Wpf.Ui.Controls.TextBox Delay { get; } = new() { Width = 56, VerticalAlignment = VerticalAlignment.Center };
+
+        public QuestStep ToStep()
+        {
+            var step = new QuestStep
+            {
+                Action = Action.SelectedItem?.ToString() ?? QuestAction.Click,
+                Value = string.IsNullOrWhiteSpace(Value.Text) ? null : Value.Text.Trim(),
+            };
+
+            // Unparseable falls back to the same default a new step gets, rather than refusing to save:
+            // a flow with a typo in one delay is one edit away, and a Save that silently does nothing is
+            // the failure this tab can least afford.
+            step.DelaySeconds = double.TryParse(Delay.Text.Trim(), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var d) ? Math.Max(0, d) : 0.25;
+            return step;
+        }
+    }
+
+    /// <summary>The Quest Hand-in tab: the flow the tool replays. See docs/PLAN-QUEST.md.
+    ///
+    /// A flow is a NAMED preset, like a spammer key rotation, because the dialogue differs per quest.
+    ///
+    /// **There is no calibration on this tab, and no calibrate tab beside it** — the tool never moves the
+    /// cursor, so there is no point to place. The player puts the mouse during the flow's initial wait,
+    /// and the run stops if it moves after that. That is the whole of the positioning.</summary>
+    private TabItem BuildQuestTab()
+    {
+        var panel = new StackPanel();
+        var hint = Mono();
+        hint.Text = "Replays a flow at the quest NPC. Nothing is read from the screen.";
+        _questHint = hint;
+
+        var quest = _service.Config.Quest;
+        if (quest.Presets.Count == 0) quest.Presets["default"] = new QuestPreset();
+        if (!quest.Presets.ContainsKey(quest.Active)) quest.Active = quest.Presets.Keys.First();
+
+        QuestPreset Active() => quest.ActivePreset;
+
+        // ── the flow picker, and the three things you can do to a flow ──────
+        const string AddNewMarker = "＋ Add new…";
+        var presetBox = new ComboBox { MinWidth = 200, VerticalAlignment = VerticalAlignment.Center };
+
+        var presetName = UiText("", "flow name");
+        presetName.Width = 150;
+        var promptLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        var confirmBtn = MakeInlineButton("Create", ControlAppearance.Primary);
+        var cancelBtn = MakeInlineButton("Cancel", ControlAppearance.Secondary);
+        var namePrompt = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 4, 0, 8),
+        };
+        namePrompt.Children.Add(promptLabel);
+        namePrompt.Children.Add(presetName);
+        namePrompt.Children.Add(confirmBtn);
+        namePrompt.Children.Add(cancelBtn);
+
+        bool syncing = false;
+
+        void ClosePrompt() => namePrompt.Visibility = Visibility.Collapsed;
+
+        void RefreshPresetList(string select)
+        {
+            syncing = true;
+            var names = quest.Presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+            names.Add(AddNewMarker);
+            presetBox.ItemsSource = names;
+            presetBox.SelectedItem = select;
+            syncing = false;
+        }
+
+        // ── the timing fields ───────────────────────────────────────────────
+        var initialBox = UiText("", null);
+        initialBox.Width = NumberFieldWidth;
+        initialBox.HorizontalAlignment = HorizontalAlignment.Left;
+        initialBox.TextChanged += (_, _) =>
+        {
+            if (double.TryParse(initialBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out var s) && s >= 0) Active().InitialWaitSeconds = s;
+        };
+
+        var loopsBox = UiText("", null);
+        loopsBox.Width = NumberFieldWidth;
+        loopsBox.HorizontalAlignment = HorizontalAlignment.Left;
+        loopsBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(loopsBox.Text.Trim(), out var n) && n >= 1) Active().Loops = n;
+        };
+
+        var guardBox = UiText("", null);
+        guardBox.Width = NumberFieldWidth;
+        guardBox.HorizontalAlignment = HorizontalAlignment.Left;
+        guardBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(guardBox.Text.Trim(), out var px) && px >= 0) quest.GuardPx = px;
+        };
+
+        // ── the step list ───────────────────────────────────────────────────
+        _questStepRows = new List<QuestStepRow>();
+        var stepsHost = new StackPanel();
+
+        void RefreshSteps()
+        {
+            _questStepRows = new List<QuestStepRow>();
+            stepsHost.Children.Clear();
+            stepsHost.Children.Add(BuildQuestStepsEditor(Active().Steps, _questStepRows, "+ Add step"));
+        }
+
+        // Re-seed every control from the flow that is now active. Written as one function because a
+        // preset switch that updates the picker but not the fields is a screen quietly showing another
+        // flow's numbers — which is how someone saves the wrong thing.
+        void ShowActive()
+        {
+            syncing = true;
+            var p = Active();
+            initialBox.Text = p.InitialWaitSeconds.ToString("0.#", CultureInfo.InvariantCulture);
+            loopsBox.Text = p.Loops.ToString(CultureInfo.InvariantCulture);
+            syncing = false;
+            RefreshSteps();
+        }
+
+        var renameBtn = MakeInlineButton("Rename", ControlAppearance.Secondary);
+        var deleteBtn = MakeInlineButton("Delete", ControlAppearance.Secondary);
+
+        presetBox.SelectionChanged += (_, _) =>
+        {
+            if (syncing || presetBox.SelectedItem is not string picked) return;
+
+            if (picked == AddNewMarker)
+            {
+                promptLabel.Text = "Create flow:";
+                confirmBtn.Content = "Create";
+                presetName.Text = "";
+                namePrompt.Visibility = Visibility.Visible;
+                presetName.Focus();
+                return;
+            }
+
+            quest.Active = picked;
+            ShowActive();
+            hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
+        };
+
+        renameBtn.Click += (_, _) =>
+        {
+            promptLabel.Text = "Rename to:";
+            confirmBtn.Content = "Rename";
+            presetName.Text = quest.Active;
+            namePrompt.Visibility = Visibility.Visible;
+            presetName.Focus();
+        };
+
+        deleteBtn.Click += (_, _) =>
+        {
+            if (quest.Presets.Count <= 1)
+            {
+                hint.Text = "This is the only flow — create another before deleting it.";
+                return;
+            }
+            if (MessageBox.Show($"Delete the flow \"{quest.Active}\"?", "Delete flow",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+
+            quest.Presets.Remove(quest.Active);
+            quest.Active = quest.Presets.Keys.First();
+            RefreshPresetList(quest.Active);
+            ShowActive();
+            hint.Text = $"Deleted. Now on \"{quest.Active}\".";
+        };
+
+        confirmBtn.Click += (_, _) =>
+        {
+            var name = presetName.Text.Trim();
+            if (name.Length == 0) { hint.Text = "A flow needs a name."; return; }
+
+            var renaming = (string?)confirmBtn.Content == "Rename";
+
+            if (renaming && name == quest.Active) { ClosePrompt(); return; }
+            if (quest.Presets.ContainsKey(name))
+            {
+                hint.Text = $"There is already a flow called \"{name}\" — pick another name.";
+                return;
+            }
+
+            if (renaming)
+            {
+                // The flow itself moves; the old name is dropped rather than left as a copy, because two
+                // flows with the same steps is how the wrong one gets run.
+                var moved = quest.Presets[quest.Active];
+                quest.Presets.Remove(quest.Active);
+                quest.Presets[name] = moved;
+            }
+            else
+            {
+                quest.Presets[name] = new QuestPreset();
+            }
+
+            quest.Active = name;
+            RefreshPresetList(name);
+            ShowActive();
+            ClosePrompt();
+            hint.Text = renaming ? $"Renamed to \"{name}\" — press Save to keep it." : $"Created \"{name}\" — press Save to keep it.";
+        };
+
+        cancelBtn.Click += (_, _) => { ClosePrompt(); RefreshPresetList(quest.Active); };
+
+        RefreshPresetList(quest.Active);
+        ShowActive();
+
+        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        renameBtn.Margin = new Thickness(6, 0, 0, 0);
+        deleteBtn.Margin = new Thickness(6, 0, 0, 0);
+        pickRow.Children.Add(presetBox);
+        pickRow.Children.Add(renameBtn);
+        pickRow.Children.Add(deleteBtn);
+
+        panel.Children.Add(Section("Flow",
+            Hint("One flow per quest, because the dialogue differs per quest. A flow is replayed at the " +
+                 "quest NPC and NOTHING IS READ FROM THE SCREEN — so nothing here can notice a flow that " +
+                 "is slightly wrong. That is what Test one loop is for.\n" +
+                 "There is no calibration and no point to place: put the mouse where the clicks have to " +
+                 "land during the initial wait, and the run stops if it moves after that."),
+            LabeledField("Flow", pickRow),
+            namePrompt));
+
+        panel.Children.Add(Section("Timing",
+            Hint("Initial wait — your window to put the mouse in place. The tool never moves the cursor, " +
+                 "so where it sits when this ends is where every click in the flow lands.\n" +
+                 "Loops — how many times the steps below are replayed.\n" +
+                 "Mouse guard — how far the cursor may move before the run STOPS. It reads the cursor " +
+                 "once when you start and compares against that; if the cursor cannot be read at all it " +
+                 "stops rather than clicking on at a place nothing is watching."),
+            LabeledField("Initial wait (s)", initialBox),
+            LabeledField("Loops", loopsBox),
+            LabeledField("Mouse guard (px)", guardBox)));
+
+        panel.Children.Add(Section("Steps — what one loop sends",
+            Hint("One row per input, in order. `key` sends ONE printable character (a digit or a letter — " +
+                 "the board presses one character and nothing else). `wait` sends nothing and passes time.\n" +
+                 "The delay is per step, because a dialogue that needs 1.5s sitting next to one that " +
+                 "needs 0.2s is exactly where one shared number breaks. 0.25s is a starting point, not a " +
+                 "measurement.\n" +
+                 "A step that cannot be sent — a key step with no character, or two — is refused before " +
+                 "the run starts rather than quietly sending nothing 500 times."),
+            stepsHost));
+
+        var test = MakeButton("Test one loop", ControlAppearance.Secondary);
+        test.Click += async (_, _) => await QuestTestOneLoop(Active());
+        var result = new InfoBar { IsOpen = false, IsClosable = true };
+        var save = MakeButton("Save", ControlAppearance.Primary);
+        save.Click += (_, _) =>
+        {
+            // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
+            // back here is what makes an edit stick.
+            Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+
+            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Quest = new ConfigLoader.LocalQuest
+            {
+                Active = quest.Active,
+                Presets = quest.Presets.ToDictionary(kv => kv.Key, kv => kv.Value),
+                // Without this the guard threshold is written to no file at all and reverts to 8 on the
+                // next launch — a setting that looks like it saves because the box keeps its new value
+                // for the rest of the session.
+                GuardPx = quest.GuardPx,
+            };
+            SaveReport(() => _service.SaveLocal(local), result,
+                $"Flow \"{quest.Active}\" written to local.yaml — {Active().Steps.Count} step(s), " +
+                $"{Active().Loops} loop(s).");
+        };
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        test.Margin = new Thickness(0, 0, 6, 0);
+        buttons.Children.Add(test);
+        buttons.Children.Add(save);
+
+        panel.Children.Add(Section("Try it, then keep it",
+            Hint("Test one loop runs the flow ONCE — the same code a real run uses, so a flow the test " +
+                 "refuses is a flow the run would refuse too. Watch the game: the run is blind, so what " +
+                 "happens on screen is the only verdict there is."),
+            buttons,
+            result));
+
+        panel.Children.Add(Section("Result", hint));
+
+        return MakeTab("Quest", panel);
+    }
+
+    /// <summary>One editable flow's step list, appended to <paramref name="rows"/> as rows are created —
+    /// the same contract as <see cref="BuildRulesEditor"/>, so the caller reads the list back at save
+    /// time rather than reaching into the panel.</summary>
+    private StackPanel BuildQuestStepsEditor(List<QuestStep> initial, List<QuestStepRow> rows, string addLabel)
+    {
+        var panel = new StackPanel();
+
+        void AddRow(QuestStep? step)
+        {
+            var row = new QuestStepRow();
+            foreach (var action in QuestAction.All) row.Action.Items.Add(action);
+            row.Action.SelectedItem = step != null && QuestAction.All.Contains(step.Action)
+                ? step.Action
+                : QuestAction.Click;
+            row.Value.Text = step?.Value ?? "";
+            row.Delay.Text = (step?.DelaySeconds ?? 0.25).ToString("0.##", CultureInfo.InvariantCulture);
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(row.Action);
+            line.Children.Add(FieldLabel("Key"));
+            line.Children.Add(row.Value);
+            line.Children.Add(FieldLabel("Delay (s)"));
+            line.Children.Add(row.Delay);
+
+            var del = new UiButton
+            {
+                Content = "✕",
+                Appearance = ControlAppearance.Secondary,
+                MinWidth = 28,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            del.Click += (_, _) => { panel.Children.Remove(line); rows.Remove(row); };
+            line.Children.Add(del);
+
+            panel.Children.Add(line);
+            rows.Add(row);
+        }
+
+        foreach (var s in initial) AddRow(s);
+
+        var add = MakeButton(addLabel, ControlAppearance.Secondary);
+        add.Click += (_, _) => AddRow(null);
+        panel.Children.Add(add);
+
+        return panel;
+    }
+
+    /// <summary>Runs the flow once, on a pool thread, and reports on the tab.
+    ///
+    /// It calls <see cref="QuestTool"/> rather than replaying the steps here, so the test and a real run
+    /// cannot disagree about what a step means, what is refused, or when the guard trips — the failure
+    /// mode of a separate test implementation is a test that passes things the run would reject.
+    ///
+    /// Off the dispatcher on purpose: the initial wait and the delays are real seconds, and the gem
+    /// composer's test buttons freeze the window for their duration by sleeping on it.</summary>
+    private async Task QuestTestOneLoop(QuestPreset preset)
+    {
+        if (_questHint == null) return;
+
+        if (preset.Steps.Count == 0)
+        {
+            _questHint.Text = "This flow has no steps yet — add some below.";
+            return;
+        }
+
+        var ser = await _service.ArduinoPortAsync();
+        if (ser == null) { _questHint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+
+        // The rows are what an edit lives in until Save, so the test uses them — otherwise it would
+        // replay the flow as it was last SAVED and quietly ignore what is on screen.
+        preset.Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+
+        if (_questHint != null)
+            _questHint.Text = $"Testing one loop — place the mouse now, {preset.InitialWaitSeconds:0.#}s…";
+
+        var state = new ToolState();
+        await Task.Run(() => new SealTools.Quest.QuestTool(_service.Config, loopsOverride: 1)
+            .Run(ser, state, CancellationToken.None));
+
+        if (_questHint != null)
+            _questHint.Text = state.Message ??
+                "One loop finished. Did the game do what you expected? A blind loop cannot tell you — " +
+                "only watching it can. Nothing was saved by the test.";
     }
 
     // ── Pet tab — the bag setup a run reads ────────────────────────────────

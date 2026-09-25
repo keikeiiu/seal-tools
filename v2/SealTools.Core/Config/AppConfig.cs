@@ -21,6 +21,7 @@ public sealed class AppConfig
     public BuySellConfig BuySell { get; set; } = new();
     public PetConfig Pet { get; set; } = new();
     public TooltipConfig Tooltip { get; set; } = new();
+    public QuestConfig Quest { get; set; } = new();
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
@@ -34,6 +35,77 @@ public sealed class AppConfig
 /// All four values are client-relative PHYSICAL pixels, like every other calibrated coordinate here,
 /// which is why they belong in local.yaml: a box measured at one machine's scale means nothing at
 /// another's.</summary>
+/// <summary>The quest hand-in tool's configured flows — see docs/PLAN-QUEST.md.
+///
+/// The tool REPLAYS an input sequence and reads nothing: no capture, no OCR, no window. That is why it
+/// has no calibration at all — the player puts the mouse where the clicks have to land, and the tool
+/// clicks wherever it is. Its entire fragility budget goes on one thing instead: a wrong sequence does
+/// the loop count in wrong actions, and the game accepts every one.
+///
+/// The flow is different per quest, so a flow is a NAMED preset.
+///
+/// **Personal, so it lives in `local.yaml`** — same reasoning as the spammer's key rotations, and the
+/// same bug it avoids: `defaults.yaml` is the file `publish.bat public` copies into the release zip, so
+/// a flow written there would ship with the next public build.</summary>
+public sealed class QuestConfig
+{
+    /// <summary>Which flow the tool runs.</summary>
+    public string Active { get; set; } = "default";
+
+    /// <summary>Named flows, one per quest.</summary>
+    public Dictionary<string, QuestPreset> Presets { get; set; } = new();
+
+    /// <summary>How far the cursor may move, in the units the process reads it in, before the run
+    /// STOPS. The player's own rule: *"if there is big swing on mouse movement, we stop it."*
+    ///
+    /// Tool-level rather than per flow, because the mouse does not care which quest is being handed in.
+    /// 8, the number `tuner.guard_px` ships, for no better reason than that it is the number already in
+    /// the player's head — and a placeholder to tune like any other.
+    ///
+    /// The tool reads the cursor ONCE when the run starts and compares against that. It needs no game
+    /// window and no calibrated point, which is why it can fail CLOSED where the tuner's guard is
+    /// documented as failing open: an unreadable cursor stops this run rather than letting it click on
+    /// at an unknown place.</summary>
+    public int GuardPx { get; set; } = 8;
+
+    /// <summary>The flow to run, or an EMPTY one when the name is missing. Deliberately not a fallback
+    /// to some other preset: replaying a different quest's dialogue is worse than replaying nothing, and
+    /// the tool says which case it is on its card instead — the same choice
+    /// <see cref="SpammerConfig.ActiveKeys"/> makes, for the same reason.</summary>
+    public QuestPreset ActivePreset =>
+        Presets.TryGetValue(Active, out var preset) ? preset : new QuestPreset();
+}
+
+/// <summary>One quest's flow: how long to wait, how many times, and what to send each time.</summary>
+public sealed class QuestPreset
+{
+    /// <summary>Seconds to wait before the first input — the whole of "positioning". The tool never
+    /// moves the cursor, so this is the player's window to put the mouse where the clicks have to land,
+    /// exactly as the tuner's `manual` spring mode does it.</summary>
+    public double InitialWaitSeconds { get; set; } = 10;
+
+    /// <summary>How many times the step list is replayed.</summary>
+    public int Loops { get; set; } = 1;
+
+    public List<QuestStep> Steps { get; set; } = new();
+}
+
+/// <summary>One input in a flow, and how long to wait after sending it.
+///
+/// The delay is PER STEP rather than one number for the flow, because a dialogue step that needs 1.5 s
+/// sitting next to one that needs 0.2 s is exactly where a single global delay breaks. The default is a
+/// placeholder, not a measurement.</summary>
+public sealed class QuestStep
+{
+    /// <summary>One of <see cref="Core.QuestAction.All"/>: click | right_click | key | enter | wait.</summary>
+    public string Action { get; set; } = Core.QuestAction.Click;
+
+    /// <summary>The character a `key` step sends. Ignored by the others.</summary>
+    public string? Value { get; set; }
+
+    public double DelaySeconds { get; set; } = 0.25;
+}
+
 public sealed class TooltipConfig
 {
     /// <summary>Panel's left edge relative to the cursor. Negative when the panel sits left of the

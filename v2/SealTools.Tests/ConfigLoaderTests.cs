@@ -357,6 +357,76 @@ public class ConfigLoaderTests
     // beside, so the pet grid and the buy/sell grid are separate calibrations. If they ever shared a
     // field, every click in the pet flow would land on the wrong bag cell — and unlike a mis-aimed
     // sale there is no undo for feeding the pet the wrong item.
+    /// <summary>A quest flow is the one config shape with a LIST OF OBJECTS inside it — and each of those
+    /// objects carries three fields of its own — so this pins the whole thing through a real save and
+    /// reload rather than trusting the projection.
+    ///
+    /// A dropped field here is a flow that sends nothing, or waits the wrong amount, 500 times, and this
+    /// is the tool with NO other eyes on it: it reads nothing from the screen, so there is nothing that
+    /// could notice a step arriving wrong. That makes the config the only place this can be caught.</summary>
+    [Fact]
+    public void QuestFlowsRoundTripWithTheirSteps()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Quest = new ConfigLoader.LocalQuest
+            {
+                Active = "red1",
+                GuardPx = 12,
+                Presets = new Dictionary<string, QuestPreset>
+                {
+                    ["red1"] = new()
+                    {
+                        InitialWaitSeconds = 7.5,
+                        Loops = 500,
+                        Steps = new List<QuestStep>
+                        {
+                            new() { Action = SealTools.Core.QuestAction.Click, DelaySeconds = 0.3 },
+                            new() { Action = SealTools.Core.QuestAction.Key, Value = "1", DelaySeconds = 0.2 },
+                            new() { Action = SealTools.Core.QuestAction.Enter, DelaySeconds = 0.25 },
+                            new() { Action = SealTools.Core.QuestAction.Wait, DelaySeconds = 1.5 },
+                        },
+                    },
+                },
+            };
+            loader.SaveLocal(local);
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("red1", cfg.Quest.Active);
+            Assert.Equal(12, cfg.Quest.GuardPx);
+
+            var flow = cfg.Quest.ActivePreset;
+            Assert.Equal(7.5, flow.InitialWaitSeconds);
+            Assert.Equal(500, flow.Loops);
+            Assert.Equal(4, flow.Steps.Count);
+
+            // The steps survive IN ORDER, with each of the three fields — and the no-value case stays
+            // null rather than becoming an empty string, because a key step with "" is the shape that
+            // sends nothing.
+            Assert.Equal(SealTools.Core.QuestAction.Click, flow.Steps[0].Action);
+            Assert.Null(flow.Steps[0].Value);
+            Assert.Equal(0.3, flow.Steps[0].DelaySeconds);
+
+            Assert.Equal(SealTools.Core.QuestAction.Key, flow.Steps[1].Action);
+            Assert.Equal("1", flow.Steps[1].Value);
+            Assert.Equal(0.2, flow.Steps[1].DelaySeconds);
+
+            Assert.Equal(SealTools.Core.QuestAction.Enter, flow.Steps[2].Action);
+            Assert.Null(flow.Steps[2].Value);
+
+            Assert.Equal(SealTools.Core.QuestAction.Wait, flow.Steps[3].Action);
+            Assert.Equal(1.5, flow.Steps[3].DelaySeconds);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void PetCalibrationRoundTripsAndKeepsItsOwnBagGrid()
     {

@@ -316,6 +316,18 @@ public sealed class ConfigLoader
                 foreach (var (name, keys) in local.Spammer.Presets)
                     defaults.Spammer.Presets[name] = keys;
         }
+
+        // Quest flows are personal in exactly the same way, and for the same reason they must not live
+        // in defaults.yaml: that file is what publish.bat copies into a public zip. Merged per flow
+        // name, so a flow added by hand to defaults.yaml would survive.
+        if (local.Quest != null)
+        {
+            if (!string.IsNullOrEmpty(local.Quest.Active)) defaults.Quest.Active = local.Quest.Active;
+            if (local.Quest.Presets != null)
+                foreach (var (name, preset) in local.Quest.Presets)
+                    defaults.Quest.Presets[name] = preset;
+            if (local.Quest.GuardPx is { } guardPx and >= 0) defaults.Quest.GuardPx = guardPx;
+        }
     }
 
     // Atomic write so the launcher can save config while tools re-read it.
@@ -384,6 +396,7 @@ public sealed class ConfigLoader
         public LocalBuySell? BuySell { get; set; }
         public LocalPet? Pet { get; set; }
         public TooltipConfig? Tooltip { get; set; }
+        public LocalQuest? Quest { get; set; }
     }
 
     /// <summary>The buy/sell tool's geometry and presets. Machine-specific like the gem positions —
@@ -663,6 +676,26 @@ public sealed class ConfigLoader
     /// <summary>The player's own spammer rotations. Personal, not machine-specific, but it lives here
     /// for the same reason: defaults.yaml is the template that ships, so anything a player edits
     /// there would be published with the next release.</summary>
+    /// <summary>The quest hand-in flows, in local.yaml.
+    ///
+    /// **The preset VALUES are the config types themselves** — <see cref="QuestPreset"/> and
+    /// <see cref="QuestStep"/>, not mirrors of them. That is the same choice LocalBuySell makes, and it
+    /// is worth stating why: this projection has silently dropped a field three times, and every one of
+    /// those was a hand-written field list. Handing the whole object across leaves no list to forget.
+    /// Only the container is declared here.</summary>
+    public sealed class LocalQuest
+    {
+        public string? Active { get; set; }
+        public Dictionary<string, QuestPreset>? Presets { get; set; }
+
+        /// <summary>Carried HERE and not in defaults.yaml, for the reason the tool-level scalars on the
+        /// Pet tab had to be: `SaveDefaults` rewrites defaults.yaml from an explicit field list, so a
+        /// setting with no line in that list is written once and silently dropped by the next Save from
+        /// any tab. The flows are the personal half and this is the behaviour half, but both are the
+        /// Quest tab's to keep.</summary>
+        public int? GuardPx { get; set; }
+    }
+
     public sealed class LocalSpammer
     {
         public string? Active { get; set; }

@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Shop", "SealTools
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Pet", "SealTools.Pet\SealTools.Pet.csproj", "{CDB877C4-77CB-461A-BA68-79C9EA951A78}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SealTools.Quest", "SealTools.Quest\SealTools.Quest.csproj", "{0AE05321-27DA-4F35-BE75-7B6512BEA1F1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -60,5 +62,9 @@ Global
 		{CDB877C4-77CB-461A-BA68-79C9EA951A78}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CDB877C4-77CB-461A-BA68-79C9EA951A78}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CDB877C4-77CB-461A-BA68-79C9EA951A78}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0AE05321-27DA-4F35-BE75-7B6512BEA1F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0AE05321-27DA-4F35-BE75-7B6512BEA1F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0AE05321-27DA-4F35-BE75-7B6512BEA1F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0AE05321-27DA-4F35-BE75-7B6512BEA1F1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

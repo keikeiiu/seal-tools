@@ -7,6 +7,7 @@
     <ProjectReference Include="..\SealTools.Spammer\SealTools.Spammer.csproj" />
     <ProjectReference Include="..\SealTools.Shop\SealTools.Shop.csproj" />
     <ProjectReference Include="..\SealTools.Pet\SealTools.Pet.csproj" />
+    <ProjectReference Include="..\SealTools.Quest\SealTools.Quest.csproj" />
   </ItemGroup>
 
   <ItemGroup>

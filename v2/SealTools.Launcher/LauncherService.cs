@@ -549,6 +549,7 @@ public sealed class LauncherService : IDisposable
         // left afterwards — and it is the one run where a board that ignored a command looks exactly
         // like a board that acted on it.
         "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport, Gate).Run(ser, state, ct),
+        "quest" => new SealTools.Quest.QuestTool(Config).Run(ser, state, ct),
         _ => 1,
     };
 
