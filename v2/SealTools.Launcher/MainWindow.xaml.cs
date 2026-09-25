@@ -5558,10 +5558,14 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the run starts rather than quietly sending nothing 500 times."),
             stepsHost));
 
-        var test = MakeButton("Test one loop", ControlAppearance.Secondary);
+        // MakeInlineButton for BOTH, not MakeButton: that one carries a 10px top margin meant for a
+        // button standing under a card's heading, so leaving it on one button of a row and overriding it
+        // on the other drops the first one 10px and they sit at different heights. The pet tab's icon
+        // row has the same comment — this repo has learned it more than once.
+        var test = MakeInlineButton("Test one loop", ControlAppearance.Secondary);
         test.Click += async (_, _) => await QuestTestOneLoop(Active());
         var result = new InfoBar { IsOpen = false, IsClosable = true };
-        var save = MakeButton("Save", ControlAppearance.Primary);
+        var save = MakeInlineButton("Save", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
             // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
@@ -5584,6 +5588,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        // First in the row: no leading gap. The second keeps MakeInlineButton's own 6px left margin,
+        // which is what separates them.
         test.Margin = new Thickness(0, 0, 6, 0);
         buttons.Children.Add(test);
         buttons.Children.Add(save);
