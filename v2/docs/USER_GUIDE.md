@@ -491,6 +491,11 @@ nothing" and "the game behaved differently today" look identical.
 
 **Watch the game when you test.** A blind run's only verdict is what happens on screen.
 
+> **Every run is logged** to `logs/quest.log` beside the launcher — the flow, the steps, each loop, and
+> **how it ended** (`DONE — 500 loop(s)`, `cancelled …`, or `STOPPED by the mouse guard …`). The card
+> returns to `stopped` for all three, so the file is where the difference survives — and it is the only
+> record, because a tool's console output goes nowhere in the launcher.
+
 > **Stopping it.** The Stop button on the card is the control that always works. The quit hotkey will
 > **not** stop this while you are in-game — the anti-cheat blocks background key reads, which is why the
 > launcher has to be focused for any hotkey to register.

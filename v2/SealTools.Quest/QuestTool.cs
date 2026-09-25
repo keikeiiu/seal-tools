@@ -59,10 +59,10 @@ public sealed class QuestTool : ToolBase
         state.Current = null;
         state.Message = null;
 
-        Console.WriteLine($"\nQuest Hand-in — flow \"{flow}\"");
-        Console.WriteLine($"  {preset.Steps.Count} step(s), {loops} loop(s), " +
+        Log($"\nQuest Hand-in — flow \"{flow}\"");
+        Log($"  {preset.Steps.Count} step(s), {loops} loop(s), " +
                           $"{preset.InitialWaitSeconds:0.#}s to place the mouse");
-        foreach (var step in preset.Steps) Console.WriteLine("  · " + QuestAction.Describe(step));
+        foreach (var step in preset.Steps) Log("  · " + QuestAction.Describe(step));
 
         // THE POSITIONING WINDOW, and it is the whole of "positioning". The tool never moves the cursor,
         // so where it sits when this ends is where every click in the flow lands — the tuner's `manual`
@@ -70,8 +70,8 @@ public sealed class QuestTool : ToolBase
         for (double left = Math.Ceiling(preset.InitialWaitSeconds); left > 0; left--)
         {
             state.Current = $"move the mouse into place — {left:0}s";
-            Console.WriteLine($"  place the mouse — {left:0}s");
-            if (!Wait(1, ct)) return Finish(state);
+            Log($"  place the mouse — {left:0}s");
+            if (!Wait(1, ct)) return Cancelled(state, "during the positioning wait");
         }
 
         // THE GUARD'S REFERENCE, read ONCE here and read STRICTLY. An unreadable cursor ends the run
@@ -85,17 +85,17 @@ public sealed class QuestTool : ToolBase
                 "a place nothing is checking.");
         }
 
-        Console.WriteLine($"  cursor at ({start.X},{start.Y}) — moving more than {quest.GuardPx} stops the run");
+        Log($"  cursor at ({start.X},{start.Y}) — moving more than {quest.GuardPx} stops the run");
 
         var stopped = false;
         for (int loop = 1; loop <= loops; loop++)
         {
             state.Cycle = loop;
-            Console.WriteLine($"\n[loop {loop}/{loops}]");
+            Log($"\n[loop {loop}/{loops}]");
 
             foreach (var step in preset.Steps)
             {
-                if (ct.IsCancellationRequested || QuitPressed) return Finish(state);
+                if (ct.IsCancellationRequested || QuitPressed) return Cancelled(state, $"in loop {loop}");
 
                 // Checked BEFORE every send, because the cost of a missed check is a click at the wrong
                 // place and the cost of the check is a cursor read.
@@ -103,13 +103,13 @@ public sealed class QuestTool : ToolBase
                 {
                     stopped = true;
                     state.Message = $"{drift} Stopped on loop {loop} of {loops}.";
-                    Console.WriteLine("[!] " + state.Message);
+                    Log("[!] " + state.Message);
                     break;
                 }
 
                 state.Current = QuestAction.Describe(step);
                 Send(ser, step);
-                if (!Wait(step.DelaySeconds, ct)) return Finish(state);
+                if (!Wait(step.DelaySeconds, ct)) return Cancelled(state, $"in loop {loop}");
             }
 
             if (stopped) break;
@@ -122,7 +122,9 @@ public sealed class QuestTool : ToolBase
         // registered after it ended, and a registration that outlives its run is the same class of lie
         // as the one this replaced.
         Finish(state);
-        Console.WriteLine(stopped ? "\nStopped by the mouse guard." : $"\nDone — {loops} loop(s).");
+        Log(stopped
+            ? $"STOPPED by the mouse guard — loop {state.Cycle} of {loops}"
+            : $"DONE — {loops} loop(s) of \"{flow}\"");
         return 0;
     }
 
@@ -194,10 +196,46 @@ public sealed class QuestTool : ToolBase
         return 0;
     }
 
+    /// <summary>Writes a line to `logs/quest.log` beside the launcher, AND to the console.
+    ///
+    /// The file is the point. A tool's Console output goes NOWHERE in the launcher — the published
+    /// WinExe has no console, and nothing in the launcher redirects one — so a run's progress had no
+    /// durable record at all. That went unnoticed until this tool became the first that ENDS BY ITSELF:
+    /// the card returns to "stopped", the same as a tool somebody stopped, and with no file there was
+    /// nothing left to tell a completed run from an interrupted one. The pet feeder keeps pet.log for
+    /// the same reason, in the same place.
+    ///
+    /// Every failure here is swallowed on purpose: logging must never be the reason a tool fails.</summary>
+    private static void Log(string line)
+    {
+        try
+        {
+            Console.WriteLine(line);
+
+            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "quest.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+        }
+        catch
+        {
+            // Never the reason a run fails.
+        }
+    }
+
+    /// <summary>Ends a run because it was ASKED to — the Stop button, or the quit hotkey. Logged
+    /// separately from a completed run, because the card returns to "stopped" for both and this line is
+    /// the only place the difference survives.</summary>
+    private static int Cancelled(ToolState state, string where)
+    {
+        Log($"cancelled {where}");
+        return Finish(state);
+    }
+
     private static int Refuse(ToolState state, string why)
     {
         state.Message = why;
-        Console.WriteLine("[!] " + why);
+        Log("[!] " + why);
         return Finish(state);
     }
 }
