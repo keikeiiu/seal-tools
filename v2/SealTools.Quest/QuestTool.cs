@@ -115,6 +115,12 @@ public sealed class QuestTool : ToolBase
             if (stopped) break;
         }
 
+        // THE CARD GOES BACK TO "stopped" and there is nothing to set here that would be seen: the
+        // launcher tears a returned tool down (see the finally in StartToolCoreAsync), which removes it
+        // from the map the card reads. So the only place a finished run can say so is the log — which is
+        // where it is, above. A "finished N loops" line ON the card would mean keeping the run
+        // registered after it ended, and a registration that outlives its run is the same class of lie
+        // as the one this replaced.
         Finish(state);
         Console.WriteLine(stopped ? "\nStopped by the mouse guard." : $"\nDone — {loops} loop(s).");
         return 0;

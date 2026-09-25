@@ -350,6 +350,34 @@ public sealed class LauncherService : IDisposable
                 }
                 catch { /* the card message above is the part that matters */ }
             }
+            finally
+            {
+                // A TOOL THAT RETURNS ON ITS OWN still has to be torn down, and until the quest tool
+                // existed none did: every other tool loops until it is stopped, so the stop path was the
+                // only teardown there was and this block did not need one. A tool that finished left
+                // Running = true for good — the card read "● RUNNING" after the work was done, the entry
+                // stayed in _running, and the next Start would have deferred to a tool that had already
+                // finished.
+                //
+                // ONLY WHEN THIS ENTRY IS STILL REGISTERED, which is what tells a self-end from a stop.
+                // StopTool removes the entry first and its own continuation disposes the CTS and releases
+                // the gate; doing either again here would release a claim this tool no longer holds.
+                // Compared by CTS rather than by the entry object, because the lambda can run before
+                // `entry.Task` has even been assigned.
+                if (_running.TryGetValue(id, out var stillRunning) && ReferenceEquals(stillRunning.Cts, cts))
+                {
+                    _running.Remove(id);
+                    if (_currentId == id) _currentId = null;
+                    state.Running = false;
+
+                    // The same release the stop path does, and for the same reason: the tool's own
+                    // finally is not what should be holding a key down.
+                    if (HeldKeys.NeedsReleaseOnStop(id)) ReleaseHeld();
+
+                    cts.Dispose();
+                    if (id != ResidentId) Gate.Release(id);
+                }
+            }
         });
         return true;
     }
