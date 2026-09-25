@@ -5613,6 +5613,12 @@ public partial class MainWindow : FluentWindow, IDisposable
     {
         var panel = new StackPanel();
 
+        // THE BUTTON GOES IN FIRST, AND EVERY ROW IS INSERTED BEFORE IT. Appending the rows instead —
+        // which is what the shared rule editor did, and what this copied from it — put a new row AFTER
+        // the button, so the button drifted up into the middle of the list as you added steps.
+        var add = MakeButton(addLabel, ControlAppearance.Secondary);
+        panel.Children.Add(add);
+
         void AddRow(QuestStep? step)
         {
             var row = new QuestStepRow();
@@ -5640,15 +5646,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             del.Click += (_, _) => { panel.Children.Remove(line); rows.Remove(row); };
             line.Children.Add(del);
 
-            panel.Children.Add(line);
+            panel.Children.Insert(panel.Children.IndexOf(add), line);
             rows.Add(row);
         }
 
         foreach (var s in initial) AddRow(s);
-
-        var add = MakeButton(addLabel, ControlAppearance.Secondary);
         add.Click += (_, _) => AddRow(null);
-        panel.Children.Add(add);
 
         return panel;
     }
@@ -8890,6 +8893,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         var panel = new StackPanel();
         var names = _service.Attributes.Attributes.Select(a => a.Name).ToList();
 
+        // THE BUTTON GOES IN FIRST, AND EVERY ROW IS INSERTED BEFORE IT. Appending the rows put a new
+        // one AFTER the button, so the button drifted up between the old rows and the new one — reported
+        // first on the quest tab's step editor, which copied this, and true of the tuner's two rule grids
+        // for as long as they have existed.
+        var add = MakeButton(addLabel, ControlAppearance.Secondary);
+        panel.Children.Add(add);
+
         void AddRow(FilterRule? rule)
         {
             var row = new RuleRow();
@@ -8916,15 +8926,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             del.Click += (_, _) => { panel.Children.Remove(line); rows.Remove(row); };
             line.Children.Add(del);
 
-            panel.Children.Add(line);
+            panel.Children.Insert(panel.Children.IndexOf(add), line);
             rows.Add(row);
         }
 
         foreach (var r in initial) AddRow(r);
 
-        var add = MakeButton(addLabel, ControlAppearance.Secondary);
         add.Click += (_, _) => AddRow(null);
-        panel.Children.Add(add);
 
         return panel;
     }
