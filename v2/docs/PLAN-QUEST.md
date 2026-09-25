@@ -1,6 +1,11 @@
 # Plan — the quest hand-in tool
 
-Written 2026-09-26, from the player's description and four decisions taken before any code. **Not built.**
+Written 2026-09-26, from the player's description and four decisions taken before any code.
+
+**BUILT 2026-09-26** — config, tool, project, card, tab, step editor, preset picker and Test one loop.
+174 tests pass, Release build 0 warnings / 0 errors. **Never run against the live game**, which for this
+tool means the flow itself is unproven: it reads nothing, so only watching a test loop can say whether a
+sequence does what it was meant to.
 
 A new tool that **hands in quests repeatedly** by replaying an input sequence at the quest NPC. It is
 **blind**: it never looks at the screen, sends the sequence the player authored, N times, and stops.

@@ -18,8 +18,8 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Pyth
 
 ## What it does
 
-Five tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR. The
-launcher shows them as **six cards** — Buy Items and Sell Items are one tool with a card each:
+Six tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR. The
+launcher shows them as **seven cards** — Buy Items and Sell Items are one tool with a card each:
 
 | Tool | Card(s) | What it does |
 |------|---------|--------------|
@@ -28,6 +28,7 @@ launcher shows them as **six cards** — Buy Items and Sell Items are one tool w
 | **Skill Spammer** | Skill Spammer | Presses configured keys, each on its own cooldown. |
 | **Buy / Sell** | Buy Items · Sell Items | Bulk-buys the items you go through constantly, and sells the bag slots you mark on an 8×8 grid. |
 | **Pet Feeder** | Pet Feeder | Keeps a boarded pet fed while you are not watching, reloading the feeder on a per-row schedule. **Resident** — starting another tool leaves it running. |
+| **Quest Hand-in** | Quest Hand-in | Replays a flow you author — clicks, digits, Enter, waits — at the quest NPC, N times. **Reads nothing from the screen**, so it has no calibration: you put the mouse in place during the initial wait, and the run stops if it moves. |
 
 At most one tool runs at a time (they share the single Arduino COM port) — with one exception: the
 **Pet Feeder** is resident. It holds nothing between reloads, so starting another tool leaves it
@@ -48,9 +49,10 @@ v2/
   SealTools.GemComposer/ # GemComposer
   SealTools.Spammer/     # SkillSpammer, HoldSpace
   SealTools.Shop/        # ShopTool (buy + sell)
+  SealTools.Quest/       # QuestTool (replays a player-authored input flow)
   SealTools.Pet/         # PetTool (the resident feeder)
   SealTools.Launcher/    # WPF-UI desktop app (the UI + tool lifecycle)
-  SealTools.Tests/       # xUnit tests — 172 cases across 17 files
+  SealTools.Tests/       # xUnit tests — 174 cases across 18 files
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/INSTALL.md        # install: board, firmware, app, first calibration, updating
@@ -61,6 +63,7 @@ v2/
   docs/DESIGN.md         # how it works and why — the doc a plan's reasoning graduates into
   docs/PET-TAB-DESIGN.md # the Pet tab, the schedule and the reload flow
   docs/ANALYSIS-UI.md    # the launcher UI, measured — the start for a next UI pass
+  docs/PLAN-QUEST.md     # the quest hand-in tool — built; the flow is unproven on a live game
   docs/PLAN-TUNER-SPRING.md  # the tuner spring + cursor guard reasoning (built; shipped in v2.4)
   docs/PLAN-UI-CLEANUP.md    # launcher UI rework — steps 0-9 shipped, shell reverted
   docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features

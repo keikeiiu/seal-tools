@@ -13,6 +13,51 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](PLAN-QUEST.md))
+
+**The player's ask:** hand in quests repeatedly by replaying a sequence at the quest NPC. The flow differs
+per quest, so it has to be the player's own and savable. **The tool reads nothing** — no capture, no OCR,
+no window — which is why it has no calibration at all and no calibrate tab.
+
+**Four decisions taken before any code**, and three of them were the player's:
+manual click placement (the tuner's `manual` spring mode), so there is no point to place and the whole
+calibration layer disappears; a per-step delay, defaulted to 0.25 s as a placeholder; presets in
+`local.yaml` because they are personal and `defaults.yaml` is what a public zip ships; and the name.
+
+**The guard is the one place this beats an existing mechanism**, and the reason is what it does *not*
+need. The tuner's mouse guard compares the cursor against a calibrated point and needs the game window
+measured, so it is documented as **failing OPEN** — window gone, "no drift, carry on", and the loop keeps
+clicking. This one reads the cursor once at start and needs neither, so it can **fail CLOSED**: an
+unreadable cursor stops the run instead of clicking on at a place nothing is watching. Same 8 px.
+
+**A step that cannot be sent is refused before anything is clicked.** A `key` step with no character, or
+two, would send nothing — and at 500 loops, "sends nothing" and "the game behaved differently today" are
+the same observation. `QuestAction.Complaint` is the same shape as `FoodLoadMode.Complaint` for the same
+reason.
+
+**Two catches, both mine, both before the commit:**
+- **`GuardPx` was written to no file.** The save carried `Active` and `Presets` only, so the threshold
+  would revert to 8 on every launch while the box kept its new value for the session — the silent-revert
+  shape this repo keeps meeting. It is on `LocalQuest` now, with the merge, because `SaveDefaults`
+  rewrites `defaults.yaml` from an explicit field list and would drop it there.
+- **`ToolState.Running` is `LauncherService`'s.** The tool does not touch it; it was created running, and
+  a tool that set it would be fighting the service for the field.
+
+**A quest flow is the one config shape with a list of objects inside it**, so it has a round-trip test
+pinning the whole shape — flow, steps, each step's three fields, and the guard threshold. This is the
+tool with **no other eyes on it**: it reads nothing, so the config is the only place a dropped field could
+be caught. 174 tests.
+
+**Docs, in the same pass:** the Quest tab in `USER_GUIDE.md` and its zh-TW mirror (both now at sixteen
+tabs and seven cards), the architecture tree and tool tables in both READMEs, and `PLAN-QUEST.md` marked
+built.
+
+**Never run against the live game**, and for this tool that means the *flow* is unproven — nothing in it
+can tell a good flow from a bad one. Test one loop is the only verdict there is, and it runs the tool
+itself rather than a copy of its logic, so the test cannot pass something a run would refuse.
+
+---
+
 ## 2026-09-23 (32) — v2.12 cut
 
 **The release the previous session's open item #1 asked for:** *"The docs still present v2.11 as the last

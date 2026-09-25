@@ -63,7 +63,7 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 ## What's inside
 
-Six tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
+Seven tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
 
 | Tool | What it does |
 |------|--------------|
@@ -73,6 +73,7 @@ Six tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM po
 | **Buy** | Re-buys the items you go through constantly: right-click the shop row, MAX, Enter, Enter, for the count set on the card. |
 | **Sell** | Sells the bag slots you click on an 8×8 grid, highest slot first, with a per-run cap and a dry run that clicks nothing. |
 | **Pet Feeder** | Keeps a boarded pet fed while you are not watching. It reloads the feeder on a per-row schedule worked out from how much food is left, and it is **resident** — starting another tool leaves it running. |
+| **Quest Hand-in** | Replays a flow you author — clicks, digits, Enter, waits — at the quest NPC, N times. It **reads nothing from the screen**, so it needs no calibration at all: you put the mouse in place during the initial wait, and the run stops if it moves. |
 
 ## Full docs
 

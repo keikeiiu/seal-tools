@@ -24,7 +24,7 @@ them:
 buttons](images/launcher-cards.png)
 
 *(The two screenshots on this page are from **v2.9.1** — five cards and twelve tabs. The app now opens
-with **six** cards and fifteen tabs; the Pet Feeder card and the `Pet`, `Calibrate Pet` and
+with **seven** cards and sixteen tabs; the Pet Feeder card and the `Pet`, `Calibrate Pet` and
 `Calibrate Tooltip` tabs are newer than the pictures. Everything outside the cards is unchanged.)*
 
 Each card is one tool: its name, its live status, and **Start** / **Stop**. Buy Items is the only card
@@ -33,7 +33,7 @@ the run rather than during it. Below the cards are **▸ Tools** and **▸ Confi
 and **Hold Space** and the pin on the right.
 
 **Hide the cards with ▸ Tools** when you need the window for something else — it is for calibration
-on a small screen, where the six cards take height that the capture canvas needs more. It opens the
+on a small screen, where the seven cards take height that the capture canvas needs more. It opens the
 configuration tabs at the same time, because hiding the cards only makes sense when you are using
 them, and collapsing Configuration again brings the cards back. The window is never left showing
 neither. *(That is the pair: hiding the cards opens the tabs, closing the tabs restores the cards.)*
@@ -44,12 +44,12 @@ and returns the window to the size it had before.
 ![The same window with Configuration expanded: the cards, both rows of tabs, and the Tuner tab's
 Goal card below](images/launcher-expanded.png)
 
-There are **fifteen tabs**, and at the default window width they **wrap onto two rows** — and they do
+There are **sixteen tabs**, and at the default window width they **wrap onto two rows** — and they do
 not wrap in reading order, so `Tuner` can end up on the *second* row with the calibration and config
 tabs above it. How they wrap depends on the window width; what is fixed is the order they are
 **defined** in, which is also the order they are listed in this document:
 
-`Tuner` · `Gem` · `Spammer` · `Buy` · `Sell` · `Pet` · `Attributes` · `Calibrate Tuner` ·
+`Tuner` · `Gem` · `Spammer` · `Buy` · `Sell` · `Pet` · `Quest` · `Attributes` · `Calibrate Tuner` ·
 `Calibrate Gem` · `Buy / Sell` · `Calibrate Pet` · `Calibrate Tooltip` · `Arduino` · `Setup` ·
 `Hotkeys`
 
@@ -436,6 +436,64 @@ you press to look at cannot quietly rewrite the queue.
 Writes the marks, the timings and the boarding state to `config/local.yaml`. It is called **Save**,
 not *Save Calibration*, because this tab holds the run's state rather than the machine's — the two
 Saves are scoped to their own halves.
+
+---
+
+## Quest tab
+
+The Quest Hand-in tool's flows: what it sends at the quest NPC, and how many times. It **reads nothing
+from the screen** — no capture, no OCR, no window lookup — which is why it needs **no calibration at
+all** and why there is no calibrate tab beside this one.
+
+> **That is the whole trade.** Nothing here can notice a flow that is slightly wrong: no reading means
+> no second opinion. A wrong flow does its loop count in wrong actions, and the game accepts every one.
+> **Test one loop** first, then a short count, then the real one.
+
+Read [PLAN-QUEST.md](PLAN-QUEST.md) for why it is built this way.
+
+### Flow
+
+| Control | What it does |
+|---|---|
+| **Flow** picker | Which flow to run. One per quest, because the dialogue differs per quest; the list ends with **＋ Add new…**, which opens the naming row. |
+| **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it — two flows with the same steps is how the wrong one gets run. |
+| **Delete** | Asks first, and refuses to delete the last one. |
+| The naming row | **Create flow:** or **Rename to:**, a name box, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message rather than overwriting. |
+
+### Timing
+
+| Control | What it does |
+|---|---|
+| **Initial wait (s)** | Your window to **put the mouse where the clicks have to land**. The tool never moves the cursor, so where it sits when this ends is where every click in the flow lands — the same idea as the tuner's `manual` spring mode. It counts down on the card. |
+| **Loops** | How many times the step list is replayed. The card shows `Cycle: 37` live. |
+| **Mouse guard (px)** | How far the cursor may move before the run **STOPS**. It reads the cursor once when you start and compares against that; if the cursor cannot be read at all, it stops rather than clicking on at a place nothing is watching. |
+
+### Steps — what one loop sends
+
+| Control | What it does |
+|---|---|
+| **Action** | `click` (left), `right_click`, `key`, `enter`, or `wait`. |
+| **Key** | The character a `key` step sends — **one printable character**, a digit or a letter. The board presses one character and nothing else: no arrows, no shift-modified keys, no combinations. Ignored by the other actions. |
+| **Delay (s)** | How long to wait after sending this step. **Per step**, because a dialogue that needs 1.5 s sitting next to one that needs 0.2 s is exactly where one shared number breaks. `0.25` is a starting point, not a measurement. |
+| **✕** | Removes that step. |
+| **+ Add step** | Appends one, defaulting to a left click at 0.25 s. |
+
+A step that **cannot be sent** — a `key` step with no character, or with two — is refused **before the
+run starts**, rather than quietly sending nothing five hundred times. In a flow this long, "sends
+nothing" and "the game behaved differently today" look identical.
+
+### Try it, then keep it
+
+| Control | What it does |
+|---|---|
+| **Test one loop** | Runs the flow **once**. It is the same code a real run uses, so a flow the test refuses is a flow the run would refuse too. It runs off the UI thread, so the window stays responsive while it works. |
+| **Save** | Writes the flow to `config/local.yaml`. Flows are **personal**, so they live there and not in `defaults.yaml` — that is the file a public build ships. |
+
+**Watch the game when you test.** A blind run's only verdict is what happens on screen.
+
+> **Stopping it.** The Stop button on the card is the control that always works. The quit hotkey will
+> **not** stop this while you are in-game — the anti-cheat blocks background key reads, which is why the
+> launcher has to be focused for any hotkey to register.
 
 ---
 
