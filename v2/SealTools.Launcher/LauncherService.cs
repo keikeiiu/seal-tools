@@ -224,7 +224,14 @@ public sealed class LauncherService : IDisposable
     /// flight returns true without starting anything — see the guard below.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
-        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell" or "pet"))
+        // A WHITELIST THAT IS A SECOND COPY of the launcher's card list, and it fails LOUDLY: a tool
+        // registered for its card and its tab but missed HERE looks wired up and does nothing when
+        // Start is pressed — the exception comes out of an async void handler, so there is no message
+        // box and no card line, only an entry in logs\error.log. That is exactly what the quest tool
+        // did on its first launch. If a fifth registration point ever appears, this is the one that
+        // bites, and the fix is one word in one list.
+        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell" or "pet"
+                       or "quest"))
         {
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
