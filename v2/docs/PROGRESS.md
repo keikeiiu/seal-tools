@@ -13,6 +13,61 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-28 (35) — plan: the US client ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md))
+
+**The ask:** run the suite against the US client as well as the TW one, chosen by a setting.
+
+**What the reading found, and it is the whole plan.** Exactly **one** thing is a code change on the
+window side: `window.title` is already config, and `FindByTitle` is a substring match, so pointing at
+`US_LIVE` works today. Everything else that differs is either **content** (the attribute dictionary, the
+pet table, the filter rules that name dictionary entries) or **one of two hardcoded phrase sets**
+(`AttrMatcher`'s `每\D` per-level regex and its `'每'` gate, and `FeederEta`'s `約 N 分` / `完成` /
+`所需時間`).
+
+**And most of the suite does not care at all**, which is why this is not a rewrite. `PetPanel` parses
+digits and brackets only — so the hover-panel read works on an English client untouched. Grade letters
+are latin. `TextCleaner` has no vocabulary of its own. The composer, buy/sell and spammer match no text.
+And the quest tool reads nothing, so it already runs on the US client as shipped.
+
+**The design decision worth recording.** The variant is resolved **at LOAD**, where the config is
+deserialised: it sets `Window.Title` and picks the dictionary file. That is what keeps the change small —
+`Window.Title` stays the single value every tool already reads, so **none** of the ~15 call sites in
+`OcrEngine`, `GemComposer`, `HidPointer` and `MainWindow` move.
+
+The **alternative — a `titles: [TW_LIVE, US_LIVE]` list** that finds whichever client is up — was
+considered and rejected, and not only for churn: it answers *which window* while leaving *which text to
+match against* unanswered, and those have to be chosen together. A list is half a question.
+
+**The calibration question, answered from the record rather than by argument.** Calibration is
+client-relative physical pixels, and COORDINATES.md already measured that this game's UI does **not**
+scale with the window ("the HP bar keeps its pixel size, the world view expands") — so the UI is drawn at
+fixed pixel sizes anchored in the client area, and the same client size should give the same coordinates.
+The risk is translation changing *text length* on anything content-sized. It is testable in **one look**:
+the calibrate tabs draw the saved marks on a capture, so switching to US and capturing says whether the
+boxes still land. A per-variant calibration is deliberately **not** in the plan until the boxes ask for
+it.
+
+**The OCR side, split honestly, because the player called it big and is right about one of the three
+parts:**
+- **the model is a measurement** — the shipped recogniser is the **Chinese** one, which does read Latin,
+  but whether it reads English attribute names well enough for an exact dictionary match is unmeasured.
+  The model paths are config, so a swap is a config line plus a file — not code;
+- **the dictionary content is big and cannot be written from here** — its value is the *variants table*,
+  built from real misreads over many sessions, and English OCR fails completely differently (`l`/`I`/`1`,
+  `O`/`0`, `rn`/`m`). So US support is a **process**: run it, collect the misreads, fill the table — which
+  is exactly how the TW table was built, from `ocr_log.jsonl` and `logs/reads/`;
+- **the phrase sets are small code**, and the dictionary file is already their right home: it carries
+  `Whole`/`Substring`/`SimplifiedTraditional`/`Final`/**`Regex`** fixes, and `AttrMatcher` already
+  receives the whole `AttributesConfig`.
+
+**Built when this entry was written:** the plan only. The frame follows, in `defaults.yaml` —
+which means `game.variant` must go into `SaveDefaults`' explicit field list or it is written once and
+dropped by the next save from any tab.
+
+**Constraint for this build:** a tool is RUNNING. Release only — no kill, no relaunch.
+
+---
+
 ## 2026-09-28 (34) — v2.13 cut
 
 Eight commits since v2.12, and the note is [RELEASE-v2.13.md](RELEASE-v2.13.md). The headline is the
