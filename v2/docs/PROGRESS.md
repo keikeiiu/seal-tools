@@ -13,6 +13,45 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-28 (34) — v2.13 cut
+
+Eight commits since v2.12, and the note is [RELEASE-v2.13.md](RELEASE-v2.13.md). The headline is the
+**Quest Hand-in** tool; the interesting part is what it flushed out.
+
+**The tool exposed a launcher bug on its first day.** The card stayed on "● RUNNING" after the loops
+finished — and the fault was not in the tool. `StartToolCoreAsync` had `try`/`catch` and **no `finally`**,
+so a tool's running flag was cleared only when it *crashed*. **It had never shown because every other tool
+loops until it is stopped**; this is the first that ends by itself, and any future one would have hit it.
+The teardown now mirrors the stop path and is guarded on the entry still being registered, which is what
+tells a self-end from a stop.
+
+**And checking my own claim about it found a second gap.** I had written that a run's completion "is in
+the log". It was not: **a tool's console output goes nowhere in the launcher** — no console in a WinExe,
+and nothing redirects one — and only the tuner and the pet write files. So a quest run had no durable
+record, which is precisely wrong for a tool whose card cannot tell a completed run from an interrupted
+one. Runs now append to `logs/quest.log` and every exit names itself. Corrected in a follow-up commit
+rather than by amending, because the repo does not rewrite commits.
+
+**A registration point that is a second copy of another list.** The tool's card and tab worked and Start
+did nothing: `StartToolAsync` carries a whitelist of ids duplicating the launcher's card list, and the
+new id was registered in three places and missed in that one. It fails *quietly* — the exception leaves an
+`async void` handler, so there is no message box and nothing on the card, only an entry in `error.log`.
+`Test one loop` bypassed that path entirely, which is what made it look like the tool. The whitelist is
+commented now as the copy that bites; consolidating the ids into one source is still open and would
+remove the class.
+
+**Two UI fixes, one of them not ours alone.** The `+ Add` button drifted into the middle of the list it
+adds to, because rows were appended *after* it — and the shared editor it was copied from had the same
+flaw, so the **Tuner tab's rule grid and override grid** have done it since they were written. Fixed in
+both. The other: `Save` sat 10 px below `Test one loop`, one button keeping `MakeButton`'s top margin
+while its neighbour had it overridden.
+
+**Said plainly in the note:** `Test one loop` is the one part of the new tool **reported working from a
+live game**. The card clearing after a run, and v2.12's food scan, are still unproven — and the note says
+so rather than leaving it to be discovered.
+
+---
+
 ## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](PLAN-QUEST.md))
 
 **The player's ask:** hand in quests repeatedly by replaying a sequence at the quest NPC. The flow differs

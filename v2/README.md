@@ -1,7 +1,7 @@
 # Seal Tools v2 (C# / .NET WPF)
 
-**Version 2.12** (2026-09-23) — the current release; see the tag `v2.12` and
-[docs/RELEASE-v2.12.md](docs/RELEASE-v2.12.md).
+**Version 2.13** (2026-09-28) — the current release; see the tag `v2.13` and
+[docs/RELEASE-v2.13.md](docs/RELEASE-v2.13.md).
 
 The **version history is not repeated here.** It lives in one place —
 [../README.md](../README.md#version-history) has the one-line-per-release table, and
