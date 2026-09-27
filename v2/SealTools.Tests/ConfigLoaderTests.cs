@@ -78,6 +78,10 @@ public class ConfigLoaderTests
             // when the field is missing from the projection — which is how move_mode was lost.
             before.Gem.MoveMode = "tuned";
 
+            // A variant that is NOT the shipped one, for the same reason: with the default `tw` this
+            // would pass whether or not `game` is projected at all.
+            before.Game.Variant = "us";
+
             loader.SaveDefaults(before);
 
             var after = new ConfigLoader(dir).Load();
@@ -90,7 +94,14 @@ public class ConfigLoaderTests
             Assert.Equal(before.Tuner.MouseGuard, after.Tuner.MouseGuard);
             Assert.Equal(before.Tuner.GuardPx, after.Tuner.GuardPx);
             Assert.Equal(before.Tuner.RecenterMax, after.Tuner.RecenterMax);
-            Assert.Equal(before.Window.Title, after.Window.Title);
+
+            // NOT window.title any more. `window` is still written (the resolved copy), but the VARIANT
+            // is the authority and the load overrides the copy — so the round-trip to compare is the
+            // title the variant resolves to. `WithNoVariantTheWindowTitleStillRoundTrips` below covers
+            // the case where there is no variant and the field stands on its own.
+            Assert.Equal("US_LIVE", after.Window.Title);
+            Assert.Equal("us", after.Game.Variant);
+            Assert.Equal("attributes.us.yaml", after.Game.Variants["us"].Attributes);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
             // spammer is deliberately NOT in this list — see SaveDefaultsLeavesSpammerPresetsAlone.
             Assert.Equal("tuned", after.Gem.MoveMode);
@@ -254,6 +265,114 @@ public class ConfigLoaderTests
             Assert.Equal(1.5, cfg.Spammer.ActiveKeys["F1"]);
             Assert.Equal(2, cfg.Spammer.Presets.Count);
             Assert.True(cfg.Spammer.Presets.ContainsKey("Boss"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
+
+    /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the
+    /// US-client change is small: every tool already reads `window.title`, so none of them — the OCR
+    /// engine, capture, the cursor, the launcher — has to know a variant exists.</summary>
+    [Fact]
+    public void TheActiveVariantResolvesTheWindowTitle()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            // As shipped: tw, resolving to the title every tool reads.
+            Assert.Equal("TW_LIVE", new ConfigLoader(dir).Load().Window.Title);
+
+            // Point it at the US client and the SAME field follows — there is no second title to keep
+            // in step.
+            var defaults = Path.Combine(dir, "defaults.yaml");
+            File.WriteAllText(defaults,
+                File.ReadAllText(defaults).Replace("  variant: tw", "  variant: us"));
+
+            Assert.Equal("US_LIVE", new ConfigLoader(dir).Load().Window.Title);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>An unset or UNKNOWN variant must change nothing. Unset is the shape of every config
+    /// written before variants existed; unknown is a typo. In both, the configured title has to stand —
+    /// blanking it would send every tool hunting a window called "".</summary>
+    [Fact]
+    public void AnUnsetOrUnknownVariantLeavesTheConfiguredTitleAlone()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var defaults = Path.Combine(dir, "defaults.yaml");
+            var text = File.ReadAllText(defaults);
+
+            foreach (var replacement in new[] { "  variant: nope", "  variant: \"\"" })
+            {
+                File.WriteAllText(defaults, text.Replace("  variant: tw", replacement));
+                Assert.Equal("TW_LIVE", new ConfigLoader(dir).Load().Window.Title);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A variant's dictionary that is MISSING must fail, and say what to do about it. The
+    /// alternative — shipping an empty one — matches nothing, so every attribute reads as "no
+    /// attribute": silent, and indistinguishable from the game having changed.</summary>
+    [Fact]
+    public void AMissingVariantDictionarySaysHowToFixIt()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            // The template, present as a published build ships it, so the message can name it.
+            File.WriteAllText(Path.Combine(dir, "attributes.us.yaml.example"), "# template\n");
+
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+
+            var ex = Assert.Throws<ConfigException>(
+                () => loader.LoadAttributes(cfg.Game.Variants["us"].Attributes));
+
+            Assert.Contains("config/attributes.us.yaml", ex.Message);
+            Assert.Contains("attributes.us.yaml.example", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>With NO variant, `window.title` is the only source and must survive a save — the shape
+    /// every config had before variants existed. SaveDefaults writes `window` for this case: dropping it
+    /// from the field list would lose the title and then fail the required-field check on the next
+    /// load.</summary>
+    [Fact]
+    public void WithNoVariantTheWindowTitleStillRoundTrips()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var defaults = Path.Combine(dir, "defaults.yaml");
+            File.WriteAllText(defaults,
+                File.ReadAllText(defaults).Replace("  variant: tw", "  variant: \"\""));
+
+            var loader = new ConfigLoader(dir);
+            var before = loader.Load();
+            Assert.Equal("TW_LIVE", before.Window.Title);
+
+            before.Window.Title = "MyClient_LIVE";
+            loader.SaveDefaults(before);
+
+            Assert.Equal("MyClient_LIVE", new ConfigLoader(dir).Load().Window.Title);
         }
         finally
         {

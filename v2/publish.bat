@@ -76,6 +76,10 @@ if /i "%MODE%"=="local" (
   copy /Y config\attributes.yaml    %PUB%\config\ >nul
   copy /Y config\defaults.yaml      %PUB%\config\ >nul
   copy /Y config\local.yaml.example %PUB%\config\ >nul
+  :: The US dictionary TEMPLATE, so a US player can copy it and fill it in. This list is explicit, so
+  :: a config file that is not named here does not ship — and the error a missing dictionary raises
+  :: tells the player to copy this file, which would be an instruction to copy something absent.
+  copy /Y config\attributes.us.yaml.example %PUB%\config\ >nul
   echo       template config only - local.yaml re-seeded on first run
 )
 

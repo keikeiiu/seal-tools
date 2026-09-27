@@ -11,7 +11,30 @@
 # Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.
 
 window:
+  # The window to drive. FindByTitle is a SUBSTRING match, so the whole title is not needed.
+  #
+  # WHEN `game.variant` IS SET BELOW, IT OVERRIDES THIS — the variant names the client and this is
+  # then only the value it resolved to. To switch clients, change `game.variant`, not this.
   title: TW_LIVE
+
+# Which game client this install is pointed at — see docs/PLAN-US-CLIENT.md.
+#
+# The two clients are the same game with different TEXT, and the text is what the suite matches
+# against: the attribute dictionary, the per-level phrases, the feeder's time line. So a variant is
+# not just a window to find; it names the words to match. That is why it is one choice and not a
+# list of acceptable windows.
+#
+# Set `variant:` to tw or us (or to a name you add yourself, with its own dictionary file in
+# config/). Leave it empty and `window.title` above stands on its own.
+game:
+  variant: tw
+  variants:
+    tw:
+      title: TW_LIVE
+      attributes: attributes.yaml
+    us:
+      title: US_LIVE
+      attributes: attributes.us.yaml
 reference_window:
   width: 1926
   height: 1232

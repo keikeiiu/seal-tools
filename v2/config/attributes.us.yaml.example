@@ -1,0 +1,68 @@
+# Seal Tools v2 — OCR attribute dictionary for the US client. TEMPLATE.
+#
+# COPY THIS to `attributes.us.yaml` beside it, then fill it in. Until that file exists, the launcher
+# REFUSES to start with `game.variant: us` — see LOADING below.
+#
+# WHY IT IS NOT SHIPPED FILLED. This file is the words the Tuner MATCHES against. An empty or wrong
+# dictionary does not fail loudly; it reads every attribute as "no attribute", silently, which is
+# indistinguishable from the game having changed. So the missing file is the loud failure, and it is
+# on purpose. Only the TW dictionary has content, because only the TW client has been played.
+
+# ── HOW TO FILL IT ────────────────────────────────────────────────────────────────────────────────
+# The TW dictionary next door was not written from a list — it was GROWN. The tuner writes
+# `logs/ocr_log.jsonl` and saves the pixels of every read to `logs/reads/`, and every misread that
+# mattered became a `variants` entry (每→国/盘/地, 幸運→幸莲, 必殺技→必毅技). Do the same here:
+#
+#   1. put the real attribute names in `attributes` below, by category;
+#   2. run the Tuner on the US client and let it misread things;
+#   3. read what it recorded in logs\ocr_log.jsonl, and add each garbled form to that attribute's
+#      `variants`;
+#   4. repeat. That is the whole method, and it is why this cannot be written for you.
+#
+# ENGLISH FAILS DIFFERENTLY. None of the TW variants carry over — English OCR confuses l/I/1, O/0 and
+# rn/m, not 每/国/盘. Start with the exact names; the variants come from the log.
+
+# ── STANDARD ATTRIBUTES ───────────────────────────────────────────────────────────────────────────
+# Each: {name, category, variants[]}.
+#   name     — what the filter RULES match on, so these are also the names to write in
+#              `tuner.filter.rules` in defaults.yaml. The rules do NOT transfer from the TW config.
+#   category — free-form grouping, shown in the Attributes tab.
+#   variants — the OCR-garbled forms. The FIRST is the exact name; add the rest as you meet them.
+attributes:
+  # - name: "Attack"
+  #   category: "atk"
+  #   variants: ["Attack"]
+
+# The stat names that appear inside a per-level (plv) line — 力量/敏捷/智力… in the TW client.
+per_level_stats: []
+
+# Substrings that mark an attribute as a NEGATIVE one: the matcher treats these as "avoid".
+# 減少 / 限制等級 / 配戴限制 in the TW client.
+negative_attr_markers: []
+
+# ── TEXT REPAIRS ──────────────────────────────────────────────────────────────────────────────────
+# Applied to every read before matching. Left empty deliberately: add an entry only when a read is
+# wrong in a way a `variant` cannot express, and prefer a variant when it can.
+#   whole                  — the line reads exactly this, so replace it wholly
+#   substring              — replace this wherever it appears
+#   simplified_traditional — character-level reparations
+#   final                  — last pass, after the others
+#   regex                  — pattern-based repairs
+text_fixes:
+  whole: []
+  substring: []
+  simplified_traditional: []
+  final: []
+  regex: []
+
+# ── NOT HERE YET, AND THAT IS DELIBERATE ──────────────────────────────────────────────────────────
+# Two phrase sets the code still matches ITSELF have not moved into the dictionary yet — the tuner's
+# per-level interval (`每 N 等級`) and the pet feeder's time line (`約 N 分`, `完成`, `所需時間`).
+# They are hardcoded, so they are TW-only until that move happens (docs/PLAN-US-CLIENT.md §2.3).
+#
+# Nothing breaks on the US client because of it, and that is worth knowing exactly:
+#   * the pet feeder reads no time line, so it schedules from the FOOD figure alone — the safe
+#     direction, the same fallback it uses whenever a line is unreadable. Its hover-panel read is
+#     digits and brackets only, so that half works on any client;
+#   * the tuner loses the per-level bonus and its `per_level_stats` handling, but grades, the
+#     dictionary match and the filter rules above all still work.

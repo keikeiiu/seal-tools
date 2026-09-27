@@ -100,6 +100,16 @@ public sealed class ConfigLoader
         // `slots:` must win over the flat keys it also happens to still hold.
         MigratePetSlots(defaults.Pet, Deserialize<LocalOverridesLegacy>("local.yaml").Pet);
 
+        // THE VARIANT RESOLVES THE TITLE, once, here — and that placement is the whole reason this
+        // change is small: `window.title` stays the single value every tool already reads, so none of
+        // the call sites in OcrEngine, GemComposer, HidPointer or the launcher has to know a variant
+        // exists. Before the validator, which requires a title to be present.
+        //
+        // An unset or unknown variant changes NOTHING, deliberately: a file written before variants
+        // existed carries only `window.title`, and an unrecognised name must not blank the target.
+        if (defaults.Game.Active is { Title.Length: > 0 } variant)
+            defaults.Window.Title = variant.Title;
+
         ConfigValidator.Validate(defaults);
         return defaults;
     }
@@ -203,7 +213,32 @@ public sealed class ConfigLoader
         SaveLocal(local);
     }
 
-    public AttributesConfig LoadAttributes() => Deserialize<AttributesConfig>("attributes.yaml");
+    /// <summary>Loads the OCR dictionary — the active game variant's, which the caller names.
+    /// <paramref name="file"/> omitted means the TW dictionary, which is what a config with no variant
+    /// uses.
+    ///
+    /// A missing file throws, through <see cref="Deserialize"/>, rather than falling back — and that is
+    /// the deliberate direction: an absent dictionary matches NOTHING, so every attribute would read as
+    /// "no attribute", silently, and look exactly like the game having changed.</summary>
+    public AttributesConfig LoadAttributes(string? file = null)
+    {
+        var name = string.IsNullOrWhiteSpace(file) ? "attributes.yaml" : file;
+
+        if (!File.Exists(PathOf(name)))
+        {
+            // A variant's dictionary is not shipped — only the TW one has content, because only the TW
+            // client has been played — so the missing file is made to say what to do about it. Shipping
+            // an EMPTY one instead would remove this error and quietly do the worse thing: match
+            // nothing, reading every attribute as "no attribute", which looks like the game changed.
+            var example = name + ".example";
+            throw new ConfigException(File.Exists(PathOf(example))
+                ? $"config/{name} does not exist. Copy config/{example} to it and fill in this " +
+                  "client's attribute names, or set game.variant back to tw."
+                : $"Missing config file: {PathOf(name)}");
+        }
+
+        return Deserialize<AttributesConfig>(name);
+    }
 
     // Load just the machine-specific overlay (returns null if local.yaml is absent).
     public LocalOverrides? LoadLocal()
@@ -346,8 +381,13 @@ public sealed class ConfigLoader
     {
         var portable = new
         {
+            // window.title is written as the RESOLVED value — a copy, when a variant is set, because the
+            // variant is the authority and `game` below carries it. It is kept because a config with NO
+            // variant uses `window.title` as its only source, and DROPPING it from this list would mean
+            // such a file loses its title on the next save and then fails the required-field check.
             window = cfg.Window,
             reference_window = cfg.ReferenceWindow,
+            game = cfg.Game,
             arduino = new { vid = cfg.Arduino.Vid, pid = cfg.Arduino.Pid, baud = cfg.Arduino.Baud, port = "" },
             hotkeys = cfg.Hotkeys,
             tuner = new

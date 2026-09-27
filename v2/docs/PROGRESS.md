@@ -13,6 +13,45 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-28 (36) — the US client: the frame is built
+
+**What landed** ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md) §4.1, §4.2 and §4.5): `game.variant` plus a
+`game.variants` map, each naming a window title and an attribute dictionary; **resolved at load**, so
+`window.title` stays the single value every tool already reads and none of the ~15 call sites moved.
+Plus `attributes.us.yaml.example`, and the published-zip copy of it.
+
+**Four tests, and one was proven rather than assumed.** Following the drill this repo has earned: the
+`SaveDefaults` guard was checked by **dropping `game` from the field list and watching it fail** —
+`Expected: "US_LIVE" / Actual: "TW_LIVE"`, exactly the trap that keeps being written into CONFIG.md. The
+other three pin the safe directions: an unset *and* an unknown variant leave the configured title alone
+(blanking it would send every tool hunting a window called `""`), and a missing variant dictionary names
+the file to copy.
+
+**Two things found by checking rather than by luck:**
+
+- **`publish.bat` copies the config by an explicit list.** A new config file that is not named there
+  does not ship — so `attributes.us.yaml.example` would have been absent from the public zip while the
+  error message told the player to copy it. Added to the list, with a comment saying why the list is a
+  hazard.
+- **The template ships as `.example`, not as a live file.** An *empty* `attributes.us.yaml` would let
+  `variant: us` start happily and match nothing — every attribute reading as "no attribute", silently,
+  which is the failure this repo keeps meeting. Missing fails loudly and says what to do instead. That
+  is the same shape as `local.yaml.example`.
+
+**Not built, and deliberately:** the **Setup-tab switch** (so changing clients is still a file edit), and
+**moving the two hardcoded phrase sets into the dictionary** (so the per-level and time-line phrases are
+still TW-only — the US client reads no time line and schedules from food alone, which is the safe
+direction).
+
+**Constraint honoured:** a tool was RUNNING. Release build only — no kill, no relaunch.
+
+**A line-ending trap, hit and worth re-recording:** a patch against `ConfigLoader.cs` silently did
+nothing because the file is **CRLF** and the pattern ended in `\n`. It is the same failure the handover
+already warns about for `PetTool.cs`, and it presented as *a test that passed when it should have
+failed* — which is the worst version of it, because a no-op edit and a real one look identical.
+
+---
+
 ## 2026-09-28 (35) — plan: the US client ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md))
 
 **The ask:** run the suite against the US client as well as the TW one, chosen by a setting.

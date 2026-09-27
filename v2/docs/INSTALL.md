@@ -143,9 +143,13 @@ Before calibrating anything that clicks, do the two prerequisites:
   options → Pointer Options` → uncheck **"Enhance pointer precision"**. The game is an OS-cursor
   title, so the distance a relative move travels depends on this setting; leaving it on makes the
   Gem Composer drift between runs. See [CALIBRATION.md §4](CALIBRATION.md).
-- **The game window title must match `window.title`** in `defaults.yaml` — `TW_LIVE` by default.
-  Nothing will find the window otherwise, and the symptom is "game window not found" from every
-  capture button. Edit `defaults.yaml` if your client is titled differently.
+- **Tell it which game client you have.** `defaults.yaml` carries `game.variant: tw` — set it to `us`
+  for the US client, or leave it empty and `window.title` stands on its own. Nothing will find the
+  window otherwise, and the symptom is "game window not found" from every capture button.
+  **The variant sets the window title *and* which attribute dictionary is read**, because the two
+  clients do not share the words the tools match against — see [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md).
+  A `us` variant needs its own dictionary: copy `config\attributes.us.yaml.example` to
+  `config\attributes.us.yaml` and fill it in, or the launcher refuses to start and says so.
 
 ### Why calibration is not optional
 

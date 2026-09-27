@@ -1,8 +1,17 @@
 # Plan — the US client (game variants)
 
-Written 2026-09-28. **The frame is built; the content is not** — see "What is blocked" at the end, which
-is the honest headline: the code can make a second client *possible*, and only the US client itself can
-make it *work*.
+Written 2026-09-28.
+
+**BUILT (2026-09-28): §4.1, §4.2 and §4.5** — `game.variant` + `game.variants`, resolved at load into
+`window.title`; the variant's dictionary file; `attributes.us.yaml.example`; and the published-zip copy
+of that example. Four tests, one of which was **proven to bite** by dropping `game` from `SaveDefaults`
+and watching it fail (`Expected: "US_LIVE" / Actual: "TW_LIVE"`).
+
+**NOT built: §4.3 (the Setup-tab switch — changing clients is still a file edit) and §4.4 (moving the
+two phrase sets into the dictionary — so the per-level and time-line phrases are still TW-only).**
+
+And the honest headline is at the end: the code makes a second client *possible*, and only the US client
+itself can make it *work*.
 
 The goal: run this suite against the **US client** as well as the TW one, chosen by a setting rather than
 by editing files or rebuilding.

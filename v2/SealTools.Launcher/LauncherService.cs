@@ -71,7 +71,10 @@ public sealed class LauncherService : IDisposable
         _rootDir = rootDir;
         _loader = new ConfigLoader(Path.Combine(rootDir, "config"));
         Config = _loader.Load();
-        Attributes = _loader.LoadAttributes();
+
+        // The active game variant's dictionary — the TW one when no variant is configured. A missing
+        // file throws with its path rather than matching nothing.
+        Attributes = _loader.LoadAttributes(Config.Game.Active?.Attributes);
     }
 
     /// <summary>The merged config (portable + local). Mutable so edits are reflected live by the tools.</summary>

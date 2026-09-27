@@ -22,6 +22,7 @@ public sealed class AppConfig
     public PetConfig Pet { get; set; } = new();
     public TooltipConfig Tooltip { get; set; } = new();
     public QuestConfig Quest { get; set; } = new();
+    public GameConfig Game { get; set; } = new();
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
@@ -35,6 +36,56 @@ public sealed class AppConfig
 /// All four values are client-relative PHYSICAL pixels, like every other calibrated coordinate here,
 /// which is why they belong in local.yaml: a box measured at one machine's scale means nothing at
 /// another's.</summary>
+/// <summary>Which game client this install is pointed at. See docs/PLAN-US-CLIENT.md.
+///
+/// The TW and US clients are the same game with different text — and the text is not decoration here,
+/// it is what the suite MATCHES: the attribute dictionary, the per-level phrases, the feeder's time
+/// line. So a variant is not merely a window to find; it names **the words to match against**. That is
+/// why this is one choice rather than a list of acceptable titles: a list would answer *which window*
+/// while leaving *which text* unanswered, and the two have to be chosen together.
+///
+/// **RESOLVED AT LOAD.** `ConfigLoader` sets <see cref="WindowConfig.Title"/> from the active variant
+/// while loading, so the single value every tool already reads stays the single value they read — no
+/// call site has to know a variant exists.
+///
+/// It lives in `defaults.yaml` — the file `publish.bat` ships — so the SHIPPED default must stay `tw`,
+/// or a public zip would arrive pointed at the builder's client.</summary>
+public sealed class GameConfig
+{
+    /// <summary>Which variant is active. **Empty means "not configured"**, and then `window.title` is
+    /// used as it is: that is what every file written before this existed says, and an unset variant
+    /// must never overwrite a title somebody set by hand.</summary>
+    public string Variant { get; set; } = "";
+
+    /// <summary>The known clients. Adding one is a block here and a dictionary file in `config/`.</summary>
+    public Dictionary<string, GameVariant> Variants { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["tw"] = new() { Title = "TW_LIVE", Attributes = "attributes.yaml" },
+        ["us"] = new() { Title = "US_LIVE", Attributes = "attributes.us.yaml" },
+    };
+
+    /// <summary>The active variant, or null when it is unset or names something unknown — in which case
+    /// the configured `window.title` stands, which is the safe direction: an unrecognised name must not
+    /// blank the target.</summary>
+    public GameVariant? Active =>
+        string.IsNullOrWhiteSpace(Variant)
+            ? null
+            : Variants.TryGetValue(Variant.Trim(), out var v) ? v : null;
+}
+
+/// <summary>One client: the window to find, and the dictionary that client's text needs.</summary>
+public sealed class GameVariant
+{
+    /// <summary>A **substring** of the client's window title — <c>WindowFinder.FindByTitle</c> matches
+    /// with Contains, so the whole title is not needed and probably not known.</summary>
+    public string Title { get; set; } = "";
+
+    /// <summary>The dictionary file, in `config/`. A missing one fails loudly on load rather than
+    /// matching nothing — an empty dictionary reads every attribute as no attribute, which is silent and
+    /// looks exactly like "the game changed".</summary>
+    public string Attributes { get; set; } = "attributes.yaml";
+}
+
 /// <summary>The quest hand-in tool's configured flows — see docs/PLAN-QUEST.md.
 ///
 /// The tool REPLAYS an input sequence and reads nothing: no capture, no OCR, no window. That is why it
