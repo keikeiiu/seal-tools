@@ -278,6 +278,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private TextBlock? _questHint;
     private List<QuestStepRow> _questStepRows = new();
 
+    /// <summary>The ACTIVE sequence's entry rows. A field for the same reason the step rows are: an edit
+    /// lives in the row controls until Save writes it back, so anything that persists the sequence has
+    /// to come through here.</summary>
+    private List<QuestEntryRow> _questEntryRows = new();
+
     // Buy tab / Sell tab state.
     private System.Windows.Controls.ComboBox? _buyPreset;
     /// <summary>The row picker on the Buy tab, kept as a field because RefreshBuyPresets fills it —
@@ -5448,6 +5453,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         return MakeTab("Calibrate Pet", panel);
     }
 
+    /// <summary>One line of a sequence: which flow, and how many times in a row. The same shape as
+    /// <see cref="QuestStepRow"/> — the row owns its controls and maps itself back at save time.</summary>
+    private sealed class QuestEntryRow
+    {
+        public ComboBox Flow { get; } = new() { MinWidth = 150, VerticalAlignment = VerticalAlignment.Center };
+        public Wpf.Ui.Controls.TextBox Times { get; } = new() { Width = 48, VerticalAlignment = VerticalAlignment.Center };
+
+        public QuestSequenceEntry ToEntry() => new()
+        {
+            Preset = Flow.SelectedItem?.ToString() ?? "",
+            // Unparseable falls back to 1, like every other number on this tab: refusing to save over a
+            // typo leaves the player with a Save that does nothing and no idea why.
+            Times = int.TryParse(Times.Text.Trim(), out var n) ? Math.Max(1, n) : 1,
+        };
+    }
+
     /// <summary>One thing the Quest card can be pointed at. A record so the picker carries the KIND with
     /// the name — a flow and a sequence may legitimately share a name, and a single string would have to
     /// be parsed to tell them apart.</summary>
@@ -5688,6 +5709,213 @@ public partial class MainWindow : FluentWindow, IDisposable
             LabeledField("Flow", pickRow),
             namePrompt));
 
+        // ── the sequence: several flows in one run ──────────────────────────
+        //
+        // The top of this tab is "what runs when Start is pressed": one flow, or a SEQUENCE of them — A
+        // three times, then B twice, wrapped in a master loop. The picker's first item is "(none)", so one
+        // control says which, and there is no second switch to keep in step.
+        //
+        // EVERY flow in a sequence clicks the SAME place and shares ONE positioning wait: the tool never
+        // moves the cursor, so a flow inside a sequence cannot have a position of its own. That is also
+        // why the feature makes sense — one NPC, several quests, one place to stand.
+        const string NoSequenceMarker = "(none — run the single flow above)";
+        const string AddSequenceMarker = "＋ Add new sequence…";
+
+        var sequenceBox = new ComboBox { MinWidth = 220, VerticalAlignment = VerticalAlignment.Center };
+        var sequenceName = UiText("", "sequence name");
+        sequenceName.Width = 150;
+        var seqPromptLabel = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+        };
+        var seqConfirm = MakeInlineButton("Create", ControlAppearance.Primary);
+        var seqCancel = MakeInlineButton("Cancel", ControlAppearance.Secondary);
+        var seqPrompt = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 4, 0, 8),
+        };
+        seqPrompt.Children.Add(seqPromptLabel);
+        seqPrompt.Children.Add(sequenceName);
+        seqPrompt.Children.Add(seqConfirm);
+        seqPrompt.Children.Add(seqCancel);
+
+        var seqLoops = UiText("", null);
+        seqLoops.Width = NumberFieldWidth;
+        seqLoops.HorizontalAlignment = HorizontalAlignment.Left;
+        seqLoops.TextChanged += (_, _) =>
+        {
+            if (quest.ActiveSequenceOrNull is { } s &&
+                int.TryParse(seqLoops.Text.Trim(), out var n) && n >= 1) s.Loops = n;
+        };
+
+        var seqWait = UiText("", null);
+        seqWait.Width = NumberFieldWidth;
+        seqWait.HorizontalAlignment = HorizontalAlignment.Left;
+        seqWait.TextChanged += (_, _) =>
+        {
+            if (quest.ActiveSequenceOrNull is { } s &&
+                double.TryParse(seqWait.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out var w) && w >= 0)
+            {
+                s.InitialWaitSeconds = w;
+            }
+        };
+
+        _questEntryRows = new List<QuestEntryRow>();
+        var entriesHost = new StackPanel();
+
+        void RefreshEntries()
+        {
+            _questEntryRows = new List<QuestEntryRow>();
+            entriesHost.Children.Clear();
+            entriesHost.Children.Add(BuildQuestEntriesEditor(quest.ActiveSequenceOrNull, _questEntryRows));
+        }
+
+        bool syncingSequence = false;
+
+        void ShowSequence()
+        {
+            syncingSequence = true;
+            var s = quest.ActiveSequenceOrNull;
+            seqLoops.Text = (s?.Loops ?? 1).ToString(CultureInfo.InvariantCulture);
+            seqWait.Text = (s?.InitialWaitSeconds ?? 10).ToString("0.#", CultureInfo.InvariantCulture);
+            syncingSequence = false;
+            RefreshEntries();
+        }
+
+        void RefreshSequenceList(string select)
+        {
+            syncingSequence = true;
+            var names = new List<string> { NoSequenceMarker };
+            names.AddRange(quest.Sequences.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
+            names.Add(AddSequenceMarker);
+            sequenceBox.ItemsSource = names;
+            sequenceBox.SelectedItem = select;
+            syncingSequence = false;
+        }
+
+        var seqRename = MakeInlineButton("Rename", ControlAppearance.Secondary);
+        var seqDelete = MakeInlineButton("Delete", ControlAppearance.Secondary);
+
+        sequenceBox.SelectionChanged += (_, _) =>
+        {
+            if (syncingSequence || sequenceBox.SelectedItem is not string picked) return;
+
+            if (picked == AddSequenceMarker)
+            {
+                seqPromptLabel.Text = "Create sequence:";
+                seqConfirm.Content = "Create";
+                sequenceName.Text = "";
+                seqPrompt.Visibility = Visibility.Visible;
+                sequenceName.Focus();
+                return;
+            }
+
+            // "(none)" writes EMPTY, and empty is what makes the single flow run. It is a real choice
+            // rather than an absence, which is why the merge applies it unconditionally.
+            quest.ActiveSequence = picked == NoSequenceMarker ? "" : picked;
+            ShowSequence();
+            RefreshQuestCardTargets();
+            hint.Text = quest.ActiveSequence.Length == 0
+                ? "Start runs the single flow above."
+                : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
+                  $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).";
+        };
+
+        seqRename.Click += (_, _) =>
+        {
+            if (quest.ActiveSequenceOrNull == null) { hint.Text = "Pick a sequence to rename."; return; }
+            seqPromptLabel.Text = "Rename to:";
+            seqConfirm.Content = "Rename";
+            sequenceName.Text = quest.ActiveSequence;
+            seqPrompt.Visibility = Visibility.Visible;
+            sequenceName.Focus();
+        };
+
+        seqDelete.Click += (_, _) =>
+        {
+            if (quest.ActiveSequenceOrNull == null) { hint.Text = "Nothing to delete — the single flow runs."; return; }
+            if (MessageBox.Show($"Delete the sequence \"{quest.ActiveSequence}\"?", "Delete sequence",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+
+            quest.Sequences.Remove(quest.ActiveSequence);
+            quest.ActiveSequence = "";
+            RefreshSequenceList(NoSequenceMarker);
+            ShowSequence();
+            RefreshQuestCardTargets();
+            hint.Text = "Deleted. Start runs the single flow above again.";
+        };
+
+        seqConfirm.Click += (_, _) =>
+        {
+            var name = sequenceName.Text.Trim();
+            if (name.Length == 0) { hint.Text = "A sequence needs a name."; return; }
+
+            var renaming = (string?)seqConfirm.Content == "Rename";
+            if (renaming && name == quest.ActiveSequence) { seqPrompt.Visibility = Visibility.Collapsed; return; }
+            if (quest.Sequences.ContainsKey(name))
+            {
+                hint.Text = $"There is already a sequence called \"{name}\" — pick another name.";
+                return;
+            }
+
+            if (renaming)
+            {
+                var moved = quest.Sequences[quest.ActiveSequence];
+                quest.Sequences.Remove(quest.ActiveSequence);
+                quest.Sequences[name] = moved;
+            }
+            else
+            {
+                quest.Sequences[name] = new QuestSequence();
+            }
+
+            quest.ActiveSequence = name;
+            RefreshSequenceList(name);
+            ShowSequence();
+            RefreshQuestCardTargets();
+            seqPrompt.Visibility = Visibility.Collapsed;
+            hint.Text = renaming
+                ? $"Renamed to \"{name}\" — press Save to keep it."
+                : $"Created \"{name}\" — add its entries, then press Save.";
+        };
+
+        seqCancel.Click += (_, _) =>
+        {
+            seqPrompt.Visibility = Visibility.Collapsed;
+            RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
+        };
+
+        RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
+        ShowSequence();
+
+        var seqPickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        seqRename.Margin = new Thickness(6, 0, 0, 0);
+        seqDelete.Margin = new Thickness(6, 0, 0, 0);
+        seqPickRow.Children.Add(sequenceBox);
+        seqPickRow.Children.Add(seqRename);
+        seqPickRow.Children.Add(seqDelete);
+
+        panel.Children.Add(Section("Sequence — several flows in one run",
+            Hint("Runs a LIST of flows in one go: A three times, then B twice, and the whole list repeated " +
+                 "by the master loops. \"(none)\" runs the single flow above instead, so this one control " +
+                 "decides which.\n" +
+                 "EVERY flow here clicks the SAME place, and the initial wait happens ONCE at the start. " +
+                 "The tool never moves the cursor, so a flow inside a sequence cannot have a position of " +
+                 "its own — that is the design, not an oversight. It is also what makes this useful: one " +
+                 "NPC, several quests, one place to stand.\n" +
+                 "There is NO failure detection. A flow that does not hand its quest in cannot be told " +
+                 "from one that did, so the run simply carries on — Test one loop on a flow, then a short " +
+                 "sequence, before trusting a long one."),
+            LabeledField("Sequence", seqPickRow),
+            seqPrompt,
+            LabeledField("Master loops", seqLoops),
+            LabeledField("Initial wait (s)", seqWait),
+            entriesHost));
+
         panel.Children.Add(Section("Timing",
             Hint("Initial wait — your window to put the mouse in place. The tool never moves the cursor, " +
                  "so where it sits when this ends is where every click in the flow lands.\n" +
@@ -5722,6 +5950,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
             // back here is what makes an edit stick.
             Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+
+            // And the same for the ACTIVE sequence's entries. Its loops and initial wait need no such
+            // line — those fields write into the sequence as they are typed.
+            if (quest.ActiveSequenceOrNull is { } activeSequence)
+                activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
 
             var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
             local.Quest = new ConfigLoader.LocalQuest
@@ -5815,7 +6048,70 @@ public partial class MainWindow : FluentWindow, IDisposable
         return panel;
     }
 
-    /// <summary>Runs the flow once, on a pool thread, and reports on the tab.
+    /// <summary>The sequence's entries: one row per flow, and how many times in a row. Built like the step
+    /// editor — the add button goes in FIRST and rows are inserted before it, so it stays at the bottom
+    /// however many rows there are.</summary>
+    private StackPanel BuildQuestEntriesEditor(QuestSequence? sequence, List<QuestEntryRow> rows)
+    {
+        var panel = new StackPanel();
+
+        if (sequence == null)
+        {
+            var none = Mono();
+            none.Text = "(no sequence chosen — the single flow above runs)";
+            panel.Children.Add(none);
+            return panel;
+        }
+
+        var flowNames = _service.Config.Quest.Presets.Keys
+            .OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+
+        var add = MakeButton("+ Add entry", ControlAppearance.Secondary);
+        panel.Children.Add(add);
+
+        void AddRow(QuestSequenceEntry? entry)
+        {
+            if (flowNames.Count == 0)
+            {
+                var none = Mono();
+                none.Text = "(no flows to add — create one in the Flow section above)";
+                panel.Children.Insert(panel.Children.IndexOf(add), none);
+                return;
+            }
+
+            var row = new QuestEntryRow();
+            foreach (var name in flowNames) row.Flow.Items.Add(name);
+            row.Flow.SelectedItem = entry != null && flowNames.Contains(entry.Preset)
+                ? entry.Preset
+                : flowNames[0];
+            row.Times.Text = (entry?.Times ?? 1).ToString(CultureInfo.InvariantCulture);
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(row.Flow);
+            line.Children.Add(FieldLabel("×"));
+            line.Children.Add(row.Times);
+
+            var del = new UiButton
+            {
+                Content = "✕",
+                Appearance = ControlAppearance.Secondary,
+                MinWidth = 28,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            del.Click += (_, _) => { panel.Children.Remove(line); rows.Remove(row); };
+            line.Children.Add(del);
+
+            panel.Children.Insert(panel.Children.IndexOf(add), line);
+            rows.Add(row);
+        }
+
+        foreach (var e in sequence.Entries) AddRow(e);
+        add.Click += (_, _) => AddRow(null);
+
+        return panel;
+    }
+
+    /// <summary>Runs the flow once, on a pool thread, and reports on the tab.</summary>
     ///
     /// It calls <see cref="QuestTool"/> rather than replaying the steps here, so the test and a real run
     /// cannot disagree about what a step means, what is refused, or when the guard trips — the failure

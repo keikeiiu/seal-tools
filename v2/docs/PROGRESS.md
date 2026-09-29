@@ -13,6 +13,46 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-09-30 (37) — quest sequences, and a card that can aim a run
+
+**What the player asked for:** *"preset a run 3 times then preset b 2 times and then have a master loop
+of that"* — and, in the same breath, a selector and counter on the CARD like Buy's, so the loop number
+can be changed without opening Configuration.
+
+**Three commits:** the plan in [PLAN-QUEST.md](PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
+then the engine (config, projection, tool, tests), then the editor on the tab and the card controls.
+
+**The design decision that is really a consequence.** Every flow in a sequence clicks the SAME place and
+the positioning wait belongs to the sequence ONCE. That is not a simplification — it falls out of the
+manual-placement design, since the tool never moves the cursor and a flow inside a sequence therefore
+cannot have a position of its own. It is also the thing that makes the feature sensible: **one NPC,
+several quests, one place to stand.**
+
+**And the question the player asked back, which was the right one.** I proposed "abort the sequence when a
+flow fails" and they asked *"how do you know it is failed?"* — the answer is that it cannot. The tool
+reads nothing, so it can see exactly three things (a step that cannot be sent, a serial write throwing,
+the mouse guard), and the first two are **transport**, not "the quest did not hand in". So no abort rule
+was written: a rule that can never fire is one a later reader would trust. Real detection needs the tool
+to read the screen, which is `Stop on a condition` (§9) and a feature of its own.
+
+**Shared, not duplicated:** the step loop, the positioning and the guard are one implementation used by
+both the single-flow and sequence runners. They differ only in how often and in what order they call it,
+and a second copy of the sending is where the guard would one day be checked in one path and not the
+other.
+
+**Two traps met and handled:**
+- the tab's Save rewrites `LocalQuest` from an explicit set, so it would have **deleted sequences** on the
+  next save. Both new fields are in it now — the same shape of bug this projection has had three times;
+- the card's count box had to **follow the target**: 5 loops means one thing for a sequence and another
+  for a flow, and a stale number there is how a run gets the wrong count.
+
+**The card mirrors Buy's measured row** — RowHeight 32, the 4/8px gaps, the 11px font and the 6px right
+inset — rather than inventing a second look for the same controls.
+
+180/180 tests pass. Release only: a tool was RUNNING, so no kill and no relaunch.
+
+---
+
 ## 2026-09-28 (36) — the US client: the frame is built
 
 **What landed** ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md) §4.1, §4.2 and §4.5): `game.variant` plus a

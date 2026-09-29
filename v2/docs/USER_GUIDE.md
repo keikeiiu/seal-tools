@@ -460,6 +460,34 @@ Read [PLAN-QUEST.md](PLAN-QUEST.md) for why it is built this way.
 | **Delete** | Asks first, and refuses to delete the last one. |
 | The naming row | **Create flow:** or **Rename to:**, a name box, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message rather than overwriting. |
 
+### Sequence — several flows in one run
+
+A **list of flows run in one go**: *A three times, then B twice*, and the whole list repeated by the
+master loops. For the quests that share an NPC.
+
+| Control | What it does |
+|---|---|
+| **Sequence** | Which sequence runs when you press **Start**. The first item is **`(none — run the single flow above)`**, so this one control decides between a sequence and a single flow — there is no second switch. **＋ Add new sequence…** opens the naming row. |
+| **Master loops** | How many times the whole entry list is repeated. |
+| **Initial wait (s)** | The **one** positioning window for the entire sequence — see the warning below. |
+| The entry rows | One per flow: pick the **flow**, set **× times**, `✕` to remove. **+ Add entry** appends one. |
+
+> ⚠ **Every flow in a sequence clicks the SAME place, and the initial wait happens ONCE.** The tool never
+> moves the cursor, so a flow inside a sequence cannot have a position of its own — which is also what
+> makes this useful: one NPC, several quests, one place to stand.
+
+> ⚠ **There is no failure detection.** A flow that fails to hand its quest in looks exactly like one that
+> succeeded — the tool reads nothing, so it cannot tell, and the run simply carries on. Test one loop on
+> each flow, then a short sequence, before trusting a long one.
+
+### The Quest card
+
+The card carries a **target picker** (every flow and every sequence, sequences first) and a **loop
+counter** with `−` / `+`, so a run can be aimed without opening Configuration. The box starts on the
+chosen target's own loop count and **follows it when you change the target** — 5 loops means one thing
+for a sequence and another for a flow. **What the card shows wins over the tab**, which is the point of
+having it there.
+
 ### Timing
 
 | Control | What it does |
