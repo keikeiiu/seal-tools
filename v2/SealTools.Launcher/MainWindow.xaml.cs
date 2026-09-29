@@ -290,6 +290,14 @@ public partial class MainWindow : FluentWindow, IDisposable
     private Wpf.Ui.Controls.TextBox? _buyCountCard;
     /// <summary>The item currently chosen on either picker. One value behind two controls.</summary>
     private string? _activeBuyPreset;
+
+    /// <summary>The Quest card's quick choice — what to run, and how many loops — so a run can be aimed
+    /// without opening Configuration. Mirrors the Buy card's pair, and the same reasoning: the picker
+    /// appears on the tab as well, and the two are kept in step rather than being one-looking control
+    /// with two states.</summary>
+    private QuestCardTarget? _activeQuestTarget;
+    private ComboBox? _questTargetCard;
+    private Wpf.Ui.Controls.TextBox? _questCountCard;
     /// <summary>True while the two pickers are being synchronised, so their events don't recurse.</summary>
     private bool _syncingBuy;
     private TextBlock? _buyHint;
@@ -390,6 +398,18 @@ public partial class MainWindow : FluentWindow, IDisposable
                 {
                     _service.PendingBuyPreset = _activeBuyPreset;
                     _service.PendingBuyCount = BuyRunCountFromCard();
+                }
+
+                // What the CARD chose, handed over here for the same reason: a tool start only carries
+                // an id, so the choice has to arrive some other way. Null for both means the run uses
+                // the tab's choice.
+                if (id == "quest")
+                {
+                    _service.PendingQuestSequence =
+                        _activeQuestTarget is { IsSequence: true } seq ? seq.Name : null;
+                    _service.PendingQuestFlow =
+                        _activeQuestTarget is { IsSequence: false } flow ? flow.Name : null;
+                    _service.PendingQuestLoops = QuestRunCountFromCard();
                 }
 
                 if (!await _service.StartToolAsync(id))
@@ -502,6 +522,77 @@ public partial class MainWindow : FluentWindow, IDisposable
                 runnerGrid.Children.Add(countRow);
 
                 right.Children.Add(runnerGrid);
+            }
+            if (id == "quest")
+            {
+                // The SAME measured row as the Buy card beside it — one height for every control, the
+                // same gaps either side of the box, and the smaller font that row height needs. Those
+                // numbers were measured once, on that card; see its block above for what was wrong
+                // before them.
+                const double RowHeight = 32;
+                const double CountWidth = 44;
+                const double TargetWidth = 150;
+                const double GapRow = 8;
+                const double GapInner = 4;
+                const double InlineFontSize = 11;
+
+                _questTargetCard = new ComboBox
+                {
+                    Width = TargetWidth,
+                    Height = RowHeight,
+                    FontSize = InlineFontSize,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, GapRow, 0),
+                };
+                _questTargetCard.SelectionChanged += (_, _) =>
+                {
+                    if (_questTargetCard.SelectedItem is not QuestCardTarget picked) return;
+                    _activeQuestTarget = picked;
+
+                    // The box follows the target: 5 loops means one thing for a sequence and another for
+                    // a flow, and leaving a stale number there is how a run gets the wrong count.
+                    if (_questCountCard != null)
+                        _questCountCard.Text = QuestDefaultLoops(picked).ToString(CultureInfo.InvariantCulture);
+                };
+
+                _questCountCard = UiText("1");
+                _questCountCard.FontSize = InlineFontSize;
+                _questCountCard.Width = CountWidth;
+                _questCountCard.Height = RowHeight;
+                _questCountCard.Margin = new Thickness(GapInner, 0, GapInner, 0);
+                _questCountCard.VerticalAlignment = VerticalAlignment.Center;
+                _questCountCard.HorizontalContentAlignment = HorizontalAlignment.Center;
+
+                var minusQ = MakeStepperButton("−");
+                minusQ.Click += (_, _) => BumpQuestCount(-1);
+                var plusQ = MakeStepperButton("+");
+                plusQ.Click += (_, _) => BumpQuestCount(+1);
+
+                var countRowQ = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    // The 6px inset the Buy row needs too: MakeButton carries a 6px right margin, so
+                    // without it the "+" overhangs the Start/Stop buttons below by exactly that.
+                    Margin = new Thickness(0, 0, 6, 0),
+                };
+                countRowQ.Children.Add(minusQ);
+                countRowQ.Children.Add(_questCountCard);
+                countRowQ.Children.Add(plusQ);
+
+                var questGrid = new Grid();
+                questGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                questGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(_questTargetCard, 0);
+                Grid.SetColumn(countRowQ, 1);
+                questGrid.Children.Add(_questTargetCard);
+                questGrid.Children.Add(countRowQ);
+
+                right.Children.Add(questGrid);
+
+                // Filled once the config is loaded and every time the tab saves, so a new flow or
+                // sequence appears on the card without a restart.
+                RefreshQuestCardTargets();
             }
             right.Children.Add(buttons);
 
@@ -4185,6 +4276,58 @@ public partial class MainWindow : FluentWindow, IDisposable
     private int BuyRunCountFromCard()
         => _buyCountCard != null && int.TryParse(_buyCountCard.Text.Trim(), out var n) && n >= 1 ? n : 1;
 
+    /// <summary>What the chosen target runs by default — a sequence's master loops, or a flow's own.
+    /// The card's box starts here so it reads as the real number rather than a placeholder, and it is
+    /// reloaded whenever the target changes, because 5 means one thing for a sequence and another for a
+    /// flow.</summary>
+    private int QuestDefaultLoops(QuestCardTarget? target)
+    {
+        var quest = _service.Config.Quest;
+        var loops = target switch
+        {
+            { IsSequence: true } t when quest.Sequences.TryGetValue(t.Name, out var s) => s.Loops,
+            { IsSequence: false } t when quest.Presets.TryGetValue(t.Name, out var p) => p.Loops,
+            _ => 1,
+        };
+
+        return Math.Max(1, loops);
+    }
+
+    /// <summary>Fills the card's picker from the config — SEQUENCES first, because a sequence is the
+    /// bigger thing to run and half the reason the picker exists. Keeps the current choice while it
+    /// still exists, so saving on the tab does not silently re-aim the card.</summary>
+    private void RefreshQuestCardTargets()
+    {
+        if (_questTargetCard == null) return;
+
+        var quest = _service.Config.Quest;
+        var targets = new List<QuestCardTarget>();
+        foreach (var name in quest.Sequences.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            targets.Add(new QuestCardTarget(name, true));
+        foreach (var name in quest.Presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            targets.Add(new QuestCardTarget(name, false));
+
+        var keep = _activeQuestTarget;
+        _questTargetCard.ItemsSource = targets;
+        _activeQuestTarget =
+            targets.FirstOrDefault(t => keep != null && t.Name == keep.Name && t.IsSequence == keep.IsSequence)
+            ?? targets.FirstOrDefault();
+        _questTargetCard.SelectedItem = _activeQuestTarget;
+
+        if (_questCountCard != null)
+            _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private void BumpQuestCount(int delta)
+    {
+        if (_questCountCard == null) return;
+        var n = Math.Max(1, QuestRunCountFromCard() + delta);
+        _questCountCard.Text = n.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private int QuestRunCountFromCard()
+        => _questCountCard != null && int.TryParse(_questCountCard.Text.Trim(), out var n) && n >= 1 ? n : 1;
+
     private void SaveBuyPreset(Wpf.Ui.Controls.TextBox name, ComboBox row,
                                Wpf.Ui.Controls.TextBox scroll, Wpf.Ui.Controls.TextBox count)
     {
@@ -5305,6 +5448,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         return MakeTab("Calibrate Pet", panel);
     }
 
+    /// <summary>One thing the Quest card can be pointed at. A record so the picker carries the KIND with
+    /// the name — a flow and a sequence may legitimately share a name, and a single string would have to
+    /// be parsed to tell them apart.</summary>
+    private sealed record QuestCardTarget(string Name, bool IsSequence)
+    {
+        public override string ToString() => $"{Name} ({(IsSequence ? "sequence" : "flow")})";
+    }
+
     /// <summary>One editable step of a quest flow. The shape <see cref="RuleRow"/> established: the row
     /// owns its controls, and maps itself back to a config type at save time.</summary>
     private sealed class QuestStepRow
@@ -5589,6 +5740,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             SaveReport(() => _service.SaveLocal(local), result,
                 $"Flow \"{quest.Active}\" written to local.yaml — {Active().Steps.Count} step(s), " +
                 $"{Active().Loops} loop(s).");
+
+            // The card's picker is built from the config, so a flow or sequence made here has to be
+            // able to reach it without a restart.
+            RefreshQuestCardTargets();
         };
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };

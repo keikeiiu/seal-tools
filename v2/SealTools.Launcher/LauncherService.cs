@@ -63,6 +63,20 @@ public sealed class LauncherService : IDisposable
     /// only its usual amount — sometimes you want a different number, and that should not mean editing
     /// the item. Set from the card at Start.</summary>
     public int PendingBuyCount { get; set; } = 1;
+
+    /// <summary>The quest target the next run uses when Start is pressed on the CARD — a sequence name,
+    /// or a flow name. The card carries the choice so a run can be aimed without opening Configuration,
+    /// and only one of the two is ever set: they are the card's "what am I running" picker, split into
+    /// its two kinds rather than packed into one string that somebody would later have to parse.
+    ///
+    /// Null for both means "use the tab's choice", which is what the tab's own Test buttons want.</summary>
+    public string? PendingQuestSequence { get; set; }
+
+    public string? PendingQuestFlow { get; set; }
+
+    /// <summary>How many loops this run does, when the card set one. Null means the flow's or
+    /// sequence's own `loops`.</summary>
+    public int? PendingQuestLoops { get; set; }
     private OcrEngine? _diagnosticOcr;
     private SerialPort? _arduino;
 
@@ -587,7 +601,8 @@ public sealed class LauncherService : IDisposable
         // left afterwards — and it is the one run where a board that ignored a command looks exactly
         // like a board that acted on it.
         "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport, Gate).Run(ser, state, ct),
-        "quest" => new SealTools.Quest.QuestTool(Config).Run(ser, state, ct),
+        "quest" => new SealTools.Quest.QuestTool(Config, PendingQuestLoops, PendingQuestSequence,
+            PendingQuestFlow).Run(ser, state, ct),
         _ => 1,
     };
 

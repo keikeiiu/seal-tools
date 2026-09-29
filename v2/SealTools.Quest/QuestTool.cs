@@ -22,24 +22,55 @@ public sealed class QuestTool : ToolBase
 {
     private readonly AppConfig _cfg;
     private readonly int? _loopsOverride;
+    private readonly string? _sequenceOverride;
+    private readonly string? _flowOverride;
 
     /// <param name="loopsOverride">How many loops to run instead of the flow's own count. The tab's
     /// **Test one loop** passes 1, so the test is THE SAME CODE as a real run — the guard, the
     /// validation and the sending are not re-implemented beside it, which is where a test and a run
     /// drift apart and the test starts passing things the run would refuse.</param>
-    public QuestTool(AppConfig cfg, int? loopsOverride = null)
+    /// <param name="sequenceOverride">What the CARD chose to run, when it chose one. The card's quick
+    /// choice wins over the tab's because that is the whole reason it is on the card; null means "use
+    /// the tab's choice", which is what the tab's own Test buttons want.</param>
+    /// <param name="flowOverride">As above, for a single flow.</param>
+    public QuestTool(AppConfig cfg, int? loopsOverride = null, string? sequenceOverride = null,
+        string? flowOverride = null)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
         _loopsOverride = loopsOverride;
+        _sequenceOverride = sequenceOverride;
+        _flowOverride = flowOverride;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
         var quest = _cfg.Quest;
 
-        // A SEQUENCE FIRST, when one is chosen. An empty `active_sequence` — or a name nobody recognises
-        // — runs the single flow, which is what every config written before sequences says.
+        // WHAT THE CARD CHOSE, first — it exists so a run can be aimed without opening Configuration,
+        // and a choice made there must not be quietly overridden by the tab.
+        if (!string.IsNullOrWhiteSpace(_sequenceOverride))
+        {
+            if (!quest.Sequences.TryGetValue(_sequenceOverride.Trim(), out var fromCard))
+                return Refuse(state, $"There is no sequence called \"{_sequenceOverride.Trim()}\" — " +
+                                     "pick another on the card, or reload the config.");
+
+            return RunSequence(ser, state, quest, fromCard, _sequenceOverride.Trim(), ct);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_flowOverride))
+        {
+            if (!quest.Presets.TryGetValue(_flowOverride.Trim(), out var fromCard))
+                return Refuse(state, $"There is no flow called \"{_flowOverride.Trim()}\" — pick " +
+                                     "another on the card, or reload the config.");
+
+            return RunFlow(ser, state, quest, _flowOverride.Trim(), fromCard,
+                _loopsOverride ?? Math.Max(1, fromCard.Loops), ct);
+        }
+
+        // Then the TAB's choice. A SEQUENCE when one is chosen; an empty `active_sequence` — or a name
+        // nobody recognises — runs the single flow, which is what every config written before sequences
+        // says.
         if (quest.ActiveSequenceOrNull is { } sequence)
             return RunSequence(ser, state, quest, sequence, quest.ActiveSequence.Trim(), ct);
 
