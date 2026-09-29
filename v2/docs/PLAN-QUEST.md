@@ -146,6 +146,64 @@ as the spammer's presets: a preset written there would ship with the next public
   capture, OCR and a detection rule, and it inherits every fragility the reading tools have.
 - **A `hid` click point** — see §3.
 
+## 11. Sequences — several flows in one run (built 2026-09-30)
+
+Two quests at the same NPC, handed in in a rhythm: **A three times, then B twice**, and the whole thing
+repeated by a master loop.
+
+```yaml
+quest:
+  active_sequence: ""        # empty = run one flow, exactly as before
+  sequences:
+    nightly:
+      initial_wait_s: 10     # ONE positioning window for the whole sequence
+      loops: 5               # the master loop
+      entries:
+        - { preset: a, times: 3 }
+        - { preset: b, times: 2 }
+```
+
+Five master loops × (3×A + 2×B) = 25 flow runs from **one** mouse placement. Purely additive: a config
+with no `sequences` runs one flow, exactly as v2.13 did.
+
+### The constraint that shapes it
+
+**Every flow in a sequence must click the SAME place**, and the initial wait belongs to the **sequence,
+once**. That is not a shortcut — it follows from the design: the tool never moves the cursor, so a flow
+inside a sequence cannot have a position of its own, and a flow's own `initial_wait_s` means *"when I am
+run alone"*. It is also what makes the feature coherent: the natural use is **several quests at one
+NPC** — one position, several dialogues.
+
+If flows ever need different positions, that is the deferred `hid` click point (§9), and it brings
+calibration back with it.
+
+### There is still NO failure detection, and that is deliberate
+
+`Run()` here reads nothing, so it cannot tell a flow that worked from one that did not. What it can see,
+and nothing else, is:
+
+| | when |
+|---|---|
+| a step that cannot be sent | before the run starts — a config error |
+| a serial write throwing | mid-run — the board is gone, and every later step is pointless |
+| the mouse guard | mid-run — the cursor moved |
+
+The first two are **transport**, not "the quest did not hand in", and a throw already aborts through the
+launcher's crash path. **No rule pretends to detect a bad flow**, because a rule that can never fire is
+one a later reader would trust. Real detection — *is the quest still in the list?* — needs the tool to
+read the screen, which is what this design gave up; it is `Stop on a condition` (§9) and it is a feature
+of its own.
+
+### The rest
+
+- **`Test one entry`** runs one named flow once, so a new flow can be checked without committing to five
+  master loops. `Test one loop` stays for the flow being edited.
+- **The card says where it is**: `sequence "nightly" · 5 × (a×3 + b×2)` on the standing line, the master
+  loop as `Cycle`, and `a 3/3 · key 1 (0.25s)` as `Current`. On a blind run that line is the only
+  account of what it is doing.
+- **The sequence picker on the tab carries `(none — run the single flow above)` as its first item**, so
+  one control says which of the two runs and there is no second switch to keep in step.
+
 ## 10. Order of work
 
 1. Config: the model, both projection directions, the guard-test fixture.

@@ -37,95 +37,236 @@ public sealed class QuestTool : ToolBase
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
         var quest = _cfg.Quest;
-        var flow = quest.Active;
-        var preset = quest.ActivePreset;
 
-        // A FLOW THAT CANNOT BE SENT IS REFUSED BEFORE ANYTHING IS CLICKED. A bad step sends nothing, and
-        // in a flow replayed 500 times "sends nothing" is indistinguishable from the game behaving
-        // differently today — so it is caught here, where the message can still be read and acted on.
-        for (int i = 0; i < preset.Steps.Count; i++)
-        {
-            if (QuestAction.Complaint(preset.Steps[i]) is { } problem)
-                return Refuse(state, $"Step {i + 1}: {problem}");
-        }
+        // A SEQUENCE FIRST, when one is chosen. An empty `active_sequence` — or a name nobody recognises
+        // — runs the single flow, which is what every config written before sequences says.
+        if (quest.ActiveSequenceOrNull is { } sequence)
+            return RunSequence(ser, state, quest, sequence, quest.ActiveSequence.Trim(), ct);
 
-        if (preset.Steps.Count == 0)
-            return Refuse(state, $"The flow \"{flow}\" has no steps — add some on the Quest tab.");
+        return RunFlow(ser, state, quest, quest.Active, quest.ActivePreset,
+            _loopsOverride ?? Math.Max(1, quest.ActivePreset.Loops), ct);
+    }
 
-        var loops = Math.Max(1, _loopsOverride ?? preset.Loops);
+    /// <summary>One flow, on its own: position, guard, then its steps for its own loop count.</summary>
+    private int RunFlow(SerialPort ser, ToolState state, QuestConfig quest, string flow,
+        QuestPreset preset, int loops, CancellationToken ct)
+    {
+        if (Validate(preset, flow) is { } problem) return Refuse(state, problem);
 
         state.Schedule = $"flow \"{flow}\" · {preset.Steps.Count} step(s) × {loops} loop(s)";
-        state.Cycle = 0;
-        state.Current = null;
-        state.Message = null;
+        Reset(state);
 
         Log($"\nQuest Hand-in — flow \"{flow}\"");
         Log($"  {preset.Steps.Count} step(s), {loops} loop(s), " +
-                          $"{preset.InitialWaitSeconds:0.#}s to place the mouse");
+            $"{preset.InitialWaitSeconds:0.#}s to place the mouse");
         foreach (var step in preset.Steps) Log("  · " + QuestAction.Describe(step));
 
-        // THE POSITIONING WINDOW, and it is the whole of "positioning". The tool never moves the cursor,
-        // so where it sits when this ends is where every click in the flow lands — the tuner's `manual`
-        // spring mode, working the same way. Counted out loud because the player is aiming at a moment.
-        for (double left = Math.Ceiling(preset.InitialWaitSeconds); left > 0; left--)
-        {
-            state.Current = $"move the mouse into place — {left:0}s";
-            Log($"  place the mouse — {left:0}s");
-            if (!Wait(1, ct)) return Cancelled(state, "during the positioning wait");
-        }
+        if (!Position(state, preset.InitialWaitSeconds, ct))
+            return Cancelled(state, "during the positioning wait");
 
-        // THE GUARD'S REFERENCE, read ONCE here and read STRICTLY. An unreadable cursor ends the run
-        // rather than letting it click on at a place nothing is watching — which is the difference from
-        // the tuner's guard: that one needs a game window it may not be able to measure, so it is
-        // documented as failing OPEN, and this one needs nothing but the cursor itself.
-        if (WindowFinder.LogicalCursorPosition() is not { } start)
-        {
-            return Refuse(state,
-                "The cursor couldn't be read, so it can't be watched — stopping rather than clicking at " +
-                "a place nothing is checking.");
-        }
+        if (!TryReadGuardReference(quest, state, out var start)) return Finish(state);
 
-        Log($"  cursor at ({start.X},{start.Y}) — moving more than {quest.GuardPx} stops the run");
-
-        var stopped = false;
         for (int loop = 1; loop <= loops; loop++)
         {
             state.Cycle = loop;
             Log($"\n[loop {loop}/{loops}]");
 
-            foreach (var step in preset.Steps)
+            switch (RunSteps(ser, state, preset, "", start, quest.GuardPx, ct))
             {
-                if (ct.IsCancellationRequested || QuitPressed) return Cancelled(state, $"in loop {loop}");
-
-                // Checked BEFORE every send, because the cost of a missed check is a click at the wrong
-                // place and the cost of the check is a cursor read.
-                if (GuardProblem(start, quest.GuardPx) is { } drift)
-                {
-                    stopped = true;
-                    state.Message = $"{drift} Stopped on loop {loop} of {loops}.";
-                    Log("[!] " + state.Message);
+                case PassResult.Done:
                     break;
-                }
 
-                state.Current = QuestAction.Describe(step);
-                Send(ser, step);
-                if (!Wait(step.DelaySeconds, ct)) return Cancelled(state, $"in loop {loop}");
+                case PassResult.Cancelled:
+                    return Cancelled(state, $"in loop {loop}");
+
+                default:
+                    state.Message = $"{state.Message} Stopped on loop {loop} of {loops}.";
+                    Log("[!] " + state.Message);
+                    Finish(state);
+                    return 0;
             }
-
-            if (stopped) break;
         }
 
-        // THE CARD GOES BACK TO "stopped" and there is nothing to set here that would be seen: the
-        // launcher tears a returned tool down (see the finally in StartToolCoreAsync), which removes it
-        // from the map the card reads. So the only place a finished run can say so is the log — which is
-        // where it is, above. A "finished N loops" line ON the card would mean keeping the run
-        // registered after it ended, and a registration that outlives its run is the same class of lie
-        // as the one this replaced.
         Finish(state);
-        Log(stopped
-            ? $"STOPPED by the mouse guard — loop {state.Cycle} of {loops}"
-            : $"DONE — {loops} loop(s) of \"{flow}\"");
+        Log($"DONE — {loops} loop(s) of \"{flow}\"");
         return 0;
+    }
+
+    /// <summary>A sequence: A three times, then B twice, and the whole list repeated by a master loop.
+    /// See docs/PLAN-QUEST.md §11.
+    ///
+    /// **ONE POSITIONING WINDOW, at the start.** A flow's own initial wait means *"when I am run alone"*
+    /// and does not apply here: the tool never moves the cursor, so a flow inside a sequence clicks where
+    /// the last one did, and a per-flow wait would ask the player to aim at something that is not going
+    /// to happen.</summary>
+    private int RunSequence(SerialPort ser, ToolState state, QuestConfig quest,
+        QuestSequence sequence, string name, CancellationToken ct)
+    {
+        // EVERY entry, and every flow it names, is checked BEFORE anything is clicked — a sequence is
+        // longer than a flow, so a mistake in it costs more.
+        if (sequence.Entries.Count == 0)
+            return Refuse(state, $"The sequence \"{name}\" has no entries — add some on the Quest tab.");
+
+        var planned = new List<(string Flow, QuestPreset Preset, int Times)>();
+        foreach (var entry in sequence.Entries)
+        {
+            var flowName = entry.Preset?.Trim() ?? "";
+            if (!quest.Presets.TryGetValue(flowName, out var preset))
+                return Refuse(state,
+                    $"The sequence \"{name}\" names a flow \"{entry.Preset}\" that does not exist.");
+
+            if (Validate(preset, flowName) is { } problem) return Refuse(state, problem);
+
+            planned.Add((flowName, preset, Math.Max(1, entry.Times)));
+        }
+
+        var loops = Math.Max(1, _loopsOverride ?? sequence.Loops);
+        var shape = string.Join(" + ", planned.Select(p => $"{p.Flow}×{p.Times}"));
+
+        state.Schedule = $"sequence \"{name}\" · {loops} × ({shape})";
+        Reset(state);
+
+        Log($"\nQuest Hand-in — sequence \"{name}\"");
+        Log($"  {loops} master loop(s) × ({shape}), " +
+            $"{sequence.InitialWaitSeconds:0.#}s to place the mouse");
+        foreach (var (flowName, preset, times) in planned)
+        {
+            Log($"  · {flowName} ×{times}");
+            foreach (var step in preset.Steps) Log("      " + QuestAction.Describe(step));
+        }
+
+        if (!Position(state, sequence.InitialWaitSeconds, ct))
+            return Cancelled(state, "during the positioning wait");
+
+        if (!TryReadGuardReference(quest, state, out var start)) return Finish(state);
+
+        for (int master = 1; master <= loops; master++)
+        {
+            state.Cycle = master;
+            Log($"\n[master {master}/{loops}]");
+
+            foreach (var (flowName, preset, times) in planned)
+            {
+                for (int pass = 1; pass <= times; pass++)
+                {
+                    Log($"  {flowName} {pass}/{times}");
+
+                    switch (RunSteps(ser, state, preset, $"{flowName} {pass}/{times} · ",
+                               start, quest.GuardPx, ct))
+                    {
+                        case PassResult.Done:
+                            break;
+
+                        case PassResult.Cancelled:
+                            return Cancelled(state, $"at {flowName} {pass}/{times}");
+
+                        default:
+                            state.Message = $"{state.Message} Stopped during {flowName} {pass}/{times} " +
+                                            $"of master loop {master}/{loops}.";
+                            Log("[!] " + state.Message);
+                            Finish(state);
+                            return 0;
+                    }
+                }
+            }
+        }
+
+        Finish(state);
+        Log($"DONE — {loops} master loop(s) of \"{name}\"");
+        return 0;
+    }
+
+    /// <summary>How one pass of a flow's steps ended.</summary>
+    private enum PassResult
+    {
+        Done,
+        StoppedByGuard,
+        Cancelled,
+    }
+
+    /// <summary>One pass of a flow's steps, with the guard checked before every send.
+    ///
+    /// Shared by the single-flow and sequence runners rather than written twice: the two differ in how
+    /// many times and in what order they call this, and in nothing else — and a second copy of the
+    /// sending is where the guard would one day be checked in one path and not the other.</summary>
+    private PassResult RunSteps(SerialPort ser, ToolState state, QuestPreset preset, string prefix,
+        (int X, int Y) start, int guardPx, CancellationToken ct)
+    {
+        foreach (var step in preset.Steps)
+        {
+            if (ct.IsCancellationRequested || QuitPressed) return PassResult.Cancelled;
+
+            // Checked BEFORE every send, because the cost of a missed check is a click at the wrong
+            // place and the cost of the check is one cursor read.
+            if (GuardProblem(start, guardPx) is { } drift)
+            {
+                state.Message = drift;
+                return PassResult.StoppedByGuard;
+            }
+
+            state.Current = prefix + QuestAction.Describe(step);
+            Send(ser, step);
+            if (!Wait(step.DelaySeconds, ct)) return PassResult.Cancelled;
+        }
+
+        return PassResult.Done;
+    }
+
+    /// <summary>The positioning window — the whole of "positioning". The tool never moves the cursor, so
+    /// where it sits when this ends is where every click lands. Counted out loud because the player is
+    /// aiming at a moment. False means the run was cancelled.</summary>
+    private bool Position(ToolState state, double seconds, CancellationToken ct)
+    {
+        for (double left = Math.Ceiling(seconds); left > 0; left--)
+        {
+            state.Current = $"move the mouse into place — {left:0}s";
+            Log($"  place the mouse — {left:0}s");
+            if (!Wait(1, ct)) return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>The guard's reference, read ONCE per run and read STRICTLY. An unreadable cursor ends the
+    /// run rather than letting it click on at a place nothing is watching — which is the difference from
+    /// the tuner's guard: that one needs a game window it may not be able to measure, so it is documented
+    /// as failing OPEN, and this one needs nothing but the cursor.</summary>
+    private static bool TryReadGuardReference(QuestConfig quest, ToolState state, out (int X, int Y) start)
+    {
+        if (WindowFinder.LogicalCursorPosition() is { } cursor)
+        {
+            start = cursor;
+            Log($"  cursor at ({start.X},{start.Y}) — moving more than {quest.GuardPx} stops the run");
+            return true;
+        }
+
+        start = default;
+        state.Message = "The cursor couldn't be read, so it can't be watched — stopping rather than " +
+                        "clicking at a place nothing is checking.";
+        Log("[!] " + state.Message);
+        return false;
+    }
+
+    /// <summary>Why this flow cannot run, or null. Refused BEFORE anything is clicked: a step that sends
+    /// nothing is indistinguishable from the game behaving differently today, and at a few hundred loops
+    /// there is no way to tell afterwards.</summary>
+    private static string? Validate(QuestPreset preset, string flow)
+    {
+        if (preset.Steps.Count == 0)
+            return $"The flow \"{flow}\" has no steps — add some on the Quest tab.";
+
+        for (int i = 0; i < preset.Steps.Count; i++)
+            if (QuestAction.Complaint(preset.Steps[i]) is { } problem)
+                return $"Flow \"{flow}\" step {i + 1}: {problem}";
+
+        return null;
+    }
+
+    private static void Reset(ToolState state)
+    {
+        state.Cycle = 0;
+        state.Current = null;
+        state.Message = null;
     }
 
     /// <summary>Why the cursor says the run should stop, or null when it is where the player left it.

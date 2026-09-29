@@ -361,6 +361,16 @@ public sealed class ConfigLoader
             if (local.Quest.Presets != null)
                 foreach (var (name, preset) in local.Quest.Presets)
                     defaults.Quest.Presets[name] = preset;
+
+            // The sequence to run, merged per name like the flows. Note the assignment is UNCONDITIONAL
+            // when the key is present: an empty `active_sequence` is a real choice — "run the single
+            // flow" — and skipping it on emptiness would make it impossible to turn a sequence off.
+            if (local.Quest.ActiveSequence != null)
+                defaults.Quest.ActiveSequence = local.Quest.ActiveSequence;
+            if (local.Quest.Sequences != null)
+                foreach (var (name, sequence) in local.Quest.Sequences)
+                    defaults.Quest.Sequences[name] = sequence;
+
             if (local.Quest.GuardPx is { } guardPx and >= 0) defaults.Quest.GuardPx = guardPx;
         }
     }
@@ -727,6 +737,13 @@ public sealed class ConfigLoader
     {
         public string? Active { get; set; }
         public Dictionary<string, QuestPreset>? Presets { get; set; }
+
+        /// <summary>Sequences, carried the same way and for the same reason as the flows: personal, so
+        /// they live in local.yaml and not in the file a public build ships. The VALUES are the config
+        /// types themselves — no mirror, so there is no field list to forget.</summary>
+        public string? ActiveSequence { get; set; }
+
+        public Dictionary<string, QuestSequence>? Sequences { get; set; }
 
         /// <summary>Carried HERE and not in defaults.yaml, for the reason the tool-level scalars on the
         /// Pet tab had to be: `SaveDefaults` rewrites defaults.yaml from an explicit field list, so a

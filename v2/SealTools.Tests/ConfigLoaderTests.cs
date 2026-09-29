@@ -546,6 +546,116 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>A SEQUENCE — several flows in one run — through a real save and reload, because it is
+    /// another list of objects inside the one config shape that already had one, and the projection has
+    /// silently dropped a field three times.
+    ///
+    /// The entries matter as much as the sequence: an entry is a flow's NAME plus a count, and a dropped
+    /// one is a step of the run that silently never happens.</summary>
+    [Fact]
+    public void QuestSequencesRoundTripWithTheirEntries()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Quest = new ConfigLoader.LocalQuest
+            {
+                Active = "a",
+                ActiveSequence = "nightly",
+                GuardPx = 9,
+                Presets = new Dictionary<string, QuestPreset>
+                {
+                    ["a"] = new() { Loops = 3, Steps = new List<QuestStep> { new() { Action = SealTools.Core.QuestAction.Click } } },
+                    ["b"] = new() { Loops = 5, Steps = new List<QuestStep> { new() { Action = SealTools.Core.QuestAction.Enter } } },
+                },
+                Sequences = new Dictionary<string, QuestSequence>
+                {
+                    ["nightly"] = new()
+                    {
+                        InitialWaitSeconds = 12.5,
+                        Loops = 5,
+                        Entries = new List<QuestSequenceEntry>
+                        {
+                            new() { Preset = "a", Times = 3 },
+                            new() { Preset = "b", Times = 2 },
+                        },
+                    },
+                },
+            };
+            loader.SaveLocal(local);
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("nightly", cfg.Quest.ActiveSequence);
+            Assert.Equal(9, cfg.Quest.GuardPx);
+
+            var sequence = cfg.Quest.ActiveSequenceOrNull;
+            Assert.NotNull(sequence);
+            Assert.Equal(12.5, sequence!.InitialWaitSeconds);
+            Assert.Equal(5, sequence.Loops);
+
+            // In ORDER, with both fields of each entry — the A-then-B rhythm is the whole point.
+            Assert.Equal(2, sequence.Entries.Count);
+            Assert.Equal("a", sequence.Entries[0].Preset);
+            Assert.Equal(3, sequence.Entries[0].Times);
+            Assert.Equal("b", sequence.Entries[1].Preset);
+            Assert.Equal(2, sequence.Entries[1].Times);
+
+            // And the flows it names are still there — the sequence refers to them by name.
+            Assert.Equal(2, cfg.Quest.Presets.Count);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>An empty `active_sequence` means "run the single flow" — the shape of every config written
+    /// before sequences existed — and an UNKNOWN name must fall back the same way rather than leaving the
+    /// tool with nothing to run.</summary>
+    [Fact]
+    public void NoSequenceChosenFallsBackToTheSingleFlow()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
+            local.Quest = new ConfigLoader.LocalQuest
+            {
+                Active = "a",
+                Presets = new Dictionary<string, QuestPreset>
+                {
+                    ["a"] = new() { Steps = new List<QuestStep> { new() { Action = SealTools.Core.QuestAction.Click } } },
+                },
+                Sequences = new Dictionary<string, QuestSequence>
+                {
+                    ["nightly"] = new() { Entries = new List<QuestSequenceEntry> { new() { Preset = "a", Times = 1 } } },
+                },
+            };
+
+            // Nothing chosen at all.
+            loader.SaveLocal(local);
+            Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
+
+            // A name nobody recognises.
+            local.Quest.ActiveSequence = "typo";
+            loader.SaveLocal(local);
+            Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
+
+            // And the real one resolves.
+            local.Quest.ActiveSequence = "nightly";
+            loader.SaveLocal(local);
+            Assert.NotNull(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void PetCalibrationRoundTripsAndKeepsItsOwnBagGrid()
     {

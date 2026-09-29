@@ -106,6 +106,21 @@ public sealed class QuestConfig
     /// <summary>Named flows, one per quest.</summary>
     public Dictionary<string, QuestPreset> Presets { get; set; } = new();
 
+    /// <summary>Which SEQUENCE to run instead of a single flow. **Empty means "run
+    /// <see cref="Active"/> on its own"**, which is what every config written before sequences says —
+    /// so this is additive and nothing has to be migrated.</summary>
+    public string ActiveSequence { get; set; } = "";
+
+    /// <summary>Named sequences: several flows in one run, for the quests that share an NPC.</summary>
+    public Dictionary<string, QuestSequence> Sequences { get; set; } = new();
+
+    /// <summary>The sequence to run, or null when none is chosen (or the name is unknown — in which
+    /// case the single flow runs, because a typo must not leave the tool with nothing to do).</summary>
+    public QuestSequence? ActiveSequenceOrNull =>
+        string.IsNullOrWhiteSpace(ActiveSequence)
+            ? null
+            : Sequences.TryGetValue(ActiveSequence.Trim(), out var s) ? s : null;
+
     /// <summary>How far the cursor may move, in the units the process reads it in, before the run
     /// STOPS. The player's own rule: *"if there is big swing on mouse movement, we stop it."*
     ///
@@ -139,6 +154,39 @@ public sealed class QuestPreset
     public int Loops { get; set; } = 1;
 
     public List<QuestStep> Steps { get; set; } = new();
+}
+
+/// <summary>Several flows in one run — A three times, then B twice, and the whole list repeated by a
+/// master loop. For the quests that share an NPC. See docs/PLAN-QUEST.md §11.
+///
+/// **EVERY FLOW IN A SEQUENCE CLICKS THE SAME PLACE**, and the initial wait belongs to the sequence,
+/// ONCE. That follows from the design rather than being a shortcut: the tool never moves the cursor, so
+/// a flow inside a sequence cannot have a position of its own, and a flow's own initial wait means
+/// "when I am run alone". It is also why the feature makes sense — one NPC, several quests, one place
+/// to stand.
+///
+/// There is NO failure detection, deliberately: the tool reads nothing, so it cannot tell a flow that
+/// worked from one that did not, and a rule that looked like detection could never fire.</summary>
+public sealed class QuestSequence
+{
+    /// <summary>Seconds to wait before anything runs — the ONE positioning window for the whole
+    /// sequence. The flows' own waits do not apply inside it.</summary>
+    public double InitialWaitSeconds { get; set; } = 10;
+
+    /// <summary>How many times the whole entry list is replayed.</summary>
+    public int Loops { get; set; } = 1;
+
+    /// <summary>Which flow, and how many times in a row, before moving to the next.</summary>
+    public List<QuestSequenceEntry> Entries { get; set; } = new();
+}
+
+/// <summary>One line of a sequence: a flow's NAME (it is looked up in
+/// <see cref="QuestConfig.Presets"/> at run time), and how many times to replay it.</summary>
+public sealed class QuestSequenceEntry
+{
+    public string Preset { get; set; } = "";
+
+    public int Times { get; set; } = 1;
 }
 
 /// <summary>One input in a flow, and how long to wait after sending it.

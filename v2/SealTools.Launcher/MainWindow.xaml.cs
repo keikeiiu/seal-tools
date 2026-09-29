@@ -5577,6 +5577,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 Active = quest.Active,
                 Presets = quest.Presets.ToDictionary(kv => kv.Key, kv => kv.Value),
+                // Both carried here or a Save from this tab DELETES them: this object replaces the file's
+                // quest block, and the merge only touches what is present.
+                ActiveSequence = quest.ActiveSequence,
+                Sequences = quest.Sequences.ToDictionary(kv => kv.Key, kv => kv.Value),
                 // Without this the guard threshold is written to no file at all and reverts to 8 on the
                 // next launch — a setting that looks like it saves because the box keeps its new value
                 // for the rest of the session.
