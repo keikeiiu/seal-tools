@@ -921,6 +921,24 @@ public sealed class SpammerConfig
     /// with no indication which one. SkillSpammer reports the empty case on the tool card instead.</summary>
     public Dictionary<string, double> ActiveKeys =>
         Presets.TryGetValue(Active, out var keys) ? keys : new Dictionary<string, double>();
+
+    /// <summary>Preset name → the keys that MUST be pressed when their cooldown is up, in precedence
+    /// order. Keys named here outrank every key that is not; the unlisted ones are the player's
+    /// "press when we are able to", and they only get a tick where nothing named here is due.
+    ///
+    /// A SEPARATE map rather than a field on each key, and that is the whole reason it looks like
+    /// this: <see cref="Presets"/> is a bare `key → seconds` map, so adding a field to a key would
+    /// change the VALUE's type and every `local.yaml` already written would stop loading. The header
+    /// of defaults.yaml records what that costs — a spammer block was once dropped that way and took
+    /// a player's key rotations with it. This is additive: a preset with no entry here behaves
+    /// exactly as it did before, because an empty list turns the rule off (see SkillSpammer).</summary>
+    public Dictionary<string, List<string>> Priority { get; set; } = new();
+
+    /// <summary>The precedence list for the active preset. Empty means "no ordering given", which
+    /// the tool reads as the old send-everything-due behaviour rather than as "nothing is
+    /// prioritised" — those are the same thing only if every key is equal, and they are not.</summary>
+    public List<string> ActivePriority =>
+        Priority.TryGetValue(Active, out var p) ? p : new List<string>();
 }
 
 public sealed class ModelsConfig

@@ -209,6 +209,10 @@ public sealed class ConfigLoader
         {
             Active = defaults.Spammer.Active,
             Presets = defaults.Spammer.Presets,
+            // Carried for the same reason the presets are: this adoption is the one path that moves
+            // a hand-written defaults.yaml block into local.yaml, and dropping it here would keep the
+            // keys and silently lose their order.
+            Priority = defaults.Spammer.Priority,
         };
         SaveLocal(local);
     }
@@ -350,6 +354,13 @@ public sealed class ConfigLoader
             if (local.Spammer.Presets != null)
                 foreach (var (name, keys) in local.Spammer.Presets)
                     defaults.Spammer.Presets[name] = keys;
+            // Merged the same way and for the same reason as the presets above. It is the same
+            // projection hazard that has dropped a field four times in this repo, so it is on the
+            // guard test's list — a copy that is missing here loads as "no order given", which is a
+            // silent fall back to the old behaviour rather than an error.
+            if (local.Spammer.Priority != null)
+                foreach (var (name, order) in local.Spammer.Priority)
+                    defaults.Spammer.Priority[name] = order;
         }
 
         // Quest flows are personal in exactly the same way, and for the same reason they must not live
@@ -757,6 +768,11 @@ public sealed class ConfigLoader
     {
         public string? Active { get; set; }
         public Dictionary<string, Dictionary<string, double>>? Presets { get; set; }
+
+        /// <summary>Preset name → the keys that outrank the rest, in order. Personal like the presets
+        /// beside it, and carried here for the same reason: it describes a rotation the player tuned,
+        /// not something a published build should ship.</summary>
+        public Dictionary<string, List<string>>? Priority { get; set; }
     }
 
     /// <summary>Windows-specific launcher state: where the window sits, how big it is when expanded,

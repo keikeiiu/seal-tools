@@ -39,6 +39,16 @@ public sealed class SkillSpammer : ToolBase
             return 0;
         }
 
+        // The walk order and whether the preempt rule is on at all. Keys the preset NAMES come first,
+        // in the order given; everything else follows in dictionary order — the player's "press when
+        // we are able to" half, which keeps its own cooldown like every other key rather than firing
+        // on every idle tick. SpammerOrder owns which keys land where and why; what is decided HERE
+        // is that an order was asked for at all, since an empty list cannot say whether that means
+        // "no rule" or "nothing outranks anything".
+        var priority = _cfg.Spammer.ActivePriority;
+        var order = SpammerOrder.For(cooldowns.Keys, priority);
+        bool preempt = priority.Count > 0;
+
         bool running = false;
         int count = 0;
         string current = "";
@@ -49,8 +59,10 @@ public sealed class SkillSpammer : ToolBase
         var sw = Stopwatch.StartNew();
 
         Console.WriteLine("\nSkill Spammer");
-        foreach (var (k, cd) in cooldowns)
-            Console.WriteLine($"  {k}: every {cd:g}s");
+        if (preempt)
+            Console.WriteLine($"  order: {string.Join(" > ", order)}  (the first one that is due wins; the rest wait)");
+        foreach (var k in order)
+            Console.WriteLine($"  {k}: every {cooldowns[k]:g}s");
         Console.WriteLine("[F12] start/stop  [F11] quit\n");
 
         void Reset()
@@ -101,8 +113,9 @@ public sealed class SkillSpammer : ToolBase
 
                 bool disconnected = false;
                 double now = sw.Elapsed.TotalSeconds;
-                foreach (var (k, cd) in cooldowns)
+                foreach (var k in order)
                 {
+                    double cd = cooldowns[k];
                     if (now - last[k] >= cd)
                     {
                         current = k;
@@ -133,6 +146,17 @@ public sealed class SkillSpammer : ToolBase
                         count++;
                         state.Current = k;
                         state.Cycle = count;
+
+                        // PREEMPT — and only when the preset names an order. One press per tick, the
+                        // rest held: a key that is due but outranked keeps its cooldown untouched and
+                        // goes on a later tick, so it is DELAYED rather than skipped. That delay is
+                        // what "the rotation goes first, the extras when we are able to" means.
+                        //
+                        // Opt-in per preset rather than always on, for the reason this rule is
+                        // dangerous: a top key whose cooldown is at or under the 20 ms tick is due
+                        // every tick, and everything below it then never fires at all. A preset with
+                        // no order keeps sending every due key as it always has.
+                        if (preempt) break;
                     }
                 }
                 if (disconnected) break;

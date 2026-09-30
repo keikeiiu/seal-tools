@@ -1911,6 +1911,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 Active = current,
                 Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
+                // Carried through UNTOUCHED, and it has to be explicit: this Save rebuilds
+                // LocalSpammer from a field list, so a field left out here is not merely unsaved, it
+                // is DELETED from local.yaml — which is how this projection has already eaten the
+                // quest sequences and, once before that, a whole spammer block. The tab cannot edit
+                // the order yet, so this is the value in force rather than a blank.
+                Priority = _service.Config.Spammer.Priority,
             };
             SaveReport(() => _service.SaveLocal(local), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).");

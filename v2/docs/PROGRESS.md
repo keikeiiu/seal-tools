@@ -13,6 +13,57 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-01 (40) — the spammer's rotation, and the "when we are able to" keys
+
+**The ask, in the player's words:** *"there are key rotation i need to hit in the loop whenever its
+cooldown is up in game. but I also want to key in other keys when we are able to."* Two tiers: the
+rotation, which **must** fire when due, and a filler set pressed only in the gaps. That is the
+preempt rule, and the player had already chosen it when asked directly.
+
+**The design decision, and it is about `local.yaml` rather than about loops.** The obvious shape —
+a `priority:` field on each key — changes the *type* of `Presets`' value, and every rotation already
+saved stops loading. The defaults.yaml header records what that costs: *"any key the launcher does not
+know about is DROPPED, silently — this is how a spammer block once disappeared, taking a player's key
+rotations with it."* So the order is a **separate map**, `preset name → [keys in precedence order]`:
+
+```yaml
+spammer:
+  presets:
+    default: { q: 30.0, w: 30.0, e: 1.5, t: 2.0 }
+  priority:
+    default: [q, w, e]        # absent = today's behaviour, exactly
+```
+
+**Preemption is opt-in per preset, and that is the part worth keeping.** An empty order means the loop
+sends every due key as it always has — so a preset written before this existed is byte-for-byte
+unchanged. Name an order and the rule turns on: one press per tick, highest first, the rest **held**
+(their cooldown is left alone, so they are delayed to a later tick rather than skipped). The reason it
+is opt-in rather than always-on is the failure it can cause: a top key whose cooldown is at or under
+the 20 ms tick is due every tick, and everything below it then never fires at all. The filler keys are
+the "when we are able to" half, and they keep their own cooldown like every other key — the alternative
+would be ~50 presses a second on every idle tick.
+
+**The projection needed both directions, and one was a live bug.** `LocalSpammer` gained `Priority`,
+the load merge carries it, and the adoption path carries it. But **the Spammer tab's Save rebuilds
+`LocalSpammer` from an explicit field list** — so with the field left out, saving any preset would have
+**deleted the order from `local.yaml`**, silently. Same shape as the quest sequences (entry 37) and the
+spammer block before that. It is carried through untouched now.
+
+**The guard was proven rather than assumed** — the drill this repo earned: the merge copy was removed,
+`LocalYamlCarriesTheSpammerPriorityOrder` was watched to **fail**, and the copy restored. The ordering
+itself lives in `SpammerOrder`, pulled out of `SkillSpammer.Run` for one reason — the run loop needs a
+serial port, and that helper is the half of the rule that is a decision rather than a press. Seven
+tests cover it: named-first, unnamed-after, typo skipped, duplicate taken at its first position, and
+the additive empty case.
+
+**Not built: the editor.** The order can only be set by hand in `local.yaml` for now; the tab shows the
+keys but cannot reorder them. That is the next piece, and it is where the "+ Add must go in first"
+trap lives.
+
+187/187 tests, 0 warnings.
+
+---
+
 ## 2026-10-01 (39) — the Hold Space toggle: found, and fixed
 
 **The instrumented build answered it on the first reproduction** (entry 38 below explains why it was

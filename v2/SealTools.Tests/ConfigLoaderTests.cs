@@ -272,6 +272,34 @@ public class ConfigLoaderTests
         }
     }
 
+    // The priority ORDER rides through the same local.yaml projection as the presets above — the one
+    // that has silently dropped a field four times in this repo. So it gets its own guard rather than
+    // leaning on that test: a missing copy here throws nothing and reports nothing, it loads as "no
+    // order given" and the preempt rule switches itself off, which reads as the feature not existing.
+    [Fact]
+    public void LocalYamlCarriesTheSpammerPriorityOrder()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '*0': 0.2\n      F1: 1.5\n" +
+            "    Boss:\n      F2: 9.0\n" +
+            "  priority:\n    Knight0-9:\n      - F1\n      - '*0'\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal(new List<string> { "F1", "*0" }, cfg.Spammer.ActivePriority);
+            // The other half, and the one that keeps this additive: a preset with no order must come
+            // back with NO entry at all, so ActivePriority is empty and every rotation saved before
+            // this existed keeps its old send-everything-due behaviour.
+            Assert.False(cfg.Spammer.Priority.ContainsKey("Boss"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
 
     /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the
@@ -312,7 +340,7 @@ public class ConfigLoaderTests
             var defaults = Path.Combine(dir, "defaults.yaml");
             var text = File.ReadAllText(defaults);
 
-            foreach (var replacement in new[] { "  variant: nope", "  variant: \"\"" })
+            foreach (var replacement in new List<string> { "  variant: nope", "  variant: \"\"" })
             {
                 File.WriteAllText(defaults, text.Replace("  variant: tw", replacement));
                 Assert.Equal("TW_LIVE", new ConfigLoader(dir).Load().Window.Title);
@@ -435,7 +463,7 @@ public class ConfigLoaderTests
             loader.SaveDefaults(cfg);
             loader.SaveLocal(loader.LoadLocal()!);
 
-            foreach (var name in new[] { "defaults.yaml", "local.yaml" })
+            foreach (var name in new List<string> { "defaults.yaml", "local.yaml" })
             {
                 var written = File.ReadAllText(Path.Combine(dir, name));
                 Assert.StartsWith("#", written);              // a header, not bare serialised content
@@ -798,7 +826,7 @@ public class ConfigLoaderTests
         // The nested shapes are MAPPED rather than assigned — a LocalPetSlot is a different type from
         // a PetSlotConfig — so reference equality is the wrong check for them and they are asserted
         // field by field below instead. Everything else is a straight assignment and is compared here.
-        var mapped = new[] { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
+        var mapped = new List<string> { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
 
         foreach (var prop in typeof(ConfigLoader.LocalPet).GetProperties())
         {
@@ -895,7 +923,7 @@ public class ConfigLoaderTests
         // The nested shapes are MAPPED, so reference equality is the wrong check and they are compared
         // field by field below. Slots is also the one property BOTH halves touch — calibration owns the
         // geometry, the session owns BoardingRunning.
-        var mapped = new[] { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
+        var mapped = new List<string> { nameof(ConfigLoader.LocalPet.Slots), nameof(ConfigLoader.LocalPet.Queue) };
 
         foreach (var prop in typeof(ConfigLoader.LocalPet).GetProperties())
         {
