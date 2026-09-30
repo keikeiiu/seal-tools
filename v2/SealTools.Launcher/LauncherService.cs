@@ -274,6 +274,7 @@ public sealed class LauncherService : IDisposable
         }
         _startInProgress = true;
         _startCancelled = false;
+        StartingId = id;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         HoldDiag($"start {id} begin");
         try
@@ -284,6 +285,7 @@ public sealed class LauncherService : IDisposable
         }
         finally
         {
+            StartingId = null;
             _startInProgress = false;
         }
     }
@@ -539,6 +541,13 @@ public sealed class LauncherService : IDisposable
     /// the Hold Space report of 2026-10-01 is exactly a click that appeared to do nothing. Diagnostic
     /// only; the UI needs to be able to say which of the two it was.</summary>
     public bool StartInProgress => _startInProgress;
+
+    /// <summary>The tool id a Start is currently in flight for, or null when none is. The Hold Space
+    /// toggle needs THIS and not just <see cref="StartInProgress"/>: <see cref="CurrentId"/> is only
+    /// set once a start COMPLETES, so during the ~2 s cold start the toggle had no way to tell "a
+    /// hold is coming" from "nothing is happening" — it answered "not running", re-entered Start, and
+    /// that click was swallowed while the spacebar stayed held.</summary>
+    public string? StartingId { get; private set; }
 
     // Hold Space diagnostics (2026-10-01) — the service half of the same trail MainWindow writes.
     // Same file, same reason: a click that never reached StopTool and a stop whose release did

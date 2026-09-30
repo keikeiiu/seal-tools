@@ -334,13 +334,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             // down (HoldSpace sets Running before it writes), the press then fell to the else, and the
             // else STARTS hold space — re-holding the key the press was meant to let go of. Whether
             // the tool's loop has flagged itself running is not the button's business.
-            // Diagnostic for the 2026-10-01 report ("the toggle froze and would not switch off").
-            // This line proves the handler RAN, which is what separates a dead button from a
-            // button that ran and did nothing — the two look identical from the outside.
+            // Hold Space is the engaged tool when it is current OR when a start for it is still in
+            // flight. The second half is the 2026-10-01 fix: CurrentId is set only when a start
+            // COMPLETES, so through the ~2 s cold start the toggle answered "not running", re-entered
+            // Start, and StartToolAsync swallowed that press — returning SUCCESS while the spacebar
+            // stayed held and nothing on screen said so. StopTool already handles a stop arriving
+            // mid-start (it sets _startCancelled, which StartToolCoreAsync honours and refuses on),
+            // so routing the press there is what makes a second one mean "I did not want that".
+            bool holdEngaged = _service.CurrentId == "holdspace" || _service.StartingId == "holdspace";
             HoldDiag($"toggle-click currentId={_service.CurrentId ?? "(null)"} " +
-                     $"branch={(_service.CurrentId == "holdspace" ? "stop" : "start")} " +
-                     $"startInProgress={_service.StartInProgress}");
-            if (_service.CurrentId == "holdspace")
+                     $"starting={_service.StartingId ?? "(null)"} branch={(holdEngaged ? "stop" : "start")}");
+            if (holdEngaged)
             {
                 _ = _service.StopTool("holdspace");
             }
