@@ -1520,6 +1520,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         string current = presets.ContainsKey(_service.Config.Spammer.Active)
             ? _service.Config.Spammer.Active
             : presets.Keys.First();
+        // The rotation order: preset name → keys in precedence order. Edited here and committed by
+        // the same Save Preset as the keys, so the two halves of a rotation are never written apart.
+        var priority = _service.Config.Spammer.Priority;
 
         // Read-only summary of the active preset's keys, shown on the Active card so the editor
         // only has to appear while you're actually changing something. Each key is a small pill.
@@ -1580,6 +1583,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         var rows = new List<SpamKeyRow>();
+        // Working copy of the order for the CURRENT preset, exactly as `rows` is the working copy of
+        // its keys: edited here, written back into `priority` on every path that moves off the preset
+        // and on Save. Kept as a copy rather than read from the config on each rebuild so a
+        // half-made ordering is not lost the moment the panel redraws.
+        var order = new List<string>();
+        // Declared here rather than beside the Order card further down, because the key grid's delete
+        // button refreshes this panel and C# will not let that lambda capture a variable declared
+        // after it. The card is still BUILT below, next to the section it belongs to.
+        var orderPanel = new StackPanel();
+        var availableBox = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
+        var addToOrder = MakeInlineButton("Add to order", ControlAppearance.Secondary);
         // The Fast column. 48 was too narrow and clipped the tick box's RIGHT BORDER away, leaving a
         // "C" — left border and top/bottom stubs, no right edge. The glyph asks for more than it
         // appears to: at 48 less the cell's 8px margin the control got 40, and the border fell about
@@ -1662,6 +1676,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                 rowsPanel.Children.Remove(row.Fast);
                 rowsPanel.Children.Remove(del);
                 rows.Remove(row);
+                // The key that went away may be sitting in the order below, and the picker has to
+                // offer whatever is left. Called after the row list changes, so it sees the truth.
+                UpdateOrderPanel();
             };
 
             Grid.SetRow(row.Key, r); Grid.SetColumn(row.Key, 0);
@@ -1673,6 +1690,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             rowsPanel.Children.Add(row.Fast);
             rowsPanel.Children.Add(del);
             rows.Add(row);
+
+            // Typing a key rebuilds the picker on the Order card, because that card may only offer
+            // keys the grid actually has — a key just renamed has to stop being offered under its old
+            // name. Attached AFTER the text was set above, so the initial load does not fire it once
+            // per row. UpdateOrderPanel never writes to row.Key, so this cannot loop.
+            row.Key.TextChanged += (_, _) => UpdateOrderPanel();
         }
 
         void LoadRows(string name)
@@ -1680,9 +1703,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             rowsPanel.Children.Clear();
             rowsPanel.RowDefinitions.Clear();
             rows.Clear();
-            if (!presets.TryGetValue(name, out var keys)) return;
+            // The order loads with the rows and not separately, so the two can never disagree about
+            // which preset is on screen — they are one rotation and the file keeps them side by side.
+            order.Clear();
+            if (priority.TryGetValue(name, out var stored)) order.AddRange(stored);
+            if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); return; }
             foreach (var kv in keys)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
+            UpdateOrderPanel();
         }
 
         const string AddNewMarker = "＋ Add new…";
@@ -1717,7 +1745,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
             if (name == current) return;
-            presets[current] = RowsToKeys(); // keep unsaved edits when switching
+            var live = RowsToKeys(); // keep unsaved edits when switching
+            presets[current] = live;
+            CommitOrder(live);       // and the order with them — the two are one rotation
             current = name;
             LoadRows(name);
             UpdateSummary();
@@ -1742,7 +1772,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (promptMode == "create")
             {
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                presets[current] = RowsToKeys();
+                var live = RowsToKeys();
+                presets[current] = live;
+                CommitOrder(live);
                 presets[name] = new Dictionary<string, double>();
                 current = name;
                 loading = true; RefreshPresetList(name); loading = false;
@@ -1753,12 +1785,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 if (name == current) { status.Text = "That is already the name."; return; }
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                presets[current] = RowsToKeys();
-                var keys = presets[current];
+                var live = RowsToKeys();
+                presets[current] = live;
+                CommitOrder(live);
                 presets.Remove(current);
-                presets[name] = keys;
+                presets[name] = live;
                 var old = current;
                 current = name;
+                // The order is keyed by preset name too, so it has to move with it. Carrying the
+                // keys and leaving the order behind would drop the rotation to "no rule" — silently,
+                // and looking exactly like the feature not existing.
+                if (priority.Remove(old, out var movedOrder)) priority[name] = movedOrder;
                 loading = true; RefreshPresetList(name); loading = false;
                 status.Text = $"Renamed '{old}' to '{name}'.";
             }
@@ -1790,17 +1827,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (confirm != MessageBoxResult.Yes) return;
             var gone = current;
             presets.Remove(current);
+            // Its order goes with it. Left behind it would be an entry for a preset that no longer
+            // exists — invisible in the tab, still in the file, and restored to life by a later
+            // preset that happened to reuse the name.
+            priority.Remove(gone);
             current = presets.Keys.First();
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
             UpdateSummary();
             status.Text = $"Deleted preset '{gone}'.";
         };
-        foreach (var kv in presets[current])
-            AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
+        // The initial keys AND order are loaded by LoadRows at the end of this method rather than
+        // here: LoadRows also fills the Order panel, and that panel does not exist yet at this point
+        // in the build. Splitting the two would be the way for the rows and the order to disagree
+        // about which preset is on screen.
 
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
-        addButton.Click += (_, _) => AddRow("", "0.2");
+        addButton.Click += (_, _) => { AddRow("", "0.2"); UpdateOrderPanel(); };
 
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
@@ -1854,6 +1897,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             return result;
         }
 
+        // Written back into `priority` on every path that leaves the current preset, and on Save —
+        // exactly as `rows` are written back through RowsToKeys(). Pruned against the keys the preset
+        // actually has, so a key deleted or renamed in the grid does not leave its name in the file
+        // for good. The tool skips an unknown name at run time, so this is tidiness rather than
+        // correctness — but the file is the player's to read.
+        void CommitOrder(IDictionary<string, double> live) =>
+            priority[current] = order.Where(live.ContainsKey).ToList();
+
         void RebuildRowsFromRaw(string text)
         {
             var parsed = ParseKeys(text);
@@ -1885,6 +1936,95 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "Tick the box to edit it; unticking rebuilds the rows from your text."),
             advanced, rawPanel));
 
+        // ── the rotation order ───────────────────────────────────────────────────────────────────
+        // Which key gets to fire when several are due at once. The NUMBER is the whole meaning: 1 is
+        // pressed the moment it comes off cooldown, and anything below it waits for a tick where 1 is
+        // not due. A key that is absent is the "when we are able to" half — it only goes out in the
+        // gaps. An EMPTY list is not an empty rotation, and that distinction is why the blank case
+        // below is spelled out rather than left as an empty panel: no order means no rule, and the
+        // spammer then fires every key as soon as it is due, exactly as it always has.
+        // orderPanel, availableBox and addToOrder are declared beside `order` near the top of this
+        // method — see the note there. Only what BUILDS the card belongs here.
+        static string OrderLabel(string k) => k.StartsWith('*') ? k[1..] + "  ⚡" : k;
+
+        void UpdateOrderPanel()
+        {
+            orderPanel.Children.Clear();
+            var live = RowsToKeys();
+
+            if (order.Count == 0)
+            {
+                orderPanel.Children.Add(new TextBlock
+                {
+                    Text = "(no order — every key gets pressed as soon as its cooldown is up)",
+                    Foreground = Res("TextFillColorSecondaryBrush"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 6),
+                });
+            }
+
+            for (int i = 0; i < order.Count; i++)
+            {
+                string name = order[i];
+                // A stored name whose key is no longer in the grid: shown, not hidden. It is still in
+                // local.yaml, and a list that silently drops a line the player wrote is one they
+                // cannot correct. The tool skips it at run time, so this is tidiness, not correctness.
+                bool known = live.ContainsKey(name);
+                var r = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+                r.Children.Add(new TextBlock
+                {
+                    Text = $"{i + 1}.  {OrderLabel(name)}" + (known ? "" : "   (not in this preset)"),
+                    MinWidth = 170,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Res(known ? "TextFillColorPrimaryBrush" : "TextFillColorSecondaryBrush"),
+                });
+
+                int at = i;
+                var up = MakeInlineButton("↑", ControlAppearance.Secondary);
+                var down = MakeInlineButton("↓", ControlAppearance.Secondary);
+                var remove = MakeInlineButton("✕", ControlAppearance.Secondary);
+                up.IsEnabled = i > 0;
+                down.IsEnabled = i < order.Count - 1;
+                up.Click += (_, _) => { (order[at - 1], order[at]) = (order[at], order[at - 1]); UpdateOrderPanel(); };
+                down.Click += (_, _) => { (order[at + 1], order[at]) = (order[at], order[at + 1]); UpdateOrderPanel(); };
+                remove.Click += (_, _) => { order.RemoveAt(at); UpdateOrderPanel(); };
+                r.Children.Add(up);
+                r.Children.Add(down);
+                r.Children.Add(remove);
+                orderPanel.Children.Add(r);
+            }
+
+            // Only keys this preset actually has, and only the ones not placed yet — so the picker can
+            // never offer a duplicate, which would press the same key twice in a tick.
+            var placed = new HashSet<string>(order);
+            var free = live.Keys.Where(k => !placed.Contains(k)).ToList();
+            availableBox.ItemsSource = free;
+            availableBox.SelectedIndex = free.Count > 0 ? 0 : -1;
+            availableBox.IsEnabled = free.Count > 0;
+            addToOrder.IsEnabled = free.Count > 0;
+        }
+
+        addToOrder.Click += (_, _) =>
+        {
+            if (availableBox.SelectedItem is not string name) return;
+            order.Add(name);
+            UpdateOrderPanel();
+        };
+
+        var orderControls = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        orderControls.Children.Add(availableBox);
+        orderControls.Children.Add(addToOrder);
+
+        editor.Children.Add(Section("Order",
+            Hint("The rotation. The first key in this list that is due is the one pressed, and the ones " +
+                 "below it wait for a tick where it isn't — so a key here always beats a key that is " +
+                 "not. Keys left off the list are your 'when we are able to' ones: they only go out " +
+                 "when nothing above them is due. With the list empty every key is equal and they all " +
+                 "fire as soon as they are due, which is how the spammer worked before this existed."),
+            orderPanel,
+            orderControls));
+
+
         advanced.Checked += (_, _) =>
         {
             raw.Text = SerializeKeys(RowsToKeys()); // reflect the rows before editing raw
@@ -1900,7 +2040,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Preset", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
-            presets[current] = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            var live = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            presets[current] = live;
+            // Committed against the keys actually being saved — in Advanced mode those are the raw
+            // ones, not the rows — so the order is pruned against the same set. Pruning against the
+            // rows instead would drop from the order any key that exists only in the text box.
+            CommitOrder(live);
             _service.Config.Spammer.Active = current;
             // Presets are the player's own rotations, so they go to local.yaml with the calibration.
             // defaults.yaml is the template publish.bat ships, so a preset saved there would be
@@ -1911,15 +2056,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 Active = current,
                 Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
-                // Carried through UNTOUCHED, and it has to be explicit: this Save rebuilds
-                // LocalSpammer from a field list, so a field left out here is not merely unsaved, it
-                // is DELETED from local.yaml — which is how this projection has already eaten the
-                // quest sequences and, once before that, a whole spammer block. The tab cannot edit
-                // the order yet, so this is the value in force rather than a blank.
+                // Explicit because this Save rebuilds LocalSpammer from a field list: a field left
+                // out here is not merely unsaved, it is DELETED from local.yaml — which is how this
+                // projection has already eaten the quest sequences and, once before that, a whole
+                // spammer block. It is the same dictionary the Order card edits, already committed.
                 Priority = _service.Config.Spammer.Priority,
             };
             SaveReport(() => _service.SaveLocal(local), result,
-                $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s)).");
+                $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +
+                $"{order.Count} in the order).");
             UpdateSummary();
         };
         // The editor goes in before the save button, not after. It used to be added last, which put
@@ -1934,6 +2079,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         loading = true;
         RefreshPresetList(current);
         loading = false;
+        LoadRows(current);
         UpdateSummary();
 
         return MakeTab("Spammer", panel);

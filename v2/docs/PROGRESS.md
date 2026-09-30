@@ -56,9 +56,32 @@ serial port, and that helper is the half of the rule that is a decision rather t
 tests cover it: named-first, unnamed-after, typo skipped, duplicate taken at its first position, and
 the additive empty case.
 
-**Not built: the editor.** The order can only be set by hand in `local.yaml` for now; the tab shows the
-keys but cannot reorder them. That is the next piece, and it is where the "+ Add must go in first"
-trap lives.
+**The editor, in the same session.** An **Order** card on the Spammer tab, inside the existing Edit
+panel: a numbered list of the placed keys with ↑ / ↓ / ✕ on each row, and below it a picker offering
+only the keys this preset actually has and has not already placed — so a duplicate can never be added,
+which would press one key twice in a tick. An empty list prints *"(no order — every key gets pressed
+as soon as its cooldown is up)"* rather than sitting blank, because that is the behaviour, and a blank
+panel reads as "nothing is set up yet".
+
+Four decisions in it worth keeping:
+
+- **The order is a working copy, like `rows`.** It is written back into `priority` on every path that
+  leaves the current preset and on Save, so a half-made ordering is not lost when the picker moves.
+  Rename moves the order to the new preset name and Delete removes it — an order left under a deleted
+  name would be invisible in the tab, alive in the file, and resurrected by a later preset that reused
+  the name.
+- **A name whose key is gone is SHOWN, greyed, marked "(not in this preset)"** rather than hidden. It
+  is in `local.yaml`, and a list that silently drops a line the player wrote is one they cannot
+  correct. The tool skips unknown names at run time, so this is tidiness, not correctness.
+- **Pruning happens against the keys actually being saved** — in Advanced mode those are the raw
+  textbox keys, not the rows. Pruning against the rows would drop from the order any key that exists
+  only in the textbox.
+- **The grid's delete button, the add-key button and any keystroke in a Key box all rebuild the
+  picker**, so it can never offer a key the grid does not have. The `TextChanged` handler is attached
+  *after* AddRow sets the text, so the initial load does not fire it once per row.
+
+**One thing deliberately not done:** the card sits after **Advanced** rather than directly under
+**Keys**. Moving it is cosmetic and untested; the player can say if they want it higher.
 
 187/187 tests, 0 warnings.
 
