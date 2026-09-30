@@ -130,7 +130,12 @@ public sealed class LauncherService : IDisposable
     {
         LastArduinoError = null;
         if (_arduino is { IsOpen: true }) return _arduino;
+        // Arduino.Find runs a WMI query SYNCHRONOUSLY on the caller's thread — the dispatcher, when
+        // this is reached from a button click — so its duration is logged rather than assumed. A
+        // slow one is a frozen window, which looks exactly like a dead button from the outside.
+        var findSw = System.Diagnostics.Stopwatch.StartNew();
         var port = Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid);
+        HoldDiag($"arduino find {port ?? "(none)"} took {findSw.ElapsedMilliseconds}ms");
         if (port == null)
         {
             LastArduinoError = $"Arduino not found (VID 0x{Config.Arduino.Vid:X4}, " +
@@ -259,12 +264,23 @@ public sealed class LauncherService : IDisposable
         // _cts and _toolTask and orphan the first loop, which kept writing to the shared serial port
         // with no way to stop it while the UI showed the other tool. A click during a start is a
         // no-op, and reports no error.
-        if (_startInProgress) return true;
+        if (_startInProgress)
+        {
+            // The silent no-op, and the single reason this report could not be diagnosed from the
+            // outside: it returns SUCCESS and starts nothing, so the caller shows no message and the
+            // click is indistinguishable from a dead button. Logged with the id it swallowed.
+            HoldDiag($"start {id} SWALLOWED - a start is already in flight");
+            return true;
+        }
         _startInProgress = true;
         _startCancelled = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        HoldDiag($"start {id} begin");
         try
         {
-            return await StartToolCoreAsync(id);
+            var ok = await StartToolCoreAsync(id);
+            HoldDiag($"start {id} {(ok ? "ok" : "REFUSED")} after {sw.ElapsedMilliseconds}ms");
+            return ok;
         }
         finally
         {
@@ -450,6 +466,8 @@ public sealed class LauncherService : IDisposable
     public Task? StopTool(string? id = null, bool fromStart = false)
     {
         var target = id ?? _currentId;
+        HoldDiag($"stop enter id={id ?? "(current)"} target={target ?? "(null)"} fromStart={fromStart} " +
+                 $"registered={(target != null && _running.ContainsKey(target) ? "yes" : "no")}");
         if (target == null || !_running.TryGetValue(target, out var running))
         {
             // Nothing running in that slot, but a start may be sitting on the port wait with no tool
@@ -464,6 +482,7 @@ public sealed class LauncherService : IDisposable
         // doesn't double-cancel.
         _running.Remove(target);
         if (_currentId == target) _currentId = null;
+        HoldDiag($"stop deregistered {target}; releasing={HeldKeys.NeedsReleaseOnStop(target)}");
 
         // A tool that holds a key down must not depend on its own finally to let go of it. The loop
         // that would send the release is what a stop is interrupting, and the case that matters is
@@ -515,6 +534,22 @@ public sealed class LauncherService : IDisposable
     /// something to log and move past.</summary>
     public string? LastReleaseError { get; private set; }
 
+    /// <summary>True while a Start is between its first line and its tool actually running. A click
+    /// during that window is deliberately a silent no-op — it returns true and reports nothing — and
+    /// the Hold Space report of 2026-10-01 is exactly a click that appeared to do nothing. Diagnostic
+    /// only; the UI needs to be able to say which of the two it was.</summary>
+    public bool StartInProgress => _startInProgress;
+
+    // Hold Space diagnostics (2026-10-01) — the service half of the same trail MainWindow writes.
+    // Same file, same reason: a click that never reached StopTool and a stop whose release did
+    // nothing are different faults and look the same from the outside. Delete with the UI half.
+    private void HoldDiag(string line)
+    {
+        try { File.AppendAllText(Path.Combine(_rootDir, "logs", "holdspace.log"),
+            $"{DateTime.Now:HH:mm:ss.fff} [svc] {line}\n"); }
+        catch { /* diagnostics must never break a stop */ }
+    }
+
     /// <summary>Lets go of everything a tool can hold down — the spacebar and the left mouse button —
     /// directly and independent of any tool's loop, so every stop path can release rather than only
     /// the toggle button. Returns null on success or the failure message, and records the same on
@@ -531,16 +566,23 @@ public sealed class LauncherService : IDisposable
     /// being interrupted, was the one that reported. That is backwards.</summary>
     public string? ReleaseHeld()
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // A null or CLOSED port writes nothing and still reports success below — the one way this
+        // method can lie. Logged so a "release ok" line can never describe a release that never
+        // went out, and so the write's duration is on the record rather than assumed to be instant.
+        HoldDiag($"release enter port={(_arduino is { IsOpen: true } p ? p.PortName : "(null/closed)")}");
         try
         {
             _arduino?.Write("U\n");   // spacebar
             _arduino?.Write("l\n");   // left mouse button (firmware 2)
             LastReleaseError = null;
+            HoldDiag($"release ok {sw.ElapsedMilliseconds}ms");
             return null;
         }
         catch (Exception ex)
         {
             LastReleaseError = ex.Message;
+            HoldDiag($"release FAILED after {sw.ElapsedMilliseconds}ms: {ex.Message}");
             return ex.Message;
         }
     }

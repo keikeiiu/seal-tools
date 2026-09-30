@@ -13,6 +13,50 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-01 (38) — an instrumented build, to find the Hold Space toggle
+
+**What the player reported:** the Hold Space toggle "froze and would not switch off" — a lag, then a
+click that did nothing, and only a *different* tool's Stop cleared it.
+
+**Two facts they gave, both of which killed a hypothesis this session was one step from building on:**
+
+- it reproduces on a build with **no pet feeder at all**, on a second PC. My first answer was that
+  Hold Space was queued behind the pet feeder's game claim
+  ([LauncherService.cs:298](../SealTools.Launcher/LauncherService.cs#L298) — `id != ResidentId` sends
+  holdspace through `WaitForGameAsync`, up to `GameWaitMs` = 45 s). That is
+  **wrong**, and the resident/gate work is not the cause;
+- the **button** froze, not the window. A blocked dispatcher freezes everything it owns, so "only the
+  button stopped responding" is a *state* problem rather than a stalled thread — which killed the
+  second candidate too (a slow synchronous `Arduino.Find` WMI query on the dispatcher).
+
+**So: instrument rather than guess a third time.** This is the repo's own precedent for a report with
+no reproducible cause ([PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md) §3, the cursor placement
+failures). **Nothing about the tool's behaviour changed — this commit is diagnostics only.**
+
+**What the trail records** (`v2/logs/holdspace.log`; both writers resolve the same root through
+`FindRootDir`, so the launcher half and the service half land in one file):
+
+- the toggle click and **which branch it took**, with `CurrentId` at entry — the line that separates a
+  dead button from a button that ran and did nothing, which look identical from outside;
+- `CurrentId` on every **change**, so a stuck value shows up on its own rather than only through the
+  button it fails to repaint;
+- `start` begin / ok / REFUSED with elapsed ms, and the **SWALLOWED** case. `StartToolAsync` returns
+  *success* and starts nothing while a start is in flight; that is why a click can vanish with no
+  message box and nothing on any card;
+- `stop` enter / deregister, and `release` enter / ok / failed with the **port name** and elapsed ms.
+  The port name is the point: a null or closed port writes nothing and still reports success, which is
+  the one way `ReleaseHeld` can lie;
+- `arduino find … took Nms` — so a slow WMI query on the dispatcher is measured rather than assumed.
+  Absence of the line means the fast path was taken and no query ran at all;
+- a **UI-thread heartbeat**: 250 ms, logging only ticks late by more than 300 ms. Silence means the
+  dispatcher never stalled, which kills the whole "the UI was blocked" class at once.
+
+**No cause is claimed here.** The two that were claimed are both dead; this file exists so the third
+one is measured instead of guessed. Release build only while the player's launcher was up, then they
+asked for the relaunch. 180/180 tests pass, 0 warnings.
+
+---
+
 ## 2026-09-30 (37) — quest sequences, and a card that can aim a run
 
 **What the player asked for:** *"preset a run 3 times then preset b 2 times and then have a master loop

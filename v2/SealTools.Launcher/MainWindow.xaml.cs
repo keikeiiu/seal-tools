@@ -68,6 +68,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private readonly DispatcherTimer _timer;
     // Debounces the placement save while the window is being dragged or resized.
     private DispatcherTimer? _uiSaveTimer;
+    // Hold Space diagnostics (2026-10-01). _uiBeat measures the ONE candidate cause that can be
+    // measured rather than argued about — a blocked dispatcher — by logging only when it is LATE.
+    // Silence in holdspace.log means the UI thread never stalled, and that cause is dead.
+    private DispatcherTimer? _uiBeat;
+    private string? _diagCurrentId;
 
     private static readonly string[] CalibGemSteps = { "N", "G", "DG", "Register", "Combine" };
     // The two composer move sets (Core/GemRoutes.cs): tuned counts vs closed-loop point placement.
@@ -329,6 +334,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             // down (HoldSpace sets Running before it writes), the press then fell to the else, and the
             // else STARTS hold space — re-holding the key the press was meant to let go of. Whether
             // the tool's loop has flagged itself running is not the button's business.
+            // Diagnostic for the 2026-10-01 report ("the toggle froze and would not switch off").
+            // This line proves the handler RAN, which is what separates a dead button from a
+            // button that ran and did nothing — the two look identical from the outside.
+            HoldDiag($"toggle-click currentId={_service.CurrentId ?? "(null)"} " +
+                     $"branch={(_service.CurrentId == "holdspace" ? "stop" : "start")} " +
+                     $"startInProgress={_service.StartInProgress}");
             if (_service.CurrentId == "holdspace")
             {
                 _ = _service.StopTool("holdspace");
@@ -352,6 +363,19 @@ public partial class MainWindow : FluentWindow, IDisposable
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _timer.Tick += (_, _) => RefreshStatus();
         _timer.Start();
+
+        // Hold Space diagnostics: tick fast and log only the LATE ticks. A stall the player can
+        // feel is hundreds of ms; a healthy dispatcher does not miss a 250 ms tick by 50.
+        var lastBeat = DateTime.UtcNow;
+        _uiBeat = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _uiBeat.Tick += (_, _) =>
+        {
+            var now = DateTime.UtcNow;
+            var gap = (now - lastBeat).TotalMilliseconds;
+            lastBeat = now;
+            if (gap > 300) HoldDiag($"UI-STALL {gap:F0}ms");
+        };
+        _uiBeat.Start();
         RefreshStatus();
 
         Closed += (_, _) => Dispose();
@@ -686,6 +710,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         // can never read "Hold Space" while pressing it would stop. The dot is the narrower claim and
         // stays on Running: "holding" means the key is down, and the tool only believes that while
         // its loop says so.
+        // Log every CHANGE of the id the toggle reads, so a stuck value shows up on its own rather
+        // than only through the button it fails to repaint. The two symptoms in the report — the
+        // button never flipping back, and the click taking the wrong branch — have this one field
+        // behind them, so this is the line that would confirm it.
+        if (_diagCurrentId != _service.CurrentId)
+        {
+            HoldDiag($"currentId {_diagCurrentId ?? "(null)"} -> {_service.CurrentId ?? "(null)"} " +
+                     $"holding={_service.StateFor("holdspace") is { Running: true }}");
+            _diagCurrentId = _service.CurrentId;
+        }
         bool holdLoaded = _service.CurrentId == "holdspace";
         bool holding = holdLoaded && _service.StateFor("holdspace") is { Running: true };
         HoldSpaceToggle.Content = holdLoaded ? "Stop Space" : "Hold Space";
@@ -2982,6 +3016,17 @@ public partial class MainWindow : FluentWindow, IDisposable
     // so the files land somewhere different from logs/ and are easy to lose.
     private static string LogPath(params string[] parts)
         => Path.Combine(new[] { FindRootDir(), "logs" }.Concat(parts).ToArray());
+
+    // Hold Space diagnostics (2026-10-01). The report was "the toggle froze and would not switch
+    // off", and it reproduces on a second PC and on a build with no pet feeder — so it predates the
+    // resident work, and the pet gate is not it. The tool itself logs nothing (the launcher is a
+    // WinExe, so HoldSpace's Console.WriteLine goes nowhere), which is why this exists at all.
+    // Delete once the cause is found and fixed.
+    private static void HoldDiag(string line)
+    {
+        try { File.AppendAllText(LogPath("holdspace.log"), $"{DateTime.Now:HH:mm:ss.fff} [ui]  {line}\n"); }
+        catch { /* diagnostics must never break the toggle */ }
+    }
 
     // Called once at launch: if a Save Tuner / Save Gem wrote a calibration reference image,
     // show it in its tab. Boxes are baked into the PNG and NOT re-activated — the drag handlers
