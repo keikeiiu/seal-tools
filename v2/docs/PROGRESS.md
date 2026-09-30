@@ -102,11 +102,22 @@ made a *busy* press look like a *dead* one — so the fixing press was the natur
 cancels. The refresh is called directly from the handler as well as on the 750 ms tick, so the label
 changes at the press rather than up to 750 ms later.
 
-**The 2.1 s itself is untouched and is the real irritant** — the port is opened on first use, so the
-first toggle after launch always pays the board's boot wait. `_arduino` is **never closed** by any tool
-stop (only by launcher `Dispose` and by the re-open path), so the port is already held for the whole
-session; opening it in the background at startup would move the wait, not add one. Not done — it is the
-player's call, and it changes when a missing board is noticed.
+**The 2.1 s itself is SETTLED — leave it, decided 2026-10-01 with the player.** The wait is a blind,
+unconditional `await Task.Delay(2000)` ([LauncherService.cs:164](../SealTools.Launcher/LauncherService.cs#L164)),
+not a read of anything the board says: opening a serial port asserts DTR, which resets an Arduino, and
+the sketch is not listening until its bootloader finishes. So the cold start buys nothing — it is the
+board booting, and the only choice is *when* it is paid.
+
+**Pre-opening at startup was proposed and then withdrawn**, because it is the worse trade: it would
+reboot the board on every launcher launch whether or not a tool is ever run, and hold COM5 from launch
+so the Arduino IDE or a serial monitor cannot have it. (`_arduino` is opened only by a tool start or a
+calibrate test button, and never closed by a tool stop — only by launcher `Dispose` and the re-open
+path — so an untouched launcher never touches the board at all.) Once per session, and now visible
+("Starting...") and cancellable, is the right place to pay it.
+
+If it ever does prove irritating in practice, the fix to reach for is a shorter or probe-based wait —
+**not** an earlier one — and it wants a live run saying so first, because the delay exists for a real
+hardware reason.
 
 **Still to do:** the diagnostics are deliberately **left in** until the fix is confirmed on a live run,
 then removed — `holdspace.log` and the `[ui]`/`[svc]` `HoldDiag` calls in `MainWindow` and
