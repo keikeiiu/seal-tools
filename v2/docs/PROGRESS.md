@@ -13,6 +13,56 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-01 (39) — the Hold Space toggle: found, and fixed
+
+**The instrumented build answered it on the first reproduction** (entry 38 below explains why it was
+built). The log, verbatim — this is the whole fault:
+
+```
+17.504 [ui]  toggle-click currentId=(null) branch=start startInProgress=False
+17.601 [svc] arduino find COM5 took 89ms
+18.840 [ui]  toggle-click currentId=(null) branch=start startInProgress=True   ← the press meant to STOP
+18.840 [svc] start holdspace SWALLOWED - a start is already in flight
+19.670 [svc] start holdspace ok after 2161ms
+20.149 [ui]  currentId (null) -> holdspace holding=True
+```
+
+**Two hypotheses died on those same lines, and both had been argued for confidently this session:**
+`arduino find took 89ms` (so not the WMI query on the dispatcher), and **not one `UI-STALL` line** (so the
+dispatcher never froze — "the button froze" was a *state* reading, exactly as the player described it).
+A third, the pet-feeder game gate, had already been killed by the player: it reproduces on a build with
+no pet feeder, on a second PC. **Three wrong answers, and the log took one run to settle it.**
+
+**The cause is one wrong question.** The toggle decided stop-vs-start from `CurrentId == "holdspace"`,
+but `CurrentId` is set only when a start **completes**. So through the whole ~2.1 s cold start the
+button answered "not running", every press re-entered Start, and `StartToolAsync` **swallowed it,
+returning `true`** — so no message box appeared either. The spacebar stayed held, and the one control
+that releases it was the control that was dead: Hold Space has no card (`Tools[]` lists seven, not it),
+and F12/F11 are read through `GetAsyncKeyState`, which the anti-cheat blocks while the game is focused.
+
+**`StopTool` already handled this correctly** — it sets `_startCancelled` for a stop arriving mid-start
+and `StartToolCoreAsync` refuses on it. The toggle simply never reached that path. So the fix is
+[`39bdf98`](39bdf98): ask the question of `StartingId` as well as `CurrentId`, and a second press now
+means "I did not want that" and reports "Start cancelled."
+
+**The second half is feedback.** The button read "Hold Space" for the entire cold start, which is what
+made a *busy* press look like a *dead* one — so the fixing press was the natural response. It now reads
+"Starting..." (with `● starting` on the status line, in the caution colour) and says pressing again
+cancels. The refresh is called directly from the handler as well as on the 750 ms tick, so the label
+changes at the press rather than up to 750 ms later.
+
+**The 2.1 s itself is untouched and is the real irritant** — the port is opened on first use, so the
+first toggle after launch always pays the board's boot wait. `_arduino` is **never closed** by any tool
+stop (only by launcher `Dispose` and by the re-open path), so the port is already held for the whole
+session; opening it in the background at startup would move the wait, not add one. Not done — it is the
+player's call, and it changes when a missing board is noticed.
+
+**Still to do:** the diagnostics are deliberately **left in** until the fix is confirmed on a live run,
+then removed — `holdspace.log` and the `[ui]`/`[svc]` `HoldDiag` calls in `MainWindow` and
+`LauncherService`. Release only while the player's launcher was up; 180/180 tests, 0 warnings.
+
+---
+
 ## 2026-10-01 (38) — an instrumented build, to find the Hold Space toggle
 
 **What the player reported:** the Hold Space toggle "froze and would not switch off" — a lag, then a

@@ -347,9 +347,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (holdEngaged)
             {
                 _ = _service.StopTool("holdspace");
+                RefreshStatus();   // the button flips back now, not up to a 750 ms tick later
             }
-            else if (!await _service.StartToolAsync("holdspace"))
-                MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+            else
+            {
+                // Started WITHOUT awaiting first: StartToolAsync sets StartingId in its synchronous
+                // part, so by the time this refresh runs the button can already say "Starting...".
+                // Awaiting first would leave it reading "Hold Space" for the whole cold start, which
+                // is the state that made the press look like it had done nothing.
+                var start = _service.StartToolAsync("holdspace");
+                RefreshStatus();
+                if (!await start)
+                    MessageBox.Show(_service.LastArduinoError ?? "Arduino not found.", "Cannot start", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         };
         ConfigToggle.Click += (_, _) => SetConfigExpanded(!_configExpanded);
         ToolsToggle.Click += (_, _) => SetToolsCollapsed(!_toolsCollapsed);
@@ -724,13 +734,23 @@ public partial class MainWindow : FluentWindow, IDisposable
                      $"holding={_service.StateFor("holdspace") is { Running: true }}");
             _diagCurrentId = _service.CurrentId;
         }
+        // A start IN FLIGHT is a state of its own, and for Hold Space it is the one actually met: a
+        // cold start waits out the board's boot (~2 s), and before this the button read "Hold Space"
+        // for that whole time — so a press that was busy looked exactly like one that had done
+        // nothing, and pressing again was the natural response. That second press is the one the
+        // fix above now makes mean "cancel", which only works if this tells the player it can.
+        bool holdStarting = _service.StartingId == "holdspace";
         bool holdLoaded = _service.CurrentId == "holdspace";
         bool holding = holdLoaded && _service.StateFor("holdspace") is { Running: true };
-        HoldSpaceToggle.Content = holdLoaded ? "Stop Space" : "Hold Space";
-        HoldSpaceToggle.Appearance = holdLoaded ? ControlAppearance.Danger : ControlAppearance.Secondary;
-        HoldSpaceToggle.ToolTip = holdLoaded
-            ? "Stop holding the spacebar and release the key"
-            : "Hold the spacebar to auto-pick up items";
+        HoldSpaceToggle.Content = holdStarting ? "Starting..." : holdLoaded ? "Stop Space" : "Hold Space";
+        HoldSpaceToggle.Appearance = holdLoaded || holdStarting
+            ? ControlAppearance.Danger
+            : ControlAppearance.Secondary;
+        HoldSpaceToggle.ToolTip = holdStarting
+            ? "Starting — press again to cancel"
+            : holdLoaded
+                ? "Stop holding the spacebar and release the key"
+                : "Hold the spacebar to auto-pick up items";
 
         // A failed release is a real key or mouse button left down on the player's machine, and Hold
         // Space is the one tool with no card for state.Message to land on — this line is the only
@@ -747,9 +767,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         else
         {
-            HoldSpaceStatus.Text = holding ? "● holding" : "● idle";
-            HoldSpaceStatus.Foreground = holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
-            HoldSpaceStatus.ToolTip = null;
+            HoldSpaceStatus.Text = holdStarting ? "● starting" : holding ? "● holding" : "● idle";
+            HoldSpaceStatus.Foreground = holdStarting
+                ? Res("SystemFillColorCautionBrush")
+                : holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
+            HoldSpaceStatus.ToolTip = holdStarting
+                ? "Waiting out the board's boot after the COM port opened."
+                : null;
         }
     }
 
