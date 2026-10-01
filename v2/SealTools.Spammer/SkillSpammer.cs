@@ -77,7 +77,16 @@ public sealed class SkillSpammer : ToolBase
 
         void Reset()
         {
-            foreach (var k in cooldowns.Keys) last[k] = sw.Elapsed.TotalSeconds;
+            // Everything starts DUE, not on cooldown. Start is a fresh run and the first thing a fresh
+            // run does is cast; waiting each key's cooldown out first is right for a 6 s rotation and
+            // wrong for a long buff, which on a short session would simply never go up at all. `now -
+            // cd` is exactly the due boundary, so the very next tick sends.
+            //
+            // The cost, and it is a real one: for one tick EVERY key is due at once. Combos space
+            // themselves (their gap), but loose keys go out a tick apart — 20 ms — until the rotation
+            // settles into its rhythm. That is the trade for not idling through the first cooldown.
+            double started = sw.Elapsed.TotalSeconds;
+            foreach (var k in cooldowns.Keys) last[k] = started - cooldowns[k];
             pending.Clear(); // a half-cast combo must not survive a stop/start
             count = 0;
             current = "";

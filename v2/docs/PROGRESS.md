@@ -13,6 +13,31 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (42) — Start casts, instead of idling out the first cooldown
+
+**Found by the player asking the right question about a long timer.** *"If it is 1200 s, first run would
+be 1200 s later?"* — yes, and that is a defect rather than a preference. `Reset()` put **every** key on
+cooldown at Start (`last[k] = now`), which is a fine assumption for skills you recast in seconds and a
+wrong one for a 10- or 20-minute buff: on a short session the buff would **never go up at all**, and
+after every Stop→Start the clock began again from zero.
+
+**The change is one line:** `last[k] = started - cooldowns[k]` instead of `= started`. That is exactly
+the due boundary, so every key is due on the next tick and the run opens with a cast.
+
+**The cost, stated because it is real and was accepted knowingly:** for one tick *every* key is due at
+once. Combos space themselves out (their gap does the work), but loose keys go out **a tick apart — 20
+ms** until the rotation settles into its rhythm. The alternative offered was "reset only the short
+ones", which needs a threshold and a reason for it; "when you press Start, it casts" is the rule you can
+explain without one.
+
+**Untested, and honestly so.** The change lives in `Reset` inside `Run`, which needs a serial port — the
+arithmetic is one subtraction and the reasoning is above, but nothing automated pins it. A live run is
+what confirms it.
+
+194/194 tests, 0 warnings.
+
+---
+
 ## 2026-10-01 (41) — combos: keys that must be cast together, in order
 
 **The player's real setup, which the priority list could not express.** Four skills on ~6 s cooldowns
