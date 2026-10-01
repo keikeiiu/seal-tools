@@ -205,6 +205,12 @@ public sealed class ConfigLoader
     {
         if (local.Spammer != null || defaults.Spammer.Presets is not { Count: > 0 }) return;
 
+        // A hand-written LEGACY step folds into the object shape first, so the copy that is adopted
+        // carries one representation rather than two — and the old key is then never written again.
+        if (defaults.Spammer.StartupStep != null)
+            foreach (var (name, step) in defaults.Spammer.StartupStep)
+                StartupFor(defaults.Spammer, name).Step = step;
+
         local.Spammer = new LocalSpammer
         {
             Active = defaults.Spammer.Active,
@@ -214,10 +220,17 @@ public sealed class ConfigLoader
             // keys and silently lose their order.
             Priority = defaults.Spammer.Priority,
             Combos = defaults.Spammer.Combos,
-            StartupStep = defaults.Spammer.StartupStep,
+            Startup = defaults.Spammer.Startup,
         };
         SaveLocal(local);
     }
+
+    /// <summary>The startup block for a preset, created if it has none — so folding a LEGACY entry in
+    /// does not have to ask whether the new shape already carries one.</summary>
+    private static SpammerStartup StartupFor(SpammerConfig spammer, string name)
+        => spammer.Startup.TryGetValue(name, out var s)
+            ? s
+            : spammer.Startup[name] = new SpammerStartup();
 
     /// <summary>Loads the OCR dictionary — the active game variant's, which the caller names.
     /// <paramref name="file"/> omitted means the TW dictionary, which is what a config with no variant
@@ -366,9 +379,16 @@ public sealed class ConfigLoader
             if (local.Spammer.Combos != null)
                 foreach (var (name, combos) in local.Spammer.Combos)
                     defaults.Spammer.Combos[name] = combos;
+            // The legacy bare step folds into the object shape FIRST, so a config written before the
+            // lead-in existed keeps its stagger without the player retyping it; a new-style entry for
+            // the same preset then overwrites it, which is what makes the fold a migration rather
+            // than a merge of two live sources.
             if (local.Spammer.StartupStep != null)
                 foreach (var (name, step) in local.Spammer.StartupStep)
-                    defaults.Spammer.StartupStep[name] = step;
+                    StartupFor(defaults.Spammer, name).Step = step;
+            if (local.Spammer.Startup != null)
+                foreach (var (name, s) in local.Spammer.Startup)
+                    defaults.Spammer.Startup[name] = s;
         }
 
         // Quest flows are personal in exactly the same way, and for the same reason they must not live
@@ -786,8 +806,13 @@ public sealed class ConfigLoader
         /// carried here for the same reason as the two above.</summary>
         public Dictionary<string, List<SpammerCombo>>? Combos { get; set; }
 
-        /// <summary>Preset name → the gap between the opening presses of a run. Personal, and carried
-        /// here for the same reason as the three above.</summary>
+        /// <summary>Preset name → that preset's opening: lead-in and step. Personal, and carried here
+        /// for the same reason as the three above.</summary>
+        public Dictionary<string, SpammerStartup>? Startup { get; set; }
+
+        /// <summary>LEGACY, read on load only — the opening step as a bare map, before the lead-in
+        /// existed. Folded into <see cref="Startup"/> by the merge below and never written, so it
+        /// disappears from the file on the next save.</summary>
         public Dictionary<string, double>? StartupStep { get; set; }
     }
 

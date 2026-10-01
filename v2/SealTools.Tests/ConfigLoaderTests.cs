@@ -325,25 +325,74 @@ public class ConfigLoaderTests
         }
     }
 
-    // The opening gap rides the same local.yaml projection as the presets, the order and the combos.
-    // Same hazard, same guard — and here the failure is especially quiet, because a gap that comes
-    // back as 0 is not an error: it is "no stagger", so the opening presses go out all at once and
-    // the feature just looks like it was never built.
+    // The opening settings ride the same local.yaml projection as the presets, the order and the
+    // combos. Same hazard, same guard — and here the failure is especially quiet, because an opening
+    // that comes back as zeroes is not an error: it is "no lead-in, no stagger", so the feature just
+    // looks like it was never built.
     [Fact]
-    public void LocalYamlCarriesTheSpammerStartupStep()
+    public void LocalYamlCarriesTheSpammerStartup()
     {
         var dir = MakeTempConfigDirWithLocal(
             ValidOcrLocal +
             "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '1': 6.0\n" +
-            "  startup_step:\n    Knight0-9: 0.15\n");
+            "  startup:\n    Knight0-9:\n      lead_in: 5\n      step: 0.15\n");
         try
         {
             var cfg = new ConfigLoader(dir).Load();
 
-            Assert.Equal(0.15, cfg.Spammer.ActiveStartupStep);
-            // The additive half: a preset with no entry must read 0, so every rotation saved before
-            // this existed keeps firing its whole opening at once.
-            Assert.False(cfg.Spammer.StartupStep.ContainsKey("Boss"));
+            Assert.Equal(5, cfg.Spammer.ActiveStartup.LeadIn);
+            Assert.Equal(0.15, cfg.Spammer.ActiveStartup.Step);
+            // The additive half, and the one the player asked for by name — "some need a lead-in, some
+            // don't". A preset with no entry must read all-zeroes, so a rotation that wants none keeps
+            // opening on the click with everything due at once.
+            Assert.False(cfg.Spammer.Startup.ContainsKey("Boss"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // THE FOLD-IN. `startup_step` was a bare map before the lead-in existed, and a config written
+    // then must keep its stagger rather than lose it to a shape change — silently, since a lost step
+    // is indistinguishable from a preset that never had one. This is the test that fails if the
+    // migration is ever dropped.
+    [Fact]
+    public void LegacyStartupStepFoldsIntoTheStartupBlock()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '1': 6.0\n" +
+            "  startup_step:\n    Knight0-9: 2\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal(2, cfg.Spammer.ActiveStartup.Step);
+            Assert.Equal(0, cfg.Spammer.ActiveStartup.LeadIn);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // And the other direction: a config carrying BOTH must read the new one, or a player who edited
+    // the new box would find the old number winning.
+    [Fact]
+    public void TheNewStartupBlockWinsOverTheLegacyStep()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '1': 6.0\n" +
+            "  startup_step:\n    Knight0-9: 2\n" +
+            "  startup:\n    Knight0-9:\n      lead_in: 5\n      step: 0.15\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal(0.15, cfg.Spammer.ActiveStartup.Step);
+            Assert.Equal(5, cfg.Spammer.ActiveStartup.LeadIn);
         }
         finally
         {

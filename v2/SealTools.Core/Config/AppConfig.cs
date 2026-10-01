@@ -951,22 +951,41 @@ public sealed class SpammerConfig
     public List<SpammerCombo> ActiveCombos =>
         Combos.TryGetValue(Active, out var c) ? c : new List<SpammerCombo>();
 
-    /// <summary>Preset name → the gap in seconds between the OPENING presses of a run.
+    /// <summary>Preset name → how that preset's run OPENS: how long to wait before the first press,
+    /// and how far apart the opening presses are.
     ///
-    /// Start makes every key due at once, so the run opens with a cast rather than idling out each
-    /// key's first cooldown — but that also means a rotation with animations fires its whole opening
-    /// into itself, and the game swallows all but the first. This spreads those presses out, in the
-    /// same order the walk uses.
-    ///
-    /// ZERO OR ABSENT MEANS NO STAGGER, which is exactly what the tool did before this existed, so a
-    /// preset that never sets one is unchanged. A third map keyed by preset name, like
-    /// <see cref="Priority"/> and <see cref="Combos"/>, and for the same reason: it is a property of a
-    /// rotation, not of one key, and Presets' value type cannot carry it.</summary>
-    public Dictionary<string, double> StartupStep { get; set; } = new();
+    /// Note the SHAPE, because it is the answer to a question the maps above raised. This is keyed by
+    /// preset name like they are, but its value is an OBJECT rather than a bare number — so the next
+    /// per-preset setting is one more field on <see cref="SpammerStartup"/>, not a fifth parallel map
+    /// with its own projection handling and guard test. If another top-level per-preset map is ever
+    /// needed, collapse the existing ones the same way instead.</summary>
+    public Dictionary<string, SpammerStartup> Startup { get; set; } = new();
 
-    /// <summary>The active preset's opening gap, or 0 — which the tool reads as "no stagger".</summary>
-    public double ActiveStartupStep =>
-        StartupStep.TryGetValue(Active, out var s) ? s : 0;
+    /// <summary>LEGACY, read on load only. The opening step was this bare map before the lead-in
+    /// existed; <see cref="ConfigLoader"/> folds it into <see cref="Startup"/> during load. Nothing
+    /// writes it, so it disappears from a config file the next time that file is saved.</summary>
+    public Dictionary<string, double>? StartupStep { get; set; }
+
+    /// <summary>The active preset's opening, or all-zeroes when it has none — which reads as "wait
+    /// none, press everything at once", exactly what the tool did before any of this existed.</summary>
+    public SpammerStartup ActiveStartup =>
+        Startup.TryGetValue(Active, out var s) ? s : new SpammerStartup();
+}
+
+/// <summary>How a run's OPENING behaves. Both fields are per preset, because both describe the
+/// rotation rather than the player: a buff rotation wants a lead-in to position in, a combat one
+/// wants to start on the click.</summary>
+public sealed class SpammerStartup
+{
+    /// <summary>Seconds to wait after Start before pressing anything — the window in which to put the
+    /// game in front. Without it the run begins the instant the button is released, and its first
+    /// casts go to whatever else has focus.</summary>
+    public double LeadIn { get; set; }
+
+    /// <summary>Seconds between the OPENING presses. Zero makes every key due at once, which is how
+    /// the tool behaved before this existed — and which, with animations, fires the whole opening into
+    /// itself so the game swallows all but the first.</summary>
+    public double Step { get; set; }
 }
 
 /// <summary>A group of keys that must be cast IN ORDER, with a pause between the steps — the shape a

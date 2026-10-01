@@ -50,9 +50,13 @@ public sealed class SkillSpammer : ToolBase
         var combos = SpammerOrder.Runnable(cooldowns.Keys, _cfg.Spammer.ActiveCombos);
         var singles = SpammerOrder.Singles(cooldowns.Keys, priority, combos);
         bool preempt = priority.Count > 0;
-        // Seconds between the OPENING presses. 0 (the default) makes the whole rotation due at once,
-        // which is how this behaved before the setting existed.
-        double startupStep = _cfg.Spammer.ActiveStartupStep;
+        // How this preset's run OPENS: a lead-in before anything is pressed, then a gap between the
+        // opening presses. Both zero — the default, and what an absent entry means — is exactly how
+        // this behaved before either setting existed.
+        var startup = _cfg.Spammer.ActiveStartup;
+        // The stopwatch moment the opening begins. Everything before it is the lead-in, during which
+        // nothing is pressed at all.
+        double openingAt = 0;
 
         // The combo being cast, one step per gap. Non-empty means the spammer is MID-COMBO and the
         // loop presses nothing else until it drains — including the fillers, which is the point.
@@ -92,17 +96,34 @@ public sealed class SkillSpammer : ToolBase
             // Staggered by UNIT and not by key: a combo is one move, so its keys share an offset and
             // the combo's own gap does the spacing INSIDE it — stepping the halves too would space
             // them twice. `last[k] = at - cd` puts the key's due moment exactly at `at`.
-            double started = sw.Elapsed.TotalSeconds;
+            openingAt = sw.Elapsed.TotalSeconds + startup.LeadIn;
+
+            // The lead-in is the one thing here with nothing to show for itself — the tool sits
+            // pressing nothing, which is indistinguishable from a Start that did not take. So it is
+            // reported through the card's SCHEDULE line, the same mechanism the pet feeder uses for a
+            // reload: the tool sets the MOMENT and the card does the arithmetic, so it counts down
+            // rather than showing a number that was true when it was written.
+            if (startup.LeadIn > 0)
+            {
+                state.Schedule = "lead-in — starting shortly";
+                state.NextActionAt = DateTime.Now.AddSeconds(startup.LeadIn);
+            }
+            else
+            {
+                state.Schedule = null;
+                state.NextActionAt = null;
+            }
+
             int opening = 0;
             foreach (var combo in combos)
             {
-                double at = started + opening * startupStep;
+                double at = openingAt + opening * startup.Step;
                 foreach (var k in combo.Keys) last[k] = at - cooldowns[k];
                 opening++;
             }
             foreach (var k in singles)
             {
-                last[k] = started + opening * startupStep - cooldowns[k];
+                last[k] = openingAt + opening * startup.Step - cooldowns[k];
                 opening++;
             }
             pending.Clear(); // a half-cast combo must not survive a stop/start
@@ -171,6 +192,14 @@ public sealed class SkillSpammer : ToolBase
                 f12Was = f12Now;
 
                 if (!running) continue;
+
+                // The lead-in is over once its moment has passed, and the countdown goes with it —
+                // left up, the card would sit counting to a time already gone.
+                if (state.NextActionAt != null && sw.Elapsed.TotalSeconds >= openingAt)
+                {
+                    state.Schedule = null;
+                    state.NextActionAt = null;
+                }
 
                 bool disconnected = false;
 

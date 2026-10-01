@@ -13,6 +13,44 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (45) — a lead-in, and the per-preset maps stop multiplying
+
+**The ask:** *"can we add another spammer preset setup — how many seconds before we start the spammer"*,
+clarified twice as: per preset, **"some need it, some don't"**, with a countdown so a run that is waiting
+does not look like a run that failed. This is the "delay before the first press" offered back in entry 44
+and not taken then.
+
+**The rule is the same shape as the step:** the opening schedule is shifted by the lead-in, so
+`openingAt = now + LeadIn` and everything before it is simply not due yet. Absent, or 0, is no lead-in —
+which is how "some presets need it" is expressed, with no flag to set.
+
+**The countdown is NOT new machinery.** `ToolState.Schedule` + `NextActionAt` already exist for exactly
+this — the pet feeder's reload, hours apart, where *"the tool sets the MOMENT and the card does the
+arithmetic, so it counts down instead of showing a number that was true when it was written."* The
+lead-in reuses that line rather than inventing a second one.
+
+**And the per-preset maps stopped at three, as promised.** Entry 43 warned that a fourth would need a
+better answer than a fourth map. It did, so: `startup_step` (a bare `preset → double` map) became
+`startup` (a `preset → SpammerStartup` map, carrying `lead_in` and `step` together). **The next per-preset
+setting is now one more field on that object, not a fifth map** with its own projection handling and
+guard test.
+
+**The fold-in is the risky half, and it is tested twice.** A config written yesterday has
+`startup_step: {JSBuffwithnoheal: 2}`, and a shape change that dropped it would lose the player's stagger
+*silently* — a lost step and a preset that never had one are indistinguishable. So the loader reads the
+legacy map, folds it into the object, and nothing writes the old key again; three tests cover the new
+shape, the fold, and the precedence when a config carries **both**.
+
+**A drill that did not fire, and why that is worth recording.** Disabling the legacy fold left all three
+tests PASSING — because the edit had accidentally left **two copies** of the fold in the file, and the
+drill disabled the dead one while the live one kept running. That is the handover's own warning ("a no-op
+edit and a real one look identical") arriving in person. Checking the file rather than trusting the green
+tick found it; the second attempt failed the test correctly.
+
+197/197 tests, 0 warnings. Not verified live.
+
+---
+
 ## 2026-10-02 (44) — startup stepping: the opening presses, spread out
 
 **The ask, and the word that needed pinning down:** *"can we set startup stepping so that we can prevent
