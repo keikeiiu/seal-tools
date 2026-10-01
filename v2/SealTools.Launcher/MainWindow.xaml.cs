@@ -301,6 +301,18 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// <summary>The item currently chosen on either picker. One value behind two controls.</summary>
     private string? _activeBuyPreset;
 
+    /// <summary>The Skill Spammer card's rotation picker, mirroring the Buy preset one. The choice
+    /// behind it is `Config.Spammer.Active` — the SAME value the tab's own picker writes and the tool
+    /// reads at run start, so there is one setting and not two that look alike.</summary>
+    private ComboBox? _spammerPresetCard;
+    /// <summary>True while the two spammer pickers are being synchronised, so their events don't
+    /// recurse — the same guard the Buy pickers carry.</summary>
+    private bool _syncingSpammer;
+    /// <summary>Set by BuildSpammerTab: moves the TAB's picker onto whatever the card last chose.
+    /// A closure rather than a field holding `current`, because `current` is a local of that method
+    /// and the card has no other way to reach it.</summary>
+    private Action? _refreshSpammerTabFromConfig;
+
     /// <summary>The Quest card's quick choice — what to run, and how many loops — so a run can be aimed
     /// without opening Configuration. Mirrors the Buy card's pair, and the same reasoning: the picker
     /// appears on the tab as well, and the two are kept in step rather than being one-looking control
@@ -636,6 +648,27 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Filled once the config is loaded and every time the tab saves, so a new flow or
                 // sequence appears on the card without a restart.
                 RefreshQuestCardTargets();
+            }
+            if (id == "spammer")
+            {
+                // The SAME measured row as the Buy and Quest cards beside it — one height, the same
+                // smaller font that height needs, the same 6px right inset the rows below carry. Which
+                // rotation the spammer presses is the one thing you change often enough to want
+                // without opening Configuration.
+                const double RowHeight = 32;
+                const double PresetWidth = 150;
+                const double InlineFontSize = 11;
+
+                _spammerPresetCard = new ComboBox
+                {
+                    Width = PresetWidth,
+                    Height = RowHeight,
+                    FontSize = InlineFontSize,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0),
+                };
+                _spammerPresetCard.SelectionChanged += (_, _) => OnSpammerPresetChanged();
+                right.Children.Add(_spammerPresetCard);
             }
             right.Children.Add(buttons);
 
@@ -1811,6 +1844,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = "";
             ClosePrompt();
             UpdateSummary();
+            RefreshSpammerCard();   // a preset made or renamed here must appear on the card at once
         };
 
         var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
@@ -1845,6 +1879,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
             UpdateSummary();
+            RefreshSpammerCard();   // the deleted name must leave the card's list with it
             status.Text = $"Deleted preset '{gone}'.";
         };
         // The initial keys AND order are loaded by LoadRows at the end of this method rather than
@@ -2226,11 +2261,29 @@ public partial class MainWindow : FluentWindow, IDisposable
         panel.Children.Add(save);
         panel.Children.Add(result);
 
+        // Kept in step with the card's picker. The card is the quick way in and this is the editor, but
+        // it is ONE choice, so the card tells the tab to re-read it rather than letting the two show
+        // different rotations. Unsaved edits are committed first, exactly as the tab's own picker does
+        // when it switches.
+        _refreshSpammerTabFromConfig = () =>
+        {
+            var want = _service.Config.Spammer.Active;
+            if (want == current || !presets.ContainsKey(want)) return;
+            var live = RowsToKeys();
+            presets[current] = live;
+            Commit(live);
+            current = want;
+            loading = true; RefreshPresetList(current); loading = false;
+            LoadRows(current);
+            UpdateSummary();
+        };
+
         loading = true;
         RefreshPresetList(current);
         loading = false;
         LoadRows(current);
         UpdateSummary();
+        RefreshSpammerCard();
 
         return MakeTab("Spammer", panel);
     }
@@ -4579,6 +4632,43 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (row >= rows) items.Add($"Row {row + 1} — past the bottom of the list");
         picker.ItemsSource = items;
         picker.SelectedIndex = row >= rows ? rows : Math.Max(0, row);
+    }
+
+    /// <summary>Repopulates the card's rotation picker from the configured presets, leaving it on the
+    /// active one. Called at build time and again whenever the tab adds, renames or deletes a preset,
+    /// so a rotation made on the tab appears on the card without a restart.</summary>
+    private void RefreshSpammerCard()
+    {
+        if (_spammerPresetCard == null) return;
+
+        var names = _service.Config.Spammer.Presets.Keys
+            .OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+        var active = _service.Config.Spammer.Active;
+
+        _syncingSpammer = true;
+        try
+        {
+            _spammerPresetCard.ItemsSource = names;
+            // Falls back to the first name only to have SOMETHING selected: a card picker that shows
+            // blank cannot be used to switch, and `Active` naming a preset that no longer exists is
+            // exactly the state a delete leaves behind.
+            _spammerPresetCard.SelectedItem = names.Contains(active) ? active : names.FirstOrDefault();
+        }
+        finally { _syncingSpammer = false; }
+    }
+
+    /// <summary>Which rotation the card chose. It sets the SAME value the tab's picker sets — the one
+    /// the tool reads at run start — and then tells the tab, so the two mirror rather than drift. It
+    /// deliberately does NOT write local.yaml: the tab's Save is the only place a rotation is
+    /// persisted, and a card that wrote the file would be a second writer of it, which this repo has
+    /// already been bitten by.</summary>
+    private void OnSpammerPresetChanged()
+    {
+        if (_syncingSpammer) return;
+        if (_spammerPresetCard?.SelectedItem is not string name) return;
+
+        _service.Config.Spammer.Active = name;
+        _refreshSpammerTabFromConfig?.Invoke();
     }
 
     /// <summary>Repopulates both preset pickers and leaves them on the same item. There are two

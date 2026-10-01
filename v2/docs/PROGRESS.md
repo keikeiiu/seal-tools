@@ -13,6 +13,39 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (43) — a rotation picker on the Skill Spammer card
+
+**The ask:** *"add a selector like buy item for skill spammer for quick setup"* — then, twice, *"we only
+need to preset select"* and *"there is no need for + / -"*. So: a preset picker, and no count stepper.
+
+**It is Buy's control, not a lookalike.** Same measured row — 32px height, 11px font, the 6px right
+inset the rows below carry — and the same mechanism: one value behind two controls, with a `_syncing…`
+guard so their events cannot recurse. The value is **`Config.Spammer.Active`**, which is the one the tab
+already writes and the tool already reads at run start, so nothing new had to be invented.
+
+**Two things it deliberately does NOT do:**
+
+- **It does not write `local.yaml`.** The tab's Save stays the only place a rotation is persisted. A
+  card that wrote the file would be a second writer of it, and `SaveLocal`/`SaveDefaults` already share
+  a temp filename with no mutual exclusion (a standing item in TODO.md) — this would have widened a
+  known hole for a convenience.
+- **It does not get its own copy of the choice.** Setting `Active` and then telling the tab to re-read
+  it is the difference between two controls and two settings, which is the exact failure the Buy
+  comment warns about.
+
+**How the tab is told** is the one non-obvious bit: the tab's selected preset is a **local** of
+`BuildSpammerTab`, so the card cannot reach it by name. The method leaves an `Action` in a field — a
+closure over that local — and the card invokes it. The closure commits the tab's unsaved edits first,
+exactly as the tab's own picker does when it switches.
+
+**Also:** the card's list is refreshed when a preset is created, renamed or deleted on the tab, so a
+rotation made there appears on the card without a restart, and a deleted one leaves with it.
+
+194/194 tests, 0 warnings. Not verified live — the card's layout is reasoned from Buy's measurements,
+not seen.
+
+---
+
 ## 2026-10-02 (42) — Start casts, instead of idling out the first cooldown
 
 **Found by the player asking the right question about a long timer.** *"If it is 1200 s, first run would
