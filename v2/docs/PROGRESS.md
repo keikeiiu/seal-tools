@@ -54,7 +54,24 @@ projection directions handled, and **both guards proven by removal**: the merge 
 for the same reason it carries `Priority` — a field left out of that explicit list is not unsaved, it
 is deleted from the file.
 
-**Not yet built: the editor.** Combos are a hand edit in `local.yaml` for now.
+**The editor, in the same session.** A **Combos** card on the Spammer tab: a list of combos, each with
+a **gap (s)** box, an ordered list of steps with ↑ / ↓ / ✕ on each, a picker to append a step, and
+*Remove combo*. An empty list prints *"(no combos — every key is pressed on its own)"*.
+
+Three decisions in it:
+
+- **A key may belong to ONE combo only.** The picker offers keys not already owned by any combo,
+  because shared between two, which combo owns it would come down to which the walk reached first —
+  and the pair that did not get it would fire half-strength with nothing saying so.
+- **The gap box updates the model and does NOT rebuild the panel.** A rebuild on every keystroke takes
+  the caret out of the box, which is how a half-typed number becomes untypeable.
+- **Combo pruning happens on commit, not on display**, the same rule the tool applies at run time —
+  fewer than two keys, or a key the preset lacks, and it is dropped where it can be seen going. The
+  step list still SHOWS an unknown key greyed, like the Order card does, so it can be corrected rather
+  than vanishing.
+
+**`Commit` now carries both maps**, and Rename moves `combosMap` alongside `priority` while Delete
+removes both — the same hole the order had, closed before it opened rather than after.
 
 194/194 tests, 0 warnings.
 

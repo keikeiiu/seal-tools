@@ -1523,6 +1523,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The rotation order: preset name → keys in precedence order. Edited here and committed by
         // the same Save Preset as the keys, so the two halves of a rotation are never written apart.
         var priority = _service.Config.Spammer.Priority;
+        // preset name → that preset's combos. Same map, same treatment, same Save.
+        var combosMap = _service.Config.Spammer.Combos;
 
         // Read-only summary of the active preset's keys, shown on the Active card so the editor
         // only has to appear while you're actually changing something. Each key is a small pill.
@@ -1588,10 +1590,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // and on Save. Kept as a copy rather than read from the config on each rebuild so a
         // half-made ordering is not lost the moment the panel redraws.
         var order = new List<string>();
+        // The combos for the CURRENT preset, a working copy for the same reason `order` is one.
+        var comboList = new List<SpammerCombo>();
         // Declared here rather than beside the Order card further down, because the key grid's delete
         // button refreshes this panel and C# will not let that lambda capture a variable declared
         // after it. The card is still BUILT below, next to the section it belongs to.
         var orderPanel = new StackPanel();
+        var combosPanel = new StackPanel();
         var availableBox = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
         var addToOrder = MakeInlineButton("Add to order", ControlAppearance.Secondary);
         // The Fast column. 48 was too narrow and clipped the tick box's RIGHT BORDER away, leaving a
@@ -1707,10 +1712,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             // which preset is on screen — they are one rotation and the file keeps them side by side.
             order.Clear();
             if (priority.TryGetValue(name, out var stored)) order.AddRange(stored);
-            if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); return; }
+            comboList.Clear();
+            if (combosMap.TryGetValue(name, out var storedCombos)) comboList.AddRange(storedCombos);
+            if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); UpdateCombosPanel(); return; }
             foreach (var kv in keys)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
             UpdateOrderPanel();
+            UpdateCombosPanel();
         }
 
         const string AddNewMarker = "＋ Add new…";
@@ -1747,7 +1755,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (name == current) return;
             var live = RowsToKeys(); // keep unsaved edits when switching
             presets[current] = live;
-            CommitOrder(live);       // and the order with them — the two are one rotation
+            Commit(live);       // and the order with them — the two are one rotation
             current = name;
             LoadRows(name);
             UpdateSummary();
@@ -1774,7 +1782,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
                 var live = RowsToKeys();
                 presets[current] = live;
-                CommitOrder(live);
+                Commit(live);
                 presets[name] = new Dictionary<string, double>();
                 current = name;
                 loading = true; RefreshPresetList(name); loading = false;
@@ -1787,7 +1795,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
                 var live = RowsToKeys();
                 presets[current] = live;
-                CommitOrder(live);
+                Commit(live);
                 presets.Remove(current);
                 presets[name] = live;
                 var old = current;
@@ -1796,6 +1804,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // keys and leaving the order behind would drop the rotation to "no rule" — silently,
                 // and looking exactly like the feature not existing.
                 if (priority.Remove(old, out var movedOrder)) priority[name] = movedOrder;
+                if (combosMap.Remove(old, out var movedCombos)) combosMap[name] = movedCombos;
                 loading = true; RefreshPresetList(name); loading = false;
                 status.Text = $"Renamed '{old}' to '{name}'.";
             }
@@ -1831,6 +1840,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // exists — invisible in the tab, still in the file, and restored to life by a later
             // preset that happened to reuse the name.
             priority.Remove(gone);
+            combosMap.Remove(gone);
             current = presets.Keys.First();
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
@@ -1897,13 +1907,21 @@ public partial class MainWindow : FluentWindow, IDisposable
             return result;
         }
 
-        // Written back into `priority` on every path that leaves the current preset, and on Save —
-        // exactly as `rows` are written back through RowsToKeys(). Pruned against the keys the preset
-        // actually has, so a key deleted or renamed in the grid does not leave its name in the file
-        // for good. The tool skips an unknown name at run time, so this is tidiness rather than
-        // correctness — but the file is the player's to read.
-        void CommitOrder(IDictionary<string, double> live) =>
+        // Written back into `priority` and `combosMap` on every path that leaves the current preset,
+        // and on Save — exactly as `rows` are written back through RowsToKeys(). Both are pruned
+        // against the keys the preset actually has, so a key deleted or renamed in the grid does not
+        // leave its name in the file for good. The tool skips an unknown name at run time, so this is
+        // tidiness rather than correctness — but the file is the player's to read.
+        void Commit(IDictionary<string, double> live)
+        {
             priority[current] = order.Where(live.ContainsKey).ToList();
+            // The same rule the tool applies at run time (SpammerOrder.Runnable): fewer than two keys,
+            // or a key this preset does not have, and the combo is dropped rather than run. Dropped
+            // HERE, where it can be seen happening, rather than silently at 20 ms a tick.
+            var kept = comboList.Where(c => c.Keys.Count >= 2 && c.Keys.All(live.ContainsKey)).ToList();
+            if (kept.Count > 0) combosMap[current] = kept;
+            else combosMap.Remove(current);
+        }
 
         void RebuildRowsFromRaw(string text)
         {
@@ -2024,6 +2042,135 @@ public partial class MainWindow : FluentWindow, IDisposable
             orderPanel,
             orderControls));
 
+        // ── combos ───────────────────────────────────────────────────────────────────────────────
+        // Ordered groups that must be cast together — 1→2 and 3→4, where the second skill only lands
+        // while the first is still animating. A combo is tried BEFORE any single key, its members are
+        // never pressed on their own, and NOTHING goes out between its steps. Those three are the
+        // whole feature; SkillSpammer's hold comment says why each one is load-bearing.
+        static string ComboLabel(string k) => k.StartsWith('*') ? k[1..] + "  ⚡" : k;
+
+        void UpdateCombosPanel()
+        {
+            combosPanel.Children.Clear();
+            var live = RowsToKeys();
+
+            if (comboList.Count == 0)
+            {
+                combosPanel.Children.Add(new TextBlock
+                {
+                    Text = "(no combos — every key is pressed on its own)",
+                    Foreground = Res("TextFillColorSecondaryBrush"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 6),
+                });
+            }
+
+            for (int ci = 0; ci < comboList.Count; ci++)
+            {
+                var combo = comboList[ci];
+                int at = ci;
+                var card = new StackPanel { Margin = new Thickness(0, 2, 0, 12) };
+
+                // Header: which combo, the gap, and the way to drop the whole thing.
+                var head = new StackPanel { Orientation = Orientation.Horizontal };
+                head.Children.Add(new TextBlock
+                {
+                    Text = $"Combo {ci + 1}",
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                head.Children.Add(new TextBlock
+                {
+                    Text = "gap (s)",
+                    Foreground = Res("TextFillColorSecondaryBrush"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(14, 0, 0, 0),
+                });
+                var gapBox = UiText("", null, clearButton: false);
+                gapBox.Text = combo.Gap.ToString(CultureInfo.InvariantCulture);
+                gapBox.Width = 64;
+                gapBox.Margin = new Thickness(6, 0, 0, 0);
+                // Updates the model ONLY. Rebuilding the panel here would take the caret out of the
+                // box on every keystroke, which is how a half-typed number becomes untypeable.
+                gapBox.TextChanged += (_, _) =>
+                {
+                    if (double.TryParse(gapBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var g))
+                        combo.Gap = g;
+                };
+                head.Children.Add(gapBox);
+                var dropCombo = MakeInlineButton("Remove combo", ControlAppearance.Secondary);
+                dropCombo.Click += (_, _) => { comboList.RemoveAt(at); UpdateCombosPanel(); };
+                head.Children.Add(dropCombo);
+                card.Children.Add(head);
+
+                // The steps, in cast order. Reorderable because the ORDER is the whole point — a
+                // 2→1 casts the wrong skill first and the effect never triggers.
+                for (int si = 0; si < combo.Keys.Count; si++)
+                {
+                    string name = combo.Keys[si];
+                    bool known = live.ContainsKey(name);
+                    var step = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+                    step.Children.Add(new TextBlock
+                    {
+                        Text = $"{si + 1}.  {ComboLabel(name)}" + (known ? "" : "   (not in this preset)"),
+                        MinWidth = 170,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = Res(known ? "TextFillColorPrimaryBrush" : "TextFillColorSecondaryBrush"),
+                    });
+
+                    int sat = si;
+                    var up = MakeInlineButton("↑", ControlAppearance.Secondary);
+                    var down = MakeInlineButton("↓", ControlAppearance.Secondary);
+                    var drop = MakeInlineButton("✕", ControlAppearance.Secondary);
+                    up.IsEnabled = si > 0;
+                    down.IsEnabled = si < combo.Keys.Count - 1;
+                    up.Click += (_, _) => { (combo.Keys[sat - 1], combo.Keys[sat]) = (combo.Keys[sat], combo.Keys[sat - 1]); UpdateCombosPanel(); };
+                    down.Click += (_, _) => { (combo.Keys[sat + 1], combo.Keys[sat]) = (combo.Keys[sat], combo.Keys[sat + 1]); UpdateCombosPanel(); };
+                    drop.Click += (_, _) => { combo.Keys.RemoveAt(sat); UpdateCombosPanel(); };
+                    step.Children.Add(up);
+                    step.Children.Add(down);
+                    step.Children.Add(drop);
+                    card.Children.Add(step);
+                }
+
+                // A key may belong to ONE combo only. Shared between two, which one owns it would come
+                // down to which the walk reached first, and the pair that did not get it would fire
+                // half-strength with nothing anywhere saying so.
+                var owned = new HashSet<string>(comboList.SelectMany(c => c.Keys));
+                var free = live.Keys.Where(k => !owned.Contains(k)).ToList();
+                var pick = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
+                pick.ItemsSource = free;
+                pick.SelectedIndex = free.Count > 0 ? 0 : -1;
+                pick.IsEnabled = free.Count > 0;
+                var addStep = MakeInlineButton("Add step", ControlAppearance.Secondary);
+                addStep.IsEnabled = free.Count > 0;
+                addStep.Click += (_, _) =>
+                {
+                    if (pick.SelectedItem is not string name) return;
+                    combo.Keys.Add(name);
+                    UpdateCombosPanel();
+                };
+                var addStepRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                addStepRow.Children.Add(pick);
+                addStepRow.Children.Add(addStep);
+                card.Children.Add(addStepRow);
+
+                combosPanel.Children.Add(card);
+            }
+        }
+
+        var addCombo = MakeInlineButton("New combo", ControlAppearance.Secondary);
+        addCombo.Click += (_, _) => { comboList.Add(new SpammerCombo()); UpdateCombosPanel(); };
+
+        editor.Children.Add(Section("Combos",
+            Hint("Keys that must be cast together, in order — the shape a combo effect needs, where the " +
+                 "second skill only lands while the first is still animating. A combo is ready only when " +
+                 "EVERY key in it is off cooldown, so one is never started that cannot be finished, and " +
+                 "a key in a combo is never pressed on its own. Nothing else is cast during the gap: the " +
+                 "previous cast's animation would swallow it."),
+            combosPanel,
+            addCombo));
+
 
         advanced.Checked += (_, _) =>
         {
@@ -2045,7 +2192,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // Committed against the keys actually being saved — in Advanced mode those are the raw
             // ones, not the rows — so the order is pruned against the same set. Pruning against the
             // rows instead would drop from the order any key that exists only in the text box.
-            CommitOrder(live);
+            Commit(live);
             _service.Config.Spammer.Active = current;
             // Presets are the player's own rotations, so they go to local.yaml with the calibration.
             // defaults.yaml is the template publish.bat ships, so a preset saved there would be
@@ -2067,7 +2214,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             };
             SaveReport(() => _service.SaveLocal(local), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +
-                $"{order.Count} in the order).");
+                $"{order.Count} in the order, {comboList.Count} combo(s)).");
             UpdateSummary();
         };
         // The editor goes in before the save button, not after. It used to be added last, which put
