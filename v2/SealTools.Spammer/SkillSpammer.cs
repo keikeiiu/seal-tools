@@ -50,6 +50,9 @@ public sealed class SkillSpammer : ToolBase
         var combos = SpammerOrder.Runnable(cooldowns.Keys, _cfg.Spammer.ActiveCombos);
         var singles = SpammerOrder.Singles(cooldowns.Keys, priority, combos);
         bool preempt = priority.Count > 0;
+        // Seconds between the OPENING presses. 0 (the default) makes the whole rotation due at once,
+        // which is how this behaved before the setting existed.
+        double startupStep = _cfg.Spammer.ActiveStartupStep;
 
         // The combo being cast, one step per gap. Non-empty means the spammer is MID-COMBO and the
         // loop presses nothing else until it drains — including the fillers, which is the point.
@@ -79,14 +82,29 @@ public sealed class SkillSpammer : ToolBase
         {
             // Everything starts DUE, not on cooldown. Start is a fresh run and the first thing a fresh
             // run does is cast; waiting each key's cooldown out first is right for a 6 s rotation and
-            // wrong for a long buff, which on a short session would simply never go up at all. `now -
-            // cd` is exactly the due boundary, so the very next tick sends.
+            // wrong for a long buff, which on a short session would simply never go up at all.
             //
-            // The cost, and it is a real one: for one tick EVERY key is due at once. Combos space
-            // themselves (their gap), but loose keys go out a tick apart — 20 ms — until the rotation
-            // settles into its rhythm. That is the trade for not idling through the first cooldown.
+            // `startupStep` then SPACES those opening presses. Due all at once, a rotation with
+            // animations fires its whole opening into itself and the game swallows all but the first —
+            // so keys come due one step apart, in the same order the walk uses. At 0 they are all due
+            // at once, which is how this behaved before the setting existed.
+            //
+            // Staggered by UNIT and not by key: a combo is one move, so its keys share an offset and
+            // the combo's own gap does the spacing INSIDE it — stepping the halves too would space
+            // them twice. `last[k] = at - cd` puts the key's due moment exactly at `at`.
             double started = sw.Elapsed.TotalSeconds;
-            foreach (var k in cooldowns.Keys) last[k] = started - cooldowns[k];
+            int opening = 0;
+            foreach (var combo in combos)
+            {
+                double at = started + opening * startupStep;
+                foreach (var k in combo.Keys) last[k] = at - cooldowns[k];
+                opening++;
+            }
+            foreach (var k in singles)
+            {
+                last[k] = started + opening * startupStep - cooldowns[k];
+                opening++;
+            }
             pending.Clear(); // a half-cast combo must not survive a stop/start
             count = 0;
             current = "";

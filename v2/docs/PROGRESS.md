@@ -13,6 +13,44 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (44) — startup stepping: the opening presses, spread out
+
+**The ask, and the word that needed pinning down:** *"can we set startup stepping so that we can prevent
+race conditions?"* "Race conditions" could have meant a delay *before* the first press; asked directly,
+it is the other thing — start makes every key due at once, so **the whole rotation fires into itself**
+and the game swallows all but the first. They chose to **spread the opening presses**, and to have the
+timing **per preset**.
+
+**This is the cost of entry 42, paid off.** Making Start cast is right for a long buff and wrong for a
+rotation with animations, and there was no third option between "everything at once" and "idle out every
+first cooldown". Now there is: `startup_step`.
+
+**The rule.** On Start, keys become due one step apart in the same order the walk uses. Staggered by
+**unit, not by key** — a combo is one move, so its keys share an offset and the combo's own gap does the
+spacing *inside* it; stepping the halves as well would space them twice. `last[k] = at - cd` puts a
+key's due moment exactly at `at`, so the arithmetic is the same shape as everything else here.
+
+**0 is the old behaviour, and absent means 0** — so every rotation saved before this existed is
+unchanged, and the tab REMOVES the entry when the box is 0 rather than writing `startup_step: 0` into
+every preset.
+
+**A third map keyed by preset name** (`priority`, `combos`, `startup_step`), which is a smell worth
+naming: three parallel maps for three per-preset settings, only because `Presets`' value type cannot
+carry them. Each needs its own projection handling and guard. If a fourth ever appears, the right answer
+is to stop and change the shape of `Presets` behind a migration rather than add a fourth map.
+
+**Both projection directions again**, and the guard proven by removal: the merge copy was taken out and
+`LocalYamlCarriesTheSpammerStartupStep` was watched to **fail**. Its failure mode is the quietest of the
+three — a gap that comes back as 0 is not an error, it is "no stagger", so the feature simply looks like
+it was never built.
+
+**Not verified live.** The staggering arithmetic is reasoned, not observed; the runtime is inside `Run`
+and needs a serial port, as with the combo state machine.
+
+195/195 tests, 0 warnings.
+
+---
+
 ## 2026-10-02 (43) — a rotation picker on the Skill Spammer card
 
 **The ask:** *"add a selector like buy item for skill spammer for quick setup"* — then, twice, *"we only

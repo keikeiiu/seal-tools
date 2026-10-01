@@ -1558,6 +1558,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         var priority = _service.Config.Spammer.Priority;
         // preset name → that preset's combos. Same map, same treatment, same Save.
         var combosMap = _service.Config.Spammer.Combos;
+        // preset name → the gap between the OPENING presses. Same again.
+        var startupSteps = _service.Config.Spammer.StartupStep;
 
         // Read-only summary of the active preset's keys, shown on the Active card so the editor
         // only has to appear while you're actually changing something. Each key is a small pill.
@@ -1625,6 +1627,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var order = new List<string>();
         // The combos for the CURRENT preset, a working copy for the same reason `order` is one.
         var comboList = new List<SpammerCombo>();
+        // The opening gap for the current preset. A plain number, but a working copy like the two
+        // above so a half-typed value is not read back mid-keystroke.
+        var startupBox = UiText("", null, clearButton: false);
+        double startupStepValue = 0;
         // Declared here rather than beside the Order card further down, because the key grid's delete
         // button refreshes this panel and C# will not let that lambda capture a variable declared
         // after it. The card is still BUILT below, next to the section it belongs to.
@@ -1747,6 +1753,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (priority.TryGetValue(name, out var stored)) order.AddRange(stored);
             comboList.Clear();
             if (combosMap.TryGetValue(name, out var storedCombos)) comboList.AddRange(storedCombos);
+            startupStepValue = startupSteps.TryGetValue(name, out var storedStep) ? storedStep : 0;
+            startupBox.Text = startupStepValue.ToString(CultureInfo.InvariantCulture);
             if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); UpdateCombosPanel(); return; }
             foreach (var kv in keys)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
@@ -1838,6 +1846,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // and looking exactly like the feature not existing.
                 if (priority.Remove(old, out var movedOrder)) priority[name] = movedOrder;
                 if (combosMap.Remove(old, out var movedCombos)) combosMap[name] = movedCombos;
+                if (startupSteps.Remove(old, out var movedStep)) startupSteps[name] = movedStep;
                 loading = true; RefreshPresetList(name); loading = false;
                 status.Text = $"Renamed '{old}' to '{name}'.";
             }
@@ -1875,6 +1884,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // preset that happened to reuse the name.
             priority.Remove(gone);
             combosMap.Remove(gone);
+            startupSteps.Remove(gone);
             current = presets.Keys.First();
             loading = true; RefreshPresetList(current); loading = false;
             LoadRows(current);
@@ -1956,6 +1966,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             var kept = comboList.Where(c => c.Keys.Count >= 2 && c.Keys.All(live.ContainsKey)).ToList();
             if (kept.Count > 0) combosMap[current] = kept;
             else combosMap.Remove(current);
+
+            // Zero is REMOVED rather than written: it is the same as absent everywhere else in this
+            // config, and leaving `startup_step: 0` behind for every preset would be noise in a file
+            // the player reads.
+            if (startupStepValue > 0) startupSteps[current] = startupStepValue;
+            else startupSteps.Remove(current);
         }
 
         void RebuildRowsFromRaw(string text)
@@ -2206,6 +2222,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             combosPanel,
             addCombo));
 
+        startupBox.Width = 64;
+        // Updates the model ONLY. Rebuilding here would take the caret out of the box mid-number, the
+        // same reason the combo gap box does not rebuild its panel.
+        startupBox.TextChanged += (_, _) =>
+        {
+            if (double.TryParse(startupBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s))
+                startupStepValue = s;
+        };
+
+        editor.Children.Add(Section("Startup",
+            Hint("Start makes every key due at once, so a run opens with a cast instead of waiting out " +
+                 "each key's first cooldown. With animations, that whole opening can fire into itself and " +
+                 "the game swallows all but the first — this spaces those presses out, in the same order " +
+                 "the walk uses. A combo counts as ONE move, so its own gap still does the spacing inside " +
+                 "it. 0 means no stagger, which is how it behaved before this existed."),
+            LabeledField("Gap between opening presses (s)", startupBox)));
+
 
         advanced.Checked += (_, _) =>
         {
@@ -2246,6 +2279,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Same reasoning, same hazard: a field left out of this list is not unsaved, it is
                 // DELETED from local.yaml on the next Save from this tab.
                 Combos = _service.Config.Spammer.Combos,
+                StartupStep = _service.Config.Spammer.StartupStep,
             };
             SaveReport(() => _service.SaveLocal(local), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +

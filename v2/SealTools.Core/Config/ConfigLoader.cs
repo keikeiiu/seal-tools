@@ -214,6 +214,7 @@ public sealed class ConfigLoader
             // keys and silently lose their order.
             Priority = defaults.Spammer.Priority,
             Combos = defaults.Spammer.Combos,
+            StartupStep = defaults.Spammer.StartupStep,
         };
         SaveLocal(local);
     }
@@ -365,6 +366,9 @@ public sealed class ConfigLoader
             if (local.Spammer.Combos != null)
                 foreach (var (name, combos) in local.Spammer.Combos)
                     defaults.Spammer.Combos[name] = combos;
+            if (local.Spammer.StartupStep != null)
+                foreach (var (name, step) in local.Spammer.StartupStep)
+                    defaults.Spammer.StartupStep[name] = step;
         }
 
         // Quest flows are personal in exactly the same way, and for the same reason they must not live
@@ -781,6 +785,10 @@ public sealed class ConfigLoader
         /// <summary>Preset name → that preset's combos, in the order they are tried. Personal, and
         /// carried here for the same reason as the two above.</summary>
         public Dictionary<string, List<SpammerCombo>>? Combos { get; set; }
+
+        /// <summary>Preset name → the gap between the opening presses of a run. Personal, and carried
+        /// here for the same reason as the three above.</summary>
+        public Dictionary<string, double>? StartupStep { get; set; }
     }
 
     /// <summary>Windows-specific launcher state: where the window sits, how big it is when expanded,

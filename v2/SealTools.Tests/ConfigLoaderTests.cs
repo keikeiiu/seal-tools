@@ -325,6 +325,32 @@ public class ConfigLoaderTests
         }
     }
 
+    // The opening gap rides the same local.yaml projection as the presets, the order and the combos.
+    // Same hazard, same guard — and here the failure is especially quiet, because a gap that comes
+    // back as 0 is not an error: it is "no stagger", so the opening presses go out all at once and
+    // the feature just looks like it was never built.
+    [Fact]
+    public void LocalYamlCarriesTheSpammerStartupStep()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '1': 6.0\n" +
+            "  startup_step:\n    Knight0-9: 0.15\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal(0.15, cfg.Spammer.ActiveStartupStep);
+            // The additive half: a preset with no entry must read 0, so every rotation saved before
+            // this existed keeps firing its whole opening at once.
+            Assert.False(cfg.Spammer.StartupStep.ContainsKey("Boss"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
 
     /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the

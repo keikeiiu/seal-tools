@@ -950,6 +950,23 @@ public sealed class SpammerConfig
     /// none, which leaves the tool doing exactly what it did before combos existed.</summary>
     public List<SpammerCombo> ActiveCombos =>
         Combos.TryGetValue(Active, out var c) ? c : new List<SpammerCombo>();
+
+    /// <summary>Preset name → the gap in seconds between the OPENING presses of a run.
+    ///
+    /// Start makes every key due at once, so the run opens with a cast rather than idling out each
+    /// key's first cooldown — but that also means a rotation with animations fires its whole opening
+    /// into itself, and the game swallows all but the first. This spreads those presses out, in the
+    /// same order the walk uses.
+    ///
+    /// ZERO OR ABSENT MEANS NO STAGGER, which is exactly what the tool did before this existed, so a
+    /// preset that never sets one is unchanged. A third map keyed by preset name, like
+    /// <see cref="Priority"/> and <see cref="Combos"/>, and for the same reason: it is a property of a
+    /// rotation, not of one key, and Presets' value type cannot carry it.</summary>
+    public Dictionary<string, double> StartupStep { get; set; } = new();
+
+    /// <summary>The active preset's opening gap, or 0 — which the tool reads as "no stagger".</summary>
+    public double ActiveStartupStep =>
+        StartupStep.TryGetValue(Active, out var s) ? s : 0;
 }
 
 /// <summary>A group of keys that must be cast IN ORDER, with a pause between the steps — the shape a
