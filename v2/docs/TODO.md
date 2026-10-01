@@ -54,6 +54,22 @@ needs new machinery, just a small driver per feature.
 
 ## Needs a live check before any code change
 
+- [ ] **The spammer's NON-fast keys do not register in game (2026-10-02, open).** Found while chasing
+  what looked like a function-key problem; it is not. The player's `*1`…`*0` rotation (Fast ticked)
+  works, and every key without Fast does not — `F4`–`F10` failed only because those were the only
+  non-fast keys they had. **Verified from the code, so far:** the card's Cycle counter rises, so
+  `ser.Write` succeeds and the host IS sending; the launcher's `SendKey` accepts 1–12 and writes
+  `"F 4\n"`; the firmware's table is complete and NUL-terminated, and **every shipped firmware from
+  v2.9 to now has identical hold logic** (`HOLD_FAST` 10 ms vs `random(HOLD_NORMAL_MIN,
+  HOLD_NORMAL_MAX)` 30–80 ms) — so reflashing changes nothing and firmware age is NOT the cause.
+  **The one remaining fork, and the test that splits it:** run the preset with `1` (normal) and `2`
+  (fast) into **Notepad** rather than the game. Both characters appear → the board is fine and the
+  GAME is rejecting a 30–80 ms press as a hold rather than a tap, and the fix is shortening
+  `HOLD_NORMAL_MIN/MAX`. Only `2` appears → the board really is dropping the normal path, and the next
+  step is the firmware level the Arduino tab reports.
+
+
+
 - [x] **OCR row-bucket pooling** — resolved (2026-09-11). The "one line less" symptom was **not** a
   `row_height` pooling after all: the captures show all 3 lines are read, and the drop was in the
   matcher (OCR character misreads breaking the dictionary match). Fixed in `3b8023b` (added `国/盘/地`→`每`,
