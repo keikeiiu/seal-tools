@@ -213,6 +213,7 @@ public sealed class ConfigLoader
             // a hand-written defaults.yaml block into local.yaml, and dropping it here would keep the
             // keys and silently lose their order.
             Priority = defaults.Spammer.Priority,
+            Combos = defaults.Spammer.Combos,
         };
         SaveLocal(local);
     }
@@ -361,6 +362,9 @@ public sealed class ConfigLoader
             if (local.Spammer.Priority != null)
                 foreach (var (name, order) in local.Spammer.Priority)
                     defaults.Spammer.Priority[name] = order;
+            if (local.Spammer.Combos != null)
+                foreach (var (name, combos) in local.Spammer.Combos)
+                    defaults.Spammer.Combos[name] = combos;
         }
 
         // Quest flows are personal in exactly the same way, and for the same reason they must not live
@@ -773,6 +777,10 @@ public sealed class ConfigLoader
         /// beside it, and carried here for the same reason: it describes a rotation the player tuned,
         /// not something a published build should ship.</summary>
         public Dictionary<string, List<string>>? Priority { get; set; }
+
+        /// <summary>Preset name → that preset's combos, in the order they are tried. Personal, and
+        /// carried here for the same reason as the two above.</summary>
+        public Dictionary<string, List<SpammerCombo>>? Combos { get; set; }
     }
 
     /// <summary>Windows-specific launcher state: where the window sits, how big it is when expanded,

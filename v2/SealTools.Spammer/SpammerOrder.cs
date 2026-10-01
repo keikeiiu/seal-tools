@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using SealTools.Core.Config;
 
 namespace SealTools.Spammer;
 
@@ -30,5 +31,32 @@ public static class SpammerOrder
         foreach (var k in all)
             if (!order.Contains(k)) order.Add(k);
         return order;
+    }
+
+    /// <summary>The keys the loop may press ON THEIR OWN: the whole preset minus everything a combo
+    /// owns, in <see cref="For"/>'s precedence order.
+    ///
+    /// The subtraction is what makes a combo a UNIT. Left in the walk, the second key of a pair would
+    /// fire on its own whenever the first was on cooldown — the effect never triggers, and nothing
+    /// says so. A key named in a combo is therefore cast only as part of it.</summary>
+    public static List<string> Singles(IEnumerable<string> keys, IEnumerable<string> priority,
+                                       IEnumerable<SpammerCombo> combos)
+    {
+        var owned = new HashSet<string>();
+        foreach (var c in combos)
+            foreach (var k in c.Keys) owned.Add(k);
+        return For(keys, priority).Where(k => !owned.Contains(k)).ToList();
+    }
+
+    /// <summary>The combos that can actually run, in the order given: at least two keys, and every
+    /// one of them a key this preset has.
+    ///
+    /// Everything else is DROPPED rather than run, and that includes a combo naming a key the preset
+    /// does not have — a typo. Half a combo is worse than no combo: it fires the first skill, spends
+    /// its cooldown, and leaves the effect un-triggered with nothing to show for it.</summary>
+    public static List<SpammerCombo> Runnable(IEnumerable<string> keys, IEnumerable<SpammerCombo> combos)
+    {
+        var all = new HashSet<string>(keys);
+        return combos.Where(c => c.Keys.Count >= 2 && c.Keys.All(all.Contains)).ToList();
     }
 }

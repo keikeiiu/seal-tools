@@ -2061,6 +2061,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // projection has already eaten the quest sequences and, once before that, a whole
                 // spammer block. It is the same dictionary the Order card edits, already committed.
                 Priority = _service.Config.Spammer.Priority,
+                // Same reasoning, same hazard: a field left out of this list is not unsaved, it is
+                // DELETED from local.yaml on the next Save from this tab.
+                Combos = _service.Config.Spammer.Combos,
             };
             SaveReport(() => _service.SaveLocal(local), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +

@@ -939,6 +939,36 @@ public sealed class SpammerConfig
     /// prioritised" — those are the same thing only if every key is equal, and they are not.</summary>
     public List<string> ActivePriority =>
         Priority.TryGetValue(Active, out var p) ? p : new List<string>();
+
+    /// <summary>Preset name → the combos in that preset, in the order they are tried. Same separate
+    /// map as <see cref="Priority"/> and for the same reason: a combo is not a property of one key,
+    /// so it cannot live on one without changing <see cref="Presets"/>' value type and breaking every
+    /// rotation already saved.</summary>
+    public Dictionary<string, List<SpammerCombo>> Combos { get; set; } = new();
+
+    /// <summary>The combos of the active preset, in the order they are tried. Empty for a preset with
+    /// none, which leaves the tool doing exactly what it did before combos existed.</summary>
+    public List<SpammerCombo> ActiveCombos =>
+        Combos.TryGetValue(Active, out var c) ? c : new List<SpammerCombo>();
+}
+
+/// <summary>A group of keys that must be cast IN ORDER, with a pause between the steps — the shape a
+/// game's combo effect needs, where the second skill only lands if the first one is still animating.
+///
+/// THE PAIR IS THE UNIT, and that is the whole point of the type: a combo is ready only when EVERY
+/// key in it is off cooldown, so the spammer never starts one it cannot finish. Casting the first
+/// half alone would waste the skill AND leave the effect un-triggered — the failure this exists to
+/// prevent, because it is silent. A key named in a combo is cast only as part of it.</summary>
+public sealed class SpammerCombo
+{
+    /// <summary>The keys, in cast order. One key is not a combo and is dropped — half a combo is
+    /// worse than none.</summary>
+    public List<string> Keys { get; set; } = new();
+
+    /// <summary>Seconds to hold between one step and the next. NOTHING else is pressed during the
+    /// hold: the previous cast's animation would swallow whatever went out inside it, and a filler
+    /// landing there would break the very combo it was meant to fill around.</summary>
+    public double Gap { get; set; } = 0.8;
 }
 
 public sealed class ModelsConfig

@@ -300,6 +300,31 @@ public class ConfigLoaderTests
         }
     }
 
+    // The combos ride the same local.yaml projection as the presets and the order above — the one
+    // that has silently dropped a field four times in this repo. A missing copy here throws nothing
+    // and reports nothing: the combos come back empty and the pairs are never cast together, which
+    // looks exactly like the feature not existing.
+    [Fact]
+    public void LocalYamlCarriesTheSpammerCombos()
+    {
+        var dir = MakeTempConfigDirWithLocal(
+            ValidOcrLocal +
+            "spammer:\n  active: Knight0-9\n  presets:\n    Knight0-9:\n      '1': 6.0\n      '2': 6.0\n" +
+            "  combos:\n    Knight0-9:\n      - keys: ['1', '2']\n        gap: 0.75\n");
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            var combo = Assert.Single(cfg.Spammer.ActiveCombos);
+            Assert.Equal(new List<string> { "1", "2" }, combo.Keys);
+            Assert.Equal(0.75, combo.Gap);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
 
     /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the

@@ -13,6 +13,53 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-01 (41) — combos: keys that must be cast together, in order
+
+**The player's real setup, which the priority list could not express.** Four skills on ~6 s cooldowns
+where **1→2 is a combo and 3→4 is a combo** — the order inside each pair is load-bearing, and each cast
+has an **animation**, so 2 cannot follow 1 immediately or its cast is swallowed. The rest of the window
+is filler. Asked directly, they chose **locked pairs** and **silent during the gap**.
+
+**What the priority list (entry 40) got and missed.** It already made `1,2,3,4` outrank the filler. It
+could not give the two things that matter: a **gap** between 1 and 2 (they would go out ~20 ms apart,
+and the animation would eat the second), and a **lock** — if 1 was on cooldown when 2 came due, 2 fired
+**alone** and the combo broke, silently.
+
+**The design, and the two rules that carry it:**
+
+- **A combo is ready only when EVERY key in it is off cooldown.** So the spammer never starts a 1→2 it
+  cannot finish, and the second half of a pair can never go out on its own. That is the lock.
+- **A running combo owns the tick.** No filler, no other combo, until its last step has gone out. The
+  first rule is about *starting*; this one is about the gap, and it is why the fillers cannot land
+  inside the animation.
+
+Combos are tried **before** any single key, and their members are **removed from the single-key walk**
+(`SpammerOrder.Singles`) — that subtraction is what makes the pair a unit, and it is the one line that
+would silently break the lock if it went missing. Each key's cooldown starts when **it** was cast, not
+when the combo began, or the second skill would come off cooldown a gap early every cycle.
+
+**Half a combo is worse than none**, so `SpammerOrder.Runnable` drops a combo with fewer than two keys
+and one naming a key the preset lacks: a typo would fire the first skill, spend its cooldown, and leave
+the effect un-triggered with nothing to show for it. Dropped, at least the failure is a rotation that
+does nothing rather than one that does half of something.
+
+**The third answer was not needed, and that is worth recording.** Asked what to do when a skill is due
+but the combo rule says wait, the player said *"i dunno as of now"*. It needs no answer: the walk runs
+the **first unit that is ready**, so a pair that is not ready is passed over rather than waited for.
+The only waiting is inside a combo already started, which they had already ruled on.
+
+**Additive again** — `combos:` is a fourth map keyed by preset name, so no `local.yaml` breaks. Both
+projection directions handled, and **both guards proven by removal**: the merge copy was taken out and
+`LocalYamlCarriesTheSpammerCombos` was watched to fail, then restored. The tab's Save carries `Combos`
+for the same reason it carries `Priority` — a field left out of that explicit list is not unsaved, it
+is deleted from the file.
+
+**Not yet built: the editor.** Combos are a hand edit in `local.yaml` for now.
+
+194/194 tests, 0 warnings.
+
+---
+
 ## 2026-10-01 (40) — the spammer's rotation, and the "when we are able to" keys
 
 **The ask, in the player's words:** *"there are key rotation i need to hit in the loop whenever its

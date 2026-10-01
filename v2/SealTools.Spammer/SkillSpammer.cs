@@ -39,15 +39,23 @@ public sealed class SkillSpammer : ToolBase
             return 0;
         }
 
-        // The walk order and whether the preempt rule is on at all. Keys the preset NAMES come first,
-        // in the order given; everything else follows in dictionary order — the player's "press when
-        // we are able to" half, which keeps its own cooldown like every other key rather than firing
-        // on every idle tick. SpammerOrder owns which keys land where and why; what is decided HERE
-        // is that an order was asked for at all, since an empty list cannot say whether that means
-        // "no rule" or "nothing outranks anything".
+        // ── the plan: combos first, then the keys that stand on their own ────────────────────────
+        // A combo is an ordered group that must be cast together — the shape a game's combo effect
+        // needs, where the second skill only lands while the first is still animating. Combos are
+        // tried BEFORE any single key, and their members are removed from the single-key walk, so the
+        // second half of a pair can never go out alone and quietly fail to trigger. SpammerOrder owns
+        // both of those decisions; what is decided HERE is the preempt flag, because an empty priority
+        // list cannot say whether it means "no rule" or "nothing outranks anything".
         var priority = _cfg.Spammer.ActivePriority;
-        var order = SpammerOrder.For(cooldowns.Keys, priority);
+        var combos = SpammerOrder.Runnable(cooldowns.Keys, _cfg.Spammer.ActiveCombos);
+        var singles = SpammerOrder.Singles(cooldowns.Keys, priority, combos);
         bool preempt = priority.Count > 0;
+
+        // The combo being cast, one step per gap. Non-empty means the spammer is MID-COMBO and the
+        // loop presses nothing else until it drains — including the fillers, which is the point.
+        var pending = new Queue<string>();
+        double nextStepAt = 0;
+        double runningGap = 0;
 
         bool running = false;
         int count = 0;
@@ -59,19 +67,45 @@ public sealed class SkillSpammer : ToolBase
         var sw = Stopwatch.StartNew();
 
         Console.WriteLine("\nSkill Spammer");
+        foreach (var c in combos)
+            Console.WriteLine($"  combo: {string.Join(" → ", c.Keys)}  (gap {c.Gap:g}s, nothing else pressed between)");
         if (preempt)
-            Console.WriteLine($"  order: {string.Join(" > ", order)}  (the first one that is due wins; the rest wait)");
-        foreach (var k in order)
+            Console.WriteLine($"  order: {string.Join(" > ", singles)}  (the first one that is due wins; the rest wait)");
+        foreach (var k in singles)
             Console.WriteLine($"  {k}: every {cooldowns[k]:g}s");
         Console.WriteLine("[F12] start/stop  [F11] quit\n");
 
         void Reset()
         {
             foreach (var k in cooldowns.Keys) last[k] = sw.Elapsed.TotalSeconds;
+            pending.Clear(); // a half-cast combo must not survive a stop/start
             count = 0;
             current = "";
             state.Cycle = 0;
             state.Current = null;
+        }
+
+        // Sends one key and reports a dead port. Split out because the combo runner and the
+        // single-key walk BOTH need it, and a second copy of stop-with-a-reason is where one of the
+        // two would eventually stop without saying why.
+        bool TrySend(string key, out bool dead)
+        {
+            dead = false;
+            try
+            {
+                return SendKey(ser, key, state);
+            }
+            catch (Exception ex)
+            {
+                // The port is gone — unplugged, or the handle died. Nothing this tool does means
+                // anything now, so stop with a reason on the card rather than let the exception
+                // unwind to the launcher's generic handler.
+                state.Message = $"Arduino disconnected — stopped ({ex.Message})";
+                running = false;
+                state.Running = false;
+                dead = true;
+                return false;
+            }
         }
 
         // Do NOT touch state.Running here: LauncherService starts the tool with Running = true and
@@ -112,36 +146,71 @@ public sealed class SkillSpammer : ToolBase
                 if (!running) continue;
 
                 bool disconnected = false;
-                double now = sw.Elapsed.TotalSeconds;
-                foreach (var k in order)
+
+                // Start a combo when none is running. Readiness is "EVERY key in it is off cooldown",
+                // which is what keeps the pair whole: starting a 1→2 that cannot finish would spend
+                // skill 1, miss the effect, and say nothing about either.
+                if (pending.Count == 0)
                 {
-                    double cd = cooldowns[k];
-                    if (now - last[k] >= cd)
+                    double probe = sw.Elapsed.TotalSeconds;
+                    foreach (var combo in combos)
                     {
+                        if (!combo.Keys.All(k => probe - last[k] >= cooldowns[k])) continue;
+                        runningGap = combo.Gap;
+                        foreach (var k in combo.Keys) pending.Enqueue(k);
+                        nextStepAt = probe; // the first step goes out now; each later one after a gap
+                        break;
+                    }
+                }
+
+                // A running combo OWNS the tick. Nothing else is pressed — no filler, no other combo
+                // — until its last step has gone out. That silence is the point: the previous cast's
+                // animation would swallow anything sent inside it, and a filler landing there would
+                // break the very combo it was meant to fill around.
+                bool comboRan = false;
+                if (pending.Count > 0)
+                {
+                    comboRan = true;
+                    if (sw.Elapsed.TotalSeconds >= nextStepAt)
+                    {
+                        var k = pending.Dequeue();
+                        current = k;
+                        // Each key's cooldown starts when IT was cast, not when the combo began —
+                        // otherwise the second skill would come off cooldown a gap early, every cycle.
+                        last[k] = sw.Elapsed.TotalSeconds;
+
+                        bool sent = TrySend(k, out disconnected);
+                        if (sent)
+                        {
+                            count++;
+                            state.Current = k;
+                            state.Cycle = count;
+                        }
+                        nextStepAt = sw.Elapsed.TotalSeconds + runningGap;
+                    }
+                }
+
+                if (!comboRan)
+                {
+                    double now = sw.Elapsed.TotalSeconds;
+                    foreach (var k in singles)
+                    {
+                        double cd = cooldowns[k];
+                        if (now - last[k] < cd) continue;
+
                         current = k;
                         last[k] = now; // advance the cooldown either way, so an unusable key isn't retried every tick
-
-                        bool sent;
-                        try
-                        {
-                            sent = SendKey(ser, k, state);
-                        }
-                        catch (Exception ex)
-                        {
-                            // The port is gone — unplugged, or the handle died. Nothing this tool does
-                            // means anything now, so stop with a reason on the card rather than let the
-                            // exception unwind to the launcher's generic handler.
-                            state.Message = $"Arduino disconnected — stopped ({ex.Message})";
-                            running = false;
-                            state.Running = false;
-                            disconnected = true;
-                            break;
-                        }
 
                         // Only count a press that actually went out. SendKey bails on a key the
                         // firmware cannot send, and counting it made the card report a rising Cycle
                         // and a changing Current while nothing was being pressed at all.
-                        if (!sent) continue;
+                        // A DEAD PORT is the other failure and must leave the walk at once, or the
+                        // remaining keys are each sent into a socket that is already gone.
+                        if (!TrySend(k, out disconnected))
+                        {
+                            if (disconnected) break;
+                            continue;
+                        }
 
                         count++;
                         state.Current = k;
@@ -159,6 +228,7 @@ public sealed class SkillSpammer : ToolBase
                         if (preempt) break;
                     }
                 }
+
                 if (disconnected) break;
                 if (PauseRequested)
                 {
