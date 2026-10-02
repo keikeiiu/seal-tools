@@ -67,6 +67,35 @@ because it changes how something else should be done.
 
 ## 6. Code health
 
+- **Swap the OCR recogniser for `Sdcb.SimdPaddleOCR`** (M for the swap, L with the re-tuning) ⚑.
+  **Assessed 2026-10-03, not built.** A pure-C# PP-OCRv6 implementation — hand-written SIMD kernels and
+  its own managed ONNX interpreter, so **no `onnxruntime`, no Paddle Inference and no native OCR
+  library**. Models load from **assembly-embedded resources**, so the `models/` folder stops being
+  something `publish.bat` must copy and can fail to. Apache-2.0, and it ships an **OpenCvSharp sample**,
+  which matters because `Mat` → span is close to zero-copy for us.
+
+  **Weight, measured** (nupkg sizes, 2026-10-03): core **0.43 MB**, Tiny det+rec+dict **5.49 MB**,
+  orientation CLS **0.92 MB**, Small **24.91 MB**, Medium **95.71 MB**. It would replace
+  `onnxruntime.dll` (**15.4 MB**) plus our PP-OCRv4 models (**16.1 MB**), so **Tiny + CLS ≈ 6.4 MB
+  replaces ≈ 31.5 MB** — the shipped zip shrinks by roughly **25 MB** and loses a native dependency.
+  Small is about size-neutral; Medium adds ~96 MB. OpenCV stays either way — it is used for capture and
+  icon matching, not only for OCR.
+
+  **The swap is not the work; the fixes table is.** Our path is crop → recognise → clean → **dictionary
+  match** → **`text_fixes`** → score gate, and the fixes table exists because the *current* recogniser
+  misreads stylised game glyphs in specific ways (`国/盘/地 → 每`, `等增加 → 等級增加`). A different
+  recogniser makes **different** mistakes, so the table and possibly the score gate need re-tuning
+  against real captures.
+
+  **⚑ The sequencing is the reason this is flagged rather than estimated.** Do it **before** the US
+  client's English dictionary is built, not after — that dictionary is a variants table grown from real
+  misreads, and a new recogniser invalidates every row of it. In the wrong order the work happens twice.
+
+  **The deciding experiment, and it needs no live game:** `v2/logs/ocr_log.jsonl` is **23 MB of real
+  reads** with the text they produced. Run both engines over those crops and diff against the known-good
+  text, and the accuracy question is answered from evidence before anything is committed. Only the
+  *accuracy on our glyphs* is unmeasured — the licence, the sizes and the API fit are all checked.
+
 - ~~**`GemPointer` → `HidPointer`** (S)~~ — **done** (2026-09-11), the tuner now reuses it for spring placement.
 - **Split `WindowFinder`** (S). Window queries, cursor helpers and diagnostics in one class today.
 - **Split the calibrator out of `MainWindow`** (M). `MainWindow.xaml.cs` is ~3 550 lines, and the
