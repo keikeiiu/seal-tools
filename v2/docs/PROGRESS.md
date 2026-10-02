@@ -13,6 +13,37 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (48) — v2.14 cut
+
+**A release, and a large one**, because the unreleased work had stacked up: the US-client frame and the
+quest sequences from the previous session came out with this one, alongside everything from today.
+
+**What is in it:** the spammer's order, combos, lead-in and opening step, the Start-casts change, and a
+rotation picker on its card; the spammer **yielding the game** so the pet feeder is no longer blocked by
+a tool that never ends; the food cells **re-marking themselves** during the pet scan; the **Hold Space**
+cold-start fix; and, from before, the **US client frame** and **quest sequences**.
+
+**The note is unusually honest about verification, on purpose.** Most of this was built in one session
+and only part of it has been run: the spammer's combos, lead-in, Start-cast and yielding all live inside
+`Run` where **no test reaches them**; the automatic food re-marking has not been watched; a quest
+*sequence* has not been run; and the Hold Space fix was found from a log but not yet confirmed on a live
+reproduction. The release note says all of that in a table rather than in prose, so it cannot be skimmed
+past.
+
+**The publishing check the last release earned.** v2.13's note records that a bulk string replace once
+left a fallback row pointing at the wrong asset. So the seven download links were changed **one at a
+time**, and then every one was checked by extracting the filename and the tag from each URL and comparing
+them — all seven match. The first attempt at that check was itself wrong (it compared `name=v2.14`
+against `tag=v2.14` as strings), which is worth recording: **a passing check that cannot fail is not a
+check**, and the same trap has now appeared twice in this file.
+
+**Artifacts verified rather than assumed:** 4 config files and 3 models present inside the zip, the exe
+at 174 MB, 144,644,801 bytes against v2.13's 144,621,073. `publish.bat` printed *"The system cannot find
+the drive specified"* during the config step and **everything it was supposed to copy was there anyway** —
+checked, not shrugged off, because a config file that silently does not ship is this repo's oldest trap.
+
+---
+
 ## 2026-10-02 (47) — the food scan rides along with the pet scan
 
 **The ask:** *"every time we need to scan for pet position we can also scan for pet food position and
