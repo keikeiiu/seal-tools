@@ -13,6 +13,47 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (47) — the food scan rides along with the pet scan
+
+**The ask:** *"every time we need to scan for pet position we can also scan for pet food position and
+update."*
+
+**It is a piggyback, not a second pass, and that is the whole design.** `FindQueuedPetCandidates` already
+does everything the food scan needs: it walks every calibrated bag page, clicks the tab, **parks the
+cursor off the bag**, captures the client, and saves the image. A separate food scan would click through
+the bag *again* for a picture already in hand — so the change is one more `IconMatch.ScoreAll` against
+the **same capture**, with the food icon instead of the pet icons.
+
+**A correction the player made, worth recording because two documents still say otherwise.** Asked to
+prove the scan before wiring it in, they answered *"I have run it always in the tab"*. So
+[RELEASE-v2.12.md](RELEASE-v2.12.md) and [HANDOVER.md](HANDOVER.md) — both of which state plainly that
+the food scan **has never run against a live bag** — are stale. The handover line is corrected, because a
+next session that reads it would spend time re-verifying something the player already relies on.
+
+**The safety property is the write, not the read.** The result is written **only when something was
+found**, and that is deliberate rather than conservative: an empty result is *ambiguous* — no food left,
+or a page that never came up — and the two cannot be told apart from here. Overwriting on an ambiguous
+empty scan would destroy the player's marked cells for good, and `ApplyCalibration`'s own comment records
+that this exact loss **"cost the player their food cells twice already"**. A stale list costs nothing by
+comparison: an exhausted one already stops the reload honestly instead of clicking into empty space.
+
+**The counter goes back to zero, and that is not a reset so much as an acknowledgement.** The list is
+what is in the bag *right now*, so nothing on it has been consumed yet — carrying the old counter over
+would skip that many cells of a list they never belonged to.
+
+**Persistence checked rather than assumed** — the projection trap this repo has paid for four times.
+`PersistPetState` writes only the session half, so `FoodSlots` had to be in `ApplySession`, and it is
+([ConfigLoader.cs:690](../SealTools.Core/Config/ConfigLoader.cs#L690)). Had it been in the calibration
+half instead, the scan would have run, logged its cells, and lost them on the next load.
+
+**Limitation, said plainly:** it runs only when a pet scan runs — which means at least one queued pet and
+a walk that completes. A bag with no queued pets gets no food refresh, which follows from what was asked
+for but is worth knowing.
+
+203/203 tests, 0 warnings.
+
+---
+
 ## 2026-10-02 (46) — the spammer yields the game, so the pet feeder can feed
 
 **The report:** *"last night I ran the spammer with the pet feeder, the pet feeder did not execute."*

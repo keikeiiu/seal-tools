@@ -1668,6 +1668,19 @@ public sealed class PetTool : ToolBase
         var best = double.MaxValue;
         var runnerUp = double.MaxValue;
 
+        // ── the food cells ride along, rather than being scanned for separately ─────────────────────
+        // Everything the food scan needs is already in this walk: the same pages selected, the same
+        // cursor parked off the bag, and the SAME CAPTURE. A second pass would click through the bag
+        // again for an image already in hand — which is why the player asked for it in these terms,
+        // "every time we need to scan for pet position, also scan for food and update".
+        //
+        // The food MOVES as stacks are consumed, so a marked list goes stale and the reload stalls on
+        // cells that no longer hold anything. Re-marking on every scan is what keeps it true.
+        using var foodIcon = string.IsNullOrWhiteSpace(pet.FoodIconPng)
+            ? null
+            : IconMatch.FromBase64(pet.FoodIconPng);
+        var foodFound = new List<List<int>>();
+
         for (int p = 0; p < pet.PageTabs.Count; p++)
         {
             if (!IsPoint(pet.PageTabs[p])) continue;
@@ -1727,6 +1740,36 @@ public sealed class PetTool : ToolBase
                     best = scores[0].Score;
                 }
             }
+
+            // The food icon against the same page image. Its own threshold is not needed — MatchLimit
+            // is the line between "this is the thing" and "this is something else", and it is a
+            // property of the matcher rather than of what is being matched.
+            if (foodIcon != null)
+            {
+                foreach (var (cell, score) in IconMatch.ScoreAll(bag, pet.BagGrid!, foodIcon))
+                {
+                    if (score > MatchLimit) break; // sorted best first, so nothing later can qualify
+                    foodFound.Add(new List<int> { p, cell });
+                }
+            }
+        }
+
+        // WRITTEN ONLY WHEN SOMETHING WAS FOUND, and that is the safety property, not a shortcut. An
+        // empty result is AMBIGUOUS — no food left, or a page that never came up — and the two cannot
+        // be told apart from here. Overwriting on an ambiguous empty scan would destroy the player's
+        // marked cells for good; leaving them alone costs nothing, because an exhausted list already
+        // stops the reload honestly rather than clicking into empty space.
+        //
+        // The list is what is in the bag RIGHT NOW, so nothing on it has been consumed yet — which is
+        // why the counter goes back to zero. Carrying the old one over would skip that many cells of a
+        // list they never belonged to.
+        if (foodIcon != null && foodFound.Count > 0)
+        {
+            pet.FoodSlots = foodFound;
+            pet.FoodSlotsUsed = 0;
+            _persistState?.Invoke();
+            Log($"  food scan: {foodFound.Count} cell(s) hold food — " +
+                string.Join(", ", foodFound.Select(f => $"p{f[0] + 1}c{f[1] + 1}")));
         }
 
         // BEST FIRST. The tool boards the best match it has and only falls through to a worse one when

@@ -31,8 +31,10 @@ frame and the quest sequences. Copy the block below as the first message.
 >    against the TW calibration's `1926×1232` / `1910×1193` — **same width, 120 px shorter**. Resize the
 >    US window to match *before* judging whether the calibration transfers, then look: the calibrate tabs
 >    draw the saved marks on a capture.
-> 2. **The food scan (v2.12) has never run against a live bag.** It compiles, it is unit-tested, and the
->    release note says plainly that its first run is the player's. Ask before assuming.
+> 2. ~~**The food scan (v2.12) has never run against a live bag.**~~ **CORRECTED 2026-10-02: it has.** The
+>    player runs it from the Pet tab routinely — *"I have run it always in the tab"*. The v2.12 release
+>    note and this line were both stale. It now ALSO runs as part of the tool's own pet-position scan and
+>    re-marks the food cells (see PROGRESS entry 47).
 > 3. **The quest sequences are unverified live too** — `Test one loop` on a single flow was reported
 >    working; a sequence has not been run.
 > 4. **The pet feeder's own list** — [PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md): §2 the
