@@ -143,10 +143,15 @@ public static class IconMatch
     /// holding several of one item scores every instance within a hair of the others, so score order
     /// is effectively ARBITRARY — the caller walks the bag in a pattern nobody can predict or see.
     ///
-    /// The two callers are the Pet tab's scan and the feeder's own, and each had to remember that for
-    /// itself. One of them did not: the feeder marked the same cells in a different order from the tab,
-    /// so which scan ran last decided how the bag was emptied. One helper, one order, nothing to keep
-    /// in step by hand.
+    /// FOR THINGS THAT ARE ALL THE SAME — food stacks, and anything else you take one of. It is NOT
+    /// for the pet search, and using it there would be a bug: a bag holds several pet TYPES, the score
+    /// is what tells them apart, and both the winner-vs-runner-up log and the best-first candidate
+    /// order depend on it. That search keeps <see cref="ScoreAll"/> deliberately.
+    ///
+    /// The two callers here are the Pet tab's FOOD scan and the feeder's own, and each had to remember
+    /// the cell ordering for itself. One of them did not: the feeder marked the same cells in a
+    /// different order from the tab, so which scan ran last decided how the bag was emptied. One
+    /// helper, one order, nothing to keep in step by hand.
     ///
     /// <paramref name="limit"/> is the CALLER's rather than a default here: where "this is the thing"
     /// ends is a property of what is being looked for, not of the matcher.</summary>
