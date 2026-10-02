@@ -46,6 +46,17 @@ would skip that many cells of a list they never belonged to.
 ([ConfigLoader.cs:690](../SealTools.Core/Config/ConfigLoader.cs#L690)). Had it been in the calibration
 half instead, the scan would have run, logged its cells, and lost them on the next load.
 
+**The player caught a bug in it the same day:** *"why is the pet food not taken by position order?"*
+Because `ScoreAll` returns cells sorted by match SCORE, and every cell holding the same food scores
+within a hair of the others — so the ORDER was effectively arbitrary and the feeder emptied the bag in a
+pattern nobody could predict. The tab's scan has always sorted by cell; the new tool-side one did not.
+
+**Fixed by single-sourcing the rule rather than by adding the missing `.OrderBy`.** `IconMatch.CellsHolding`
+now returns the cells in cell order, and BOTH scans call it. That matters more than the two-line fix: the
+defect was two scans each having to remember the ordering for itself, which is exactly how one of them
+came not to. The tab's version also stops carrying its own `.Where(...).OrderBy(...)` chain, so there is
+nothing left to keep in step by hand.
+
 **Limitation, said plainly:** it runs only when a pet scan runs — which means at least one queued pet and
 a walk that completes. A bag with no queued pets gets no food refresh, which follows from what was asked
 for but is worth knowing.

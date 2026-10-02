@@ -9212,18 +9212,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (cap == null) { report.Add($"page {p + 1}: couldn't capture the bag"); continue; }
 
             using var bag = cap.Image;
-            var hits = IconMatch.ScoreAll(bag, pet.BagGrid!, icon)
-                .Where(s => s.Score <= SealTools.Pet.PetTool.MatchLimit)
-                .OrderBy(s => s.Cell)
-                .ToList();
+            // CellsHolding, NOT ScoreAll: the cells have to come back in CELL order. ScoreAll sorts by
+            // match score, and every cell holding the same food scores within a hair of the others, so
+            // that order is effectively arbitrary — the bag would be emptied in a pattern nobody could
+            // predict. The feeder's own scan uses the same helper, so the two cannot drift apart.
+            var hits = IconMatch.CellsHolding(bag, pet.BagGrid!, icon, SealTools.Pet.PetTool.MatchLimit);
 
             if (hits.Count == 0) { report.Add($"page {p + 1}: nothing matched"); continue; }
 
             // 1-based for the report — the grid is drawn as slot 1 top-left, and a list of 0-based
             // indices is a number the player has to translate.
-            report.Add($"page {p + 1}: {hits.Count} cell(s) — " +
-                       string.Join(", ", hits.Select(h => h.Cell + 1)));
-            foreach (var hit in hits) found.Add(new List<int> { page, hit.Cell });
+            report.Add($"page {p + 1}: {hits.Count} cell(s) — " + string.Join(", ", hits.Select(c => c + 1)));
+            foreach (var cell in hits) found.Add(new List<int> { page, cell });
         }
 
         if (!write)

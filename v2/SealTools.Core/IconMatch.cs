@@ -135,6 +135,30 @@ public static class IconMatch
     /// <summary>Every cell's score, best first — the shape the calibration test wants. Reading only
     /// the winner hides how close the runner-up was, and a runner-up at 0.02 is a tool that will
     /// eventually click the wrong item.</summary>
+    /// <summary>Every cell holding this icon, in CELL order — and the order is the whole reason this
+    /// exists as its own method.
+    ///
+    /// <see cref="ScoreAll"/> returns cells sorted by match SCORE, which is the right order for "which
+    /// one is most likely to be the thing" and the wrong one for "which shall I use first". A bag
+    /// holding several of one item scores every instance within a hair of the others, so score order
+    /// is effectively ARBITRARY — the caller walks the bag in a pattern nobody can predict or see.
+    ///
+    /// The two callers are the Pet tab's scan and the feeder's own, and each had to remember that for
+    /// itself. One of them did not: the feeder marked the same cells in a different order from the tab,
+    /// so which scan ran last decided how the bag was emptied. One helper, one order, nothing to keep
+    /// in step by hand.
+    ///
+    /// <paramref name="limit"/> is the CALLER's rather than a default here: where "this is the thing"
+    /// ends is a property of what is being looked for, not of the matcher.</summary>
+    public static IReadOnlyList<int> CellsHolding(Mat bag, IReadOnlyList<int> grid, Mat icon,
+        double limit, int inset = DefaultInset, int tolerance = DefaultTolerance,
+        int radius = SearchRadius)
+        => ScoreAll(bag, grid, icon, inset, tolerance, radius)
+            .Where(s => s.Score <= limit)
+            .OrderBy(s => s.Cell)
+            .Select(s => s.Cell)
+            .ToList();
+
     public static IReadOnlyList<(int Cell, double Score)> ScoreAll(Mat bag, IReadOnlyList<int> grid,
         Mat icon, int inset = DefaultInset, int tolerance = DefaultTolerance,
         int radius = SearchRadius)

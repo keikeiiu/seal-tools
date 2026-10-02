@@ -1741,16 +1741,13 @@ public sealed class PetTool : ToolBase
                 }
             }
 
-            // The food icon against the same page image. Its own threshold is not needed — MatchLimit
-            // is the line between "this is the thing" and "this is something else", and it is a
-            // property of the matcher rather than of what is being matched.
+            // The food icon against the same page image. CellsHolding rather than ScoreAll, so the
+            // feeder marks the bag in the SAME order the tab's scan does — see its comment for what
+            // happens when the two disagree, which they did.
             if (foodIcon != null)
             {
-                foreach (var (cell, score) in IconMatch.ScoreAll(bag, pet.BagGrid!, foodIcon))
-                {
-                    if (score > MatchLimit) break; // sorted best first, so nothing later can qualify
+                foreach (var cell in IconMatch.CellsHolding(bag, pet.BagGrid!, foodIcon, MatchLimit))
                     foodFound.Add(new List<int> { p, cell });
-                }
             }
         }
 
