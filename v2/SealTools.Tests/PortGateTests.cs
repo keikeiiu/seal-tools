@@ -118,4 +118,70 @@ public class PortGateTests
         Assert.True(gate.TryAcquire("gem"));
         Assert.Equal("gem", gate.Owner);
     }
+
+    // ── the waiting signal: how a HOLDER finds out that someone needs the game ──────────────────
+
+    // A claim can be refused but never interrupted, so without this the holder simply never learns.
+    // That is not hypothetical: a pet reload is ~30 s and a spammer run is unbounded, so the feeder
+    // would wait for the entire run and eventually run dry behind a tool that would have stepped
+    // aside for half a minute.
+    [Fact]
+    public void WhoIsWaitingIsReadableWhileTheGateIsHeld()
+    {
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("pet");
+
+        Assert.Equal("spammer", gate.Owner);
+        Assert.Equal("pet", gate.Waiting);
+    }
+
+    [Fact]
+    public void NobodyIsWaitingOnAFreshGate()
+    {
+        Assert.Null(new PortGate().Waiting);
+    }
+
+    // Acquiring IS the end of the wait. Cleared here rather than left to each caller, because a mark
+    // left up makes the new holder want its own game — it would step aside the moment it looked.
+    [Fact]
+    public void AcquiringClearsYourOwnWaitingMark()
+    {
+        var gate = new PortGate();
+        gate.AnnounceWaiting("pet");
+        Assert.True(gate.TryAcquire("pet"));
+
+        Assert.Null(gate.Waiting);
+    }
+
+    // The same shape as a release from a non-holder, and the dangerous direction: a stale withdrawal
+    // must not erase a LIVE waiter, or the next holder sees nobody waiting and keeps the game.
+    [Fact]
+    public void AWithdrawalFromSomeoneElseLeavesTheWaiterAlone()
+    {
+        var gate = new PortGate();
+        gate.AnnounceWaiting("pet");
+        gate.WithdrawWaiting("gem");
+
+        Assert.Equal("pet", gate.Waiting);
+    }
+
+    [Fact]
+    public void TheWaiterCanStandDown()
+    {
+        var gate = new PortGate();
+        gate.AnnounceWaiting("pet");
+        gate.WithdrawWaiting("pet");
+
+        Assert.Null(gate.Waiting);
+    }
+
+    [Fact]
+    public void AnOwnerIsRequiredToWaitToo()
+    {
+        var gate = new PortGate();
+
+        Assert.Throws<ArgumentException>(() => gate.AnnounceWaiting(""));
+        Assert.Throws<ArgumentException>(() => gate.AnnounceWaiting(null!));
+    }
 }

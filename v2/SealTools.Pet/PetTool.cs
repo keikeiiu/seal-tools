@@ -522,25 +522,39 @@ public sealed class PetTool : ToolBase
         var gate = _gate;
         if (gate == null || gate.TryAcquire(GateOwner)) return true;
 
-        var said = "";
-        while (!gate.TryAcquire(GateOwner))
+        // ANNOUNCE before polling. A claim can only be refused, never interrupted, so the holder has no
+        // way to know the feeder wants the game unless it says so — and the holder this matters for is
+        // the spammer, which runs until the player stops it rather than for a bounded operation. Without
+        // the announcement the feeder waits out the entire run and eventually runs dry.
+        gate.AnnounceWaiting(GateOwner);
+        try
         {
-            if (ct.IsCancellationRequested) return false;
-
-            var message = waiting();
-            state.Message = message;
-            // Only on a change: the wait can last for hours, and a line every two seconds would bury
-            // the reload history that this log exists to keep.
-            if (message != said)
+            var said = "";
+            while (!gate.TryAcquire(GateOwner))
             {
-                said = message;
-                Console.WriteLine(message);
-                Log("  " + message);
-            }
+                if (ct.IsCancellationRequested) return false;
 
-            if (!SleepUntil(DateTime.Now.AddSeconds(2), ct)) return false;
+                var message = waiting();
+                state.Message = message;
+                // Only on a change: the wait can last for hours, and a line every two seconds would bury
+                // the reload history that this log exists to keep.
+                if (message != said)
+                {
+                    said = message;
+                    Console.WriteLine(message);
+                    Log("  " + message);
+                }
+
+                if (!SleepUntil(DateTime.Now.AddSeconds(2), ct)) return false;
+            }
+            return true;
         }
-        return true;
+        finally
+        {
+            // Whether it got the game or gave up. A mark left up would have the NEXT holder stepping
+            // aside for a feeder that is no longer waiting.
+            gate.WithdrawWaiting(GateOwner);
+        }
     }
 
     /// <summary>What to say while a row waits for the game, including how long its food lasts.

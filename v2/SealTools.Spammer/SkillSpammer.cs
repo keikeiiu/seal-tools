@@ -16,10 +16,19 @@ public sealed class SkillSpammer : ToolBase
 {
     private readonly AppConfig _cfg;
 
-    public SkillSpammer(AppConfig cfg)
+    /// <summary>The game claim, or null when the tool was built without one (the tests, and any caller
+    /// that does not run against a board). Null simply means this tool never yields.</summary>
+    private readonly PortGate? _gate;
+
+    /// <summary>The name this tool claims the game under — its tool id, so a card that says it is
+    /// waiting for "spammer" names the thing the player started.</summary>
+    private const string GateOwner = "spammer";
+
+    public SkillSpammer(AppConfig cfg, PortGate? gate = null)
         : base(cfg.Hotkeys)
     {
         _cfg = cfg;
+        _gate = gate;
     }
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
@@ -67,6 +76,9 @@ public sealed class SkillSpammer : ToolBase
         bool running = false;
         int count = 0;
         string current = "";
+        // True while the game has been handed to another tool. Nothing is pressed until it comes back,
+        // but the loop keeps ticking so Stop and the hotkeys still work.
+        bool yielded = false;
         var last = new Dictionary<string, double>();
         foreach (var k in cooldowns.Keys) last[k] = 0;
 
@@ -82,7 +94,7 @@ public sealed class SkillSpammer : ToolBase
             Console.WriteLine($"  {k}: every {cooldowns[k]:g}s");
         Console.WriteLine("[F12] start/stop  [F11] quit\n");
 
-        void Reset()
+        void Reset(bool payLeadIn = true)
         {
             // Everything starts DUE, not on cooldown. Start is a fresh run and the first thing a fresh
             // run does is cast; waiting each key's cooldown out first is right for a 6 s rotation and
@@ -96,14 +108,14 @@ public sealed class SkillSpammer : ToolBase
             // Staggered by UNIT and not by key: a combo is one move, so its keys share an offset and
             // the combo's own gap does the spacing INSIDE it — stepping the halves too would space
             // them twice. `last[k] = at - cd` puts the key's due moment exactly at `at`.
-            openingAt = sw.Elapsed.TotalSeconds + startup.LeadIn;
+            openingAt = sw.Elapsed.TotalSeconds + (payLeadIn ? startup.LeadIn : 0);
 
             // The lead-in is the one thing here with nothing to show for itself — the tool sits
             // pressing nothing, which is indistinguishable from a Start that did not take. So it is
             // reported through the card's SCHEDULE line, the same mechanism the pet feeder uses for a
             // reload: the tool sets the MOMENT and the card does the arithmetic, so it counts down
             // rather than showing a number that was true when it was written.
-            if (startup.LeadIn > 0)
+            if (payLeadIn && startup.LeadIn > 0)
             {
                 state.Schedule = "lead-in — starting shortly";
                 state.NextActionAt = DateTime.Now.AddSeconds(startup.LeadIn);
@@ -127,6 +139,11 @@ public sealed class SkillSpammer : ToolBase
                 opening++;
             }
             pending.Clear(); // a half-cast combo must not survive a stop/start
+            // A fresh run is NOT yielded, and this is load-bearing rather than tidiness: the launcher
+            // claims the gate on the tool's behalf at Start, so a stale `yielded` would have the tool
+            // trying to re-acquire something it already holds — refused, every tick, forever, with the
+            // rotated pressing nothing and saying only that it is paused.
+            yielded = false;
             count = 0;
             current = "";
             state.Cycle = 0;
@@ -191,6 +208,17 @@ public sealed class SkillSpammer : ToolBase
                 }
                 f12Was = f12Now;
 
+                // Checked HERE rather than after the work, because the yield below can skip the rest of
+                // the tick with a continue — and a graceful stop that could be missed for as long as a
+                // pet happens to be feeding is not a graceful stop.
+                if (PauseRequested)
+                {
+                    Console.WriteLine("[PAUSE] graceful stop");
+                    running = false; state.Running = false;
+                    PauseRequested = false;
+                    break;
+                }
+
                 if (!running) continue;
 
                 // The lead-in is over once its moment has passed, and the countdown goes with it —
@@ -200,6 +228,43 @@ public sealed class SkillSpammer : ToolBase
                     state.Schedule = null;
                     state.NextActionAt = null;
                 }
+
+                // ── yielding the game to a waiter ────────────────────────────────────────────────
+                // The pet feeder's reload is ~30 s and this run is unbounded, so without this the
+                // feeder waits out the whole run and eventually runs dry. A claim can be refused but
+                // never interrupted, so this is the holder choosing to stand down — and it stands down
+                // only while someone is actually WAITING, which is what keeps a spammer running alone
+                // from yielding to nobody.
+                //
+                // The pause lasts exactly as long as the waiter's action does: it ends when the gate
+                // comes free, not on a timer, so a reload that takes 40 s is waited out and one that
+                // takes 10 s is not waited 30.
+                bool yieldedNow = yielded;
+                if (yielded)
+                {
+                    if (_gate?.TryAcquire(GateOwner) == true)
+                    {
+                        yielded = false;
+                        yieldedNow = false;
+                        state.Message = null;
+                        // Re-open through the rotation's own rules so a 30 s pause does not end with
+                        // every expired cooldown firing at once. The LEAD-IN is deliberately not paid
+                        // again — it exists to give you time to focus the game after Start, and the
+                        // game is already in front by the time a reload finishes.
+                        Reset(payLeadIn: false);
+                        Console.WriteLine("[RESUME] the game is ours again");
+                    }
+                }
+                else if (_gate is { } held && held.Owner == GateOwner && held.Waiting is { } waiter)
+                {
+                    held.Release(GateOwner);
+                    yielded = true;
+                    yieldedNow = true;
+                    state.Message = $"paused — {waiter} has the game";
+                    Console.WriteLine($"[YIELD] handed the game to {waiter}");
+                }
+
+                if (yieldedNow) continue; // nothing is pressed while the game is someone else's
 
                 bool disconnected = false;
 
@@ -286,13 +351,6 @@ public sealed class SkillSpammer : ToolBase
                 }
 
                 if (disconnected) break;
-                if (PauseRequested)
-                {
-                    Console.WriteLine("[PAUSE] graceful stop");
-                    running = false; state.Running = false;
-                    PauseRequested = false;
-                    break;
-                }
             }
         }
         finally

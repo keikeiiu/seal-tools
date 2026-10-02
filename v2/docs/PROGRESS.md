@@ -13,6 +13,61 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-02 (46) — the spammer yields the game, so the pet feeder can feed
+
+**The report:** *"last night I ran the spammer with the pet feeder, the pet feeder did not execute."*
+
+**It was working as designed, and the design says so.** [archive/PLAN-RESIDENT-PET.md:243-245](archive/PLAN-RESIDENT-PET.md#L243-L245)
+has the row *"a pet reload comes due while a tool runs → the pet feeder waits, and says so on its card"*,
+and `PetTool.ClaimGame` polls **with no timeout** — its own comment says *"the wait can last for hours"*.
+
+**But the report exposes a hole in the rule, not a bug in it.** DESIGN.md §5 defines the rule as *"a
+tool takes the game for a **bounded operation**"* — and every tool that existed when it was written is
+bounded: the tuner, composer, buy and sell all finish on their own. **The spammer doesn't.** It runs
+until the player stops it, so "step aside and come back" quietly becomes "never come back", and the
+feeder — which is resident precisely so it does NOT have to be stopped — runs dry behind a tool that
+would have been happy to stand down for half a minute.
+
+**Two halves to the fix, and the first is the one that had to come first.**
+
+1. **The gate gained a WAITING signal** (`AnnounceWaiting` / `WithdrawWaiting` / `Waiting`). A claim can
+   be refused but never interrupted, so a holder has no way to learn that someone needs the game. The
+   gate still does not break a claim on anyone's behalf — it only makes the waiter *visible*, and the
+   holder decides.
+2. **The spammer stands down and comes back.** It releases the game, presses nothing, and re-acquires
+   when the gate frees. The loop keeps ticking while paused, so Stop and the hotkeys still work.
+
+**The pause is bounded by the ACTION, not a timer** — the player corrected this themselves (*"the pause
+should not be static"*), and it is what the code does: the wait ends when the gate comes free, so a
+40 s reload is waited out and a 10 s one is not waited 30.
+
+**Two details that are decisions rather than mechanics:**
+
+- **On resume the rotation re-opens through its STEP but NOT its lead-in.** The lead-in exists to give
+  you time to focus the game after Start; the game is already in front when a reload finishes, so
+  paying it again after every reload would be wrong. Without the step, a 30 s pause would end with
+  every expired cooldown firing at once.
+- **`Reset` clears the yielded flag**, and that is load-bearing rather than tidiness: the launcher
+  claims the gate on the tool's behalf at Start, so a stale flag would have the tool trying to
+  re-acquire what it already holds — refused every tick, forever, pressing nothing and saying only that
+  it is paused. Found while writing it, not while running it.
+
+**The graceful-stop check moved earlier in the loop** for the same class of reason: the yield path
+`continue`s past the rest of the tick, and a stop that can be missed for as long as a pet is feeding is
+not a graceful stop.
+
+**Scope, deliberately: the spammer only.** The quest hand-in holds the game the same way and can run
+just as long, so it has the same hole — but this is a concurrency change, and one tool at a time is how
+it gets to be verified.
+
+**Gate tests proven by removal** (the `_waiting` clear was disabled and `AcquiringClearsYourOwnWaitingMark`
+watched to fail). The tool half is inside `Run` and needs a board, so — as with the combos and the
+lead-in — **a live run is what confirms it.**
+
+203/203 tests, 0 warnings.
+
+---
+
 ## 2026-10-02 (45) — a lead-in, and the per-preset maps stop multiplying
 
 **The ask:** *"can we add another spammer preset setup — how many seconds before we start the spammer"*,

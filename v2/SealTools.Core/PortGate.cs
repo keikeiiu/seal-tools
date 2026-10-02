@@ -23,12 +23,27 @@ public sealed class PortGate
 {
     private readonly object _sync = new();
     private string? _owner;
+    private string? _waiting;
 
     /// <summary>The tool id that holds the gate, or null when it is free. Readable while held —
     /// callers show it, so "who is the pet feeder waiting for?" has an answer.</summary>
     public string? Owner
     {
         get { lock (_sync) return _owner; }
+    }
+
+    /// <summary>Who is waiting for the gate, or null when nobody is.
+    ///
+    /// This exists because a claim can only be REFUSED, never interrupted. A tool that holds the game
+    /// never finds out that someone else wants it, so a waiter with a short job is at the mercy of a
+    /// holder with a long one — and that is not hypothetical: a pet reload is ~30 s, and a spammer run
+    /// is unbounded, so without this the feeder waits for the whole run and eventually runs dry with
+    /// the game held by a tool that would have been happy to step aside for half a minute.
+    ///
+    /// The holder reads this and decides. The gate does not break a claim on anyone's behalf.</summary>
+    public string? Waiting
+    {
+        get { lock (_sync) return _waiting; }
     }
 
     /// <summary>Claims the gate for <paramref name="owner"/>. False when anyone else holds it,
@@ -42,7 +57,30 @@ public sealed class PortGate
         {
             if (_owner != null) return false;
             _owner = owner;
+            // Acquiring ENDS the wait, so the mark comes down here rather than relying on every caller
+            // to remember — a mark left up makes the new holder want its own game, and it would step
+            // aside the moment it looked.
+            if (_waiting == owner) _waiting = null;
             return true;
+        }
+    }
+
+    /// <summary>A waiter says so BEFORE it starts polling. Without the announcement the holder cannot
+    /// know to stand down, which is the whole point of the field above.</summary>
+    public void AnnounceWaiting(string owner)
+    {
+        if (string.IsNullOrEmpty(owner)) throw new ArgumentException("owner required", nameof(owner));
+        lock (_sync) _waiting = owner;
+    }
+
+    /// <summary>The waiter stands down — it gave up, or the run was cancelled. Only clears its OWN
+    /// mark, so a stale withdrawal cannot erase a live waiter and leave the next holder with no reason
+    /// to step aside.</summary>
+    public void WithdrawWaiting(string owner)
+    {
+        lock (_sync)
+        {
+            if (_waiting == owner) _waiting = null;
         }
     }
 

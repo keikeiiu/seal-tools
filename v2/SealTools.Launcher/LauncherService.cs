@@ -647,7 +647,10 @@ public sealed class LauncherService : IDisposable
         "sell" => new ShopTool(Config, ShopMode.Sell, null).Run(ser, state, ct),
         "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
         "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
-        "spammer" => new SkillSpammer(Config).Run(ser, state, ct),
+        // The gate, so the spammer can stand down when the pet feeder needs the game. It is the one
+        // foreground tool that never ends on its own, which makes it the one that would otherwise
+        // hold the game for as long as the player leaves it running.
+        "spammer" => new SkillSpammer(Config, Gate).Run(ser, state, ct),
         // The firmware report goes in because a pet run lasts days and its log is the only record
         // left afterwards — and it is the one run where a board that ignored a command looks exactly
         // like a board that acted on it.
