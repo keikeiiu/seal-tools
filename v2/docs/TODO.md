@@ -54,22 +54,6 @@ needs new machinery, just a small driver per feature.
 
 ## Needs a live check before any code change
 
-- [ ] **The spammer's NON-fast keys do not register in game (2026-10-02, open).** Found while chasing
-  what looked like a function-key problem; it is not. The player's `*1`…`*0` rotation (Fast ticked)
-  works, and every key without Fast does not — `F4`–`F10` failed only because those were the only
-  non-fast keys they had. **Verified from the code, so far:** the card's Cycle counter rises, so
-  `ser.Write` succeeds and the host IS sending; the launcher's `SendKey` accepts 1–12 and writes
-  `"F 4\n"`; the firmware's table is complete and NUL-terminated, and **every shipped firmware from
-  v2.9 to now has identical hold logic** (`HOLD_FAST` 10 ms vs `random(HOLD_NORMAL_MIN,
-  HOLD_NORMAL_MAX)` 30–80 ms) — so reflashing changes nothing and firmware age is NOT the cause.
-  **The one remaining fork, and the test that splits it:** run the preset with `1` (normal) and `2`
-  (fast) into **Notepad** rather than the game. Both characters appear → the board is fine and the
-  GAME is rejecting a 30–80 ms press as a hold rather than a tap, and the fix is shortening
-  `HOLD_NORMAL_MIN/MAX`. Only `2` appears → the board really is dropping the normal path, and the next
-  step is the firmware level the Arduino tab reports.
-
-
-
 - [x] **OCR row-bucket pooling** — resolved (2026-09-11). The "one line less" symptom was **not** a
   `row_height` pooling after all: the captures show all 3 lines are read, and the drop was in the
   matcher (OCR character misreads breaking the dictionary match). Fixed in `3b8023b` (added `国/盘/地`→`每`,
@@ -82,7 +66,12 @@ response, and **the two groups are not the same kind of claim**: the first four 
 source and confirmed; the rest came back from the audit and have **not** been reproduced, so treat
 them as leads rather than findings.
 
-**Confirmed by reading the code:**
+**Confirmed by reading the code — all four are now FIXED (2026-10-03):**
+
+> Fixed in [PROGRESS.md](PROGRESS.md) entries 51 (`int.Parse`), 52 (the temp file), 54 (the empty
+> `tuner:` section) and 55 (the `pet` projection), each with a guard test that was seen to fail first.
+> What is kept below is the finding as it was written, because the reasoning is what a future reader
+> needs to judge the fixes.
 
 - **Four `PetConfig` properties cannot be set from either config file.** `ItemsPerMinute` (the 3/min
   burn rate), `PetSlotOccupiedAbove` (the slot-occupied threshold) and `FeederSlotA`/`FeederSlotB` have
@@ -94,17 +83,27 @@ them as leads rather than findings.
   by the migration. The existing guard test (`EveryLocalPetFieldIsCopiedFromTheConfig`) walks
   **LocalPet → PetConfig only**, which is why the reverse gap went unnoticed; the fix is a second
   test walking the other way.
+  **Fixed:** `SaveDefaults` now writes a `pet:` block carrying the two live settings (round-tripped by
+  `SaveDefaultsPreservesEveryPortableField`), and `EveryPetConfigFieldIsCarriedByAFileOrDeliberately-
+  Excluded` walks PetConfig the other way so a new field cannot repeat this silently. The two legacy
+  boxes are **kept and listed with a reason** rather than deleted — see that test.
 - **`ConfigLoader.SaveLocal` / `SaveDefaults` have no mutual exclusion and share a temp filename.**
   Both do `File.WriteAllText(path + ".tmp")` then `File.Move(..., overwrite: true)`. Two writers of
   the *same* file — the WPF thread saving a calibration and the pet tool's `PersistPetState` — collide
   on that one `.tmp` name, and the read-modify-write around it is last-writer-wins. The comment on the
   method claims atomicity; it covers concurrent *readers*, which is not the case that exists.
+  **Fixed:** one `SaveGate` lock and a per-call temp name, both halves needed; the lost-update half is
+  unchanged and is recorded in PROGRESS 52 as a design question, not a bug fixed here.
 - **`AttrMatcher` uses `int.Parse` on unbounded `(\d+)` captures** (`AttrMatcher.cs:79,88,95,104`).
   Every other parser in the project uses `TryParse`. An OCR line containing an 11+ digit run throws
   `OverflowException` out of `MatchAttributes`, which nothing catches on that path.
+  **Fixed:** `TryInt` at all four sites; an overflowing run is "no value".
 - **`PetConfig.FeederSlotA`/`FeederSlotB`** — see the first item; they are unreachable, not merely
   unconfigurable.
-- **The projection guard only protects what its fixture remembers.** `EveryLocalPetFieldIsCopiedFromTheConfig`
+- **The projection guard only protects what its fixture remembers.**
+  **Partly closed 2026-10-03:** `EveryPetConfigFieldIsCarriedByAFileOrDeliberatelyExcluded` now walks
+  `PetConfig` the other way, so a property with no home in any file fails there instead of surviving
+  into a player's next session. The fixture half is still open — `EveryLocalPetFieldIsCopiedFromTheConfig`
   walks `LocalPet`'s properties and compares each against the config — so a field the **fixture omits**
   is null on *both* sides and passes whether or not the projection carries it. Verified 2026-09-23 by
   removing a copy and watching it fail *with* the fixture set, then removing the fixture value and
@@ -166,6 +165,16 @@ the current build, after the residency rewrite of the shared Start/Stop path).
 
 Real, but deliberately left alone. Listed so they are not rediscovered as bugs and "fixed" without
 the context — three of the four would be *reverted* by a well-meaning cleanup.
+
+- **The spammer's non-fast path is unreachable from the UI (reclassified 2026-10-03).** A key WITHOUT
+  the `*` did not register in the game (found 2026-10-02, `F4`–`F10`); the Notepad test that would
+  split "the game rejects a 30–80 ms press" from "the board drops it" was **never run**. Rather than
+  chase it, **the rows editor stopped producing such keys**: it writes `*name` for every key — which
+  is what all four presets already stored — and its "Fast" tick box is gone. The firmware's `K`/`k`
+  split and `SkillSpammer.SendKey` are untouched, and the Advanced raw list still accepts a bare
+  `key:seconds`, so the normal 30–80 ms hold survives for a hand-edited setup. **Untested, and now
+  without a user**: do not shorten `HOLD_NORMAL_MIN/MAX` blind — run the Notepad test first if a held
+  skill is ever wanted. See [PROGRESS.md](PROGRESS.md), 2026-10-03.
 
 - **A null attribute value satisfies a bounded filter rule.** `AttrMatcher.ValueOk` passes when the
   OCR read the attribute NAME but not its number, so a rule with `min`/`max` is satisfied by an

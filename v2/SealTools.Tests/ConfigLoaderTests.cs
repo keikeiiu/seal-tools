@@ -82,6 +82,11 @@ public class ConfigLoaderTests
             // would pass whether or not `game` is projected at all.
             before.Game.Variant = "us";
 
+            // Two settings the feeder actually reads (`PetTool` uses both). Non-default on purpose:
+            // against the defaults these pass whether or not the projection carries them.
+            before.Pet.ItemsPerMinute = 7;
+            before.Pet.PetSlotOccupiedAbove = 0.25;
+
             loader.SaveDefaults(before);
 
             var after = new ConfigLoader(dir).Load();
@@ -103,6 +108,11 @@ public class ConfigLoaderTests
             Assert.Equal("us", after.Game.Variant);
             Assert.Equal("attributes.us.yaml", after.Game.Variants["us"].Attributes);
             Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
+            // The pet flow's two portable settings: they live on PetConfig, `PetTool` reads both, and
+            // they had NO `pet:` block in the projection — so a hand-added block in defaults.yaml was
+            // read once and then deleted by the next Save from any tab.
+            Assert.Equal(before.Pet.ItemsPerMinute, after.Pet.ItemsPerMinute);
+            Assert.Equal(before.Pet.PetSlotOccupiedAbove, after.Pet.PetSlotOccupiedAbove);
             // spammer is deliberately NOT in this list — see SaveDefaultsLeavesSpammerPresetsAlone.
             Assert.Equal("tuned", after.Gem.MoveMode);
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
@@ -1500,6 +1510,72 @@ public class ConfigLoaderTests
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    // The same trap as the value-less band above, one level up: a bare `tuner:` line makes the whole
+    // SECTION null, and the validator read `c.Tuner.Ocr` before any guard could report it — so a
+    // hand-edited file died with a NullReferenceException instead of the descriptive ConfigException
+    // the validator exists to produce. Found by the 2026-09-22 audit.
+    [Fact]
+    public void LoadRejectsAnEmptyTunerSectionWithAMessageNotANullReference()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var path = Path.Combine(dir, "defaults.yaml");
+            // Collapse the whole tuner block to a value-less key: everything from `tuner:` up to the
+            // next top-level line goes away, which is what a hand-edit that empties the section does.
+            var collapsed = System.Text.RegularExpressions.Regex.Replace(
+                File.ReadAllText(path), @"(?ms)^tuner:.*?(?=^[^\s#])", "tuner:\n");
+
+            // If this fails the collapse did not happen and the test below would prove nothing.
+            Assert.DoesNotContain("grade_order", collapsed);
+            File.WriteAllText(path, collapsed);
+
+            var ex = Assert.Throws<ConfigException>(() => new ConfigLoader(dir).Load());
+            Assert.Contains("tuner", ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // The audit's finding, as a fence. `EveryLocalPetFieldIsCopiedFromTheConfig` walks LocalPet ->
+    // PetConfig, so a PetConfig property with NO file counterpart is invisible to it — which is how
+    // four of them accumulated without anything noticing. This walks the other way: every settable
+    // property on PetConfig must be accounted for, either as one LocalPet carries, as one the portable
+    // projection writes, or with a stated reason for neither.
+    //
+    // Like its twin, this can only fail when someone ADDS a property — that is the point: the failure
+    // is the point at which the decision should be made, rather than a player discovering that the
+    // setting they hand-edited was deleted by the next Save.
+    [Fact]
+    public void EveryPetConfigFieldIsCarriedByAFileOrDeliberatelyExcluded()
+    {
+        var portable = new[] { nameof(PetConfig.ItemsPerMinute), nameof(PetConfig.PetSlotOccupiedAbove) };
+
+        var excluded = new Dictionary<string, string>
+        {
+            [nameof(PetConfig.FeederSlotA)] =
+                "legacy food-count box. Read by nothing since FeederLayout derived the strip from the " +
+                "row geometry; kept rather than deleted so a hand-edited feeder_slot_a: does not become " +
+                "an unknown key in someone's defaults.yaml",
+            [nameof(PetConfig.FeederSlotB)] = "same as FeederSlotA",
+        };
+
+        var uncovered = typeof(PetConfig).GetProperties()
+            .Where(p => p.CanRead && p.CanWrite)
+            .Select(p => p.Name)
+            .Where(n => System.Array.IndexOf(portable, n) < 0
+                        && !excluded.ContainsKey(n)
+                        && typeof(ConfigLoader.LocalPet).GetProperty(n) == null)
+            .ToList();
+
+        Assert.True(uncovered.Count == 0,
+            "These PetConfig properties have no home in any config file, so nothing can set them and a " +
+            "hand-added block is deleted by the next Save. Carry them, or list them with a reason:\n  " +
+            string.Join("\n  ", uncovered));
     }
 
     [Fact]

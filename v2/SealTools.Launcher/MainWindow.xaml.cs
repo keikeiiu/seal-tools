@@ -1529,12 +1529,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         // boxes are shorter and sat on a different baseline. No clear button: these are 88px wide.
         public Wpf.Ui.Controls.TextBox Key { get; } = UiText("", null, clearButton: false);
         public Wpf.Ui.Controls.TextBox Delay { get; } = UiText("", null, clearButton: false);
-        // "fast" is the friendly face of the leading '*' on the key; the config still stores '*key'.
-        //
-        // Left to size itself on purpose. Do NOT pin Width here: the drawn glyph needs more than the
-        // ~20px it looks like, and a Width of 20 clips it away COMPLETELY (measured — an empty gap
-        // where the tick box should be). The column is what gives it room; see FastColumnWidth.
-        public CheckBox Fast { get; } = new() { VerticalAlignment = VerticalAlignment.Center };
+        // There is no "fast" tick box any more. Every key this editor writes is stored as '*key' —
+        // the fast tap — because that is the only press this rotation has ever used in the game.
+        // The '*' stays in the file: it is the key's identity there, and `priority`, `combos` and the
+        // presets themselves all reference keys by it. See RowsToKeys.
     }
 
     private TabItem BuildSpammerTab()
@@ -1642,35 +1640,24 @@ public partial class MainWindow : FluentWindow, IDisposable
         var combosPanel = new StackPanel();
         var availableBox = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
         var addToOrder = MakeInlineButton("Add to order", ControlAppearance.Secondary);
-        // The Fast column. 48 was too narrow and clipped the tick box's RIGHT BORDER away, leaving a
-        // "C" — left border and top/bottom stubs, no right edge. The glyph asks for more than it
-        // appears to: at 48 less the cell's 8px margin the control got 40, and the border fell about
-        // 2px outside. Pinching it the other way is not a fix either — a Width of 20 clips it away
-        // entirely. Measured both ways; 60 leaves ~52 for a ~42px glyph.
-        const double FastColumnWidth = 60;
-
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
-        // noise. One header, then bare boxes lined up underneath it.
+        // noise. One header, then bare boxes lined up underneath it. Three columns now — key, delay,
+        // and the remove button: the "Fast" column went with the tick box.
         var rowsPanel = new Grid();
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FastColumnWidth) });
         rowsPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var keyHeader = new Grid { Margin = new Thickness(0, 0, 0, 2) };
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FastColumnWidth) });
         keyHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var keyHeaderLabel = new TextBlock { Text = "Key", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
         var delayHeaderLabel = new TextBlock { Text = "Delay (s)", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
-        var fastHeaderLabel = new TextBlock { Text = "Fast", Foreground = Res("TextFillColorSecondaryBrush"), FontSize = 12 };
         Grid.SetColumn(keyHeaderLabel, 0);
         Grid.SetColumn(delayHeaderLabel, 1);
-        Grid.SetColumn(fastHeaderLabel, 2);
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
-        keyHeader.Children.Add(fastHeaderLabel);
         // MinWidth is a floor for a very narrow window, not the width it takes: it sits in a star
         // column now, so it stretches into whatever the Rename and Delete buttons leave.
         var presetBox = new ComboBox { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
@@ -1702,16 +1689,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         void AddRow(string key, string delay)
         {
             var row = new SpamKeyRow();
-            bool fast = key.StartsWith('*');
-            if (fast) key = key[1..];
-            row.Key.Text = key;
+            // A stored key carries its leading '*' — the fast tap; the box shows the bare name and
+            // RowsToKeys puts the '*' back, so the two halves cannot drift apart.
+            row.Key.Text = key.TrimStart('*');
             row.Key.Width = 88;
             row.Delay.Text = delay;
             row.Delay.Width = 88;
-            row.Fast.IsChecked = fast;
             row.Key.Margin = new Thickness(0, 2, 8, 2);
             row.Delay.Margin = new Thickness(0, 2, 8, 2);
-            row.Fast.Margin = new Thickness(0, 2, 8, 2);
 
             int r = rowsPanel.RowDefinitions.Count;
             rowsPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1721,7 +1706,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 rowsPanel.Children.Remove(row.Key);
                 rowsPanel.Children.Remove(row.Delay);
-                rowsPanel.Children.Remove(row.Fast);
                 rowsPanel.Children.Remove(del);
                 rows.Remove(row);
                 // The key that went away may be sitting in the order below, and the picker has to
@@ -1731,11 +1715,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             Grid.SetRow(row.Key, r); Grid.SetColumn(row.Key, 0);
             Grid.SetRow(row.Delay, r); Grid.SetColumn(row.Delay, 1);
-            Grid.SetRow(row.Fast, r); Grid.SetColumn(row.Fast, 2);
-            Grid.SetRow(del, r); Grid.SetColumn(del, 3);
+            Grid.SetRow(del, r); Grid.SetColumn(del, 2);
             rowsPanel.Children.Add(row.Key);
             rowsPanel.Children.Add(row.Delay);
-            rowsPanel.Children.Add(row.Fast);
             rowsPanel.Children.Add(del);
             rows.Add(row);
 
@@ -1938,10 +1920,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             status));
         editor.Children.Add(namePrompt);
         editor.Children.Add(Section("Keys",
-            // Said here as well as in the tab intro: the default preset is all "*0, *1, …" rows, and
-            // the one thing a reader needs to know about them is what that star means.
-            Hint("* is a fast tap — the key is held about 10 ms instead of the normal 30–80 ms. " +
-                 "Without it the press is longer, which is what most games want for a held skill. " +
+            // Said here as well as in the tab intro: every key is stored as "*0, *1, …", and the one
+            // thing a reader needs to know about them is what that star means.
+            Hint("Every key is a fast tap: it is held about 10 ms, which is what a skill rotation " +
+                 "wants. Keys are saved with a leading '*' — that is what the star in the file means. " +
                  "Any single letter or digit works, plus F1–F12."),
             keyHeader, rowsPanel, addButton));
 
@@ -1952,7 +1934,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 var k = r.Key.Text.Trim();
                 if (k.Length == 0) continue;
-                if (r.Fast.IsChecked == true) k = "*" + k;
+                // Always written as a fast tap. The leading '*' is the key's identity in the file —
+                // the presets, `priority` and `combos` all reference keys by it — so the editor adds
+                // it here and AddRow strips it again for display.
+                k = "*" + k;
                 if (double.TryParse(r.Delay.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
                     result[k] = d;
             }

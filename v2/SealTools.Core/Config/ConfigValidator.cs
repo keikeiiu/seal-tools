@@ -22,33 +22,44 @@ internal static class ConfigValidator
         // That beats the field initializer, so each one needs a null check: without them a
         // hand-edited config crashed with a NullReferenceException here, which defeats the point of
         // a validator whose whole job is to fail with a descriptive ConfigException first.
-        var ocr = c.Tuner.Ocr;
-        if (ocr == null)
+        // A bare `tuner:` key makes the whole SECTION null, and ValidateObject skips null values — so
+        // this is the first place that would dereference it. Report the section instead of dying.
+        var tuner = c.Tuner;
+        if (tuner == null)
         {
-            errors.Add("tuner.ocr: missing — the tuner needs its OCR geometry (run Calibrate Tuner)");
+            errors.Add("tuner: the section is empty — it needs grade_order, the ocr geometry and the " +
+                       "timing (run Calibrate Tuner, or copy the tuner block from defaults.yaml)");
         }
         else
         {
-            var ga = ocr.GradeArea;
-            var region = ocr.Region;
+            var ocr = tuner.Ocr;
+            if (ocr == null)
+            {
+                errors.Add("tuner.ocr: missing — the tuner needs its OCR geometry (run Calibrate Tuner)");
+            }
+            else
+            {
+                var ga = ocr.GradeArea;
+                var region = ocr.Region;
 
-            if (ga == null)
-                errors.Add("tuner.ocr.grade_area: missing — needs x1, y1, x2, y2");
-            else if (ga.X2 <= ga.X1 || ga.Y2 <= ga.Y1)
-                errors.Add("tuner.ocr.grade_area: x2/y2 must be greater than x1/y1");
+                if (ga == null)
+                    errors.Add("tuner.ocr.grade_area: missing — needs x1, y1, x2, y2");
+                else if (ga.X2 <= ga.X1 || ga.Y2 <= ga.Y1)
+                    errors.Add("tuner.ocr.grade_area: x2/y2 must be greater than x1/y1");
 
-            if (region == null)
-                errors.Add("tuner.ocr.region: missing — needs left, top, width, height");
-            else if (ga != null && (ga.X1 < 0 || ga.Y1 < 0 || ga.X2 > region.Width || ga.Y2 > region.Height))
-                errors.Add("tuner.ocr.grade_area must lie inside tuner.ocr.region " +
-                    $"(region is {region.Width}x{region.Height})");
+                if (region == null)
+                    errors.Add("tuner.ocr.region: missing — needs left, top, width, height");
+                else if (ga != null && (ga.X1 < 0 || ga.Y1 < 0 || ga.X2 > region.Width || ga.Y2 > region.Height))
+                    errors.Add("tuner.ocr.grade_area must lie inside tuner.ocr.region " +
+                        $"(region is {region.Width}x{region.Height})");
 
-            // OcrEngine indexes these as [0]/[1]; a short list is an IndexOutOfRange at scan time.
-            RequireBand(errors, "tuner.ocr.grade_y", ocr.GradeY);
-            RequireBand(errors, "tuner.ocr.attr_y", ocr.AttrY);
-            RequireBand(errors, "tuner.ocr.remaining_y", ocr.RemainingY);
-            RequireOptionalBand(errors, "tuner.ocr.attr_x", ocr.AttrX);
-            RequireOptionalBand(errors, "tuner.ocr.remaining_x", ocr.RemainingX);
+                // OcrEngine indexes these as [0]/[1]; a short list is an IndexOutOfRange at scan time.
+                RequireBand(errors, "tuner.ocr.grade_y", ocr.GradeY);
+                RequireBand(errors, "tuner.ocr.attr_y", ocr.AttrY);
+                RequireBand(errors, "tuner.ocr.remaining_y", ocr.RemainingY);
+                RequireOptionalBand(errors, "tuner.ocr.attr_x", ocr.AttrX);
+                RequireOptionalBand(errors, "tuner.ocr.remaining_x", ocr.RemainingX);
+            }
         }
 
         if (errors.Count > 0)

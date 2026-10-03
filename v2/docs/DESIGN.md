@@ -16,7 +16,7 @@ SealTools.Launcher      WPF UI. Cards per tool, configuration tabs behind them. 
                         the service that starts and stops tools, and every calibrator.
 SealTools.Core          Everything shared: the OCR engine, the HID/Arduino link, the config model,
                         the geometry, the icon matcher, the attribute matcher.
-SealTools.Tests         xUnit. 172 tests, all pure — no game, no board, no screen.
+SealTools.Tests         xUnit. 206 tests, all pure — no game, no board, no screen.
 SealTools.Pet           The resident feeder: schedule, reload, placement, food.
 SealTools.Tuner         Seal-breaking: OCR the attributes, decide, click.
 SealTools.Shop          Buy/sell.

@@ -45,6 +45,10 @@ public sealed class LauncherService : IDisposable
     private readonly string _rootDir;
     private readonly ConfigLoader _loader;
     private readonly Dictionary<string, RunningTool> _running = new();
+    // EVERY tool id, in one place: this map is both what StartToolAsync accepts and what each id
+    // actually runs. It replaced a whitelist that was a second hand-kept copy of the launcher's card
+    // list — see the note at the guard in StartToolAsync.
+    private readonly Dictionary<string, Func<SerialPort, ToolState, CancellationToken, int>> _toolRunners;
     /// <summary>Which running tool the UI calls "current". Deliberately never the resident tool: it is
     /// background furniture rather than a run the player is watching, and the UI keys mini mode and the
     /// Hold Space card off this. The pet's own card still shows live, via <see cref="StateFor"/>.</summary>
@@ -89,6 +93,27 @@ public sealed class LauncherService : IDisposable
         // The active game variant's dictionary — the TW one when no variant is configured. A missing
         // file throws with its path rather than matching nothing.
         Attributes = _loader.LoadAttributes(Config.Game.Active?.Attributes);
+
+        // The one list of tools. Adding a tool means one entry here and nothing else: the same map
+        // answers "may this start?" and "what runs for it?".
+        _toolRunners = new Dictionary<string, Func<SerialPort, ToolState, CancellationToken, int>>(StringComparer.Ordinal)
+        {
+            ["holdspace"] = (ser, state, ct) => new HoldSpace(Config).Run(ser, state, ct),
+            ["buy"] = (ser, state, ct) => new ShopTool(Config, ShopMode.Buy, PendingBuyPreset, PendingBuyCount).Run(ser, state, ct),
+            ["sell"] = (ser, state, ct) => new ShopTool(Config, ShopMode.Sell, null).Run(ser, state, ct),
+            ["tuner"] = (ser, state, ct) => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
+            ["gem"] = (ser, state, ct) => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
+            // The gate, so the spammer can stand down when the pet feeder needs the game. It is the one
+            // foreground tool that never ends on its own, which makes it the one that would otherwise
+            // hold the game for as long as the player leaves it running.
+            ["spammer"] = (ser, state, ct) => new SkillSpammer(Config, Gate).Run(ser, state, ct),
+            // The firmware report goes in because a pet run lasts days and its log is the only record
+            // left afterwards — and it is the one run where a board that ignored a command looks exactly
+            // like a board that acted on it.
+            ["pet"] = (ser, state, ct) => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport, Gate).Run(ser, state, ct),
+            ["quest"] = (ser, state, ct) => new SealTools.Quest.QuestTool(Config, PendingQuestLoops, PendingQuestSequence,
+                PendingQuestFlow).Run(ser, state, ct),
+        };
     }
 
     /// <summary>The merged config (portable + local). Mutable so edits are reflected live by the tools.</summary>
@@ -246,14 +271,13 @@ public sealed class LauncherService : IDisposable
     /// flight returns true without starting anything — see the guard below.</summary>
     public async Task<bool> StartToolAsync(string id)
     {
-        // A WHITELIST THAT IS A SECOND COPY of the launcher's card list, and it fails LOUDLY: a tool
-        // registered for its card and its tab but missed HERE looks wired up and does nothing when
-        // Start is pressed — the exception comes out of an async void handler, so there is no message
-        // box and no card line, only an entry in logs\error.log. That is exactly what the quest tool
-        // did on its first launch. If a fifth registration point ever appears, this is the one that
-        // bites, and the fix is one word in one list.
-        if (id is not ("tuner" or "gem" or "spammer" or "holdspace" or "buy" or "sell" or "pet"
-                       or "quest"))
+        // The acceptance test and the dispatch are the SAME map (_toolRunners) — that is the whole
+        // point of it. This used to be a whitelist that was a second hand-kept copy of the launcher's
+        // card list, and it failed LOUDLY rather than safely: a tool registered for its card and its
+        // tab but missed here looked wired up and did nothing when Start was pressed, because the
+        // exception came out of an async void handler — no message box, no card line, only an entry in
+        // logs\error.log. That is exactly what the quest tool did on its first launch.
+        if (!_toolRunners.ContainsKey(id))
         {
             throw new ArgumentException($"Unknown tool id: {id}", nameof(id));
         }
@@ -640,25 +664,15 @@ public sealed class LauncherService : IDisposable
         return n;
     }
 
-    private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct) => id switch
+    /// <summary>Runs the tool an accepted id names. The id was accepted by the same map that answers
+    /// here, so an unknown one is a programming error rather than a user error — but a tool thread must
+    /// not throw over it, so it reports the old "one attempt" and says so on the console.</summary>
+    private int RunTool(string id, SerialPort ser, ToolState state, CancellationToken ct)
     {
-        "holdspace" => new HoldSpace(Config).Run(ser, state, ct),
-        "buy" => new ShopTool(Config, ShopMode.Buy, PendingBuyPreset, PendingBuyCount).Run(ser, state, ct),
-        "sell" => new ShopTool(Config, ShopMode.Sell, null).Run(ser, state, ct),
-        "tuner" => new SealTuner(Config, Attributes, _rootDir).Run(ser, state, ct),
-        "gem" => new GemComposerTool(Config, _rootDir).Run(ser, state, ct),
-        // The gate, so the spammer can stand down when the pet feeder needs the game. It is the one
-        // foreground tool that never ends on its own, which makes it the one that would otherwise
-        // hold the game for as long as the player leaves it running.
-        "spammer" => new SkillSpammer(Config, Gate).Run(ser, state, ct),
-        // The firmware report goes in because a pet run lasts days and its log is the only record
-        // left afterwards — and it is the one run where a board that ignored a command looks exactly
-        // like a board that acted on it.
-        "pet" => new PetTool(Config, Attributes, _rootDir, PersistPetState, FirmwareReport, Gate).Run(ser, state, ct),
-        "quest" => new SealTools.Quest.QuestTool(Config, PendingQuestLoops, PendingQuestSequence,
-            PendingQuestFlow).Run(ser, state, ct),
-        _ => 1,
-    };
+        if (_toolRunners.TryGetValue(id, out var run)) return run(ser, state, ct);
+        Console.WriteLine($"[launcher] no runner for tool id '{id}'");
+        return 1;
+    }
 
     /// <summary>Records the pet run's own state: how many food cells are used up, and which rows are
     /// boarding. Both are written as they change rather than at the end of a run, because the run is

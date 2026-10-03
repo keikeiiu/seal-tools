@@ -295,8 +295,14 @@ public sealed class ConfigLoader
     private static void ApplyOverrides(AppConfig defaults, LocalOverrides local)
     {
         if (local.Calibration != null) defaults.Calibration = local.Calibration;
-        if (local.Tuner?.Ocr != null) defaults.Tuner.Ocr = local.Tuner.Ocr;
-        if (local.Tuner?.SpringPoint != null) defaults.Tuner.SpringPoint = local.Tuner.SpringPoint;
+        // `defaults.Tuner` can itself be null — a bare `tuner:` key in defaults.yaml makes it so — and
+        // dereferencing it here threw before Validate could report the empty section. The local half
+        // was already null-checked; this half was not, which is the whole bug.
+        if (defaults.Tuner != null)
+        {
+            if (local.Tuner?.Ocr != null) defaults.Tuner.Ocr = local.Tuner.Ocr;
+            if (local.Tuner?.SpringPoint != null) defaults.Tuner.SpringPoint = local.Tuner.SpringPoint;
+        }
         if (local.Gem?.GradePositions is { Count: > 0 }) defaults.Gem.GradePositions = local.Gem.GradePositions;
         if (local.Gem?.Movements != null) defaults.Gem.Movements = local.Gem.Movements;
         if (local.Gem?.ResourceGems != null) defaults.Gem.ResourceGems = local.Gem.ResourceGems;
@@ -414,14 +420,42 @@ public sealed class ConfigLoader
         }
     }
 
-    // Atomic write so the launcher can save config while tools re-read it.
+    // One writer at a time, and a temp name nobody else can be holding. Both save paths used to write
+    // `<path>.tmp` with no mutual exclusion — so the WPF thread saving a calibration and the pet
+    // tool's PersistPetState, which are independent, could both be writing that ONE name. The lock
+    // serializes them; the unique name means a writer that died mid-save cannot leave a name for the
+    // next one to collide with either. Static, because a second ConfigLoader instance must not be able
+    // to interleave with the first.
+    private static readonly object SaveGate = new();
+
+    /// <summary>Replaces a config file with a fully written temp file, one writer at a time. The temp
+    /// name is unique per call and is removed if the write fails, so a failure cannot leave litter in
+    /// the config folder or a name for the next writer to trip over.</summary>
+    private static void WriteAtomically(string path, string yaml)
+    {
+        lock (SaveGate)
+        {
+            var tmp = path + "." + System.Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, yaml);
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                // The first failure is the one worth reporting; a failed cleanup must not replace it.
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* keep the original error */ }
+                throw;
+            }
+        }
+    }
+
+    // Atomic write so the launcher can save config while tools re-read it — and since 2026-10-03, so
+    // that two WRITERS cannot collide on one temp name. See WriteAtomically.
     public void SaveLocal(LocalOverrides local)
     {
         var path = PathOf("local.yaml");
-        var yaml = LocalHeader + Serializer.Serialize(local);
-        var tmp = path + ".tmp";
-        File.WriteAllText(tmp, yaml);
-        File.Move(tmp, path, overwrite: true);
+        WriteAtomically(path, LocalHeader + Serializer.Serialize(local));
     }
 
     // Re-serialize the portable sections to defaults.yaml. Machine-specific parts
@@ -460,17 +494,23 @@ public sealed class ConfigLoader
             // property default. Same shape as the ocr_retries regression; the round-trip test now
             // covers it with a non-default value.
             gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures, move_mode = cfg.Gem.MoveMode },
+            // Two settings the feeder reads (PetTool uses both) that no config file could carry: they
+            // live on PetConfig, and this projection had no `pet` block at all — so a `pet:` block
+            // hand-added to defaults.yaml was read on load and then DELETED by the next Save from any
+            // tab. Only these two are portable: the pet flow's geometry and its run state belong to
+            // local.yaml through LocalPet, and a test walks PetConfig to keep that split honest.
+            pet = new
+            {
+                items_per_minute = cfg.Pet.ItemsPerMinute,
+                pet_slot_occupied_above = cfg.Pet.PetSlotOccupiedAbove,
+            },
             // spammer is deliberately absent: presets are personal and live in local.yaml. Leaving
             // it here would write the merged in-memory presets back out on every Save Config
             // (tuner, gem, hotkeys all call this), pushing a player's rotations into the file
             // publish.bat ships. The spammer block in defaults.yaml is a static seed, not saved.
         };
 
-        var path = PathOf("defaults.yaml");
-        var yaml = DefaultsHeader + Serializer.Serialize(portable);
-        var tmp = path + ".tmp";
-        File.WriteAllText(tmp, yaml);
-        File.Move(tmp, path, overwrite: true);
+        WriteAtomically(PathOf("defaults.yaml"), DefaultsHeader + Serializer.Serialize(portable));
     }
 
     // Machine-specific overlay shape (mirrors local.yaml).

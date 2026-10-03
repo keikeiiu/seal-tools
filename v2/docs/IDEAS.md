@@ -146,7 +146,9 @@ Keys — click to include
   F6 F7 F8 F9 F10
 
   click        add / remove the key
-  right-click  toggle the fast tap (the '*' in the raw list)
+  right-click  toggle the fast tap (the '*' in the raw list) — NOTE 2026-10-03: the rows editor no
+               longer offers a Fast tick box, so this would be the only UI way to make a NON-fast
+               key. Decide whether that is still wanted when this key pad is built.
   caption      its cooldown, e.g. 0.2s
 ```
 

@@ -55,10 +55,11 @@ frame and the quest sequences. Copy the block below as the first message.
 > - **A patch against a CRLF file with a `\n` pattern silently does NOTHING.** `ConfigLoader.cs` is CRLF.
 >   It surfaced as *a test passing when it should have failed* — a no-op edit and a real one look
 >   identical. Verify a removal took, then run the guard.
-> - **`StartToolAsync` carries a tool-id WHITELIST that duplicates the launcher's card list.** A new tool
->   registered for its card and tab but missed there looks wired up and does nothing on Start — the
->   exception leaves an `async void` handler, so there is no message box and nothing on the card, only a
->   line in `logs/error.log`. Consolidating the ids into one source is still open.
+> - **`StartToolAsync`'s tool-id whitelist duplicated the launcher's card list.** A new tool registered
+>   for its card and tab but missed there looked wired up and did nothing on Start — the exception left
+>   an `async void` handler, so there was no message box and nothing on the card, only a line in
+>   `logs/error.log`. **FIXED 2026-10-03:** the acceptance test and the dispatch are now one map
+>   (`_toolRunners`), so the two cannot disagree. See [PROGRESS.md](PROGRESS.md), entry 50.
 > - **`publish.bat` copies the config by an EXPLICIT LIST.** A new config file not named there does not
 >   ship — and the error message can then tell the player to copy a file that isn't in the zip.
 > - **A tool that ends by itself was left "running" forever.** `StartToolCoreAsync` had no `finally`, so

@@ -74,25 +74,34 @@ public sealed class AttrMatcher
                 var t = raw.Trim();
                 if (!t.Contains(preferMatcher)) continue;
                 var m = SignNumber.Match(t);
-                if (m.Success) return ParseSigned(m);
+                if (m.Success && ParseSigned(m) is { } sv) return sv;
                 m = AnyNumber.Match(t);
-                if (m.Success) return int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+                if (m.Success && TryInt(m.Groups[1].Value) is { } num) return num;
             }
         }
         foreach (var raw in texts)
         {
             var t = raw.Trim();
             var m = SignNumber.Match(t);
-            if (m.Success) return ParseSigned(m);
+            if (m.Success && ParseSigned(m) is { } sv) return sv;
             m = WholeNumber.Match(t);
-            if (m.Success) return int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (m.Success && TryInt(m.Groups[1].Value) is { } num) return num;
         }
         return null;
     }
 
-    private static int ParseSigned(Match m)
+    /// <summary>Parses a captured digit run, or null when it does not fit an int. The captures are
+    /// unbounded `(\d+)` runs, so a long enough one overflows — and that used to throw
+    /// <see cref="System.OverflowException"/> straight out of the matcher, where nothing on the path
+    /// caught it. "No number" is the honest answer, and it is a state the caller already has a rule
+    /// for: a name that matched with an unreadable value still satisfies a bounded filter rule.</summary>
+    private static int? TryInt(string digits) =>
+        int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    /// <summary>The signed number, or null when its digits do not fit an int.</summary>
+    private static int? ParseSigned(Match m)
     {
-        var val = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
+        if (TryInt(m.Groups[2].Value) is not { } val) return null;
         return m.Groups[1].Value == "+" ? val : -val;
     }
 
@@ -101,7 +110,7 @@ public sealed class AttrMatcher
         var combined = string.Join(" ", texts);
         var m = PerLevelInterval.Match(combined);
         if (!m.Success) m = PerLevelInterval2.Match(combined);
-        int? levels = m.Success ? int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : null;
+        int? levels = m.Success ? TryInt(m.Groups[1].Value) : null;
 
         var bonus = PlusTwo.IsMatch(combined) ? 2 : 1;
 

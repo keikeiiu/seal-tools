@@ -52,7 +52,7 @@ v2/
   SealTools.Quest/       # QuestTool (replays a player-authored input flow)
   SealTools.Pet/         # PetTool (the resident feeder)
   SealTools.Launcher/    # WPF-UI desktop app (the UI + tool lifecycle)
-  SealTools.Tests/       # xUnit tests — 174 cases across 18 files
+  SealTools.Tests/       # xUnit tests — 206 cases across 18 files
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
   docs/INSTALL.md        # install: board, firmware, app, first calibration, updating

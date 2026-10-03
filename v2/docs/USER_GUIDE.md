@@ -218,8 +218,8 @@ and reported as a `⚠` on the tool card.
 
 | Control | Meaning |
 |---|---|
-| **Key** / **Delay (s)** / **Fast** header | One row per key. `✕` removes that row. |
-| **Fast** checkbox | A fast tap: the key is held about 10 ms instead of the normal 30–80 ms. Leave it off for a held skill — that is what most games want. |
+| **Key** / **Delay (s)** header | One row per key. `✕` removes that row. |
+| Keys are always a fast tap | Each key is held about 10 ms and is saved with a leading `*` — that is what the star in the raw list means. There is no tick box: a rotation is taps. |
 | **+ Add Key** | Appends an empty row with a 0.2 s delay. |
 
 ### Advanced

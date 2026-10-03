@@ -13,6 +13,230 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-03 (55) — the pet flow's two settings can finally be set, and the projection has a fence
+
+**The finding, and why it was worth fixing rather than deleting.** `PetConfig.ItemsPerMinute` (the 3/min
+burn rate) and `PetConfig.PetSlotOccupiedAbove` (the slot-occupied threshold) are read by `PetTool`
+(lines 298/830 and 737/757/1800), but **no config file could carry either**: they have no `LocalPet`
+counterpart, and `SaveDefaults` wrote an anonymous object with **no `pet` key at all** — so a `pet:`
+block hand-added to `defaults.yaml` was read once and then *deleted by the next Save from any tab*. Two
+more properties, `FeederSlotA`/`FeederSlotB`, are dead outright.
+
+**Red first.** `SaveDefaultsPreservesEveryPortableField` was extended with non-default values for both
+settings and round-trip assertions. Before the fix it failed `Expected: 7, Actual: 3` — the projection
+dropped `ItemsPerMinute` exactly as the audit said.
+
+**The fix is a `pet:` block in the portable projection**, carrying those two settings. Only those two:
+the pet flow's geometry and run state belong to `local.yaml` through `LocalPet`, and putting them here
+would write a machine's calibration into the file `publish.bat` ships.
+
+**A fence for the next field, because the existing guard cannot see this class of bug.**
+`EveryLocalPetFieldIsCopiedFromTheConfig` walks **LocalPet → PetConfig**, so a `PetConfig` property with
+no file counterpart is invisible to it — which is how four accumulated. The new
+`EveryPetConfigFieldIsCarriedByAFileOrDeliberatelyExcluded` walks the other way: every settable property
+must be carried by `LocalPet`, written by the portable projection, or listed with a reason. It passes
+today (its list is decided), and its value is the day someone adds a property without deciding.
+
+**The two legacy boxes are kept, not deleted, and that is a decision.** `FeederSlotA`/`FeederSlotB` read
+as food-count boxes whose consumer was replaced when `FeederLayout` derived the strip from the row
+geometry. Deleting the properties would make a hand-edited `feeder_slot_a:` an unknown key in someone's
+`defaults.yaml`, and the rule here is to deprecate by ignoring rather than by deleting — so they are
+listed in the fence with that reason instead.
+
+**Measured:** 206 tests, 0 failures (205 before this entry's fence), build 0 warnings / 0 errors, both
+from an actual run.
+
+---
+
+## 2026-10-03 (54) — an empty `tuner:` section reports itself instead of crashing
+
+**Two unguarded dereferences, and the audit had named the second one.** YamlDotNet sets a property to
+null when its key is present with no value, so a hand-edited bare `tuner:` makes the whole section null —
+and `ValidateObject` skips null values, so nothing upstream noticed. Then:
+
+- `ConfigLoader`'s local overlay read `defaults.Tuner.Ocr` while null-checking only the LOCAL half
+  (`local.Tuner?.Ocr`). **That is where the crash actually happened**, before validation ran at all.
+- `ConfigValidator` read `c.Tuner.Ocr` with no guard — the line the audit reported as the cause.
+
+**Both needed the guard:** with only the loader fixed, the validator's line is the next crash, so a fix
+at one site would have moved the failure rather than removed it.
+
+**Red first, then green.** `LoadRejectsAnEmptyTunerSectionWithAMessageNotANullReference` collapses the
+tuner block to a value-less key in a copy of `defaults.yaml` and asserts a `ConfigException` that names
+the section. It self-checks that the collapse happened (`Assert.DoesNotContain("grade_order", …)`), so it
+cannot pass by having proved nothing. Before the fix it failed with `Actual: NullReferenceException`;
+after both guards it passes.
+
+**Measured:** 205 tests, 0 failures (204 before this entry's test). Build 0 warnings / 0 errors — and
+both numbers now come from an actual run, not from a compile (entry 53 explains the host).
+
+---
+
+## 2026-10-03 (53) — the suite runs, and the count in the docs was wrong twice
+
+**204 tests pass, 0 fail.** That is Phase 1's test half, and it settles a drift three documents had been
+carrying: this file said 203/203, `README.md` said "174 cases across 18 files" and `DESIGN.md` said "172
+tests". The real number is **204** — 203 before this session plus the `AttrMatcher` overflow guard from
+entry 51 — so both of those were simply stale and are corrected here. "18 files" was right.
+
+**How it was run, precisely, because it is NOT `dotnet test`:** the sandbox refuses to start VSTest's
+test host at all. `testhost` opens a handle to its parent process (`Process.GetOrOpenProcessHandle` →
+`EnableRaisingEvents`) and the confined token is denied, so `dotnet test`, `dotnet test --arch x64` and
+`vstest.console /InIsolation` all die identically. What works is xunit's **own engine**
+(`xunit.runner.utility`'s `XunitFrontController`) hosted in a scratch console app: same test code, same
+assertions, same runner — a different host. Two details it needed, each worth recording because each
+cost a round to find:
+
+- the host's `deps.json` must carry `xunit.execution.dotnet`, so the `xunit` package goes in the host
+  project (referencing `xunit.runner.utility` alone is not enough);
+- `DOTNET_ADDITIONAL_DEPS=<testbin>/SealTools.Tests.deps.json` at run time, or the OpenCvSharp **native**
+  asset is never resolved and 11 image tests fail with `Unable to load DLL 'OpenCvSharpExtern'`.
+
+The suite also needs the repo around it: `ConfigLoaderTests` walks up from `AppContext.BaseDirectory` for
+a `config/defaults.yaml`, and `PetFeedingTests` for `docs/pet-data.csv`. So the run used a mirror of the
+test output plus copies of `v2/config` and `v2/docs` under `%TEMP%` — a test that writes cannot reach the
+player's real calibration that way.
+
+**What this verifies beyond the baseline:** entries 49, 50, 51 and 52 are all in this tree and all pass,
+the new overflow guard among them (it fails against the old code). The build is 0 warnings / 0 errors.
+
+---
+
+## 2026-10-03 (52) — the two config writers stop sharing one temp file
+
+**The race**, from the 2026-09-22 audit and confirmed by reading it: `SaveLocal` and `SaveDefaults` both
+did `File.WriteAllText(path + ".tmp", yaml)` and then `File.Move(tmp, path, overwrite: true)`, with
+nothing serializing them. The two writers are independent — the WPF thread saving a calibration, and the
+pet tool's `PersistPetState` — so they could be inside that ONE temp name at the same time. The comment
+on `SaveLocal` claimed atomicity, and it was right about concurrent *readers*, which is not the case
+that exists.
+
+**The fix is a gate and a unique name, and both halves matter:**
+
+- `WriteAtomically` takes a static `SaveGate` lock, so the replace is one writer at a time. Static, not
+  per instance: a second `ConfigLoader` must not be able to interleave with the first.
+- The temp name carries a fresh GUID per call, so a writer that died mid-save cannot leave a name for
+  the next one to collide with.
+- A failed write deletes its temp file, so a failure cannot leave litter in `config/` — or, worse, a
+  stale `.tmp` that the old code would have re-used as the *source* of a later replace.
+
+Serialization stays outside the lock; only the file work is serialized.
+
+**What this does NOT fix, said plainly so it is not assumed fixed:** the lock removes the collision on
+one temp name, but the read-modify-write around each save is still last-writer-wins. Two savers that
+each load, edit and write back can still lose one edit. The UI's calibration and the pet tool's run
+state touch different halves of `local.yaml` today, which is why it has not bitten. Closing *that* means
+one writer for the file or a merge on save — a design change, not this fix.
+
+**Verified:** the whole solution compiles, 0 warnings / 0 errors; the only `.tmp` construction left in
+`ConfigLoader.cs` is the one inside `WriteAtomically`, and both call sites go through it (checked, not
+assumed — a CRLF file and a removed line is exactly where a no-op edit hides). **No test:** a meaningful
+race test is inherently timing-dependent, and this session cannot start a test host. The change is
+constructive — one gate, one name per call — rather than statistical.
+
+---
+
+## 2026-10-03 (51) — AttrMatcher stops throwing on an over-long digit run
+
+**What was wrong**, from the 2026-09-22 audit and confirmed by reading the code: `AttrMatcher` was the
+one parser in this project using `int.Parse` on an unbounded `(\d+)` capture, at four sites —
+`ExtractValue`'s signed and unsigned branches, `ParseSigned`, and the per-level read. A single OCR line
+carrying an 11+ digit run therefore threw `OverflowException` straight out of `MatchAttributes`, and
+nothing on that path catches it: a bad read took the tuner down instead of being treated as a read that
+failed.
+
+**The fix is one helper, not four guards.** `TryInt(string) → int?`, used at all four sites;
+`ParseSigned` now returns `int?`. An overflowing run means "no value", which is a state the caller
+already has a rule for — the first test in `AttrMatcherTests` pins the deliberate rule that a matched
+NAME with an unreadable value still satisfies a bounded filter rule.
+
+**A behaviour choice, stated so it is not mistaken for an accident:** the two `ExtractValue` branches
+now *skip* a text whose number does not parse and go on to the next candidate, instead of returning
+null at the first match. That is one step further than the crash fix, and deliberately so — the loop
+exists to look at more than one text.
+
+**The guard test is written and NOT RUN.** `AnOverflowingNumberIsNoValueRatherThanAnException` feeds one
+line (`增加傷害`, `99999999999999999999`) through the real `MatchAttributes` and asserts the value is
+null. Against the old code it fails with the `OverflowException`, so it is not a check that cannot fail.
+It could not be executed here: this session's sandbox cannot start a test host (VSTest opens a handle to
+its parent process, which the sandbox denies). **Compile-verified only — run `dotnet test` before
+trusting it.**
+
+**Still open from the same audit:** the `.tmp` race in `ConfigLoader.SaveLocal`/`SaveDefaults`, the four
+`PetConfig` properties no config file can set, and `ConfigValidator`'s unguarded bare `tuner:`. The last
+of those wants a test that fails first, and a test cannot be *shown* to fail here — so they wait for a
+session that can run the suite.
+
+---
+
+## 2026-10-03 (50) — the tool ids exist once: what Start accepts is what runs
+
+**The trap this closes**, recorded in [HANDOVER.md](HANDOVER.md) and paid for once already:
+`StartToolAsync` carried a whitelist (`id is not ("tuner" or "gem" or …)`) that was a **second
+hand-kept copy of the launcher's card list**, while `RunTool` carried a `switch` with the same eight
+labels. A tool registered for its card and its tab but missed in the whitelist looked wired up and did
+nothing on Start — and because the exception left an `async void` handler there was no message box and
+no card line, only a line in `logs/error.log`. That is exactly what the quest tool did on its first
+launch.
+
+**The fix is a map, not a third list.** `LauncherService._toolRunners` maps id →
+`Func<SerialPort, ToolState, CancellationToken, int>`, built once in the constructor from the same
+expressions the switch used. The whitelist is now `_toolRunners.ContainsKey(id)` and the dispatch is
+`_toolRunners.TryGetValue(...)`, so **the two cannot disagree**: adding a tool is one entry in one
+place. The lambdas close over the same mutable `Pending*` properties the switch read at call time, so
+the "UI sets the preset, then presses Start" timing is unchanged.
+
+**The `_ => 1` arm** — the switch's silent fallback — became an explicit console line. An unknown id
+cannot reach `RunTool` (the guard rejects it first), so that path is a programming error rather than a
+user one; it still returns the old "one attempt" instead of throwing from a tool thread.
+
+**Still open, found while looking for other copies:** `HeldKeysTests.EveryToolId` is a hand-written
+array of ids (`tuner, gem, spammer, buy, sell`) whose own comment calls the duplication deliberate —
+but it is already **stale**: it predates `quest`, so that id is covered by nothing. It cannot be
+derived from this map either, because the test project deliberately does not reference the Launcher
+(`net8.0-windows`). Deriving it means moving the id list into `SealTools.Core`.
+
+**Verified:** the whole solution compiles, 0 warnings / 0 errors, and the ids now appear once. The
+tests were **not** run — this session's sandbox cannot start a test host — so the guard's behaviour
+here is read-verified, not run-verified.
+
+---
+
+## 2026-10-03 (49) — the spammer's Fast tick box is gone; every key is written as a fast tap
+
+**The ask:** *"instead maybe remove the option for toggle for fast, and set all spammer setup using
+fast anyway."*
+
+**The decision, and what it is not.** [TODO.md](TODO.md) recorded that a key without the `*` does not
+register in the game — found 2026-10-02, never reproduced, and the Notepad test that would split the
+two possible causes was never run. Asked whether to run it, the player answered *"dont need to test we
+should be using it already right"*. All four presets in `local.yaml` carry `*` on every key, so the
+untested path had no user. The right disposition was therefore **not to fix it but to stop producing
+it** — the item moved from "Needs a live check" to "Accepted as-is", still marked untested.
+
+**The one hazard, and the shape that avoids it.** `*` is not a UI flag: it is the key's IDENTITY in the
+config. The presets store `'*1'`/`'*F4'`, and `priority` and `combos` reference keys by those same
+strings. Dropping `*` from the format would have needed a migration across all three maps and would
+have broken the `⚡` in `OrderLabel`/`ComboLabel`. So: **remove the control, keep the format.**
+`RowsToKeys` now always writes `*name` and `AddRow` strips it again for display, so what is stored is
+unchanged — zero migration, and a hand-edited config keeps working.
+
+**What went with the tick box:** `SpamKeyRow.Fast`, the `FastColumnWidth` constant and the measurement
+behind it (48 px clipped the glyph's right border and read as a "C"; 20 px removed it entirely), the
+column in the header and in the row grid, and the hint that told the player to leave the box OFF for a
+held skill — advice pointing at the path this suite has never used.
+
+**Not deleted:** the firmware's `K`/`k` split and `SkillSpammer.SendKey`'s `StartsWith('*')`. The
+Advanced raw list still takes a bare `key:seconds`. The UI stopped offering a choice nobody made; the
+protocol is unchanged.
+
+**Verification, stated plainly:** the launcher UI has no test coverage, so this was checked by
+compiling the whole solution (0 warnings / 0 errors) and by reading the diff. **Nobody has opened the
+Spammer tab yet.** The tick box was added deliberately in v2.6 — a future session tempted to add it
+back should read this first.
+
+---
+
 ## 2026-10-02 (48) — v2.14 cut
 
 **A release, and a large one**, because the unreleased work had stacked up: the US-client frame and the

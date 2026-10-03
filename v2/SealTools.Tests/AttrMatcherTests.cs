@@ -82,4 +82,27 @@ public class AttrMatcherTests
         Assert.True(result.Passed);
         Assert.StartsWith("override", result.Reason);
     }
+
+    // The audit's finding, pinned: every other parser in this project uses TryParse, and this one used
+    // int.Parse on an unbounded `(\d+)` capture. ONE OCR line containing an 11+ digit run therefore
+    // threw OverflowException out of MatchAttributes, and nothing on that path caught it. An
+    // overflowing run is now "no value" — the state the first test above already has a rule for.
+    [Fact]
+    public void AnOverflowingNumberIsNoValueRatherThanAnException()
+    {
+        var matcher = new AttrMatcher(new AttributesConfig
+        {
+            Attributes = new List<AttributeDef>
+            {
+                new() { Name = "增加傷害", Category = "attack", Variants = new List<string> { "增加傷害" } },
+            },
+        });
+
+        var matched = matcher.MatchAttributes(
+            new List<List<string>> { new() { "增加傷害", "99999999999999999999" } });
+
+        var attr = Assert.Single(matched);
+        Assert.Equal("增加傷害", attr.Name);
+        Assert.Null(attr.Value);
+    }
 }
