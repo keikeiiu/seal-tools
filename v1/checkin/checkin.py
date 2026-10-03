@@ -257,7 +257,75 @@ def do_receive(context, page, receive_url):
     return got_any, results
 
 
-def process_account(p, acc, login_url, checkin_url, server_value, receive_url=None):
+# 3rd_job (哈比番長狂歡祭) error codes, from that page's inline script
+PACK_WAVES = [(1, "第一波"), (2, "第二波")]
+PACK_MSG = {
+    "E001": "連線至錯誤的路徑",
+    "E002": "請先登入",
+    "E003": "不在活動期間",
+    "E004": "帳號或密碼錯誤",
+    "E005": "已領取過了",
+    "E006": "轟趴包剩餘不足一日，請明天再領",
+    "E008": "非活動期間或配發對象",
+}
+
+
+def do_happypack(page, happypack_url, api_tmpl):
+    """Claim 【戀曲轟趴包-15天】 for whichever wave is currently open.
+
+    The endpoint returns E001 unless the call is made from the page itself, so
+    the page is loaded first and the fetch runs in that context.
+    """
+    page.goto(happypack_url, wait_until="domcontentloaded")
+    page.wait_for_timeout(2500)
+
+    results = []
+    got_any = False
+    for wave, name in PACK_WAVES:
+        api = api_tmpl.format(wave=wave)
+        try:
+            data = page.evaluate(
+                """async (url) => {
+                     const r = await fetch(url, {
+                       method: 'POST',
+                       headers: {'X-Requested-With': 'XMLHttpRequest'},
+                       body: ''
+                     });
+                     const t = await r.text();
+                     try { return JSON.parse(t); }
+                     catch (e) { return {_raw: t.slice(0, 200)}; }
+                   }""",
+                api,
+            )
+        except Exception as e:
+            print(f"  ⛔ 轟趴包{name}：請求失敗 {e}")
+            results.append(f"轟趴包{name} 請求失敗")
+            continue
+
+        entry = (data.get("results") or [{}])[0] if isinstance(data, dict) else {}
+        rtype = str(entry.get("RetType", ""))
+        code = str(entry.get("ErrCode", ""))
+
+        if rtype == "Y":
+            print(f"  ✓ 轟趴包{name}：領取完成")
+            results.append(f"轟趴包{name} 領取完成")
+            got_any = True
+        elif code == "E005":  # 已領取過了 — a previous run got it
+            print(f"  ✓ 轟趴包{name}：{PACK_MSG[code]}")
+            results.append(f"轟趴包{name} {PACK_MSG[code]}")
+            got_any = True
+        elif code == "E003":  # wave not open yet — expected for 第二波 before 10/14
+            print(f"  … 轟趴包{name}：{PACK_MSG[code]}")
+        else:
+            note = PACK_MSG.get(code, f"未知回應 {data}")
+            print(f"  ⛔ 轟趴包{name}：{note}")
+            results.append(f"轟趴包{name} {note}")
+
+    return got_any, results
+
+
+def process_account(p, acc, login_url, checkin_url, server_value,
+                    receive_url=None, happypack=None):
     """Process one account: server select (first time) + daily check-in."""
     username = acc["username"]
     password = acc["password"]
@@ -317,6 +385,13 @@ def process_account(p, acc, login_url, checkin_url, server_value, receive_url=No
                 msg = f"{msg}；{'；'.join(parts)}"
             ok = ok or got
 
+    # ── One-time 【戀曲轟趴包-15天】 claim (per wave) ──
+    if happypack:
+        got, parts = do_happypack(page, happypack["url"], happypack["api"])
+        if parts:
+            msg = f"{msg}；{'；'.join(parts)}"
+        ok = ok or got
+
     context.close()
     return ok, msg
 
@@ -333,6 +408,10 @@ def main():
     receive_url = cfg.get("receive_url")
     server_value = cfg.get("server")
 
+    happypack = None
+    if cfg.get("happypack_url") and cfg.get("happypack_api"):
+        happypack = {"url": cfg["happypack_url"], "api": cfg["happypack_api"]}
+
     print(f"共 {len(accounts)} 個帳號\n")
 
     results = []
@@ -341,7 +420,8 @@ def main():
             username = acc.get("username", "?")
             print(f"\n=== {username} ===")
             try:
-                ok, msg = process_account(p, acc, login_url, checkin_url, server_value, receive_url)
+                ok, msg = process_account(p, acc, login_url, checkin_url, server_value,
+                                          receive_url, happypack)
             except Exception as e:
                 ok, msg = False, f"錯誤: {e}"
             results.append((username, ok, msg))
