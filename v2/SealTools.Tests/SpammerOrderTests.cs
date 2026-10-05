@@ -139,6 +139,56 @@ public class SpammerOrderTests
         Assert.Empty(runnable);
     }
 
+    // ── respelling a reference to match the keys it names ───────────────────────────────────────
+
+    // THE BUG THIS EXISTS FOR: the rows editor writes every key as '*name', so saving a preset that a
+    // hand-edited config spelled bare RENAMES its keys — and `priority` and `combos` name keys, so the
+    // references were pruned against names that had merely changed shape. The ordering and the combos
+    // disappeared on the first save, silently.
+    [Fact]
+    public void AReferenceFollowsItsKeyWhenOnlyTheStarDiffers()
+    {
+        var respelled = SpammerOrder.Respell(
+            new List<string> { "F4", "F5" },
+            new List<string> { "*F4", "*F5" });
+
+        Assert.Equal(new List<string> { "*F4", "*F5" }, respelled);
+    }
+
+    // The other direction, so the helper is a match rather than a rule about stars.
+    [Fact]
+    public void AStarredReferenceFollowsABareKey()
+    {
+        var respelled = SpammerOrder.Respell(
+            new List<string> { "*F4" },
+            new List<string> { "F4" });
+
+        Assert.Equal(new List<string> { "F4" }, respelled);
+    }
+
+    // A name that matches NEITHER spelling must be left alone. "Correcting" it would rewrite a typo
+    // into some key that happens to exist — the silent version of the same bug the helper prevents.
+    [Fact]
+    public void ANameThatMatchesNothingIsLeftAlone()
+    {
+        var respelled = SpammerOrder.Respell(
+            new List<string> { "ghost", "F4" },
+            new List<string> { "*F4", "*F5" });
+
+        Assert.Equal(new List<string> { "ghost", "*F4" }, respelled);
+    }
+
+    // Already consistent, which is the common case: nothing moves.
+    [Fact]
+    public void ANameAlreadySpelledRightIsUnchanged()
+    {
+        var respelled = SpammerOrder.Respell(
+            new List<string> { "*1", "*2" },
+            new List<string> { "*1", "*2" });
+
+        Assert.Equal(new List<string> { "*1", "*2" }, respelled);
+    }
+
     // The order the combos are listed in is the order they are tried, so it must survive.
     [Fact]
     public void RunnableCombosKeepTheirListedOrder()

@@ -17,6 +17,7 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 using Ellipse = System.Windows.Shapes.Ellipse;
 using SealTools.Core;
 using SealTools.Core.Config;
+using SealTools.Spammer;
 using SealTools.Tuner;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using ControlAppearance = Wpf.Ui.Controls.ControlAppearance;
@@ -1937,7 +1938,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Always written as a fast tap. The leading '*' is the key's identity in the file —
                 // the presets, `priority` and `combos` all reference keys by it — so the editor adds
                 // it here and AddRow strips it again for display.
-                k = "*" + k;
+                //
+                // TrimStart first, because the box takes whatever is typed into it: a hand-entered or
+                // pasted "*1" would otherwise be stored as "**1", which SendKey refuses (its length is
+                // 2, so it is not a single character) and the run silently skips the key.
+                k = "*" + k.TrimStart('*');
                 if (double.TryParse(r.Delay.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
                     result[k] = d;
             }
@@ -1951,6 +1956,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         // tidiness rather than correctness — but the file is the player's to read.
         void Commit(IDictionary<string, double> live)
         {
+            // RESPELL the references against the keys as they are being SAVED. The rows editor writes
+            // every key as '*name', so saving a preset that a hand-edited config spelled bare renames
+            // its keys — and the lines below prune `order` and the combos against those names. Without
+            // this a bare-keyed config loses its ordering and its combos on the first save, silently.
+            // The working copies are respelled in place so the panels and the key picker agree with
+            // what was written, rather than holding names the file no longer contains.
+            var liveKeys = live.Keys.ToList();
+            var respelled = SpammerOrder.Respell(order, liveKeys);
+            order.Clear();
+            order.AddRange(respelled);
+            foreach (var combo in comboList)
+            {
+                var keys = SpammerOrder.Respell(combo.Keys, liveKeys);
+                combo.Keys.Clear();
+                combo.Keys.AddRange(keys);
+            }
+
             priority[current] = order.Where(live.ContainsKey).ToList();
             // The same rule the tool applies at run time (SpammerOrder.Runnable): fewer than two keys,
             // or a key this preset does not have, and the combo is dropped rather than run. Dropped

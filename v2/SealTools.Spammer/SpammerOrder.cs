@@ -33,6 +33,30 @@ public static class SpammerOrder
         return order;
     }
 
+    /// <summary>Each name respelled to the form the preset actually stores, when the two differ only by
+    /// the leading `*`; anything else comes back untouched.
+    ///
+    /// This exists because the rows editor writes every key as `*name` — the fast tap — so saving a
+    /// preset that a hand-edited config spelled bare RENAMES its keys. `priority` and `combos` reference
+    /// keys BY NAME, so without this the editor prunes those references against names that had merely
+    /// changed shape: the ordering and the combos vanish on the first save, silently.
+    ///
+    /// One way only, and only where it is unambiguous. A name matching NEITHER spelling is left alone,
+    /// so a genuine typo is still pruned by the normal rule rather than being rewritten into some key
+    /// that happens to exist — "correcting" it would be the silent version of the same bug.</summary>
+    public static List<string> Respell(IEnumerable<string> names, IEnumerable<string> presetKeys)
+    {
+        var keys = new HashSet<string>(presetKeys);
+        var result = new List<string>();
+        foreach (var n in names)
+        {
+            if (keys.Contains(n)) { result.Add(n); continue; }
+            var other = n.StartsWith('*') ? n[1..] : "*" + n;
+            result.Add(keys.Contains(other) ? other : n);
+        }
+        return result;
+    }
+
     /// <summary>The keys the loop may press ON THEIR OWN: the whole preset minus everything a combo
     /// owns, in <see cref="For"/>'s precedence order.
     ///

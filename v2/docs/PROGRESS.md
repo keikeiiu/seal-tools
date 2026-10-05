@@ -13,6 +13,43 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (56) — the editor's key rename stops orphaning the references
+
+**The bug, found reviewing entry 49.** The rows editor now writes every key as `*name` (the fast tap),
+so saving a preset spelled bare RENAMES its keys — and `priority` and `combos` reference keys **by
+name**. `Commit` then pruned those references against names that had merely changed shape, so a
+bare-keyed config lost its ordering and its combos **on the first save, silently**. This repo's own
+`local.yaml` carries the scar: `JSBuffwithnoheal` went from bare `F4`–`F10` with a seven-entry priority
+list to starred keys with `priority: ['*7']`.
+
+**My first attempt was wrong, and the tests said so.** Folding it at LOAD looked better — one place,
+idempotent, same shape as the existing fold-ins — and it broke **five** config tests at once. Not because
+it was buggy but because it was **wrong-scoped**: normalising at load changes what a config *means*, and
+one of the things it removed was the deliberate ability to hand-edit a bare key for the normal 30–80 ms
+hold, which entry 49 kept on purpose. A rename the EDITOR performs should be absorbed where the editor
+performs it, not by rewriting everyone's file on the way in.
+
+**So the fold lives in `SpammerOrder.Respell`** and runs in `Commit`: each reference respelled to the
+form the preset actually stores, **one way only, and only where it is unambiguous**. A name matching
+neither spelling is left ALONE, so a genuine typo is still pruned by the normal rule rather than being
+rewritten into some key that happens to exist — "correcting" it would be the silent version of the same
+bug. It went into `SpammerOrder` rather than the UI for the same reason the ordering did: it is a rule
+about key names, and inside `MainWindow` no test could reach it.
+
+**The working copies are respelled in place**, so the Order and Combos panels and the key picker agree
+with what was written instead of holding names the file no longer contains.
+
+**Also fixed, same edit:** `RowsToKeys` now does `k.TrimStart('*')` before prepending its own star. A
+hand-typed or pasted `*1` was stored as `**1`, which `SendKey` refuses (length 2) and the run silently
+skips the key.
+
+**Verified:** 210/210 (206 + four `Respell` tests), build 0 warnings. **The guard was proven by
+removal** — the fold line was replaced with a pass-through and **three** of the four tests failed, while
+`ANameAlreadySpelledRightIsUnchanged` correctly still passed because it takes the other branch. That
+discrimination is the point: the tests distinguish "followed its key" from "was already right".
+
+---
+
 ## 2026-10-03 (55) — the pet flow's two settings can finally be set, and the projection has a fence
 
 **The finding, and why it was worth fixing rather than deleting.** `PetConfig.ItemsPerMinute` (the 3/min
