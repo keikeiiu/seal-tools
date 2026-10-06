@@ -5030,7 +5030,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!TryPlace(ser, target.X, target.Y, out err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
 
         _buyHint!.Text = $"Dry run: scrolled {preset.Scroll} notch(es) down from where the list was and " +
-                         $"parked the cursor on row {preset.Row}. Nothing was clicked. It assumes the " +
+                         $"parked the cursor on row {preset.Row + 1}. Nothing was clicked. It assumes the " +
                          "list is already at the TOP — scroll it there yourself first. If the pointer " +
                          $"isn't on '{name}', change the scroll amount and run this again.";
     }
@@ -7218,27 +7218,26 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         _petDragTarget = target;
 
-        // The food strip is ONE drag per row now, divided by the row's stack count — a per-slot chain
-        // was how many there are is the ROW's stack
-        // count — two on the free row, five on a paid one. It used to stop at two, which is the free
-        // row's number generalised to every row: the same mistake the load size made, in the markup.
-        if (target.StartsWith("feeder:", StringComparison.Ordinal))
-        {
-            var i = int.Parse(target["feeder:".Length..], CultureInfo.InvariantCulture);
-            var stacks = EditRow(_service.Config.Pet).Stacks;
-            _petHint!.Text = $"Drag a box around the COUNT on food slot {i + 1} of {stacks} — the " +
-                             "number at its bottom-right, which spills past the slot's frame. Tight " +
-                             "around the digits, and not reaching the next slot, or two numbers come " +
-                             "back as one string.";
-            return;
-        }
-
+        // "feederstrip" is the live target — the food strip is ONE drag per row, divided by the row's
+        // food-slot count, so a five-slot paid row is one drag rather than five.
+        //
+        // The per-slot chain it replaced is gone, and its branch ("feeder:<n>") was left behind:
+        // unreachable, because no caller builds such a target any more. It is removed rather than
+        // kept, because its presence is what made the default arm look correct — "feederstrip" fell
+        // through to "Drag a box around ONE slot", which is precisely the one thing this button must
+        // not be told to do. A dead arm that reads as a plausible default is a trap for the next
+        // person to add a target here.
         _petHint!.Text = target switch
         {
             "toggle" => "Drag a box around the 開始代養 / 結束代養 button. The tool clicks its centre " +
                         "to start boarding once the food is loaded.",
             "petslot" => "Drag a box around the PET SLOT in the boarding window — the square the " +
                         "pet sits in, next to the food.",
+            "feederstrip" => "Drag ONE box across ALL of this row's food slots — the whole strip, not " +
+                        "one slot. The tool divides it by the row's food-slot count, so a five-slot " +
+                        "paid row is one drag rather than five. It is also the whole of the count " +
+                        "calibration: the crop each count is read from is computed inside the slot, " +
+                        "so there is nothing else to draw.",
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
             _ => "Drag a box around ONE slot.",
         };
@@ -7848,7 +7847,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         for (int i = 0; i < pet.Slots.Count; i++)
-            lines.Add(Mark(true, $"row {i + 1} boarding       " +
+            // Marked with the REAL value, not `true`. Hard-coded true meant a row that is not boarding
+            // rendered "  ok   row 2 boarding   no — tick it if it is feeding": the ok/-- column said
+            // set while the text beside it said not set.
+            lines.Add(Mark(pet.Slots[i].BoardingRunning, $"row {i + 1} boarding       " +
                                  (pet.Slots[i].BoardingRunning ? "yes" : "no — tick it if it is feeding")));
 
         _petSessionChecklist.Text = string.Join("\n", lines);
@@ -8131,6 +8133,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         // other, which is the mixing the two are meant to avoid. The card names the real reason if you
         // press Start with a calibration gap, and Calibrate Pet's checklist names it before that.
         var lines = new List<string>();
+        // Zero rows is the one gap the other checks cannot express: `round` is 0, so the "one round of
+        // all N rows" test is skipped by its own `round > 0` guard and the tab reported "ready" with
+        // nothing to run — and the sentence ended "reloading every ." because the join was empty.
+        if (pet.Slots.Count == 0)
+            lines.Add("no breeding rows configured — there is nothing for the feeder to run");
         if (pet.ReturnSlot is not { Count: 2 } && pet.Queue.Count == 0)
             lines.Add("neither the return slot nor a pet icon is marked — nothing says where the pet is");
         if (pet.FoodSlots.Count == 0) lines.Add("no food cells are marked");
@@ -8196,7 +8203,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var total = 0;
         var counted = 0;
         var read = 0;
-        int? agreed = null;
         try
         {
             // THE LAUNCHER IS HIDDEN ONCE FOR THE WHOLE READ. It hides for a screen grab because the
@@ -8208,6 +8214,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 foreach (var (what, box) in boxes)
                 {
                     var reads = new List<string>();
+                    // PER SLOT, and it has to be here. Declared outside the loop it kept the previous
+                    // slot's number: a slot with no region, or one whose read threw, printed the slot
+                    // before it — the "seen" column saying "no region" beside a number that came from
+                    // somewhere else entirely — and the footer counted that number a second time.
+                    int? agreed = null;
                     try
                     {
                         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
@@ -8361,7 +8372,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var report = new List<string>
             {
-                $"Page {page + 1}, cell {cell} (bag slot {cell + 1}) — panel read at " +
+                // 1-based, like every other surface the player reads — the picker says "Row 1", the bag
+                // cell tooltips say "Bag slot 1". This line used to name the same cell twice, once
+                // 0-based and once 1-based ("cell 0 (bag slot 1)"), so it contradicted itself.
+                $"Page {page + 1}, cell {cell + 1} — panel read at " +
                 $"({region.Left},{region.Top}) {region.Width}x{region.Height}.",
                 lines.Count == 0
                     ? "Read NOTHING. The image saved to logs\\reads is the exact region the OCR was " +
@@ -8678,9 +8692,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
-                    "Nothing was changed: this is the read-only scan. \"Scan + rebuild the queue\" " +
-                    "writes what it finds.";
+        // NOT "held no pet". notPets counts cells the matcher DID match whose hover panel would not
+        // read — the per-cell lines say exactly that, and the counter's own comment says such a cell is
+        // "NOT called finished, and not called feedable either". The summary asserted the one thing the
+        // code goes out of its way not to claim: that the pet is gone.
+        hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) matched a pet but " +
+                    "would not read. Nothing was changed: this is the read-only scan. " +
+                    "\"Scan + rebuild the queue\" writes what it finds.";
     }
 
     /// <summary>Writes a bag scan's report to logs\reads, beside every other diagnostic's evidence.
@@ -9073,7 +9091,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             RefreshPetQueue();
             if (_petQueuePreview != null) _petQueuePreview.Source = MatToBitmapSource(crop);
 
-            hint.Text = $"Added {box.Width}x{box.Height} from page {marked[0] + 1}, cell {cell}. " +
+            hint.Text = $"Added {box.Width}x{box.Height} from page {marked[0] + 1}, cell {cell + 1}. " +
                         $"{pet.Queue.Count} pet icon(s) queued. Check the preview matches the pet.";
         }
         catch (Exception ex)
@@ -9166,7 +9184,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (_petFoodPreview != null) _petFoodPreview.Source = MatToBitmapSource(crop);
 
             hint.Text = $"Food icon captured, {box.Width}x{box.Height} from page {page + 1}, " +
-                        $"cell {cell}. Check the preview, then Scan the bag for food.";
+                        $"cell {cell + 1}. Check the preview, then Scan the bag for food.";
         }
         catch (Exception ex)
         {
