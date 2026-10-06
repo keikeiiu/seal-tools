@@ -417,6 +417,23 @@ public sealed class PetTool : ToolBase
                 {
                     visited = Visit(ser, state, batch);
                 }
+                catch (OperationCanceledException)
+                {
+                    // THE HANDOVER TO THE PLAYER. A stop lands wherever the pet had got to, and that
+                    // can be mid-reload or mid-drag — a drag cut between its press and its release
+                    // leaves the stack on the ground where the cursor was. The player is standing
+                    // right there and can fix that by hand, but only if they are told to look.
+                    //
+                    // Nothing is repaired here on purpose. The restart re-inspects the game and
+                    // re-feeds any row that still needs it (Run opens with InspectRows), so the
+                    // SCHEDULE is never left wrong — it is the GAME that may be, and that is the one
+                    // thing this process cannot put back.
+                    state.Message = batch.Count == 1
+                        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
+                        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
+                          + " — some may not have been fed. Check them in game.";
+                    throw;
+                }
                 finally
                 {
                     ReleaseGame();
