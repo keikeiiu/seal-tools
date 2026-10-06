@@ -116,6 +116,8 @@ public sealed class LauncherService : IDisposable
     public LauncherService(string rootDir)
     {
         _rootDir = rootDir;
+        // Built on the one gate rather than owning a rule of its own — see the property above.
+        Arbiter = new InputArbiter(Gate);
         _loader = new ConfigLoader(Path.Combine(rootDir, "config"));
         Config = _loader.Load();
 
@@ -172,6 +174,12 @@ public sealed class LauncherService : IDisposable
     /// it reloads. Its own thread-safe claim rather than a read of the registry: the pet tool asks this
     /// from its own thread, so the "is it free?" check and the claim have to be one operation.</summary>
     public PortGate Gate { get; } = new();
+
+    /// <summary>The UI's way to ask for the game. Wraps <see cref="Gate"/> rather than replacing it —
+    /// the gate stays the single answer to "who is driving?", and this only gives the test and
+    /// calibration buttons a way to ask the question and to hold what they are given. See
+    /// <see cref="InputArbiter"/> for why it is not a second rule beside the gate.</summary>
+    public InputArbiter Arbiter { get; }
 
     /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
@@ -236,6 +244,40 @@ public sealed class LauncherService : IDisposable
         FirmwareReport = FirmwareVersion.Describe(FirmwareLevel);
         Console.WriteLine($"[arduino] firmware {FirmwareReport}");
         return _arduino;
+    }
+
+    /// <summary>Obtains the game for a test or calibration button, or refuses and says who has it.
+    /// The UI's one way in: every test button goes through here instead of taking the port itself, so
+    /// "no button writes to the board outside the arbiter" is one rule in one place rather than 19
+    /// places that each have to remember it.
+    ///
+    /// The claim is taken BEFORE the port is opened, deliberately. Opening is a 2 s boot wait on a
+    /// cold start, and spending it only to refuse would leave the button looking dead for two seconds
+    /// before it said why — while the refusal is knowable immediately.
+    ///
+    /// Returns null with <see cref="LastArduinoError"/> set, so a caller's existing message path
+    /// reports the real reason rather than repeating a guess about the cable.</summary>
+    public async Task<InputLease?> AcquireInputAsync()
+    {
+        LastArduinoError = null;
+
+        if (!Arbiter.TryAcquireUiLease(out var refusal))
+        {
+            LastArduinoError = refusal;
+            return null;
+        }
+
+        var ser = await ArduinoPortAsync();
+        if (ser == null)
+        {
+            // The reason is ArduinoPortAsync's and is already on LastArduinoError. Hand the claim
+            // back, or the claim outlives the attempt and every later test is refused with "another
+            // test is using the game" while no test is.
+            Arbiter.ReleaseUiLease();
+            return null;
+        }
+
+        return new InputLease(Arbiter, ser);
     }
 
     /// <summary>The firmware protocol level the board reported when the port was opened, or null when
