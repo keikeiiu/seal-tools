@@ -31,6 +31,7 @@ public sealed class SealTuner : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         var logDir = Path.Combine(_rootDir, "logs");
         Directory.CreateDirectory(logDir);
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);

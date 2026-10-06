@@ -282,6 +282,7 @@ public sealed class PetTool : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         if (Ready(state) is { } problem)
         {
             Console.WriteLine("[!] " + problem);

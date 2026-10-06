@@ -21,6 +21,17 @@ public abstract class ToolBase
     protected bool QuitPressed { get; set; }
     protected bool PauseRequested { get; set; }
 
+    private CancellationToken _runToken;
+
+    /// <summary>Hands the run's cancellation token to the base, so <see cref="SleepCheck"/> can see a
+    /// stop. Every tool calls this as the first line of its Run — without it a sleep is deaf to the
+    /// stop signal, which is the whole bug this exists to fix.
+    ///
+    /// NOT folded into the constructor: the token is not known when the tool is built. The launcher
+    /// constructs a tool and immediately calls Run with the token, so construction is the wrong place
+    /// and Run is the right one.</summary>
+    protected void WatchCancellation(CancellationToken ct) => _runToken = ct;
+
     /// <summary>When true, SleepCheck never raises <see cref="QuitPressed"/>, so this tool can only be
     /// stopped by its own Stop button.
     ///
@@ -31,6 +42,23 @@ public abstract class ToolBase
     /// tool, which is what it was for.</summary>
     protected bool IgnoresQuitHotkey { get; }
 
+    /// <summary>Sleeps in 50 ms chunks, watching for a stop.
+    ///
+    /// A STOP THROWS RATHER THAN SETTING A FLAG, and that is the fix rather than a style choice. The
+    /// tools' loops already read the token, but a loop is only reached when the step it is running has
+    /// finished — and a pet feeder's step can be a whole visit: several rows of OCR, then a reload
+    /// whose wait alone is ~30 s. So a stop was honoured only at a visit boundary, and the player's
+    /// Stop button looked broken for as long as that took. There is no flag the caller could read in
+    /// the middle of that work, so the work has to be abandoned from the inside, and an exception is
+    /// how you unwind a step in progress. The tools' own finally blocks then run — the pet releases
+    /// the game, a drag lets go of the button — which is exactly the teardown a stop wants.
+    ///
+    /// The token is checked BEFORE the hotkey on every tick, so a stop is not delayed behind a key
+    /// read, and a cancelled run cannot be revived by the hotkey paths that clear <see cref="QuitPressed"/>
+    /// to mean "pause", not "quit".
+    ///
+    /// A tool that catches this and carries on is not a hazard: the token stays cancelled, so the very
+    /// next SleepCheck throws again.</summary>
     protected void SleepCheck(double seconds)
     {
         var steps = Math.Max(1, (int)(seconds / 0.05));
@@ -38,6 +66,7 @@ public abstract class ToolBase
         for (int i = 0; i < steps; i++)
         {
             Thread.Sleep(ms);
+            _runToken.ThrowIfCancellationRequested();
             if (!IgnoresQuitHotkey && Hotkeys.IsDown(_hotkeys.Quit)) { QuitPressed = true; return; }
             if (Hotkeys.IsDown(_hotkeys.Pause)) { PauseRequested = true; }
         }

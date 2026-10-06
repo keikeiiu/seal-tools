@@ -33,6 +33,7 @@ public sealed class SkillSpammer : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         var cooldowns = _cfg.Spammer.ActiveKeys;
         if (cooldowns.Count == 0)
         {

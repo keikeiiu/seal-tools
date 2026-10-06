@@ -45,6 +45,7 @@ public sealed class QuestTool : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         var quest = _cfg.Quest;
 
         // WHAT THE CARD CHOSE, first — it exists so a run can be aimed without opening Configuration,

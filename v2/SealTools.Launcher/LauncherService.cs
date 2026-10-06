@@ -472,6 +472,17 @@ public sealed class LauncherService : IDisposable
             {
                 RunTool(id, ser, state, ct);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // A STOP, NOT A CRASH. SleepCheck throws so a step in progress — a pet drag, a reload
+                // wait — is abandoned instead of finishing first, which is what made Stop on the pet
+                // feeder look like it did nothing. Without this clause that ordinary stop lands in the
+                // handler below: "pet stopped: The operation was cancelled." on the card, and a line
+                // in logs/error.log, every single time the player pressed Stop.
+                //
+                // Nothing reported and nothing logged, deliberately: silence is what a normal stop
+                // does today, and a stop is not news. The finally below tears down either way.
+            }
             catch (Exception ex)
             {
                 // The tool card is the only place the user can see this — the published WinExe has no
