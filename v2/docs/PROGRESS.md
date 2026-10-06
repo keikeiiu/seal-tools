@@ -13,6 +13,53 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-07 (62) — a stop that actually stops the feeder
+
+**The player's report:** Stop on the pet feeder did nothing. Verified against the source, and it was
+true in the way that matters — the CTS *was* cancelled and every tool loop reads the token, but a loop
+is only reached when the step it is running has finished, and a pet visit is several rows of OCR plus a
+reload whose wait alone is ~30 s. **So Stop was honoured only at a visit boundary**, which on a tool
+that runs for days reads exactly like a broken button.
+
+**The gap was `SleepCheck`.** It watched the quit hotkey and never the token — and the pet sets
+`ignoresQuitHotkey`, so for the pet it was a bare sleep. It now throws.
+
+**Throwing, not a flag, and that is the fix rather than a style choice.** There is no flag a caller
+could read in the middle of a visit; the work has to be abandoned from the inside, and an exception is
+how a step in progress unwinds. The tools' own `finally` blocks then run — the pet releases the game, a
+drag lets go of the button — which is the teardown a stop wants. It is also the design the repo already
+chose when it made the quit hotkey skip the pet; the difference is that a **deliberate** stop is no
+longer treated as an accidental keypress.
+
+**`QuitPressed` could not be reused for this**, and it was the obvious candidate: HoldSpace, SkillSpammer
+and ShopTool clear it to mean *pause*, so a stop signalled that way could be erased by the very tool it
+was meant to stop. The token is checked before the hotkey on every tick.
+
+**The worker had to stop calling a stop a crash.** Its single `catch (Exception)` puts the message on the
+card and a line in `logs/error.log`. A cancelled stop is neither, so it now has a clause of its own that
+reports and logs **nothing** — which is what a normal stop does today. Without it every Stop would have
+written *"pet stopped: The operation was cancelled."* and an error.log line.
+
+**The handover, which is the part for the human.** A stop lands wherever the pet had got to, and a drag
+cut between its press and its release leaves the stack on the ground where the cursor was. That is
+acceptable — the player pressed Stop and can put it back — but only if they are told to look. The visit
+is wrapped so a cancellation inside it names the row(s) and says they may not have been fed. **Nothing
+is repaired**, deliberately: `Run` opens with `InspectRows`, so a restart re-reads the game and re-feeds
+any row that still needs it. The SCHEDULE is never left wrong by an interruption; it is the GAME that may
+be, and that is the one thing this process cannot put back. A stop that arrives *between* visits sets no
+message — nothing was in flight, and inventing a warning there would train the player to ignore the real
+one.
+
+**Blunt instrument, said plainly.** `SleepCheck` is shared, so all seven tools now abandon a step in
+progress on cancel, not just the pet. That is the intended reading of a stop, and each tool's own
+`finally` blocks still run, but it is a behaviour change beyond the pet.
+
+**Verified:** 250/250 (six new tests pin the throw, the mid-sleep abort, and that the tool ignoring the
+quit hotkey still stops), launcher builds 0 warnings. **Not verified against the board** — the wording is
+the part only the player can judge.
+
+---
+
 ## 2026-10-06 (61) — the gate learns why, and a release stops lying
 
 **Two landed on the `feature/input-arbiter` branch.** Both are of the "cannot regress a tool" kind, which
