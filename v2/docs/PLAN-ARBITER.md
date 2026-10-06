@@ -98,6 +98,25 @@ Stated because each of these was proposed at some point and is deliberately decl
 - **Not an override of a tool's own settings.** It does not override a tool's mouse-movement policy; the
   tool still controls its own workflow and still decides what action to perform.
 
+**The boundary, and it holds whichever way §6 is decided: the arbiter governs *access*, never
+*behaviour*.** Every tool keeps its existing logic — what it clicks, what it reads, what it decides. The
+arbiter knows nothing about pet slots, gem combining, or spammer combos, and must never learn. It knows
+only *who asked*, *what they declared as their unit of work*, and *whether they are done*.
+
+The sharpest form of that rule: **the arbiter never cancels a tool.** Example B in §2 is the proof — the
+arbiter tells the Gem Composer a deadline-holder is waiting, and the composer cancels *itself* because
+its own policy is set to `stop`. Refusing a claim and telling a holder someone is waiting is the
+arbiter's whole vocabulary. It never aborts a run on a tool's behalf.
+
+So the division is:
+
+| Decided by the arbiter | Decided by the tool |
+|---|---|
+| who may send input now | what that input does |
+| when a lease starts and ends | how long its own operation is |
+| refusing a claim while held | whether to yield, or to cancel |
+| telling a holder a waiter exists | its own mouse-movement / stop policy |
+
 ---
 
 ## 4. The one enforceable rule
@@ -149,6 +168,11 @@ M or an L:
 
 Reading A would put a wrapper around every write, which is the opposite of that. The enforceable rule in
 §4 survives Reading B unchanged: the only way to *obtain* the port is from the arbiter.
+
+**Neither reading touches tool logic.** The cost column for Reading A is *plumbing* — how a tool receives
+the port, not what it does with it. §3's boundary holds either way, and it is the test to apply to any
+design here: if a proposal makes the arbiter aware of pet rows, gem counts, or combo timings, the
+proposal is wrong, whichever reading it is wearing.
 
 ---
 
