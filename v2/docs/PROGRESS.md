@@ -13,6 +13,45 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (61) — the gate learns why, and a release stops lying
+
+**Two landed on the `feature/input-arbiter` branch.** Both are of the "cannot regress a tool" kind, which
+is why they went first.
+
+**The deadline policy — [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4.1 + §4.2, PLAN-ARBITER step 1.** A
+claim now carries an optional deadline, and `ShouldStandDown(owner)` answers the single question that
+replaces every hand-written pair-wise rule: does whoever is waiting have a *sooner* deadline than mine? A
+holder with no deadline always yields to a waiter that has one.
+
+**Nothing was rewired, deliberately.** `TryAcquire` and `AnnounceWaiting` take the deadline as an
+optional argument, so every existing call site passes none and behaves exactly as before — 244/244 green,
+including the tests that already pinned the old behaviour, and the spammer still yields on
+`Waiting != null`. **The two halves are not separable**: `ShouldStandDown` returns false for a waiter
+that declared no deadline, so moving a caller onto it *before* its waiter declares one would stop it
+yielding entirely — silent starvation, not a crash. That is pinned by a test and called out in the
+method's own doc comment, and it is why §4.3 (the pet declaring its deadline, and the spammer asking the
+new question) is **not** in this entry.
+
+**Equal deadlines do not stand down** — PLAN-SCHEDULING §8's deferred tie-break, pinned as a decision
+rather than left to whichever way `<` happened to fall. Deadlines are cleared on release and on
+withdrawal: they belong to the claim, not to the name, or the next holder reads an urgency that was never
+its own.
+
+**`ReleaseHeld` no longer reports success for a write it never made.** It used `_arduino?.Write(...)`,
+which on a null or closed port wrote nothing, threw nothing and returned success — the method's own
+comment called it *"the one way this method can lie"*, and the mitigation was a log line the player never
+sees. It now reports the failure, and the status line beside the toggle already knew what to do with one:
+*"● input may be stuck"*, in red, with the remedy in its tooltip. That is the audit's finding #3, in the
+one place the repo admitted to it. Its other half — a sell that is sent but not verified — is still open.
+
+**No test for the release fix**, and it is the same seam as entry 59: the launcher is `net8.0-windows`
+and the test project does not reference it. Recorded, not hidden.
+
+**Verified:** 244/244; the launcher builds with 0 warnings. **Not verified: anything live.** Both live
+checks — a test button refused while a tool runs, and a stop whose release is refused — need the board.
+
+---
+
 ## 2026-10-06 (60) — the UI's input gets one door
 
 **PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](PLAN-ARBITER.md) step 2.** Not as a guard beside
