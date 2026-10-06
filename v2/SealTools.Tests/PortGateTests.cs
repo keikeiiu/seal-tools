@@ -184,4 +184,143 @@ public class PortGateTests
         Assert.Throws<ArgumentException>(() => gate.AnnounceWaiting(""));
         Assert.Throws<ArgumentException>(() => gate.AnnounceWaiting(null!));
     }
+
+    // The deadline is what replaces every hand-written pair-wise rule: one comparison answers "should
+    // I step aside?" for any pair of participants. These tests pin the comparison itself, because it
+    // is the one place a policy error is invisible — a rule that is wrong in the yielding direction
+    // does not crash, it just starves whoever should have won.
+
+    [Fact]
+    public void ACallerWithNoWaiterNeverStandsDown()
+    {
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+
+        Assert.False(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void ACallerWhoIsNotTheHolderNeverStandsDown()
+    {
+        // Only the holder has a claim to give up. True here would let a bystander tell itself to
+        // release someone else's game.
+        var gate = new PortGate();
+        gate.TryAcquire("pet");
+
+        Assert.False(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void AHolderWithNoDeadlineStandsDownForAWaiterThatHasOne()
+    {
+        // The whole rule in one test: a tool that merely wants the port yields to one that needs it
+        // by a time. This is what the spammer does for the pet feeder today, arrived at by comparison
+        // rather than by naming the pet.
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("pet", DateTime.UtcNow.AddMinutes(5));
+
+        Assert.True(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void AWaiterWithNoDeadlineNeverPreempts()
+    {
+        // The trap, pinned: "someone is waiting" is NOT the same question as "someone is waiting with
+        // a reason to go first". Moving a caller onto ShouldStandDown before its waiter declares a
+        // deadline would stop it yielding at all — a silent starvation, not a crash.
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("pet");
+
+        Assert.False(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void AHoldersOwnSoonerDeadlineDoesNotStandDown()
+    {
+        var gate = new PortGate();
+        gate.TryAcquire("pet", DateTime.UtcNow.AddMinutes(1));
+        gate.AnnounceWaiting("spammer", DateTime.UtcNow.AddMinutes(10));
+
+        Assert.False(gate.ShouldStandDown("pet"));
+    }
+
+    [Fact]
+    public void ALaterDeadlineStandsDownForASoonerOne()
+    {
+        var gate = new PortGate();
+        gate.TryAcquire("pet", DateTime.UtcNow.AddMinutes(10));
+        gate.AnnounceWaiting("spammer", DateTime.UtcNow.AddMinutes(1));
+
+        Assert.True(gate.ShouldStandDown("pet"));
+    }
+
+    [Fact]
+    public void EqualDeadlinesDoNotStandDown()
+    {
+        // PLAN-SCHEDULING §8 defers the tie-break because it needs three participants to matter.
+        // Pinned so the current answer is a decision rather than an accident of which way `<` fell.
+        var at = DateTime.UtcNow.AddMinutes(5);
+        var gate = new PortGate();
+        gate.TryAcquire("pet", at);
+        gate.AnnounceWaiting("spammer", at);
+
+        Assert.False(gate.ShouldStandDown("pet"));
+    }
+
+    [Fact]
+    public void ADepartedWaiterCannotLeaveItsUrgencyBehind()
+    {
+        // The deadline belongs to the claim, not to the name. If WithdrawWaiting left it set, the next
+        // holder would read the urgency of a waiter that had already given up.
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("pet", DateTime.UtcNow.AddMinutes(1));
+        gate.WithdrawWaiting("pet");
+
+        Assert.False(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void ANewHolderDoesNotInheritTheLastOnesDeadline()
+    {
+        var gate = new PortGate();
+        gate.TryAcquire("pet", DateTime.UtcNow.AddMinutes(1));
+        gate.Release("pet");
+
+        // The spammer takes the game with no reason to want it by any time.
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("watcher", DateTime.UtcNow.AddMinutes(30));
+
+        // A stale deadline from the pet would have read as "mine is sooner" and refused to yield.
+        Assert.True(gate.ShouldStandDown("spammer"));
+    }
+
+    [Fact]
+    public void AcquiringEndsTheWaitAndItsDeadline()
+    {
+        // The existing rule — acquiring takes the mark down — extended to the deadline that now
+        // travels with it, or the new holder would carry a reason that was never its own.
+        var gate = new PortGate();
+        gate.AnnounceWaiting("pet", DateTime.UtcNow.AddMinutes(1));
+        gate.TryAcquire("pet");
+
+        Assert.Null(gate.Waiting);
+        Assert.False(gate.ShouldStandDown("pet"));
+    }
+
+    [Fact]
+    public void TheDeadlineDefaultsToNoneAndChangesNothing()
+    {
+        // Every caller before this existed passes no deadline, and none of them may behave differently
+        // now. The old calls are still the old calls.
+        var gate = new PortGate();
+        gate.TryAcquire("spammer");
+        gate.AnnounceWaiting("pet");
+
+        Assert.Equal("spammer", gate.Owner);
+        Assert.Equal("pet", gate.Waiting);
+        Assert.False(gate.ShouldStandDown("spammer"));
+    }
 }
