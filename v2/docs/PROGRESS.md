@@ -13,6 +13,61 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-07 (63) — the launcher UI audit, and nine things it said that were not so
+
+**A read-only audit of the launcher UI** (MainWindow.xaml.cs, 9,969 lines, plus the types it reads),
+looking for the failure this repo keeps paying for: *a message that tells the player the wrong thing*.
+Nine ranked findings, all of them that class. **Nine are fixed; three are not, and are named at the
+end.**
+
+**The two structural ones.**
+
+*The Arduino tab was asking a different question than Start.* The tab worked its answer out itself, from
+`Diagnose` — VID/PID match only — while the port actually opened comes from `PortChoice.Choose`, which
+also honours a port **named** in `arduino.port` and `Arduino.Find`'s **name-based fallback**, which
+`Diagnose` deliberately does not have. So the tab read green "Connected" for a port Start would refuse,
+and red "Not found" for one it would happily open — **on the one tab that exists to diagnose "Arduino not
+found"**. Now there is **one resolution with two readers** (`ResolveArduinoPort`), used by both
+`ArduinoPortAsync` and the tab, so they cannot drift apart again. The light reports what Start will
+**do**, the detail pane prints `arduino.port` and the resolution in words — neither was visible before —
+and `>>` marks the port that will be **opened** rather than the one whose IDs happen to match. Found
+while in there: `Diagnose` passes `""` for the friendly name, so the old line rendered
+**"Connected —  (COM5)"**, a hole where the name should have been.
+
+*A crash rendered exactly like a deliberate Stop.* The handler writes the reason to the tool's
+`ToolState`, and its comment says why that matters — *"the tool card is the only place the user can see
+this, the published WinExe has no console"*. But the teardown removes the tool from the registry
+microseconds later, the card reads the registry, and it fell through to a bare `"stopped"`. `LastCrash`
+on the service now holds it, the same shape as `LastArduinoError` and `LastReleaseError` — held there
+because it has to **outlive the run**, which is the whole difficulty. Cleared when that tool next
+starts, so it cannot describe a run already replaced.
+
+**The seven text defects.** The food-strip button told the player to draw **one slot** (the opposite of
+what it wants — its switch had no `feederstrip` arm and fell through to the bag-slot default, *because* a
+dead `feeder:<n>` branch above it read as a plausible default; the dead branch is removed); three
+0-based numbers where every other surface is 1-based, including one line that named the same cell twice
+and disagreed with itself; a "Test read" that carried a slot's number into the **next** slot and counted
+it twice; a scan summary that said cells "held no pet" for cells it had matched but could not read, the
+one thing its own counter's comment says is never claimed; a Pet tab that reported **ready** with zero
+rows and ended *"reloading every ."*; and a checklist printing `ok` beside a row reading `no`.
+
+**Verified:** 250/250, builds 0 warnings. **No test for any of it** — the launcher is `net8.0-windows`
+and the test project does not reference it, the seam TODO.md records. The wording is the part only the
+player can judge.
+
+**NOT fixed, and named so they are not mistaken for done:**
+
+- **A Hold Space release that fails on the F12 hotkey path** leaves the dot reading *"● idle"* with the
+  spacebar still down and no warning. `LastReleaseError` is set only by the service-side `ReleaseHeld`,
+  not by the tool's own write, and `holdspace` has no card for its `state.Message` to land on.
+- **Save Setup accepts a blank client size**, writing `{0,0}` — which later makes the tool warn
+  *"measured on a 0×0 client, recalibrate"*, a false warning the UI itself created.
+- **`ToolState.Remaining` / `NextActionAt` are multi-word structs** read by the 750 ms tick while the
+  tool thread writes them. A torn read shows a garbage countdown. **Already recorded** in
+  [ANALYSIS-UI.md](ANALYSIS-UI.md) §3.5, listed only so it is not counted twice.
+
+---
+
 ## 2026-10-07 (62) — a stop that actually stops the feeder
 
 **The player's report:** Stop on the pet feeder did nothing. Verified against the source, and it was
