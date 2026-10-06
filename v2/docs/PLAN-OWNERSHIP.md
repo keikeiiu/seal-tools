@@ -100,11 +100,13 @@ registry.
 
 ## Item 4 (M) — calibration input bypasses the gate entirely
 
-> **See also: [PLAN-ARBITER.md](PLAN-ARBITER.md).** The same audit designs the destination this item is
-> a first slice of — an `InputArbiter` that owns the one Arduino and grants operation-level leases.
-> **If that design is adopted**, this item is its step 2 rather than a separate guard, because a guard
-> bolted on beside `PortGate` would be the *"two competing ownership rules"* the audit warns against.
-> The decision is open; the item below stands on its own either way.
+> **Superseded in shape by [PLAN-ARBITER.md](PLAN-ARBITER.md) — decided 2026-10-06.** The same audit
+> designs the destination this item is the first slice of: an arbiter that owns the one Arduino and
+> grants the input lease. This item is therefore built as **that arbiter's entry point**, not as a guard
+> bolted on beside `PortGate` — a second ownership rule is exactly what the audit warns against. The 19
+> sites, the refusal and the message audit below are unchanged; only the name and the home of the thing
+> they route through are. The document below is kept as written because the evidence and the risk are
+> still the reason this lands last.
 
 **Evidence.** `MainWindow` never references `.Gate` — **zero** occurrences — while **19** call sites in
 it obtain the port and write to it directly ([MainWindow.xaml.cs](../SealTools.Launcher/MainWindow.xaml.cs),

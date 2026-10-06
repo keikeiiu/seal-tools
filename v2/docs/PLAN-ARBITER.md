@@ -160,6 +160,13 @@ M or an L:
 | Tools receive | a lease object instead of a `SerialPort` | the `SerialPort`, as today, for the duration of a lease |
 | Cost | all 7 `Run(SerialPort ser, …)` signatures, ~18 `SerialPort` parameters inside `PetTool` alone, every `HidPointer` call site | the arbiter decides *when*; the port stays direct |
 
+**DECIDED 2026-10-06: Reading B first, Reading A as the destination.** B is how the deadline policy and
+the 19 UI sites land, because it moves no tool signature and cannot regress a working tool. A is kept as
+a named later stage rather than abandoned, for the two things only A can give — emergency stop while a
+tool is wedged, and a release that cannot report success when nothing was written. Deciding B
+*permanently* is the outcome to avoid: it leaves the enforceable rule a convention and emergency stop
+impossible.
+
 **Reading B is recommended**, and it is the one the diagram describes. It also keeps the property
 `PortGate` was built on deliberately (`PortGate.cs:17-21`):
 
