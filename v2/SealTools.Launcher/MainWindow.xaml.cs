@@ -1148,17 +1148,54 @@ public partial class MainWindow : FluentWindow, IDisposable
             Foreground = Res("TextFillColorPrimaryBrush"),
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
         };
-        var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        var statusRow = new StackPanel { Orientation = Orientation.Horizontal };
         statusRow.Children.Add(light);
         statusRow.Children.Add(status);
 
-        var detail = new TextBlock
+        // THE REMEDY, on its own line under the verdict and only while something is wrong. It used to
+        // be the tail of one dense monospace paragraph — which is exactly where a player stops reading,
+        // and it was the part telling them what to actually do.
+        var advice = new TextBlock
         {
             Foreground = Res("TextFillColorPrimaryBrush"),
-            FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 4),
+            Margin = new Thickness(22, 4, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+
+        // A small caption above each group, so the card reads as a few labelled facts rather than one
+        // block. Secondary weight: enough to scan by, not enough to compete with the verdict.
+        TextBlock Caption(string text) => new()
+        {
+            Text = text,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            Margin = new Thickness(0, 10, 0, 2),
+        };
+
+        var portsList = new StackPanel();
+        var lookingFor = new TextBlock
+        {
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var firmware = new TextBlock
+        {
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        // The raw level, SHOWN rather than hidden in a tooltip: it is evidence, and it is what a bug
+        // report needs. Secondary weight and monospace so it reads as the detail under the verdict
+        // rather than as a second, competing one.
+        var firmwareDetail = new TextBlock
+        {
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0),
         };
 
         void Refresh()
@@ -1177,48 +1214,93 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // old reading could not express it at all: it showed green whenever some OTHER board
                 // matched the IDs, while Start was refusing the one the player had named.
                 light.Fill = Res("SystemFillColorCriticalBrush");
-                status.Text = "arduino.port is not usable — Start will refuse";
+                status.Text = "Start will refuse — the named port is missing";
+                // The full sentence, which names the port and says both ways out. It was previously
+                // buried mid-paragraph in the monospace block, at the same weight as the PnP ids.
+                advice.Text = refusal;
+                advice.Visibility = Visibility.Visible;
             }
-            else if (resolved is { } port)
+            else if (resolved is { } chosen)
             {
                 light.Fill = Res("SystemFillColorSuccessBrush");
-                // The port is what this line is for. Diagnose does not fill in a friendly name — it
-                // passes "" — so the old line rendered "Connected —  (COM5)", a hole where the name
-                // should have been. The name is appended only when there is one.
-                var d = devices.FirstOrDefault(x => string.Equals(x.Port, port, StringComparison.OrdinalIgnoreCase));
-                status.Text = string.IsNullOrWhiteSpace(d?.Name)
-                    ? $"Ready — will open {port}"
-                    : $"Ready — will open {port} ({d.Name})";
+                status.Text = $"Ready — Start will open {chosen}";
+                advice.Visibility = Visibility.Collapsed;
             }
             else
             {
                 light.Fill = Res("SystemFillColorCriticalBrush");
-                status.Text = "No Arduino found — Start will refuse";
+                status.Text = "Start will refuse — no Arduino found";
+                // The cable first, because it is the most common cause and the one the player cannot
+                // see: a charge-only cable powers the board and never enumerates it as a port.
+                advice.Text = "Plug the board in, then press Refresh. A charge-only cable is the usual " +
+                              "cause — the board lights up and never appears as a port.";
+                advice.Visibility = Visibility.Visible;
             }
 
-            var lines = new List<string>
+            // PORTS, one per row and the chosen one first, so "which will it use?" is the first thing
+            // read. The raw PnP id is the longest string on the card and the one a player reads least,
+            // so it is a tooltip now rather than part of the line — it was half of every row.
+            portsList.Children.Clear();
+            if (devices.Count == 0)
             {
-                $"Expected: VID 0x{_service.Config.Arduino.Vid:X4}  PID {string.Join("/", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}",
-                // Printed because it decides everything above, and was never shown: a player who had
-                // named a port had no way to see which port the launcher would actually open.
-                string.IsNullOrWhiteSpace(_service.Config.Arduino.Port)
-                    ? "arduino.port: (not set — the board is found by its IDs)"
-                    : $"arduino.port: {_service.Config.Arduino.Port}",
-                refusal is { } why ? "Resolution: REFUSED — " + why
-                    : resolved is { } chosen ? $"Resolution: will open {chosen}"
-                    : "Resolution: nothing found to open",
-                // The board is asked once, when the port is opened, so before any tool has run there
-                // is nothing to report yet — and that is a different thing from a board that stayed
-                // silent, which the report says in its own words.
-                $"Firmware: {_service.FirmwareReport ?? "not asked yet (opens with the first tool)"}",
-            };
-            if (devices.Count == 0) lines.Add("(no serial ports detected)");
-            // ">>" marks the port that will be OPENED, not the one whose IDs happen to match — the
-            // match is still shown, on the line itself, because it is useful and no longer decisive.
-            foreach (var d in devices)
-                lines.Add($"{(string.Equals(d.Port, resolved, StringComparison.OrdinalIgnoreCase) ? ">>" : "  ")} " +
-                          $"{d.Port,-8} {d.Name}{(d.IsMatch ? "  [VID/PID match]" : "")}  [{d.PnpId}]");
-            detail.Text = string.Join(Environment.NewLine, lines);
+                portsList.Children.Add(Hint("This machine reports no serial ports at all."));
+            }
+            else
+            {
+                foreach (var d in devices.OrderByDescending(
+                             x => string.Equals(x.Port, resolved, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var isChosen = string.Equals(d.Port, resolved, StringComparison.OrdinalIgnoreCase);
+                    var row = new TextBlock
+                    {
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 1, 0, 1),
+                        Text = $"{(isChosen ? "●" : "○")}  {d.Port}" +
+                               (string.IsNullOrWhiteSpace(d.Name) ? "" : $"   {d.Name}") +
+                               (isChosen ? "     — Start will open this one"
+                                         : d.IsMatch ? "     — matches the expected ID" : ""),
+                        Foreground = isChosen
+                            ? Res("SystemFillColorSuccessBrush")
+                            : Res("TextFillColorSecondaryBrush"),
+                    };
+                    ToolTipService.SetToolTip(row, d.PnpId);
+                    portsList.Children.Add(row);
+                }
+            }
+
+            // Printed because it decides everything above. A player who had named a port had no way to
+            // see which one would actually be opened: the card showed the ID it wanted and never the
+            // override that outranks it.
+            lookingFor.Text =
+                $"VID 0x{_service.Config.Arduino.Vid:X4}    PID " +
+                string.Join(" / ", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}")) +
+                Environment.NewLine +
+                (string.IsNullOrWhiteSpace(_service.Config.Arduino.Port)
+                    ? "arduino.port: not set — the board is found by the ID above"
+                    : $"arduino.port: {_service.Config.Arduino.Port} — a named port wins over the ID above");
+
+            // WHAT THE LEVEL MEANS, not the level itself. "protocol level 2 (current)" is written for
+            // the log — a player has no way to tell whether level 2 is good. The card says what the
+            // level decides (can this board drag food?) and what to do when it cannot; the raw
+            // sentence goes in the tooltip, which is exactly where a bug report wants it.
+            var report = _service.FirmwareReport;
+            if (report is null)
+            {
+                // Not asked yet is the NORMAL state before any tool has run, and it must not read as a
+                // fault — it sits beside a status light, on a card called Connection.
+                firmware.Text = "Not checked yet — this is normal. The board is read the first time a " +
+                                "tool opens it.";
+                firmwareDetail.Text = "";
+            }
+            else
+            {
+                // The verdict, then the evidence, both on the card. "Correct or not" is decided by the
+                // one question the level answers — can this board drag food — rather than by comparing
+                // numbers, so a NEWER board reads as fine rather than as a mismatch.
+                firmware.Text = (FoodLoadMode.BoardCanDrag(_service.FirmwareLevel) ? "OK — " : "Not OK — ")
+                                + FirmwareVersion.Summary(_service.FirmwareLevel);
+                firmwareDetail.Text = "Reported: " + report;
+            }
         }
 
         var refreshBtn = MakeButton("Refresh", ControlAppearance.Secondary);
@@ -1226,7 +1308,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         var refreshRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         refreshRow.Children.Add(refreshBtn);
 
-        panel.Children.Add(Section("Connection", statusRow, detail, refreshRow));
+        panel.Children.Add(Section("Connection",
+            statusRow,
+            advice,
+            Caption("Ports this machine has"),
+            portsList,
+            Caption("What the launcher looks for"),
+            lookingFor,
+            Caption("Board firmware"),
+            firmware,
+            firmwareDetail,
+            refreshRow));
 
         // ── Input test ──────────────────────────────────────────────────────
 
