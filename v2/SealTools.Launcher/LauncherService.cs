@@ -45,6 +45,14 @@ public sealed class LauncherService : IDisposable
     private readonly string _rootDir;
     private readonly ConfigLoader _loader;
     private readonly Dictionary<string, RunningTool> _running = new();
+
+    /// <summary>Ids whose stop has been REQUESTED and whose loop has not yet left. Read by the UI to
+    /// answer "is this tool still winding down", which `_running` cannot answer — see IsStopping.</summary>
+    private readonly HashSet<string> _stopping = new();
+    /// <summary>Guards <see cref="_stopping"/>. It is set on the UI thread when a stop is requested and
+    /// cleared on a worker thread when the loop finishes, which is exactly the read/write pair that
+    /// needs one. Its own lock rather than the registry's, so this change stands alone.</summary>
+    private readonly object _stoppingLock = new();
     // EVERY tool id, in one place: this map is both what StartToolAsync accepts and what each id
     // actually runs. It replaced a whitelist that was a second hand-kept copy of the launcher's card
     // list — see the note at the guard in StartToolAsync.
@@ -527,11 +535,17 @@ public sealed class LauncherService : IDisposable
         // last command. The cost is that a tool loop which never exits keeps the game — and the pet
         // feeder says "waiting for <tool>" on its card the whole time, which is the honest reading
         // rather than a silent overlap. The pet's own claims are not the launcher's to release.
+        // Set BEFORE the continuation is attached, so the flag cannot be cleared by a continuation that
+        // runs the instant it is attached — the tool's task is often already complete by here, and
+        // ExecuteSynchronously means it would otherwise clear a flag that had not been set yet.
+        lock (_stoppingLock) _stopping.Add(target);
+
         return running.Task.ContinueWith(
             _ =>
             {
                 running.Cts.Dispose();
                 if (target != ResidentId) Gate.Release(target);
+                lock (_stoppingLock) _stopping.Remove(target);
             },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
@@ -572,6 +586,20 @@ public sealed class LauncherService : IDisposable
     /// hold is coming" from "nothing is happening" — it answered "not running", re-entered Start, and
     /// that click was swallowed while the spacebar stayed held.</summary>
     public string? StartingId { get; private set; }
+
+    /// <summary>True while a stop for this id is in flight — requested, and not yet finished.
+    ///
+    /// THIS EXISTS BECAUSE <see cref="StopTool"/> CLEARS THE CURRENT ID FIRST, before the worker has left
+    /// its loop. A UI that asked only "is it loaded?" therefore read *idle* while the tool was still
+    /// winding down, and the next press started it again — which is how a toggle that had just been
+    /// switched off came back on. `CurrentId` cannot answer this; this can.
+    ///
+    /// Cleared in the same continuation that disposes the CTS, so it is true for exactly as long as the
+    /// tool is genuinely still on its way out.</summary>
+    public bool IsStopping(string id)
+    {
+        lock (_stoppingLock) return _stopping.Contains(id);
+    }
 
     // Hold Space diagnostics (2026-10-01) — the service half of the same trail MainWindow writes.
     // Same file, same reason: a click that never reached StopTool and a stop whose release did

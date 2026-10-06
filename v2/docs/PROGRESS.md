@@ -13,6 +13,59 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (57) — Hold Space: a press while STOPPING no longer starts it again
+
+**Item 1 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
+by an external read-only audit of `cc6551b`, then checked here against the source before being believed.
+
+**The evidence.** `StopTool` clears the current id **synchronously**, before the worker has left its
+loop:
+
+```csharp
+_running.Remove(target);
+if (_currentId == target) _currentId = null;   // ← the button now reads "Hold Space"
+...
+running.Cts.Cancel();                          // ← but the loop is still winding down
+```
+
+The button asks exactly `CurrentId == "holdspace"`, so between those two lines a second press took the
+**start** branch and pressed the spacebar back down. Entry 39 fixed *"a press during **Starting**
+cancels"* and left the mirror image open — **and made it easier to hit**, because it added an immediate
+`RefreshStatus()` on the stop path, so the label flips to "Hold Space" at once instead of up to 750 ms
+later.
+
+**The rule is now a function, because it has been wrong three times.** `ToolToggle.Decide(loaded,
+starting, stopping)` in Core, with tests. The common thread in all three bugs is that the question asked
+was **"is it running?"** — a question with a *window* in it, so each fix closed one window and revealed
+another. The question that has no window is **"is it engaged at all?"**, and every engaged state means a
+press stops or cancels.
+
+**Three states are now one**, and the button says which:
+
+| | label | status |
+|---|---|---|
+| starting | `Starting...` | `● starting` |
+| holding | `Stop Space` | `● holding` |
+| **stopping** | **`Stopping...`** | **`● stopping`** |
+| idle | `Hold Space` | `● idle` |
+
+**`LauncherService.IsStopping(id)`** is the new surface: set when a stop is requested, cleared in the
+continuation that already disposes the CTS — so it is true for exactly as long as the tool is genuinely
+still on the way out. Its own lock, because it is set on the UI thread and cleared on a worker thread.
+`CurrentId` cannot answer this question; this can.
+
+**A detail that would have been a bug:** the flag is set **before** the continuation is attached, because
+the tool's task is often already complete by then and `ExecuteSynchronously` would otherwise run the
+continuation first and clear a flag that had not been set yet.
+
+**Verified:** 215/215 (210 + five `ToolToggle` tests), build 0 warnings. **The guard was proven by
+removal** — the `isStopping` term was dropped from `Decide` and the two tests that should fail did
+(`APressWhileStoppingDoesNotStartItAgain` and the exhaustive `EveryEngagedCombinationStops`), while the
+other three correctly still passed. **Not verified live:** the 2 s release window is in the launcher,
+and the click test on the board is the player's.
+
+---
+
 ## 2026-10-06 (56) — the editor's key rename stops orphaning the references
 
 **The bug, found reviewing entry 49.** The rows editor now writes every key as `*name` (the fast tap),

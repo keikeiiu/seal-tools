@@ -354,10 +354,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             // stayed held and nothing on screen said so. StopTool already handles a stop arriving
             // mid-start (it sets _startCancelled, which StartToolCoreAsync honours and refuses on),
             // so routing the press there is what makes a second one mean "I did not want that".
-            bool holdEngaged = _service.CurrentId == "holdspace" || _service.StartingId == "holdspace";
+            // ...and STOPPING, which is the third state and the one that was still missing. StopTool
+            // clears CurrentId before the worker has left its loop, so for that window the tool is
+            // neither loaded nor starting — and this used to take the else branch and START it again,
+            // pressing the spacebar back down. ToolToggle owns the rule and says why it is stated as
+            // "is it engaged at all?" rather than "is it running?".
+            bool holdLoaded = _service.CurrentId == "holdspace";
+            bool holdStarting = _service.StartingId == "holdspace";
+            bool holdStopping = _service.IsStopping("holdspace");
+            var action = ToolToggle.Decide(holdLoaded, holdStarting, holdStopping);
             HoldDiag($"toggle-click currentId={_service.CurrentId ?? "(null)"} " +
-                     $"starting={_service.StartingId ?? "(null)"} branch={(holdEngaged ? "stop" : "start")}");
-            if (holdEngaged)
+                     $"starting={_service.StartingId ?? "(null)"} stopping={holdStopping} action={action}");
+            if (action == ToggleAction.Stop)
             {
                 _ = _service.StopTool("holdspace");
                 RefreshStatus();   // the button flips back now, not up to a 750 ms tick later
@@ -774,17 +782,25 @@ public partial class MainWindow : FluentWindow, IDisposable
         // nothing, and pressing again was the natural response. That second press is the one the
         // fix above now makes mean "cancel", which only works if this tells the player it can.
         bool holdStarting = _service.StartingId == "holdspace";
+        bool holdStopping = _service.IsStopping("holdspace");
         bool holdLoaded = _service.CurrentId == "holdspace";
         bool holding = holdLoaded && _service.StateFor("holdspace") is { Running: true };
-        HoldSpaceToggle.Content = holdStarting ? "Starting..." : holdLoaded ? "Stop Space" : "Hold Space";
-        HoldSpaceToggle.Appearance = holdLoaded || holdStarting
+        // STOPPING is shown as its own label rather than falling back to "Hold Space". Reading idle
+        // while the tool is still winding down is the state that made the next press look like a fresh
+        // start — so the button says what is true, and the press it invites is a stop, not a start.
+        HoldSpaceToggle.Content = holdStopping ? "Stopping..."
+            : holdStarting ? "Starting..."
+            : holdLoaded ? "Stop Space" : "Hold Space";
+        HoldSpaceToggle.Appearance = holdLoaded || holdStarting || holdStopping
             ? ControlAppearance.Danger
             : ControlAppearance.Secondary;
-        HoldSpaceToggle.ToolTip = holdStarting
-            ? "Starting — press again to cancel"
-            : holdLoaded
-                ? "Stop holding the spacebar and release the key"
-                : "Hold the spacebar to auto-pick up items";
+        HoldSpaceToggle.ToolTip = holdStopping
+            ? "Releasing the key — press again to be sure it stops"
+            : holdStarting
+                ? "Starting — press again to cancel"
+                : holdLoaded
+                    ? "Stop holding the spacebar and release the key"
+                    : "Hold the spacebar to auto-pick up items";
 
         // A failed release is a real key or mouse button left down on the player's machine, and Hold
         // Space is the one tool with no card for state.Message to land on — this line is the only
@@ -801,13 +817,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         else
         {
-            HoldSpaceStatus.Text = holdStarting ? "● starting" : holding ? "● holding" : "● idle";
-            HoldSpaceStatus.Foreground = holdStarting
+            HoldSpaceStatus.Text = holdStopping ? "● stopping"
+                : holdStarting ? "● starting"
+                : holding ? "● holding" : "● idle";
+            HoldSpaceStatus.Foreground = holdStopping || holdStarting
                 ? Res("SystemFillColorCautionBrush")
                 : holding ? Res("SystemFillColorSuccessBrush") : Res("TextFillColorSecondaryBrush");
-            HoldSpaceStatus.ToolTip = holdStarting
-                ? "Waiting out the board's boot after the COM port opened."
-                : null;
+            HoldSpaceStatus.ToolTip = holdStopping
+                ? "The key has been released and the run is ending."
+                : holdStarting
+                    ? "Waiting out the board's boot after the COM port opened."
+                    : null;
         }
     }
 
