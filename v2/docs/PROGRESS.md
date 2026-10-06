@@ -13,6 +13,52 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (60) — the UI's input gets one door
+
+**PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](PLAN-ARBITER.md) step 2.** Not as a guard beside
+`PortGate`: the audit's instruction is to evolve or replace the gate, never to run two ownership rules,
+because two things deciding who may drive can disagree and neither is then authoritative.
+
+**The bug.** `MainWindow` never referenced `.Gate` — **zero** occurrences — while **19** call sites took
+the port and wrote to it. A Test Click pressed while a tool was mid-gesture landed in the middle of that
+gesture; for the pet feeder mid-drag that drops the stack of food it was carrying.
+
+**The decision that was not obvious: the arbiter's logic lives in `Core`, not in `LauncherService`.**
+The launcher is `net8.0-windows` and the test project does not reference it — the same seam problem
+entry 59 hit, where the tool lifecycle landed with no test and the gap was recorded rather than hidden.
+Putting the guard in the service would have repeated it. In Core it is testable, and it is tested: nine
+tests, 233 in total.
+
+**The lease carries the port.** `InputLease.Port` is the only way the UI obtains the shared
+`SerialPort`, so "may I write?" and "here is what to write to" cannot get out of step, and the `using`
+hands the claim back on every path including a throw. `Dispose` is guarded by an exchange rather than a
+bool, because every lease carries the same owner name `"test"` — a stale second `Dispose` would
+otherwise release a claim taken since, which is a silent overlap and the one outcome the gate exists to
+prevent.
+
+**Seven sites would have lied.** Five Gem hints and the tuner hardcoded *"Arduino not found — plug it in
+and retry"* whatever the real reason, and the connection test said *"No Arduino — see Connection
+above."* Once a refusal is possible that tells the player their board is unplugged when a tool is
+running — the exact trap this item was flagged for. They now report `LastArduinoError` first, which is
+set on every refusal path, with the old string kept as the fallback.
+
+**The nineteenth site is deliberate.** `LauncherService`'s own tool-start keeps `ArduinoPortAsync`: it
+already holds the gate for the tool it is starting, so routing it through the arbiter would have it
+refuse itself.
+
+**Verified:** 233/233 tests; the launcher builds with 0 warnings (to a scratch output path, because the
+published app was running and holding its own DLLs); and the check this item was found by now passes —
+nothing outside `LauncherService` reads the port directly.
+
+**Still open, and this entry is not the whole plan.** The arbiter arbitrates and nothing more so far: the
+**deadline policy** ([PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4, where `ShouldStandDown` replaces the
+hand-written pair-wise yield rules) and **operation-level leases** (a claim covering a whole gesture
+rather than a button press) are both unbuilt, and PLAN-ARBITER §7 orders them. **The live check has not
+been run** — press a test button while a tool is running, and confirm it refuses and says which — and it
+needs a board. Until it passes, this is source-verified only.
+
+---
+
 ## 2026-10-06 (59) — the tool lifecycle gets one owner
 
 **Item 3 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
