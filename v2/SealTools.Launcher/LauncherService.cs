@@ -726,18 +726,34 @@ public sealed class LauncherService : IDisposable
     ///
     /// This used to swallow its exception, which made it the one path that failed silently — while
     /// the tool's own copy of the same write, the one that is only reachable when the loop is not
-    /// being interrupted, was the one that reported. That is backwards.</summary>
+    /// being interrupted, was the one that reported. That is backwards.
+    ///
+    /// A null or closed port is now a REPORTED failure rather than a silent success. It was the last
+    /// way this method could lie, and the worst one to lie about: what it claims to have released is
+    /// a key that is still down on the player's machine, so "released" and "never sent" cannot be the
+    /// same answer. Nothing is written on that path, so nothing is reported as written.</summary>
     public string? ReleaseHeld()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        // A null or CLOSED port writes nothing and still reports success below — the one way this
-        // method can lie. Logged so a "release ok" line can never describe a release that never
-        // went out, and so the write's duration is on the record rather than assumed to be instant.
-        HoldDiag($"release enter port={(_arduino is { IsOpen: true } p ? p.PortName : "(null/closed)")}");
+        if (_arduino is not { IsOpen: true } port)
+        {
+            // Said, not merely logged. The log line was the old mitigation and it is not a report —
+            // the player never sees logs/holdspace.log, and the status line beside the toggle would
+            // have gone on reading as though the key had been let go.
+            // Short, because the status line already says "input may be stuck" and its tooltip already
+            // gives the remedy — this only has to supply the reason, not repeat the advice.
+            LastReleaseError = "the Arduino port is not open, so nothing was sent";
+            HoldDiag($"release NOT SENT — port is {(_arduino == null ? "null" : "closed")}");
+            return LastReleaseError;
+        }
+
+        // The write's duration is on the record rather than assumed to be instant, which is the other
+        // thing the log is for.
+        HoldDiag($"release enter port={port.PortName}");
         try
         {
-            _arduino?.Write("U\n");   // spacebar
-            _arduino?.Write("l\n");   // left mouse button (firmware 2)
+            port.Write("U\n");   // spacebar
+            port.Write("l\n");   // left mouse button (firmware 2)
             LastReleaseError = null;
             HoldDiag($"release ok {sw.ElapsedMilliseconds}ms");
             return null;
