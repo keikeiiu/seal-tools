@@ -46,6 +46,27 @@ public sealed class LauncherService : IDisposable
     private readonly ConfigLoader _loader;
     private readonly Dictionary<string, RunningTool> _running = new();
 
+    /// <summary>Guards <see cref="_running"/> and <see cref="_currentId"/> — the tool LIFECYCLE, which
+    /// is read and written by two threads:
+    ///
+    ///  - the UI thread reads both every 750 ms, per card, and writes them on Start and Stop;
+    ///  - a **worker** thread writes both when a tool finishes on its own (the continuation below).
+    ///
+    /// A `Dictionary` read while another thread writes it is undefined behaviour — a corrupted lookup or
+    /// a spin, not a clean exception. This class already said so:
+    /// <see cref="Gate"/>'s own comment describes itself as *"thread-safe, unlike `_running`"*. That was
+    /// true and deliberate when only one tool could exist; the resident pet feeder ended that.
+    ///
+    /// A LOCK rather than <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>,
+    /// deliberately: two of the sites are check-then-act — the continuation compares the CTS before
+    /// removing, so that a tool which finished is not confused with one the player has already replaced.
+    /// A concurrent dictionary makes each CALL atomic and leaves the PAIR racing, which would look like a
+    /// fix while leaving the same bug.
+    ///
+    /// Never held across a serial write, a task continuation or anything else that can block: every
+    /// scope below is dictionary work and nothing more.</summary>
+    private readonly object _lifecycleLock = new();
+
     /// <summary>Ids whose stop has been REQUESTED and whose loop has not yet left. Read by the UI to
     /// answer "is this tool still winding down", which `_running` cannot answer — see IsStopping.</summary>
     private readonly HashSet<string> _stopping = new();
@@ -130,21 +151,26 @@ public sealed class LauncherService : IDisposable
     /// <summary>The OCR attribute dictionary from attributes.yaml.</summary>
     public AttributesConfig Attributes { get; }
 
-    /// <summary>The id of the tool the UI calls current, or null when there is none.</summary>
-    public string? CurrentId => _currentId;
+    /// <summary>The id of the tool the UI calls current, or null when there is none. Through the lock
+    /// because a worker thread clears this when a tool finishes on its own — see
+    /// <see cref="_lifecycleLock"/>.</summary>
+    public string? CurrentId { get { lock (_lifecycleLock) return _currentId; } }
 
     /// <summary>The live state of the current tool, or null when there is none.</summary>
-    public ToolState? CurrentState => _currentId is { } id ? StateFor(id) : null;
+    public ToolState? CurrentState => CurrentId is { } id ? StateFor(id) : null;
 
     /// <summary>The live state of one tool, or null when that tool is not running. The card loop asks
     /// this per id rather than reading one "current" tool, because the pet feeder can be running while
     /// another tool is — and a card that read "stopped" while its tool was feeding pets is exactly the
     /// kind of lie this replaces.</summary>
-    public ToolState? StateFor(string id) => _running.TryGetValue(id, out var r) ? r.State : null;
+    public ToolState? StateFor(string id)
+    {
+        lock (_lifecycleLock) return _running.TryGetValue(id, out var r) ? r.State : null;
+    }
 
     /// <summary>Who is driving the game — the launcher for a foreground tool, or the pet feeder while
-    /// it reloads. Thread-safe, unlike <see cref="_running"/>: the pet tool asks this from its own
-    /// thread, so the "is it free?" check and the claim have to be one operation.</summary>
+    /// it reloads. Its own thread-safe claim rather than a read of the registry: the pet tool asks this
+    /// from its own thread, so the "is it free?" check and the claim have to be one operation.</summary>
     public PortGate Gate { get; } = new();
 
     /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
@@ -383,7 +409,7 @@ public sealed class LauncherService : IDisposable
 
         // The resident tool never becomes "current": it is background furniture, and the UI keys mini
         // mode and the Hold Space card off this. Its card still shows live through StateFor.
-        if (id != ResidentId) _currentId = id;
+        if (id != ResidentId) { lock (_lifecycleLock) _currentId = id; }
         // Starting a hold takes the spacebar over deliberately, so any standing "the release failed"
         // warning describes a state that no longer applies — it would otherwise sit red on the status
         // line for the rest of the session, after the player had already dealt with it.
@@ -397,7 +423,7 @@ public sealed class LauncherService : IDisposable
         // Registered BEFORE the loop is started, and with no await between the two, so a Stop from
         // the UI cannot fall between them and miss a tool that is already running. (The whole block
         // is synchronous on the dispatcher thread, which is what makes that safe.)
-        _running[id] = entry;
+        lock (_lifecycleLock) _running[id] = entry;
         entry.Task = Task.Run(() =>
         {
             try
@@ -437,10 +463,24 @@ public sealed class LauncherService : IDisposable
                 // the gate; doing either again here would release a claim this tool no longer holds.
                 // Compared by CTS rather than by the entry object, because the lambda can run before
                 // `entry.Task` has even been assigned.
-                if (_running.TryGetValue(id, out var stillRunning) && ReferenceEquals(stillRunning.Cts, cts))
+                // The CHECK AND THE REMOVE are one critical section, and that is the whole reason this
+                // uses a lock rather than a concurrent dictionary: between the two, a Stop could clear
+                // the entry and a fresh Start could install a NEW one — and this would then remove a
+                // tool it does not own.
+                bool ours;
+                lock (_lifecycleLock)
                 {
-                    _running.Remove(id);
-                    if (_currentId == id) _currentId = null;
+                    ours = _running.TryGetValue(id, out var stillRunning)
+                           && ReferenceEquals(stillRunning.Cts, cts);
+                    if (ours)
+                    {
+                        _running.Remove(id);
+                        if (_currentId == id) _currentId = null;
+                    }
+                }
+
+                if (ours)
+                {
                     state.Running = false;
 
                     // The same release the stop path does, and for the same reason: the tool's own
@@ -489,7 +529,12 @@ public sealed class LauncherService : IDisposable
     private List<Task> StopAll(Func<string, bool>? keep = null)
     {
         var stopping = new List<Task>();
-        foreach (var id in _running.Keys.ToList())
+        // The ToList is taken UNDER the lock: enumerating the live dictionary while a worker finishes a
+        // tool on its own is the same undefined behaviour the rest of this block exists to remove, and
+        // ToList does not copy safely on its own.
+        List<string> ids;
+        lock (_lifecycleLock) ids = _running.Keys.ToList();
+        foreach (var id in ids)
         {
             if (keep?.Invoke(id) == true) continue;
             if (StopTool(id, fromStart: true) is { } t) stopping.Add(t);
@@ -505,10 +550,16 @@ public sealed class LauncherService : IDisposable
     /// the Stop buttons mean.</summary>
     public Task? StopTool(string? id = null, bool fromStart = false)
     {
-        var target = id ?? _currentId;
+        RunningTool? running;
+        string? target;
+        lock (_lifecycleLock)
+        {
+            target = id ?? _currentId;
+            _running.TryGetValue(target ?? "", out running);
+        }
         HoldDiag($"stop enter id={id ?? "(current)"} target={target ?? "(null)"} fromStart={fromStart} " +
-                 $"registered={(target != null && _running.ContainsKey(target) ? "yes" : "no")}");
-        if (target == null || !_running.TryGetValue(target, out var running))
+                 $"registered={(running != null ? "yes" : "no")}");
+        if (target == null || running == null)
         {
             // Nothing running in that slot, but a start may be sitting on the port wait with no tool
             // installed yet. Flag it so the start bails on resume, instead of launching a tool the
@@ -520,8 +571,11 @@ public sealed class LauncherService : IDisposable
 
         // Deregister first so a re-entrant call (e.g. StartTool -> StopTool) sees no such tool and
         // doesn't double-cancel.
-        _running.Remove(target);
-        if (_currentId == target) _currentId = null;
+        lock (_lifecycleLock)
+        {
+            _running.Remove(target);
+            if (_currentId == target) _currentId = null;
+        }
         HoldDiag($"stop deregistered {target}; releasing={HeldKeys.NeedsReleaseOnStop(target)}");
 
         // A tool that holds a key down must not depend on its own finally to let go of it. The loop

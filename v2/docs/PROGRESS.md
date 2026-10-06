@@ -13,6 +13,49 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (59) — the tool lifecycle gets one owner
+
+**Item 3 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
+a plain field, read and written by **two threads**:
+
+- the UI thread reads both every 750 ms (per card) and writes them on Start and Stop;
+- a **worker** thread writes both when a tool finishes on its own — the continuation in
+  `StartToolCoreAsync`.
+
+A `Dictionary` read while another thread writes it is undefined behaviour: a corrupted lookup or a spin,
+not a clean exception. **The class already said so** — `Gate`'s comment described itself as *"thread-safe,
+**unlike `_running`**"*. That was true and deliberate while only one tool could exist; the resident pet
+feeder ended that, and the quest tool made it reachable by giving the suite its first tool that ends by
+itself.
+
+**One lock for both fields**, because they are one thing: "what is running, and which of them is
+current". Held only for dictionary work — never across a serial write, `ReleaseHeld`, a task continuation
+or a `Gate` call.
+
+**A lock rather than `ConcurrentDictionary`, and that is the substantive decision.** Two of the sites are
+check-then-act. The self-end continuation compares the **CTS** before removing, so that a tool which
+finished is not confused with one the player has already replaced; and `StopTool` looks the tool up and
+then deregisters it. A concurrent dictionary makes each *call* atomic and leaves the *pair* racing — it
+would look like a fix while leaving exactly the bug. That block is now one critical section with the rest
+of the teardown outside it.
+
+**`StopAll`'s `_running.Keys.ToList()` is taken under the lock too**, which is easy to miss: enumerating
+the live dictionary while a worker finishes a tool is the same undefined behaviour, and `ToList` does not
+copy safely on its own.
+
+**No test, and that is a real gap rather than a deliberate choice.** A meaningful test needs a tool that
+can be started and stopped without a board, and there is no way to inject one: the runner map closes over
+`Config`, `Attributes` and the port. The plan said so up front (*"either this lands after Item 4, or the
+test is written against `_running` alone by extracting the registry"*), and it has landed before Item 4.
+**The follow-up is the seam, not a test written against the current shape** — recorded in
+[TODO.md](TODO.md).
+
+**Verified:** 224/224, build 0 warnings, and every access site checked by grep to be inside the lock —
+which is a weaker claim than the other items in this plan can make, and is said plainly here so it is not
+mistaken for one of them.
+
+---
+
 ## 2026-10-06 (58) — `arduino.port` is honoured, or it says why not
 
 **Item 2 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in

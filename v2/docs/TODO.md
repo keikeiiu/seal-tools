@@ -52,6 +52,17 @@ needs new machinery, just a small driver per feature.
   OCR bands**: the tuner's read regions can have the pointer in them, and that one wants a measurement
   first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
 
+## Needs a code change before it can be tested
+
+- [ ] **The tool lifecycle lock has no test, because there is no seam to test it through.** The lock
+  itself landed 2026-10-06 (PROGRESS 59) and every access site was checked by grep to be inside it — but
+  a meaningful concurrency test needs a tool that can be **started and stopped without a board**, and
+  `LauncherService._toolRunners` closes over `Config`, `Attributes` and the port, so no fake can be
+  injected. **The fix is the seam, not a test written against the current shape**: inject the runner map
+  (or extract the registry into Core behind an interface) and then hammer add/remove/read from two
+  threads. Until then the lock is reasoning, not verification — and it is the only item in
+  PLAN-OWNERSHIP that cannot say otherwise.
+
 ## Needs a live check before any code change
 
 - [x] **OCR row-bucket pooling** — resolved (2026-09-11). The "one line less" symptom was **not** a
