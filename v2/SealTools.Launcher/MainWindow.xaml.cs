@@ -1205,10 +1205,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var testBtn = MakeButton("Send a test click", ControlAppearance.Primary);
         testBtn.Click += async (_, _) =>
         {
-            var ser = await _service.ArduinoPortAsync();
-            if (ser == null)
+            using var lease = await _service.AcquireInputAsync();
+            if (lease?.Port is not { } ser)
             {
-                testResult.Text = "No Arduino — see Connection above.";
+                testResult.Text = _service.LastArduinoError ?? "No Arduino — see Connection above.";
                 return;
             }
             try
@@ -2911,8 +2911,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry."; return; }
 
         try
         {
@@ -2971,10 +2971,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
 
@@ -3058,10 +3058,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
         // The composer sends the RAW hand-tuned movement for a pair, not a computed pixel delta
@@ -3113,8 +3113,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry."; return; }
 
         try
         {
@@ -3195,16 +3195,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             targets[i] = (steps[i].Action, steps[i].Point, pt.Value);
         }
 
-        // Claim the guard BEFORE the first await. ArduinoPortAsync waits out a 2 s boot delay on a
-        // cold start, and a second click used to pass the check at the top of this method while the
-        // first was still suspended — two cycles then drove the game at the same time.
+        // Claim the guard BEFORE the first await. AcquireInputAsync waits out the 2 s boot delay on a
+        // cold start (inside ArduinoPortAsync), and a second click used to pass the check at the top
+        // of this method while the first was still suspended — two cycles then drove the game at the
+        // same time. The arbiter now refuses that second cycle too, since the first holds the gate;
+        // this flag is kept because it also covers the synchronous stretch before the claim.
         _cycleRunning = true;
         try
         {
-            var ser = await _service.ArduinoPortAsync();
-            if (ser == null)
+            using var lease = await _service.AcquireInputAsync();
+            if (lease?.Port is not { } ser)
             {
-                _gemHint!.Text = "Arduino not found — plug it in and retry.";
+                _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
                 return;
             }
 
@@ -3724,10 +3726,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _tunerHint!.Text = "Arduino not found — plug it in and retry.";
+            _tunerHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
 
@@ -4997,8 +4999,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
         // Click the scroll point FIRST. The dry run is a calibration action — you have just been
         // clicking this window — so the game is unfocused and the wheel goes nowhere. A real run
         // needs no such click: there the mouse is already in the game.
@@ -5039,8 +5041,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!BagGrid.IsValidRect(bs.BagGrid)) { _sellHint!.Text = "Calibrate the bag grid first."; return; }
         if (bs.SellSlots.Count == 0) { _sellHint!.Text = "Click some slots first."; return; }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _sellHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _sellHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         // Same descending order the real run uses, so the dry run shows the actual sequence.
         var centres = BagGrid.Centres(bs.BagGrid!);
@@ -5454,8 +5456,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             _tooltipHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -5621,8 +5623,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -6678,8 +6680,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _questHint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _questHint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         // The rows are what an edit lives in until Save, so the test uses them — otherwise it would
         // replay the flow as it was last SAVED and quietly ignore what is on screen.
@@ -8321,8 +8323,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -8444,8 +8446,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -8850,8 +8852,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
@@ -9124,8 +9126,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         if (!TryPlace(ser, tab[0], tab[1], out var tabError))
         {
@@ -9197,8 +9199,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
@@ -9765,8 +9767,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             _buySellHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
