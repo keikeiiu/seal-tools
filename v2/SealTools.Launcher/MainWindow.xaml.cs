@@ -755,7 +755,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             else
             {
-                block.Text = "stopped";
+                // A CRASHED TOOL KEEPS ITS REASON. The state is gone by here — the teardown removes
+                // the tool from the registry — so the reason has to come from the service, where it
+                // outlives the run. Without this a crash rendered exactly like a deliberate Stop, and
+                // the reason lived only in logs/error.log, which the crash handler's own comment says
+                // is not somewhere the player looks.
+                var crash = _service.LastCrash;
+                block.Text = crash is { } c && c.Id == id
+                    ? "⚠ crashed: " + c.Message
+                    : "stopped";
                 block.Foreground = Res("SystemFillColorCriticalBrush");
             }
         }
@@ -1156,32 +1164,60 @@ public partial class MainWindow : FluentWindow, IDisposable
         void Refresh()
         {
             var devices = _service.ArduinoDevices();
-            var match = devices.FirstOrDefault(d => d.IsMatch);
-            if (match != null)
+
+            // WHAT START WOULD DO, asked of the service rather than worked out here. The light used to
+            // answer a different question — "does some port's VID/PID match?" — and the two answers
+            // came apart in both directions: green for a port Start would refuse, red for one it would
+            // open. See LauncherService.ResolveArduinoPort.
+            var (resolved, refusal) = _service.ResolveArduinoPort();
+
+            if (refusal != null)
+            {
+                // A port NAMED in arduino.port that is not here. A refusal is not an absence, and the
+                // old reading could not express it at all: it showed green whenever some OTHER board
+                // matched the IDs, while Start was refusing the one the player had named.
+                light.Fill = Res("SystemFillColorCriticalBrush");
+                status.Text = "arduino.port is not usable — Start will refuse";
+            }
+            else if (resolved is { } port)
             {
                 light.Fill = Res("SystemFillColorSuccessBrush");
-                // The friendly name usually already ends in "(COM5)" — don't repeat the port.
-                status.Text = match.Name.Contains($"({match.Port})", StringComparison.OrdinalIgnoreCase)
-                    ? $"Connected — {match.Name}"
-                    : $"Connected — {match.Name} ({match.Port})";
+                // The port is what this line is for. Diagnose does not fill in a friendly name — it
+                // passes "" — so the old line rendered "Connected —  (COM5)", a hole where the name
+                // should have been. The name is appended only when there is one.
+                var d = devices.FirstOrDefault(x => string.Equals(x.Port, port, StringComparison.OrdinalIgnoreCase));
+                status.Text = string.IsNullOrWhiteSpace(d?.Name)
+                    ? $"Ready — will open {port}"
+                    : $"Ready — will open {port} ({d.Name})";
             }
             else
             {
                 light.Fill = Res("SystemFillColorCriticalBrush");
-                status.Text = "Not found";
+                status.Text = "No Arduino found — Start will refuse";
             }
 
             var lines = new List<string>
             {
                 $"Expected: VID 0x{_service.Config.Arduino.Vid:X4}  PID {string.Join("/", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}",
+                // Printed because it decides everything above, and was never shown: a player who had
+                // named a port had no way to see which port the launcher would actually open.
+                string.IsNullOrWhiteSpace(_service.Config.Arduino.Port)
+                    ? "arduino.port: (not set — the board is found by its IDs)"
+                    : $"arduino.port: {_service.Config.Arduino.Port}",
+                refusal is { } why ? "Resolution: REFUSED — " + why
+                    : resolved is { } chosen ? $"Resolution: will open {chosen}"
+                    : "Resolution: nothing found to open",
                 // The board is asked once, when the port is opened, so before any tool has run there
                 // is nothing to report yet — and that is a different thing from a board that stayed
                 // silent, which the report says in its own words.
                 $"Firmware: {_service.FirmwareReport ?? "not asked yet (opens with the first tool)"}",
             };
             if (devices.Count == 0) lines.Add("(no serial ports detected)");
+            // ">>" marks the port that will be OPENED, not the one whose IDs happen to match — the
+            // match is still shown, on the line itself, because it is useful and no longer decisive.
             foreach (var d in devices)
-                lines.Add($"{(d.IsMatch ? ">>" : "  ")} {d.Port,-8} {d.Name}  [{d.PnpId}]");
+                lines.Add($"{(string.Equals(d.Port, resolved, StringComparison.OrdinalIgnoreCase) ? ">>" : "  ")} " +
+                          $"{d.Port,-8} {d.Name}{(d.IsMatch ? "  [VID/PID match]" : "")}  [{d.PnpId}]");
             detail.Text = string.Join(Environment.NewLine, lines);
         }
 

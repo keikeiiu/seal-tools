@@ -185,6 +185,25 @@ public sealed class LauncherService : IDisposable
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
     public List<ArduinoDevice> ArduinoDevices() => Arduino.Diagnose(Config.Arduino.Vid, Config.Arduino.Pid);
 
+    /// <summary>Which port Start would open right now, or why it would refuse — the same resolution
+    /// <see cref="ArduinoPortAsync"/> uses, exposed so the Arduino tab can SHOW it rather than work it
+    /// out again.
+    ///
+    /// The tab used to answer this question itself, from <see cref="ArduinoDevices"/>, and got two
+    /// different answers: it lights on a VID/PID match, while the port that is actually opened also
+    /// honours a port NAMED in `arduino.port` (present → that one, whatever its IDs; absent → refuse)
+    /// and `Arduino.Find`'s name-based fallback, which `Diagnose` deliberately does not have. So the
+    /// tab read green "Connected" for a port Start would refuse, and red "Not found" for one it would
+    /// happily open — on the very tab that exists to diagnose "Arduino not found". One resolution,
+    /// two readers, so they cannot drift apart again.
+    ///
+    /// Read-only: it resolves and reports, and opens nothing.</summary>
+    public (string? Port, string? Refusal) ResolveArduinoPort() =>
+        PortChoice.Choose(
+            Config.Arduino.Port,
+            System.IO.Ports.SerialPort.GetPortNames(),
+            () => Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid));
+
     /// <summary>Why the last <see cref="ArduinoPortAsync"/> call failed, or null on success.
     /// Surfaced to the user because the launcher has no console in the published WinExe.</summary>
     public string? LastArduinoError { get; private set; }
@@ -204,10 +223,7 @@ public sealed class LauncherService : IDisposable
         // a fall-through to discovery — see PortChoice. Until this, `arduino.port` was documented as an
         // override and read by nothing, so naming a port did silently nothing at all.
         var findSw = System.Diagnostics.Stopwatch.StartNew();
-        var (port, portError) = PortChoice.Choose(
-            Config.Arduino.Port,
-            System.IO.Ports.SerialPort.GetPortNames(),
-            () => Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid));
+        var (port, portError) = ResolveArduinoPort();
         HoldDiag($"arduino port {port ?? "(none)"} took {findSw.ElapsedMilliseconds}ms");
         if (port == null)
         {
@@ -465,6 +481,9 @@ public sealed class LauncherService : IDisposable
         // Registered BEFORE the loop is started, and with no await between the two, so a Stop from
         // the UI cannot fall between them and miss a tool that is already running. (The whole block
         // is synchronous on the dispatcher thread, which is what makes that safe.)
+        // A crash from a previous run of THIS tool stops being news the moment it is running again.
+        // Cleared by id rather than wholesale, so another tool's failure stays on its own card.
+        if (LastCrash?.Id == id) LastCrash = null;
         lock (_lifecycleLock) _running[id] = entry;
         entry.Task = Task.Run(() =>
         {
@@ -490,6 +509,9 @@ public sealed class LauncherService : IDisposable
                 // tool rendered as "paused" with no explanation.
                 state.Message = $"{id} stopped: {ex.Message}";
                 state.Running = false;
+                // And on the service, because the state does not outlive the teardown below — see
+                // LastCrash. Without this the card renders a crash as a plain "stopped".
+                LastCrash = (id, ex.Message);
                 Console.WriteLine($"[!] {id} crashed: {ex}");
                 try
                 {
@@ -686,6 +708,20 @@ public sealed class LauncherService : IDisposable
     /// it. A release that fails leaves a real key or mouse button down on the player's machine: not
     /// something to log and move past.</summary>
     public string? LastReleaseError { get; private set; }
+
+    /// <summary>Which tool crashed last, and why — or null when none has this session.
+    ///
+    /// The crash handler already writes the reason to the tool's own <see cref="ToolState"/>, and its
+    /// comment says why that matters: *"the tool card is the only place the user can see this — the
+    /// published WinExe has no console"*. But the teardown that follows removes the tool from the
+    /// registry microseconds later, the card reads the registry, and so the card fell through to a
+    /// bare "stopped" — a crash rendered exactly like a deliberate Stop, with the reason surviving
+    /// only in logs/error.log, which is the one place that comment says is not enough.
+    ///
+    /// Held HERE rather than on the state because it has to OUTLIVE the run: the whole difficulty is
+    /// that the failing tool is gone by the time anyone can read it. Cleared when that same tool
+    /// starts again, so it can never describe a run the player has already replaced.</summary>
+    public (string Id, string Message)? LastCrash { get; private set; }
 
     /// <summary>True while a Start is between its first line and its tool actually running. A click
     /// during that window is deliberately a silent no-op — it returns true and reports nothing — and
