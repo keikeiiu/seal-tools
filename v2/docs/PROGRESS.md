@@ -13,6 +13,47 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-07 (64) — the Arduino card, laid out to be read
+
+**The player's report:** *"the text is too condense and hard for user to follow"*. Correct, and the
+reason was structural — the connection card was **one monospace block**, with the verdict, the ID it
+wants and a raw PnP dump all at the same weight. The sentence that matters sat between two that do not.
+
+**Rebuilt as labelled groups.** The verdict is first and alone; the ports are one per row with the one
+that **will be opened** first and marked; the raw PnP id — the longest string on the card and the one a
+player reads least — is a tooltip rather than half of every row. What is wrong now gets **its own line**
+under the verdict, because as the tail of a paragraph it was exactly where a player stops reading. The
+"no Arduino" case names the **charge-only cable** first: it is the most common cause and the one the
+player cannot see, since the board lights up and never enumerates.
+
+**Firmware now says what it MEANS.** The player's question was blunt and right: *"protocol level 2 make
+any sense to me or other users?"* It does not — it is a developer's unit, and a player has no way to
+tell whether 2 is good. `FirmwareVersion.Summary` is the same fact the other way round, in the shape
+`FoodLoadMode.Complaint` already uses: **what is decided, and the two ways out.** The only thing the
+level decides today is whether the board can **drag** food, and a board that cannot fails by doing
+**nothing** — identical from outside to a mis-aimed drag — so the sentence says that too.
+
+The card shows **both**, which the player asked for explicitly: the verdict, then the evidence.
+
+```
+OK — Up to date — it supports everything this launcher sends, dragging food included.
+Reported: protocol level 2 (current)
+
+Not OK — Older than this launcher's — it cannot drag food, and a drag would silently
+do nothing. Reflash the board, or set the Pet tab's food load back to right-click.
+Reported: protocol level 1 — older than this launcher's 2
+```
+
+"Correct or not" is decided by `FoodLoadMode.BoardCanDrag` — the one question the level answers — rather
+than by comparing numbers, so a **newer** board reads as fine rather than as a mismatch. `Describe` is
+unchanged and still what the log prints: it is the report's unit, not the player's.
+
+**Verified:** 257/257 (seven new tests on `Summary`), builds 0 warnings.
+**NOT verified visually** — the launcher is out of the test project's reach, and a screenshot needs a
+PowerShell execution policy the player has not granted. The layout is the player's to judge.
+
+---
+
 ## 2026-10-07 (63) — the launcher UI audit, and nine things it said that were not so
 
 **A read-only audit of the launcher UI** (MainWindow.xaml.cs, 9,969 lines, plus the types it reads),
