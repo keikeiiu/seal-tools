@@ -37,4 +37,7 @@ gem:
   empty_distance: 0.18
 
 arduino:
-  port: ""   # optional override; empty = auto-detect
+  # optional override; empty = find the board by its IDs below. If you NAME a port that this
+  # machine does not have, nothing is opened and the reason is reported — it does NOT fall back to
+  # discovery, because opening a different board than the one you named is worse than not opening one.
+  port: ""

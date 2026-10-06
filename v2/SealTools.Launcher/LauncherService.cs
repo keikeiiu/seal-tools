@@ -166,12 +166,18 @@ public sealed class LauncherService : IDisposable
         // Arduino.Find runs a WMI query SYNCHRONOUSLY on the caller's thread — the dispatcher, when
         // this is reached from a button click — so its duration is logged rather than assumed. A
         // slow one is a frozen window, which looks exactly like a dead button from the outside.
+        // A port NAMED in the config wins, and a named port that is not present is an error rather than
+        // a fall-through to discovery — see PortChoice. Until this, `arduino.port` was documented as an
+        // override and read by nothing, so naming a port did silently nothing at all.
         var findSw = System.Diagnostics.Stopwatch.StartNew();
-        var port = Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid);
-        HoldDiag($"arduino find {port ?? "(none)"} took {findSw.ElapsedMilliseconds}ms");
+        var (port, portError) = PortChoice.Choose(
+            Config.Arduino.Port,
+            System.IO.Ports.SerialPort.GetPortNames(),
+            () => Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid));
+        HoldDiag($"arduino port {port ?? "(none)"} took {findSw.ElapsedMilliseconds}ms");
         if (port == null)
         {
-            LastArduinoError = $"Arduino not found (VID 0x{Config.Arduino.Vid:X4}, " +
+            LastArduinoError = portError ?? $"Arduino not found (VID 0x{Config.Arduino.Vid:X4}, " +
                 $"PID {string.Join("/", Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}). " +
                 "Check the Arduino tab.";
             return null;

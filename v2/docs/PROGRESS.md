@@ -13,6 +13,38 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-06 (58) — `arduino.port` is honoured, or it says why not
+
+**Item 2 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
+`local.yaml.example` as *"optional override; empty = auto-detect"* and is merged from `local.yaml` on
+every load — and until now it was read by **nothing**. `ArduinoPortAsync` always called
+`Arduino.Find(Vid, Pid)`, so a player who named a port got it silently ignored.
+
+**The same class as the four `PetConfig` properties fixed in entry 55**: a setting that loads, looks
+honoured, and does nothing. It is the second one this repo has found in a week.
+
+**Honoured rather than deleted**, because a named port is genuinely useful — two boards, a COM number the
+OS reassigned, or a board whose IDs are not reported properly, which is exactly why `Arduino.Find`
+already carries a name-based fallback.
+
+**And the direction that matters is REFUSING.** A named port that this machine does not have is an
+**error**, not a fall-through to discovery: a player names a port precisely because they do not want the
+other one, so discovery would defeat the setting *silently* and in the direction of driving the wrong
+board.
+
+**`PortChoice.Choose(configured, available, discover)`** puts the decision in Core with **the I/O passed
+in** — the port list and the discovery call — so the whole matrix is testable with no board: a named port
+that exists, one that does not, `com3` against `COM3`, surrounding space, an empty or whitespace-only
+value, and the case where nothing is named and discovery finds nothing (which returns *no error*, because
+the caller is the only thing that knows the configured VID and PIDs to name in it).
+
+**Verified:** 224/224 (215 + nine `PortChoice` tests), build 0 warnings. **Proven by removal** — making
+the missing-port branch fall through to discovery failed exactly
+`ANamedPortThatDoesNotExistIsAnErrorRatherThanAFallThrough` and left the other eight passing. The example
+config's own comment now states the behaviour, since that is where the setting is explained.
+
+---
+
 ## 2026-10-06 (57) — Hold Space: a press while STOPPING no longer starts it again
 
 **Item 1 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
