@@ -53,13 +53,18 @@ kept separate from description. Every claim carries a `file.cs:NNN` citation. §
 eight share — start, stop, the gate, the cancellation rule — so no tool section has to repeat it, and
 §2 is the suite at a glance. Linked from [DESIGN.md](DESIGN.md) §7.
 
-**Two things the documenting turned up, worth a verdict, and NOT fixed here:**
+**Two things the documenting turned up. One is settled; the other is not.**
 
-- **The shop tool never verifies a purchase or a sale.** It has no capture, no OCR, no read-back of any
-  kind — `"Bought N"` and `"Sold N"` count the commands it SENT. That is the earlier audit's finding #3,
-  *"a sent action can be reported as a completed action"*, on the one tool that cannot even check.
+- **The shop tool never verifies a purchase or a sale — SETTLED, player's verdict 2026-10-08: it does not
+  need to.** It has no capture, no OCR and no read-back of any kind, so `"Bought N"` and `"Sold N"` count
+  the commands it SENT rather than sales the game confirmed. That is the earlier audit's finding #3,
+  *"a sent action can be reported as a completed action"*, on the one tool that cannot even check — and
+  the verdict on it is that the messages are meant to count attempts. **Written down rather than dropped**
+  because a later reader re-derives the observation from the code alone, in the one place that has no way
+  to act on it. The items were removed from [TOOL-FLOWS.md](TOOL-FLOWS.md), where *"Worth a verdict"* is a
+  list of **open** questions and a settled one does not belong on it.
 - **The tuner's disconnect `catch` covers only `C`/`E`**, while its placements write outside the `try`;
-  its mouse guard fails open; and a panel STOP does not abort the countdown.
+  its mouse guard fails open; and a panel STOP does not abort the countdown. **Still open.**
 
 This entry adds a document and corrects a claim; it changes no behaviour.
 
