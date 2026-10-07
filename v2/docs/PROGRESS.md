@@ -13,6 +13,48 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-08 (67) — the flows as editable diagrams
+
+**`v2/docs/diagrams/`** — one `.drawio` per tool (shop has two pages, buy and sell), cloned from an
+approved template so the set reads as one document. The player installed `drawio-skill` and the VS Code
+drawio extension for this; they are editable, not pictures.
+
+**The template took eight rounds, and that is the finding.** `spammer-flow.drawio` was corrected eight
+times, and **`validate.py --score` reported `0 error(s), 0 warning(s), 0 overlaps` on every single
+version** — including the ones with real defects. What actually found them:
+
+- **Rendering, four times**: an arrowhead sitting on a swimlane's title; an edge spanning the whole loop;
+  the yield drawn as a three-step pipeline when it is a branch; and a diamond hanging 60 px out of its
+  own container into the next one.
+- **The player, three times**: the diamond overflowing, the jog in the `on ANY exit` line, and the line
+  being off the spine.
+- **A checker written for it, twice** — see below.
+
+**The yield was drawn wrong twice, and reading the code is what caught it.** Three boxes read as a
+three-state sequence; the source is `if (yielded) {...} else if (holding && Waiting) {...}`, so it is
+**two** states with an entry — `waiting` was never a state of that tool, it is the same yielded state
+while the gate has not come free. Fixed by reading `SkillSpammer.cs` rather than the prose.
+
+**The worst failure in this entry is the checker's, not a diagram's.** `fitcheck.py` — written after the
+overflow that `validate.py` could not see — merged every cell in a file into one dict keyed by id, so on
+the two-page shop file the second page's ids overwrote the first's and it **reported an overflow that did
+not exist**. A diagram was then **reshaped to satisfy that phantom**: both pages' containers forced to
+identical geometry. That is the worst thing a checker can do — not miss a defect, but invent one and be
+obeyed. It is page-aware now, and it is committed at
+[`diagrams/tools/fitcheck.py`](diagrams/tools/fitcheck.py) because the diagrams cannot be verified
+without it.
+
+**Also worth recording: the drawio editor silently keeps a stale render.** Four separate times — twice
+for the player, twice for me — it showed an old version while the file on disk was already correct. A
+defect was reported from one of those stale views and was not real. `Ctrl+Shift+P → View drawio file`
+re-reads from disk; the `●` on the tab is the warning that the editor is holding a buffer.
+
+**Verified:** every file parses, `validate.py` 0/0/0, fit check 0 overflows.
+**NOT visually reviewed** — none of the seven new diagrams has been rendered and looked at. Two of the
+eight corrections above were things only an eye could catch, so assume the rest need the same pass.
+
+---
+
 ## 2026-10-08 (66) — every tool's flow in one place, and a correction to entry 62
 
 **The correction first, because it is the more important half.** Entry 62 says — and the `SleepCheck`
