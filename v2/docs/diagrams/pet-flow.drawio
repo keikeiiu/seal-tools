@@ -43,7 +43,7 @@
                 <mxCell id="14" parent="100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6" value="6d · CLAIM the game for the visit&#xa;wait again if held — the row&#39;s next stays in the past" vertex="1">
                     <mxGeometry height="70" width="260" x="90" y="390" as="geometry"/>
                 </mxCell>
-                <mxCell id="15" parent="100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" value="6e · THE VISIT — ▓ open once &#183; read every row &#183;&#xa;reload each due row &#183; close once" vertex="1">
+                <mxCell id="15" parent="100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366" value="6e · THE VISIT — ▓ open once &#183; read every row&#xa;▓ reload each due row &#183; close once" vertex="1">
                     <mxGeometry height="70" width="260" x="90" y="500" as="geometry"/>
                 </mxCell>
                 <mxCell id="16" parent="100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" value="6f · fold the results back, per row&#xa;Ok · NothingToBoard · Failed" vertex="1">
