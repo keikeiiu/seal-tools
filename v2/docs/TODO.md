@@ -7,6 +7,18 @@ why is in [DESIGN.md](DESIGN.md)**; the design guardrails (things not to reverse
 
 ---
 
+## Dated — do not let this pass
+
+- [ ] **.NET 8 reaches end of support on 2026-11-10.** Every project targets `net8.0` / `net8.0-windows`
+  and there is no `global.json`. After that date the runtime gets no more servicing fixes, and this
+  repo's whole distribution model is a self-contained exe (`publish.bat`), so a runtime fix would mean
+  republishing regardless. **The move is to .NET 10 LTS**, tested, and it is an **L** — nine projects,
+  plus WPF, plus OpenCvSharp / ONNX Runtime / RapidOCRSharp package versions that must line up with the
+  new TFM. Raised by the 2026-10-06 external audit; not previously tracked anywhere.
+  *Verify:* the whole suite green and a published exe launched on a machine with no .NET installed.
+
+---
+
 ## Planned (design written, not built)
 
 - [x] **Tuner spring positioning + cursor guard** — **shipped in v2.4** (branch `v2-tuner-spring`,

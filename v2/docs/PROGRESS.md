@@ -13,6 +13,415 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-08 (68) — program vs profile: deployment planned, not built
+
+**The plan is [PLAN-PATHS.md](PLAN-PATHS.md); nothing in it is built.** It exists because "should the
+next version reorganise the codebase?" got the honest answer **no** — the code is in better shape than
+its own handover doc makes it sound — and then a second question, "including easier deployment to
+another PC?", turned out to have exactly one root cause.
+
+**The measurement that made the case.** `AppContext.BaseDirectory` appears **20 times** across `Core`,
+`Launcher` and all six tools; `Environment.GetFolderPath`, `SpecialFolder` and `AppData` appear **zero**
+times. The install folder *is* the data folder, and the two publish modes, the hand-maintained copy list
+in `publish.bat` and the fact that an update cannot replace the folder all follow from it.
+
+**The finding worth keeping.** `defaults.yaml` reads as a program file and ships as one
+(`publish.bat:77`), but `SaveDefaults` rewrites it at runtime (`LauncherService.cs:704`). It is **user
+state seeded from a program template** — a plan that moved only `local.yaml` and the calibration PNGs
+would have left it to be clobbered by every update.
+
+**Not a v3.** Every step lands shippably and only one is player-visible, so this is v2.x work. A major
+version is for a changed user-visible contract, not for code that got better.
+
+**The handover's traps list is history, not current truth.** The config-projection bug class it records
+— *"the projection drops fields, four times now"* — is already closed by reflection guards in
+`ConfigLoaderTests.cs` (`EveryLocalPetFieldIsCopiedFromTheConfig`, plus the `LocalPetSlot`,
+`LocalPetQueueEntry` and `PetConfig` fences). A plan built from that list alone would over-scope. One
+claim in it does still hold: `ToolState`'s *"reads are atomic"* comment is false for its `int?` and
+`DateTime?` members.
+
+**Open:** the three ⚑ decisions in §8 of the plan.
+
+## 2026-10-08 (67) — the flows as editable diagrams
+
+**`v2/docs/diagrams/`** — one `.drawio` per tool (shop has two pages, buy and sell), cloned from an
+approved template so the set reads as one document. The player installed `drawio-skill` and the VS Code
+drawio extension for this; they are editable, not pictures.
+
+**The template took eight rounds, and that is the finding.** `spammer-flow.drawio` was corrected eight
+times, and **`validate.py --score` reported `0 error(s), 0 warning(s), 0 overlaps` on every single
+version** — including the ones with real defects. What actually found them:
+
+- **Rendering, four times**: an arrowhead sitting on a swimlane's title; an edge spanning the whole loop;
+  the yield drawn as a three-step pipeline when it is a branch; and a diamond hanging 60 px out of its
+  own container into the next one.
+- **The player, three times**: the diamond overflowing, the jog in the `on ANY exit` line, and the line
+  being off the spine.
+- **A checker written for it, twice** — see below.
+
+**The yield was drawn wrong twice, and reading the code is what caught it.** Three boxes read as a
+three-state sequence; the source is `if (yielded) {...} else if (holding && Waiting) {...}`, so it is
+**two** states with an entry — `waiting` was never a state of that tool, it is the same yielded state
+while the gate has not come free. Fixed by reading `SkillSpammer.cs` rather than the prose.
+
+**The worst failure in this entry is the checker's, not a diagram's.** `fitcheck.py` — written after the
+overflow that `validate.py` could not see — merged every cell in a file into one dict keyed by id, so on
+the two-page shop file the second page's ids overwrote the first's and it **reported an overflow that did
+not exist**. A diagram was then **reshaped to satisfy that phantom**: both pages' containers forced to
+identical geometry. That is the worst thing a checker can do — not miss a defect, but invent one and be
+obeyed. It is page-aware now, and it is committed at
+[`diagrams/tools/fitcheck.py`](diagrams/tools/fitcheck.py) because the diagrams cannot be verified
+without it.
+
+**Also worth recording: the drawio editor silently keeps a stale render.** Four separate times — twice
+for the player, twice for me — it showed an old version while the file on disk was already correct. A
+defect was reported from one of those stale views and was not real. `Ctrl+Shift+P → View drawio file`
+re-reads from disk; the `●` on the tab is the warning that the editor is holding a buffer.
+
+**Verified:** every file parses, `validate.py` 0/0/0, fit check 0 overflows.
+**NOT visually reviewed** — none of the seven new diagrams has been rendered and looked at. Two of the
+eight corrections above were things only an eye could catch, so assume the rest need the same pass.
+
+---
+
+## 2026-10-08 (66) — every tool's flow in one place, and a correction to entry 62
+
+**The correction first, because it is the more important half.** Entry 62 says — and the `SleepCheck`
+doc comment repeated it — that `HoldSpace`, `SkillSpammer` and `ShopTool` *"clear `QuitPressed` to mean
+pause, so a stop signalled that way could be erased by the very tool it was meant to stop."* **That is
+false**, and it was found while documenting the tools for this entry.
+
+All three loops are the same shape:
+
+```csharp
+while (true)
+{
+    SleepCheck(…);
+    if (QuitPressed || ct.IsCancellationRequested) break;   // breaks HERE
+
+    if (state.Running && !running)
+    {
+        running = true;
+        QuitPressed = false;              // only reached with QuitPressed ALREADY false — a no-op
+```
+
+The clear sits **below** the break that reads the same flag, so it is only ever reached when there is
+nothing to clear. It is dead code from an older pause-toggle design. **`QuitPressed` means quit, plainly,
+and always did.**
+
+**What this does and does not change.** The throw-based design is unaffected and still correct — the
+requirement was to abandon a step *in progress*, and a flag cannot do that, because a flag is only read
+when control returns to the loop. But the *reason* given for not reusing `QuitPressed` was wrong, and it
+had been written into a commit message, entry 62, and the code. The code comment is corrected in place;
+entry 62 is left exactly as written, because this log is append-only — corrected here instead.
+
+Recorded rather than quietly fixed because this repo's own rule is that a document which says something
+untrue is worse than a missing one, and this one said it in three places.
+
+**And the deliverable: [TOOL-FLOWS.md](TOOL-FLOWS.md)** — all eight tools, each with an ASCII flow
+diagram, an inventory of every action sent to the game, a decision table, and a "Worth a verdict" list
+kept separate from description. Every claim carries a `file.cs:NNN` citation. §1 is the machinery all
+eight share — start, stop, the gate, the cancellation rule — so no tool section has to repeat it, and
+§2 is the suite at a glance. Linked from [DESIGN.md](DESIGN.md) §7.
+
+**Two things the documenting turned up. One is settled; the other is not.**
+
+- **The shop tool never verifies a purchase or a sale — SETTLED, player's verdict 2026-10-08: it does not
+  need to.** It has no capture, no OCR and no read-back of any kind, so `"Bought N"` and `"Sold N"` count
+  the commands it SENT rather than sales the game confirmed. That is the earlier audit's finding #3,
+  *"a sent action can be reported as a completed action"*, on the one tool that cannot even check — and
+  the verdict on it is that the messages are meant to count attempts. **Written down rather than dropped**
+  because a later reader re-derives the observation from the code alone, in the one place that has no way
+  to act on it. The items were removed from [TOOL-FLOWS.md](TOOL-FLOWS.md), where *"Worth a verdict"* is a
+  list of **open** questions and a settled one does not belong on it.
+- **The tuner's disconnect `catch` covers only `C`/`E`**, while its placements write outside the `try`;
+  its mouse guard fails open; and a panel STOP does not abort the countdown. **Still open.**
+
+This entry adds a document and corrects a claim; it changes no behaviour.
+
+---
+
+## 2026-10-08 (65) — a stop abandons the work, not the cleanup
+
+**A bug hunt over the whole branch before release**, because three of its changes alter live behaviour
+and **none of them had been near a board**. It found four real defects and **three were introduced by
+entry 62** — the `SleepCheck`-throws change. All four are fixed.
+
+**The rule they were all missing, now written into the code:** *a stop abandons the WORK, not the
+CLEANUP.* Entry 62 made `SleepCheck` throw so a step in progress could be abandoned — and it throws from
+**any** point, including inside teardown. The code that lets go of a button and closes a window also
+sleeps, and nothing had been asked what should happen there.
+
+**1. The pet's left mouse button could stay DOWN.** `DragFood` pressed with `LeftDown` *above* the
+`try`, so a cancellation in the `SleepCheck` below unwound **before the `try` was entered**, the
+`finally` never ran and `LeftUp` was never sent. A held left button follows the real cursor and drops
+whatever it is over on the next press — the exact hazard `HeldKeys` exists for. **Anything that presses
+now lives inside the same `try` whose `finally` releases.**
+
+**2. A Stop during a visit left the BOARDING WINDOW OPEN over the game.** `CloseBoarding` closes it
+through `Click()`, which sleeps before it writes — so with the token cancelled that sleep threw and the
+X was never clicked. The code says in as many words that the next cycle then clicks 目錄 behind it.
+**Deterministic, not a race.** And worse: the `finally` threw, which **replaces the exception it was
+unwinding**, so a real crash arriving beside a Stop was filed as a clean one by the launcher's new
+clause — the outcome worse than a noisy failure.
+
+**3. Stopping the tuner reported "Arduino disconnected".** Its `catch (Exception)` wraps two
+`SleepCheck`s, and `OperationCanceledException` derives from `Exception`, so a normal Stop put a **false
+cable fault** on the card. Now `when (ex is not OperationCanceledException)`.
+
+**4. `AcquireInputAsync` leaked the UI claim** if `ArduinoPortAsync` *threw* rather than returning null —
+the gate stayed owned by `"test"` and every later test was refused with `"test" is using the game right
+now` while no test was.
+
+**The mechanism for 1 and 2: `ToolBase.WithoutCancellation(Action)`** — nestable, restored in a
+`finally` so a teardown that throws cannot leave the tool unable to be stopped. `SleepCheck` honours it.
+It is a **named** thing rather than a flag set by hand, so "this is cleanup" is visible at the call
+site; the two pet `finally`s now say so.
+
+**Also confirmed clean**, and worth recording because a clean bill of health is a result: the
+`InputArbiter`/`InputLease` lifetime (the double-dispose guard is correct, a lease cannot outlive its
+port), every lock and their order, and `PetTool.ClaimGame` (sleeps between polls, no spin).
+
+**One thing the hunt found that is NOT a bug but is worth knowing:** `ShouldStandDown` has **no
+production caller** and no caller passes a deadline, so the deadline machinery is inert. PLAN-SCHEDULING
+§9 step 2 is marked *not started* and entry 61 says nothing was rewired — so the documents are honest —
+but "the gate carries a reason" is a design that is **built and not yet used**.
+
+**Verified:** 265/265 (four new tests on the mute: it suppresses, it is lifted when the block ends, an
+inner block does not un-mute an outer one, and a teardown that throws still lifts it), builds 0
+warnings. **Everything above is source-verified only.** The four fixes are exactly the paths a board
+test would exercise, and that test has not run.
+
+---
+
+## 2026-10-07 (64) — the Arduino card, laid out to be read
+
+**The player's report:** *"the text is too condense and hard for user to follow"*. Correct, and the
+reason was structural — the connection card was **one monospace block**, with the verdict, the ID it
+wants and a raw PnP dump all at the same weight. The sentence that matters sat between two that do not.
+
+**Rebuilt as labelled groups.** The verdict is first and alone; the ports are one per row with the one
+that **will be opened** first and marked; the raw PnP id — the longest string on the card and the one a
+player reads least — is a tooltip rather than half of every row. What is wrong now gets **its own line**
+under the verdict, because as the tail of a paragraph it was exactly where a player stops reading. The
+"no Arduino" case names the **charge-only cable** first: it is the most common cause and the one the
+player cannot see, since the board lights up and never enumerates.
+
+**Firmware now says what it MEANS.** The player's question was blunt and right: *"protocol level 2 make
+any sense to me or other users?"* It does not — it is a developer's unit, and a player has no way to
+tell whether 2 is good. `FirmwareVersion.Summary` is the same fact the other way round, in the shape
+`FoodLoadMode.Complaint` already uses: **what is decided, and the two ways out.** The only thing the
+level decides today is whether the board can **drag** food, and a board that cannot fails by doing
+**nothing** — identical from outside to a mis-aimed drag — so the sentence says that too.
+
+The card shows **both**, which the player asked for explicitly: the verdict, then the evidence.
+
+```
+OK — Up to date — it supports everything this launcher sends, dragging food included.
+Reported: protocol level 2 (current)
+
+Not OK — Older than this launcher's — it cannot drag food, and a drag would silently
+do nothing. Reflash the board, or set the Pet tab's food load back to right-click.
+Reported: protocol level 1 — older than this launcher's 2
+```
+
+"Correct or not" is decided by `FoodLoadMode.BoardCanDrag` — the one question the level answers — rather
+than by comparing numbers, so a **newer** board reads as fine rather than as a mismatch. `Describe` is
+unchanged and still what the log prints: it is the report's unit, not the player's.
+
+**Verified:** 257/257 (seven new tests on `Summary`), builds 0 warnings.
+**NOT verified visually** — the launcher is out of the test project's reach, and a screenshot needs a
+PowerShell execution policy the player has not granted. The layout is the player's to judge.
+
+---
+
+## 2026-10-07 (63) — the launcher UI audit, and nine things it said that were not so
+
+**A read-only audit of the launcher UI** (MainWindow.xaml.cs, 9,969 lines, plus the types it reads),
+looking for the failure this repo keeps paying for: *a message that tells the player the wrong thing*.
+Nine ranked findings, all of them that class. **Nine are fixed; three are not, and are named at the
+end.**
+
+**The two structural ones.**
+
+*The Arduino tab was asking a different question than Start.* The tab worked its answer out itself, from
+`Diagnose` — VID/PID match only — while the port actually opened comes from `PortChoice.Choose`, which
+also honours a port **named** in `arduino.port` and `Arduino.Find`'s **name-based fallback**, which
+`Diagnose` deliberately does not have. So the tab read green "Connected" for a port Start would refuse,
+and red "Not found" for one it would happily open — **on the one tab that exists to diagnose "Arduino not
+found"**. Now there is **one resolution with two readers** (`ResolveArduinoPort`), used by both
+`ArduinoPortAsync` and the tab, so they cannot drift apart again. The light reports what Start will
+**do**, the detail pane prints `arduino.port` and the resolution in words — neither was visible before —
+and `>>` marks the port that will be **opened** rather than the one whose IDs happen to match. Found
+while in there: `Diagnose` passes `""` for the friendly name, so the old line rendered
+**"Connected —  (COM5)"**, a hole where the name should have been.
+
+*A crash rendered exactly like a deliberate Stop.* The handler writes the reason to the tool's
+`ToolState`, and its comment says why that matters — *"the tool card is the only place the user can see
+this, the published WinExe has no console"*. But the teardown removes the tool from the registry
+microseconds later, the card reads the registry, and it fell through to a bare `"stopped"`. `LastCrash`
+on the service now holds it, the same shape as `LastArduinoError` and `LastReleaseError` — held there
+because it has to **outlive the run**, which is the whole difficulty. Cleared when that tool next
+starts, so it cannot describe a run already replaced.
+
+**The seven text defects.** The food-strip button told the player to draw **one slot** (the opposite of
+what it wants — its switch had no `feederstrip` arm and fell through to the bag-slot default, *because* a
+dead `feeder:<n>` branch above it read as a plausible default; the dead branch is removed); three
+0-based numbers where every other surface is 1-based, including one line that named the same cell twice
+and disagreed with itself; a "Test read" that carried a slot's number into the **next** slot and counted
+it twice; a scan summary that said cells "held no pet" for cells it had matched but could not read, the
+one thing its own counter's comment says is never claimed; a Pet tab that reported **ready** with zero
+rows and ended *"reloading every ."*; and a checklist printing `ok` beside a row reading `no`.
+
+**Verified:** 250/250, builds 0 warnings. **No test for any of it** — the launcher is `net8.0-windows`
+and the test project does not reference it, the seam TODO.md records. The wording is the part only the
+player can judge.
+
+**NOT fixed, and named so they are not mistaken for done:**
+
+- **A Hold Space release that fails on the F12 hotkey path** leaves the dot reading *"● idle"* with the
+  spacebar still down and no warning. `LastReleaseError` is set only by the service-side `ReleaseHeld`,
+  not by the tool's own write, and `holdspace` has no card for its `state.Message` to land on.
+- **Save Setup accepts a blank client size**, writing `{0,0}` — which later makes the tool warn
+  *"measured on a 0×0 client, recalibrate"*, a false warning the UI itself created.
+- **`ToolState.Remaining` / `NextActionAt` are multi-word structs** read by the 750 ms tick while the
+  tool thread writes them. A torn read shows a garbage countdown. **Already recorded** in
+  [ANALYSIS-UI.md](ANALYSIS-UI.md) §3.5, listed only so it is not counted twice.
+
+---
+
+## 2026-10-07 (62) — a stop that actually stops the feeder
+
+**The player's report:** Stop on the pet feeder did nothing. Verified against the source, and it was
+true in the way that matters — the CTS *was* cancelled and every tool loop reads the token, but a loop
+is only reached when the step it is running has finished, and a pet visit is several rows of OCR plus a
+reload whose wait alone is ~30 s. **So Stop was honoured only at a visit boundary**, which on a tool
+that runs for days reads exactly like a broken button.
+
+**The gap was `SleepCheck`.** It watched the quit hotkey and never the token — and the pet sets
+`ignoresQuitHotkey`, so for the pet it was a bare sleep. It now throws.
+
+**Throwing, not a flag, and that is the fix rather than a style choice.** There is no flag a caller
+could read in the middle of a visit; the work has to be abandoned from the inside, and an exception is
+how a step in progress unwinds. The tools' own `finally` blocks then run — the pet releases the game, a
+drag lets go of the button — which is the teardown a stop wants. It is also the design the repo already
+chose when it made the quit hotkey skip the pet; the difference is that a **deliberate** stop is no
+longer treated as an accidental keypress.
+
+**`QuitPressed` could not be reused for this**, and it was the obvious candidate: HoldSpace, SkillSpammer
+and ShopTool clear it to mean *pause*, so a stop signalled that way could be erased by the very tool it
+was meant to stop. The token is checked before the hotkey on every tick.
+
+**The worker had to stop calling a stop a crash.** Its single `catch (Exception)` puts the message on the
+card and a line in `logs/error.log`. A cancelled stop is neither, so it now has a clause of its own that
+reports and logs **nothing** — which is what a normal stop does today. Without it every Stop would have
+written *"pet stopped: The operation was cancelled."* and an error.log line.
+
+**The handover, which is the part for the human.** A stop lands wherever the pet had got to, and a drag
+cut between its press and its release leaves the stack on the ground where the cursor was. That is
+acceptable — the player pressed Stop and can put it back — but only if they are told to look. The visit
+is wrapped so a cancellation inside it names the row(s) and says they may not have been fed. **Nothing
+is repaired**, deliberately: `Run` opens with `InspectRows`, so a restart re-reads the game and re-feeds
+any row that still needs it. The SCHEDULE is never left wrong by an interruption; it is the GAME that may
+be, and that is the one thing this process cannot put back. A stop that arrives *between* visits sets no
+message — nothing was in flight, and inventing a warning there would train the player to ignore the real
+one.
+
+**Blunt instrument, said plainly.** `SleepCheck` is shared, so all seven tools now abandon a step in
+progress on cancel, not just the pet. That is the intended reading of a stop, and each tool's own
+`finally` blocks still run, but it is a behaviour change beyond the pet.
+
+**Verified:** 250/250 (six new tests pin the throw, the mid-sleep abort, and that the tool ignoring the
+quit hotkey still stops), launcher builds 0 warnings. **Not verified against the board** — the wording is
+the part only the player can judge.
+
+---
+
+## 2026-10-06 (61) — the gate learns why, and a release stops lying
+
+**Two landed on the `feature/input-arbiter` branch.** Both are of the "cannot regress a tool" kind, which
+is why they went first.
+
+**The deadline policy — [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4.1 + §4.2, PLAN-ARBITER step 1.** A
+claim now carries an optional deadline, and `ShouldStandDown(owner)` answers the single question that
+replaces every hand-written pair-wise rule: does whoever is waiting have a *sooner* deadline than mine? A
+holder with no deadline always yields to a waiter that has one.
+
+**Nothing was rewired, deliberately.** `TryAcquire` and `AnnounceWaiting` take the deadline as an
+optional argument, so every existing call site passes none and behaves exactly as before — 244/244 green,
+including the tests that already pinned the old behaviour, and the spammer still yields on
+`Waiting != null`. **The two halves are not separable**: `ShouldStandDown` returns false for a waiter
+that declared no deadline, so moving a caller onto it *before* its waiter declares one would stop it
+yielding entirely — silent starvation, not a crash. That is pinned by a test and called out in the
+method's own doc comment, and it is why §4.3 (the pet declaring its deadline, and the spammer asking the
+new question) is **not** in this entry.
+
+**Equal deadlines do not stand down** — PLAN-SCHEDULING §8's deferred tie-break, pinned as a decision
+rather than left to whichever way `<` happened to fall. Deadlines are cleared on release and on
+withdrawal: they belong to the claim, not to the name, or the next holder reads an urgency that was never
+its own.
+
+**`ReleaseHeld` no longer reports success for a write it never made.** It used `_arduino?.Write(...)`,
+which on a null or closed port wrote nothing, threw nothing and returned success — the method's own
+comment called it *"the one way this method can lie"*, and the mitigation was a log line the player never
+sees. It now reports the failure, and the status line beside the toggle already knew what to do with one:
+*"● input may be stuck"*, in red, with the remedy in its tooltip. That is the audit's finding #3, in the
+one place the repo admitted to it. Its other half — a sell that is sent but not verified — is still open.
+
+**No test for the release fix**, and it is the same seam as entry 59: the launcher is `net8.0-windows`
+and the test project does not reference it. Recorded, not hidden.
+
+**Verified:** 244/244; the launcher builds with 0 warnings. **Not verified: anything live.** Both live
+checks — a test button refused while a tool runs, and a stop whose release is refused — need the board.
+
+---
+
+## 2026-10-06 (60) — the UI's input gets one door
+
+**PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](PLAN-ARBITER.md) step 2.** Not as a guard beside
+`PortGate`: the audit's instruction is to evolve or replace the gate, never to run two ownership rules,
+because two things deciding who may drive can disagree and neither is then authoritative.
+
+**The bug.** `MainWindow` never referenced `.Gate` — **zero** occurrences — while **19** call sites took
+the port and wrote to it. A Test Click pressed while a tool was mid-gesture landed in the middle of that
+gesture; for the pet feeder mid-drag that drops the stack of food it was carrying.
+
+**The decision that was not obvious: the arbiter's logic lives in `Core`, not in `LauncherService`.**
+The launcher is `net8.0-windows` and the test project does not reference it — the same seam problem
+entry 59 hit, where the tool lifecycle landed with no test and the gap was recorded rather than hidden.
+Putting the guard in the service would have repeated it. In Core it is testable, and it is tested: nine
+tests, 233 in total.
+
+**The lease carries the port.** `InputLease.Port` is the only way the UI obtains the shared
+`SerialPort`, so "may I write?" and "here is what to write to" cannot get out of step, and the `using`
+hands the claim back on every path including a throw. `Dispose` is guarded by an exchange rather than a
+bool, because every lease carries the same owner name `"test"` — a stale second `Dispose` would
+otherwise release a claim taken since, which is a silent overlap and the one outcome the gate exists to
+prevent.
+
+**Seven sites would have lied.** Five Gem hints and the tuner hardcoded *"Arduino not found — plug it in
+and retry"* whatever the real reason, and the connection test said *"No Arduino — see Connection
+above."* Once a refusal is possible that tells the player their board is unplugged when a tool is
+running — the exact trap this item was flagged for. They now report `LastArduinoError` first, which is
+set on every refusal path, with the old string kept as the fallback.
+
+**The nineteenth site is deliberate.** `LauncherService`'s own tool-start keeps `ArduinoPortAsync`: it
+already holds the gate for the tool it is starting, so routing it through the arbiter would have it
+refuse itself.
+
+**Verified:** 233/233 tests; the launcher builds with 0 warnings (to a scratch output path, because the
+published app was running and holding its own DLLs); and the check this item was found by now passes —
+nothing outside `LauncherService` reads the port directly.
+
+**Still open, and this entry is not the whole plan.** The arbiter arbitrates and nothing more so far: the
+**deadline policy** ([PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4, where `ShouldStandDown` replaces the
+hand-written pair-wise yield rules) and **operation-level leases** (a claim covering a whole gesture
+rather than a button press) are both unbuilt, and PLAN-ARBITER §7 orders them. **The live check has not
+been run** — press a test button while a tool is running, and confirm it refuses and says which — and it
+needs a board. Until it passes, this is source-verified only.
+
+---
+
 ## 2026-10-06 (59) — the tool lifecycle gets one owner
 
 **Item 3 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`

@@ -22,6 +22,7 @@ public sealed class HoldSpace : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         bool running = false;
         bool f12Was = Hotkeys.IsDown(_hotkeys.Start);
 

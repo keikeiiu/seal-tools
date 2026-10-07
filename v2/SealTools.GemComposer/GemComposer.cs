@@ -54,6 +54,7 @@ public sealed class GemComposer : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         var grades = _cfg.Gem.Grades;
         int gidx = Math.Max(0, grades.IndexOf(_cfg.Gem.StartGrade));
         bool running = false;

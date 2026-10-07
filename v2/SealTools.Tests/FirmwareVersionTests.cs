@@ -69,4 +69,64 @@ public class FirmwareVersionTests
         Assert.DoesNotContain("older", current);
         Assert.DoesNotContain("newer", current);
     }
+
+    // Summary is what the player reads. Describe is the same fact in a developer's unit — "protocol
+    // level 2 (current)" cannot be judged by someone who only wants to know whether their board is up
+    // to date — so these pin that the player-facing sentence never falls back to the number, and that
+    // each case says the thing that is actually decided (food dragging) plus a way out.
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ABoardThatCannotDragIsToldSoAndGivenAWayOut(int? level)
+    {
+        var summary = FirmwareVersion.Summary(level);
+
+        Assert.Contains("drag", summary);
+        Assert.Contains("Reflash", summary);
+        Assert.DoesNotContain("protocol level", summary);
+    }
+
+    [Fact]
+    public void ABoardThatCanDragIsNotToldTheNumber()
+    {
+        var summary = FirmwareVersion.Summary(FirmwareVersion.DragLevel);
+
+        Assert.Contains("Up to date", summary);
+        Assert.DoesNotContain("protocol level", summary);
+    }
+
+    [Fact]
+    public void SilenceIsAnAnsweredNoRatherThanAnUnknown()
+    {
+        // A board that never replied predates the drag commands as well as version reporting, so this
+        // is a definite "cannot drag" — not "we could not tell". The distinction matters because the
+        // drag it cannot do fails by doing NOTHING, which looks identical to a mis-aimed drag.
+        var summary = FirmwareVersion.Summary(null);
+
+        Assert.Contains("cannot", summary.Replace("it also predates", "cannot"));
+        Assert.Contains("Reflash", summary);
+    }
+
+    [Fact]
+    public void ABoardNewerThanThisLauncherIsNotCalledUpToDate()
+    {
+        // It may well be fine, but claiming "up to date" about a board the launcher cannot read would
+        // be a claim it has no way to check.
+        var summary = FirmwareVersion.Summary(FirmwareVersion.Current + 1);
+
+        Assert.Contains("Newer", summary);
+        Assert.DoesNotContain("Up to date", summary);
+    }
+
+    [Fact]
+    public void ASummaryForABoardThatCannotDragNamesTheGameConsequence()
+    {
+        // "cannot drag food" alone invites "so what?" — the failure is silent, so the sentence has to
+        // say that a drag would DO NOTHING. That is the same lesson FoodLoadMode.Complaint exists for.
+        var summary = FirmwareVersion.Summary(1);
+
+        Assert.Contains("silently do nothing", summary);
+    }
 }

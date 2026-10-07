@@ -160,6 +160,13 @@ M or an L:
 | Tools receive | a lease object instead of a `SerialPort` | the `SerialPort`, as today, for the duration of a lease |
 | Cost | all 7 `Run(SerialPort ser, …)` signatures, ~18 `SerialPort` parameters inside `PetTool` alone, every `HidPointer` call site | the arbiter decides *when*; the port stays direct |
 
+**DECIDED 2026-10-06: Reading B first, Reading A as the destination.** B is how the deadline policy and
+the 19 UI sites land, because it moves no tool signature and cannot regress a working tool. A is kept as
+a named later stage rather than abandoned, for the two things only A can give — emergency stop while a
+tool is wedged, and a release that cannot report success when nothing was written. Deciding B
+*permanently* is the outcome to avoid: it leaves the enforceable rule a convention and emergency stop
+impossible.
+
 **Reading B is recommended**, and it is the one the diagram describes. It also keeps the property
 `PortGate` was built on deliberately (`PortGate.cs:17-21`):
 
@@ -180,15 +187,22 @@ proposal is wrong, whichever reading it is wearing.
 
 Staged so each step is verifiable on its own, and so the first steps cannot regress the tools:
 
-1. **The deadline on a claim, and `ShouldStandDown`** — `PortGate` only, with tests. No tool changes.
-   *This is [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §9 step 1; it should not be built twice.*
-2. **The arbiter's entry point** — port acquisition moves behind the arbiter, and the UI's 19 direct
-   call sites route through it. This is PLAN-OWNERSHIP item 4, absorbed.
+1. ~~**The deadline on a claim, and `ShouldStandDown`**~~ — **DONE 2026-10-06** (PROGRESS entry 61).
+   `PortGate` only, additive, 11 new tests. No tool was rewired: see §4.3's warning about the two halves
+   moving together.
+2. ~~**The arbiter's entry point**~~ — **DONE 2026-10-06** (PROGRESS entries 60 and 61). `InputArbiter`
+   and `InputLease` in Core, and the UI's 18 MainWindow sites route through `AcquireInputAsync`. This is
+   PLAN-OWNERSHIP item 4, absorbed. The 19th site — the launcher's own tool start — keeps the raw port
+   deliberately, because it already holds the gate for the tool it is starting.
 3. **The unit** — leases become operation-level (a whole gesture), with the normal-stop /
-   emergency-stop distinction from §4 above.
+   emergency-stop distinction from §4 above. **Not started.**
 4. **Live check** — the pet feeder against a running spammer: the pause lasts as long as the reload, and
    the spammer resumes on its own. Per PLAN-SCHEDULING §9 step 3, this is the step that decides whether
-   the policy is right and it is the one that cannot be reasoned.
+   the policy is right and it is the one that cannot be reasoned. **Not run — needs the board.**
+
+**Before step 3, and out of order on purpose:** PLAN-SCHEDULING §4.3 (the pet declaring its deadline and
+the spammer asking the new question) is the rewiring step 1 deliberately did not do. It also needs
+step 4's live check to be trusted, because §4.3 is the change that decides whether the policy is right.
 
 ---
 

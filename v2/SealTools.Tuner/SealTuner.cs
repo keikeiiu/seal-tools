@@ -31,6 +31,7 @@ public sealed class SealTuner : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         var logDir = Path.Combine(_rootDir, "logs");
         Directory.CreateDirectory(logDir);
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
@@ -139,7 +140,13 @@ public sealed class SealTuner : ToolBase
                     ser.Write("E\n");
                     SleepCheck(timing.OcrDelay);
                 }
-                catch (Exception)
+                // A STOP IS NOT A DISCONNECT. SleepCheck throws OperationCanceledException when the
+                // run is cancelled, and that derives from Exception — so without the `when` this
+                // catch swallowed a perfectly normal Stop and reported "Arduino disconnected", which
+                // is a false fault on the card and sends the player to check a cable that is fine.
+                // The cancellation is left to propagate: the launcher's own clause files it as the
+                // stop it is.
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Console.WriteLine("[!] Arduino disconnected — stopping");
                     running = false;

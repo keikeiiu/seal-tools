@@ -67,6 +67,17 @@
 // Level 2 is the first time the number is load-bearing rather than informational: a host that drags
 // on a level-1 board sends 'L' and 'l', gets silence, and the item is never picked up — which looks
 // exactly like a mis-aimed drag. The pet tool's food-load mode is what reads this.
+//
+// BUMPING THIS IS NOT OPTIONAL, AND NOT ONLY A COMMENT. Two things hold it, and they do different
+// jobs — do not mistake the second for the first:
+//
+//   * v2/SealTools.Tests/FirmwareSketchTests.cs pins this number against the command set actually
+//     dispatched below. Add or remove a command without bumping, and the BUILD GOES RED. That is the
+//     guard, and it is the reason the level can be trusted.
+//   * Each level is tagged `fw<n>` at the commit that introduced it — `fw1`, `fw2` — so the history
+//     of what a board could do at each level is browsable instead of dug out with `git log -S`. That
+//     is the RECORD. A tag enforces nothing: you can change this file and never tag it, and no tool
+//     will complain.
 #define FW_VERSION 2
 
 // ── Held-key failsafe ────────────────────────

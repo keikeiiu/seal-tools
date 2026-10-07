@@ -116,6 +116,8 @@ public sealed class LauncherService : IDisposable
     public LauncherService(string rootDir)
     {
         _rootDir = rootDir;
+        // Built on the one gate rather than owning a rule of its own — see the property above.
+        Arbiter = new InputArbiter(Gate);
         _loader = new ConfigLoader(Path.Combine(rootDir, "config"));
         Config = _loader.Load();
 
@@ -173,9 +175,34 @@ public sealed class LauncherService : IDisposable
     /// from its own thread, so the "is it free?" check and the claim have to be one operation.</summary>
     public PortGate Gate { get; } = new();
 
+    /// <summary>The UI's way to ask for the game. Wraps <see cref="Gate"/> rather than replacing it —
+    /// the gate stays the single answer to "who is driving?", and this only gives the test and
+    /// calibration buttons a way to ask the question and to hold what they are given. See
+    /// <see cref="InputArbiter"/> for why it is not a second rule beside the gate.</summary>
+    public InputArbiter Arbiter { get; }
+
     /// <summary>Enumerates the serial ports the OS sees, flagging any matching the configured
     /// Arduino VID/PID. Used by the "Arduino" status tab for connection diagnostics.</summary>
     public List<ArduinoDevice> ArduinoDevices() => Arduino.Diagnose(Config.Arduino.Vid, Config.Arduino.Pid);
+
+    /// <summary>Which port Start would open right now, or why it would refuse — the same resolution
+    /// <see cref="ArduinoPortAsync"/> uses, exposed so the Arduino tab can SHOW it rather than work it
+    /// out again.
+    ///
+    /// The tab used to answer this question itself, from <see cref="ArduinoDevices"/>, and got two
+    /// different answers: it lights on a VID/PID match, while the port that is actually opened also
+    /// honours a port NAMED in `arduino.port` (present → that one, whatever its IDs; absent → refuse)
+    /// and `Arduino.Find`'s name-based fallback, which `Diagnose` deliberately does not have. So the
+    /// tab read green "Connected" for a port Start would refuse, and red "Not found" for one it would
+    /// happily open — on the very tab that exists to diagnose "Arduino not found". One resolution,
+    /// two readers, so they cannot drift apart again.
+    ///
+    /// Read-only: it resolves and reports, and opens nothing.</summary>
+    public (string? Port, string? Refusal) ResolveArduinoPort() =>
+        PortChoice.Choose(
+            Config.Arduino.Port,
+            System.IO.Ports.SerialPort.GetPortNames(),
+            () => Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid));
 
     /// <summary>Why the last <see cref="ArduinoPortAsync"/> call failed, or null on success.
     /// Surfaced to the user because the launcher has no console in the published WinExe.</summary>
@@ -196,10 +223,7 @@ public sealed class LauncherService : IDisposable
         // a fall-through to discovery — see PortChoice. Until this, `arduino.port` was documented as an
         // override and read by nothing, so naming a port did silently nothing at all.
         var findSw = System.Diagnostics.Stopwatch.StartNew();
-        var (port, portError) = PortChoice.Choose(
-            Config.Arduino.Port,
-            System.IO.Ports.SerialPort.GetPortNames(),
-            () => Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid));
+        var (port, portError) = ResolveArduinoPort();
         HoldDiag($"arduino port {port ?? "(none)"} took {findSw.ElapsedMilliseconds}ms");
         if (port == null)
         {
@@ -236,6 +260,53 @@ public sealed class LauncherService : IDisposable
         FirmwareReport = FirmwareVersion.Describe(FirmwareLevel);
         Console.WriteLine($"[arduino] firmware {FirmwareReport}");
         return _arduino;
+    }
+
+    /// <summary>Obtains the game for a test or calibration button, or refuses and says who has it.
+    /// The UI's one way in: every test button goes through here instead of taking the port itself, so
+    /// "no button writes to the board outside the arbiter" is one rule in one place rather than 19
+    /// places that each have to remember it.
+    ///
+    /// The claim is taken BEFORE the port is opened, deliberately. Opening is a 2 s boot wait on a
+    /// cold start, and spending it only to refuse would leave the button looking dead for two seconds
+    /// before it said why — while the refusal is knowable immediately.
+    ///
+    /// Returns null with <see cref="LastArduinoError"/> set, so a caller's existing message path
+    /// reports the real reason rather than repeating a guess about the cable.</summary>
+    public async Task<InputLease?> AcquireInputAsync()
+    {
+        LastArduinoError = null;
+
+        if (!Arbiter.TryAcquireUiLease(out var refusal))
+        {
+            LastArduinoError = refusal;
+            return null;
+        }
+
+        SerialPort? ser;
+        try
+        {
+            ser = await ArduinoPortAsync();
+        }
+        catch
+        {
+            // The claim must not outlive the attempt, whichever way the attempt ends. `ser == null`
+            // was the only exit this used to cover; an exception out of ArduinoPortAsync — a WMI
+            // failure inside the resolution, say — left the gate owned by "test" for good, and then
+            // every later test was refused with `"test" is using the game right now` while no test
+            // was. Rethrown rather than swallowed: the caller's handler is what reports it.
+            Arbiter.ReleaseUiLease();
+            throw;
+        }
+
+        if (ser == null)
+        {
+            // The reason is ArduinoPortAsync's and is already on LastArduinoError.
+            Arbiter.ReleaseUiLease();
+            return null;
+        }
+
+        return new InputLease(Arbiter, ser);
     }
 
     /// <summary>The firmware protocol level the board reported when the port was opened, or null when
@@ -423,12 +494,26 @@ public sealed class LauncherService : IDisposable
         // Registered BEFORE the loop is started, and with no await between the two, so a Stop from
         // the UI cannot fall between them and miss a tool that is already running. (The whole block
         // is synchronous on the dispatcher thread, which is what makes that safe.)
+        // A crash from a previous run of THIS tool stops being news the moment it is running again.
+        // Cleared by id rather than wholesale, so another tool's failure stays on its own card.
+        if (LastCrash?.Id == id) LastCrash = null;
         lock (_lifecycleLock) _running[id] = entry;
         entry.Task = Task.Run(() =>
         {
             try
             {
                 RunTool(id, ser, state, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // A STOP, NOT A CRASH. SleepCheck throws so a step in progress — a pet drag, a reload
+                // wait — is abandoned instead of finishing first, which is what made Stop on the pet
+                // feeder look like it did nothing. Without this clause that ordinary stop lands in the
+                // handler below: "pet stopped: The operation was cancelled." on the card, and a line
+                // in logs/error.log, every single time the player pressed Stop.
+                //
+                // Nothing reported and nothing logged, deliberately: silence is what a normal stop
+                // does today, and a stop is not news. The finally below tears down either way.
             }
             catch (Exception ex)
             {
@@ -437,6 +522,9 @@ public sealed class LauncherService : IDisposable
                 // tool rendered as "paused" with no explanation.
                 state.Message = $"{id} stopped: {ex.Message}";
                 state.Running = false;
+                // And on the service, because the state does not outlive the teardown below — see
+                // LastCrash. Without this the card renders a crash as a plain "stopped".
+                LastCrash = (id, ex.Message);
                 Console.WriteLine($"[!] {id} crashed: {ex}");
                 try
                 {
@@ -634,6 +722,20 @@ public sealed class LauncherService : IDisposable
     /// something to log and move past.</summary>
     public string? LastReleaseError { get; private set; }
 
+    /// <summary>Which tool crashed last, and why — or null when none has this session.
+    ///
+    /// The crash handler already writes the reason to the tool's own <see cref="ToolState"/>, and its
+    /// comment says why that matters: *"the tool card is the only place the user can see this — the
+    /// published WinExe has no console"*. But the teardown that follows removes the tool from the
+    /// registry microseconds later, the card reads the registry, and so the card fell through to a
+    /// bare "stopped" — a crash rendered exactly like a deliberate Stop, with the reason surviving
+    /// only in logs/error.log, which is the one place that comment says is not enough.
+    ///
+    /// Held HERE rather than on the state because it has to OUTLIVE the run: the whole difficulty is
+    /// that the failing tool is gone by the time anyone can read it. Cleared when that same tool
+    /// starts again, so it can never describe a run the player has already replaced.</summary>
+    public (string Id, string Message)? LastCrash { get; private set; }
+
     /// <summary>True while a Start is between its first line and its tool actually running. A click
     /// during that window is deliberately a silent no-op — it returns true and reports nothing — and
     /// the Hold Space report of 2026-10-01 is exactly a click that appeared to do nothing. Diagnostic
@@ -684,18 +786,34 @@ public sealed class LauncherService : IDisposable
     ///
     /// This used to swallow its exception, which made it the one path that failed silently — while
     /// the tool's own copy of the same write, the one that is only reachable when the loop is not
-    /// being interrupted, was the one that reported. That is backwards.</summary>
+    /// being interrupted, was the one that reported. That is backwards.
+    ///
+    /// A null or closed port is now a REPORTED failure rather than a silent success. It was the last
+    /// way this method could lie, and the worst one to lie about: what it claims to have released is
+    /// a key that is still down on the player's machine, so "released" and "never sent" cannot be the
+    /// same answer. Nothing is written on that path, so nothing is reported as written.</summary>
     public string? ReleaseHeld()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        // A null or CLOSED port writes nothing and still reports success below — the one way this
-        // method can lie. Logged so a "release ok" line can never describe a release that never
-        // went out, and so the write's duration is on the record rather than assumed to be instant.
-        HoldDiag($"release enter port={(_arduino is { IsOpen: true } p ? p.PortName : "(null/closed)")}");
+        if (_arduino is not { IsOpen: true } port)
+        {
+            // Said, not merely logged. The log line was the old mitigation and it is not a report —
+            // the player never sees logs/holdspace.log, and the status line beside the toggle would
+            // have gone on reading as though the key had been let go.
+            // Short, because the status line already says "input may be stuck" and its tooltip already
+            // gives the remedy — this only has to supply the reason, not repeat the advice.
+            LastReleaseError = "the Arduino port is not open, so nothing was sent";
+            HoldDiag($"release NOT SENT — port is {(_arduino == null ? "null" : "closed")}");
+            return LastReleaseError;
+        }
+
+        // The write's duration is on the record rather than assumed to be instant, which is the other
+        // thing the log is for.
+        HoldDiag($"release enter port={port.PortName}");
         try
         {
-            _arduino?.Write("U\n");   // spacebar
-            _arduino?.Write("l\n");   // left mouse button (firmware 2)
+            port.Write("U\n");   // spacebar
+            port.Write("l\n");   // left mouse button (firmware 2)
             LastReleaseError = null;
             HoldDiag($"release ok {sw.ElapsedMilliseconds}ms");
             return null;

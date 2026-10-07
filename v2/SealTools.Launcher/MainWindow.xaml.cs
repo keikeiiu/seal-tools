@@ -755,7 +755,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             else
             {
-                block.Text = "stopped";
+                // A CRASHED TOOL KEEPS ITS REASON. The state is gone by here — the teardown removes
+                // the tool from the registry — so the reason has to come from the service, where it
+                // outlives the run. Without this a crash rendered exactly like a deliberate Stop, and
+                // the reason lived only in logs/error.log, which the crash handler's own comment says
+                // is not somewhere the player looks.
+                var crash = _service.LastCrash;
+                block.Text = crash is { } c && c.Id == id
+                    ? "⚠ crashed: " + c.Message
+                    : "stopped";
                 block.Foreground = Res("SystemFillColorCriticalBrush");
             }
         }
@@ -1140,49 +1148,159 @@ public partial class MainWindow : FluentWindow, IDisposable
             Foreground = Res("TextFillColorPrimaryBrush"),
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
         };
-        var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        var statusRow = new StackPanel { Orientation = Orientation.Horizontal };
         statusRow.Children.Add(light);
         statusRow.Children.Add(status);
 
-        var detail = new TextBlock
+        // THE REMEDY, on its own line under the verdict and only while something is wrong. It used to
+        // be the tail of one dense monospace paragraph — which is exactly where a player stops reading,
+        // and it was the part telling them what to actually do.
+        var advice = new TextBlock
         {
             Foreground = Res("TextFillColorPrimaryBrush"),
-            FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 4),
+            Margin = new Thickness(22, 4, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+
+        // A small caption above each group, so the card reads as a few labelled facts rather than one
+        // block. Secondary weight: enough to scan by, not enough to compete with the verdict.
+        TextBlock Caption(string text) => new()
+        {
+            Text = text,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            Margin = new Thickness(0, 10, 0, 2),
+        };
+
+        var portsList = new StackPanel();
+        var lookingFor = new TextBlock
+        {
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var firmware = new TextBlock
+        {
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        // The raw level, SHOWN rather than hidden in a tooltip: it is evidence, and it is what a bug
+        // report needs. Secondary weight and monospace so it reads as the detail under the verdict
+        // rather than as a second, competing one.
+        var firmwareDetail = new TextBlock
+        {
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0),
         };
 
         void Refresh()
         {
             var devices = _service.ArduinoDevices();
-            var match = devices.FirstOrDefault(d => d.IsMatch);
-            if (match != null)
+
+            // WHAT START WOULD DO, asked of the service rather than worked out here. The light used to
+            // answer a different question — "does some port's VID/PID match?" — and the two answers
+            // came apart in both directions: green for a port Start would refuse, red for one it would
+            // open. See LauncherService.ResolveArduinoPort.
+            var (resolved, refusal) = _service.ResolveArduinoPort();
+
+            if (refusal != null)
+            {
+                // A port NAMED in arduino.port that is not here. A refusal is not an absence, and the
+                // old reading could not express it at all: it showed green whenever some OTHER board
+                // matched the IDs, while Start was refusing the one the player had named.
+                light.Fill = Res("SystemFillColorCriticalBrush");
+                status.Text = "Start will refuse — the named port is missing";
+                // The full sentence, which names the port and says both ways out. It was previously
+                // buried mid-paragraph in the monospace block, at the same weight as the PnP ids.
+                advice.Text = refusal;
+                advice.Visibility = Visibility.Visible;
+            }
+            else if (resolved is { } chosen)
             {
                 light.Fill = Res("SystemFillColorSuccessBrush");
-                // The friendly name usually already ends in "(COM5)" — don't repeat the port.
-                status.Text = match.Name.Contains($"({match.Port})", StringComparison.OrdinalIgnoreCase)
-                    ? $"Connected — {match.Name}"
-                    : $"Connected — {match.Name} ({match.Port})";
+                status.Text = $"Ready — Start will open {chosen}";
+                advice.Visibility = Visibility.Collapsed;
             }
             else
             {
                 light.Fill = Res("SystemFillColorCriticalBrush");
-                status.Text = "Not found";
+                status.Text = "Start will refuse — no Arduino found";
+                // The cable first, because it is the most common cause and the one the player cannot
+                // see: a charge-only cable powers the board and never enumerates it as a port.
+                advice.Text = "Plug the board in, then press Refresh. A charge-only cable is the usual " +
+                              "cause — the board lights up and never appears as a port.";
+                advice.Visibility = Visibility.Visible;
             }
 
-            var lines = new List<string>
+            // PORTS, one per row and the chosen one first, so "which will it use?" is the first thing
+            // read. The raw PnP id is the longest string on the card and the one a player reads least,
+            // so it is a tooltip now rather than part of the line — it was half of every row.
+            portsList.Children.Clear();
+            if (devices.Count == 0)
             {
-                $"Expected: VID 0x{_service.Config.Arduino.Vid:X4}  PID {string.Join("/", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}"))}",
-                // The board is asked once, when the port is opened, so before any tool has run there
-                // is nothing to report yet — and that is a different thing from a board that stayed
-                // silent, which the report says in its own words.
-                $"Firmware: {_service.FirmwareReport ?? "not asked yet (opens with the first tool)"}",
-            };
-            if (devices.Count == 0) lines.Add("(no serial ports detected)");
-            foreach (var d in devices)
-                lines.Add($"{(d.IsMatch ? ">>" : "  ")} {d.Port,-8} {d.Name}  [{d.PnpId}]");
-            detail.Text = string.Join(Environment.NewLine, lines);
+                portsList.Children.Add(Hint("This machine reports no serial ports at all."));
+            }
+            else
+            {
+                foreach (var d in devices.OrderByDescending(
+                             x => string.Equals(x.Port, resolved, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var isChosen = string.Equals(d.Port, resolved, StringComparison.OrdinalIgnoreCase);
+                    var row = new TextBlock
+                    {
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 1, 0, 1),
+                        Text = $"{(isChosen ? "●" : "○")}  {d.Port}" +
+                               (string.IsNullOrWhiteSpace(d.Name) ? "" : $"   {d.Name}") +
+                               (isChosen ? "     — Start will open this one"
+                                         : d.IsMatch ? "     — matches the expected ID" : ""),
+                        Foreground = isChosen
+                            ? Res("SystemFillColorSuccessBrush")
+                            : Res("TextFillColorSecondaryBrush"),
+                    };
+                    ToolTipService.SetToolTip(row, d.PnpId);
+                    portsList.Children.Add(row);
+                }
+            }
+
+            // Printed because it decides everything above. A player who had named a port had no way to
+            // see which one would actually be opened: the card showed the ID it wanted and never the
+            // override that outranks it.
+            lookingFor.Text =
+                $"VID 0x{_service.Config.Arduino.Vid:X4}    PID " +
+                string.Join(" / ", _service.Config.Arduino.Pid.Select(p => $"0x{p:X4}")) +
+                Environment.NewLine +
+                (string.IsNullOrWhiteSpace(_service.Config.Arduino.Port)
+                    ? "arduino.port: not set — the board is found by the ID above"
+                    : $"arduino.port: {_service.Config.Arduino.Port} — a named port wins over the ID above");
+
+            // WHAT THE LEVEL MEANS, not the level itself. "protocol level 2 (current)" is written for
+            // the log — a player has no way to tell whether level 2 is good. The card says what the
+            // level decides (can this board drag food?) and what to do when it cannot; the raw
+            // sentence goes in the tooltip, which is exactly where a bug report wants it.
+            var report = _service.FirmwareReport;
+            if (report is null)
+            {
+                // Not asked yet is the NORMAL state before any tool has run, and it must not read as a
+                // fault — it sits beside a status light, on a card called Connection.
+                firmware.Text = "Not checked yet — this is normal. The board is read the first time a " +
+                                "tool opens it.";
+                firmwareDetail.Text = "";
+            }
+            else
+            {
+                // The verdict, then the evidence, both on the card. "Correct or not" is decided by the
+                // one question the level answers — can this board drag food — rather than by comparing
+                // numbers, so a NEWER board reads as fine rather than as a mismatch.
+                firmware.Text = (FoodLoadMode.BoardCanDrag(_service.FirmwareLevel) ? "OK — " : "Not OK — ")
+                                + FirmwareVersion.Summary(_service.FirmwareLevel);
+                firmwareDetail.Text = "Reported: " + report;
+            }
         }
 
         var refreshBtn = MakeButton("Refresh", ControlAppearance.Secondary);
@@ -1190,7 +1308,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         var refreshRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         refreshRow.Children.Add(refreshBtn);
 
-        panel.Children.Add(Section("Connection", statusRow, detail, refreshRow));
+        panel.Children.Add(Section("Connection",
+            statusRow,
+            advice,
+            Caption("Ports this machine has"),
+            portsList,
+            Caption("What the launcher looks for"),
+            lookingFor,
+            Caption("Board firmware"),
+            firmware,
+            firmwareDetail,
+            refreshRow));
 
         // ── Input test ──────────────────────────────────────────────────────
 
@@ -1205,10 +1333,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var testBtn = MakeButton("Send a test click", ControlAppearance.Primary);
         testBtn.Click += async (_, _) =>
         {
-            var ser = await _service.ArduinoPortAsync();
-            if (ser == null)
+            using var lease = await _service.AcquireInputAsync();
+            if (lease?.Port is not { } ser)
             {
-                testResult.Text = "No Arduino — see Connection above.";
+                testResult.Text = _service.LastArduinoError ?? "No Arduino — see Connection above.";
                 return;
             }
             try
@@ -2911,8 +3039,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry."; return; }
 
         try
         {
@@ -2971,10 +3099,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
 
@@ -3058,10 +3186,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first.";
             return;
         }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _gemHint!.Text = "Arduino not found — plug it in and retry.";
+            _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
         // The composer sends the RAW hand-tuned movement for a pair, not a computed pixel delta
@@ -3113,8 +3241,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var display = HidPointer.Display(_service.Config.Window.Title);
         if (display == null) { _gemHint!.Text = "Game window not found (or minimized) — open and restore the game first."; return; }
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _gemHint!.Text = "Arduino not found — plug it in and retry."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry."; return; }
 
         try
         {
@@ -3195,16 +3323,18 @@ public partial class MainWindow : FluentWindow, IDisposable
             targets[i] = (steps[i].Action, steps[i].Point, pt.Value);
         }
 
-        // Claim the guard BEFORE the first await. ArduinoPortAsync waits out a 2 s boot delay on a
-        // cold start, and a second click used to pass the check at the top of this method while the
-        // first was still suspended — two cycles then drove the game at the same time.
+        // Claim the guard BEFORE the first await. AcquireInputAsync waits out the 2 s boot delay on a
+        // cold start (inside ArduinoPortAsync), and a second click used to pass the check at the top
+        // of this method while the first was still suspended — two cycles then drove the game at the
+        // same time. The arbiter now refuses that second cycle too, since the first holds the gate;
+        // this flag is kept because it also covers the synchronous stretch before the claim.
         _cycleRunning = true;
         try
         {
-            var ser = await _service.ArduinoPortAsync();
-            if (ser == null)
+            using var lease = await _service.AcquireInputAsync();
+            if (lease?.Port is not { } ser)
             {
-                _gemHint!.Text = "Arduino not found — plug it in and retry.";
+                _gemHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
                 return;
             }
 
@@ -3724,10 +3854,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
-            _tunerHint!.Text = "Arduino not found — plug it in and retry.";
+            _tunerHint!.Text = _service.LastArduinoError ?? "Arduino not found — plug it in and retry.";
             return;
         }
 
@@ -4997,8 +5127,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _buyHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
         // Click the scroll point FIRST. The dry run is a calibration action — you have just been
         // clicking this window — so the game is unfocused and the wheel goes nowhere. A real run
         // needs no such click: there the mouse is already in the game.
@@ -5028,7 +5158,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!TryPlace(ser, target.X, target.Y, out err)) { _buyHint!.Text = "Dry run stopped: " + err; return; }
 
         _buyHint!.Text = $"Dry run: scrolled {preset.Scroll} notch(es) down from where the list was and " +
-                         $"parked the cursor on row {preset.Row}. Nothing was clicked. It assumes the " +
+                         $"parked the cursor on row {preset.Row + 1}. Nothing was clicked. It assumes the " +
                          "list is already at the TOP — scroll it there yourself first. If the pointer " +
                          $"isn't on '{name}', change the scroll amount and run this again.";
     }
@@ -5039,8 +5169,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!BagGrid.IsValidRect(bs.BagGrid)) { _sellHint!.Text = "Calibrate the bag grid first."; return; }
         if (bs.SellSlots.Count == 0) { _sellHint!.Text = "Click some slots first."; return; }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _sellHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _sellHint!.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         // Same descending order the real run uses, so the dry run shows the actual sequence.
         var centres = BagGrid.Centres(bs.BagGrid!);
@@ -5454,8 +5584,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             _tooltipHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -5621,8 +5751,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -6678,8 +6808,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { _questHint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { _questHint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         // The rows are what an edit lives in until Save, so the test uses them — otherwise it would
         // replay the flow as it was last SAVED and quietly ignore what is on screen.
@@ -7216,27 +7346,26 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         _petDragTarget = target;
 
-        // The food strip is ONE drag per row now, divided by the row's stack count — a per-slot chain
-        // was how many there are is the ROW's stack
-        // count — two on the free row, five on a paid one. It used to stop at two, which is the free
-        // row's number generalised to every row: the same mistake the load size made, in the markup.
-        if (target.StartsWith("feeder:", StringComparison.Ordinal))
-        {
-            var i = int.Parse(target["feeder:".Length..], CultureInfo.InvariantCulture);
-            var stacks = EditRow(_service.Config.Pet).Stacks;
-            _petHint!.Text = $"Drag a box around the COUNT on food slot {i + 1} of {stacks} — the " +
-                             "number at its bottom-right, which spills past the slot's frame. Tight " +
-                             "around the digits, and not reaching the next slot, or two numbers come " +
-                             "back as one string.";
-            return;
-        }
-
+        // "feederstrip" is the live target — the food strip is ONE drag per row, divided by the row's
+        // food-slot count, so a five-slot paid row is one drag rather than five.
+        //
+        // The per-slot chain it replaced is gone, and its branch ("feeder:<n>") was left behind:
+        // unreachable, because no caller builds such a target any more. It is removed rather than
+        // kept, because its presence is what made the default arm look correct — "feederstrip" fell
+        // through to "Drag a box around ONE slot", which is precisely the one thing this button must
+        // not be told to do. A dead arm that reads as a plausible default is a trap for the next
+        // person to add a target here.
         _petHint!.Text = target switch
         {
             "toggle" => "Drag a box around the 開始代養 / 結束代養 button. The tool clicks its centre " +
                         "to start boarding once the food is loaded.",
             "petslot" => "Drag a box around the PET SLOT in the boarding window — the square the " +
                         "pet sits in, next to the food.",
+            "feederstrip" => "Drag ONE box across ALL of this row's food slots — the whole strip, not " +
+                        "one slot. The tool divides it by the row's food-slot count, so a five-slot " +
+                        "paid row is one drag rather than five. It is also the whole of the count " +
+                        "calibration: the crop each count is read from is computed inside the slot, " +
+                        "so there is nothing else to draw.",
             "grid" => "Drag a box around the WHOLE 8x8 bag grid.",
             _ => "Drag a box around ONE slot.",
         };
@@ -7846,7 +7975,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         };
 
         for (int i = 0; i < pet.Slots.Count; i++)
-            lines.Add(Mark(true, $"row {i + 1} boarding       " +
+            // Marked with the REAL value, not `true`. Hard-coded true meant a row that is not boarding
+            // rendered "  ok   row 2 boarding   no — tick it if it is feeding": the ok/-- column said
+            // set while the text beside it said not set.
+            lines.Add(Mark(pet.Slots[i].BoardingRunning, $"row {i + 1} boarding       " +
                                  (pet.Slots[i].BoardingRunning ? "yes" : "no — tick it if it is feeding")));
 
         _petSessionChecklist.Text = string.Join("\n", lines);
@@ -8129,6 +8261,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         // other, which is the mixing the two are meant to avoid. The card names the real reason if you
         // press Start with a calibration gap, and Calibrate Pet's checklist names it before that.
         var lines = new List<string>();
+        // Zero rows is the one gap the other checks cannot express: `round` is 0, so the "one round of
+        // all N rows" test is skipped by its own `round > 0` guard and the tab reported "ready" with
+        // nothing to run — and the sentence ended "reloading every ." because the join was empty.
+        if (pet.Slots.Count == 0)
+            lines.Add("no breeding rows configured — there is nothing for the feeder to run");
         if (pet.ReturnSlot is not { Count: 2 } && pet.Queue.Count == 0)
             lines.Add("neither the return slot nor a pet icon is marked — nothing says where the pet is");
         if (pet.FoodSlots.Count == 0) lines.Add("no food cells are marked");
@@ -8194,7 +8331,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         var total = 0;
         var counted = 0;
         var read = 0;
-        int? agreed = null;
         try
         {
             // THE LAUNCHER IS HIDDEN ONCE FOR THE WHOLE READ. It hides for a screen grab because the
@@ -8206,6 +8342,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 foreach (var (what, box) in boxes)
                 {
                     var reads = new List<string>();
+                    // PER SLOT, and it has to be here. Declared outside the loop it kept the previous
+                    // slot's number: a slot with no region, or one whose read threw, printed the slot
+                    // before it — the "seen" column saying "no region" beside a number that came from
+                    // somewhere else entirely — and the footer counted that number a second time.
+                    int? agreed = null;
                     try
                     {
                         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
@@ -8321,8 +8462,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -8359,7 +8500,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var report = new List<string>
             {
-                $"Page {page + 1}, cell {cell} (bag slot {cell + 1}) — panel read at " +
+                // 1-based, like every other surface the player reads — the picker says "Row 1", the bag
+                // cell tooltips say "Bag slot 1". This line used to name the same cell twice, once
+                // 0-based and once 1-based ("cell 0 (bag slot 1)"), so it contradicted itself.
+                $"Page {page + 1}, cell {cell + 1} — panel read at " +
                 $"({region.Left},{region.Top}) {region.Width}x{region.Height}.",
                 lines.Count == 0
                     ? "Read NOTHING. The image saved to logs\\reads is the exact region the OCR was " +
@@ -8444,8 +8588,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             hint.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;
@@ -8676,9 +8820,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) held no pet. " +
-                    "Nothing was changed: this is the read-only scan. \"Scan + rebuild the queue\" " +
-                    "writes what it finds.";
+        // NOT "held no pet". notPets counts cells the matcher DID match whose hover panel would not
+        // read — the per-cell lines say exactly that, and the counter's own comment says such a cell is
+        // "NOT called finished, and not called feedable either". The summary asserted the one thing the
+        // code goes out of its way not to claim: that the pet is gone.
+        hint.Text = $"{feedable} feedable, {finished} finished — {notPets} cell(s) matched a pet but " +
+                    "would not read. Nothing was changed: this is the read-only scan. " +
+                    "\"Scan + rebuild the queue\" writes what it finds.";
     }
 
     /// <summary>Writes a bag scan's report to logs\reads, beside every other diagnostic's evidence.
@@ -8850,8 +8998,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
@@ -9071,7 +9219,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             RefreshPetQueue();
             if (_petQueuePreview != null) _petQueuePreview.Source = MatToBitmapSource(crop);
 
-            hint.Text = $"Added {box.Width}x{box.Height} from page {marked[0] + 1}, cell {cell}. " +
+            hint.Text = $"Added {box.Width}x{box.Height} from page {marked[0] + 1}, cell {cell + 1}. " +
                         $"{pet.Queue.Count} pet icon(s) queued. Check the preview matches the pet.";
         }
         catch (Exception ex)
@@ -9124,8 +9272,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         if (!TryPlace(ser, tab[0], tab[1], out var tabError))
         {
@@ -9164,7 +9312,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (_petFoodPreview != null) _petFoodPreview.Source = MatToBitmapSource(crop);
 
             hint.Text = $"Food icon captured, {box.Width}x{box.Height} from page {page + 1}, " +
-                        $"cell {cell}. Check the preview, then Scan the bag for food.";
+                        $"cell {cell + 1}. Check the preview, then Scan the bag for food.";
         }
         catch (Exception ex)
         {
@@ -9197,8 +9345,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser) { hint.Text = _service.LastArduinoError ?? "Arduino not found."; return; }
 
         var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd))
@@ -9765,8 +9913,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var ser = await _service.ArduinoPortAsync();
-        if (ser == null)
+        using var lease = await _service.AcquireInputAsync();
+        if (lease?.Port is not { } ser)
         {
             _buySellHint!.Text = _service.LastArduinoError ?? "Arduino not found.";
             return;

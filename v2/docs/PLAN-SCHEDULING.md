@@ -161,9 +161,12 @@ nothing" failure this repo has paid for twice.
 
 ## 9. Order of work
 
-1. **§4.1 + §4.2** — the deadline on a claim, and `ShouldStandDown`. `PortGate` only, with tests; no tool
-   changes, so nothing can regress.
-2. **§4.3** — the spammer asks the new question. One condition changes.
+1. ~~**§4.1 + §4.2** — the deadline on a claim, and `ShouldStandDown`.~~ **DONE 2026-10-06** — `PortGate`
+   only, additive (the deadline is an optional argument, so every existing call site is unchanged), and
+   11 new tests. See PROGRESS entry 61. No tool was rewired.
+2. **§4.3** — the spammer asks the new question. One condition changes. **Not started, and it MUST land
+   with the pet declaring its deadline**: `ShouldStandDown` returns false for a waiter that declared
+   none, so the spammer switched over alone would stop yielding entirely.
 3. **Live check** — the pet feeder against a running spammer: the pause should last exactly as long as
    the reload, and the spammer should resume on its own. **This is the step that decides whether the
    policy is right**, and it is the one that cannot be reasoned.

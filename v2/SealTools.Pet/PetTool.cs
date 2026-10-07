@@ -282,6 +282,7 @@ public sealed class PetTool : ToolBase
 
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
+        WatchCancellation(ct);
         if (Ready(state) is { } problem)
         {
             Console.WriteLine("[!] " + problem);
@@ -415,6 +416,23 @@ public sealed class PetTool : ToolBase
                 try
                 {
                     visited = Visit(ser, state, batch);
+                }
+                catch (OperationCanceledException)
+                {
+                    // THE HANDOVER TO THE PLAYER. A stop lands wherever the pet had got to, and that
+                    // can be mid-reload or mid-drag — a drag cut between its press and its release
+                    // leaves the stack on the ground where the cursor was. The player is standing
+                    // right there and can fix that by hand, but only if they are told to look.
+                    //
+                    // Nothing is repaired here on purpose. The restart re-inspects the game and
+                    // re-feeds any row that still needs it (Run opens with InspectRows), so the
+                    // SCHEDULE is never left wrong — it is the GAME that may be, and that is the one
+                    // thing this process cannot put back.
+                    state.Message = batch.Count == 1
+                        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
+                        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
+                          + " — some may not have been fed. Check them in game.";
+                    throw;
                 }
                 finally
                 {
@@ -698,7 +716,11 @@ public sealed class PetTool : ToolBase
         }
         finally
         {
-            CloseBoarding(ser);
+            // Muted: closing the window is CLEANUP, and a stop must not abandon it. CloseBoarding
+            // clicks the X through Click(), which sleeps before it writes — so with the token cancelled
+            // the sleep threw and the X was never clicked, leaving the boarding window on top of the
+            // game for the next cycle to click 目錄 behind.
+            WithoutCancellation(() => CloseBoarding(ser));
         }
     }
 
@@ -1169,7 +1191,9 @@ public sealed class PetTool : ToolBase
         }
         finally
         {
-            CloseBoarding(ser);
+            // Muted, for the same reason as the look path above: the window close is cleanup, and a
+            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
+            WithoutCancellation(() => CloseBoarding(ser));
         }
 
         return new VisitResult(results, schedule);
@@ -2001,14 +2025,22 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        HidPointer.LeftDown(ser);
-        Log($"  drag[{attempt}] leftdown at {CursorWhere()}");
-
-        // HOLD before pulling. Not a nicety: this is what the player's eye caught — the first drag
-        // pressed and moved in the same frame and picked nothing up. See DragGrabWait.
-        SleepCheck(DragGrabWait);
         try
         {
+            // THE PRESS BELONGS INSIDE THE TRY, and that is a correctness rule rather than tidiness.
+            // It used to sit above it, so a cancellation arriving in the SleepCheck below — which now
+            // THROWS — unwound before the try was ever entered, the finally never ran, and the left
+            // button stayed DOWN on the player's machine. A held left button follows the real cursor
+            // and drops whatever it is over on the next press; that is the hazard HeldKeys exists for.
+            //
+            // The rule: anything that PRESSES must be inside the same try whose finally RELEASES.
+            HidPointer.LeftDown(ser);
+            Log($"  drag[{attempt}] leftdown at {CursorWhere()}");
+
+            // HOLD before pulling. Not a nicety: this is what the player's eye caught — the first drag
+            // pressed and moved in the same frame and picked nothing up. See DragGrabWait.
+            SleepCheck(DragGrabWait);
+
             if (!PlaceOn(ser, slot[0], slot[1], out error))
             {
                 Log($"  FAILED dragging stack {stack + 1} to its box at ({slot[0]},{slot[1]}): {error}");
