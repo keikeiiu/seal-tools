@@ -22,6 +22,7 @@ public class ToolBaseCancellationTests
 
         public void Watch(CancellationToken ct) => WatchCancellation(ct);
         public void Sleep(double seconds) => SleepCheck(seconds);
+        public void Muted(Action teardown) => WithoutCancellation(teardown);
     }
 
     [Fact]
@@ -100,5 +101,71 @@ public class ToolBaseCancellationTests
         cts.Cancel();
 
         Assert.Throws<OperationCanceledException>(() => probe.Sleep(0));
+    }
+
+    // A STOP ABANDONS THE WORK, NOT THE CLEANUP. SleepCheck throws from any point, and the code that
+    // closes a window or lets go of a button also sleeps — so without a mute, a stop arriving inside
+    // such a teardown aborted the teardown itself. The pet left its boarding window open over the game,
+    // and a finally that throws also REPLACES the exception it was unwinding.
+
+    [Fact]
+    public void ASleepInsideCleanupDoesNotThrowEvenWhenTheRunIsCancelled()
+    {
+        var probe = new Probe();
+        using var cts = new CancellationTokenSource();
+        probe.Watch(cts.Token);
+        cts.Cancel();
+
+        probe.Muted(() => probe.Sleep(0.1));   // must not throw
+    }
+
+    [Fact]
+    public void TheMuteIsLiftedWhenTheCleanupEnds()
+    {
+        // If it were not, the FIRST stop would leave the tool permanently unable to be stopped — a far
+        // worse bug than the one the mute fixes.
+        var probe = new Probe();
+        using var cts = new CancellationTokenSource();
+        probe.Watch(cts.Token);
+        cts.Cancel();
+
+        probe.Muted(() => probe.Sleep(0.05));
+
+        Assert.Throws<OperationCanceledException>(() => probe.Sleep(0.05));
+    }
+
+    [Fact]
+    public void AFinishedInnerCleanupDoesNotUnmuteAnOuterOne()
+    {
+        // Nesting is real: a cleanup helper may itself have cleanup. The inner block ending must not
+        // hand cancellation back while the outer block is still running.
+        var probe = new Probe();
+        using var cts = new CancellationTokenSource();
+        probe.Watch(cts.Token);
+        cts.Cancel();
+
+        probe.Muted(() =>
+        {
+            probe.Muted(() => probe.Sleep(0.05));
+            probe.Sleep(0.05);   // still inside the outer cleanup — must not throw
+        });
+
+        Assert.Throws<OperationCanceledException>(() => probe.Sleep(0.05));
+    }
+
+    [Fact]
+    public void ACleanupThatThrowsStillLiftsTheMute()
+    {
+        // Cleared in a finally for exactly this: a teardown that throws — the very case a teardown is
+        // most likely to be running — must not leave the tool unable to be stopped afterwards.
+        var probe = new Probe();
+        using var cts = new CancellationTokenSource();
+        probe.Watch(cts.Token);
+        cts.Cancel();
+
+        Assert.Throws<InvalidOperationException>(
+            () => probe.Muted(() => throw new InvalidOperationException("teardown failed")));
+
+        Assert.Throws<OperationCanceledException>(() => probe.Sleep(0.05));
     }
 }

@@ -716,7 +716,11 @@ public sealed class PetTool : ToolBase
         }
         finally
         {
-            CloseBoarding(ser);
+            // Muted: closing the window is CLEANUP, and a stop must not abandon it. CloseBoarding
+            // clicks the X through Click(), which sleeps before it writes — so with the token cancelled
+            // the sleep threw and the X was never clicked, leaving the boarding window on top of the
+            // game for the next cycle to click 目錄 behind.
+            WithoutCancellation(() => CloseBoarding(ser));
         }
     }
 
@@ -1187,7 +1191,9 @@ public sealed class PetTool : ToolBase
         }
         finally
         {
-            CloseBoarding(ser);
+            // Muted, for the same reason as the look path above: the window close is cleanup, and a
+            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
+            WithoutCancellation(() => CloseBoarding(ser));
         }
 
         return new VisitResult(results, schedule);
@@ -2019,14 +2025,22 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        HidPointer.LeftDown(ser);
-        Log($"  drag[{attempt}] leftdown at {CursorWhere()}");
-
-        // HOLD before pulling. Not a nicety: this is what the player's eye caught — the first drag
-        // pressed and moved in the same frame and picked nothing up. See DragGrabWait.
-        SleepCheck(DragGrabWait);
         try
         {
+            // THE PRESS BELONGS INSIDE THE TRY, and that is a correctness rule rather than tidiness.
+            // It used to sit above it, so a cancellation arriving in the SleepCheck below — which now
+            // THROWS — unwound before the try was ever entered, the finally never ran, and the left
+            // button stayed DOWN on the player's machine. A held left button follows the real cursor
+            // and drops whatever it is over on the next press; that is the hazard HeldKeys exists for.
+            //
+            // The rule: anything that PRESSES must be inside the same try whose finally RELEASES.
+            HidPointer.LeftDown(ser);
+            Log($"  drag[{attempt}] leftdown at {CursorWhere()}");
+
+            // HOLD before pulling. Not a nicety: this is what the player's eye caught — the first drag
+            // pressed and moved in the same frame and picked nothing up. See DragGrabWait.
+            SleepCheck(DragGrabWait);
+
             if (!PlaceOn(ser, slot[0], slot[1], out error))
             {
                 Log($"  FAILED dragging stack {stack + 1} to its box at ({slot[0]},{slot[1]}): {error}");

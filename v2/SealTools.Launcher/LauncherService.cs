@@ -283,12 +283,25 @@ public sealed class LauncherService : IDisposable
             return null;
         }
 
-        var ser = await ArduinoPortAsync();
+        SerialPort? ser;
+        try
+        {
+            ser = await ArduinoPortAsync();
+        }
+        catch
+        {
+            // The claim must not outlive the attempt, whichever way the attempt ends. `ser == null`
+            // was the only exit this used to cover; an exception out of ArduinoPortAsync — a WMI
+            // failure inside the resolution, say — left the gate owned by "test" for good, and then
+            // every later test was refused with `"test" is using the game right now` while no test
+            // was. Rethrown rather than swallowed: the caller's handler is what reports it.
+            Arbiter.ReleaseUiLease();
+            throw;
+        }
+
         if (ser == null)
         {
-            // The reason is ArduinoPortAsync's and is already on LastArduinoError. Hand the claim
-            // back, or the claim outlives the attempt and every later test is refused with "another
-            // test is using the game" while no test is.
+            // The reason is ArduinoPortAsync's and is already on LastArduinoError.
             Arbiter.ReleaseUiLease();
             return null;
         }

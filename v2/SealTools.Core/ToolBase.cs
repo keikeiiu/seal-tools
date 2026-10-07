@@ -22,6 +22,29 @@ public abstract class ToolBase
     protected bool PauseRequested { get; set; }
 
     private CancellationToken _runToken;
+    private bool _cancellationMuted;
+
+    /// <summary>Runs teardown that must finish even though the run is being stopped.
+    ///
+    /// A STOP ABANDONS THE WORK, NOT THE CLEANUP, and this is where that distinction lives.
+    /// <see cref="SleepCheck"/> throws so a step in progress can be abandoned — but it throws from ANY
+    /// point, and the code that CLOSES A WINDOW or LETS GO OF A BUTTON also sleeps. Without this, a
+    /// Stop arriving inside such a teardown aborted the teardown itself:
+    ///
+    ///   * the pet left its boarding window open on top of the game, and the code says in as many
+    ///     words that the next cycle then clicks 目錄 behind it;
+    ///   * a `finally` that throws REPLACES the exception it was unwinding, so a real crash arriving
+    ///     next to a Stop was filed as a clean stop — the one outcome worse than a noisy failure.
+    ///
+    /// Nestable, and it restores the previous value rather than clearing it, so a muted section inside
+    /// a muted section cannot un-mute the outer one early.</summary>
+    protected void WithoutCancellation(Action teardown)
+    {
+        var wasMuted = _cancellationMuted;
+        _cancellationMuted = true;
+        try { teardown(); }
+        finally { _cancellationMuted = wasMuted; }
+    }
 
     /// <summary>Hands the run's cancellation token to the base, so <see cref="SleepCheck"/> can see a
     /// stop. Every tool calls this as the first line of its Run — without it a sleep is deaf to the
@@ -66,7 +89,8 @@ public abstract class ToolBase
         for (int i = 0; i < steps; i++)
         {
             Thread.Sleep(ms);
-            _runToken.ThrowIfCancellationRequested();
+            // Muted inside WithoutCancellation: a stop abandons the work, not the cleanup.
+            if (!_cancellationMuted) _runToken.ThrowIfCancellationRequested();
             if (!IgnoresQuitHotkey && Hotkeys.IsDown(_hotkeys.Quit)) { QuitPressed = true; return; }
             if (Hotkeys.IsDown(_hotkeys.Pause)) { PauseRequested = true; }
         }
