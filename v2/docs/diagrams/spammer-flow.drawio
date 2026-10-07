@@ -68,9 +68,12 @@
           <mxGeometry x="90" y="140" width="260" height="60" as="geometry" />
         </mxCell>
 
-        <!-- Terminals -->
+        <!-- Terminals — one per exit, so neither edge has to span the whole loop -->
         <mxCell id="40" value="✋ the run ends&#xa;nothing is left held" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="790" y="520" width="200" height="70" as="geometry" />
+          <mxGeometry x="790" y="620" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="✋ the run ends&#xa;nothing is left held" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="790" y="1100" width="200" height="70" as="geometry" />
         </mxCell>
 
         <!-- Edges: the spine -->
@@ -109,7 +112,7 @@
         <mxCell id="65" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="10" source="15" target="16">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="66" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="10" source="16" target="40">
+        <mxCell id="66" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="10" source="16" target="41">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="67" value="no — tick again" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1" edge="1" parent="10" source="16" target="11">
@@ -128,7 +131,7 @@
         </mxCell>
 
         <!-- Edges: the stop path -->
-        <mxCell id="80" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="16" target="30">
+        <mxCell id="80" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="16" target="31">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="81" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="30" source="31" target="32">
