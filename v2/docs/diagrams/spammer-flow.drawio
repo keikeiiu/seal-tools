@@ -123,11 +123,8 @@
         <mxCell id="70" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="14" target="20">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="71" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="20" target="21">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="72" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="21" target="22">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="90" value="the yield — three STATES, one at a time; not a sequence" style="text;html=1;align=left;verticalAlign=middle;fontStyle=2;fontColor=#9673a6" vertex="1" parent="1">
+          <mxGeometry x="800" y="795" width="320" height="30" as="geometry" />
         </mxCell>
 
         <!-- Edges: the stop path -->
