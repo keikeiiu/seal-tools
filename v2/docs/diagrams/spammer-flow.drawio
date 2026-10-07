@@ -128,7 +128,11 @@
         </mxCell>
 
         <!-- Edges: the stop path -->
-        <mxCell id="80" value="on ANY exit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.795;exitY=1;exitDx=0;exitDy=0;entryX=0.795;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="10" target="30">
+        <!-- edgeStyle=none, not orthogonal: both ends are pinned to the same x (0.795 of two
+             swimlanes at the same x and width = the same absolute point), so a straight connector
+             is vertical by construction. The orthogonal router drew a horizontal step between them
+             and would not honour the pins. This is the skill's own rule for branch lines. -->
+        <mxCell id="80" value="on ANY exit" style="edgeStyle=none;html=1;endArrow=block;endSize=8;exitX=0.795;exitY=1;exitDx=0;exitDy=0;entryX=0.795;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="10" target="30">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="81" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="30" source="31" target="32">
