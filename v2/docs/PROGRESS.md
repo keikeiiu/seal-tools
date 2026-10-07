@@ -13,6 +13,59 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-08 (65) — a stop abandons the work, not the cleanup
+
+**A bug hunt over the whole branch before release**, because three of its changes alter live behaviour
+and **none of them had been near a board**. It found four real defects and **three were introduced by
+entry 62** — the `SleepCheck`-throws change. All four are fixed.
+
+**The rule they were all missing, now written into the code:** *a stop abandons the WORK, not the
+CLEANUP.* Entry 62 made `SleepCheck` throw so a step in progress could be abandoned — and it throws from
+**any** point, including inside teardown. The code that lets go of a button and closes a window also
+sleeps, and nothing had been asked what should happen there.
+
+**1. The pet's left mouse button could stay DOWN.** `DragFood` pressed with `LeftDown` *above* the
+`try`, so a cancellation in the `SleepCheck` below unwound **before the `try` was entered**, the
+`finally` never ran and `LeftUp` was never sent. A held left button follows the real cursor and drops
+whatever it is over on the next press — the exact hazard `HeldKeys` exists for. **Anything that presses
+now lives inside the same `try` whose `finally` releases.**
+
+**2. A Stop during a visit left the BOARDING WINDOW OPEN over the game.** `CloseBoarding` closes it
+through `Click()`, which sleeps before it writes — so with the token cancelled that sleep threw and the
+X was never clicked. The code says in as many words that the next cycle then clicks 目錄 behind it.
+**Deterministic, not a race.** And worse: the `finally` threw, which **replaces the exception it was
+unwinding**, so a real crash arriving beside a Stop was filed as a clean one by the launcher's new
+clause — the outcome worse than a noisy failure.
+
+**3. Stopping the tuner reported "Arduino disconnected".** Its `catch (Exception)` wraps two
+`SleepCheck`s, and `OperationCanceledException` derives from `Exception`, so a normal Stop put a **false
+cable fault** on the card. Now `when (ex is not OperationCanceledException)`.
+
+**4. `AcquireInputAsync` leaked the UI claim** if `ArduinoPortAsync` *threw* rather than returning null —
+the gate stayed owned by `"test"` and every later test was refused with `"test" is using the game right
+now` while no test was.
+
+**The mechanism for 1 and 2: `ToolBase.WithoutCancellation(Action)`** — nestable, restored in a
+`finally` so a teardown that throws cannot leave the tool unable to be stopped. `SleepCheck` honours it.
+It is a **named** thing rather than a flag set by hand, so "this is cleanup" is visible at the call
+site; the two pet `finally`s now say so.
+
+**Also confirmed clean**, and worth recording because a clean bill of health is a result: the
+`InputArbiter`/`InputLease` lifetime (the double-dispose guard is correct, a lease cannot outlive its
+port), every lock and their order, and `PetTool.ClaimGame` (sleeps between polls, no spin).
+
+**One thing the hunt found that is NOT a bug but is worth knowing:** `ShouldStandDown` has **no
+production caller** and no caller passes a deadline, so the deadline machinery is inert. PLAN-SCHEDULING
+§9 step 2 is marked *not started* and entry 61 says nothing was rewired — so the documents are honest —
+but "the gate carries a reason" is a design that is **built and not yet used**.
+
+**Verified:** 265/265 (four new tests on the mute: it suppresses, it is lifted when the block ends, an
+inner block does not un-mute an outer one, and a teardown that throws still lifts it), builds 0
+warnings. **Everything above is source-verified only.** The four fixes are exactly the paths a board
+test would exercise, and that test has not run.
+
+---
+
 ## 2026-10-07 (64) — the Arduino card, laid out to be read
 
 **The player's report:** *"the text is too condense and hard for user to follow"*. Correct, and the
