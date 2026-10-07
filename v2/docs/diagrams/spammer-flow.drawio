@@ -58,14 +58,20 @@
         </mxCell>
 
         <!-- The stop path -->
-        <mxCell id="30" value="STOP PATH — however the loop leaves" style="swimlane;startSize=30;html=1;fillColor=none;strokeColor=#b85450;fontStyle=1;fontColor=#b85450" vertex="1" parent="1">
-          <mxGeometry x="300" y="1310" width="440" height="240" as="geometry" />
+        <!-- Widened symmetrically about x=520 so its CENTRE is the loop's centre, and its title is
+             an empty swimlane label plus a LEFT-aligned text cell: drawio centres a swimlane's own
+             title, so any title text sits exactly where a centre-entry arrow has to land. -->
+        <mxCell id="30" value="" style="rounded=0;html=1;fillColor=none;strokeColor=#b85450;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1310" width="640" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="91" value="STOP PATH — however the loop leaves" style="text;html=1;align=center;verticalAlign=middle;fontStyle=1;fontColor=#b85450;whiteSpace=wrap;" vertex="1" parent="30">
+          <mxGeometry x="0" y="10" width="640" height="28" as="geometry" />
         </mxCell>
         <mxCell id="31" value="a Stop cancels the token ─►&#xa;the loop's next sleep THROWS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="30">
-          <mxGeometry x="90" y="50" width="260" height="60" as="geometry" />
+          <mxGeometry x="190" y="50" width="260" height="60" as="geometry" />
         </mxCell>
         <mxCell id="32" value="the tool's finally runs&#xa;clears &quot;running&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="30">
-          <mxGeometry x="90" y="140" width="260" height="60" as="geometry" />
+          <mxGeometry x="190" y="140" width="260" height="60" as="geometry" />
         </mxCell>
 
         <!-- Terminals — one per exit, so neither edge has to span the whole loop -->
@@ -132,7 +138,7 @@
              swimlanes at the same x and width = the same absolute point), so a straight connector
              is vertical by construction. The orthogonal router drew a horizontal step between them
              and would not honour the pins. This is the skill's own rule for branch lines. -->
-        <mxCell id="80" value="on ANY exit" style="edgeStyle=none;html=1;endArrow=block;endSize=8;exitX=0.795;exitY=1;exitDx=0;exitDy=0;entryX=0.795;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="10" target="30">
+        <mxCell id="80" value="on ANY exit" style="edgeStyle=none;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="10" target="30">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="81" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="30" source="31" target="32">
