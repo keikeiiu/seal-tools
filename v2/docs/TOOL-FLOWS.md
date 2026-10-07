@@ -938,29 +938,23 @@ is never sent by this class.
    `LauncherService.cs:98`). So the config carries a count that does nothing, and the live count means
    something different from what its name suggests.
 
-2. **No purchase is ever verified.** The success message "Bought `_count`x" (`ShopTool.cs:185`) is written
-   once the loop finishes, whether or not any click landed. The only failure the tool can detect is a
-   *cursor placement* that did not reach the point (`PlaceOn`, `ShopTool.cs:333-336`). A right-click that
-   missed a row, or a MAX/Enter sequence the game refused (insufficient money, empty stock), still ends
-   in "Bought N" and the five-beep finish (`:98`).
-
-3. **A quit hotkey aborts the pass silently, then plays the same finish beep.** `BuyPass` returns on
+2. **A quit hotkey aborts the pass silently, then plays the same finish beep.** `BuyPass` returns on
    `QuitPressed` with no message (`ShopTool.cs:166`), and `Run` still calls `BeepMany()` (`:98`) — the
    pattern that otherwise means "done". So an abandoned run and a completed run sound identical, and the
    card keeps whatever `Message` it last held.
 
-4. **`ScrollFromTop` does not scroll to the top — and nothing checks the list is there.** Despite the
+3. **`ScrollFromTop` does not scroll to the top — and nothing checks the list is there.** Despite the
    name (`ShopTool.cs:300`), it only applies the preset's scroll from wherever the list already is; the
    docstring is explicit that scroll-to-top was deliberately removed (`:273`). The preset's row is
    measured from the top (`:153-154`), so a list left scrolled by the player silently buys the wrong row.
    `Ready` cannot catch this, because nothing reads the list.
 
-5. **The `RowCentre == null` branch is the odd one out.** It sets `state.Message` but does not call
+4. **The `RowCentre == null` branch is the odd one out.** It sets `state.Message` but does not call
    `Stop` and prints no `[!]` line (`ShopTool.cs:158-162`), unlike every other failure in the file
    (`:341-346`). It is harmless only because `Run`'s `finally` clears `Running` anyway (`:106`), which
    makes the two failure paths behave the same for a reason the branch itself does not state.
 
-6. **The Start hotkey is not honoured during a pass.** It is polled only in the outer loop
+5. **The Start hotkey is not honoured during a pass.** It is polled only in the outer loop
    (`ShopTool.cs:81`), and the passes' `SleepCheck` watches only Quit and Pause (`ToolBase.cs:94-95`). A
    pass is short, so the window is small — but a second Start press mid-pass is ignored, and the loop
    then breaks after that one pass regardless (`:101`).
@@ -1048,28 +1042,23 @@ structural difference from Buy.
    the pass would sell exactly 16 — and duplicates can inflate `Ready`'s count the same way. The two
    checks are about different sets and can disagree in both directions.
 
-2. **No sale is ever verified either.** "Sold `slots.Count` slot(s)" (`ShopTool.cs:227`) counts the slots
-   the loop *attempted*, not sales the game confirmed; as with Buy, only a failed placement is detectable
-   (`:333-336`). This matters more here, because a right-click that lands on the wrong cell — or on an
-   empty one — is a silent no-op that the message reports as success.
-
-3. **Highest-index-first is deliberate, and the reason is worth keeping written down.** Selling 0 upward
+2. **Highest-index-first is deliberate, and the reason is worth keeping written down.** Selling 0 upward
    would skip items if the bag compacts after a sale (removing slot 0 shifts slot 1 into it); going
    highest-first is correct whether or not it compacts (`ShopTool.cs:19-22`, `:199`). This is the
    defensive choice, not a surprise — but it is invisible in a message, so it is only safe as long as the
    comment stays.
 
-4. **The focus point is left-clicked, so it must be inert.** Sell sends a real left-click at
+3. **The focus point is left-clicked, so it must be inert.** Sell sends a real left-click at
    `ScrollPoint` for focus only (`ShopTool.cs:205`, `:281-298`); the same point Buy wheels from. A point
    chosen over a list row would select or act on that row on every run (`:275-277`). Because Sell never
    scrolls, the "inert" requirement is *only* about this click — which is easy to forget when the field
    is named and configured as a scroll point.
 
-5. **The cap is enforced twice on purpose.** Once in `Ready` (`ShopTool.cs:127`) and again in the loop
+4. **The cap is enforced twice on purpose.** Once in `Ready` (`ShopTool.cs:127`) and again in the loop
    that destroys things (`:195-200`). That is stated as intentional (`:195-196`) and not a defect, but it
    is the reason the two checks existing is acceptable rather than a redundancy to remove.
 
-6. **The selection is not persisted, on purpose.** `BuySellConfig.SellSlots` is deliberately not saved —
+5. **The selection is not persisted, on purpose.** `BuySellConfig.SellSlots` is deliberately not saved —
    selling is the one irreversible thing in the suite, so it starts from an empty grid every launch
    (`AppConfig.cs:643-647`). A selection carried over from a previous session is a selection nobody
    re-checked, so the tool reads only what is ticked now.
