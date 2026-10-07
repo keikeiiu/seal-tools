@@ -25,7 +25,7 @@
 
         <!-- The loop -->
         <mxCell id="10" value="LOOP — repeats until the run is stopped" style="swimlane;startSize=30;html=1;fillColor=none;strokeColor=#666666;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="300" y="460" width="440" height="660" as="geometry" />
+          <mxGeometry x="300" y="460" width="440" height="790" as="geometry" />
         </mxCell>
         <mxCell id="11" value="4 · tick — sleep ~20 ms&#xa;a QUIT press is seen here" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="10">
           <mxGeometry x="90" y="50" width="260" height="60" as="geometry" />
@@ -59,7 +59,7 @@
 
         <!-- The stop path -->
         <mxCell id="30" value="STOP PATH — however the loop leaves" style="swimlane;startSize=30;html=1;fillColor=none;strokeColor=#b85450;fontStyle=1;fontColor=#b85450" vertex="1" parent="1">
-          <mxGeometry x="300" y="1160" width="440" height="240" as="geometry" />
+          <mxGeometry x="300" y="1310" width="440" height="240" as="geometry" />
         </mxCell>
         <mxCell id="31" value="a Stop cancels the token ─►&#xa;the loop's next sleep THROWS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="30">
           <mxGeometry x="90" y="50" width="260" height="60" as="geometry" />
