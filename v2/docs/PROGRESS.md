@@ -13,6 +13,35 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-08 (68) — program vs profile: deployment planned, not built
+
+**The plan is [PLAN-PATHS.md](PLAN-PATHS.md); nothing in it is built.** It exists because "should the
+next version reorganise the codebase?" got the honest answer **no** — the code is in better shape than
+its own handover doc makes it sound — and then a second question, "including easier deployment to
+another PC?", turned out to have exactly one root cause.
+
+**The measurement that made the case.** `AppContext.BaseDirectory` appears **20 times** across `Core`,
+`Launcher` and all six tools; `Environment.GetFolderPath`, `SpecialFolder` and `AppData` appear **zero**
+times. The install folder *is* the data folder, and the two publish modes, the hand-maintained copy list
+in `publish.bat` and the fact that an update cannot replace the folder all follow from it.
+
+**The finding worth keeping.** `defaults.yaml` reads as a program file and ships as one
+(`publish.bat:77`), but `SaveDefaults` rewrites it at runtime (`LauncherService.cs:704`). It is **user
+state seeded from a program template** — a plan that moved only `local.yaml` and the calibration PNGs
+would have left it to be clobbered by every update.
+
+**Not a v3.** Every step lands shippably and only one is player-visible, so this is v2.x work. A major
+version is for a changed user-visible contract, not for code that got better.
+
+**The handover's traps list is history, not current truth.** The config-projection bug class it records
+— *"the projection drops fields, four times now"* — is already closed by reflection guards in
+`ConfigLoaderTests.cs` (`EveryLocalPetFieldIsCopiedFromTheConfig`, plus the `LocalPetSlot`,
+`LocalPetQueueEntry` and `PetConfig` fences). A plan built from that list alone would over-scope. One
+claim in it does still hold: `ToolState`'s *"reads are atomic"* comment is false for its `int?` and
+`DateTime?` members.
+
+**Open:** the three ⚑ decisions in §8 of the plan.
+
 ## 2026-10-08 (67) — the flows as editable diagrams
 
 **`v2/docs/diagrams/`** — one `.drawio` per tool (shop has two pages, buy and sell), cloned from an
