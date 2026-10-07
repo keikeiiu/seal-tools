@@ -13,6 +13,58 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-08 (66) — every tool's flow in one place, and a correction to entry 62
+
+**The correction first, because it is the more important half.** Entry 62 says — and the `SleepCheck`
+doc comment repeated it — that `HoldSpace`, `SkillSpammer` and `ShopTool` *"clear `QuitPressed` to mean
+pause, so a stop signalled that way could be erased by the very tool it was meant to stop."* **That is
+false**, and it was found while documenting the tools for this entry.
+
+All three loops are the same shape:
+
+```csharp
+while (true)
+{
+    SleepCheck(…);
+    if (QuitPressed || ct.IsCancellationRequested) break;   // breaks HERE
+
+    if (state.Running && !running)
+    {
+        running = true;
+        QuitPressed = false;              // only reached with QuitPressed ALREADY false — a no-op
+```
+
+The clear sits **below** the break that reads the same flag, so it is only ever reached when there is
+nothing to clear. It is dead code from an older pause-toggle design. **`QuitPressed` means quit, plainly,
+and always did.**
+
+**What this does and does not change.** The throw-based design is unaffected and still correct — the
+requirement was to abandon a step *in progress*, and a flag cannot do that, because a flag is only read
+when control returns to the loop. But the *reason* given for not reusing `QuitPressed` was wrong, and it
+had been written into a commit message, entry 62, and the code. The code comment is corrected in place;
+entry 62 is left exactly as written, because this log is append-only — corrected here instead.
+
+Recorded rather than quietly fixed because this repo's own rule is that a document which says something
+untrue is worse than a missing one, and this one said it in three places.
+
+**And the deliverable: [TOOL-FLOWS.md](TOOL-FLOWS.md)** — all eight tools, each with an ASCII flow
+diagram, an inventory of every action sent to the game, a decision table, and a "Worth a verdict" list
+kept separate from description. Every claim carries a `file.cs:NNN` citation. §1 is the machinery all
+eight share — start, stop, the gate, the cancellation rule — so no tool section has to repeat it, and
+§2 is the suite at a glance. Linked from [DESIGN.md](DESIGN.md) §7.
+
+**Two things the documenting turned up, worth a verdict, and NOT fixed here:**
+
+- **The shop tool never verifies a purchase or a sale.** It has no capture, no OCR, no read-back of any
+  kind — `"Bought N"` and `"Sold N"` count the commands it SENT. That is the earlier audit's finding #3,
+  *"a sent action can be reported as a completed action"*, on the one tool that cannot even check.
+- **The tuner's disconnect `catch` covers only `C`/`E`**, while its placements write outside the `try`;
+  its mouse guard fails open; and a panel STOP does not abort the countdown.
+
+This entry adds a document and corrects a claim; it changes no behaviour.
+
+---
+
 ## 2026-10-08 (65) — a stop abandons the work, not the cleanup
 
 **A bug hunt over the whole branch before release**, because three of its changes alter live behaviour

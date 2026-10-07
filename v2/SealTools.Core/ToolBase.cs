@@ -77,8 +77,15 @@ public abstract class ToolBase
     /// the game, a drag lets go of the button — which is exactly the teardown a stop wants.
     ///
     /// The token is checked BEFORE the hotkey on every tick, so a stop is not delayed behind a key
-    /// read, and a cancelled run cannot be revived by the hotkey paths that clear <see cref="QuitPressed"/>
-    /// to mean "pause", not "quit".
+    /// read.
+    ///
+    /// CORRECTION, 2026-10-08. An earlier version of this comment claimed the hotkey paths "clear
+    /// QuitPressed to mean pause, not quit", and that a cancellation could therefore be revived by
+    /// them. That is not true and the comment was wrong. HoldSpace, SkillSpammer and ShopTool do
+    /// write `QuitPressed = false` — but each sits BELOW a `if (QuitPressed || ct.IsCancellationRequested)
+    /// break;` in the same loop, so it is only reached when QuitPressed was already false: a no-op,
+    /// reached never with anything to clear. `QuitPressed` means QUIT, plainly, and those three lines
+    /// are dead code from an older pause-toggle design. See PROGRESS entry 66.
     ///
     /// A tool that catches this and carries on is not a hazard: the token stays cancelled, so the very
     /// next SleepCheck throws again.</summary>

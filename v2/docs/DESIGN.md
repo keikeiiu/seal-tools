@@ -175,6 +175,8 @@ measured per-level cost that decides how long a pet still needs.
 | calibrating a machine | [CALIBRATION.md](CALIBRATION.md) |
 | the composer's hand-tuned move sets | [MOVE-SETS.md](MOVE-SETS.md) |
 | the guardrails, in full | [REVIEW.md](REVIEW.md) |
+| what each tool sends to the game, and where it branches | [TOOL-FLOWS.md](TOOL-FLOWS.md) |
+| the pet feeder's in-visit detail (TOOL-FLOWS' companion) | [AUDIT-PET-FLOW.md](AUDIT-PET-FLOW.md) |
 | the launcher UI, measured (for a next UI pass) | [ANALYSIS-UI.md](ANALYSIS-UI.md) |
 | how to use it | [USER_GUIDE.md](USER_GUIDE.md) |
 | finished plans, with their reasoning | [archive/](archive/README.md) |
