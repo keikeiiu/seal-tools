@@ -13,6 +13,25 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (70) — the look defers when it loses the front; the close retries the X once
+
+**Two small fixes in the same family as (69), both from the same evidence.**
+
+- **A look that loses the front mid-read defers instead of parking rows.** The fore gate turns a
+  covered read into "couldn't read", and `ScheduleFor` treats that as a FULL LOAD — 205/505 minutes
+  for a row that may be dry right now. `InspectRows` now re-checks the front after `ReadRows` and,
+  when it is gone, schedules every row at `RetryMinutes` (`DeferredSchedule`) — deliberately not
+  `UnreadSchedule`, which stays the answer for "the breeder would not open at all": there, nothing
+  else can be done; here, the game was there a moment ago.
+- **The close retries the X once** (`CloseAttempts = 2`). The measured failure is the cursor
+  placement failing to converge — 17 in `pet.log`, "it stopped at (861,327)" against (844,327) — and
+  a retry re-aims from wherever the first attempt left the cursor. Same shape as `PlaceAttempts` and
+  `FoodDragAttempts`. A close that fails twice now says the window may still be OPEN, which is the
+  line that makes the next guard's work findable in the log.
+
+**Verified.** Pet project builds clean; 265 tests pass. On branch `feature/pet-flow`, the commit that
+carries this entry.
+
 ## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
 
 **Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](PLAN-PET-FLOW.md), branch `feature/pet-flow`)

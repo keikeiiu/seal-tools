@@ -1235,6 +1235,9 @@ hotkey.*
   │
   4  THE LOOK       open the breeder ONCE, read every row, close ONCE   ▓
   │                   └ the game is given back in a finally, however it goes
+  │                   └ the front is checked AFTER the read too: a look that
+  │                     lost the game mid-way schedules every row at +5 min
+  │                     rather than parking them on the 205/505 cycle
   │
   5  schedule       failures = 0 per row · publish the standing card line
   │
@@ -1251,7 +1254,9 @@ hotkey.*
   ┃       The front is re-checked before EVERY row: a focus lost mid-visit
   ┃       abandons the rest of the visit and leaves those rows untouched.
   ┃ 6e  THE VISIT — open ONCE · read every row · reload each due row ·   ▓
-  ┃       close ONCE. The whole reload is board writes (detail: AUDIT-PET-FLOW).
+  ┃       close ONCE (the X is re-clicked once if the cursor cannot reach
+  ┃       it; a close that fails twice says the window may still be open).
+  ┃       The whole reload is board writes (detail: AUDIT-PET-FLOW).
   ┃       └ cut by a stop ──► note "it may not have been fed — check it in
   ┃          game", give the game back, then rethrow
   ┃ 6f  fold the results back, per row:

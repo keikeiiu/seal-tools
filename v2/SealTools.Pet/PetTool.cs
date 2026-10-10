@@ -810,7 +810,24 @@ public sealed class PetTool : ToolBase
         // Every exit past this point closes the window — the look is a visit like any other.
         try
         {
-            return ReadRows(ser);
+            var schedule = ReadRows(ser);
+
+            // THE FRONT IS CHECKED AGAIN AFTER THE READ. A look that started in front can lose it
+            // mid-way — the player alt-tabs back to the launcher — and every read behind the fore
+            // gate then answers "couldn't read", which ScheduleFor treats as a FULL LOAD and parks
+            // on the configured cycle: 205-505 minutes for a row that may be dry right now. Five
+            // minutes and a fresh look is the honest answer, and the plan's failure direction says
+            // the cheap retry wins over the confident guess.
+            if (!GameIsInFront())
+            {
+                Log("  the game window left the front while reading — every row is looked at again " +
+                    $"in {RetryMinutes:0} min");
+                state.Message = "The game window left the front while reading the rows — " +
+                                $"trying again in {RetryMinutes:0} min.";
+                return DeferredSchedule();
+            }
+
+            return schedule;
         }
         finally
         {
@@ -829,6 +846,20 @@ public sealed class PetTool : ToolBase
     {
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
         foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null);
+        return schedule;
+    }
+
+    /// <summary>The schedule for a look whose READING is not evidence — the window left the front
+    /// while the rows were being read. Every row comes back in <see cref="RetryMinutes"/>.
+    ///
+    /// Deliberately NOT <see cref="UnreadSchedule"/>: an unreadable row is treated there as a full
+    /// load and parked on the 205-505-minute cycle, which is right when nothing can be done about it
+    /// (the breeder would not open at all) and wrong here — the game was there a moment ago, and a
+    /// row may be dry NOW. Five minutes costs three tab clicks when the front comes back.</summary>
+    private Dictionary<PetSlotConfig, DateTime> DeferredSchedule()
+    {
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = DateTime.Now.AddMinutes(RetryMinutes);
         return schedule;
     }
 
@@ -1503,18 +1534,45 @@ public sealed class PetTool : ToolBase
         return true;
     }
 
+    /// <summary>How many times the X is clicked before the close is given up on. TWO, and the second
+    /// one is the fix rather than a hedge: the measured failure is the cursor placement failing to
+    /// CONVERGE — 17 in pet.log, e.g. "the cursor wouldn't move to (844,327) — it stopped at
+    /// (861,327)" — which is intermittent, and a retry re-aims from wherever the first attempt left
+    /// the cursor. The same reasoning as <see cref="PlaceAttempts"/> and
+    /// <see cref="FoodDragAttempts"/>: an intermittent action cannot be made reliable by aiming
+    /// better, it can only be re-tried, and the count only bounds it.</summary>
+    private const int CloseAttempts = 2;
+
     private void CloseBoarding(SerialPort ser)
     {
         _bagPage = -1;
         if (!IsPoint(_cfg.Pet.CloseButton)) return;
+
         // Logged even though it cannot fail the reload: it is the cleanup, and on a failed reload it
         // is the LAST thing that moves the cursor. Without a line here the log ends at the failure and
         // the closing reads as a step that ran and did something unexplained.
-        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, "the boarding X", out var err))
-            Log("  close: couldn't reach the X — " + err);
-        else
-            Log("  close: clicked the boarding window's X");
-        SleepCheck(ClickWait);
+        for (var attempt = 1; attempt <= CloseAttempts; attempt++)
+        {
+            if (Click(ser, _cfg.Pet.CloseButton!, right: false, "the boarding X", out var err))
+            {
+                Log(attempt == 1
+                    ? "  close: clicked the boarding window's X"
+                    : $"  close: the X went through on attempt {attempt} of {CloseAttempts}");
+                SleepCheck(ClickWait);
+                return;
+            }
+
+            Log($"  close: couldn't reach the X — {err}" +
+                (attempt < CloseAttempts ? " — trying once more" : ""));
+            SleepCheck(ActionWait);
+        }
+
+        // BOTH ATTEMPTS FAILED, so the window may still be OPEN. Said plainly because the next open
+        // is what pays for it: OpenBoarding probes for an open window before it clicks 目錄, and a
+        // probe that cannot answer falls back to the old blind click — which is the failure this
+        // line is here to make findable.
+        Log("  close: the X could not be reached — the boarding window may still be OPEN; " +
+            "the next open will check for it first");
     }
 
     /// <summary>Right-click the marked cell to put the pet back into the boarding slot.
