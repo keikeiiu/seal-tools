@@ -215,6 +215,14 @@ public sealed class PetTool : ToolBase
     /// per run rather than kept in memory for the life of the process.</summary>
     private IReadOnlyList<PetFeeding.Line> _feeding = Array.Empty<PetFeeding.Line>();
 
+    /// <summary>How many items each row's feeder last READ, or null when that row's counts could not
+    /// be read — the detail line under each row on the card (see <see cref="ToolState.Rows"/>). It is
+    /// the last reading and not a live figure: the tray drains continuously and nothing reads it
+    /// between visits, so the card shows it as the reading it is, beside when the row is next seen.
+    /// A row that is not boarding is read nothing and stores null — there is nothing in its feeder to
+    /// count.</summary>
+    private readonly Dictionary<PetSlotConfig, int?> _lastItems = new();
+
     /// <summary>Records what was read about the pet that just went into the loader. See
     /// <see cref="_boardedPanel"/>.</summary>
     private void RememberBoarded(PetSlotConfig row, int entry, PetPanel? panel)
@@ -398,6 +406,28 @@ public sealed class PetTool : ToolBase
         // of showing a number that was true when it was written.
         void PublishSchedule()
         {
+            // ONE LINE PER ROW, always — the player asked to see all four rows' condition rather
+            // than only the soonest one: *"if I have 4 pets pending to feed … list out all 4
+            // conditions"*. The summary line stays (it is the glance that says what is next overall);
+            // the per-row list is what says that row 1 is boarding on 516 items while row 4 was
+            // given up on. The status word comes from the same two facts the schedule does —
+            // whether the row is boarding, and whether it still has a next at all — and the detail
+            // is the last feeder reading, shown as the reading it is: the tray drains between visits
+            // and nothing here is a live count.
+            var rows = new List<ToolRowState>();
+            foreach (var row in _cfg.Pet.ActiveRows)
+            {
+                var hasNext = next.TryGetValue(row, out var at);
+                var status = !hasNext ? "given up"
+                    : row.BoardingRunning ? "boarding"
+                    : "waiting for a reload";
+                var detail = _lastItems.TryGetValue(row, out var items) && items is { } n
+                    ? $"{n} item(s) at the last read"
+                    : null;
+                rows.Add(new ToolRowState(NameOf(row), status, detail, hasNext ? at : null));
+            }
+            state.Rows = rows;
+
             var boarding = next.Keys.Where(r => r.BoardingRunning).Select(NameOf).ToList();
             if (next.Count == 0)
             {
@@ -1014,12 +1044,18 @@ public sealed class PetTool : ToolBase
 
                 // Only worth reading a feeder on a row that is actually boarding — an empty one has
                 // nothing loaded and will be filled in a moment anyway.
-                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied }; continue; }
+                if (!row.BoardingRunning)
+                {
+                    _lastItems[row] = null;
+                    schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied };
+                    continue;
+                }
 
                 ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
                 var left = ReadFeederCounts(ocr, row, out var countsFromDigits);
                 var eta = ReadEta(ocr, row);
                 schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
+                _lastItems[row] = left;
 
                 // The other two proofs — see ProveWindow for why the set is this narrow.
                 if (countsFromDigits || (eta is not null && FeederEta.CompletionMinutes(eta) is not null))

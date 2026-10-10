@@ -1320,6 +1320,13 @@ names the holder, because a stalled feeder and a broken one look identical other
 feed icon, one Enter, the X) and the visit (the whole reload) — and nothing at all in between, where it
 only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 
+**What its card shows.** The standing line (which rows are boarding, which is next and when) and then
+**one line per breeding row** — `· Row 1: boarding · 516 item(s) at the last read · next 07:14 (in 2h 41m)`
+— so all four conditions are visible at once rather than only the soonest. Each row carries its own
+moment (`ToolState.Rows`) and the card recomputes every countdown on each tick, the same rule the
+standing line follows. The item figure is labelled "at the last read" because that is what it is: the
+tray drains between visits and nothing reads it in between.
+
 ### Decision points (the outer loop only)
 
 | Where | Question | True → | False → |

@@ -111,7 +111,20 @@ can be paused with its hotkey (see the **Hotkeys** tab).
 **The Pet Feeder's card is different in two ways.** It is *resident*, so starting another tool leaves
 it running (see [The window](#while-a-tool-runs-mini-mode) above), and its live status is a **standing
 line** rather than a run counter — `boarding Row 1  ·  next Row 2 at 19:40  ·  2 more queued`, built
-from the boarding state and the schedule on the **Pet** tab.
+from the boarding state and the schedule on the **Pet** tab. **Under it the card lists every breeding
+row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
+
+```
+· Row 1: boarding  ·  516 item(s) at the last read  ·  next 07:14 (in 2h 41m)
+· Row 2: boarding  ·  669 item(s) at the last read  ·  next 08:05 (in 3h 32m)
+· Row 3: waiting for a reload
+· Row 4: given up
+```
+
+Each line carries that row's own countdown, recomputed as the card refreshes. **"At the last read"
+is worded that way on purpose** — the tray drains continuously and nothing reads it between visits,
+so the figure is the last reading, not a live count; the time beside it is when the row is next
+looked at. A row that was given up on (three failures in a row) has no next time and says so.
 
 ### Buy Items has extra controls on its card
 

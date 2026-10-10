@@ -34,6 +34,20 @@ public sealed class ToolState
     public string? Schedule { get; set; }
     public DateTime? NextActionAt { get; set; }
 
+    // ONE ENTRY PER ROW, for the tools that have rows — the pet feeder's four breeding rows are the
+    // only ones. The player asked for it in as many words: *"if I have 4 pets pending to feed …
+    // list out all 4 conditions"* — the summary above says which row is soonest, and it cannot say
+    // that row 4 is boarding with 675 items while row 2 is waiting for a pet. Each entry carries its
+    // OWN moment so the card can recompute every row's countdown on each UI tick, exactly as
+    // NextActionAt does for the summary. Same replace-wholesale rule as Attributes: the tool thread
+    // swaps the whole list, never mutates one in place.
+    private IReadOnlyList<ToolRowState> _rows = Array.Empty<ToolRowState>();
+    public IReadOnlyList<ToolRowState> Rows
+    {
+        get => _rows;
+        set => _rows = value?.ToArray() ?? Array.Empty<ToolRowState>();
+    }
+
     // One-off user-visible notice shown on the launcher card — for things the user must see but
     // that would otherwise only reach Console.WriteLine, which is invisible in the published
     // WinExe (no console attached). Null/empty when there is nothing to report.
@@ -48,3 +62,11 @@ public sealed class ToolState
         set => _attributes = value.ToArray();
     }
 }
+
+/// <summary>One row of a tool's standing plan — the pet feeder's four breeding rows.
+///
+/// <paramref name="Status"/> is the short state word the card shows ("boarding", "not boarding",
+/// "given up"); <paramref name="Detail"/> is the last reading about that row ("516 item(s)", or null
+/// when there is none to show); <paramref name="NextAt"/> is when this row next needs attention, or
+/// null when it never will again (a row that was dropped).</summary>
+public sealed record ToolRowState(string Name, string Status, string? Detail, DateTime? NextAt);

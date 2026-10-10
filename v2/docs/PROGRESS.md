@@ -13,6 +13,31 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (79) — the Pet Feeder's card lists every row
+
+**The player's ask:** *"if I have 4 pets pending to feed … list out all 4 conditions."* The card's
+standing line could say which row was soonest and could not say that row 1 is boarding on 516 items
+while row 4 was given up on.
+
+**What it shows now:** the standing line, then one line per breeding row —
+`· Row 1: boarding · 516 item(s) at the last read · next 07:14 (in 2h 41m)` — with the status word
+(`boarding` / `waiting for a reload` / `given up`), the last feeder reading, and **that row's own
+countdown**, recomputed on every card tick like the summary's.
+
+**How, and why this shape.** `ToolState` gained `Rows` (`ToolRowState`: name, status, detail, its own
+`NextAt`), written by the tool and replaced wholesale on every publish, the same rule `Attributes`
+follows so the UI can read the list without a lock. The pet tool fills it in `PublishSchedule` — the
+one place that already knows every row's next — and remembers each row's last feeder count
+(`_lastItems`) as the reads happen. The launcher renders it in `FormatStatus`, where the countdown
+logic already lived; that logic became one `Countdown` helper so a row's clock and the summary's
+cannot drift apart.
+
+**Deliberately not live:** the item figure says "at the last read". The tray drains continuously and
+nothing reads it between visits, so a number that looked live would be a number that was true hours
+ago — the guide says so in both languages (`USER_GUIDE.md` and its zh-TW twin).
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The launcher needs a restart to show it.
+
 ## 2026-10-11 (78) — the open is confirmed, and the slot read stops believing the world
 
 **The player found the hole the front guard does not cover:** *"in some cases, the first click may

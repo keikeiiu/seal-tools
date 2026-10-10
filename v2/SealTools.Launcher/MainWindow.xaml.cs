@@ -848,15 +848,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         // down instead of showing a number that was true when it was written.
         if (!string.IsNullOrEmpty(state.Schedule))
         {
-            var wait = "";
-            if (state.NextActionAt is { } at)
-            {
-                var left = at - DateTime.Now;
-                wait = left <= TimeSpan.Zero
-                    ? "   (due now)"
-                    : $"   (in {(left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes:00}m" : $"{left.Minutes}m {left.Seconds:00}s")})";
-            }
+            var wait = state.NextActionAt is { } at ? "   (" + Countdown(at) + ")" : "";
             lines.Add(state.Schedule + wait);
+        }
+
+        // ONE LINE PER ROW, for the tools that have rows — the pet feeder's four breeding rows. Each
+        // carries its own moment, so every row counts down on each tick exactly like the summary
+        // does, and the player can see all four conditions at a glance instead of only the soonest.
+        foreach (var row in state.Rows)
+        {
+            lines.Add($"· {row.Name}: {row.Status}" +
+                      (string.IsNullOrEmpty(row.Detail) ? "" : $"  ·  {row.Detail}") +
+                      (row.NextAt is { } at ? $"  ·  next {at:HH:mm} ({Countdown(at)})" : ""));
         }
 
         if (!string.IsNullOrEmpty(state.Grade)) lines.Add($"Grade: {state.Grade}");
@@ -868,6 +871,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!string.IsNullOrEmpty(state.FilterStatus)) lines.Add($"Filter: {state.FilterStatus}");
         if (!string.IsNullOrEmpty(state.Message)) lines.Add("⚠ " + state.Message);
         return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>How long until a moment, as the card writes it. Shared by the summary line and the
+    /// per-row lines so a row's countdown reads exactly like the summary's — the same words for the
+    /// same fact, one place to change them.</summary>
+    private static string Countdown(DateTime at)
+    {
+        var left = at - DateTime.Now;
+        return left <= TimeSpan.Zero
+            ? "due now"
+            : $"in {(left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes:00}m" : $"{left.Minutes}m {left.Seconds:00}s")}";
     }
 
     // ── Config tabs ─────────────────────────────────────────────────────────

@@ -103,6 +103,19 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 **Pet Feeder 的卡片有兩點不同。** 它是*常駐*的，所以啟動其他工具時它會繼續跑（見上方
 [工具執行時（迷你模式）](#工具執行時迷你模式)），而且它的即時狀態是一行**常駐狀態**而不是執行計數 —
 `boarding Row 1  ·  next Row 2 at 19:40  ·  2 more queued`，由 **Pet** 分頁上的代養狀態與排程組出來。
+**那一行下面，卡片會逐列列出每一個 Breeding Row**，四列的狀況一眼全看到，而不是只看到最快到期的
+那一列：
+
+```
+· Row 1: boarding  ·  516 item(s) at the last read  ·  next 07:14 (in 2h 41m)
+· Row 2: boarding  ·  669 item(s) at the last read  ·  next 08:05 (in 3h 32m)
+· Row 3: waiting for a reload
+· Row 4: given up
+```
+
+每一列都有自己的倒數，隨卡片更新重算。**「at the last read」是刻意的用詞** — 食槽的存量在兩次 visit
+之間持續下降，那段時間沒有任何讀取，所以那個數字是「最後一次讀到的量」，不是即時值；旁邊的時間才是
+這一列下次被查看的時刻。被放棄的列（連續三次失敗）沒有下次時間，會直接寫 given up。
 
 ### Buy Items 卡片上多出來的控制項
 
