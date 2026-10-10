@@ -807,6 +807,8 @@ public class ConfigLoaderTests
                 MenuButton = new List<int> { 815, 1735 },
                 FeedIcon = new List<int> { 900, 1400 },
                 CloseButton = new List<int> { 880, 140 },
+                CloseButtonPng = "close-ref-png",
+                BoardingWindowMayBeOpen = true,
                 PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
                 BagGrid = new List<int> { 660, 150, 408, 408 },
                 BagSlot = new List<int> { 660, 150, 51, 51 },
@@ -859,6 +861,14 @@ public class ConfigLoaderTests
             Assert.Equal(1500, PetConfig.LoadItemsFor(slot));
             Assert.Equal(500, cfg.Pet.LoadMinutesFor(slot));
 
+            // The close probe's pair — SESSION state the run writes about itself. The save direction
+            // has a reflection fence over it; the LOAD merge (ApplyOverrides) has none, and this is
+            // where fields have silently gone missing twice before, so the round trip is the test.
+            // The belief in particular must survive a restart: the window a killed run leaves open is
+            // exactly the case only the next run can notice.
+            Assert.Equal("close-ref-png", cfg.Pet.CloseButtonPng);
+            Assert.True(cfg.Pet.BoardingWindowMayBeOpen);
+
             // The two grids are independent calibrations, and this is the assertion that keeps them so.
             Assert.Null(cfg.BuySell.BagGrid);
 
@@ -901,6 +911,8 @@ public class ConfigLoaderTests
             // LocalPet against the config, so a field this fixture omits is null on BOTH
             // sides and passes whether or not the projection carries it.
             FoodIconPng = "food-png",
+            CloseButtonPng = "close-png",
+            BoardingWindowMayBeOpen = true,
             ReturnSlot = new List<int> { 34, 35 },
             MaxButton = new List<int> { 40, 41 },
             WaitAfterEmptyMinutes = 3,

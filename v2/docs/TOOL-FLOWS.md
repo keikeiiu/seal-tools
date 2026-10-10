@@ -1238,6 +1238,9 @@ hotkey.*
   │                   └ the front is checked AFTER the read too: a look that
   │                     lost the game mid-way schedules every row at +5 min
   │                     rather than parking them on the 205/505 cycle
+  │                   └ a read that PROVED the window was up (an empty slot
+  │                     matched, a count or a time line came back) teaches the
+  │                     X's reference crop — the open probe's yardstick
   │
   5  schedule       failures = 0 per row · publish the standing card line
   │
@@ -1253,9 +1256,12 @@ hotkey.*
   ┃       the PAST, so the same row is picked again after the wait.
   ┃       The front is re-checked before EVERY row: a focus lost mid-visit
   ┃       abandons the rest of the visit and leaves those rows untouched.
-  ┃ 6e  THE VISIT — open ONCE · read every row · reload each due row ·   ▓
-  ┃       close ONCE (the X is re-clicked once if the cursor cannot reach
-  ┃       it; a close that fails twice says the window may still be open).
+  ┃ 6e  THE VISIT — open ONCE (the open first PROBES for an already-open
+  ┃       window when the run believes one may be up — a close that could not
+  ┃       be sent; a match skips the 目錄 + feed-icon clicks) · read every row ·
+  ┃       reload each due row · close ONCE (the X is re-clicked once if the
+  ┃       cursor cannot reach it; a close that fails twice leaves the belief
+  ┃       standing and says the window may still be open).
   ┃       The whole reload is board writes (detail: AUDIT-PET-FLOW).
   ┃       └ cut by a stop ──► note "it may not have been fed — check it in
   ┃          game", give the game back, then rethrow
@@ -1298,6 +1304,8 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | `SleepUntil` | Cancelled during the wait? | break | compute the due batch |
 | batch | Does the batch hold any row? | visit them | `batch = [soonest]` |
 | front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
+| `OpenBoarding` | Does the run believe a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | probe it anyway, then click exactly as today (no reference, no match, or unreadable = the old way) |
+| `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
 | per-row front check | Still in front, mid-visit? | reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
 | `ClaimGame` | Game free, for the visit? | `Visit` | wait; `next[row]` stays in the past; cancelled → break |
 | `Visit` | Was the visit cut by a stop? | throw — "may not have been fed. Check it in game." | fold the results back |
@@ -1342,7 +1350,15 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
 6. **`Ready` checks every ticked row, not just the first**, so a switched-off half-set-up row no longer
    blocks a run that never touches it.
 
-7. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
+7. **The boarding window's close is retried, and a suspect open is probed.** The measured close
+   failure (17 in `pet.log`) is the cursor placement giving up short of the X, so the X is clicked
+   twice; a close that still cannot send its click leaves a persisted belief that the window may be
+   open, and the next open compares the X against a reference crop the run learned from a window
+   whose contents it had just READ. Only a confident match skips the two blind clicks — every other
+   answer opens the old way. The residual (a mis-marked X can, in the belief-gated states, match) is
+   recorded in [PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) with its hardening path.
+
+8. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
    screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
    `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
    with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in

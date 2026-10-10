@@ -388,6 +388,36 @@ public sealed class PetConfig
     /// the bag's), so the flow has to know which it is pressing.</summary>
     public List<int>? CloseButton { get; set; }
 
+    /// <summary>A crop of the boarding window's X, as it looks with the window OPEN, taken from a
+    /// live capture the moment the window was provably up — a base64 PNG, like the other reference
+    /// crops, and SESSION state rather than a calibration: it is learned by the run, not drawn by
+    /// the player.
+    ///
+    /// It exists so a run can answer "is the boarding window still open?" before its next open
+    /// clicks 目錄. pet.log holds 17 closes where the cursor could not reach the X (most recently
+    /// 2026-10-09), and each left the window on the screen for the next open to click behind. The
+    /// reference is compared with a live grab of the same rectangle at the same client coordinates,
+    /// the same stored-crop-vs-live-region shape the empty-slot check has run daily since 2026-09-17.
+    ///
+    /// LEARNED FROM A PROVEN-OPEN WINDOW, deliberately — not cropped at calibration time. What makes
+    /// a capture trustworthy here is that the boarding window's own contents were just READ out of
+    /// it (an empty slot matching, a feeder count, a time line); a crop taken earlier, on a screen
+    /// the tool cannot verify, could as easily be the bag's X or the game world, and a reference of
+    /// the world would match the world — turning a closed window into a skipped open. See
+    /// PetTool.BoardingWindowMayBeOpen for the other half.</summary>
+    public string? CloseButtonPng { get; set; }
+
+    /// <summary>Whether the tool believes the boarding window is still on screen — set when it
+    /// opens the window, cleared when it sends a close click, and LEFT SET when a close cannot be
+    /// reached (the measured failure) or a run is killed between the two.
+    ///
+    /// It is a gate, not an answer: the probe is only CONSULTED while this is true, so the common
+    /// open pays nothing for it — and when it is true and the probe cannot tell, the old blind click
+    /// happens, which is exactly today's behaviour. Persisted for the same reason the reload records
+    /// it: the window a killed run leaves open outlives the process, and the next run's first open
+    /// is the one that has to notice.</summary>
+    public bool BoardingWindowMayBeOpen { get; set; }
+
     /// <summary>The bag's ITEM1 / ITEM2 / ITEM3 tab points, in page order. Absolute tabs, not
     /// next/prev: clicking a tab lands on that page whatever page you were on, so nothing has to be
     /// read back to know where the tool is.</summary>

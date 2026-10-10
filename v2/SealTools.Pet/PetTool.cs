@@ -172,6 +172,16 @@ public sealed class PetTool : ToolBase
     /// covers the seconds between one stack and the next.</summary>
     private int _bagPage = -1;
 
+    /// <summary>Whether the read just taken saw the BOARDING WINDOW's own contents — an empty slot
+    /// matching its reference, a feeder count read, or a time line parsed. Reset at the top of
+    /// <see cref="ReadRows"/> and consumed right after it by <see cref="EnsureCloseReference"/>.
+    ///
+    /// It exists for one decision: whether a capture of the X may be trusted as a reference. Every
+    /// other answer the tool takes from the screen is read and used within seconds; this one is kept
+    /// for days and decides whether an open gets skipped, so its provenance has to be a fact the run
+    /// established — not the assumption that a click landed.</summary>
+    private bool _windowProofSeen;
+
     /// <summary>What the guard read about the pet it just boarded, and which line that pet is.
     ///
     /// Set by <see cref="RememberBoarded"/> when the pet actually goes in, and read immediately after by
@@ -814,6 +824,7 @@ public sealed class PetTool : ToolBase
         try
         {
             var schedule = ReadRows(ser);
+            if (_windowProofSeen) EnsureCloseReference(ser);
 
             // THE FRONT IS CHECKED AGAIN AFTER THE READ. A look that started in front can lose it
             // mid-way — the player alt-tabs back to the launcher — and every read behind the fore
@@ -876,6 +887,7 @@ public sealed class PetTool : ToolBase
     private Dictionary<PetSlotConfig, DateTime> ReadRows(SerialPort ser)
     {
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        _windowProofSeen = false;
 
         // The engine is built here and disposed with the look, rather than held for the life of the
         // run: the counts are wanted once per visit, and an ONNX session parked in memory for days to
@@ -893,6 +905,10 @@ public sealed class PetTool : ToolBase
                 {
                     case true:
                         row.BoardingRunning = false;
+                        // An empty slot MATCHED ITS REFERENCE, which is the strongest proof there is
+                        // that these pixels came from the boarding window — a covered screen cannot
+                        // match a crop of the window's own furniture.
+                        _windowProofSeen = true;
                         Log($"  {NameOf(row)}: slot reads EMPTY, so this row is not boarding — " +
                             "it will be reloaded now");
                         break;
@@ -921,6 +937,10 @@ public sealed class PetTool : ToolBase
                 var left = ReadFeederCounts(ocr, row);
                 var eta = ReadEta(ocr, row);
                 schedule[row] = ScheduleFor(row, left, eta);
+
+                // Digits off the feeder's own slots, or a time line in the game's own wording: either
+                // one is the window speaking, which is all the reference capture needs.
+                if (left is not null || eta is not null) _windowProofSeen = true;
 
                 // The time line is quoted RAW, because it is a sentence rather than a number and the
                 // only way to know the region found it is to see what it read. A row whose line is
@@ -1276,6 +1296,7 @@ public sealed class PetTool : ToolBase
             // READ FIRST, and read EVERYTHING — the due rows to act on, and the rest because this
             // reading is also what re-derives their next.
             schedule = ReadRows(ser);
+            if (_windowProofSeen) EnsureCloseReference(ser);
 
             // THE FRONT IS CHECKED AGAIN PER ROW, because the check in the main loop is a few clicks
             // and an OCR pass old by now — and every action from here presses keys and buttons at
@@ -1531,10 +1552,29 @@ public sealed class PetTool : ToolBase
     /// </summary>
     private bool OpenBoarding(SerialPort ser, out string error)
     {
-        if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
-        SleepCheck(WindowWait);
-        if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+        // THE ALREADY-OPEN PROBE, and it only runs when the tool has a reason to suspect the window
+        // is still up: a close whose click could not be sent, or a run killed between open and close
+        // (BoardingWindowMayBeOpen, persisted for exactly those two). The ordinary open pays nothing
+        // for it. A positive match skips the two clicks, because both of their targets are
+        // coordinates in the CLOSED world — 目錄 sits behind the window, and the feed icon's panel is
+        // not showing — so clicking them is how a left-open window became a blind click into it.
+        var alreadyOpen = _cfg.Pet.BoardingWindowMayBeOpen && BoardingWindowLooksOpen(ser) == true;
+        if (alreadyOpen)
+        {
+            Log("  the boarding window is ALREADY OPEN (the probe matched its X) — skipping the 目錄 " +
+                "and feed-icon clicks");
+        }
+        else
+        {
+            if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
+            SleepCheck(WindowWait);
+            if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+        }
 
+        // Everything from here is shared by both paths. The Enter in particular: it clears the
+        // out-of-food message, which blocks 結束代養, and with no message in front of it the player
+        // confirmed it is a no-op — the one keystroke that is right in both worlds. It is NOT a click,
+        // so the already-open path can send it.
         SleepCheck(ActionWait);
         if (!Enter(ser, out error)) return false;
         Log("  enter (clears the out-of-food message if the breeder opened with one)");
@@ -1542,6 +1582,15 @@ public sealed class PetTool : ToolBase
 
         // The bag comes up on whatever page it likes, so anything known about the page is now wrong.
         _bagPage = -1;
+
+        // THE WINDOW IS NOW OPEN AND THE RUN SAYS SO ON DISK. Persisted on change only — this rides
+        // the same file the reload records already write — and it must survive a kill, because the
+        // window a killed run leaves open is the case the NEXT run is the only one that can notice.
+        if (!_cfg.Pet.BoardingWindowMayBeOpen)
+        {
+            _cfg.Pet.BoardingWindowMayBeOpen = true;
+            _persistState?.Invoke();
+        }
         return true;
     }
 
@@ -1569,6 +1618,16 @@ public sealed class PetTool : ToolBase
                 Log(attempt == 1
                     ? "  close: clicked the boarding window's X"
                     : $"  close: the X went through on attempt {attempt} of {CloseAttempts}");
+
+                // The click WAS SENT, so the window is taken to be closed — the assumption every
+                // click in this tool makes, kept here deliberately: nothing can see the result of a
+                // click that went out. The probe exists for the failure where NO click went out at
+                // all, which is the only kind that leaves the belief false.
+                if (_cfg.Pet.BoardingWindowMayBeOpen)
+                {
+                    _cfg.Pet.BoardingWindowMayBeOpen = false;
+                    _persistState?.Invoke();
+                }
                 SleepCheck(ClickWait);
                 return;
             }
@@ -1578,12 +1637,131 @@ public sealed class PetTool : ToolBase
             SleepCheck(ActionWait);
         }
 
-        // BOTH ATTEMPTS FAILED, so the window may still be OPEN. Said plainly because the next open
-        // is what pays for it: OpenBoarding probes for an open window before it clicks 目錄, and a
-        // probe that cannot answer falls back to the old blind click — which is the failure this
-        // line is here to make findable.
+        // BOTH ATTEMPTS FAILED, so the window may still be OPEN — and the belief is left standing, so
+        // the next open PROBES for it before clicking 目錄 (see OpenBoarding). The probe is consulted
+        // only because of this belief; a probe that cannot answer falls back to the old blind click,
+        // which is the failure this line is here to make findable.
         Log("  close: the X could not be reached — the boarding window may still be OPEN; " +
-            "the next open will check for it first");
+            "the next open will probe for it first");
+    }
+
+    /// <summary>How far the probe's box extends each way from the X's point — 14 gives the 28x28 crop
+    /// the probe design measured (2026-10-11, on the player's own capture): the X's glyph is about
+    /// 26 px wide, and a 28x28 crop compared at the matcher's 6-px inset leaves a 16x16 window wholly
+    /// on the button, while 32x32 starts catching the animated world behind the window's corner. The
+    /// calibrated point is the ONLY stored number; the box is derived from it here, so a re-marked X
+    /// can never disagree with its reference.</summary>
+    private const int CloseProbeRadius = 14;
+
+    /// <summary>How different the X's region may look from its learned reference and still count as
+    /// "the window is open". MEASURED for the probe design on the player's own capture: identical
+    /// content scored 0.000, the button's glyph alone occupies 0.36 of the compared window, and the
+    /// same window against other screen patches scored 0.98-1.00. 0.10 is three and a half times
+    /// below the glyph's own ink, so even a coincidentally matching surround cannot carry a MISSING X
+    /// — and the cost of being too strict is the old blind open, which is what happens today anyway.
+    /// The score is logged on every probe so one live run can correct this from evidence.</summary>
+    private const double CloseProbeMaxDifference = 0.10;
+
+    /// <summary>The client-relative rectangle the X's reference and the live probe both use — the
+    /// calibrated point expanded by <see cref="CloseProbeRadius"/>, or null when there is no point to
+    /// expand.</summary>
+    private List<int>? CloseProbeRegion() => IsPoint(_cfg.Pet.CloseButton)
+        ? new List<int>
+        {
+            _cfg.Pet.CloseButton![0] - CloseProbeRadius, _cfg.Pet.CloseButton![1] - CloseProbeRadius,
+            CloseProbeRadius * 2, CloseProbeRadius * 2,
+        }
+        : null;
+
+    /// <summary>Whether the boarding window looks like it is already on screen: true only for a
+    /// CONFIDENT match of the X against the reference it learned, null whenever that cannot be told,
+    /// false for a positive mismatch. Every caller must treat null as "open the old way".
+    ///
+    /// The cursor is parked first, and that is not tidiness: the measured failed close leaves the
+    /// cursor beside the X ("it stopped at (861,327)"), and a reference crop can never contain the
+    /// arrow — the same reason the bag scans park the cursor before every capture.
+    ///
+    /// A covered game returns null rather than an answer, like every other read in this tool: the
+    /// capture would be of the covering window, and "the cover looks different from the X" is not
+    /// evidence that the window is closed (nor that it is open).</summary>
+    private bool? BoardingWindowLooksOpen(SerialPort ser)
+    {
+        var region = CloseProbeRegion();
+        if (region == null) return null;
+
+        using var reference = IconMatch.FromBase64(_cfg.Pet.CloseButtonPng);
+        if (reference == null) return null;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
+        ParkCursor(ser);
+        SleepCheck(ClickWait);
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+        });
+        if (cap == null) return null;
+
+        using var now = cap.Image;
+        var score = IconMatch.DifferingFraction(reference, now);
+        var open = score <= CloseProbeMaxDifference;
+        Log($"  boarding-open probe: {score:0.###} vs {CloseProbeMaxDifference:0.###} — " +
+            (open ? "the window looks OPEN" : "no match, treated as closed"));
+        return open;
+    }
+
+    /// <summary>Learns — or corrects — the reference crop of the boarding X, from a capture of a
+    /// window whose contents have just been READ. Called only when <see cref="_windowProofSeen"/>:
+    /// an empty slot matched its own reference, a feeder count was read, or a time line parsed.
+    ///
+    /// WHY THE PROOF MATTERS. A crop taken on faith could be of the game world, and a world crop
+    /// MATCHES THE WORLD — which would make a closed window look open and skip the only step that
+    /// brings it up, the one direction this guard must never fail in. The proof is the tool's own
+    /// evidence that the boarding window is the thing that produced those pixels.
+    ///
+    /// An existing reference that still matches writes nothing — it is the same picture, and
+    /// local.yaml is the file the launcher's own saves also write. One that no longer matches is
+    /// REPLACED, because a re-rendered X (resolution, skin) must not kill the guard silently; the
+    /// replacement is logged, and it happens only from a proven-open window like the first one.</summary>
+    private void EnsureCloseReference(SerialPort ser)
+    {
+        var region = CloseProbeRegion();
+        if (region == null) return;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return;
+        if (WindowFinder.ForegroundWindow() != hwnd) return;
+
+        ParkCursor(ser);
+        SleepCheck(ClickWait);
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+        });
+        if (cap == null) return;
+
+        using var now = cap.Image;
+        using var reference = IconMatch.FromBase64(_cfg.Pet.CloseButtonPng);
+        if (reference != null)
+        {
+            var score = IconMatch.DifferingFraction(reference, now);
+            if (score <= CloseProbeMaxDifference) return;
+
+            Log($"  the boarding X's reference no longer matches the open window ({score:0.###}) — " +
+                "replacing it with what is on screen now");
+        }
+        else
+        {
+            Log("  learning the boarding X's reference from this open window — a close that never " +
+                "reaches the X can then be noticed before the next open clicks 目錄 behind it");
+        }
+
+        _cfg.Pet.CloseButtonPng = IconMatch.ToBase64(now);
+        _persistState?.Invoke();
     }
 
     /// <summary>Right-click the marked cell to put the pet back into the boarding slot.

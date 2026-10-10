@@ -13,6 +13,36 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
+
+**PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:
+[PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
+two lenses; the built design is the judges' winner with one change of provenance.
+
+**The measured problem.** 17 closes in `pet.log` could not reach the X; each left the window open for
+the next open to click 目錄 *behind* — both open clicks are coordinates in the closed world. Two
+corrections the judgement made to the plan's reading, now on the record: those coordinates are
+HidPointer's **logical-space** goals (the configured X has not moved; the placement gave up 18 px
+short), and the 17 split 7 same-run / 9–10 **across a run boundary** — which is why the belief is
+persisted, not held in memory.
+
+**Built.** The X is clicked twice (`CloseAttempts`, commit `7daf94a` — the failure is non-convergence,
+so a retry re-aims). A close whose click could not be sent leaves `pet.boarding_window_may_be_open`
+standing; the next open then compares the X's region against `pet.close_button_png`. The reference is
+**learned at runtime from a window whose contents were just read** — an empty slot matched, a count or
+a time line came back — not cropped at calibration time: a crop taken on faith could be the game
+world, and a world crop matches the world, which would turn a closed window into a skipped open. A
+match skips only the two clicks; the clearing Enter and everything after run unchanged. Every probe
+logs its score; every learn and replacement is logged.
+
+**Open, and recorded in the design doc:** a mis-marked X can, in the belief-gated states, still match
+(a bound, not an elimination — two X buttons share the screen); the hardening path is a second
+independent live signal (the toggle label's OCR, after an offline readability check). No live run has
+exercised the probe yet.
+
+**Verified.** Pet + Tests build clean; 265 tests pass, with the new keys under the config reflection
+fences and a save→load round trip.
+
 ## 2026-10-11 (71) — every failure writes its reason, and a row's death carries the last one
 
 **From the same log reading as (69).** The plan's §3 second gap — "for some failures the log records

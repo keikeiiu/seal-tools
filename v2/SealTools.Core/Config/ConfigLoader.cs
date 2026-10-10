@@ -332,6 +332,11 @@ public sealed class ConfigLoader
             if (IsPoint(pet.MenuButton)) defaults.Pet.MenuButton = pet.MenuButton;
             if (IsPoint(pet.FeedIcon)) defaults.Pet.FeedIcon = pet.FeedIcon;
             if (IsPoint(pet.CloseButton)) defaults.Pet.CloseButton = pet.CloseButton;
+            if (!string.IsNullOrWhiteSpace(pet.CloseButtonPng)) defaults.Pet.CloseButtonPng = pet.CloseButtonPng;
+            // A LOAD-side line with no reflection fence over it (the fences cover the save direction),
+            // which is exactly where this block has silently dropped fields before. False means "no
+            // belief", which is also the default, so only the true case is worth assigning.
+            if (pet.BoardingWindowMayBeOpen is true) defaults.Pet.BoardingWindowMayBeOpen = true;
             if (pet.PageTabs is { Count: > 0 }) defaults.Pet.PageTabs = pet.PageTabs;
             // The boarding bag's grid, deliberately separate from BuySell's — the bag sits somewhere
             // else in this flow, so borrowing those numbers would aim every cell at the wrong item.
@@ -618,6 +623,15 @@ public sealed class ConfigLoader
         public List<int>? MenuButton { get; set; }
         public List<int>? FeedIcon { get; set; }
         public List<int>? CloseButton { get; set; }
+        /// <summary>A crop of the boarding X as it looks with the window OPEN — the reference the
+        /// already-open probe compares against. Session half: the RUN learns it from a window whose
+        /// contents it just read, so there is no calibration button for it and the calibration half
+        /// must not be expected to carry it. See <see cref="PetConfig.CloseButtonPng"/>.</summary>
+        public string? CloseButtonPng { get; set; }
+        /// <summary>Whether the window may still be on screen — set on an open, cleared on a SENT
+        /// close, left set when the close could not be reached. Session half for the same reason:
+        /// it describes the last operation this run performed.</summary>
+        public bool? BoardingWindowMayBeOpen { get; set; }
         public List<List<int>>? PageTabs { get; set; }
         public List<int>? BagGrid { get; set; }
         public List<int>? BagSlot { get; set; }
@@ -730,6 +744,11 @@ public sealed class ConfigLoader
             t.FoodSlots = p.FoodSlots;
             t.FoodSlotsUsed = p.FoodSlotsUsed;
             t.FoodIconPng = p.FoodIconPng;
+            // The close probe's pair: learned and updated by the run itself rather than marked by the
+            // player, which is what puts them on THIS half — the session save is what a tool's own
+            // state write calls (LauncherService.PersistPetState).
+            t.CloseButtonPng = p.CloseButtonPng;
+            t.BoardingWindowMayBeOpen = p.BoardingWindowMayBeOpen;
             t.ReturnSlot = p.ReturnSlot;
             t.WaitAfterEmptyMinutes = p.WaitAfterEmptyMinutes;
             t.ActionWaitMs = p.ActionWaitMs;
