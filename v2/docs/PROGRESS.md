@@ -13,6 +13,47 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (86) — the count read, characterised: the reader is knife-edge on these digits
+
+**Where this stands.** Entry 85 added a retry because one capture looked soft. The next live look
+(refused-closes and all) kept failing on the *partial* stacks while the full ones (`300`) always read —
+and the failed crops, probed offline against the real recogniser, turned out to be **statistically
+indistinguishable from the ones that read at 0.998**: same size, same digit colour and stroke weight,
+same height (46 px upscaled), same position in the crop, same edge energy (Laplacian variance 1185–1353
+for the failures, 1190–1282 for the successes). Whatever decides the outcome is **sub-pixel
+rendering**, and the reader is on a knife edge about it.
+
+**What the offline probe actually found** (a throwaway console at `c:\tmp\ocr_probe` driving
+`OcrEngine.ReadImageFile` over every saved crop):
+
+| crop | what the recogniser says |
+|---|---|
+| a crisp `120` / `273` / `276` / `279` / `300` | the right number, at 3×, 6× and 9× |
+| `108` (failed live) | **`801` at 3×** — the digits read in REVERSE — and `108` only at 9× |
+| `267` (failed live) | nothing until **24×**, then `267` |
+| `264`, `144` (failed live) | nothing at any scale, 3×–24× |
+| the crisp `120` at 24× | nothing — too big |
+
+So there is **no single upscale that reads them all**, and the failures are not one phenomenon: a
+reversed read, a garbage read (`4944`), and true no-reads, from crops that measure the same.
+
+**Why the tool is still safe on every one of them.** `FeederCount.Parse` rejects anything above 300,
+so a reversed `801` becomes *no reading* rather than a confident wrong number; `4944` likewise; and a
+no-read understates the slot, which is the direction the schedule prefers (reload early — the leftover
+food returns with the pet). The residual is the reversed read whose mirror happens to be ≤ 300 (e.g.
+`102` → accepted as `201`, an overstatement) — rare, and the class to close if a fix is wanted.
+
+**The options, for the player to pick (nothing built beyond the retry):**
+1. **A scale ladder on the failure path** — re-read at 6× and 9× before giving up. Closes the reversed
+   class (the `108` case), costs ~0.5 s only when a read has already failed.
+2. **A digit-template reader** — the counts are a fixed font, and the saved crops between them contain
+   every digit; the tool's own `IconMatch` (offset search, differing-fraction) is the proven machinery
+   and reads pets at 1.0. The most reliable option and the most work.
+3. **Leave it** — every failure is safe, and the cost is an occasional reload an hour early.
+
+**Measured on the way, worth keeping:** ~11 unreadable slot reads in ~50 minutes of monitored looks
+(≈1 per look), always on PARTIAL stacks; the full `300` stacks never failed.
+
 ## 2026-10-11 (85) — a slot's count read is retried, because the failure is a capture
 
 **The report:** the player, watching a slot whose count sat at 144, saw the tool read it as *nothing*
