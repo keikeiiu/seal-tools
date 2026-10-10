@@ -1321,11 +1321,15 @@ feed icon, one Enter, the X) and the visit (the whole reload) — and nothing at
 only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 
 **What its card shows.** The standing line (which rows are boarding, which is next and when) and then
-**one line per breeding row** — `· Row 1: boarding · 516 item(s) at the last read · next 07:14 (in 2h 41m)`
-— so all four conditions are visible at once rather than only the soonest. Each row carries its own
-moment (`ToolState.Rows`) and the card recomputes every countdown on each tick, the same rule the
-standing line follows. The item figure is labelled "at the last read" because that is what it is: the
-tray drains between visits and nothing reads it in between.
+**one line per breeding row** — `· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · 516 item(s) at
+the last read · next 07:14 (in 2h 41m)` — so all four conditions are visible at once rather than only
+the soonest, **plus a `why:` line under each** saying where that time came from: the feeder
+arithmetic, the game's own line, the pet's estimate from the panel and the feeding table, or the
+configured cycle when nothing could be read. Each row carries its own moment (`ToolState.Rows`) and
+the card recomputes every countdown on each tick; the why is written by the code that produced the
+number, so the two cannot disagree. The item figure is labelled "at the last read" because that is
+what it is (the tray drains between visits), and the game's **level-form** line is quoted as the
+stage the pet is heading for rather than left as a hidden message — it deliberately drives nothing.
 
 ### Decision points (the outer loop only)
 

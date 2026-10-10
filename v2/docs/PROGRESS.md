@@ -13,6 +13,28 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (80) — every row's time says WHY it is that time
+
+**The player's follow-up to (79):** *"also information on why it is calculated this way — (hidden
+message is that it is level 6 pet right?) from the preset."* They had spotted that the game's line
+「到6為止预計所需時間：約19分」 is telling you something (the stage the pet is heading for) and that
+the card was silently not using it, with no way to tell that from a line it *had* used.
+
+**What each row now carries:** the pet it boarded (species from the **queue entry — the player's own
+preset** — beside the hover panel's reading, `stage 6, +7, 52.18%`), the last feeder count, its own
+countdown, and a **`why:` line**: the feeder arithmetic (`516 item(s) ≈ 172 min of food at 3/min,
++ 5 min grace`), the game's own line, the pet's estimate from the panel and the feeding table, or
+the configured cycle when nothing could be read. When the line is the **level** form it says so —
+"the stage it is heading for; it does not drive the schedule" — which is the exact question the
+player asked.
+
+**How it cannot drift:** `_rowWhy` is written by the code that produced each `next[row]` — the read
+side in `WhyFromReading` (switched on the same `ScheduleSource` the number comes from), the fold for
+reloaded, waiting and given-up rows, and the front deferral. The card only prints what was recorded,
+so a time and its explanation are two views of one decision.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Guides updated in both languages.
+
 ## 2026-10-11 (79) — the Pet Feeder's card lists every row
 
 **The player's ask:** *"if I have 4 pets pending to feed … list out all 4 conditions."* The card's

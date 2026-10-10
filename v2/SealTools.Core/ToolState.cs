@@ -66,7 +66,10 @@ public sealed class ToolState
 /// <summary>One row of a tool's standing plan — the pet feeder's four breeding rows.
 ///
 /// <paramref name="Status"/> is the short state word the card shows ("boarding", "not boarding",
-/// "given up"); <paramref name="Detail"/> is the last reading about that row ("516 item(s)", or null
-/// when there is none to show); <paramref name="NextAt"/> is when this row next needs attention, or
-/// null when it never will again (a row that was dropped).</summary>
-public sealed record ToolRowState(string Name, string Status, string? Detail, DateTime? NextAt);
+/// "given up"); <paramref name="Detail"/> is the last reading about that row (the pet it boarded and
+/// its feeder count, or null when there is none to show); <paramref name="Why"/> is WHY the next time
+/// is what it is — the arithmetic and the reading behind it, written where the number was produced so
+/// the two cannot drift; <paramref name="NextAt"/> is when this row next needs attention, or null
+/// when it never will again (a row that was dropped).</summary>
+public sealed record ToolRowState(string Name, string Status, string? Detail, string? Why,
+    DateTime? NextAt);

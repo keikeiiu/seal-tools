@@ -115,16 +115,29 @@ from the boarding state and the schedule on the **Pet** tab. **Under it the card
 row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
 
 ```
-· Row 1: boarding  ·  516 item(s) at the last read  ·  next 07:14 (in 2h 41m)
-· Row 2: boarding  ·  669 item(s) at the last read  ·  next 08:05 (in 3h 32m)
-· Row 3: waiting for a reload
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  516 item(s) at the last read  ·  next 07:14 (in 2h 41m)
+     why: the tray read 516 item(s) ≈ 172 min of food at 3/min, + 5 min grace  ·  its line 「到6為止预計所需時間：約19分」 is the LEVEL form — the stage it is heading for; it does not drive the schedule
+· Row 2: waiting for a reload
+     why: nothing is boarding — it needs a pet and a fill
 · Row 4: given up
+     why: given up after 3 failures — <the reason, first sentence>
 ```
 
-Each line carries that row's own countdown, recomputed as the card refreshes. **"At the last read"
-is worded that way on purpose** — the tray drains continuously and nothing reads it between visits,
-so the figure is the last reading, not a live count; the time beside it is when the row is next
-looked at. A row that was given up on (three failures in a row) has no next time and says so.
+Each line carries that row's own countdown, recomputed as the card refreshes, and **a `why:` line
+under it** saying where the time came from — the feeder arithmetic, the game's own line, the pet's
+estimate from the panel and the feeding table, or the configured cycle when nothing could be read.
+The `why:` is written by the same code that produced the time, so the two cannot disagree.
+
+Two wordings worth knowing:
+
+- **"At the last read"** — the tray drains continuously and nothing reads it between visits, so the
+  figure is the last reading, not a live count; the time beside it is when the row is next looked at.
+- **"The LEVEL form"** — the game writes two kinds of time line. The *completion* form ("完成 … 約N分")
+  says when the pet finishes, and drives the schedule. The *level* form ("到6為止预計所需時間：約19分")
+  says the **stage the pet is heading for** — the card quotes it so that message is not hidden, but it
+  deliberately does not drive the schedule.
+
+A row that was given up on (three failures in a row) has no next time and says so.
 
 ### Buy Items has extra controls on its card
 
