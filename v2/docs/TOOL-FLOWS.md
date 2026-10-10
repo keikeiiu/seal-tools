@@ -1321,14 +1321,15 @@ feed icon, one Enter, the X) and the visit (the whole reload) — and nothing at
 only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 
 **What its card shows.** The standing line (which rows are boarding, which is next and when) and then
-**one line per breeding row** — `· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → stage 9 ·
+**one line per breeding row** — `· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → +9 ·
 3/min (game line) · next 07:14 (in 2h 41m)` — so all four conditions are visible at once rather than only the soonest.
 Each row carries its own moment (`ToolState.Rows`) and the card recomputes every countdown on each
-tick. The **`→ stage N`** is the one deduction the game's own time line contributes: the *level*
-form ("到6為止预計所需時間：約19分") names the **feeding (代養) stage** the pet is heading for
-(`FeederEta.LevelTarget`) — the same scale the panel's own "stage N" shows, never the pet's rank —
-and that number is shown while the line itself, deliberately, drives nothing. The **`N/min (game
-line)`** is the row's own feeding rate, read from the window's own sentence (`每1分 攝取3個`,
+tick. The **`→ +N`** is the one deduction the game's own time line contributes: the *level* form
+("到9為止预計所需時間：約94分") counts to a **餵養值/growth** (`FeederEta.GrowthTarget`), the same
++N scale the panel shows and ending at +9 — the STAGE is the panel's `(6階)`, read by hovering the
+pet icon, and both numbers are on the row because both matter ("there is no stage 8 or 9"). That
+number is shown while the line itself, deliberately, drives nothing. The **`N/min (game line)`** is
+the row's own feeding rate, read from the window's own sentence (`每1分 攝取3個`,
 `FeederEta.ParseRate`) on the same OCR pass as the time line: the rate follows the feeding stage, so
 each row's arithmetic uses ITS rate and `pet.items_per_minute` answers only when the line could not
 be read.

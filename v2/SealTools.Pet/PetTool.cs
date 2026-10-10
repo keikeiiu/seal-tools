@@ -223,10 +223,10 @@ public sealed class PetTool : ToolBase
     /// count.</summary>
     private readonly Dictionary<PetSlotConfig, int?> _lastItems = new();
 
-    /// <summary>The game's time line for a row, VERBATIM, from the last read — "到6為止预計所需時間：
-    /// 約19分" and the like. Kept raw because it is a sentence rather than a number, and because the
-    /// level form's meaning (the stage the pet is heading for) is exactly what the player wants to
-    /// see spelled out.</summary>
+    /// <summary>The game's time line for a row, VERBATIM, from the last read — "到9為止预計所需時間：
+    /// 約94分" and the like. Kept raw because it is a sentence rather than a number, and because the
+    /// level form's meaning (the GROWTH the line counts to) is exactly what the player wants to see
+    /// spelled out.</summary>
     private readonly Dictionary<PetSlotConfig, string?> _lastEtaLine = new();
 
     /// <summary>What each row last boarded: the species (from its queue entry, i.e. the player's
@@ -483,11 +483,14 @@ public sealed class PetTool : ToolBase
                 // else the first version spelled out turned out to be noise.
                 var detail = _rowPet.TryGetValue(row, out var pet) ? pet : null;
                 if (_lastEtaLine.TryGetValue(row, out var etaLine) &&
-                    FeederEta.LevelTarget(etaLine) is { } stage)
+                    FeederEta.GrowthTarget(etaLine) is { } growthTo)
                 {
+                    // `→ +9` in the panel's own vocabulary: the growth the game's line counts to,
+                    // where +9/100 % is the finished pet. NOT a stage — the player, 2026-10-11:
+                    // *"there is no stage 8 stage 9."*
                     detail = string.IsNullOrEmpty(detail)
-                        ? $"→ stage {stage}"
-                        : $"{detail}  ·  → stage {stage}";
+                        ? $"→ +{growthTo}"
+                        : $"{detail}  ·  → +{growthTo}";
                 }
 
                 // The ROW's own feeding rate, when the window stated one — the number that says why a

@@ -13,6 +13,30 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (84) — three pet numbers, told apart at last
+
+**The player, over several messages:** *"there is no stage 8 stage 9"*, *"u know the stage be
+hovering on the pet icon"*, and *"stage and + N is both important information we need to know and
+deduce."*
+
+**What the first version got wrong:** it labelled the game's `到9為止` number `→ stage 9`. There is no
+stage 8 or 9. Three different numbers sit near each other and the card was mixing two of them:
+
+| number | where | what it is |
+|---|---|---|
+| `(6階)` | hover panel — read by hovering the pet icon, which is what the tool does at every placement | the **stage** (no 8/9) |
+| `+7` / `到9為止` | the panel's growth, and the line's countdown target | the **餵養值 / growth**, +0 … +9; `+9` at 100 % is a finished pet (`PetPanel.MaxGrowth`) |
+| `52.18%` | the panel | that growth bar's fill |
+
+**What changed:** `FeederEta.LevelTarget` → `GrowthTarget` (bounds checked against
+`PetPanel.MaxGrowth`, the game's own maximum, in the class that owns it), the card shows `→ +9` in
+the panel's own vocabulary, and both guides carry the table above. **Both numbers stay on the row**
+— the stage from the hover panel and the line's growth target are each worth knowing, and the rate
+line's `N/min` beside them. The stage's source is the hover panel, which the tool has always read at
+placement; the line's target is the deduction this row's `→ +N` contributes.
+
+**Verified.** 284 tests pass.
+
 ## 2026-10-11 (83) — the feeding rate is read per row, from the game's own line
 
 **The player's point, in three messages:** *"the reason why it is 3 food per pet it is those pet is

@@ -115,21 +115,22 @@ from the boarding state and the schedule on the **Pet** tab. **Under it the card
 row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
 
 ```
-· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → +9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
 · Row 2: waiting for a reload
 · Row 4: given up
 ```
 
 Each line carries that row's own countdown, recomputed as the card refreshes, and — when the game's
-own time line names one — **`→ stage N`**: the **feeding (代養) stage** that line says the pet is
-heading for. That is the whole message of the so-called *level* form ("到6為止预計所需時間：約19分" —
-*up to 6*): the game writes two kinds of time line, and only the *completion* form ("完成 … 約N分",
-when the pet finishes) drives the schedule. The level form is shown as the one number it carries and
-deliberately drives nothing.
+own time line names one — **`→ +N`**: the **餵養值 (growth)** that line counts to, in the panel's own
+vocabulary (`+9` is the last of them, and `+9` at 100 % is a finished pet). That is the whole message
+of the so-called *level* form ("到9為止预計所需時間：約94分" — *up to +9*): the game writes two kinds
+of time line, and only the *completion* form ("完成 … 約N分", when the pet finishes) drives the
+schedule. The level form is shown as the one number it carries and deliberately drives nothing.
 
-**That number is the feeding stage, not the pet's rank or level** — the same scale the hover panel's
-`stage N` shows. It never describes how strong the pet is, and the card uses the word *stage* so the
-two cannot be confused.
+**Three different numbers sit close together, and they are not each other:** the hover panel's
+`(6階)` is the **stage** (there is no stage 8 or 9); the panel's `+7` and the line's `到9為止` are the
+**餵養值/growth** (+0 … +9); the `52.18%` is that growth bar's fill. The stage comes from hovering the
+pet icon — which is exactly what the tool reads when it places one.
 
 **`3/min (game line)` is the row's own feeding rate**, read from the window's own line
 (`每1分 攝取3個`) rather than assumed: the rate follows the pet's feeding stage, so rows holding pets

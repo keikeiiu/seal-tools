@@ -37,29 +37,31 @@ public static class FeederEta
     private static readonly Regex AboutMinutes =
         new(@"約\s*(\d{1,4})\s*分", RegexOptions.Compiled);
 
-    /// <summary>`到6為止` — the stage a level-form line names. It is the line's own statement of which
-    /// stage the pet is heading FOR: 「到6為止预計所需時間：約19分」 says "estimated time to reach
-    /// stage 6". 止 is matched in both scripts because the OCR mixes them line by line — the measured
-    /// log shows Traditional 為止 beside Simplified 预 in the same sentence.</summary>
-    private static readonly Regex LevelTo = new(@"到\s*(\d{1,2})\s*[為为]止", RegexOptions.Compiled);
+    /// <summary>`到9為止` — the 餵養值 / growth the line counts down TO. 「到9為止预計所需時間：約94分」
+    /// says "estimated time to reach +9", and +9 with a full bar is a finished pet (see
+    /// <c>PetPanel.MaxGrowth</c>). 止 is matched in both scripts because the OCR mixes them line by
+    /// line — the measured logs show Traditional 為止 beside Simplified 预 in the same sentence.</summary>
+    private static readonly Regex GrowthTo = new(@"到\s*(\d{1,2})\s*[為为]止", RegexOptions.Compiled);
 
-    /// <summary>The stage a line says the pet is heading for, or null when it names none.
+    /// <summary>The GROWTH (餵養值, +0 … +9) a line says the pet is heading for, or null when it names
+    /// none.
     ///
-    /// IT IS THE 代養 / FEEDING STAGE, NOT THE PET'S RANK OR LEVEL — the player corrected exactly
-    /// that reading on 2026-10-11: *"the pet feeding level is not the pet rank level."* The number
-    /// 到N為止 counts the boarding stages (the same scale the hover panel's "stage 6" shows), and it
-    /// has nothing to do with how strong the pet is. The card says `→ stage N` for that reason.
+    /// THREE NUMBERS LIVE NEAR EACH OTHER, and the first version of this method confused two of them
+    /// — the player caught it: *"there is no stage 8 stage 9."* The hover panel's `(6階)` is the
+    /// **stage** (it has no 8/9); the panel's `+7` and this line's `到9為止` are the **growth**, which
+    /// runs +0 … +9 and ends at +9/100 % — the finished pet. The card shows `→ +9` for that reason,
+    /// in the panel's own vocabulary.
     ///
     /// DISPLAY ONLY: the level form drives nothing (see <see cref="CompletionMinutes"/>), and this
-    /// exists so a card can say which stage the line is about instead of quoting a sentence nobody
+    /// exists so a card can say what the line is counting to instead of quoting a sentence nobody
     /// reads.</summary>
-    public static int? LevelTarget(string? line)
+    public static int? GrowthTarget(string? line)
     {
         if (line is null) return null;
-        var match = LevelTo.Match(line);
+        var match = GrowthTo.Match(line);
         return match.Success && int.TryParse(match.Groups[1].Value, NumberStyles.Integer,
-            CultureInfo.InvariantCulture, out var stage)
-            ? stage
+            CultureInfo.InvariantCulture, out var growth) && growth >= 0 && growth <= PetPanel.MaxGrowth
+            ? growth
             : null;
     }
 

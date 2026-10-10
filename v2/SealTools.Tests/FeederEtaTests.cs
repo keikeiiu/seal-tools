@@ -45,21 +45,24 @@ public class FeederEtaTests
         Assert.Null(FeederEta.CompletionMinutes(r));
     }
 
-    /// <summary>The stage the level form is talking about — what the card shows as `→ stage 6`, and
-    /// the reason the parser keeps the line verbatim. The number is the 代養/FEEDING stage, not the
-    /// pet's rank or level (the player corrected that reading on 2026-10-11), which is why it is
-    /// pinned against the panel's own "stage N" scale. Display only: the level form drives nothing.</summary>
+    /// <summary>The 餵養值/growth the level form counts to — what the card shows as `→ +9`, and the
+    /// reason the parser keeps the line verbatim. It is the GROWTH (+0 … +9, ending at a finished
+    /// pet), NOT the stage: the player corrected both readings on 2026-10-11 — *"the pet feeding
+    /// level is not the pet rank level"* and *"there is no stage 8 stage 9"*. The stage comes from
+    /// hovering the pet icon (the panel's `(6階)`), which is a different number entirely. Display
+    /// only: the level form drives nothing.</summary>
     [Theory]
     [InlineData("到2為止預計所需時間：約 20分", 2)]
     [InlineData("到6為止预計所需時間：約19分", 6)]
     [InlineData("到9為止预計所需時間：約94分", 9)]
     [InlineData("到3为止预计所需时间：约 12分", 3)]   // the OCR's Simplified 止, mixed scripts
-    [InlineData("代養完成預計所需時間：約14分", null)]   // the completion form names no stage
-    [InlineData("該欄位約27日9時51分16秒後到期。", null)] // the shelf life is not a stage either
+    [InlineData("代養完成預計所需時間：約14分", null)]   // the completion form names no growth
+    [InlineData("該欄位約27日9時51分16秒後到期。", null)] // the shelf life is not one either
     [InlineData("到6為止", 6)]
-    public void TheLevelFormNamesTheStageItIsHeadingFor(string line, int? expected)
+    [InlineData("到12為止預計所需時間：約 20分", null)]   // above the game's own maximum (+9)
+    public void TheLevelFormNamesTheGrowthItCountsTo(string line, int? expected)
     {
-        Assert.Equal(expected, FeederEta.LevelTarget(line));
+        Assert.Equal(expected, FeederEta.GrowthTarget(line));
     }
 
     /// <summary>The feeding rate the window prints beside every row — the line that answers the
