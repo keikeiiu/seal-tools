@@ -13,6 +13,38 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
+
+**PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
+[PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
+
+**The saving, and where the sweep actually goes.** A plural batch paid one full three-page sweep per
+row — worst on the visit that follows downtime, which is the one with the most rows. The sweep is now
+taken by the visit's FIRST PLACEMENT and shared. That is one step later than the plan's diagram puts
+it, on evidence: a boarding row's pet is in the loader until its own end press, so a sweep before the
+row loop looks at a bag that provably lacks the pet those rows need — and the fixed return slot the
+saving would then lean on measures empty 173 of 258 tries in `pet.log`. Taken at the first placement,
+the list includes the just-returned pet, the single-row reload is byte-for-byte today's flow, and a
+plural batch pays at most today's per-row cost.
+
+**The check survives the sharing.** A stored cell is re-read against the queued icons before it is
+clicked (`CaptureBagCell` with the search radius + the new `IconMatch.ScoreCell`, the sweep's own
+comparison applied to one cell): a match proceeds, a positive mismatch skips and logs page/cell/score,
+an unreadable one carries on — unknown must not cancel a boarding. The food cells get the same
+one-cell read against the food icon before a stack is spent on them.
+
+**The recovered hole.** A row whose own boarding just ended has its pet in neither the shared list nor
+(usually) the return slot, so when the shared walk yields nothing usable that row runs **one** fallback
+sweep, after its own end press; the list it finds replaces the shared one. Bound: one per row, so at
+most today's sweeps per visit. The food re-mark stays with the visit's single sweep — never on a
+fallback, whose write would reset a counter the other rows are still counting against — and it now
+also runs for a setup with **no pet queue but a food icon**, which previously re-marked nothing, ever.
+
+**Verified.** 268 tests pass (three new ones pin the single-cell verification's three outcomes);
+Pet + Tests build clean. Still owed: the live run the plan requires for this step, and its
+bag-compaction case, which is what would prove the re-verify rule and show how often the fallback
+fires.
+
 ## 2026-10-11 (73) — the fresh read may cancel a reload; the margin, measured rather than argued
 
 **PLAN-PET-FLOW §8 step 2, the veto half** (§2 and its ⚑2/⚑3; the reclassification half had already

@@ -28,6 +28,12 @@
     <ProjectReference Include="..\SealTools.Tuner\SealTools.Tuner.csproj" />
     <ProjectReference Include="..\SealTools.Spammer\SealTools.Spammer.csproj" />
     <ProjectReference Include="..\SealTools.GemComposer\SealTools.GemComposer.csproj" />
+    <!-- The pet tool, for its ONE public number: PetTool.MatchLimit is the threshold the bag sweep
+         stores its candidates with, and the per-use re-score (IconMatch.ScoreCell) must be judged
+         against the SAME number — a test carrying its own copy would agree with the tool's run and be
+         wrong about it, which is the trap MatchLimit's own comment names. SealTools.Pet is plain
+         net8.0, so unlike the Launcher it can be referenced directly. -->
+    <ProjectReference Include="..\SealTools.Pet\SealTools.Pet.csproj" />
   </ItemGroup>
 
 </Project>

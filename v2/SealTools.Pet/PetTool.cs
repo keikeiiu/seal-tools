@@ -1387,6 +1387,10 @@ public sealed class PetTool : ToolBase
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
         var schedule = new Dictionary<PetSlotConfig, RowReading>();
 
+        // The bag every row of THIS visit works from — the sweep, its reason, and whether it has been
+        // taken. One per visit, dead with the frame (plan ⚑5).
+        var bag = new VisitBag();
+
         state.Message = batch.Count > 1
             ? $"Opening the breeder for {batch.Count} rows…"
             : $"{NameOf(batch[0])}: opening the boarding window…";
@@ -1451,7 +1455,7 @@ public sealed class PetTool : ToolBase
                 }
                 Log($"  veto check: {NameOf(row)} — {note}");
 
-                var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes,
+                var ok = ReloadRowInPlace(ser, state, row, bag, out var rowError, out var petMinutes,
                     out var nothingToBoard);
                 results[row] = new RowOutcome(ok, rowError, petMinutes, nothingToBoard);
 
@@ -1530,12 +1534,18 @@ public sealed class PetTool : ToolBase
     ///
     /// The rows are still serviced one at a time, which is the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
-    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row,
+    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row, VisitBag bag,
         out string error, out double? petMinutes, out bool nothingToBoard)
     {
         error = "";
         petMinutes = null;
         nothingToBoard = false;
+
+        // Whether THIS reload ended the row's boarding — the trigger for the fallback sweep, and it
+        // has to be read before the end block clears it. A row that was boarding has its pet in the
+        // loader when the visit's sweep ran, so if the shared list holds nothing feedable this flag
+        // is what says "your own pet came back a moment ago; look again".
+        var justEnded = row.BoardingRunning;
 
         // A plain block rather than a try/finally: there is nothing to clean up per row any more, and
         // the braces are kept so this stays a reviewable diff against the method it was — this is the
@@ -1603,7 +1613,7 @@ public sealed class PetTool : ToolBase
 
             state.Message = $"{NameOf(row)}: placing the pet…";
             Log("  placing the pet");
-            if (!PlacePet(ser, row, out error, out nothingToBoard))
+            if (!PlacePet(ser, row, bag, justEnded, out error, out nothingToBoard))
             {
                 Log("  FAILED placing the pet: " + error);
                 return false;
@@ -1919,7 +1929,8 @@ public sealed class PetTool : ToolBase
     /// not necessarily land here. IconMatch exists for exactly that case and is deliberately not wired
     /// in yet — proving the rest of the flow end to end is worth more than solving the hard case
     /// first.</summary>
-    private bool PlacePet(SerialPort ser, PetSlotConfig row, out string error, out bool nothingToBoard)
+    private bool PlacePet(SerialPort ser, PetSlotConfig row, VisitBag bag, bool justEnded,
+        out string error, out bool nothingToBoard)
     {
         error = "";
         nothingToBoard = false;
@@ -1937,158 +1948,254 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        // THE RETURN SLOT IS TRIED FIRST (player, 2026-09-22). It is ONE cell and one hover against a
-        // three-page scan, and it is where the pet this row was just feeding comes back to — so it is
-        // both the cheapest thing to check and the likeliest thing to board.
-        //
-        // The guard below decides whether it is usable: a cell holding a pet that can still be fed is
-        // boarded, and anything else — no pet there at all, or one already finished — falls through to
-        // the scan. This is the reverse of what the code used to do, which was the queue first with
-        // deliberately NO fallback to the return slot; that reasoning held while the slot was assumed
-        // empty, and it is not.
-        var candidates = new List<PetCandidate>();
-        if (pet.ReturnSlot is { Count: 2 } back && back[1] >= 0 && back[1] < centres.Count)
-        {
-            Log($"  trying the return slot first: page {back[0] + 1}, cell {back[1]}");
-            candidates.Add(new PetCandidate(-1, back[0], back[1], 0, "the return slot"));
-        }
-
-        // …THEN THE SCAN, for the case the slot could not answer. A pet that is not in the bag either
-        // finished and was mailed or was never there, which is the honest end state and is reported as
-        // a WAIT rather than as a failure — see the caller.
-        var why = "the queue has no icons in it";
-        if (pet.Queue.Count > 0) candidates.AddRange(FindQueuedPetCandidates(ser, out why));
-
-        if (candidates.Count == 0)
-        {
-            error = pet.ReturnSlot is not { Count: 2 }
-                ? "Neither a queued pet icon nor a return slot is set — there is nothing to " +
-                  "right-click. Mark the return slot or capture a pet icon, on the Pet tab."
-                : $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished " +
-                  "it was mailed, so this is the queue being empty of live pets — capture the next " +
-                  "one's icon on the Pet tab.";
-            nothingToBoard = true;   // a WAIT, not a fault — see the caller
-            return false;
-        }
-
         // Built once for the placement and disposed with it — the same lifetime rule InspectRows
         // follows. LAZY, because a placement with nothing to check should not pay for an ONNX session.
         OcrEngine? ocr = null;
         try
         {
-            var refused = new List<string>();
-
-            foreach (var cand in candidates)
+            // THE SWEEP IS THE VISIT'S, TAKEN BY ITS FIRST PLACEMENT (plan §1.2/§6.3). The bag is the
+            // visit's state — it belongs to the window that is open, not to the row being reloaded —
+            // and a plural batch used to pay one full three-page sweep PER ROW. The first placement
+            // takes it and every row after walks the same list; **the sharing saves the sweep, never
+            // the check**, so each stored cell is re-read before it is clicked (see CellHoldsQueuedPet).
+            //
+            // TAKEN HERE RATHER THAN BEFORE THE ROW LOOP, deliberately: the first row of a plural batch
+            // ends its own boarding before it places, and the pet that comes back is IN THE BAG at this
+            // moment. Sweeping before the row loop would look at a bag every boarding row's pet has
+            // left — the one moment the sweep is provably least useful. It also means the ordinary
+            // single-row reload keeps the sweep exactly where it has always been.
+            var tookSweep = !bag.Swept;
+            if (tookSweep)
             {
-                if (cand.Cell < 0 || cand.Cell >= centres.Count)
-                {
-                    error = $"Cell {cand.Cell} is outside the bag grid.";
-                    return false;
-                }
+                // The food re-mark rides on this sweep and runs exactly once per visit, never
+                // skipped — so it also runs for a setup with NO pet queue but a food icon, which
+                // used to get no re-mark at all and slowly emptied a list it never refreshed.
+                bag.Candidates = pet.Queue.Count > 0 || HasFoodIcon()
+                    ? FindQueuedPetCandidates(ser, remarkFood: true, out bag.Why)
+                    : new List<PetCandidate>();
+                bag.Swept = true;
+                Log($"  the visit's bag sweep: {bag.Candidates.Count} queued pet candidate(s)" +
+                    (bag.Candidates.Count > 0 ? ", shared by every row of this visit" : ""));
+            }
+            else
+            {
+                Log($"  the visit's bag sweep was already taken — {bag.Candidates!.Count} candidate(s) " +
+                    "to re-verify before they are used");
+            }
 
-                // After a scan the bag is left on whichever page was swept last, so the page the cell
-                // lives on has to be brought back up before anything is clicked on it.
-                if (!SelectPage(ser, cand.Page, out error)) return false;
+            // THE RETURN SLOT IS TRIED FIRST (player, 2026-09-22), still: ONE cell and one hover
+            // against the sweep, and it is where the pet this row was just feeding comes back to.
+            var candidates = new List<PetCandidate>();
+            if (pet.ReturnSlot is { Count: 2 } back && back[1] >= 0 && back[1] < centres.Count)
+            {
+                Log($"  trying the return slot first: page {back[0] + 1}, cell {back[1]}");
+                candidates.Add(new PetCandidate(-1, back[0], back[1], 0, "the return slot"));
+            }
 
-                var (cx, cy) = centres[cand.Cell];
+            // …THEN THE STORED POSITIONS. A pet that is not in the bag either finished and was mailed
+            // or was never there, which is the honest end state and is reported as a WAIT rather than
+            // as a failure — see the caller.
+            candidates.AddRange(bag.Candidates!);
 
-                if (cand.Entry >= 0)
-                    Log($"  found a queued pet: page {cand.Page + 1}, cell {cand.Cell}, match {cand.Score:0.###}");
-
-                // THE +9/100% GUARD. A finished pet cannot be boarded: the right-click simply does not
-                // place it, which in a live run looked like "the pet did not go in after 3 right-clicks"
-                // — three attempts spent on a pet that could never go in — and boarding one raises the
-                // error dialog that wedges everything after it.
-                //
-                // UNKNOWN BOARDS AS BEFORE. A null panel (no tooltip calibrated, the cursor won't move,
-                // the read throws, the panel doesn't parse) falls through to the click. The guard may
-                // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
-                // direction this whole tool treats as the unrecoverable one.
-                PetPanel? boarded = null;
-                if (_cfg.Tooltip.IsSet)
-                {
-                    // BOTH KINDS ARE HOVERED NOW — the return slot as well as a matched cell — because
-                    // for the slot the hover IS the decision: nothing there means nothing to
-                    // right-click, and a pet there that has finished means trying the scan instead.
-                    ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
-                    boarded = ReadHoverPanel(ocr, ser, cx, cy);
-
-                    if (boarded is { IsFinished: true })
-                    {
-                        refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
-                        Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
-                            $"{boarded.Describe()} — NOT boarding it, trying the next one");
-                        continue;
-                    }
-
-                    // THE RETURN SLOT MUST ACTUALLY HOLD A PET. A matched candidate boards even when its
-                    // panel cannot be read — unknown must never remove a boarding — but the slot is a
-                    // fixed cell that is normally empty, so NO PANEL there means there is nothing to
-                    // click rather than that we do not know. Right-clicking an empty cell is the guess
-                    // the icon matching exists to avoid.
-                    if (boarded == null && cand.Entry < 0)
-                    {
-                        Log($"  nothing in the return slot (page {cand.Page + 1}, cell {cand.Cell}) — " +
-                            "scanning for a queued pet instead");
-                        continue;
-                    }
-
-                    if (boarded == null)
-                        Log("  the hover panel couldn't be read — boarding this one as before");
-                }
-
-                // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost
-                // roughly half its boarded time to reloads that loaded food into an empty slot and
-                // reported success — and the placement is verified to within 2px, so the cursor was on
-                // target when the click went out. An intermittent action cannot be made reliable by
-                // aiming better; it can only be checked and repeated.
-                for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
-                {
-                    if (!Click(ser, new List<int> { cx, cy }, right: true,
-                            $"the PET at cell {cand.Cell} (page {cand.Page + 1})", out error))
-                        return false;
-
-                    SleepCheck(Math.Max(PlaceSettle, ActionWait));
-
-                    switch (PetSlotIsEmpty(row))
-                    {
-                        case false:
-                            if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
-                            RememberBoarded(row, cand.Entry, boarded);
-                            return true;
-
-                        case null:
-                            // No reference, or the region couldn't be read. Unknown is NOT failure —
-                            // refusing to run because a safety net is absent would be worse than the
-                            // thing it guards.
-                            Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
-                            RememberBoarded(row, cand.Entry, boarded);
-                            return true;
-
-                        default:
-                            Log($"  pet slot is still EMPTY after attempt {attempt}");
-                            break;
-                    }
-                }
-
-                error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
-                        "empty. Nothing was loaded. Check the return slot on the Pet tab.";
+            if (candidates.Count == 0 && bag.Candidates!.Count == 0)
+            {
+                error = pet.ReturnSlot is not { Count: 2 }
+                    ? "Neither a queued pet icon nor a return slot is set — there is nothing to " +
+                      "right-click. Mark the return slot or capture a pet icon, on the Pet tab."
+                    : $"No queued pet is in the bag ({bag.Why}). Right-clicked nothing. If the pet " +
+                      "finished it was mailed, so this is the queue being empty of live pets — capture " +
+                      "the next one's icon on the Pet tab.";
+                nothingToBoard = true;   // a WAIT, not a fault — see the caller
                 return false;
             }
 
-            // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
-            // there, they are simply all finished, and the fix is a different one — capture the icon of
-            // a pet that still needs feeding.
-            // Nothing usable, and the two shapes of that need different sentences: pets WERE found and
-            // every one has finished, or nothing was found at all — the return slot empty and no queued
-            // icon matching anything in the bag.
-            error = refused.Count > 0
-                ? "Every pet that could be boarded reads +9/100%. Refused " +
-                  string.Join("; ", refused) + ". Capture the icon of a pet that can still be fed, " +
-                  "on the Pet tab."
-                : "The return slot holds no pet, and no queued icon matched one in the bag. Capture " +
-                  "the icon of a pet that can still be fed, on the Pet tab.";
-            nothingToBoard = true;   // a WAIT, not a fault — see the caller
+            // WALKS ONE CANDIDATE LIST AND BOARDS THE FIRST USABLE PET. One walk, used for the visit's
+            // shared list and for a fallback's fresh one — the second is the first with a newer list,
+            // not a copy of it. `error`/`nothingToBoard` describe THIS list only; the caller decides
+            // whether a fallback sweep is worth one more walk.
+            //
+            // A "did not go in after N right-clicks" is a FAILURE of the walk, not an exhaustion: the
+            // pet was found and would not board, which no fresh sweep can fix, and today it is the
+            // row's failure — so it must never trigger the fallback.
+            bool TryBoard(List<PetCandidate> list, out string walkError, out bool walkNothing)
+            {
+                walkError = "";
+                walkNothing = false;
+                var refused = new List<string>();
+
+                foreach (var cand in list)
+                {
+                    if (cand.Cell < 0 || cand.Cell >= centres.Count)
+                    {
+                        walkError = $"Cell {cand.Cell} is outside the bag grid.";
+                        return false;
+                    }
+
+                    // After a scan the bag is left on whichever page was swept last, so the page the
+                    // cell lives on has to be brought back up before anything is clicked on it.
+                    if (!SelectPage(ser, cand.Page, out walkError)) return false;
+
+                    var (cx, cy) = centres[cand.Cell];
+                    var cellCentre = new List<int> { cx, cy };
+
+                    if (cand.Entry >= 0)
+                        Log($"  found a queued pet: page {cand.Page + 1}, cell {cand.Cell}, match {cand.Score:0.###}");
+
+                    // ── §6.3: THE STORED CELL IS RE-READ BEFORE IT IS CLICKED ────────────────────
+                    // The sweep found this cell minutes ago, and this visit has since boarded pets
+                    // out of other cells and dragged food out of more — so the list is a memory, and
+                    // a memory is not a licence to click. The verification is POSITIVE-ONLY, like the
+                    // veto: a confident match proceeds, a confident mismatch skips and says so, and
+                    // an unreadable one carries on exactly as before (unknown must never remove a
+                    // boarding). It runs before the hover, because the hover moves the cursor onto
+                    // the cell and the arrow would land in the verification's own capture.
+                    if (cand.Entry >= 0)
+                    {
+                        var holds = CellHoldsQueuedPet(cellCentre, out var holdScore);
+                        if (holds == false)
+                        {
+                            Log($"  the cell at page {cand.Page + 1} cell {cand.Cell} scores " +
+                                $"{holdScore:0.###} against every queued icon now — it no longer " +
+                                "holds a pet, so it is not clicked");
+                            continue;
+                        }
+                        if (holds is null)
+                            Log($"  the cell at page {cand.Page + 1} cell {cand.Cell} couldn't be " +
+                                "re-read — carrying on with it, because unknown must not cancel a boarding");
+                    }
+
+                    // THE +9/100% GUARD. A finished pet cannot be boarded: the right-click simply does not
+                    // place it, which in a live run looked like "the pet did not go in after 3 right-clicks"
+                    // — three attempts spent on a pet that could never go in — and boarding one raises the
+                    // error dialog that wedges everything after it.
+                    //
+                    // UNKNOWN BOARDS AS BEFORE. A null panel (no tooltip calibrated, the cursor won't move,
+                    // the read throws, the panel doesn't parse) falls through to the click. The guard may
+                    // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
+                    // direction this whole tool treats as the unrecoverable one.
+                    PetPanel? boarded = null;
+                    if (_cfg.Tooltip.IsSet)
+                    {
+                        // BOTH KINDS ARE HOVERED NOW — the return slot as well as a matched cell — because
+                        // for the slot the hover IS the decision: nothing there means nothing to
+                        // right-click, and a pet there that has finished means trying the scan instead.
+                        ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
+                        boarded = ReadHoverPanel(ocr, ser, cx, cy);
+
+                        if (boarded is { IsFinished: true })
+                        {
+                            refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
+                            Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
+                                $"{boarded.Describe()} — NOT boarding it, trying the next one");
+                            continue;
+                        }
+
+                        // THE RETURN SLOT MUST ACTUALLY HOLD A PET. A matched candidate boards even when its
+                        // panel cannot be read — unknown must never remove a boarding — but the slot is a
+                        // fixed cell that is normally empty, so NO PANEL there means there is nothing to
+                        // click rather than that we do not know. Right-clicking an empty cell is the guess
+                        // the icon matching exists to avoid.
+                        if (boarded == null && cand.Entry < 0)
+                        {
+                            Log($"  nothing in the return slot (page {cand.Page + 1}, cell {cand.Cell}) — " +
+                                "scanning for a queued pet instead");
+                            continue;
+                        }
+
+                        if (boarded == null)
+                            Log("  the hover panel couldn't be read — boarding this one as before");
+                    }
+
+                    // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost
+                    // roughly half its boarded time to reloads that loaded food into an empty slot and
+                    // reported success — and the placement is verified to within 2px, so the cursor was on
+                    // target when the click went out. An intermittent action cannot be made reliable by
+                    // aiming better; it can only be checked and repeated.
+                    for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
+                    {
+                        if (!Click(ser, cellCentre, right: true,
+                                $"the PET at cell {cand.Cell} (page {cand.Page + 1})", out walkError))
+                            return false;
+
+                        SleepCheck(Math.Max(PlaceSettle, ActionWait));
+
+                        switch (PetSlotIsEmpty(row))
+                        {
+                            case false:
+                                if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
+                                RememberBoarded(row, cand.Entry, boarded);
+                                return true;
+
+                            case null:
+                                // No reference, or the region couldn't be read. Unknown is NOT failure —
+                                // refusing to run because a safety net is absent would be worse than the
+                                // thing it guards.
+                                Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
+                                RememberBoarded(row, cand.Entry, boarded);
+                                return true;
+
+                            default:
+                                Log($"  pet slot is still EMPTY after attempt {attempt}");
+                                break;
+                        }
+                    }
+
+                    walkError = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot " +
+                                "still looks empty. Nothing was loaded. Check the return slot on the " +
+                                "Pet tab.";
+                    return false;
+                }
+
+                // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
+                // there, they are simply all finished, and the fix is a different one — capture the icon of
+                // a pet that still needs feeding.
+                // Nothing usable, and the two shapes of that need different sentences: pets WERE found and
+                // every one has finished, or nothing was found at all — the return slot empty and no queued
+                // icon matching anything in the bag.
+                walkError = refused.Count > 0
+                    ? "Every pet that could be boarded reads +9/100%. Refused " +
+                      string.Join("; ", refused) + ". Capture the icon of a pet that can still be fed, " +
+                      "on the Pet tab."
+                    : "The return slot holds no pet, and no queued icon matched one in the bag. Capture " +
+                      "the icon of a pet that can still be fed, on the Pet tab.";
+                walkNothing = true;   // a WAIT, not a fault — see the caller
+                return false;
+            }
+
+            if (TryBoard(candidates, out error, out nothingToBoard)) return true;
+            if (!nothingToBoard) return false;   // a hard failure — today's path, never re-swept
+
+            // ── THE FALLBACK SWEEP, AT MOST ONE PER ROW ─────────────────────────────────────────
+            // The hole this closes is the one the sweep's move creates: a row that was BOARDING has
+            // its pet in the loader when the sweep runs, so no stored position can name it — and if
+            // the bag holds no feedable substitute either, the walk above ends with nothing. That row
+            // ends its own boarding moments before this walk, so a fresh sweep taken NOW sees the pet
+            // wherever it landed. It fires only on "nothing usable" (a hard failure above returns
+            // first — a pet that would not go in is today's failure and no sweep fixes it), only for a
+            // row whose boarding just ended, and never for the row that took the visit's sweep (its
+            // sweep already ran after its own end). The list it finds REPLACES the shared one, so the
+            // rows after this inherit the fresher reading — and the food re-mark stays with the
+            // visit's single sweep, never here.
+            if (justEnded && !tookSweep)
+            {
+                Log("  the shared list had nothing to board and this row's own pet came back after it " +
+                    "was swept — sweeping once more for this row");
+                bag.Candidates = pet.Queue.Count > 0
+                    ? FindQueuedPetCandidates(ser, remarkFood: false, out bag.Why)
+                    : new List<PetCandidate>();
+
+                if (bag.Candidates.Count > 0)
+                {
+                    if (TryBoard(bag.Candidates, out var freshError, out var freshNothing)) return true;
+                    if (!freshNothing)
+                    {
+                        // The fresh walk found a pet and FAILED on it — that reason is the row's, and
+                        // it is more specific than the first walk's "nothing matched".
+                        error = freshError;
+                        nothingToBoard = false;
+                    }
+                }
+            }
             return false;
         }
         finally
@@ -2176,7 +2283,33 @@ public sealed class PetTool : ToolBase
     /// matched. The ENTRY matters because the guard below has to name the pet it refused to board.</summary>
     private readonly record struct PetCandidate(int Entry, int Page, int Cell, double Score, string Label);
 
-    private List<PetCandidate> FindQueuedPetCandidates(SerialPort ser, out string why)
+    /// <summary>The bag ONE VISIT works from: the queued pets the visit's sweep found, and the state
+    /// that says whether that sweep has run. Created in <see cref="Visit"/>, walked by every row of
+    /// the visit, and dead when the frame is — the window closes, the world may have moved, and the
+    /// next visit re-reads everything (plan ⚑5: one visit, trivially correct).
+    ///
+    /// Null and empty mean different things about <see cref="Candidates"/>: null is "no sweep has run
+    /// yet", empty is "a sweep ran and the bag holds nothing feedable". The walk is entered with an
+    /// empty list every so often, and it must be the honest one of the two.</summary>
+    private sealed class VisitBag
+    {
+        public List<PetCandidate>? Candidates;
+
+        /// <summary>Why the sweep found nothing, for the no-pet error text. Replaced by the fallback's
+        /// own reason when that runs.</summary>
+        public string Why = "the queue has no icons in it";
+
+        /// <summary>Whether the visit's sweep has been taken. Once true, later rows walk the list
+        /// rather than sweeping again — that is the whole point of the holder.</summary>
+        public bool Swept;
+    }
+
+    /// <summary>Whether a food icon is configured — the sweep's second job (re-marking the food
+    /// cells) only exists when one is, and a sweep that can do NEITHER of its two jobs is three tab
+    /// clicks and three captures for nothing.</summary>
+    private bool HasFoodIcon() => !string.IsNullOrWhiteSpace(_cfg.Pet.FoodIconPng);
+
+    private List<PetCandidate> FindQueuedPetCandidates(SerialPort ser, bool remarkFood, out string why)
     {
         why = "";
         var found = new List<PetCandidate>();
@@ -2212,7 +2345,12 @@ public sealed class PetTool : ToolBase
         //
         // The food MOVES as stacks are consumed, so a marked list goes stale and the reload stalls on
         // cells that no longer hold anything. Re-marking on every scan is what keeps it true.
-        using var foodIcon = string.IsNullOrWhiteSpace(pet.FoodIconPng)
+        //
+        // <paramref name="remarkFood"/> is false for a row's FALLBACK sweep, and that is the whole
+        // difference between the two kinds: the re-mark happens exactly ONCE per visit (with the
+        // visit's own sweep) and is never skipped, while a fallback exists only to find a pet and must
+        // not re-write a list whose consumption the other rows are still counting against.
+        using var foodIcon = !remarkFood || string.IsNullOrWhiteSpace(pet.FoodIconPng)
             ? null
             : IconMatch.FromBase64(pet.FoodIconPng);
         var foodFound = new List<List<int>>();
@@ -2390,25 +2528,45 @@ public sealed class PetTool : ToolBase
         var drag = FoodLoadMode.IsDrag(pet.FoodLoadMode);
         for (int stack = 0; stack < stacks; stack++)
         {
-            var cell = NextFoodCell(pet);
-            if (cell == null)
+            // THE CELL IS PICKED AND RE-READ BEFORE ANYTHING IS CLICKED ON IT (plan §5's "per drag:
+            // verify the food cell before loading"). The list was re-marked by this visit's sweep, so
+            // a cell that no longer reads as food means the bag moved under the list — a compaction,
+            // or a stack leaving in a way the counter did not predict. Clicking one of those loads
+            // nothing and reports success, so the walk moves to the NEXT marked cell rather than
+            // spending the stack on an empty one. A cell that cannot be judged (no food icon, a grab
+            // that failed) is used exactly as before: unknown is not evidence of emptiness.
+            int page;
+            int index;
+            List<int> bagCell;
+            while (true)
             {
-                error = $"No food cells left — {pet.FoodSlotsUsed} of {pet.FoodSlots.Count} used. " +
-                        "Mark the cells holding food again on the Pet tab.";
-                return false;
+                var cell = NextFoodCell(pet);
+                if (cell == null)
+                {
+                    error = $"No food cells left — {pet.FoodSlotsUsed} of {pet.FoodSlots.Count} used. " +
+                            "Mark the cells holding food again on the Pet tab.";
+                    return false;
+                }
+
+                (page, index) = cell.Value;
+                if (!SelectPage(ser, page, out error)) return false;
+
+                var centres = BagGrid.Centres(pet.BagGrid!);
+                if (index >= centres.Count)
+                {
+                    error = $"A marked food cell ({index}) is outside the bag grid.";
+                    return false;
+                }
+                bagCell = new List<int> { centres[index].X, centres[index].Y };
+
+                if (CellHoldsFood(bagCell, out var foodScore) != false) break;
+
+                Log($"  food cell {pet.FoodSlotsUsed}/{pet.FoodSlots.Count} (page {page + 1}, cell " +
+                    $"{index}) scores {foodScore:0.###} against the food icon — it no longer holds " +
+                    "food, so the next marked cell is used instead");
             }
 
-            var (page, index) = cell.Value;
-            if (!SelectPage(ser, page, out error)) return false;
-
-            var centres = BagGrid.Centres(pet.BagGrid!);
-            if (index >= centres.Count)
-            {
-                error = $"A marked food cell ({index}) is outside the bag grid.";
-                return false;
-            }
-            var (cx, cy) = centres[index];
-            var bagCell = new List<int> { cx, cy };
+            var (cx, cy) = (bagCell[0], bagCell[1]);
 
             List<int>? slot = null;
             if (drag)
@@ -2595,8 +2753,13 @@ public sealed class PetTool : ToolBase
 
     /// <summary>One bag cell's pixels, centred on <paramref name="centre"/> at the grid's pitch — the
     /// same crop the icon capture uses. Null when the window or the grab is unavailable, which the
-    /// caller reads as "don't know" rather than as "it moved" or "it didn't".</summary>
-    private Mat? CaptureBagCell(List<int> centre)
+    /// caller reads as "don't know" rather than as "it moved" or "it didn't".
+    ///
+    /// <paramref name="margin"/> grows the crop on every side. The drag check leaves it at zero (it
+    /// only ever compares the cell against itself), while the icon re-score needs
+    /// <see cref="IconMatch.SearchRadius"/> pixels of room so the sweep's own offset search can run
+    /// inside the crop — see <see cref="IconMatch.ScoreCell"/>.</summary>
+    private Mat? CaptureBagCell(List<int> centre, int margin = 0)
     {
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
@@ -2607,8 +2770,8 @@ public sealed class PetTool : ToolBase
         // compare "unchanged" — which reads as a failed drag and re-drags a cell nobody touched.
         if (WindowFinder.ForegroundWindow() != hwnd) return null;
 
-        var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
-        var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+        var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!)) + 2 * margin;
+        var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!)) + 2 * margin;
 
         var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
         {
@@ -2618,6 +2781,67 @@ public sealed class PetTool : ToolBase
             Height = h,
         });
         return cap?.Image;
+    }
+
+    /// <summary>Whether a stored cell still holds a QUEUED PET, from a fresh grab — the plan's §6.3
+    /// verification, in three outcomes: true (a queued icon still matches), false (something else is
+    /// there now, a positive read), null (the grab or the icons could not be judged — the walk
+    /// carries on, because unknown must never cancel a boarding).
+    ///
+    /// It asks the SWEEP'S OWN QUESTION — "is any queued pet in this cell" — not "is this the exact
+    /// instance that was found". The sweep treats every cell holding a queued icon as a candidate, so
+    /// a cell that now holds a different queued pet is still one, and refusing it would throw away a
+    /// boarding the sweep would have taken. The comparison is the sweep's own offset search and
+    /// threshold (`IconMatch.ScoreCell`, `MatchLimit`), so verify and sweep cannot disagree about
+    /// what "a match" is.</summary>
+    private bool? CellHoldsQueuedPet(List<int> centre, out double score)
+    {
+        score = 1;
+        if (_cfg.Pet.Queue.Count == 0) return null;
+
+        using var crop = CaptureBagCell(centre, IconMatch.SearchRadius);
+        if (crop == null) return null;
+
+        var pitchX = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
+        var pitchY = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+
+        var judged = false;
+        foreach (var entry in _cfg.Pet.Queue)
+        {
+            using var icon = IconMatch.FromBase64(entry.Png);
+            if (icon == null) continue;
+            if (IconMatch.ScoreCell(crop, icon, pitchX, pitchY) is not { } s) continue;
+
+            judged = true;
+            if (s < score) score = s;
+        }
+
+        return judged ? score <= MatchLimit : null;
+    }
+
+    /// <summary>Whether a marked food cell still holds FOOD, from a fresh grab — the same three
+    /// outcomes as <see cref="CellHoldsQueuedPet"/>, against the food icon instead of the queue.
+    ///
+    /// The sweep just re-marked the cells, so within the same visit a mismatch means the bag really
+    /// moved under the list — the game compacted a row, or a stack left in a way the counter did not
+    /// predict. Clicking such a cell loads nothing while reporting success, which is the failure the
+    /// drag check exists for and this catches one step earlier. No food icon configured ⇒ unknown,
+    /// which is today's behaviour.</summary>
+    private bool? CellHoldsFood(List<int> centre, out double score)
+    {
+        score = 1;
+        using var icon = IconMatch.FromBase64(_cfg.Pet.FoodIconPng);
+        if (icon == null) return null;
+
+        using var crop = CaptureBagCell(centre, IconMatch.SearchRadius);
+        if (crop == null) return null;
+
+        var pitchX = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
+        var pitchY = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+        if (IconMatch.ScoreCell(crop, icon, pitchX, pitchY) is not { } s) return null;
+
+        score = s;
+        return s <= MatchLimit;
     }
 
     /// <summary>Whether the stack left the bag cell, or null when it cannot be told.

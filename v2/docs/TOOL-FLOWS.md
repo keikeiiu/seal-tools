@@ -1262,6 +1262,14 @@ hotkey.*
   ┃       reload each due row · close ONCE (the X is re-clicked once if the
   ┃       cursor cannot reach it; a close that fails twice leaves the belief
   ┃       standing and says the window may still be open).
+  ┃       ── THE SWEEP, taken by the visit's FIRST placement and shared by every
+  ┃          row after it: one three-page bag sweep — the queued pet positions
+  ┃          AND the food-cell re-mark (exactly once per visit, never skipped).
+  ┃          A stored cell is re-read against the queued icons before it is
+  ┃          clicked: a mismatch skips it and says so, an unreadable one carries
+  ┃          on. A row whose own boarding just ended may run ONE fallback sweep
+  ┃          when the shared list yields nothing (its pet returned after the
+  ┃          sweep, so no stored position can name it). See PLAN-PET-SWEEP.
   ┃       ── THE VETO, per due row, just before its reload: a FRESH reading
   ┃          that found food still in the feeder — the slot read as occupied,
   ┃          a count that came back above zero, and more than 30 min to go —
@@ -1317,6 +1325,10 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
 | per-row front check | Still in front, mid-visit? | consider the veto, then reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
 | veto (in `Visit`) | Does the fresh read show food SEEN and more than `VetoMarginMinutes` (30) ahead? | **skip** the reload — the fold-back writes the fresh next, and the row keeps its strikes | act; `pet.log` records which gate said so (source, minutes left) |
+| bag sweep (first placement of a visit) | Has the visit's sweep already been taken? | walk the shared list, re-reading each stored cell | take it now (pet icons + the food re-mark, once per visit) |
+| stored cell, before it is clicked | Does it still hold a queued pet? (one cell read) | proceed to the hover guard | **skip** it and log; unknown carries on |
+| a walk with nothing boardable | Did this row's own boarding just end, and was the sweep someone else's? | run **one** fallback sweep, after its own end press, and replace the shared list | resolve as `NothingToBoard` / failure, as today |
+| food cell, before it is used | Does it still hold food? (one cell read) | use it | take the next marked cell; unknown uses it |
 | `ClaimGame` | Game free, for the visit? | `Visit` | wait; `next[row]` stays in the past; cancelled → break |
 | `Visit` | Was the visit cut by a stop? | throw — "may not have been fed. Check it in game." | fold the results back |
 | fold | The row's reload was **Ok**? | `next = now + min(pet, load) + WaitAfterEmpty`; failures = 0 | check next |
@@ -1378,7 +1390,17 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    at 41-plus — the 13-40 stretch is empty, so any margin in it fires on every recorded case.
    Positive evidence only; unknown and unreadable always act.
 
-9. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
+9. **The bag sweep runs once per visit, taken by its first placement — and every stored cell is
+   re-read before it is used.** The plan's diagram put the sweep at visit scope; it runs one step
+   later on evidence: a boarding row's pet is in the loader until its own end press, so a pre-loop
+   sweep would look at a bag that provably lacks the pet those rows need (the return slot is
+   measured empty 67-100% of the time). Taken at the first placement, the shared list includes the
+   just-returned pet, the ordinary single-row reload is byte-for-byte today's flow, and a plural
+   batch pays at most today's per-row cost. The food re-mark rides the one sweep and is never
+   skipped on a visit that acts — including for a setup with no pet queue but a food icon, which
+   used to get no re-mark at all. See [PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
+
+10. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
    screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
    `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
    with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in
