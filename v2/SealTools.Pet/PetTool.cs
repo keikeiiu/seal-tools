@@ -463,7 +463,7 @@ public sealed class PetTool : ToolBase
                 VisitResult visited;
                 try
                 {
-                    visited = Visit(ser, state, batch);
+                    visited = Visit(ser, state, batch, failures);
                 }
                 catch (OperationCanceledException)
                 {
@@ -492,7 +492,7 @@ public sealed class PetTool : ToolBase
                 // describes the state that reload just replaced.
                 foreach (var (readRow, readNext) in visited.Schedule)
                     if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
-                        next[readRow] = readNext;
+                        next[readRow] = readNext.Next;
 
                 foreach (var (row, result) in visited.Rows)
                 {
@@ -841,7 +841,10 @@ public sealed class PetTool : ToolBase
                 return DeferredSchedule();
             }
 
-            return schedule;
+            // The run's own schedule wants only the moment; the SOURCE stays inside the visit, where
+            // the veto reads it against the batch. Nothing outside a visit can cancel a reload, so
+            // nothing outside one needs to know what a reading was worth.
+            return schedule.ToDictionary(kv => kv.Key, kv => kv.Value.Next);
         }
         finally
         {
@@ -859,7 +862,7 @@ public sealed class PetTool : ToolBase
     private Dictionary<PetSlotConfig, DateTime> UnreadSchedule()
     {
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
-        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null);
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null).Next;
         return schedule;
     }
 
@@ -884,9 +887,9 @@ public sealed class PetTool : ToolBase
     ///
     /// It WRITES the rows: BoardingRunning is set from what the slot says. The schedule comes back so
     /// the caller can re-derive every row's next from THIS reading rather than from an old one.</summary>
-    private Dictionary<PetSlotConfig, DateTime> ReadRows(SerialPort ser)
+    private Dictionary<PetSlotConfig, RowReading> ReadRows(SerialPort ser)
     {
-        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        var schedule = new Dictionary<PetSlotConfig, RowReading>();
         _windowProofSeen = false;
 
         // The engine is built here and disposed with the look, rather than held for the life of the
@@ -901,6 +904,10 @@ public sealed class PetTool : ToolBase
             {
                 var difference = PetSlotDifference(row);
                 var empty = difference is { } d ? d <= _cfg.Pet.PetSlotOccupiedAbove : (bool?)null;
+                // The veto's first gate, taken from THIS read: a slot that came back as occupied
+                // above the threshold. A held ticked flag is not a reading, so this is false when
+                // the slot could not be read at all — unknown must keep meaning act.
+                var slotOccupied = empty == false;
                 switch (empty)
                 {
                     case true:
@@ -931,12 +938,12 @@ public sealed class PetTool : ToolBase
 
                 // Only worth reading a feeder on a row that is actually boarding — an empty one has
                 // nothing loaded and will be filled in a moment anyway.
-                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null, null); continue; }
+                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied }; continue; }
 
                 ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
                 var left = ReadFeederCounts(ocr, row);
                 var eta = ReadEta(ocr, row);
-                schedule[row] = ScheduleFor(row, left, eta);
+                schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
 
                 // Digits off the feeder's own slots, or a time line in the game's own wording: either
                 // one is the window speaking, which is all the reference capture needs.
@@ -949,10 +956,10 @@ public sealed class PetTool : ToolBase
 
                 if (left is { } items)
                     Log($"  {NameOf(row)}: {items} item(s) left in the feeder — reloading in " +
-                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
+                        $"{Math.Max(0, (schedule[row].Next - DateTime.Now).TotalMinutes):0} min{quoted}");
                 else
                     Log($"  {NameOf(row)}: the feeder counts couldn't be read — reloading in " +
-                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
+                        $"{Math.Max(0, (schedule[row].Next - DateTime.Now).TotalMinutes):0} min{quoted}");
             }
             _persistState?.Invoke();
         }
@@ -962,6 +969,35 @@ public sealed class PetTool : ToolBase
         }
 
         return schedule;
+    }
+
+    /// <summary>What one row's read said, and where the number came from. The next time is what the
+    /// schedule always needed; the SOURCE is what the veto needs, because "the counts could not be
+    /// read" falls back to the configured cycle — a number that LOOKS like a comfortable future and
+    /// is not a reading at all. Keeping them in one value is the point: the branch that produces the
+    /// number is the only place that knows what it is worth, so the number and its worth cannot
+    /// drift apart.</summary>
+    private readonly record struct RowReading(DateTime Next, ScheduleSource Source,
+        bool SlotOccupied = false);
+
+    /// <summary>Where a row's next came from. Only <see cref="ScheduleSource.CountRead"/> counts as
+    /// a READING for the veto — food was SEEN — and even that one needs the slot to have been read
+    /// as occupied on the same pass; see <see cref="ConsiderVeto"/>.</summary>
+    private enum ScheduleSource
+    {
+        /// <summary>A feeder count came back and there is food in the tray.</summary>
+        CountRead,
+        /// <summary>The game's own completion line parsed. On its own — with no count — this is NOT
+        /// food evidence, and the veto never skips on it.</summary>
+        CompletionRead,
+        /// <summary>Counts came back as zero — reload now.</summary>
+        CountEmpty,
+        /// <summary>The row is not boarding — reload now.</summary>
+        NotBoarding,
+        /// <summary>Nothing readable: the configured cycle is assumed.</summary>
+        CycleFallback,
+        /// <summary>RELOAD EVERY ROW ON START — every row is due; no reading can cancel that.</summary>
+        StartOverride,
     }
 
     /// <summary>When a row next needs a reload, from what was read about it.
@@ -980,10 +1016,10 @@ public sealed class PetTool : ToolBase
     /// Null means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
     /// (fall back to the configured cycle, which assumes a full load). The two are different and the
     /// caller logs which.</summary>
-    private DateTime ScheduleFor(PetSlotConfig row, int? itemsLeft, FeederEta.Reading? eta)
+    private RowReading ScheduleFor(PetSlotConfig row, int? itemsLeft, FeederEta.Reading? eta)
     {
-        if (_cfg.Pet.ReloadOnStart) return DateTime.Now;
-        if (!row.BoardingRunning) return DateTime.Now;
+        if (_cfg.Pet.ReloadOnStart) return new RowReading(DateTime.Now, ScheduleSource.StartOverride);
+        if (!row.BoardingRunning) return new RowReading(DateTime.Now, ScheduleSource.NotBoarding);
 
         // THE GAME'S OWN COMPLETION TIME, when it gives one. A pet that finishes is MAILED, so the row
         // will be empty then and wants a new one — the case that otherwise waits out a whole cycle with
@@ -993,21 +1029,99 @@ public sealed class PetTool : ToolBase
 
         if (itemsLeft is not { } items)
         {
-            // No counts. A finish time is still a real answer, and a far better one than the cycle.
+            // No counts. A finish time is still a real answer, and a far better one than the cycle —
+            // but it is not FOOD evidence, and the source says so.
             return finish is { } f
-                ? DateTime.Now.AddMinutes(f + WaitAfterEmptyMinutes)
-                : DateTime.Now.AddMinutes(CycleMinutesFor(row));
+                ? new RowReading(DateTime.Now.AddMinutes(f + WaitAfterEmptyMinutes),
+                    ScheduleSource.CompletionRead)
+                : new RowReading(DateTime.Now.AddMinutes(CycleMinutesFor(row)),
+                    ScheduleSource.CycleFallback);
         }
 
-        if (itemsLeft <= 0) return DateTime.Now;
+        if (itemsLeft <= 0) return new RowReading(DateTime.Now, ScheduleSource.CountEmpty);
 
         var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
         var food = Math.Max(0, itemsLeft.Value / (double)rate);
 
-        // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself.
-        return DateTime.Now.AddMinutes(
-            (finish is { } fin ? Math.Min(food, fin) : food) + WaitAfterEmptyMinutes);
+        // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself. The source stays
+        // CountRead even when the finish wins the min: a count was read and it was above zero, which
+        // is the food evidence the veto needs.
+        return new RowReading(
+            DateTime.Now.AddMinutes((finish is { } fin ? Math.Min(food, fin) : food) +
+                                    WaitAfterEmptyMinutes),
+            ScheduleSource.CountRead);
     }
+
+    /// <summary>How much fresh feeding time makes a timer-driven reload not worth doing — the veto's
+    /// threshold, and one of the plan's open questions (⚑2) until this was measured.
+    ///
+    /// MEASURED, 2026-10-11, on the same pet.log the plan was written from: every batch row's own
+    /// visit-opening read falls into exactly two groups — **165 reads at 0 minutes, one at 12, and
+    /// thirty at 41 or more**. The stretch between 13 and 40 is EMPTY, so a margin anywhere inside it
+    /// fires on every recorded case; 30 is its middle, chosen the same way MatchLimit was, by sitting
+    /// where the measurements left room rather than by tuning until an answer came out.
+    ///
+    /// The number's real job is the case the log does not have: a fresh read with six minutes left is
+    /// not worth deferring for, because the deferral is not free — it spends the whole visit again
+    /// (open, read, close) when the six minutes are up. And the direction is safe by construction:
+    /// the veto only ever fires on food SEEN (see ConsiderVeto), so a margin that is too tight skips
+    /// a reload that was going to be early anyway, and one that is too loose simply acts.</summary>
+    private const double VetoMarginMinutes = 30;
+
+    /// <summary>Whether the fresh reading lets this row's reload be SKIPPED — and when it does not,
+    /// which gate kept the veto off, for the log. The note is written for `pet.log`: every firing
+    /// and every near-firing goes in, so the margin can be corrected from a run's evidence rather
+    /// than argued about.
+    ///
+    /// POSITIVE-ONLY, the plan's §2.1 rule, and it is the whole safety of the thing. A skip needs
+    /// food SEEN on this visit: the slot freshly read as occupied, a count that came back as a
+    /// number, and that number above zero. Every other state acts — an unreadable count, a slot that
+    /// could not be read, a completion line with no count beside it (zero recorded instances in three
+    /// weeks, and no evidence it is trustworthy on a dry tray), and the cycle fallback. A misread
+    /// count that says "full" would skip a reload that was needed, and an unfed pet cannot be undone;
+    /// unknown keeps meaning act.
+    ///
+    /// <paramref name="strikes"/> is only logged. A veto leaves the strike count untouched — the row
+    /// proved it can be fed — so a row with strikes standing can still be dropped by a later failure,
+    /// and the count on this line is what makes that visible before it happens.</summary>
+    private static (bool Skip, string Note) ConsiderVeto(RowReading fresh, int strikes)
+    {
+        var standing = strikes > 0 ? $" ({strikes} strike(s) standing)" : "";
+
+        if (fresh.Source == ScheduleSource.StartOverride)
+            return (false, "RELOAD EVERY ROW ON START is on — acting");
+
+        if (!fresh.SlotOccupied)
+            return (false, $"the slot was not read as occupied ({DescribeSource(fresh.Source)}) — " +
+                           "acting" + standing);
+
+        if (fresh.Source != ScheduleSource.CountRead)
+            return (false, $"no count came back ({DescribeSource(fresh.Source)}) — acting, because " +
+                           "unknown must never cancel a reload" + standing);
+
+        var ahead = fresh.Next - DateTime.Now;
+        if (ahead <= TimeSpan.FromMinutes(VetoMarginMinutes))
+            return (false, $"the fresh read leaves {ahead.TotalMinutes:0} min of food (within the " +
+                           $"{VetoMarginMinutes:0} min margin) — acting" + standing);
+
+        return (true, $"the timer had it due, but the fresh read found food still in the feeder — " +
+                      $"{ahead.TotalMinutes:0} min to go (> {VetoMarginMinutes:0} min margin), next " +
+                      $"{fresh.Next:HH:mm}. Nothing ended, moved, loaded or started; its next comes " +
+                      "from this reading" + standing);
+    }
+
+    /// <summary>Where a reading came from, for a log line — the words a person reads in pet.log, not
+    /// the enum name.</summary>
+    private static string DescribeSource(ScheduleSource source) => source switch
+    {
+        ScheduleSource.CountRead => "a feeder count was read, with food in it",
+        ScheduleSource.CompletionRead => "only the game's completion line was read",
+        ScheduleSource.CountEmpty => "the counts read zero",
+        ScheduleSource.NotBoarding => "the row is not boarding",
+        ScheduleSource.CycleFallback => "nothing was readable, so the configured cycle is assumed",
+        ScheduleSource.StartOverride => "RELOAD EVERY ROW ON START",
+        _ => source.ToString(),
+    };
 
     /// <summary>Every active row's time line, read in one pass at the END of a visit — see the call
     /// site for why. A row whose line is unreadable maps to null, which is the ordinary case and not an
@@ -1232,7 +1346,7 @@ public sealed class PetTool : ToolBase
     /// own hours-old timer comes round.</summary>
     private sealed record VisitResult(
         Dictionary<PetSlotConfig, RowOutcome> Rows,
-        Dictionary<PetSlotConfig, DateTime> Schedule);
+        Dictionary<PetSlotConfig, RowReading> Schedule);
 
     /// <summary>One row's result from a visit. <paramref name="PetMinutes"/> is how long the pet that
     /// was boarded still needs, or null when that could not be answered — the caller falls back to the
@@ -1267,10 +1381,11 @@ public sealed class PetTool : ToolBase
     ///
     /// A ROW THAT FAILS DOES NOT TAKE THE VISIT WITH IT. Each row is reported separately, the rest are
     /// still attempted, and the window closes once at the end either way.</summary>
-    private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch)
+    private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
+        Dictionary<PetSlotConfig, int> failures)
     {
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
-        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        var schedule = new Dictionary<PetSlotConfig, RowReading>();
 
         state.Message = batch.Count > 1
             ? $"Opening the breeder for {batch.Count} rows…"
@@ -1286,7 +1401,7 @@ public sealed class PetTool : ToolBase
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
             // "assume a full load", turning one failed open into a run-wide loss of what was known.
-            return new VisitResult(results, new Dictionary<PetSlotConfig, DateTime>());
+            return new VisitResult(results, new Dictionary<PetSlotConfig, RowReading>());
         }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
@@ -1303,6 +1418,7 @@ public sealed class PetTool : ToolBase
             // whatever window is in front. A focus stolen mid-visit abandons the REST of the visit;
             // the row already in flight runs to its own failure path, which now says why.
             var frontLost = false;
+            var vetoed = 0;
             foreach (var row in batch)
             {
                 if (!GameIsInFront())
@@ -1314,13 +1430,38 @@ public sealed class PetTool : ToolBase
                     break;
                 }
 
+                // THE VETO — the fresh read may CANCEL the reload the timer asked for (plan §2).
+                // A vetoed row is simply absent from `results`, which is all the fold-back needs:
+                // "read but not acted on → take the freshly measured next" already exists, and it is
+                // exactly right here — the next comes from the reading that did the vetoing.
+                // The default is spelled out rather than `default(RowReading)`: the enum's zero value
+                // is CountRead, so a missing entry would silently LOOK like positive food evidence.
+                // It cannot be missing today — ReadRows writes every active row — but the cost of
+                // being wrong in that direction is an unfed pet, so the fallback is the safe one.
+                var fresh = schedule.TryGetValue(row, out var read)
+                    ? read
+                    : new RowReading(DateTime.Now, ScheduleSource.CycleFallback);
+                var (skip, note) = ConsiderVeto(fresh, failures.TryGetValue(row, out var prior) ? prior : 0);
+                if (skip)
+                {
+                    vetoed++;
+                    Log($"  veto: {NameOf(row)} — {note}");
+                    state.Message = $"{NameOf(row)} isn't due on a fresh read — next {fresh.Next:HH:mm}.";
+                    continue;
+                }
+                Log($"  veto check: {NameOf(row)} — {note}");
+
                 var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes,
                     out var nothingToBoard);
                 results[row] = new RowOutcome(ok, rowError, petMinutes, nothingToBoard);
 
                 if (!ok)
-                    Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
+                    Log($"  {NameOf(row)} failed inside the visit — {rowError} — the other rows carry on");
             }
+
+            if (vetoed > 0 && results.Count == 0)
+                Log($"  visit: every due row is still fed on a fresh read — nothing reloaded " +
+                    $"({vetoed} vetoed)");
 
             if (frontLost)
                 // NO SCHEDULE, deliberately, and for the same reason the failed-open path returns an
@@ -1328,7 +1469,7 @@ public sealed class PetTool : ToolBase
                 // are not evidence about the rows — returning them would park a dry row on the
                 // configured cycle for 205-505 minutes. The rows not touched keep the next they had;
                 // the main loop's front check defers them properly on the next pass.
-                return new VisitResult(results, new Dictionary<PetSlotConfig, DateTime>());
+                return new VisitResult(results, new Dictionary<PetSlotConfig, RowReading>());
 
             // ── THE SECOND READ, while the window is still open ──────────────
             //
@@ -1358,13 +1499,14 @@ public sealed class PetTool : ToolBase
                 }
 
                 // A row it did NOT act on: only ever pull its next earlier. The reading from the top
-                // of the visit still stands when this one says nothing.
+                // of the visit still stands when this one says nothing — and so does its SOURCE: a
+                // later time is not new evidence about what the earlier read was worth.
                 if (finish is not { } mins || !schedule.TryGetValue(row, out var current)) continue;
                 var candidate = DateTime.Now.AddMinutes(mins + WaitAfterEmptyMinutes);
-                if (candidate >= current) continue;
+                if (candidate >= current.Next) continue;
 
                 Log($"  {NameOf(row)}: finish line read on the second pass — {mins:0} min to go");
-                schedule[row] = candidate;
+                schedule[row] = current with { Next = candidate };
             }
         }
         finally

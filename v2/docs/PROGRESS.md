@@ -13,6 +13,39 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (73) — the fresh read may cancel a reload; the margin, measured rather than argued
+
+**PLAN-PET-FLOW §8 step 2, the veto half** (§2 and its ⚑2/⚑3; the reclassification half had already
+shipped in `7832b76`, and ⚑7's reason-logging landed in (71)). Two policies were designed
+independently and judged by two lenses; both judges agreed on the safety shape and split only on the
+margin, which the evidence settled.
+
+**The rule.** A due row's reload is skipped iff the fresh reading shows food SEEN on this visit: the
+slot freshly read as occupied, a feeder count that came back as a number, and that number above zero,
+with more than **30 minutes** to go. Every other state acts — unreadable counts, an unreadable slot, a
+completion line with no count beside it (zero instances in three weeks, and no evidence it is
+trustworthy on a dry tray), the cycle fallback, and `RELOAD EVERY ROW ON START`. Unknown keeps meaning
+act; a misread count that says "full" must never cancel a reload, because an unfed pet cannot be
+undone.
+
+**The margin is the measurement.** ⚑2 asked "how much margin" and called the answer *"one line of
+instrumentation away"*. The line was already in `pet.log`: every batch row's own visit-opening read is
+**165 at 0 minutes, one at 12, and thirty at 41-plus** — the 13-40 stretch is empty, so a margin
+anywhere inside it fires on every recorded case, and 30 sits in its middle. `ScheduleFor` now returns
+the next **with its source** (`RowReading`), so the number and what it is worth are produced by the
+same branch and cannot drift; `:407`'s "reload the soonest anyway" is untouched and its forced row is
+veto-eligible like any other (⚑3: the fallback decides *which* row the visit is for, the veto decides
+*whether to act* — different information, different times).
+
+**The honest caveat, kept from the judges.** The veto DEFERS the reload, it does not avoid it: the
+reload count is load-limited, and what a firing costs is one extra open+read+close. That is why the
+margin cannot be zero, and why this is a correctness change (the read now owns the decision) rather
+than a saving.
+
+**Verified.** Pet + Tests build clean; 265 tests pass. Fires and near-fires are both logged
+(`veto:` / `veto check:`), so the margin is correctable from the next live run rather than argued
+about.
+
 ## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
 
 **PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:

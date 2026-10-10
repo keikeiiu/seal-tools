@@ -1262,6 +1262,15 @@ hotkey.*
   ┃       reload each due row · close ONCE (the X is re-clicked once if the
   ┃       cursor cannot reach it; a close that fails twice leaves the belief
   ┃       standing and says the window may still be open).
+  ┃       ── THE VETO, per due row, just before its reload: a FRESH reading
+  ┃          that found food still in the feeder — the slot read as occupied,
+  ┃          a count that came back above zero, and more than 30 min to go —
+  ┃          cancels the reload the timer asked for. The row's next then comes
+  ┃          from that reading. Everything else acts: an unreadable count, an
+  ┃          unreadable slot, a completion line with no count, the cycle
+  ┃          fallback, and RELOAD EVERY ROW ON START all mean act, because a
+  ┃          skipped reload that was needed leaves a pet unfed. Fires and
+  ┃          near-fires are both logged.
   ┃       The whole reload is board writes (detail: AUDIT-PET-FLOW).
   ┃       └ cut by a stop ──► note "it may not have been fed — check it in
   ┃          game", give the game back, then rethrow
@@ -1306,7 +1315,8 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
 | `OpenBoarding` | Does the run believe a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | probe it anyway, then click exactly as today (no reference, no match, or unreadable = the old way) |
 | `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
-| per-row front check | Still in front, mid-visit? | reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
+| per-row front check | Still in front, mid-visit? | consider the veto, then reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
+| veto (in `Visit`) | Does the fresh read show food SEEN and more than `VetoMarginMinutes` (30) ahead? | **skip** the reload — the fold-back writes the fresh next, and the row keeps its strikes | act; `pet.log` records which gate said so (source, minutes left) |
 | `ClaimGame` | Game free, for the visit? | `Visit` | wait; `next[row]` stays in the past; cancelled → break |
 | `Visit` | Was the visit cut by a stop? | throw — "may not have been fed. Check it in game." | fold the results back |
 | fold | The row's reload was **Ok**? | `next = now + min(pet, load) + WaitAfterEmpty`; failures = 0 | check next |
@@ -1358,7 +1368,17 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    answer opens the old way. The residual (a mis-marked X can, in the belief-gated states, match) is
    recorded in [PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) with its hardening path.
 
-8. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
+8. **The fresh read can cancel a reload the timer asked for — and the honest accounting is that it
+   DEFERS the reload rather than avoiding it.** With the veto, the reload happens when the tray
+   really empties instead of onto a part-used tray (the case whose behaviour the code itself calls
+   unknown); the reload COUNT is load-limited and unchanged, so what a firing costs is one extra
+   window operation (open, read, close) — which is why the margin is 30 minutes and not zero: at
+   zero, a fresh read with six minutes left would spend a whole visit to gain six minutes. Measured
+   before it was built: batch rows' visit-opening reads are 165 at 0 minutes, one at 12, and thirty
+   at 41-plus — the 13-40 stretch is empty, so any margin in it fires on every recorded case.
+   Positive evidence only; unknown and unreadable always act.
+
+9. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
    screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
    `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
    with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in
