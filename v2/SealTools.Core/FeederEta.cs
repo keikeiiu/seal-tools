@@ -37,6 +37,24 @@ public static class FeederEta
     private static readonly Regex AboutMinutes =
         new(@"約\s*(\d{1,4})\s*分", RegexOptions.Compiled);
 
+    /// <summary>`到6為止` — the stage a LEVEL-form line names. It is the line's own statement of which
+    /// stage the pet is heading FOR, and it is what the player means by *"the hidden message is that
+    /// it is level 6"*: 「到6為止预計所需時間：約19分」 says "estimated time to reach stage 6".</summary>
+    private static readonly Regex LevelTo = new(@"到\s*(\d{1,2})\s*為止", RegexOptions.Compiled);
+
+    /// <summary>The stage a line says the pet is heading for, or null when it names none. DISPLAY
+    /// ONLY: the level form drives nothing (see <see cref="CompletionMinutes"/>), and this exists so
+    /// a card can say which stage the line is about instead of quoting a sentence nobody reads.</summary>
+    public static int? LevelTarget(string? line)
+    {
+        if (line is null) return null;
+        var match = LevelTo.Match(line);
+        return match.Success && int.TryParse(match.Groups[1].Value, NumberStyles.Integer,
+            CultureInfo.InvariantCulture, out var stage)
+            ? stage
+            : null;
+    }
+
     /// <summary>Reads the time line out of a row's text, or null when there is nothing to read.
     ///
     /// Null is an ordinary answer — an older window, a mangled read, a pet whose line says something

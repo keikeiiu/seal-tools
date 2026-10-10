@@ -45,6 +45,21 @@ public class FeederEtaTests
         Assert.Null(FeederEta.CompletionMinutes(r));
     }
 
+    /// <summary>The stage the LEVEL form is talking about — the player's *"the hidden message is that
+    /// it is level 6"*. What the card shows as `game line says level 6`, and the reason the parser
+    /// keeps the line verbatim. Display only: the level form still drives nothing.</summary>
+    [Theory]
+    [InlineData("到2為止預計所需時間：約 20分", 2)]
+    [InlineData("到6為止预計所需時間：約19分", 6)]
+    [InlineData("到9為止预計所需時間：約94分", 9)]
+    [InlineData("代養完成預計所需時間：約14分", null)]   // the completion form names no stage
+    [InlineData("該欄位約27日9時51分16秒後到期。", null)] // the shelf life is not a stage either
+    [InlineData("到6為止", 6)]
+    public void TheLevelFormNamesTheStageItIsHeadingFor(string line, int? expected)
+    {
+        Assert.Equal(expected, FeederEta.LevelTarget(line));
+    }
+
     /// <summary>THE TRAP: the food's shelf life carries a 約 and a number near a 分, and reading it as a
     /// countdown would schedule a row twenty-seven days out.</summary>
     [Fact]

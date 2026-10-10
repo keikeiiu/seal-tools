@@ -107,25 +107,25 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 那一列：
 
 ```
-· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  516 item(s) at the last read  ·  next 07:14 (in 2h 41m)
-     why: the tray read 516 item(s) ≈ 172 min of food at 3/min, + 5 min grace  ·  its line 「到6為止预計所需時間：約19分」 is the LEVEL form — the stage it is heading for; it does not drive the schedule
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  next 07:14 (in 2h 41m)
+     why: tray 501 item(s) ≈ 167 min (last read)  ·  game line says level 6
 · Row 2: waiting for a reload
-     why: nothing is boarding — it needs a pet and a fill
+     why: not boarding
 · Row 4: given up
-     why: given up after 3 failures — <原因，只取第一句>
+     why: given up after 3 failures
 ```
 
-每一列都有自己的倒數，隨卡片更新重算，並且**下面有一行 `why:`** 說明這個時間怎麼來的——食槽的算術、
-遊戲自己的時間行、由面板與餵食表算出的寵物估計，或是什麼都讀不到時假設的設定週期。`why:` 是由產生
-那個時間的同一段程式寫的，兩者不可能互相矛盾。
+每一列都有自己的倒數，隨卡片更新重算，下面**一行簡短的 `why:`**——食槽還能撐幾分鐘、遊戲自己的時間
+行、由面板與餵食表算出的寵物估計，或什麼都讀不到時假設的設定週期，再加上遊戲時間行所說的「正在前往
+哪個階段」。`why:` 是由產生那個時間的同一段程式寫的，兩者不可能互相矛盾。
 
 兩個值得知道的用詞：
 
-- **「at the last read」** — 食槽存量在兩次 visit 之間持續下降、那段時間沒有任何讀取，所以那個數字是
+- **「(last read)」** — 食槽存量在兩次 visit 之間持續下降、那段時間沒有任何讀取，所以那個數字是
   「最後一次讀到的量」，不是即時值；旁邊的時間才是這一列下次被查看的時刻。
-- **「the LEVEL form」** — 遊戲會寫兩種時間行：*completion* 形式（「完成 … 約N分」）說寵物何時完成，
-  會驅動排程；*level* 形式（「到6為止预計所需時間：約19分」）說的是**寵物正前往的階段**——卡片把它
-  原樣引出來，讓這個訊息不再是隱藏訊息，但它刻意不驅動排程。
+- **「game line says level N」** — 遊戲會寫兩種時間行：*completion* 形式（「完成 … 約N分」）說寵物
+  何時完成，會驅動排程；*level* 形式（「到6為止预計所需時間：約19分」）說的是**寵物正前往的階段**，
+  卡片現在直接寫出是哪個階段，而那一行刻意不驅動排程。
 
 被放棄的列（連續三次失敗）沒有下次時間，會直接寫 given up。
 

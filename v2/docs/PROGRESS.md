@@ -13,6 +13,22 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (81) — the row's why, trimmed to a hint
+
+**The player's verdict on (80):** *"i dont need fully on how the calculation is done, too much, maybe
+a short hint that u deduce this is level 6 is fine."* The first version spelled out the arithmetic and
+quoted the game's line in full; what they actually wanted from it was the one deduction — that the
+line names a stage.
+
+**What changed:** every `why:` is now a handful of words — `tray 501 item(s) ≈ 167 min (last read)`,
+`nothing readable — cycle 505 min`, `not boarding`, `full load — 500 min`, `no feedable pet — keeps
+its place, looked up again in 30 min`, `given up after 3 failures` — and the level form contributes
+exactly `game line says level 6`, from the new `FeederEta.LevelTarget` (pinned by six theory cases on
+the real measured strings, including that the completion form and the shelf-life line name no stage).
+The pet's identity moved to the row line where it belongs, and the numbers live only in the why.
+
+**Verified.** 274 tests pass; Pet + Tests build clean. Guides updated in both languages.
+
 ## 2026-10-11 (80) — every row's time says WHY it is that time
 
 **The player's follow-up to (79):** *"also information on why it is calculated this way — (hidden
