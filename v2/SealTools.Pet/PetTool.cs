@@ -1447,25 +1447,50 @@ public sealed class PetTool : ToolBase
     /// decoration: a 0 from the colour verdict "this cell has no food" is a fact about a crop and can
     /// be produced by the game world, while digits are the boarding window speaking — and only the
     /// latter may teach the X's reference crop (see <see cref="ProveWindow"/>).</summary>
+    /// <summary>How many times one slot's crop is read before the read is given up on. THREE, and the
+    /// failure it exists for is a CAPTURE rather than a calibration.
+    ///
+    /// MEASURED, 2026-10-11. A slot holding a legible **144** read as NOTHING at 04:42; seven minutes
+    /// later the SAME SLOT read **120 at 0.998**. The failed crop was kept and run offline through the
+    /// real recogniser at upscales 1, 2, 3, 4, 6 and 8 and every score gate down to 0.0 — it finds no
+    /// line in that image at all. Put side by side, the failed capture is visibly SOFT (the digits'
+    /// edges glow) where the good one is crisp: each slot is its own screen grab, and a grab can land
+    /// on a frame the compositor is still committing. An intermittent capture cannot be fixed by
+    /// aiming better — the rule every retry in this tool follows — so it is re-read, and the count
+    /// bounds it. The empty-slot colour check runs BETWEEN attempts, so a genuinely empty slot still
+    /// pays for one verdict and no retry.</summary>
+    private const int CountReadAttempts = 3;
+
     private (int? Count, bool FromOcr) FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         if (RegionFor(slotBox) is not { } region) return (null, false);
 
-        if (ReadStack(ocr, region) is { } count) return (count, true);
+        for (var attempt = 1; attempt <= CountReadAttempts; attempt++)
+        {
+            if (ReadStack(ocr, region) is { } count) return (count, true);
 
-        // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
-        // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
-        // case that is genuinely odd. This order cost a live run two confusing saves before it was
-        // right: the log said "a slot read NOTHING" about a slot that was simply empty.
-        //
-        // NO NUMBER is either a crop the reader failed on or a slot with NOTHING IN IT, and those mean
-        // opposite things: one says "assume a full load", the other says "reload now". The pixels settle
-        // it. See FeederCount.WarmFraction.
-        if (SlotHasNoFood(region) is true) return (0, false);
+            // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
+            // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
+            // case that is genuinely odd. This order cost a live run two confusing saves before it was
+            // right: the log said "a slot read NOTHING" about a slot that was simply empty.
+            //
+            // NO NUMBER is either a crop the reader failed on or a slot with NOTHING IN IT, and those mean
+            // opposite things: one says "assume a full load", the other says "reload now". The pixels settle
+            // it. See FeederCount.WarmFraction.
+            if (SlotHasNoFood(region) is true) return (0, false);
 
-        // FOOD IS THERE AND NO NUMBER WAS READ. That one is worth its pixels: a crop in the wrong place
-        // and a crop the reader cannot see text in look identical in the log and need opposite fixes —
-        // and today a slot holding a legible 300 read as nothing and left three theories and no evidence.
+            if (attempt < CountReadAttempts)
+            {
+                Log($"  a slot with food read nothing (attempt {attempt} of {CountReadAttempts}) — " +
+                    "reading it again; a soft capture is the known cause");
+                SleepCheck(0.2);   // let the next frame commit before the next grab
+            }
+        }
+
+        // FOOD IS THERE AND NO NUMBER WAS READ, every attempt. That one is worth its pixels: a crop in
+        // the wrong place and a crop the reader cannot see text in look identical in the log and need
+        // opposite fixes — and today a slot holding a legible 300 read as nothing and left three
+        // theories and no evidence.
         SaveFailedSlotCrop(ocr, region);
         return (null, false);
     }

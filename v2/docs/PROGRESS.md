@@ -13,6 +13,32 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (85) — a slot's count read is retried, because the failure is a capture
+
+**The report:** the player, watching a slot whose count sat at 144, saw the tool read it as *nothing*
+— and the card then scheduled the row from one slot only. They read the slot by eye: 132 a few minutes
+later, so the tray was never the question.
+
+**What was ruled out, in order:**
+- *The score gate* — the saved crop was run offline through the real recogniser with a throwaway probe
+  (`OcrEngine.ReadImageFile`, gates from 0.0 up); it finds **no line at all** in that image.
+- *The crop's height* — measured: the digits end ~14 px (source) above the crop's edge. An overspill
+  change was written for it and **reverted** when the measurement refused it.
+- *The digits being unreadable in principle* — the SAME SLOT, seven minutes later, read
+  **120 at 0.998**, and put side by side the failed capture is visibly **soft** (glowing edges) where
+  the good one is crisp.
+
+**The cause, and why the fix is a retry:** each slot is its own screen grab, and a grab can land on a
+frame the compositor is still committing. An intermittent capture cannot be fixed by aiming better —
+the rule every retry in this tool already follows (`PlaceAttempts`, `FoodDragAttempts`,
+`CloseAttempts`) — so `FeederCountOf` reads a slot up to `CountReadAttempts` (3) times, with a short
+beat between attempts, and the empty-slot colour verdict runs BETWEEN attempts so a genuinely empty
+slot still pays for one check and no retry.
+
+**Verified.** 285 tests pass; Pet + Tests build clean. The temporary evidence mode (every crop saved,
+every line logged with its score) that made this diagnosable was removed with the fix — the tool is
+back to saving only the failures that survive all three attempts.
+
 ## 2026-10-11 (84) — three pet numbers, told apart at last
 
 **The player, over several messages:** *"there is no stage 8 stage 9"*, *"u know the stage be
