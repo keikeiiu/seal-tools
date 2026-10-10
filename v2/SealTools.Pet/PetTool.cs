@@ -318,9 +318,13 @@ public sealed class PetTool : ToolBase
         //
         // It also opens the breeder and clicks, so it needs the game — and it is the first thing that
         // can be deferred. A run started while another tool is busy therefore starts and WAITS to look,
-        // rather than reporting rows it never read.
-        var looked = ClaimGame(state,
-            () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
+        // rather than reporting rows it never read. The game window itself must also be up and IN
+        // FRONT first: a player who presses Start on the launcher has the LAUNCHER focused, and the
+        // look sent in that state clicks 目錄 into the launcher and reads its pixels as the feeder's
+        // counts — which is how a whole run's schedule came out of a covered screen on 2026-10-01.
+        // See WaitForGameInFront; it holds nothing while it waits, so the residency rule survives.
+        var looked = WaitForGameInFront(state, ct) &&
+            ClaimGame(state, () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
         Dictionary<PetSlotConfig, DateTime> next;
         try
         {
@@ -350,6 +354,11 @@ public sealed class PetTool : ToolBase
         // progress note is not a state, and on this tool the gap between the two is hours.
         state.Message = null;
         var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
+
+        // The last thing written about the game window not being in front. Held here so the wait
+        // says it once per episode rather than once per retry — the same rule ClaimGame follows,
+        // for the same reason: this can repeat for hours if the player leaves the PC.
+        var frontWaitSaid = "";
 
         // THE CARD'S STANDING LINE. A reload is hours apart, so a card that only reported the last
         // thing that happened said nothing at all for most of a run — the player asked for "which row
@@ -405,6 +414,35 @@ public sealed class PetTool : ToolBase
                                 .OrderBy(r => ordered.IndexOf(r))
                                 .ToList();
                 if (batch.Count == 0) batch.Add(soonest);
+
+                // THE GAME WINDOW MUST BE IN FRONT BEFORE THE VISIT — before the claim, before the
+                // open, before any read. This is the guard that would have prevented 2026-10-01: the
+                // window was covered, the slot read (the one read the fore gate was missing) answered
+                // "a pet is in the loader" from the covering window, and the visit pressed the end
+                // toggle at whatever was in front — 57 of the 90 strikes in pet.log, all silent.
+                //
+                // A DEFERRAL, not a failure, and no click is sent: the rows keep their place and are
+                // tried again in RetryMinutes, the same shape as the NothingToBoard wait. Waiting here
+                // rather than polling is deliberate — the feeder must hold NOTHING between operations
+                // (that is what makes it resident), and a 2-second poll while the player works would
+                // be a claim on the game's attention that this tool never makes.
+                if (!GameIsInFront())
+                {
+                    var line = $"The game window isn't in front — {NameOf(soonest)} keeps its place; " +
+                               $"nothing was clicked, and it is tried again in {RetryMinutes:0} min.";
+                    if (line != frontWaitSaid)
+                    {
+                        frontWaitSaid = line;
+                        Console.WriteLine(line);
+                        Log("  " + line);
+                    }
+                    state.Message = line;
+
+                    foreach (var row in batch) next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                    PublishSchedule();
+                    continue;
+                }
+                frontWaitSaid = "";
 
                 // The soonest row is due, but the game may belong to another tool. Deferring here needs
                 // no bookkeeping at all: next[row] is left in the past, so the next pass picks this same
@@ -592,6 +630,66 @@ public sealed class PetTool : ToolBase
     /// <summary>Gives the game back. Always called — a tool that dies holding the gate would leave the
     /// launcher waiting on it for the rest of the session.</summary>
     private void ReleaseGame() => _gate?.Release(GateOwner);
+
+    /// <summary>Whether the game window is open, restored and IN FRONT — the precondition every
+    /// screen read and every click in this tool shares.
+    ///
+    /// The reads are SCREEN GRABS, so whatever is in front of the game is what gets measured. Two of
+    /// them already refuse to judge an image that is not the game — the feeder counts and the icon
+    /// sweep — and the composer refuses its empty box for the same reason. This is that same check,
+    /// in one place, so the reads that were missing it cannot drift from the ones that had it.
+    ///
+    /// WHY IT MATTERS, measured 2026-10-11. pet.log holds **194 slot reads of exactly 1.000** —
+    /// "completely different from the empty reference" — and the feeder counts failed to read in 104
+    /// of the reads that followed one. Four rows reading "occupied by 1.000" in the same second, with
+    /// no count and no time line, is not four pets: it is one covered window. The slot read was the
+    /// one screen read WITHOUT this gate, so it answered "a pet is in the loader" from whatever was
+    /// covering the game — the reload then pressed the end toggle at the covering window, read the
+    /// same covered image back, and failed with no reason written to the log at all (the
+    /// pet-did-not-come-back branch, the only !ok return in ReloadRowInPlace that logs nothing). That
+    /// path is **57 of the 90 strikes** that dropped a row across three weeks, and 24 of the 30
+    /// give-up events.</summary>
+    private bool GameIsInFront()
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        return hwnd != IntPtr.Zero
+            && !WindowFinder.IsMinimized(hwnd)
+            && WindowFinder.ForegroundWindow() == hwnd;
+    }
+
+    /// <summary>Waits until the game window is open, restored and in front, and returns false when
+    /// the run was cancelled first. Called before the LOOK, which clicks 目錄 and reads screens — an
+    /// open sent while the game is covered clicks whatever is covering it.
+    ///
+    /// It holds NOTHING while it waits, and that is the point rather than politeness: the whole
+    /// reason the feeder can be resident is that it holds the gate only inside an operation (see
+    /// <see cref="ClaimGame"/>). A player who presses Start on the launcher has the LAUNCHER in
+    /// front, so this is the normal state for a second or two — and a launcher left in front for
+    /// longer must not block every other tool for the rest of the session.
+    ///
+    /// Never a silent wait: the card and the log say what it is waiting for, because a feeder that
+    /// is waiting for the game to be focused looks exactly like a broken one otherwise.</summary>
+    private bool WaitForGameInFront(ToolState state, CancellationToken ct)
+    {
+        var said = "";
+        while (!GameIsInFront())
+        {
+            if (ct.IsCancellationRequested) return false;
+
+            const string message =
+                "Waiting for the game window to be in front — click the game to let the feeder look.";
+            state.Message = message;
+            if (message != said)
+            {
+                said = message;
+                Console.WriteLine(message);
+                Log("  " + message);
+            }
+
+            if (!SleepUntil(DateTime.Now.AddSeconds(2), ct)) return false;
+        }
+        return true;
+    }
 
     /// <summary>Why a run can't start, or null when it can. Checked before anything moves, so a
     /// half-calibrated setup says what is missing instead of clicking into empty screen.</summary>
@@ -1014,6 +1112,9 @@ public sealed class PetTool : ToolBase
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
 
+        // Same fore gate as every other screen read — a covered game would answer about the cover.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
         var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
         {
             Left = region[0], Top = region[1], Width = region[2], Height = region[3],
@@ -1142,8 +1243,22 @@ public sealed class PetTool : ToolBase
             // reading is also what re-derives their next.
             schedule = ReadRows(ser);
 
+            // THE FRONT IS CHECKED AGAIN PER ROW, because the check in the main loop is a few clicks
+            // and an OCR pass old by now — and every action from here presses keys and buttons at
+            // whatever window is in front. A focus stolen mid-visit abandons the REST of the visit;
+            // the row already in flight runs to its own failure path, which now says why.
+            var frontLost = false;
             foreach (var row in batch)
             {
+                if (!GameIsInFront())
+                {
+                    frontLost = true;
+                    Log("  the game window left the front — the rest of this visit is abandoned; " +
+                        "the rows not reached were not touched");
+                    state.Message = "The game window left the front — the rest of the visit was skipped.";
+                    break;
+                }
+
                 var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes,
                     out var nothingToBoard);
                 results[row] = new RowOutcome(ok, rowError, petMinutes, nothingToBoard);
@@ -1151,6 +1266,14 @@ public sealed class PetTool : ToolBase
                 if (!ok)
                     Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
             }
+
+            if (frontLost)
+                // NO SCHEDULE, deliberately, and for the same reason the failed-open path returns an
+                // empty one: the reading above was taken off a covered screen too, so its fallbacks
+                // are not evidence about the rows — returning them would park a dry row on the
+                // configured cycle for 205-505 minutes. The rows not touched keep the next they had;
+                // the main loop's front check defers them properly on the next pass.
+                return new VisitResult(results, new Dictionary<PetSlotConfig, DateTime>());
 
             // ── THE SECOND READ, while the window is still open ──────────────
             //
@@ -1846,6 +1969,13 @@ public sealed class PetTool : ToolBase
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
 
+        // THE FORE GATE, and it is the whole of the 2026-10-11 finding: without it a covered game
+        // read as "a pet is in the loader" at exactly 1.000, because a screen grab of the covering
+        // window shares no pixels with the empty-slot reference. See GameIsInFront for the numbers.
+        // Unknown is the right answer — every caller keeps its previous belief on null, where a
+        // confident "occupied" starts an end press at whatever is covering the game.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
         var box = row.BoardingPetSlot!;
         var cap = ScreenCapture.CaptureClientRegion(hwnd,
             new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] });
@@ -2082,6 +2212,11 @@ public sealed class PetTool : ToolBase
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
         if (!BagGrid.IsValidRect(_cfg.Pet.BagGrid)) return null;
+
+        // Same fore gate as every other screen read: the before/after pair this feeds is only a
+        // comparison of the bag when both images are of the game. Covered, both are the cover and
+        // compare "unchanged" — which reads as a failed drag and re-drags a cell nobody touched.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
 
         var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
         var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));

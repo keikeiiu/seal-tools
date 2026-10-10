@@ -13,6 +13,48 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
+
+**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](PLAN-PET-FLOW.md), branch `feature/pet-flow`)
+with its smallest, most certain step — and the reconnaissance found something the plan had not: the
+reason the feeder silently gives up on rows.
+
+**What the log said when it was asked why.** The plan's §3 flagship ("20 of 30 give-ups are *No queued
+pet is in the bag*") is a **miscount** — 20 is the count of that log *line*, and the give-ups from it
+are 4, all before commit `7832b76` (2026-09-21) which already made that state a wait. Re-measured on
+the whole 26,722-line log: **77 of the 131 in-visit failures have no reason line at all**, and all 77
+follow the end-boarding toggle press. That is `PetTool.cs`'s pet-did-not-come-back branch — the one
+`!ok` return in `ReloadRowInPlace` that logs nothing. It is **57 of the 90 strikes** behind the 30
+give-ups, 24 of the 30 events.
+
+**Why the pet "did not come back out".** Not the pet: the screen. `pet.log` holds **194 slot reads of
+exactly 1.000** — completely unlike the empty-slot reference — and in 104 of the reads that followed
+one the feeder counts were also unreadable. Four rows reading "occupied" in the same second, with no
+numbers anywhere, is one **covered window**. Every screen read in the tool checks
+`ForegroundWindow()` before trusting its grab — except `PetSlotDifference`, the slot-occupancy read.
+So a covered game read as "a pet is in the loader", the reload pressed 結束代養 at whatever window was
+in front, read the same covered image back as proof the press failed, and burned a strike — quietly.
+
+**What changed.**
+- `PetSlotDifference`, `CaptureBagCell` and `SlotHasNoFood` got the same foreground gate the feeder
+  counts and the icon sweep already had. Unknown now means unknown instead of a confident wrong
+  answer.
+- **The run waits for the game before the LOOK** (`WaitForGameInFront`) — holding nothing while it
+  waits, saying so on the card, because the player who presses Start on the launcher has the
+  *launcher* focused.
+- **A visit whose window is not in front defers**: rows keep their place, retried in `RetryMinutes`,
+  no strike, no click. The front is re-checked before every row; a focus lost mid-visit abandons the
+  rest of the visit and returns no schedule (a covered read's fallbacks are not evidence — returning
+  them would park a dry row on the 205/505-minute cycle).
+
+**Verified.** Pet + Tests projects build clean; **265 tests pass**. Live verification still owed — the
+plan's own rule for every step in this work.
+
+**Left open.** Mid-visit focus loss can still let the row in flight press blind (bounded: the rest of
+the visit stops, and the reads now answer "unknown"); whether clicks should refuse outright when the
+window is not in front is a step-2-shaped decision, not this one. The four plan steps themselves are
+next, in the plan's order, each its own commit on `feature/pet-flow`.
+
 ## 2026-10-08 (68) — program vs profile: deployment planned, not built
 
 **The plan is [PLAN-PATHS.md](PLAN-PATHS.md); nothing in it is built.** It exists because "should the

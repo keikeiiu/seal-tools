@@ -1221,7 +1221,12 @@ hotkey.*
   2  load the table  pet-data.csv. A missing or unreadable table costs the
   │                  COMPUTED schedule and nothing else — the pets still feed.
   │
-  3  CLAIM the game  for the look. ◆ is it free?
+  3  CLAIM the game  for the look — but only once the game window is open,
+  │                  restored and IN FRONT: every read is a screen grab, so a
+  │                  covered window answers about the cover, and the open
+  │                  clicks 目錄 at whatever is in front. So first WAIT for the
+  │                  game to be clicked (holding NOTHING — see below).
+  │                  ◆ is it free?
   │                   no  ──► ANNOUNCE that it is waiting and SAY who for, then
   │                          poll until free — a holder that yields (the
   │                          spammer) stands down and hands the game over
@@ -1238,9 +1243,13 @@ hotkey.*
   ┏ 6a  ◆ any live rows left? ── no ──► ✋ "Every row has failed repeatedly"
   ┃ 6b  sleep to the soonest row's next reload (a stop here just breaks out)
   ┃ 6c  take EVERY row due now, in ROW ORDER (none due → just the soonest)
-  ┃ 6d  CLAIM the game for the visit — waiting again if another tool holds it.
-  ┃       The row's next is left in the PAST, so the same row is picked again
-  ┃       after the wait, rather than skipped.
+  ┃ 6d  ◆ is the game window IN FRONT?  no ──► nothing is clicked; the rows
+  ┃       keep their place and are retried in 5 min — a deferral, not a
+  ┃       failure (nothing was attempted). Then CLAIM the game for the visit,
+  ┃       waiting again if another tool holds it. The row's next is left in
+  ┃       the PAST, so the same row is picked again after the wait.
+  ┃       The front is re-checked before EVERY row: a focus lost mid-visit
+  ┃       abandons the rest of the visit and leaves those rows untouched.
   ┃ 6e  THE VISIT — open ONCE · read every row · reload each due row ·   ▓
   ┃       close ONCE. The whole reload is board writes (detail: AUDIT-PET-FLOW).
   ┃       └ cut by a stop ──► note "it may not have been fed — check it in
@@ -1277,10 +1286,13 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | Where | Question | True → | False → |
 |---|---|---|---|
 | `Ready` | Any precondition missing? | stop with a message naming it | run |
+| `WaitForGameInFront` | Game window open, restored and **in front**, for the look? | `ClaimGame` | wait, holding nothing, saying so on the card; cancelled → end the run |
 | `ClaimGame` | Game free, for the look? | `InspectRows` | wait, saying who; cancelled → end the run |
 | loop | Any live rows left? | sleep to the soonest | "Every row has failed repeatedly" → break |
 | `SleepUntil` | Cancelled during the wait? | break | compute the due batch |
 | batch | Does the batch hold any row? | visit them | `batch = [soonest]` |
+| front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
+| per-row front check | Still in front, mid-visit? | reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
 | `ClaimGame` | Game free, for the visit? | `Visit` | wait; `next[row]` stays in the past; cancelled → break |
 | `Visit` | Was the visit cut by a stop? | throw — "may not have been fed. Check it in game." | fold the results back |
 | fold | The row's reload was **Ok**? | `next = now + min(pet, load) + WaitAfterEmpty`; failures = 0 | check next |
@@ -1323,3 +1335,14 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
 
 6. **`Ready` checks every ticked row, not just the first**, so a switched-off half-set-up row no longer
    blocks a run that never touches it.
+
+7. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
+   screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
+   `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
+   with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in
+   the same second is one covered window, not four pets. The slot read was the last screen read
+   without the foreground gate its two siblings had; the resulting silent end-press failures are
+   **57 of the 90 strikes** that dropped a row in the log. A visit whose window is not in front now
+   defers the rows five minutes without a click and without a failure — the failure direction is an
+   unfed pet, and a blind press at whatever window is in front can start a boarding with no pet in
+   it.
