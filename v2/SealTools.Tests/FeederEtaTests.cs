@@ -45,13 +45,15 @@ public class FeederEtaTests
         Assert.Null(FeederEta.CompletionMinutes(r));
     }
 
-    /// <summary>The stage the LEVEL form is talking about — the player's *"the hidden message is that
-    /// it is level 6"*. What the card shows as `game line says level 6`, and the reason the parser
-    /// keeps the line verbatim. Display only: the level form still drives nothing.</summary>
+    /// <summary>The stage the level form is talking about — what the card shows as `→ stage 6`, and
+    /// the reason the parser keeps the line verbatim. The number is the 代養/FEEDING stage, not the
+    /// pet's rank or level (the player corrected that reading on 2026-10-11), which is why it is
+    /// pinned against the panel's own "stage N" scale. Display only: the level form drives nothing.</summary>
     [Theory]
     [InlineData("到2為止預計所需時間：約 20分", 2)]
     [InlineData("到6為止预計所需時間：約19分", 6)]
     [InlineData("到9為止预計所需時間：約94分", 9)]
+    [InlineData("到3为止预计所需时间：约 12分", 3)]   // the OCR's Simplified 止, mixed scripts
     [InlineData("代養完成預計所需時間：約14分", null)]   // the completion form names no stage
     [InlineData("該欄位約27日9時51分16秒後到期。", null)] // the shelf life is not a stage either
     [InlineData("到6為止", 6)]

@@ -115,28 +115,21 @@ from the boarding state and the schedule on the **Pet** tab. **Under it the card
 row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
 
 ```
-· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  next 07:14 (in 2h 41m)
-     why: tray 501 item(s) ≈ 167 min (last read)  ·  game line says level 6
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  next 07:14 (in 2h 41m)
 · Row 2: waiting for a reload
-     why: not boarding
 · Row 4: given up
-     why: given up after 3 failures
 ```
 
-Each line carries that row's own countdown, recomputed as the card refreshes, and **a short `why:`
-line** under it — the tray's minutes, the game's own line, the pet's estimate from the panel and the
-feeding table, or the configured cycle when nothing could be read, plus the stage the game's line
-says the pet is heading for. The `why:` is written by the same code that produced the time, so the
-two cannot disagree.
+Each line carries that row's own countdown, recomputed as the card refreshes, and — when the game's
+own time line names one — **`→ stage N`**: the **feeding (代養) stage** that line says the pet is
+heading for. That is the whole message of the so-called *level* form ("到6為止预計所需時間：約19分" —
+*up to 6*): the game writes two kinds of time line, and only the *completion* form ("完成 … 約N分",
+when the pet finishes) drives the schedule. The level form is shown as the one number it carries and
+deliberately drives nothing.
 
-Two wordings worth knowing:
-
-- **"(last read)"** — the tray drains continuously and nothing reads it between visits, so the figure
-  is the last reading, not a live count; the time beside it is when the row is next looked at.
-- **"game line says level N"** — the game writes two kinds of time line. The *completion* form
-  ("完成 … 約N分") says when the pet finishes, and drives the schedule. The *level* form
-  ("到6為止预計所需時間：約19分") says the **stage the pet is heading for**; the card now says which
-  one, and that line deliberately does not drive the schedule.
+**That number is the feeding stage, not the pet's rank or level** — the same scale the hover panel's
+`stage N` shows. It never describes how strong the pet is, and the card uses the word *stage* so the
+two cannot be confused.
 
 A row that was given up on (three failures in a row) has no next time and says so.
 

@@ -37,14 +37,22 @@ public static class FeederEta
     private static readonly Regex AboutMinutes =
         new(@"約\s*(\d{1,4})\s*分", RegexOptions.Compiled);
 
-    /// <summary>`到6為止` — the stage a LEVEL-form line names. It is the line's own statement of which
-    /// stage the pet is heading FOR, and it is what the player means by *"the hidden message is that
-    /// it is level 6"*: 「到6為止预計所需時間：約19分」 says "estimated time to reach stage 6".</summary>
-    private static readonly Regex LevelTo = new(@"到\s*(\d{1,2})\s*為止", RegexOptions.Compiled);
+    /// <summary>`到6為止` — the stage a level-form line names. It is the line's own statement of which
+    /// stage the pet is heading FOR: 「到6為止预計所需時間：約19分」 says "estimated time to reach
+    /// stage 6". 止 is matched in both scripts because the OCR mixes them line by line — the measured
+    /// log shows Traditional 為止 beside Simplified 预 in the same sentence.</summary>
+    private static readonly Regex LevelTo = new(@"到\s*(\d{1,2})\s*[為为]止", RegexOptions.Compiled);
 
-    /// <summary>The stage a line says the pet is heading for, or null when it names none. DISPLAY
-    /// ONLY: the level form drives nothing (see <see cref="CompletionMinutes"/>), and this exists so
-    /// a card can say which stage the line is about instead of quoting a sentence nobody reads.</summary>
+    /// <summary>The stage a line says the pet is heading for, or null when it names none.
+    ///
+    /// IT IS THE 代養 / FEEDING STAGE, NOT THE PET'S RANK OR LEVEL — the player corrected exactly
+    /// that reading on 2026-10-11: *"the pet feeding level is not the pet rank level."* The number
+    /// 到N為止 counts the boarding stages (the same scale the hover panel's "stage 6" shows), and it
+    /// has nothing to do with how strong the pet is. The card says `→ stage N` for that reason.
+    ///
+    /// DISPLAY ONLY: the level form drives nothing (see <see cref="CompletionMinutes"/>), and this
+    /// exists so a card can say which stage the line is about instead of quoting a sentence nobody
+    /// reads.</summary>
     public static int? LevelTarget(string? line)
     {
         if (line is null) return null;

@@ -1321,15 +1321,13 @@ feed icon, one Enter, the X) and the visit (the whole reload) — and nothing at
 only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 
 **What its card shows.** The standing line (which rows are boarding, which is next and when) and then
-**one line per breeding row** — `· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · next 07:14
-(in 2h 41m)` — so all four conditions are visible at once rather than only the soonest, **plus a short
-`why:` under each** (`tray 501 item(s) ≈ 167 min (last read) · game line says level 6`): the tray's
-minutes, the game's own line, the pet's estimate from the panel and the feeding table, or the
-configured cycle when nothing could be read — and, when the line is the **level form**, the stage it
-says the pet is heading for (`FeederEta.LevelTarget`), which turns that line's hidden message into one
-number. Each row carries its own moment (`ToolState.Rows`) and the card recomputes every countdown on
-each tick; the why is written by the code that produced the number, so the two cannot disagree. The
-tray figure says "(last read)" because that is what it is — it drains between visits.
+**one line per breeding row** — `· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → stage 9 ·
+next 07:14 (in 2h 41m)` — so all four conditions are visible at once rather than only the soonest.
+Each row carries its own moment (`ToolState.Rows`) and the card recomputes every countdown on each
+tick. The **`→ stage N`** is the one deduction the game's own time line contributes: the *level*
+form ("到6為止预計所需時間：約19分") names the **feeding (代養) stage** the pet is heading for
+(`FeederEta.LevelTarget`) — the same scale the panel's own "stage N" shows, never the pet's rank —
+and that number is shown while the line itself, deliberately, drives nothing.
 
 ### Decision points (the outer loop only)
 

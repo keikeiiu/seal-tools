@@ -860,11 +860,6 @@ public partial class MainWindow : FluentWindow, IDisposable
             lines.Add($"· {row.Name}: {row.Status}" +
                       (string.IsNullOrEmpty(row.Detail) ? "" : $"  ·  {row.Detail}") +
                       (row.NextAt is { } at ? $"  ·  next {at:HH:mm} ({Countdown(at)})" : ""));
-
-            // WHY that time, under the row — the player asked for the calculation's basis in as many
-            // words ("information on why it is calculated this way"), and the tool writes it where it
-            // produced the number, so the two cannot disagree.
-            if (!string.IsNullOrEmpty(row.Why)) lines.Add("     why: " + row.Why);
         }
 
         if (!string.IsNullOrEmpty(state.Grade)) lines.Add($"Grade: {state.Grade}");

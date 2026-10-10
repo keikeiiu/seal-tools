@@ -13,6 +13,29 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (82) — the row is one line again, with the feeding-stage deduction on it
+
+**The player, twice over:** *"possible to simplify even more? → maybe just a deduced level 6 at the
+same line?"* (81) had trimmed the `why:` to a hint; this removes the second line altogether.
+
+**What changed:** `why:` is gone — `ToolRowState.Why`, the `_rowWhy` bookkeeping, `WhyFromReading` and
+every write to it. What survives is the single deduction the player actually wanted from the game's
+line: **`→ stage N`**, appended to the row's own line when the line names a stage
+(`FeederEta.LevelTarget`). The row reads
+`· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → stage 9 · next 07:14 (in 2h 41m)`.
+
+**A correction that came with it, and matters:** that number is the **feeding (代養) stage**, not the
+pet's rank or level — the player caught the first version calling it "level": *"the pet feeding level
+is not the pet rank level."* It is the same scale the hover panel's `stage N` shows, and the card
+uses the word *stage* so the two can never be read as the same thing.
+
+**Why this is a simplification and not a loss:** the numbers the why line carried (tray minutes,
+cycle fallback, retry timing) are the tool's own arithmetic and are already in `pet.log` where they
+are checked; the card's job is what the player glances at, and the only thing on it that they could
+not deduce themselves was what the game's foreign-language line was saying.
+
+**Verified.** 274 tests pass; Pet + Tests build clean.
+
 ## 2026-10-11 (81) — the row's why, trimmed to a hint
 
 **The player's verdict on (80):** *"i dont need fully on how the calculation is done, too much, maybe

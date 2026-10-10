@@ -223,13 +223,6 @@ public sealed class PetTool : ToolBase
     /// count.</summary>
     private readonly Dictionary<PetSlotConfig, int?> _lastItems = new();
 
-    /// <summary>WHY each row's next time is what it is — written by the code that produced the number,
-    /// and shown under the row on the card. The player asked for it in as many words: *"information on
-    /// why it is calculated this way"*, with the game's own line — *"the hidden msg is that it is
-    /// level 6 pet right"* — as the example. Every `next[row] = …` in this file sets it, so a card
-    /// that shows a time and a why cannot say two different things.</summary>
-    private readonly Dictionary<PetSlotConfig, string> _rowWhy = new();
-
     /// <summary>The game's time line for a row, VERBATIM, from the last read — "到6為止预計所需時間：
     /// 約19分" and the like. Kept raw because it is a sentence rather than a number, and because the
     /// level form's meaning (the stage the pet is heading for) is exactly what the player wants to
@@ -450,11 +443,19 @@ public sealed class PetTool : ToolBase
                     : "waiting for a reload";
                 // The pet it is carrying, when that is known — the numbers live in the why line, which
                 // keeps each row to two short lines rather than a paragraph.
+                // THE PET, and — when the game's own line names one — the stage it says the pet is
+                // heading for, on the SAME line (the player's ask: "maybe just a deduced level 6 at
+                // the same line"). That deduction is the whole message of the level form; everything
+                // else the first version spelled out turned out to be noise.
                 var detail = _rowPet.TryGetValue(row, out var pet) ? pet : null;
-                rows.Add(new ToolRowState(NameOf(row), status,
-                    detail,
-                    _rowWhy.TryGetValue(row, out var why) ? why : null,
-                    hasNext ? at : null));
+                if (_lastEtaLine.TryGetValue(row, out var etaLine) &&
+                    FeederEta.LevelTarget(etaLine) is { } stage)
+                {
+                    detail = string.IsNullOrEmpty(detail)
+                        ? $"→ stage {stage}"
+                        : $"{detail}  ·  → stage {stage}";
+                }
+                rows.Add(new ToolRowState(NameOf(row), status, detail, hasNext ? at : null));
             }
             state.Rows = rows;
 
@@ -538,11 +539,7 @@ public sealed class PetTool : ToolBase
                     }
                     state.Message = line;
 
-                    foreach (var row in batch)
-                    {
-                        next[row] = DateTime.Now.AddMinutes(RetryMinutes);
-                        _rowWhy[row] = "window not in front — nothing clicked";
-                    }
+                    foreach (var row in batch) next[row] = DateTime.Now.AddMinutes(RetryMinutes);
                     PublishSchedule();
                     return true;
                 }
@@ -661,12 +658,6 @@ public sealed class PetTool : ToolBase
                 var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
                 next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
 
-                // …and the card is told WHY, briefly — the pet's own estimate when the panel and the
-                // table could answer, the full load when they could not.
-                _rowWhy[row] = fromPet is { } needs2 && needs2 < loaded
-                    ? $"pet needs {wait:0} min (panel + table)"
-                    : $"full load — {loaded:0} min";
-
                 state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
                                 (fromPet is { } m && m < loaded
                                     ? $" (the pet finishes first, in {m:0} min)"
@@ -680,7 +671,6 @@ public sealed class PetTool : ToolBase
                 // must not be counted against, or dropped, for the state of the bag.
                 failures[row] = 0;
                 next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
-                _rowWhy[row] = $"no feedable pet — keeps its place, looked at again in {NoPetRetryMinutes:0} min";
                 state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
                 Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
                     $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
@@ -702,12 +692,10 @@ public sealed class PetTool : ToolBase
                     // that carried the reason is gone by then.
                     Log($"  {NameOf(row)} given up on after {MaxFailures} failures — " +
                         $"{result.Error} — the other rows carry on");
-                    _rowWhy[row] = $"given up after {MaxFailures} failures";
                     next.Remove(row);
                     continue;
                 }
                 next[row] = DateTime.Now.AddMinutes(RetryMinutes);
-                _rowWhy[row] = $"failed — retry in {RetryMinutes:0} min";
             }
         }
     }
@@ -1092,7 +1080,6 @@ public sealed class PetTool : ToolBase
                     _lastItems[row] = null;
                     _lastEtaLine[row] = null;
                     schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied };
-                    _rowWhy[row] = WhyFromReading(row, schedule[row], null, null);
                     continue;
                 }
 
@@ -1102,7 +1089,6 @@ public sealed class PetTool : ToolBase
                 schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
                 _lastItems[row] = left;
                 _lastEtaLine[row] = eta?.Line;
-                _rowWhy[row] = WhyFromReading(row, schedule[row], left, eta);
 
                 // The other two proofs — see ProveWindow for why the set is this narrow.
                 if (countsFromDigits || (eta is not null && FeederEta.CompletionMinutes(eta) is not null))
@@ -1267,43 +1253,6 @@ public sealed class PetTool : ToolBase
                       $"{ahead.TotalMinutes:0} min to go (> {VetoMarginMinutes:0} min margin), next " +
                       $"{fresh.Next:HH:mm}. Nothing ended, moved, loaded or started; its next comes " +
                       "from this reading" + standing);
-    }
-
-    /// <summary>WHY a row's next time is what it is, in the words the card shows — built where
-    /// <see cref="ScheduleFor"/> produced the number, so the explanation and the number come from the
-    /// same branch and cannot drift. The player asked for exactly this: *"information on why it is
-    /// calculated this way"*, and the level-form line is their own example of the useful detail —
-    /// 「到6為止预計所需時間：約19分」 says the pet is heading for stage 6 and is deliberately NOT used
-    /// for timing, and the card now says so instead of leaving it a hidden message.
-    ///
-    /// The numbers quoted are the config's own (the rate, the grace, the cycle), so the arithmetic can
-    /// be checked against the Pet tab.</summary>
-    private string WhyFromReading(PetSlotConfig row, RowReading reading, int? items,
-        FeederEta.Reading? eta)
-    {
-        var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
-        var reason = reading.Source switch
-        {
-            ScheduleSource.CountRead when items is { } n =>
-                eta is not null && FeederEta.CompletionMinutes(eta) is { } f && f < n / (double)rate
-                    ? $"the game's line says {f:0} min first — under the tray's {n / (double)rate:0} min"
-                    : $"tray {n} item(s) ≈ {n / (double)rate:0} min (last read)",
-            ScheduleSource.CompletionRead => $"the game's own line — {eta?.Minutes:0} min",
-            ScheduleSource.CountEmpty => "tray read zero — now",
-            ScheduleSource.NotBoarding => "not boarding",
-            ScheduleSource.CycleFallback => $"nothing readable — cycle {CycleMinutesFor(row):0} min",
-            ScheduleSource.StartOverride => "reload-on-start",
-            _ => DescribeSource(reading.Source),
-        };
-
-        // A SHORT HINT, at the player's request — the first version spelled the whole arithmetic out
-        // and was "too much". The level form's entire message is which stage the pet is heading for,
-        // and one number says that where a quoted sentence was noise: 「到6為止预計所需時間：約19分」
-        // becomes `game line says level 6`.
-        var level = eta is not null && FeederEta.LevelTarget(eta.Line) is { } stage
-            ? $"  ·  game line says level {stage}"
-            : "";
-        return reason + level;
     }
 
     /// <summary>Where a reading came from, for a log line — the words a person reads in pet.log, not

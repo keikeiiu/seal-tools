@@ -67,9 +67,8 @@ public sealed class ToolState
 ///
 /// <paramref name="Status"/> is the short state word the card shows ("boarding", "not boarding",
 /// "given up"); <paramref name="Detail"/> is the last reading about that row (the pet it boarded and
-/// its feeder count, or null when there is none to show); <paramref name="Why"/> is WHY the next time
-/// is what it is — the arithmetic and the reading behind it, written where the number was produced so
-/// the two cannot drift; <paramref name="NextAt"/> is when this row next needs attention, or null
-/// when it never will again (a row that was dropped).</summary>
-public sealed record ToolRowState(string Name, string Status, string? Detail, string? Why,
-    DateTime? NextAt);
+/// its stage, and — when the game's own line names one — the **feeding** stage that line says it is
+/// heading for, as `→ stage N`; that is the 代養 stage, never the pet's rank or level);
+/// <paramref name="NextAt"/> is when this row next needs attention, or null when it never will again
+/// (a row that was dropped).</summary>
+public sealed record ToolRowState(string Name, string Status, string? Detail, DateTime? NextAt);
