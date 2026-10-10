@@ -107,7 +107,7 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 那一列：
 
 ```
-· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  next 07:14 (in 2h 41m)
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
 · Row 2: waiting for a reload
 · Row 4: given up
 ```
@@ -119,6 +119,10 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 
 **這個數字是代養階段，不是寵物的等級或階級** — 和 hover 面板顯示的 `stage N` 是同一個尺度，與寵物
 強弱無關；卡片用 *stage* 這個詞就是為了不讓兩者混淆。
+
+**`3/min (game line)` 是這一列自己的餵食速率**，讀自遊戲視窗自己的那行字（`每1分 攝取3個`），不是
+假設值：速率跟著寵物的代養階段走，所以不同階段的列吃得不一樣快，每一列的計算都用自己那個數字。
+**Pet** 分頁上的 items-per-minute 設定只是「那行讀不到時」的後備值。
 
 被放棄的列（連續三次失敗）沒有下次時間，會直接寫 given up。
 

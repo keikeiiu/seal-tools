@@ -18,6 +18,10 @@ Settings that are **the same on every machine and every user**. This file is che
 - `tuner.grade_colors.*`, `tuner.models.*`, `tuner.filter.*`
 - `reference_window.*`
 - **Behavior preferences** (not tied to hardware):
+  - `pet.items_per_minute` — **the FALLBACK rate only.** The boarding window prints the feeding rate
+    beside every row (`每1分 攝取3個`) and the pet feeder reads it, per row, because the rate follows
+    the pets' feeding stage and rows need not hold pets at the same stage. This value answers only
+    when that line could not be read.
   - `gem.start_grade`
   - `gem.empty_mode` — `"stop"` | `"advance_grade"` | `"advance_grade_clear"`
   - `gem.empty_streak` — consecutive empties before acting

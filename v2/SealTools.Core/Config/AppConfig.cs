@@ -613,10 +613,15 @@ public sealed class PetConfig
     /// <summary>The game's per-stack cap, and a game constant rather than a setting.</summary>
     public const int StackSize = 300;
 
-    /// <summary>Items the game consumes per minute while boarding runs. Stage 6 is 3; the boarding
-    /// window states this itself (`每1分 攝取3個`), so it is a measured game constant rather than a
-    /// guess — and each row states its own, so a stage-7 row saying 4 is readable rather than a number
-    /// this config is simply wrong about.</summary>
+    /// <summary>Items the game consumes per minute while boarding runs — **the FALLBACK now**: the
+    /// boarding window states the rate itself, per row (`每1分 攝取3個`), and the tool reads it and
+    /// uses THAT row's number wherever items become minutes. This value answers only when the line
+    /// could not be read, which is what it always was in practice: a measured game constant (stage 6
+    /// is 3) rather than a guess.
+    ///
+    /// Per ROW matters because the rate follows the pets' feeding stage, and rows need not hold pets
+    /// at the same stage (player, 2026-10-11) — a stage-7 row saying 4/min is then read rather than
+    /// mis-timed by a number this config is simply wrong about. See <c>FeederEta.ParseRate</c>.</summary>
     public int ItemsPerMinute { get; set; } = 3;
 
     /// <summary>How many items one reload puts into the given row, DERIVED from that row's stack count

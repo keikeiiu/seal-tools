@@ -235,6 +235,40 @@ public sealed class PetTool : ToolBase
     /// so a restart starts blind for one cycle, exactly like <see cref="_rowSpecies"/>.</summary>
     private readonly Dictionary<PetSlotConfig, string> _rowPet = new();
 
+    /// <summary>Items per minute as the GAME states it for this row — `每1分 攝取3個`, read off the
+    /// row's own text. Null when the line was not there or did not parse, in which case the config's
+    /// <see cref="PetConfig.ItemsPerMinute"/> answers (see <see cref="RateFor"/>).
+    ///
+    /// The rate follows the pets' feeding stage, which is why a single configured number cannot be
+    /// right for four rows holding pets at different stages — the player, 2026-10-11: *"the reason
+    /// why it is 3 food per pet is those pets are stage 6 pets"*, and *"possible we can deduce
+    /// that?"*. It does not have to be deduced: the window prints it beside every row.</summary>
+    private readonly Dictionary<PetSlotConfig, int?> _lastRate = new();
+
+    /// <summary>That row's feeding rate for every minutes-from-items calculation: what the game said
+    /// about THIS row at its last read, or the configured number when it said nothing. One place, so
+    /// the schedule, the load arithmetic and the card cannot use different rates for one row.
+    ///
+    /// PER ROW because the rate follows the pets' feeding stage, and rows need not hold pets at the
+    /// same stage — the player, 2026-10-11: *"it is important as they may have different stage pet
+    /// in the future"*. A single configured number would then mis-time whichever rows it did not
+    /// match.</summary>
+    private int RateFor(PetSlotConfig row) =>
+        _lastRate.TryGetValue(row, out var measured) && measured is { } rate
+            ? rate
+            : Math.Max(1, _cfg.Pet.ItemsPerMinute);
+
+    /// <summary>Minutes the given row's full load lasts, at THAT ROW's rate — the configured
+    /// <see cref="PetConfig.LoadMinutesFor"/> with the measured rate when there is one. A faster
+    /// eater (a higher-stage pet) empties sooner, so using the measured rate shortens the row's
+    /// fallback cycle: the safe direction, and the one the config comment anticipated when it noted
+    /// that a stage-7 row saying 4/min should be readable rather than wrong.</summary>
+    private int LoadMinutesFor(PetSlotConfig row)
+    {
+        var rate = RateFor(row);
+        return rate > 0 ? PetConfig.LoadItemsFor(row) / rate : 0;
+    }
+
     /// <summary>Records what was read about the pet that just went into the loader. See
     /// <see cref="_boardedPanel"/>.</summary>
     private void RememberBoarded(PetSlotConfig row, int entry, PetPanel? panel)
@@ -455,6 +489,16 @@ public sealed class PetTool : ToolBase
                         ? $"→ stage {stage}"
                         : $"{detail}  ·  → stage {stage}";
                 }
+
+                // The ROW's own feeding rate, when the window stated one — the number that says why a
+                // row's arithmetic is what it is, and the visible half of the per-row rate reading
+                // ("it is important as they may have different stage pet in the future").
+                if (_lastRate.TryGetValue(row, out var measuredRate) && measuredRate is { } r)
+                {
+                    detail = string.IsNullOrEmpty(detail)
+                        ? $"{r}/min (game line)"
+                        : $"{detail}  ·  {r}/min (game line)";
+                }
                 rows.Add(new ToolRowState(NameOf(row), status, detail, hasNext ? at : null));
             }
             state.Rows = rows;
@@ -651,7 +695,7 @@ public sealed class PetTool : ToolBase
                 // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
                 // panel read, no row for that line at that stage, and an unreadable time line
                 // all land here.
-                var loaded = _cfg.Pet.LoadMinutesFor(row);
+                var loaded = LoadMinutesFor(row);
                 var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
                     ? Math.Min(a, b)
                     : result.PetMinutes ?? result.LandedLineMinutes;
@@ -1085,7 +1129,13 @@ public sealed class PetTool : ToolBase
 
                 ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
                 var left = ReadFeederCounts(ocr, row, out var countsFromDigits);
-                var eta = ReadEta(ocr, row);
+                var eta = ReadEta(ocr, row, out var rate);
+                _lastRate[row] = rate;
+                // Only when they DISAGREE: a line that matches the config is the silence every run
+                // has, and a line that does not is evidence the config is wrong for this row.
+                if (rate is { } gameRate && gameRate != _cfg.Pet.ItemsPerMinute)
+                    Log($"  {NameOf(row)}: the game's own rate line says {gameRate}/min — the config " +
+                        $"says {_cfg.Pet.ItemsPerMinute}/min; THIS ROW's arithmetic uses {gameRate}");
                 schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
                 _lastItems[row] = left;
                 _lastEtaLine[row] = eta?.Line;
@@ -1185,7 +1235,7 @@ public sealed class PetTool : ToolBase
 
         if (itemsLeft <= 0) return new RowReading(DateTime.Now, ScheduleSource.CountEmpty);
 
-        var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
+        var rate = RateFor(row);
         var food = Math.Max(0, itemsLeft.Value / (double)rate);
 
         // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself. The source stays
@@ -1276,14 +1326,15 @@ public sealed class PetTool : ToolBase
         var result = new Dictionary<PetSlotConfig, FeederEta.Reading?>();
         using var ocr = new OcrEngine(_cfg, _attrs, _rootDir);
         foreach (var row in _cfg.Pet.ActiveRows)
-            result[row] = ReadEta(ocr, row);
+            result[row] = ReadEta(ocr, row, out _);
         return result;
     }
 
     /// <summary>The row's time line — the game's own statement of when this boarding completes. Null
     /// when there is nothing readable there, which the schedule answers with the food figure.</summary>
-    private FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row)
+    private FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row, out int? rate)
     {
+        rate = null;
         if (FeederLayout.EtaRegion(row.FeederStrip) is not { } region) return null;
 
         // THE SAME FORE GATE AS EVERY OTHER SCREEN READ — and this one had none. The line it reads is
@@ -1293,9 +1344,15 @@ public sealed class PetTool : ToolBase
         // answer "nothing readable" here like it does everywhere else.
         if (!GameIsInFront()) return null;
 
-        return FeederEta.Parse(ocr.ReadLines(
+        // ONE OCR PASS, TWO LINES OUT of the same region: the time line and the feeding rate the
+        // window prints beside it (每1分 攝取3個). The rate is per ROW and follows the pets'
+        // feeding stage, which is why one configured number cannot serve four rows — the player,
+        // 2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*.
+        var lines = ocr.ReadLines(
             new RegionConfig { Left = region[0], Top = region[1], Width = region[2], Height = region[3] },
-            3, null));
+            3, null);
+        rate = FeederEta.ParseRate(lines);
+        return FeederEta.Parse(lines);
     }
 
     /// <summary>How many food items are left in a row, read off the counts the game draws on each of
@@ -1503,7 +1560,7 @@ public sealed class PetTool : ToolBase
     /// different times and one timer cannot serve both.</summary>
     private double CycleMinutesFor(PetSlotConfig row)
     {
-        var full = _cfg.Pet.LoadMinutesFor(row);
+        var full = LoadMinutesFor(row);
         if (full <= 0) return 60;   // a broken rate must not spin the loop
         return Math.Max(5, full + WaitAfterEmptyMinutes);
     }

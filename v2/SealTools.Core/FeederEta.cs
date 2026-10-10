@@ -63,6 +63,49 @@ public static class FeederEta
             : null;
     }
 
+    /// <summary>`每1分 攝取3個` — the game's own statement of the FEEDING RATE, and the line the
+    /// player pointed at when they explained that the rate follows the pets' feeding stage
+    /// (2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*).</summary>
+    private static readonly Regex RateLine = new(
+        @"每\s*(\d{1,3})\s*分[^\d]{0,8}(\d{1,4})\s*[個个]", RegexOptions.Compiled);
+
+    /// <summary>Items per minute as the game states it, or null when the line is not there or does
+    /// not parse.
+    ///
+    /// WHY IT EXISTS, and why reading beats deducing: the player asked whether the tool could work
+    /// the rate out from the pets' stage ("possible we can deduce that?"). It does not have to — the
+    /// window prints the rate beside every row ("每1分 攝取3個"), so the row can carry its OWN rate
+    /// instead of one configured number for all four. That matters the moment two rows hold pets at
+    /// different feeding stages, which is exactly when a single constant starts mis-timing one of
+    /// them. A stage→rate table would have been a guess; this is a reading.
+    ///
+    /// Implausible values are rejected rather than clamped: a misread rate would silently rescale
+    /// every time this row computes, and the caller falls back to the configured number instead.</summary>
+    public static int? ParseRate(IEnumerable<string>? lines)
+    {
+        if (lines == null) return null;
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var match = RateLine.Match(line);
+            if (!match.Success) continue;
+            if (!int.TryParse(match.Groups[1].Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var minutes) || minutes <= 0) continue;
+            if (!int.TryParse(match.Groups[2].Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var items)) continue;
+
+            // Whole items per minute, 1..30: the config's own scale, and wide enough that no honest
+            // line is refused while a two-digit misread still is.
+            if (items <= 0 || items > 30 * minutes) continue;
+            var rate = (int)Math.Round(items / (double)minutes);
+            if (rate is >= 1 and <= 30) return rate;
+        }
+
+        return null;
+    }
+
     /// <summary>Reads the time line out of a row's text, or null when there is nothing to read.
     ///
     /// Null is an ordinary answer — an older window, a mangled read, a pet whose line says something

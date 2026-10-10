@@ -62,6 +62,24 @@ public class FeederEtaTests
         Assert.Equal(expected, FeederEta.LevelTarget(line));
     }
 
+    /// <summary>The feeding rate the window prints beside every row — the line that answers the
+    /// player's *"the reason why it is 3 food per pet is those pets are stage 6 pets"*, read per row
+    /// because rows may hold pets at different stages.</summary>
+    [Theory]
+    [InlineData("每1分 攝取3個", 3)]                    // the measured line, verbatim
+    [InlineData("每 1 分 攝取 5 個", 5)]
+    [InlineData("每2分 攝取6個", 3)]                    // "3 per minute", stated as 6 in 2
+    [InlineData("每1分攝取4个", 4)]                     // Simplified 个, no spaces
+    [InlineData("該欄位約27日9時51分16 秒後到期。", null)]
+    [InlineData("代養完成預計所需時間：約14分", null)]
+    [InlineData("到6為止预計所需時間：約19分", null)]
+    [InlineData("每1分 攝取300個", null)]               // implausible: rejected, not clamped
+    [InlineData("每0分 攝取3個", null)]
+    public void TheRateLineIsReadPerRow(string line, int? expected)
+    {
+        Assert.Equal(expected, FeederEta.ParseRate(new[] { line }));
+    }
+
     /// <summary>THE TRAP: the food's shelf life carries a 約 and a number near a 分, and reading it as a
     /// countdown would schedule a row twenty-seven days out.</summary>
     [Fact]

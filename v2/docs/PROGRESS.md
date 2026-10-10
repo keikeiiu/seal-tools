@@ -13,6 +13,36 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (83) — the feeding rate is read per row, from the game's own line
+
+**The player's point, in three messages:** *"the reason why it is 3 food per pet it is those pet is
+stage 6 pets"*, *"possible we can deduce that?"*, and — the one that settles the design — *"it is
+important as they may have different stage pet in the future."*
+
+**They do not have to be deduced, and reading is strictly better.** `AppConfig.ItemsPerMinute`'s own
+comment had already recorded the ground truth: the boarding window prints the rate beside every row
+(`每1分 攝取3個`) and *"a stage-7 row saying 4 is readable rather than a number this config is simply
+wrong about"* — written when the config was born, never wired up. It is wired now:
+
+- `FeederEta.ParseRate` reads `每N分 攝取M個` off the SAME OCR pass that reads the time line (one
+  region, one read), rejecting implausible values (1..30/min, whole numbers) rather than clamping —
+  a misread rate would silently rescale every time that row computes.
+- The pet tool keeps `_lastRate` per row and `RateFor(row)` resolves measured-first,
+  config-fallback. `ScheduleFor`, `CycleMinutesFor` and the reload fold's load arithmetic all go
+  through it, so one row cannot be timed at two different rates; a faster eater shortening the
+  fallback cycle is the safe direction.
+- The card shows the row's own `3/min (game line)` beside its stage, and a rate that disagrees with
+  the config is logged as evidence (`the game's own rate line says 4/min — the config says 3/min;
+  THIS ROW's arithmetic uses 4`).
+- `pet.items_per_minute` is documented everywhere as the FALLBACK it now is.
+
+**Owed, and asked of the player:** a **stage→rate table** would let the tool answer when the line is
+unreadable; only two data points exist (stage 6 → 3, and the comment's stage 7 → 4), and a guessed
+table is exactly what this repo refuses to ship. The loading is ready for it (`RateFor` is one place).
+
+**Verified.** 284 tests pass (nine new rate cases, including the measured line, the Simplified 个,
+and the two implausible-value rejections).
+
 ## 2026-10-11 (82) — the row is one line again, with the feeding-stage deduction on it
 
 **The player, twice over:** *"possible to simplify even more? → maybe just a deduced level 6 at the

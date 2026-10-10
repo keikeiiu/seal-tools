@@ -115,7 +115,7 @@ from the boarding state and the schedule on the **Pet** tab. **Under it the card
 row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
 
 ```
-· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  next 07:14 (in 2h 41m)
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → stage 9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
 · Row 2: waiting for a reload
 · Row 4: given up
 ```
@@ -130,6 +130,11 @@ deliberately drives nothing.
 **That number is the feeding stage, not the pet's rank or level** — the same scale the hover panel's
 `stage N` shows. It never describes how strong the pet is, and the card uses the word *stage* so the
 two cannot be confused.
+
+**`3/min (game line)` is the row's own feeding rate**, read from the window's own line
+(`每1分 攝取3個`) rather than assumed: the rate follows the pet's feeding stage, so rows holding pets
+at different stages eat at different speeds and each row's arithmetic uses its own number. The
+**Pet** tab's items-per-minute setting is only the fallback for a row whose line could not be read.
 
 A row that was given up on (three failures in a row) has no next time and says so.
 
