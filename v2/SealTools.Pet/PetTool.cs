@@ -535,8 +535,11 @@ public sealed class PetTool : ToolBase
                         // being fed, and previously any row reaching MaxFailures stopped everything.
                         if (failures[row] >= MaxFailures)
                         {
-                            Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
-                                "rows carry on");
+                            // The reason comes with the death, not only with the earlier strikes: a
+                            // row's give-up is the last thing anyone reads about it, and the card
+                            // that carried the reason is gone by then.
+                            Log($"  {NameOf(row)} given up on after {MaxFailures} failures — " +
+                                $"{result.Error} — the other rows carry on");
                             next.Remove(row);
                             continue;
                         }
@@ -1423,6 +1426,14 @@ public sealed class PetTool : ToolBase
                             "asked and a boarding may now be running with nothing in it. Stopping " +
                             "rather than clicking on: check the row in the game, and re-capture its " +
                             "empty-slot reference on Calibrate Pet if the slot is empty.";
+                    // THE ONE !ok PATH THAT USED TO LOG NOTHING, and it is the one that mattered
+                    // most: measured on 2026-10-11, 77 of the 131 in-visit failures in pet.log sat
+                    // between this press and the visit's own "failed inside the visit" line with no
+                    // reason anywhere — 57 of the 90 strikes that dropped a row. The error text went
+                    // only to the card, which is overwritten by the next line and gone when the tool
+                    // stops. Every other failure path here already logs its own reason; this one
+                    // said nothing, so in the log the press read as the last thing that happened.
+                    Log("  FAILED ending: " + error);
                     return false;
                 }
             }

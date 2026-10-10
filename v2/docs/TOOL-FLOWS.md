@@ -1259,7 +1259,8 @@ hotkey.*
   ┃       The whole reload is board writes (detail: AUDIT-PET-FLOW).
   ┃       └ cut by a stop ──► note "it may not have been fed — check it in
   ┃          game", give the game back, then rethrow
-  ┃ 6f  fold the results back, per row:
+  ┃ 6f  fold the results back, per row:   (every failure writes its reason to
+  ┃       pet.log, and a give-up writes the last reason with the row's death)
   ┃        Ok              ──► next load when the pet or the food runs out,
   ┃                            whichever comes first, plus the grace period
   ┃        NothingToBoard  ──► look again in 30 min — a WAIT, not a failure

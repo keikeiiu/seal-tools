@@ -13,6 +13,23 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (71) — every failure writes its reason, and a row's death carries the last one
+
+**From the same log reading as (69).** The plan's §3 second gap — "for some failures the log records
+no reason at all" — turned out to be the *dominant* case rather than a corner: **77 of the 131
+in-visit failures** had nothing between the action and the failure line. All 77 came through
+`ReloadRowInPlace`'s pet-did-not-come-back branch, the one `!ok` return there that never called
+`Log`. It printed to the card, which the next line overwrites and which is gone when the tool stops.
+
+- That branch now logs `FAILED ending: …`, the same shape as its four siblings (`FAILED placing the
+  pet`, `FAILED loading the food`, `FAILED ending` at the toggle, `FAILED starting`).
+- A give-up writes the **last reason with the death**: `Row 1 given up on after 3 failures —
+  <why> — the other rows carry on`. The rejection line is the last thing anyone reads about a row;
+  the card that carried its reason is long gone by then, and a dropped row is the shape of an unfed
+  pet.
+
+**Verified.** Pet project builds clean; 265 tests pass. Branch `feature/pet-flow`.
+
 ## 2026-10-11 (70) — the look defers when it loses the front; the close retries the X once
 
 **Two small fixes in the same family as (69), both from the same evidence.**
