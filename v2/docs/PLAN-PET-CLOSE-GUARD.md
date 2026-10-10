@@ -64,13 +64,19 @@ blind open.
 **Deliberate deviation from the winning proposal: the crop is learned at RUNTIME, not at calibration
 time.** The proposal cropped it when the player marks the X on Calibrate Pet; the judges made a
 mark-time validation mandatory (the tab cannot verify which of the two captures a mark sits on).
-Learning it instead from a window whose contents have just been READ removes the question: the
-capture is taken only when the read itself proved the window was up — an empty slot matched its own
-reference, a feeder count came back, or a time line parsed (`_windowProofSeen`). A crop taken on
-faith could be the game world, and a world crop *matches the world*, which would turn a closed window
-into a skipped open — the one direction this guard must never fail in. An existing reference that
-stops matching is replaced, from the same proven state, so a re-rendered X cannot kill the guard
-silently; every learn and every replacement is logged.
+Learning it instead from a window whose contents have just been READ removes the question. A crop
+taken on faith could be the game world, and a world crop *matches the world*, which would turn a
+closed window into a skipped open — the one direction this guard must never fail in.
+
+**The proof is deliberately narrow, and it is taken at the moment it happens** (tightened after the
+2026-10-11 adversarial review, which showed the first version could be satisfied by a reading of the
+game world): only three structures of the boarding window's own interior count — a slot that
+**matched its empty reference**; **digits** read off a feeder slot by the OCR (not the colour verdict
+"this cell has no food", which is a fact about a crop); and the game's own **completion-form** time
+line. The capture runs inside the read, the instant one of those lands, not after the remaining rows'
+OCR passes — a player can close the window at any moment, and this tool runs for days beside them. An
+existing reference that stops matching is replaced, from the same proven state, so a re-rendered X
+cannot kill the guard silently; every learn and every replacement is logged.
 
 **The probe** — `BoardingWindowLooksOpen`: park the cursor (the failed close leaves it beside the X,
 and a reference never contains the arrow — the same reason the bag scans park first), grab the same

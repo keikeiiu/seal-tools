@@ -13,6 +13,45 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (76) — the whole branch, adversarially reviewed; eleven defects fixed
+
+**Method.** Four reviewers took the branch apart by area (veto + schedule provenance; close guard;
+sweep; hand-off + foreground + docs), then two independent verifiers tried to REFUTE every finding —
+one by constructing the triggering state in the code, one by consequence and the project's own rules
+(*unknown keeps meaning act*; an unfed pet is the unrecoverable direction). **Both verifiers confirmed
+all fourteen findings**, and their suggested fixes agreed. Eleven distinct fixes landed (some findings
+were the same defect seen twice); the rest of the confirmed set was documentation wording.
+
+**The two that mattered, both in the close guard's provenance chain:**
+- **The window proof could be satisfied without the window.** `_windowProofSeen` accepted any
+  non-null feeder count — including the **colour-derived 0** ("this crop has no food in it", a fact
+  about a crop, producible by the game world) — and any parsed time line at any score. A failed open
+  plus a world read could therefore teach `close_button_png` from the world, and a world crop matches
+  the world: the one path that turns a closed window into a skipped open. The proof is now three
+  narrow window-interior structures only — an empty slot that **matched its reference**, **digits**
+  read by the OCR, and the **completion-form** time line — and the capture runs at the instant the
+  proof lands, not after the remaining rows' OCR passes (a player can close the window meanwhile).
+  `ReadEta` also gained the foreground gate every other screen read had, for the same reason.
+- **The front guard went stale across the gate wait.** `GameIsInFront()` was checked *before*
+  `ClaimGame`, which can spend hours waiting for another tool — so the front at the moment the gate
+  was granted was untested, and the look's first two clicks could land on whatever took it. Both call
+  sites now re-check after the claim (the look gives the gate back and waits again; the loop defers
+  the batch five minutes, releasing the gate).
+
+**The rest.** The may-be-open belief is written the moment the feed-icon click is sent, not at the
+end of the open's tail (a stop or a kill in between left the window on screen with the belief false).
+The fallback sweep can now fire on an empty candidate list — the early return that used to skip it
+meant a queue-without-return-slot config never re-swept for a just-returned pet, which is the one
+case the fallback exists for. The per-use verification parks the cursor first (the arrow in the crop
+could score a live cell as gone). The feeder-counts read re-checks the front **per slot** and
+discards the whole reading if it ever fails. The success beep no longer plays for a visit that acted
+on nothing, the "every due row is still fed" line is no longer written when a row was never judged,
+and the look's hand-off no longer pays §4.2's redundant second `ReadRows` — the look hands its own
+reading to `ReadAndReload`.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The review's own record: the two verifiers'
+counterexample and invariant passes, both confirming this set and nothing else.
+
 ## 2026-10-11 (75) — the look and the first visit share one window
 
 **PLAN-PET-FLOW §8 step 4, the last of the four** (§4.2). The plan's own words: *"Two complete

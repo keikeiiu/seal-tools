@@ -1327,7 +1327,7 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | `SleepUntil` | Cancelled during the wait? | break | compute the due batch |
 | batch | Does the batch hold any row? | visit them | `batch = [soonest]` |
 | front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
-| `OpenBoarding` | Does the run believe a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | probe it anyway, then click exactly as today (no reference, no match, or unreadable = the old way) |
+| `OpenBoarding` | Does the run **believe** a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | **no probe at all** — click exactly as today. (With the belief standing, a missing reference, a non-match or an unreadable probe also clicks as today.) |
 | `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
 | per-row front check | Still in front, mid-visit? | consider the veto, then reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
 | veto (in `Visit`) | Does the fresh read show food SEEN and more than `VetoMarginMinutes` (30) ahead? | **skip** the reload — the fold-back writes the fresh next, and the row keeps its strikes | act; `pet.log` records which gate said so (source, minutes left) |
