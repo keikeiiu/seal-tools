@@ -13,6 +13,65 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (78) — the open is confirmed, and the slot read stops believing the world
+
+**The player found the hole the front guard does not cover:** *"in some cases, the first click may
+fail and cause the breeding window not open."* With the start-wait gone (entry 77), the look's first
+click both focuses the game and presses 目錄 — but a click that misses leaves the window closed while
+everything downstream believes it is looking at rows. And this state is **invisible to the front
+gates**: the click focused the game, so the game IS in front; the pixels are just the world. The
+measured signature is identical to a covered window — slots "occupied by 1.000", counts 0 or
+unreadable — and it ends the same way: the end toggle pressed at the game world, 57 strikes. The
+04:05 live run on the new build is the proof that both states exist: it read four rows cleanly AND
+logged `learning the boarding X's reference from this open window` — the probe's reference is now
+real, so it can answer.
+
+**Two guards, both positive-only, neither able to silence a run:**
+
+- **Confirm the open** (`OpenBoarding`, after the clicks): the X's learned reference answers whether
+  the window came up. A positive "the X is not there" **re-opens once**; unknown carries on as
+  always. A second failure is only **logged loudly** and the reads decide — failing the open there
+  would let a stale reference kill every future open (no successful read, so no re-learn, forever),
+  and a run that stops feeding is the outcome this tool refuses.
+- **The slot read stops believing the world** (`PetSlotNotTheWindowAbove = 0.85`): the measured bands
+  are empty slot **0.000**, pet in the slot **0.65-0.785**, and not-the-window **0.91 and up** (194
+  reads of exactly 1.000). 0.85 sits in the empty gap, and a reading inside it is now **unknown**
+  rather than "a pet is in the loader" — so a missed open turns into the existing unknown handling
+  (the end press passes its check, the bag scan finds nothing, the row takes a 30-minute wait)
+  instead of three strikes and a dropped row. The raw number is still logged, with a line saying
+  plainly that the pixels are not the boarding window.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Owed: the same watched run — this time to see
+`the boarding window is ALREADY OPEN` or `did NOT come up` lines, and the slot band's new log line,
+if either state ever occurs live.
+
+## 2026-10-11 (77) — the run start does not ask the player for focus
+
+**The player refused the start-wait, and the refusal is right.** The front guard's first version made
+the run WAIT until the game window was the focused window before the look. The player: *"your new
+action gives me a burden to click the game window, which I did not need before"* — and *"in practical
+usage, I would not let the launcher cover the needed click area."*
+
+**Two things were wrong with it.** (1) It contradicted a rule this codebase already settled: the gem
+flow's *"one click both focuses the game and presses the button; never add a focus-click"* — and the
+look's first click on 目錄 does exactly that, so a run started from the launcher has always focused
+the game on its own. (2) It gated on the wrong fact: **foreground is not the requirement — "the areas
+the tool touches are not covered" is.** A game sitting unfocused beside a browser satisfies the real
+requirement and fails the focus test, so the wait would defer work that has always succeeded.
+
+**The evidence agrees.** Of 131 `run started` lines in `pet.log`, **120 read their counts on the
+first try and ZERO showed the covered-window pattern** — the look has never once met a covered screen.
+The covered events (194 reads of exactly 1.000, the 57 strikes) all happened during VISITS, hours in.
+
+**What changed:** `WaitForGameInFront` is gone; the run claims the game and looks, as it always did.
+**What stayed:** the read gates (a covered screen answers "unknown" instead of a confident wrong
+answer), the per-slot front re-check in the feeder counts, and the visit-level deferral — the parts
+that act on the tool's own reads rather than on the player's attention. The visit deferral is kept
+deliberately even though its gate is the same coarse foreground test: it never asks the player for an
+action, it costs five minutes, and its measured case is the one that dropped rows.
+
+**Verified.** Pet + Tests build clean; 268 tests pass.
+
 ## 2026-10-11 (76) — the whole branch, adversarially reviewed; eleven defects fixed
 
 **Method.** Four reviewers took the branch apart by area (veto + schedule provenance; close guard;

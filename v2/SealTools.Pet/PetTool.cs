@@ -328,23 +328,21 @@ public sealed class PetTool : ToolBase
         //
         // It also opens the breeder and clicks, so it needs the game — and it is the first thing that
         // can be deferred. A run started while another tool is busy therefore starts and WAITS to look,
-        // rather than reporting rows it never read. The game window itself must also be up and IN
-        // FRONT first: a player who presses Start on the launcher has the LAUNCHER focused, and the
-        // look sent in that state clicks 目錄 into the launcher and reads its pixels as the feeder's
-        // counts — which is how a whole run's schedule came out of a covered screen on 2026-10-01.
-        // See WaitForGameInFront; it holds nothing while it waits, so the residency rule survives.
-        // WAIT FOR THE FRONT, THEN FOR THE GATE — AND IF THE FRONT WENT AWAY DURING THE GATE WAIT,
-        // give the gate back and wait again. The gate wait can last hours behind another tool, so a
-        // front check taken before it says nothing about the moment the gate is actually granted; the
-        // look's two clicks are the first thing that would land on whatever took the front.
-        var looked = false;
-        while (!looked)
-        {
-            if (!WaitForGameInFront(state, ct)) break;
-            if (!ClaimGame(state, () => $"Starting up — waiting for {GameOwner} before reading the rows", ct)) break;
-            if (GameIsInFront()) { looked = true; break; }
-            ReleaseGame();
-        }
+        // rather than reporting rows it never read.
+        //
+        // THE RUN START DOES NOT WAIT FOR THE GAME TO BE FOCUSED. The first version of the front
+        // guard did, and the player refused it with the reason that settles the question: *"your new
+        // action gives me a burden to click the game window, which I did not need before."* It is
+        // also the codebase's own rule — the gem flow settled it on 2026-09-18, "one click both
+        // focuses the game and presses the button; never add a focus-click" — and the look's first
+        // click on 目錄 does exactly that: it focuses the game on its way to the button.
+        //
+        // What the guard may never do is act on a screen the game is not the one SHOWING — and that
+        // is checked where it can actually hurt, per read and per visit, not by demanding focus
+        // first. The player keeps the areas the tool touches visible by habit; a check that insists
+        // on focus would defer visits that have always worked.
+        var looked = ClaimGame(state,
+            () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
 
         // The strike counts exist before the look now, because the look can reload: its hand-off
         // visits report outcomes the same way the loop's do.
@@ -740,40 +738,6 @@ public sealed class PetTool : ToolBase
             && WindowFinder.ForegroundWindow() == hwnd;
     }
 
-    /// <summary>Waits until the game window is open, restored and in front, and returns false when
-    /// the run was cancelled first. Called before the LOOK, which clicks 目錄 and reads screens — an
-    /// open sent while the game is covered clicks whatever is covering it.
-    ///
-    /// It holds NOTHING while it waits, and that is the point rather than politeness: the whole
-    /// reason the feeder can be resident is that it holds the gate only inside an operation (see
-    /// <see cref="ClaimGame"/>). A player who presses Start on the launcher has the LAUNCHER in
-    /// front, so this is the normal state for a second or two — and a launcher left in front for
-    /// longer must not block every other tool for the rest of the session.
-    ///
-    /// Never a silent wait: the card and the log say what it is waiting for, because a feeder that
-    /// is waiting for the game to be focused looks exactly like a broken one otherwise.</summary>
-    private bool WaitForGameInFront(ToolState state, CancellationToken ct)
-    {
-        var said = "";
-        while (!GameIsInFront())
-        {
-            if (ct.IsCancellationRequested) return false;
-
-            const string message =
-                "Waiting for the game window to be in front — click the game to let the feeder look.";
-            state.Message = message;
-            if (message != said)
-            {
-                said = message;
-                Console.WriteLine(message);
-                Log("  " + message);
-            }
-
-            if (!SleepUntil(DateTime.Now.AddSeconds(2), ct)) return false;
-        }
-        return true;
-    }
-
     /// <summary>Why a run can't start, or null when it can. Checked before anything moves, so a
     /// half-calibrated setup says what is missing instead of clicking into empty screen.</summary>
     private string? Ready(ToolState state)
@@ -1010,8 +974,7 @@ public sealed class PetTool : ToolBase
             // its slot is the first thing that would act on it.
             foreach (var row in _cfg.Pet.ActiveRows)
             {
-                var difference = PetSlotDifference(row);
-                var empty = difference is { } d ? d <= _cfg.Pet.PetSlotOccupiedAbove : (bool?)null;
+                var (difference, empty) = PetSlotState(row);
                 // The veto's first gate, taken from THIS read: a slot that came back as occupied
                 // above the threshold. A held ticked flag is not a reading, so this is false when
                 // the slot could not be read at all — unknown must keep meaning act.
@@ -1032,8 +995,13 @@ public sealed class PetTool : ToolBase
                         Log($"  {NameOf(row)}: a pet is in the loader");
                         break;
                     default:
-                        Log($"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
-                            $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
+                        Log(difference is { } band && band >= PetSlotNotTheWindowAbove
+                            ? $"  {NameOf(row)}: the slot's pixels are NOT the boarding window " +
+                              $"(they differ from its empty reference by {band:0.###}) — keeping the " +
+                              $"ticked state ({(row.BoardingRunning ? "boarding" : "not boarding")}). " +
+                              "Either the window did not open or something covers it"
+                            : $"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
+                              $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
                         break;
                 }
 
@@ -1903,6 +1871,41 @@ public sealed class PetTool : ToolBase
 
         // The bag comes up on whatever page it likes, so anything known about the page is now wrong.
         _bagPage = -1;
+
+        // ── CONFIRM THE WINDOW ACTUALLY CAME UP, AND RE-OPEN ONCE IF IT DID NOT ─────────────────
+        // The player's report, 2026-10-11: *"in some cases, the first click may fail and cause the
+        // breeding window not open."* A window that never opened is the DANGEROUS state rather than a
+        // missing feature — the reads then describe the game world while everything downstream
+        // believes it is looking at rows, and the signature is indistinguishable from a covered
+        // window in the log (slots "occupied by 1.000"; counts 0 or unreadable).
+        //
+        // The X's learned reference is the confirmation, and it is POSITIVE-ONLY in both directions:
+        // only a confident "something else is at that spot" retries (unknown — no reference learned
+        // yet, the game not in front, a grab that failed — carries on exactly as the open always
+        // did); and a second failure does NOT fail the open either. That second part is deliberate,
+        // and it is the failure direction talking: a stale reference would otherwise fail every open
+        // forever — no read would ever succeed, so nothing would ever re-learn it — and a run that
+        // silently stops feeding is the one outcome this tool refuses. Instead it says so loudly and
+        // the reads decide, with PetSlotState answering "unknown" for pixels that are not the window.
+        if (BoardingWindowLooksOpen(ser) == false)
+        {
+            Log("  the boarding window did NOT come up (the X is not where its reference says) — " +
+                "sending the two opening clicks again");
+            if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
+            SleepCheck(WindowWait);
+            if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+            SleepCheck(ActionWait);
+            if (!Enter(ser, out error)) return false;
+            SleepCheck(ActionWait);
+            _bagPage = -1;
+
+            if (BoardingWindowLooksOpen(ser) == false)
+                Log("  the boarding window STILL did not come up on the second try — carrying on and " +
+                    "letting the reads decide. Either it really is not up, or its reference is stale " +
+                    "and will be re-learned from the first read that proves the window");
+            else
+                Log("  the second attempt opened it");
+        }
         return true;
     }
 
@@ -2655,51 +2658,73 @@ public sealed class PetTool : ToolBase
         return found;
     }
 
+    /// <summary>Above this difference the slot is no longer showing the BOARDING WINDOW at all, and
+    /// the answer must be "unknown" rather than "occupied".
+    ///
+    /// MEASURED across `pet.log` (2026-10-11): an empty slot reads **0.000**, a pet in the slot reads
+    /// **0.65-0.785**, and everything that is not the window — the game world under a window that
+    /// never opened, or a covering window — reads **0.91 and up** (194 reads of exactly 1.000). The
+    /// stretch between 0.785 and 0.91 is empty, so 0.85 sits in it the same way MatchLimit and
+    /// VetoMarginMinutes do, by where the measurements left room.
+    ///
+    /// Why it matters as much as the fore gate does: a confident "a pet is in the loader" read off
+    /// pixels that are NOT the window is what pressed the end toggle at the game world — 57 of the
+    /// 90 strikes that dropped a row in the log. Both the covered case and the "the first click
+    /// missed and the window never opened" case produce that read.</summary>
+    private const double PetSlotNotTheWindowAbove = 0.85;
+
     /// <summary>Whether this row's pet slot in the boarding window still looks empty.
     ///
-    /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
-    /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
-    /// otherwise work.</summary>
-    private bool? PetSlotIsEmpty(PetSlotConfig row) => PetSlotDifference(row) is { } d
-        ? d <= _cfg.Pet.PetSlotOccupiedAbove
-        : null;
+    /// Null when it cannot be told — no reference captured, the region unreadable, or a difference in
+    /// the band that is not the window at all — which callers treat as "carry on" rather than
+    /// "failed": a missing check must not stop a run that would otherwise work.</summary>
+    private bool? PetSlotIsEmpty(PetSlotConfig row) => PetSlotState(row).Empty;
 
-    /// <summary>How unlike the row's empty reference its slot looks right now, or null when it cannot
-    /// be told — no reference captured, no window, an unreadable grab.
+    /// <summary>What the row's slot shows: how unlike its empty reference it looks right now, and what
+    /// that NUMBER MEANS — true (empty), false (a pet is in the loader) or null (cannot be told).
     ///
-    /// Split out from the yes/no so the NUMBER can be logged. A slot that reads "occupied" by a hair
-    /// is a reference that no longer matches its box — a re-drawn box leaves the crop stale, and the
-    /// comparison can only resize, not re-aim — and that failure is invisible in a boolean: it looks
-    /// exactly like a pet being there. It cost a live run an empty boarding started on a row with no
-    /// pet, which the game answered with an error box over everything.
+    /// One capture, two answers, because the number has to be logged while the decision is a
+    /// three-way one: the raw difference goes on the log line so a marginal reference can be seen
+    /// coming (a slot that reads "occupied" by a hair is a re-drawn box leaving a stale crop, and
+    /// that is invisible in a boolean — it looks exactly like a pet being there; it once started an
+    /// empty boarding, which the game answered with an error box over everything).
     ///
-    /// The threshold it is compared against is deliberately LOW, because the cost of the strict
-    /// direction is a retry and the cost of the loose direction is not noticing a pet that never went
-    /// in. PetSlotOccupiedAbove carries that reasoning.</summary>
-    private double? PetSlotDifference(PetSlotConfig row)
+    /// The three-way split itself is <see cref="PetSlotNotTheWindowAbove"/>: below it, the low
+    /// threshold <see cref="PetConfig.PetSlotOccupiedAbove"/> says empty-or-pet; above it, the pixels
+    /// are not the window and the answer is null. The cost of the strict direction here is a retry;
+    /// the cost of the loose direction is not noticing a pet that never went in.</summary>
+    private (double? Difference, bool? Empty) PetSlotState(PetSlotConfig row)
     {
-        if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
+        if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return (null, null);
 
         using var reference = IconMatch.FromBase64(row.PetSlotEmptyPng);
-        if (reference == null) return null;
+        if (reference == null) return (null, null);
 
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
-        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return (null, null);
 
         // THE FORE GATE, and it is the whole of the 2026-10-11 finding: without it a covered game
         // read as "a pet is in the loader" at exactly 1.000, because a screen grab of the covering
         // window shares no pixels with the empty-slot reference. See GameIsInFront for the numbers.
         // Unknown is the right answer — every caller keeps its previous belief on null, where a
         // confident "occupied" starts an end press at whatever is covering the game.
-        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+        if (WindowFinder.ForegroundWindow() != hwnd) return (null, null);
 
         var box = row.BoardingPetSlot!;
         var cap = ScreenCapture.CaptureClientRegion(hwnd,
             new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] });
-        if (cap == null) return null;
+        if (cap == null) return (null, null);
 
         using var now = cap.Image;
-        return IconMatch.DifferingFraction(reference, now);
+        var difference = IconMatch.DifferingFraction(reference, now);
+
+        bool? empty = difference switch
+        {
+            var d when d <= _cfg.Pet.PetSlotOccupiedAbove => true,
+            var d when d < PetSlotNotTheWindowAbove => false,
+            _ => null,   // not the boarding window — see PetSlotNotTheWindowAbove
+        };
+        return (difference, empty);
     }
 
     /// <summary>One transaction per stack, filling as many of the row's slots as it holds — see

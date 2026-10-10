@@ -1221,11 +1221,13 @@ hotkey.*
   2  load the table  pet-data.csv. A missing or unreadable table costs the
   │                  COMPUTED schedule and nothing else — the pets still feed.
   │
-  3  CLAIM the game  for the look — but only once the game window is open,
-  │                  restored and IN FRONT: every read is a screen grab, so a
-  │                  covered window answers about the cover, and the open
-  │                  clicks 目錄 at whatever is in front. So first WAIT for the
-  │                  game to be clicked (holding NOTHING — see below).
+  3  CLAIM the game  for the look. It does NOT wait for the game to be focused
+  │                  first: the look's own first click (目錄) focuses the game
+  │                  on its way to the button — the rule the gem flow settled,
+  │                  "one click both focuses the game and presses the button;
+  │                  never add a focus-click". What is guarded instead is the
+  │                  reads and each visit (see below), never the player's
+  │                  attention.
   │                  ◆ is it free?
   │                   no  ──► ANNOUNCE that it is waiting and SAY who for, then
   │                          poll until free — a holder that yields (the
@@ -1263,10 +1265,13 @@ hotkey.*
   ┃       abandons the rest of the visit and leaves those rows untouched.
   ┃ 6e  THE VISIT — open ONCE (the open first PROBES for an already-open
   ┃       window when the run believes one may be up — a close that could not
-  ┃       be sent; a match skips the 目錄 + feed-icon clicks) · read every row ·
-  ┃       reload each due row · close ONCE (the X is re-clicked once if the
-  ┃       cursor cannot reach it; a close that fails twice leaves the belief
-  ┃       standing and says the window may still be open).
+  ┃       be sent; a match skips the 目錄 + feed-icon clicks. Then it CONFIRMS
+  ┃       the window actually came up — a positive "the X is not there"
+  ┃       re-opens once; a second failure is only logged and the reads decide,
+  ┃       because a stale reference must never silence the runs) · read every
+  ┃       row · reload each due row · close ONCE (the X is re-clicked once if
+  ┃       the cursor cannot reach it; a close that fails twice leaves the
+  ┃       belief standing and says the window may still be open).
   ┃       ── THE SWEEP, taken by the visit's FIRST placement and shared by every
   ┃          row after it: one three-page bag sweep — the queued pet positions
   ┃          AND the food-cell re-mark (exactly once per visit, never skipped).
@@ -1320,7 +1325,6 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | Where | Question | True → | False → |
 |---|---|---|---|
 | `Ready` | Any precondition missing? | stop with a message naming it | run |
-| `WaitForGameInFront` | Game window open, restored and **in front**, for the look? | `ClaimGame` | wait, holding nothing, saying so on the card; cancelled → end the run |
 | the look's hand-off | Did the look's own reading put any row due NOW? | reload those rows in the look's open window (`ReadAndReload`) | close, give the game back, sleep to the soonest |
 | `ClaimGame` | Game free, for the look? | `InspectRows` | wait, saying who; cancelled → end the run |
 | loop | Any live rows left? | sleep to the soonest | "Every row has failed repeatedly" → break |
@@ -1328,6 +1332,8 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 | batch | Does the batch hold any row? | visit them | `batch = [soonest]` |
 | front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
 | `OpenBoarding` | Does the run **believe** a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | **no probe at all** — click exactly as today. (With the belief standing, a missing reference, a non-match or an unreadable probe also clicks as today.) |
+| `OpenBoarding` (after the clicks) | Did the window actually come up? (the same X probe) | proceed to read | **re-open once**; a second failure is logged loudly and the reads decide — never a hard failure, because a stale reference must not silence a run |
+| the slot read (every row, every read) | What is the slot showing? (difference from its empty reference) | ≤ 0.05 empty · below 0.85 a pet is in the loader | **≥ 0.85 means the pixels are not the window** — "unknown", never a confident "occupied" |
 | `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
 | per-row front check | Still in front, mid-visit? | consider the veto, then reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |
 | veto (in `Visit`) | Does the fresh read show food SEEN and more than `VetoMarginMinutes` (30) ahead? | **skip** the reload — the fold-back writes the fresh next, and the row keeps its strikes | act; `pet.log` records which gate said so (source, minutes left) |
@@ -1413,13 +1419,20 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
     window it already has open, through the same body a loop visit runs, folded back by the same
     code. Nothing due → close and sleep exactly as before.
 
-11. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
-   screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
-   `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
-   with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in
-   the same second is one covered window, not four pets. The slot read was the last screen read
-   without the foreground gate its two siblings had; the resulting silent end-press failures are
-   **57 of the 90 strikes** that dropped a row in the log. A visit whose window is not in front now
-   defers the rows five minutes without a click and without a failure — the failure direction is an
-   unfed pet, and a blind press at whatever window is in front can start a boarding with no pet in
-   it.
+11. **The reads and the visits refuse a covered game — but the run never asks the player for
+    focus.** Every read is a screen grab, so a covered window answers about whatever covers it.
+    Measured 2026-10-11 in `pet.log`: **194 slot reads of exactly 1.000** ("completely different
+    from the empty reference"), with the feeder counts unreadable in 104 of the reads that followed
+    one — four rows "occupied" in the same second is one covered window, not four pets. The slot
+    read was the last screen read without the front gate its two siblings had; the resulting silent
+    end-press failures are **57 of the 90 strikes** that dropped a row in the log. A visit whose
+    window is not in front defers the rows five minutes without a click and without a failure.
+
+    **The RUN START is deliberately not gated** — the first version was, and the player refused it:
+    *"your new action gives me a burden to click the game window, which I did not need before."*
+    The look's own first click (目錄) focuses the game on its way to the button, which is the rule
+    the gem flow settled — "one click both focuses the game and presses the button; never add a
+    focus-click" — and `pet.log` says the look has never once met a covered screen in 131 run
+    starts (120 read their counts on the first try; zero showed the covered pattern). What matters
+    is that the areas the tool touches are visible, which the player keeps true by habit; a check
+    that insists on focus would defer work that has always succeeded.

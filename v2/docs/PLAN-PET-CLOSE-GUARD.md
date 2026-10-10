@@ -85,6 +85,19 @@ unreadable path — no reference yet, no point, window gone, **game not in front
 returns null, and null means the old blind open. A positive match skips **only** the two clicks; the
 shared tail is unchanged, including the unconditional Enter that clears the out-of-food message.
 
+## The probe's second job: confirming an open actually happened
+
+Added the same day, from the player's report — *"in some cases, the first click may fail and cause
+the breeding window not open."* After the two opening clicks, `OpenBoarding` asks the probe whether
+the X is where its reference says. A **positive mismatch re-opens once**; unknown changes nothing; and
+a second failure is **logged loudly and carried on from**, never a hard failure — a stale reference
+would otherwise fail every open forever (no read would ever succeed, so nothing would ever re-learn
+it), and a run that silently stops feeding is the one outcome the tool refuses. The backstop for the
+window really not being up is the slot read: a difference from an empty slot's reference in the
+"not-the-window" band (≥ 0.85 — measured: pets read 0.65-0.785, everything else 0.91 up) now answers
+**unknown**, so the world below a window that never opened can no longer read as "a pet is in the
+loader" and press the end toggle at it.
+
 ## Accepted residual, and the hardening path
 
 A mis-marked X (the bag's X, or the game world) can, in the belief-gated states, match the live region
