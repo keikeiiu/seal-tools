@@ -335,10 +335,16 @@ public sealed class PetTool : ToolBase
         // See WaitForGameInFront; it holds nothing while it waits, so the residency rule survives.
         var looked = WaitForGameInFront(state, ct) &&
             ClaimGame(state, () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
+
+        // The strike counts exist before the look now, because the look can reload: its hand-off
+        // visits report outcomes the same way the loop's do.
+        var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
+        LookResult? look = null;
         Dictionary<PetSlotConfig, DateTime> next;
         try
         {
-            next = looked ? InspectRows(ser, state) : new Dictionary<PetSlotConfig, DateTime>();
+            look = looked ? InspectRows(ser, state, failures) : null;
+            next = look?.Next ?? new Dictionary<PetSlotConfig, DateTime>();
         }
         finally
         {
@@ -363,7 +369,14 @@ public sealed class PetTool : ToolBase
         // looking sat there claiming to be looking, for as long as its first reload was away. A
         // progress note is not a state, and on this tool the gap between the two is hours.
         state.Message = null;
-        var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
+
+        // ── THE LOOK'S HAND-OFF (§4.2) ──────────────────────────────────────────────────────────
+        // When the reading found rows due RIGHT NOW — the usual reason the tool was started — they
+        // were reloaded in the window the look already had open, and come back as a visit's results.
+        // They fold back exactly like a visit from the loop: one set of rules for the whole run. No
+        // beep here, deliberately: the run is still starting, and the original start was silent.
+        if (look?.Acted is { } first)
+            FoldBack(first, next, failures, state);
 
         // The last thing written about the game window not being in front. Held here so the wait
         // says it once per episode rather than once per retry — the same rule ClaimGame follows,
@@ -476,10 +489,7 @@ public sealed class PetTool : ToolBase
                     // re-feeds any row that still needs it (Run opens with InspectRows), so the
                     // SCHEDULE is never left wrong — it is the GAME that may be, and that is the one
                     // thing this process cannot put back.
-                    state.Message = batch.Count == 1
-                        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
-                        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
-                          + " — some may not have been fed. Check them in game.";
+                    state.Message = StoppedDuring(batch);
                     throw;
                 }
                 finally
@@ -487,75 +497,7 @@ public sealed class PetTool : ToolBase
                     ReleaseGame();
                 }
 
-                // THE RE-MEASURE, for every row the visit did NOT act on. A row it did reload gets its
-                // next from the reload below, because the reading was taken BEFORE the reload and
-                // describes the state that reload just replaced.
-                foreach (var (readRow, readNext) in visited.Schedule)
-                    if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
-                        next[readRow] = readNext.Next;
-
-                foreach (var (row, result) in visited.Rows)
-                {
-                    if (!next.ContainsKey(row)) continue;
-
-                    if (result.Ok)
-                    {
-                        failures[row] = 0;
-
-                        // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
-                        // There are TWO pet figures now and either may be absent — the estimate from
-                        // the panel the guard read at placement, and the game's own line read after the
-                        // pet was landed. The smaller wins; the food's is the full load just put in.
-                        // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
-                        // panel read, no row for that line at that stage, and an unreadable time line
-                        // all land here.
-                        var loaded = _cfg.Pet.LoadMinutesFor(row);
-                        var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
-                            ? Math.Min(a, b)
-                            : result.PetMinutes ?? result.LandedLineMinutes;
-                        var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
-                        next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
-
-                        state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
-                                        (fromPet is { } m && m < loaded
-                                            ? $" (the pet finishes first, in {m:0} min)"
-                                            : "");
-                        Console.WriteLine(state.Message);
-                    }
-                    else if (result.NothingToBoard)
-                    {
-                        // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
-                        // or none is in there. The player may simply not have another yet, and a row
-                        // must not be counted against, or dropped, for the state of the bag.
-                        failures[row] = 0;
-                        next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
-                        state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
-                        Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
-                            $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
-                        Console.WriteLine(state.Message);
-                    }
-                    else
-                    {
-                        failures[row]++;
-                        state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {result.Error}";
-                        Console.WriteLine(state.Message);
-
-                        // A row that keeps failing is DROPPED rather than taking the run with it. With
-                        // four rows that matters: one bad calibration should not stop the other three
-                        // being fed, and previously any row reaching MaxFailures stopped everything.
-                        if (failures[row] >= MaxFailures)
-                        {
-                            // The reason comes with the death, not only with the earlier strikes: a
-                            // row's give-up is the last thing anyone reads about it, and the card
-                            // that carried the reason is gone by then.
-                            Log($"  {NameOf(row)} given up on after {MaxFailures} failures — " +
-                                $"{result.Error} — the other rows carry on");
-                            next.Remove(row);
-                            continue;
-                        }
-                        next[row] = DateTime.Now.AddMinutes(RetryMinutes);
-                    }
-                }
+                FoldBack(visited, next, failures, state);
 
                 PublishSchedule();
                 if (visited.Rows.Values.All(r => r.Ok)) Beep(523, 100);
@@ -569,6 +511,97 @@ public sealed class PetTool : ToolBase
 
         Console.WriteLine("Pet tool done.");
         return 0;
+    }
+
+    /// <summary>The note left on the card when a stop lands inside a visit — the same words for the
+    /// loop's visits and for the look's hand-off, because the player's problem is the same either way:
+    /// the reload was cut and this process cannot put the game back.</summary>
+    private string StoppedDuring(List<PetSlotConfig> batch) => batch.Count == 1
+        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
+        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
+          + " — some may not have been fed. Check them in game.";
+
+    /// <summary>Folds one visit's results into the schedule and the strike counts — the row rules the
+    /// tool has always had, in one place because there are now TWO callers: the main loop, and the
+    /// look's hand-off at run start. They must not drift: a run whose first reload followed
+    /// different rules from its second would be a run nobody can reason about.
+    ///
+    /// THE RE-MEASURE comes first, for every row the visit did NOT act on — a row it did reload gets
+    /// its next below, because the reading was taken BEFORE the reload and describes the state that
+    /// reload just replaced. A vetoed row arrives here as exactly this: read, not acted on, so its
+    /// fresh next is what the veto read.
+    ///
+    /// The card's message and the log are written here too, because they are about the SAME facts the
+    /// schedule is made from, and a second copy is a second thing to keep in step.</summary>
+    private void FoldBack(VisitResult visited, Dictionary<PetSlotConfig, DateTime> next,
+        Dictionary<PetSlotConfig, int> failures, ToolState state)
+    {
+        foreach (var (readRow, readNext) in visited.Schedule)
+            if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
+                next[readRow] = readNext.Next;
+
+        foreach (var (row, result) in visited.Rows)
+        {
+            if (!next.ContainsKey(row)) continue;
+
+            if (result.Ok)
+            {
+                failures[row] = 0;
+
+                // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
+                // There are TWO pet figures now and either may be absent — the estimate from
+                // the panel the guard read at placement, and the game's own line read after the
+                // pet was landed. The smaller wins; the food's is the full load just put in.
+                // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
+                // panel read, no row for that line at that stage, and an unreadable time line
+                // all land here.
+                var loaded = _cfg.Pet.LoadMinutesFor(row);
+                var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
+                    ? Math.Min(a, b)
+                    : result.PetMinutes ?? result.LandedLineMinutes;
+                var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
+                next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
+
+                state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
+                                (fromPet is { } m && m < loaded
+                                    ? $" (the pet finishes first, in {m:0} min)"
+                                    : "");
+                Console.WriteLine(state.Message);
+            }
+            else if (result.NothingToBoard)
+            {
+                // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
+                // or none is in there. The player may simply not have another yet, and a row
+                // must not be counted against, or dropped, for the state of the bag.
+                failures[row] = 0;
+                next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
+                state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
+                Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
+                    $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
+                Console.WriteLine(state.Message);
+            }
+            else
+            {
+                failures[row]++;
+                state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {result.Error}";
+                Console.WriteLine(state.Message);
+
+                // A row that keeps failing is DROPPED rather than taking the run with it. With
+                // four rows that matters: one bad calibration should not stop the other three
+                // being fed, and previously any row reaching MaxFailures stopped everything.
+                if (failures[row] >= MaxFailures)
+                {
+                    // The reason comes with the death, not only with the earlier strikes: a
+                    // row's give-up is the last thing anyone reads about it, and the card
+                    // that carried the reason is gone by then.
+                    Log($"  {NameOf(row)} given up on after {MaxFailures} failures — " +
+                        $"{result.Error} — the other rows carry on");
+                    next.Remove(row);
+                    continue;
+                }
+                next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+            }
+        }
     }
 
     /// <summary>The owner name this tool claims the game under — the same as its tool id, so a card
@@ -809,15 +842,21 @@ public sealed class PetTool : ToolBase
     ///
     /// Only the first line is a proof, and that is enough: the rows it settles are exactly the ones a
     /// blind reload would have disturbed for no reason.</summary>
-    private Dictionary<PetSlotConfig, DateTime> InspectRows(SerialPort ser, ToolState state)
+    /// <summary>What the run's opening look produced: the schedule every row starts from, and — when
+    /// the reading found rows due right now — the results of reloading them in the window it already
+    /// had open, which the caller folds back exactly like a visit's (see <see cref="FoldBack"/>).</summary>
+    private sealed record LookResult(Dictionary<PetSlotConfig, DateTime> Next, VisitResult? Acted);
+
+    private LookResult InspectRows(SerialPort ser, ToolState state,
+        Dictionary<PetSlotConfig, int> failures)
     {
         state.Message = "Checking what is already running…";
-        Log("start: opening the breeder to check each row (no reload)");
+        Log("start: opening the breeder to check each row (reloading any row that is due now)");
 
         if (!OpenBoarding(ser, out var error))
         {
             Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            return UnreadSchedule();
+            return new LookResult(UnreadSchedule(), null);
         }
 
         // Every exit past this point closes the window — the look is a visit like any other.
@@ -838,13 +877,44 @@ public sealed class PetTool : ToolBase
                     $"in {RetryMinutes:0} min");
                 state.Message = "The game window left the front while reading the rows — " +
                                 $"trying again in {RetryMinutes:0} min.";
-                return DeferredSchedule();
+                return new LookResult(DeferredSchedule(), null);
             }
 
-            // The run's own schedule wants only the moment; the SOURCE stays inside the visit, where
+            // The run's own schedule wants only the moment; the SOURCE stays inside a visit, where
             // the veto reads it against the batch. Nothing outside a visit can cancel a reload, so
             // nothing outside one needs to know what a reading was worth.
-            return schedule.ToDictionary(kv => kv.Key, kv => kv.Value.Next);
+            var next = schedule.ToDictionary(kv => kv.Key, kv => kv.Value.Next);
+
+            // ── THE HAND-OFF (§4.2) ─────────────────────────────────────────────────────────────
+            // The look has just read every row — so it already knows whether any of them is due NOW,
+            // which is the usual reason the tool was started. It used to close this window, give the
+            // game back, and then immediately re-claim and re-open for the very row it had read, with
+            // a second ReadRows inside: two complete open/read/close cycles seconds apart. The rows
+            // due now are reloaded HERE instead, in this window, by the same code a loop visit runs.
+            var ordered = _cfg.Pet.ActiveRows.ToList();
+            var now = DateTime.Now;
+            var batch = next.Where(kv => kv.Value <= now)
+                            .Select(kv => kv.Key)
+                            .OrderBy(r => ordered.IndexOf(r))
+                            .ToList();
+            if (batch.Count == 0) return new LookResult(next, null);
+
+            Log($"look: {batch.Count} row(s) are due right now — reloading them in this same window " +
+                "(no close and reopen)");
+
+            VisitResult visited;
+            try
+            {
+                visited = ReadAndReload(ser, state, batch, failures);
+            }
+            catch (OperationCanceledException)
+            {
+                // The same note the main loop leaves, from the same words: a stop landed mid-reload
+                // and the game may be left half-done. The close still runs — this method's finally.
+                state.Message = StoppedDuring(batch);
+                throw;
+            }
+            return new LookResult(next, visited);
         }
         finally
         {
@@ -1385,12 +1455,6 @@ public sealed class PetTool : ToolBase
         Dictionary<PetSlotConfig, int> failures)
     {
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
-        var schedule = new Dictionary<PetSlotConfig, RowReading>();
-
-        // The bag every row of THIS visit works from — the sweep, its reason, and whether it has been
-        // taken. One per visit, dead with the frame (plan ⚑5).
-        var bag = new VisitBag();
-
         state.Message = batch.Count > 1
             ? $"Opening the breeder for {batch.Count} rows…"
             : $"{NameOf(batch[0])}: opening the boarding window…";
@@ -1400,17 +1464,45 @@ public sealed class PetTool : ToolBase
         if (!OpenBoarding(ser, out var openError))
         {
             Log("  FAILED opening: " + openError);
-            foreach (var row in batch) results[row] = new RowOutcome(false, openError, null, false);
+            var failed = new Dictionary<PetSlotConfig, RowOutcome>();
+            foreach (var row in batch) failed[row] = new RowOutcome(false, openError, null, false);
 
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
             // "assume a full load", turning one failed open into a run-wide loss of what was known.
-            return new VisitResult(results, new Dictionary<PetSlotConfig, RowReading>());
+            return new VisitResult(failed, new Dictionary<PetSlotConfig, RowReading>());
         }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
+        {
+            return ReadAndReload(ser, state, batch, failures);
+        }
+        finally
+        {
+            // Muted, for the same reason as the look path above: the window close is cleanup, and a
+            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
+            WithoutCancellation(() => CloseBoarding(ser));
+        }
+    }
+
+    /// <summary>Everything a visit does with the boarding window ALREADY OPEN: the reading that is
+    /// also the schedule, the veto, the row loop, and the second time-line pass. Split out of
+    /// <see cref="Visit"/> for one caller — the run's opening LOOK (see <see cref="InspectRows"/>):
+    /// when the look finds rows due right now, they are reloaded in the window it already has open,
+    /// and §4.2's waste (close, release, re-claim, reopen for the very row just read) is gone. It is
+    /// ONE body, so the look's reload and the loop's reload cannot drift apart.</summary>
+    private VisitResult ReadAndReload(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
+        Dictionary<PetSlotConfig, int> failures)
+    {
+        var results = new Dictionary<PetSlotConfig, RowOutcome>();
+        var schedule = new Dictionary<PetSlotConfig, RowReading>();
+
+        // The bag every row of THIS visit works from — the sweep, its reason, and whether it has been
+        // taken. One per visit, dead with the frame (plan ⚑5).
+        var bag = new VisitBag();
+
         {
             // READ FIRST, and read EVERYTHING — the due rows to act on, and the rest because this
             // reading is also what re-derives their next.
@@ -1512,12 +1604,6 @@ public sealed class PetTool : ToolBase
                 Log($"  {NameOf(row)}: finish line read on the second pass — {mins:0} min to go");
                 schedule[row] = current with { Next = candidate };
             }
-        }
-        finally
-        {
-            // Muted, for the same reason as the look path above: the window close is cleanup, and a
-            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
-            WithoutCancellation(() => CloseBoarding(ser));
         }
 
         return new VisitResult(results, schedule);

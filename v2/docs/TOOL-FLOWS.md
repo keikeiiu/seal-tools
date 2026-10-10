@@ -1241,6 +1241,11 @@ hotkey.*
   │                   └ a read that PROVED the window was up (an empty slot
   │                     matched, a count or a time line came back) teaches the
   │                     X's reference crop — the open probe's yardstick
+  │                   └ ANY ROW DUE NOW is reloaded in THIS window, by the same
+  │                     body a visit runs (6e) — the close/release/reopen pair
+  │                     for the row just read is gone. Nothing due ──► close as
+  │                     usual. Its results fold back exactly like a visit's
+  │                     (minus the beep: the run is still starting).
   │
   5  schedule       failures = 0 per row · publish the standing card line
   │
@@ -1316,6 +1321,7 @@ only sleeps. The complete action inventory is in `AUDIT-PET-FLOW.md` §2.
 |---|---|---|---|
 | `Ready` | Any precondition missing? | stop with a message naming it | run |
 | `WaitForGameInFront` | Game window open, restored and **in front**, for the look? | `ClaimGame` | wait, holding nothing, saying so on the card; cancelled → end the run |
+| the look's hand-off | Did the look's own reading put any row due NOW? | reload those rows in the look's open window (`ReadAndReload`) | close, give the game back, sleep to the soonest |
 | `ClaimGame` | Game free, for the look? | `InspectRows` | wait, saying who; cancelled → end the run |
 | loop | Any live rows left? | sleep to the soonest | "Every row has failed repeatedly" → break |
 | `SleepUntil` | Cancelled during the wait? | break | compute the due batch |
@@ -1400,7 +1406,14 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    skipped on a visit that acts — including for a setup with no pet queue but a food icon, which
    used to get no re-mark at all. See [PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
 
-10. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
+10. **The look and the first visit share one window.** A run started because a row is due used to
+    open the breeder for the look, close it, give the game back, and then re-claim and re-open for
+    the very row it had just read — two complete open/read/close cycles seconds apart, with a second
+    `ReadRows` inside. The look's own reading now picks the rows due NOW and reloads them in the
+    window it already has open, through the same body a loop visit runs, folded back by the same
+    code. Nothing due → close and sleep exactly as before.
+
+11. **The game window must be IN FRONT, and the tool now enforces it everywhere.** Every read is a
    screen grab, so a covered window answers about whatever covers it. Measured 2026-10-11 in
    `pet.log`: **194 slot reads of exactly 1.000** ("completely different from the empty reference"),
    with the feeder counts unreadable in 104 of the reads that followed one — four rows "occupied" in

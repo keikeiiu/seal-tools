@@ -13,6 +13,36 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (75) — the look and the first visit share one window
+
+**PLAN-PET-FLOW §8 step 4, the last of the four** (§4.2). The plan's own words: *"Two complete
+open/read/close cycles seconds apart, and one of the two `ReadRows` is redundant."*
+
+**What it was.** A run started because a row was due — the usual reason — looked once (open, read,
+close, release the game), then the loop immediately re-claimed the game and opened the same window
+again for the very row it had just read, with a second `ReadRows` inside. The plan's first draft
+claimed a measured open/close imbalance from `pet.log`; that arithmetic was withdrawn (the log spans
+restarts with different logging) and the waste was argued from the code. This entry's change removes
+it without needing the measurement.
+
+**What it is now.** The look's own reading picks the rows due NOW and reloads them in the window it
+already has open, through the same body a loop visit runs (`ReadAndReload` — extracted from `Visit`
+so the two cannot drift), folded back by the same code (`FoldBack` — extracted from the loop, because
+there are now two callers and a run whose first reload followed different rules from its second would
+be a run nobody can reason about). Nothing due → close, release, sleep, exactly as before. A stop
+mid-hand-off leaves the same "may not have been fed — check it in game" note, from the same words
+(`StoppedDuring`). The hand-off is deliberately silent: no beep, because the run is still starting
+and the original start was.
+
+**This also makes `RELOAD EVERY ROW ON START` do what PLAN-RELOAD-VISIT §5 says it is for** — every
+row due at once, on demand — now inside the look's own window rather than as a separate four-open
+sequence.
+
+**Verified.** 268 tests pass; Pet + Tests build clean. The whole four-step flow is now in, and what
+remains is what the plan says every step needs: **one watched live cycle** with `pet.log` open —
+which settles the close guard and the veto, and needs the bag to compact at least once to prove the
+sweep's re-verify rule.
+
 ## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
 
 **PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
