@@ -13,6 +13,22 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (87) — the count read walks a scale ladder (option 1 of 86, built)
+
+**The player chose option 1 and asked its cost first** — *"the effect would be we use more time on
+ocr?"* — so it was measured before it was written: one recognition on a real 40x60 crop, median of
+five, on this machine: **3x = 118 ms, 9x = 202 ms, 24x = 330 ms**. The ladder's first rung IS today's
+read, so a slot that reads pays exactly what it always did; only a failure walks the rest, and the
+whole ladder costs ~0.65 s against the old three same-scale attempts' ~0.33 s — with about one
+unreadable slot per look, ~0.3 s every few hours.
+
+**`CountReadUpscales = { 3, 9, 24 }`**, the three scales the corpus actually needed: the same probe
+shows a crisp `120` reading at 3x and at NOTHING else (9x and 24x return junk — so a good crop must
+never be pushed up the ladder, and never is), a reversed `108` needing 9x, and a `267` needing 24x.
+The same-scale retry of (85) is replaced by it; re-capture still happens per rung, so a transient
+frame is covered too. `FeederCount.Parse`'s >300 rejection and the between-rungs empty-slot colour
+check are unchanged — a reversed or garbled rung still becomes NO READING, never a confident number.
+
 ## 2026-10-11 (86) — the count read, characterised: the reader is knife-edge on these digits
 
 **Where this stands.** Entry 85 added a retry because one capture looked soft. The next live look

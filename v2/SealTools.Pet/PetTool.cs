@@ -1447,27 +1447,35 @@ public sealed class PetTool : ToolBase
     /// decoration: a 0 from the colour verdict "this cell has no food" is a fact about a crop and can
     /// be produced by the game world, while digits are the boarding window speaking — and only the
     /// latter may teach the X's reference crop (see <see cref="ProveWindow"/>).</summary>
-    /// <summary>How many times one slot's crop is read before the read is given up on. THREE, and the
-    /// failure it exists for is a CAPTURE rather than a calibration.
+    /// <summary>The upscales one slot's count is read at, in order, when the previous one came back
+    /// with nothing. THREE RUNGS, and they are MEASURED rungs rather than a retry loop.
     ///
-    /// MEASURED, 2026-10-11. A slot holding a legible **144** read as NOTHING at 04:42; seven minutes
-    /// later the SAME SLOT read **120 at 0.998**. The failed crop was kept and run offline through the
-    /// real recogniser at upscales 1, 2, 3, 4, 6 and 8 and every score gate down to 0.0 — it finds no
-    /// line in that image at all. Put side by side, the failed capture is visibly SOFT (the digits'
-    /// edges glow) where the good one is crisp: each slot is its own screen grab, and a grab can land
-    /// on a frame the compositor is still committing. An intermittent capture cannot be fixed by
-    /// aiming better — the rule every retry in this tool follows — so it is re-read, and the count
-    /// bounds it. The empty-slot colour check runs BETWEEN attempts, so a genuinely empty slot still
-    /// pays for one verdict and no retry.</summary>
-    private const int CountReadAttempts = 3;
+    /// The reader is KNIFE-EDGE on these digits, and the working scale is not the same for every
+    /// image: 2026-10-11, probed offline through the real recogniser over every saved crop — a crisp
+    /// `120` reads at 3× and at nothing else (9× and 24× return junk), a failed `108` reads as the
+    /// REVERSED `801` at 3× and correctly only at 9×, and a failed `267` reads only at 24×. Same
+    /// footprint, same digits, same edge energy in all of them; no single scale reads them all, and a
+    /// fixed retry at 3× (the previous version of this) could only ever catch a genuinely transient
+    /// frame.
+    ///
+    /// So the rungs are the three scales the corpus actually needed, and the FIRST one is today's
+    /// read — a successful slot pays exactly what it always did (~118 ms measured). Only a failure
+    /// walks the ladder, and the whole ladder costs ~0.65 s where the old three same-scale attempts
+    /// cost ~0.33 s; with about one unreadable slot per look, that is ~0.3 s every few hours.
+    ///
+    /// What survives every rung unchanged is the guard: `FeederCount.Parse` rejects anything above
+    /// 300, so a reversed or garbled read becomes NO READING rather than a confident wrong number.
+    /// The empty-slot colour check runs BETWEEN rungs, so a genuinely empty slot still pays for one
+    /// verdict and no ladder.</summary>
+    private static readonly int[] CountReadUpscales = { 3, 9, 24 };
 
     private (int? Count, bool FromOcr) FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         if (RegionFor(slotBox) is not { } region) return (null, false);
 
-        for (var attempt = 1; attempt <= CountReadAttempts; attempt++)
+        for (var attempt = 1; attempt <= CountReadUpscales.Length; attempt++)
         {
-            if (ReadStack(ocr, region) is { } count) return (count, true);
+            if (ReadStack(ocr, region, CountReadUpscales[attempt - 1]) is { } count) return (count, true);
 
             // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
             // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
@@ -1479,10 +1487,11 @@ public sealed class PetTool : ToolBase
             // it. See FeederCount.WarmFraction.
             if (SlotHasNoFood(region) is true) return (0, false);
 
-            if (attempt < CountReadAttempts)
+            if (attempt < CountReadUpscales.Length)
             {
-                Log($"  a slot with food read nothing (attempt {attempt} of {CountReadAttempts}) — " +
-                    "reading it again; a soft capture is the known cause");
+                Log($"  a slot with food read nothing at {CountReadUpscales[attempt - 1]}x " +
+                    $"(attempt {attempt} of {CountReadUpscales.Length}) — reading it again at " +
+                    $"{CountReadUpscales[attempt]}x");
                 SleepCheck(0.2);   // let the next frame commit before the next grab
             }
         }
@@ -1570,14 +1579,14 @@ public sealed class PetTool : ToolBase
     private List<int>? RegionFor(List<int>? slotBox) =>
         FeederLayout.ReadRegion(slotBox, _cfg.Pet.FeederCountLeftFraction);
 
-    /// <summary>One crop, read to a number.</summary>
-    private int? ReadStack(OcrEngine ocr, List<int> box)
+    /// <summary>One crop, read to a number at one upscale.</summary>
+    private int? ReadStack(OcrEngine ocr, List<int> box, int upscale)
     {
         var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
         // Scored, so the caller can pick the BEST line rather than the first survivor: this crop comes
         // back with the real count beside junk from the food icon, and which is which is the score.
         var min = _cfg.Pet.FeederCountMinScore;
-        return FeederCount.Parse(ocr.ReadLinesScored(region, 3, null, min), min);
+        return FeederCount.Parse(ocr.ReadLinesScored(region, upscale, null, min), min);
     }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
