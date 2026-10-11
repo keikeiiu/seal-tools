@@ -220,14 +220,6 @@ public sealed class PetTool : ToolBase
     /// per run rather than kept in memory for the life of the process.</summary>
     private IReadOnlyList<PetFeeding.Line> _feeding = Array.Empty<PetFeeding.Line>();
 
-    /// <summary>How many items each row's feeder last READ, or null when that row's counts could not
-    /// be read — the detail line under each row on the card (see <see cref="ToolState.Rows"/>). It is
-    /// the last reading and not a live figure: the tray drains continuously and nothing reads it
-    /// between visits, so the card shows it as the reading it is, beside when the row is next seen.
-    /// A row that is not boarding is read nothing and stores null — there is nothing in its feeder to
-    /// count.</summary>
-    private readonly Dictionary<PetSlotConfig, int?> _lastItems = new();
-
     /// <summary>The game's time line for a row, VERBATIM, from the last read — "到9為止预計所需時間：
     /// 約94分" and the like. Kept raw because it is a sentence rather than a number, and because the
     /// level form's meaning (the GROWTH the line counts to) is exactly what the player wants to see
@@ -617,7 +609,7 @@ public sealed class PetTool : ToolBase
                 VisitResult visited;
                 try
                 {
-                    visited = Visit(ser, state, batch, failures);
+                    visited = Visit(ser, state, batch, failures, next);
                 }
                 catch (OperationCanceledException)
                 {
@@ -724,7 +716,7 @@ public sealed class PetTool : ToolBase
                 failures[row] = 0;
                 next[row] = DateTime.Now.AddMinutes(RetryMinutes);
                 state.Message = $"{NameOf(row)} is waiting for the boarding window to open.";
-                Log($"  {NameOf(row)}: the boarding window would not open — nothing was attempted, " +
+                Log($"  {NameOf(row)}: the boarding window would not open — no reload was attempted, " +
                     $"so nothing is counted against the row; trying again in {RetryMinutes:0} min.");
                 Console.WriteLine(state.Message);
             }
@@ -1036,7 +1028,7 @@ public sealed class PetTool : ToolBase
             {
                 // The look's own reading is handed over: the window has not been touched since it was
                 // taken, so re-reading it would be §4.2's second `ReadRows` all over again.
-                visited = ReadAndReload(ser, state, batch, failures, schedule);
+                visited = ReadAndReload(ser, state, batch, failures, next, schedule);
             }
             catch (OperationCanceledException)
             {
@@ -1145,7 +1137,6 @@ public sealed class PetTool : ToolBase
                 // nothing loaded and will be filled in a moment anyway.
                 if (!row.BoardingRunning)
                 {
-                    _lastItems[row] = null;
                     _lastEtaLine[row] = null;
                     schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied };
                     continue;
@@ -1161,7 +1152,6 @@ public sealed class PetTool : ToolBase
                     Log($"  {NameOf(row)}: the game's own rate line says {gameRate}/min — the config " +
                         $"says {_cfg.Pet.ItemsPerMinute}/min; THIS ROW's arithmetic uses {gameRate}");
                 schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
-                _lastItems[row] = left;
                 _lastEtaLine[row] = eta?.Line;
 
                 // The other two proofs — see ProveWindow for why the set is this narrow.
@@ -1456,14 +1446,14 @@ public sealed class PetTool : ToolBase
     /// when BOTH return the same thing. That is not belt-and-braces: the measured failure of a
     /// slightly-wrong crop is a confident WRONG number — "300" came back as "0" at 0.56 and "84" as
     /// "4" at 0.89 — and clipping changes the answer between two crops while a genuine read does not.
-    /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.</summary>
-    /// <summary>One food slot's count, or null when it cannot be read.
+    /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.
     ///
-    /// ONE read of ONE crop, because that is what the measurements showed is needed: given the right
-    /// crop the count reads at 0.99-1.00 at every upscale. Two earlier revisions did more — four crops
-    /// with a majority vote, and before that a proportional fraction of the slot — and both were
-    /// machinery around a crop nobody had found yet. There is nothing to search for now: the crop is
-    /// four tenths of the way across each slot, computed from the slot itself.</summary>
+    /// ONE crop, four tenths of the way across the slot and computed from the slot itself — that is
+    /// settled (see <see cref="FeederLayout"/> for the four attempts it took). What the crop cannot
+    /// fix is the READER, which is knife-edge on these digits: **one crop is read at up to
+    /// <see cref="CountReadUpscales"/>.Length upscales** before the slot is given up on, because the
+    /// scale that reads a legible number is not the same for every capture (PROGRESS 86). The first
+    /// rung is the old single read, so a slot that reads pays exactly what it always did.</summary>
     /// <summary>The count, and whether it came from DIGITS the OCR actually read. The flag is not
     /// decoration: a 0 from the colour verdict "this cell has no food" is a fact about a crop and can
     /// be produced by the game world, while digits are the boarding window speaking — and only the
@@ -1487,15 +1477,31 @@ public sealed class PetTool : ToolBase
     /// What survives every rung unchanged is the guard: `FeederCount.Parse` rejects anything above
     /// 300, so a reversed or garbled read becomes NO READING rather than a confident wrong number.
     /// The empty-slot colour check runs BETWEEN rungs, so a genuinely empty slot still pays for one
-    /// verdict and no ladder.</summary>
-    private static readonly int[] CountReadUpscales = { 3, 9, 24 };
+    /// verdict and no ladder.
+    ///
+    /// PUBLIC so the launcher's Test read walks the SAME rungs: a diagnostic with its own copy of the
+    /// scale would report "(nothing)" for a slot the run reads fine, and the player would re-draw a
+    /// strip over a slot that was never broken — the same rule the MatchLimit comment states.</summary>
+    public static IReadOnlyList<int> CountReadUpscales { get; } = new[] { 3, 9, 24 };
 
     private (int? Count, bool FromOcr) FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
         if (RegionFor(slotBox) is not { } region) return (null, false);
 
-        for (var attempt = 1; attempt <= CountReadUpscales.Length; attempt++)
+        for (var attempt = 1; attempt <= CountReadUpscales.Count; attempt++)
         {
+            // THE FORE GATE, RE-CHECKED PER RUNG. Each rung is its own screen grab, and the ladder spends
+            // a second or more inside one slot — so a focus lost in between would otherwise let a rung
+            // OCR whatever window is in front and hand its digits back as this slot's count, which the
+            // visit then treats as FOOD EVIDENCE. The per-slot gate above cannot cover this: it ran
+            // before the first rung. A read that spans a focus loss is discarded whole, here as there.
+            if (attempt > 1 && !GameIsInFront())
+            {
+                Log("  the game window left the front while a slot was being re-read — this slot's " +
+                    "reading is discarded");
+                return (null, false);
+            }
+
             if (ReadStack(ocr, region, CountReadUpscales[attempt - 1]) is { } count) return (count, true);
 
             // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
@@ -1508,10 +1514,10 @@ public sealed class PetTool : ToolBase
             // it. See FeederCount.WarmFraction.
             if (SlotHasNoFood(region) is true) return (0, false);
 
-            if (attempt < CountReadUpscales.Length)
+            if (attempt < CountReadUpscales.Count)
             {
                 Log($"  a slot with food read nothing at {CountReadUpscales[attempt - 1]}x " +
-                    $"(attempt {attempt} of {CountReadUpscales.Length}) — reading it again at " +
+                    $"(attempt {attempt} of {CountReadUpscales.Count}) — reading it again at " +
                     $"{CountReadUpscales[attempt]}x");
                 SleepCheck(0.2);   // let the next frame commit before the next grab
             }
@@ -1653,9 +1659,11 @@ public sealed class PetTool : ToolBase
         // figure from the game at all — only the panel estimate, which a pet from the return slot may
         // not have. Null whenever the line was unreadable or said something other than a finish.
         double? LandedLineMinutes = null,
-        // Nothing was ATTEMPTED for this row — the boarding window would not come up, so not one
-        // click was sent. A wait, not a failure: there is nothing to retry in five minutes but the
-        // open, and a strike for a closed window would count against a row that was never touched.
+        // No RELOAD was attempted for this row — the boarding window would not come up, so the row's
+        // own steps (end, place, load, start) never ran. A wait, not a failure: a strike for a window
+        // that never opened would count against a row that was never touched. (The OPEN itself did
+        // click — twice, trying to bring the window up — which is why this says "no reload", not "no
+        // click".)
         bool Deferred = false);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
@@ -1673,7 +1681,7 @@ public sealed class PetTool : ToolBase
     /// A ROW THAT FAILS DOES NOT TAKE THE VISIT WITH IT. Each row is reported separately, the rest are
     /// still attempted, and the window closes once at the end either way.</summary>
     private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
-        Dictionary<PetSlotConfig, int> failures)
+        Dictionary<PetSlotConfig, int> failures, Dictionary<PetSlotConfig, DateTime> next)
     {
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
         state.Message = batch.Count > 1
@@ -1699,7 +1707,7 @@ public sealed class PetTool : ToolBase
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
-            return ReadAndReload(ser, state, batch, failures);
+            return ReadAndReload(ser, state, batch, failures, next);
         }
         finally
         {
@@ -1720,7 +1728,7 @@ public sealed class PetTool : ToolBase
     /// the hand-off does not pay a second full OCR pass for a window nothing has touched in between.
     /// §4.2 lists that second `ReadRows` as half the waste; skipping it is the other half.</summary>
     private VisitResult ReadAndReload(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
-        Dictionary<PetSlotConfig, int> failures,
+        Dictionary<PetSlotConfig, int> failures, Dictionary<PetSlotConfig, DateTime> next,
         Dictionary<PetSlotConfig, RowReading>? alreadyRead = null)
     {
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
@@ -1752,6 +1760,13 @@ public sealed class PetTool : ToolBase
             foreach (var row in _cfg.Pet.ActiveRows)
             {
                 if (batch.Contains(row)) continue;
+
+                // A ROW THE RUN HAS GIVEN UP ON IS NOT REVIVED HERE. The fold drops a row after
+                // MaxFailures strikes (next.Remove), and that drop is what stops unbounded clicking on
+                // a row that keeps failing — so the join must not quietly undo it and run a full
+                // reload attempt whose outcome the fold then discards (the row is no longer in next).
+                // A fresh read saying "due now" is not new evidence about a row the run already judged.
+                if (!next.ContainsKey(row)) continue;
                 if (!schedule.TryGetValue(row, out var reading) || reading.Next > DateTime.Now) continue;
 
                 batch.Add(row);
@@ -2017,6 +2032,14 @@ public sealed class PetTool : ToolBase
                     (landed is null
                         ? "nothing"
                         : $"{landed.Line}  ({(landed.IsCompletion ? "COMPLETION — drives a schedule" : "level form — drives nothing by design")})"));
+
+                // AND THE ROW'S STORED LINE AND RATE ARE REFRESHED FROM THIS READ, because everything
+                // stored before it describes the pet that was just taken OUT. The card's `→ +N` and
+                // RateFor were both showing the PREVIOUS boarding's numbers after a reload — a row
+                // whose new pet is at another stage would then be timed at the old pet's rate. This
+                // read exists for exactly this moment (the landed pet's own line), so it feeds both.
+                _lastEtaLine[row] = landed?.Line;
+                _lastRate[row] = FeederEta.ParseRate(raw);
             }
             catch (Exception ex)
             {
@@ -2095,13 +2118,13 @@ public sealed class PetTool : ToolBase
         // window in the log (slots "occupied by 1.000"; counts 0 or unreadable).
         //
         // The X's learned reference is the confirmation, and it is POSITIVE-ONLY in both directions:
-        // only a confident "something else is at that spot" retries (unknown — no reference learned
-        // yet, the game not in front, a grab that failed — carries on exactly as the open always
-        // did); and a second failure does NOT fail the open either. That second part is deliberate,
-        // and it is the failure direction talking: a stale reference would otherwise fail every open
-        // forever — no read would ever succeed, so nothing would ever re-learn it — and a run that
-        // silently stops feeding is the one outcome this tool refuses. Instead it says so loudly and
-        // the reads decide, with PetSlotState answering "unknown" for pixels that are not the window.
+        // only a confident "something else is at that spot" retries; unknown — no reference learned
+        // yet, the game not in front, a grab that failed — carries on exactly as the open always did.
+        // A second positive failure DEFERS the visit (see below), and the reference it may be stale
+        // against is thrown away on the second such open in a row, so a dead crop cannot gate the run
+        // for ever. (SUPERSEDED 2026-10-11, review 2: the first version carried on into the reads
+        // here, "letting them decide" — the 13:56 live incident showed what the reads then describe,
+        // which is the world.)
         if (BoardingWindowLooksOpen(ser) == false)
         {
             Log("  the boarding window did NOT come up (the X is not where its reference says) — " +
@@ -2139,7 +2162,7 @@ public sealed class PetTool : ToolBase
                 }
 
                 error = "the boarding window did not come up (the X never appeared) after two tries — " +
-                        "nothing was clicked into it and the rows keep their place";
+                        "no reload was attempted and the rows keep their place";
                 unconfirmed = true;
                 return false;
             }

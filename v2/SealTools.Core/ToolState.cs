@@ -65,10 +65,11 @@ public sealed class ToolState
 
 /// <summary>One row of a tool's standing plan — the pet feeder's four breeding rows.
 ///
-/// <paramref name="Status"/> is the short state word the card shows ("boarding", "not boarding",
-/// "given up"); <paramref name="Detail"/> is the last reading about that row (the pet it boarded and
-/// its stage, and — when the game's own line names one — the **feeding** stage that line says it is
-/// heading for, as `→ stage N`; that is the 代養 stage, never the pet's rank or level);
-/// <paramref name="NextAt"/> is when this row next needs attention, or null when it never will again
-/// (a row that was dropped).</summary>
+/// <paramref name="Status"/> is the short state word the card shows — `boarding`, `waiting for a
+/// reload`, or `given up` (the last only when there is no next at all); <paramref name="Detail"/> is
+/// the pet the row boarded when that is known — its species from the queue entry's preset, the hover
+/// panel's `stage N, +N, N%`, the row's own feeding rate when the game's line stated one
+/// (`N/min (game line)`), and the 餵養值/growth the game's time line counts to as `→ +N` (the GROWTH,
+/// +0 … +9 — never the stage, and never the pet's rank or level); <paramref name="NextAt"/> is when
+/// this row next needs attention, or null when it never will again (a row that was dropped).</summary>
 public sealed record ToolRowState(string Name, string Status, string? Detail, DateTime? NextAt);

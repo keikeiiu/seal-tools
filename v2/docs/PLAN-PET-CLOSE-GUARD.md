@@ -87,6 +87,13 @@ shared tail is unchanged, including the unconditional Enter that clears the out-
 
 ## The probe's second job: confirming an open actually happened
 
+> **SUPERSEDED 2026-10-11 (PROGRESS 88, review 2).** The paragraph below says a second unconfirmed
+> open is "logged loudly and carried on from". The live 13:56/15:09 incident showed what "carried on"
+> means when the window really is closed — the reads describe the game world and the reload presses
+> its buttons at it — so the shipped behaviour is now a **deferred visit** (no reload attempted, no
+> strike), with the X's reference thrown away after two consecutive unconfirmed opens. The text below
+> is the original record and is left as it was.
+
 Added the same day, from the player's report — *"in some cases, the first click may fail and cause
 the breeding window not open."* After the two opening clicks, `OpenBoarding` asks the probe whether
 the X is where its reference says. A **positive mismatch re-opens once**; unknown changes nothing; and

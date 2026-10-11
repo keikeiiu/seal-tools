@@ -67,9 +67,19 @@ public static class FeederEta
 
     /// <summary>`每1分 攝取3個` — the game's own statement of the FEEDING RATE, and the line the
     /// player pointed at when they explained that the rate follows the pets' feeding stage
-    /// (2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*).</summary>
+    /// (2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*).
+    ///
+    /// MATCHED LOOSELY, because the live OCR mangles this line far worse than a dictionary word: the
+    /// forms actually in pet.log are `每1分最取适` (37 times — the ITEM COUNT IS GONE), `每分最取尚`,
+    /// `每1分瑜取3固` and `每1分输取3固`. So the ending is NOT matched at all — `個` arrives as `固`,
+    /// `适`, `尚` — and only the two NUMBERS are required: the minute base after 每, and the nearest
+    /// number after 分. When the item count did not survive there is nothing to read and this returns
+    /// null, which is the honest answer (the configured rate stands; it is the fallback).
+    ///
+    /// The gap is capped and excludes the time line's own characters, so a line where the OCR joined
+    /// the rate sentence to 「到7為止…約25分」 cannot read the 7 as an item count.</summary>
     private static readonly Regex RateLine = new(
-        @"每\s*(\d{1,3})\s*分[^\d]{0,8}(\d{1,4})\s*[個个]", RegexOptions.Compiled);
+        @"每\s*(\d{1,3})\s*分[^\d到約為止]{0,6}(\d{1,4})", RegexOptions.Compiled);
 
     /// <summary>Items per minute as the game states it, or null when the line is not there or does
     /// not parse.

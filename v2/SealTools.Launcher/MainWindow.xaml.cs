@@ -8377,16 +8377,31 @@ public partial class MainWindow : FluentWindow, IDisposable
                         {
                             var regionConfig = new RegionConfig
                             { Left = region[0], Top = region[1], Width = region[2], Height = region[3] };
-                            // Left behind so a blank result can be told from a wrong region by looking.
-                            var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
-                                "reads", $"{what.Replace(" ", "")}_{stamp}.png");
-                            var lines = await Task.Run(() => _service.ReadTextScored(
-                                regionConfig, 3, debugPath, pet.FeederCountMinScore));
-                            var shown = lines.Count == 0
-                                ? "(nothing)"
-                                : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                            agreed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
-                            reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}");
+                            // WALK THE SAME RUNGS A RUN WALKS (PetTool.CountReadUpscales): the reader
+                            // is knife-edge on these digits, so a slot that reads only at 9x or 24x is
+                            // read by the run and would otherwise show "(nothing)" here — sending the
+                            // player to re-draw a strip over a slot that was never broken.
+                            foreach (var rung in SealTools.Pet.PetTool.CountReadUpscales)
+                            {
+                                // Left behind so a blank result can be told from a wrong region by looking.
+                                var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
+                                    "reads", $"{what.Replace(" ", "")}_{stamp}_{rung}x.png");
+                                var lines = await Task.Run(() => _service.ReadTextScored(
+                                    regionConfig, rung, debugPath, pet.FeederCountMinScore));
+                                var shown = lines.Count == 0
+                                    ? "(nothing)"
+                                    : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
+                                agreed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
+
+                                // Stop at the first rung that reads — later rungs are what a run pays
+                                // only when the earlier ones failed.
+                                if (agreed is not null || rung == SealTools.Pet.PetTool.CountReadUpscales[PetTool.CountReadUpscales.Count - 1])
+                                {
+                                    reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}" +
+                                              (rung == 3 ? "" : $" (at {rung}x)"));
+                                    break;
+                                }
+                            }
                         }
                     }
                     catch (Exception ex)

@@ -13,7 +13,10 @@ namespace SealTools.Core;
 // left edges that reads correctly is about THREE PIXELS wide, and the player, asked twice to draw a box
 // into it, missed it twice. An earlier revision read four offsets and voted, which was papering over
 // a crop nobody had found yet: given the RIGHT crop the count reads at 0.99-1.00 at every upscale, so
-// the run needs one read and the searching belongs in finding the fraction.
+// the searching belongs in finding the fraction. What the crop alone cannot fix is the READER's
+// knife-edge on these digits (PROGRESS 86): the tool now reads one crop at up to three upscales before
+// giving up — see PetTool.CountReadUpscales — and the FIRST rung is this crop at the usual scale, so a
+// slot that reads pays exactly one read as before.
 //
 //   4  a strip across each row's food slots  ->  every slot box, divided by the row's stack count,
 //                                                and every count region derived inside them

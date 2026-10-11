@@ -108,7 +108,7 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 
 ```
 · Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → +9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
-· Row 2: waiting for a reload
+· Row 2: waiting for a reload  ·  next 19:40 (in 3h 12m)
 · Row 4: given up
 ```
 

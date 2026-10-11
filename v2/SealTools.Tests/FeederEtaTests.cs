@@ -67,12 +67,22 @@ public class FeederEtaTests
 
     /// <summary>The feeding rate the window prints beside every row — the line that answers the
     /// player's *"the reason why it is 3 food per pet is those pets are stage 6 pets"*, read per row
-    /// because rows may hold pets at different stages.</summary>
+    /// because rows may hold pets at different stages.
+    ///
+    /// THE STRINGS BELOW ARE THE LIVE OCR'S OWN OUTPUT, from pet.log 2026-10-11 — the first version of
+    /// the regex demanded 個/个 and matched NONE of them (the review's finding): the dominant form has
+    /// its item count eaten (`每1分最取适`, 37 occurrences), and the one that survives arrives as
+    /// `固`. So the ending is not matched at all; only the two numbers are.</summary>
     [Theory]
-    [InlineData("每1分 攝取3個", 3)]                    // the measured line, verbatim
+    [InlineData("每1分 攝取3個", 3)]                    // the clean form, from the 2026-09-21 measurement
     [InlineData("每 1 分 攝取 5 個", 5)]
     [InlineData("每2分 攝取6個", 3)]                    // "3 per minute", stated as 6 in 2
     [InlineData("每1分攝取4个", 4)]                     // Simplified 个, no spaces
+    [InlineData("每1分瑜取3固", 3)]                     // LIVE: 個 arrives as 固
+    [InlineData("每1分输取3固", 3)]
+    [InlineData("每1分最取适", null)]                   // LIVE and dominant: the item count is GONE
+    [InlineData("每分最取尚", null)]                    // and here the minute base too — nothing to read
+    [InlineData("每1分最取适 到7為止预計所需時間：約25分", null)]  // joined lines: the 7 is not an item count
     [InlineData("該欄位約27日9時51分16 秒後到期。", null)]
     [InlineData("代養完成預計所需時間：約14分", null)]
     [InlineData("到6為止预計所需時間：約19分", null)]

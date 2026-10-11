@@ -13,6 +13,42 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (89) — review 2: the per-row rate never fired, and the join could revive a dropped row
+
+Four reviewers over the ten commits since f40b3ab (the card, the why, the growth/stage correction, the
+per-row rate, the retry, the ladder, the join, the deferral), two independent verifiers on every
+finding. All but one confirmed; the one refuted was a rounding nit. The two that mattered:
+
+**The per-row rate feature never fired, silently.** `FeederEta.ParseRate` demanded an ending of 個/个 —
+and the live OCR never produces one. pet.log's actual forms: `每1分最取适` (37 times — **the item count
+is gone**), `每分最取尚`, and `每1分瑜取3固` / `每1分输取3固` (the digit survives, 個 arrives as 固). So
+every rung of the feature was inert and the configured rate answered everything. The regex now matches
+only the two numbers (`每N分` then the nearest number, gap capped and excluding the time line's own
+characters so a line the OCR joined to 「到7為止…約25分」 cannot read the 7 as a count), and the tests
+carry the live strings. The dominant form still returns null — its count is genuinely not in the
+image — which is the honest answer: the config's rate stands.
+
+**The join could revive a given-up row.** The join iterated every active row with no check that the
+run still tracks it, so a row `FoldBack` had dropped (after three strikes) could rejoin any later
+visit, run a full reload attempt, and have its outcome silently discarded — "given up" no longer
+stuck. The join now takes the run's `next` and skips rows that are not in it: a fresh read saying
+"due now" is not new evidence about a row the run already judged.
+
+**Also fixed:** the rate and the row's time line are now refreshed from the post-start read (they
+described the pet that was just taken OUT — a row whose new pet is at another stage was timed at the
+old pet's rate); the ladder re-checks the foreground before each rung (a focus lost mid-ladder could
+hand a covering window's digits back as a count, which the visit treats as food evidence); the
+launcher's Test read walks the same rungs (`CountReadUpscales` is public for it — a diagnostic with
+its own copy of the scale would report "(nothing)" for a slot the run reads fine); the Deferred
+wording says "no reload was attempted" rather than "no click was sent" (the open itself does click);
+the refuted "ONE read of ONE crop … reads at 0.99-1.00 at every upscale" summary over `FeederCountOf`
+is replaced; `_lastItems` (write-only since the why-line was removed) is gone; the `ToolRowState`
+contract, both guides' sample row, and the close-guard plan (a dated superseding note, not a rewrite)
+are corrected.
+
+**Verified.** 290 tests pass (five new rate cases on the live strings); Pet + Core build clean. The
+launcher-side change compiles in the next restart cycle.
+
 ## 2026-10-11 (88) — the reading can join a visit, and an unconfirmed open defers instead of blundering
 
 **Two live findings from the same afternoon, both from the player watching the tool.**
