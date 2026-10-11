@@ -1267,11 +1267,14 @@ hotkey.*
   ┃       window when the run believes one may be up — a close that could not
   ┃       be sent; a match skips the 目錄 + feed-icon clicks. Then it CONFIRMS
   ┃       the window actually came up — a positive "the X is not there"
-  ┃       re-opens once; a second failure is only logged and the reads decide,
-  ┃       because a stale reference must never silence the runs) · read every
-  ┃       row · reload each due row · close ONCE (the X is re-clicked once if
-  ┃       the cursor cannot reach it; a close that fails twice leaves the
-  ┃       belief standing and says the window may still be open).
+  ┃       re-opens once; a second failure DEFERS the visit (no click is sent
+  ┃       at a closed window, no strike) and clears the X's reference if that
+  ┃       happens twice running) · read every row — and a row the READING
+  ┃       finds due NOW joins this visit rather than getting a second open
+  ┃       and close of its own · reload each due row · close ONCE (the X is
+  ┃       re-clicked once if the cursor cannot reach it; a close that fails
+  ┃       twice leaves the belief standing and says the window may still be
+  ┃       open).
   ┃       ── THE SWEEP, taken by the visit's FIRST placement and shared by every
   ┃          row after it: one three-page bag sweep — the queued pet positions
   ┃          AND the food-cell re-mark (exactly once per visit, never skipped).
@@ -1346,7 +1349,8 @@ be read.
 | batch | Does the batch hold any row? | visit them | `batch = [soonest]` |
 | front check | Game window **in front**, for the visit? | claim the game and visit | defer the batch 5 min — not a failure; nothing was attempted |
 | `OpenBoarding` | Does the run **believe** a window may still be open? (a close whose click could not be sent, or a killed run) | probe the X against its learned reference: **match** → skip the 目錄 + feed-icon clicks | **no probe at all** — click exactly as today. (With the belief standing, a missing reference, a non-match or an unreadable probe also clicks as today.) |
-| `OpenBoarding` (after the clicks) | Did the window actually come up? (the same X probe) | proceed to read | **re-open once**; a second failure is logged loudly and the reads decide — never a hard failure, because a stale reference must not silence a run |
+| `OpenBoarding` (after the clicks) | Did the window actually come up? (the same X probe) | proceed to read | **re-open once**; a second failure DEFERS the visit — nothing is clicked at a closed window and no strike is earned — and a second unconfirmed open in a row throws the X's reference away so a stale crop cannot gate every open |
+| after `ReadRows` in a visit | Does the fresh read put any OTHER row due NOW? | it joins this visit (row order restored) | the batch stands as chosen |
 | the slot read (every row, every read) | What is the slot showing? (difference from its empty reference) | ≤ 0.05 empty · below 0.85 a pet is in the loader | **≥ 0.85 means the pixels are not the window** — "unknown", never a confident "occupied" |
 | `CloseBoarding` | Could the X be reached? | click sent → the belief is cleared | retry once; still unreachable → the belief stays, and the next open probes |
 | per-row front check | Still in front, mid-visit? | consider the veto, then reload that row | abandon the rest of the visit; the rows not reached keep their next and are untouched |

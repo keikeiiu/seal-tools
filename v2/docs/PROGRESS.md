@@ -13,6 +13,33 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-11 (88) — the reading can join a visit, and an unconfirmed open defers instead of blundering
+
+**Two live findings from the same afternoon, both from the player watching the tool.**
+
+**1. "Why does it close and reopen when several pets need reloading?"** — 15:34 on 2026-10-11, the log
+answers it: the visit belonged to Row 4, and that visit's OWN read found Row 2's slot EMPTY (its
+boarding had stopped, so Row 2 was due that instant). The batch is chosen from the schedule BEFORE the
+window opens, so the reading could only ever CANCEL an act, never join one — Row 2 therefore got a
+second visit 40 seconds later: open, read everything again, close. The player watched exactly that
+pair. **Fixed:** after `ReadRows`, any active row whose FRESH reading is due now joins the current
+visit (row order restored). Same rule as the batch itself, and the veto still runs per row, so a
+joining row gets no less scrutiny than one the schedule sent.
+
+**2. The open that never happened, and the world it acted on.** At 13:56 and 15:09 the confirmation
+probe said twice that the X was not there — the window genuinely never came up (the player had the
+game's own menu open, and 目錄 is a TOGGLE: the tool's click closed it). The first version's choice
+was "carry on and let the reads decide", and the reads did not save it: they described the game
+WORLD, the visit pressed the end toggle at the world, and two rows failed and burned strikes. **Fixed:**
+a doubly-unconfirmed open now **defers the visit** — not one click is sent, the rows keep their place,
+`Deferred` is a wait rather than a failure in the fold — and because a STALE reference would also
+answer "not there" while the window is genuinely open, **two consecutive unconfirmed opens throw the
+reference away** (`close_button_png` cleared, persisted): with none, the probe answers unknown and the
+open proceeds blind as it always did, and the first read that proves the window learns the crop again.
+The look path uses `DeferredSchedule` (+5 min) for the same case rather than the cycle.
+
+**Verified.** Pet + Tests build clean; 285 tests pass. Owed: the live run after the next restart.
+
 ## 2026-10-11 (87) — the count read walks a scale ladder (option 1 of 86, built)
 
 **The player chose option 1 and asked its cost first** — *"the effect would be we use more time on

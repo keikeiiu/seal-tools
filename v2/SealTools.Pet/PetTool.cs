@@ -172,6 +172,11 @@ public sealed class PetTool : ToolBase
     /// covers the seconds between one stack and the next.</summary>
     private int _bagPage = -1;
 
+    /// <summary>Consecutive opens whose confirmation said the window never came up. Two in a row
+    /// throws the X's reference away — see OpenBoarding — so a stale crop cannot gate every open for
+    /// ever.</summary>
+    private int _openUnconfirmed;
+
     /// <summary>Whether the read just taken saw the BOARDING WINDOW's own contents — an empty slot
     /// matching its reference, a feeder count read, or a time line parsed. Reset at the top of
     /// <see cref="ReadRows"/> and consumed right after it by <see cref="EnsureCloseReference"/>.
@@ -711,6 +716,18 @@ public sealed class PetTool : ToolBase
                                     : "");
                 Console.WriteLine(state.Message);
             }
+            else if (result.Deferred)
+            {
+                // NOT A FAILURE AND NOT A WAIT FOR A PET: the boarding window would not come up, so
+                // NOTHING was attempted for this row — not one click was sent. Five minutes, no
+                // strike, and the card says which of the two waits it is.
+                failures[row] = 0;
+                next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                state.Message = $"{NameOf(row)} is waiting for the boarding window to open.";
+                Log($"  {NameOf(row)}: the boarding window would not open — nothing was attempted, " +
+                    $"so nothing is counted against the row; trying again in {RetryMinutes:0} min.");
+                Console.WriteLine(state.Message);
+            }
             else if (result.NothingToBoard)
             {
                 // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
@@ -962,10 +979,14 @@ public sealed class PetTool : ToolBase
         state.Message = "Checking what is already running…";
         Log("start: opening the breeder to check each row (reloading any row that is due now)");
 
-        if (!OpenBoarding(ser, out var error))
+        if (!OpenBoarding(ser, out var error, out var unconfirmed))
         {
-            Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            return new LookResult(UnreadSchedule(), null);
+            // UNCONFIRMED is the window that never came up — five minutes and a fresh look, not the
+            // configured cycle, for the same reason the front-loss path uses it: the game is there
+            // and the difference may be as small as the player's own menu being open.
+            Log("  couldn't open the breeder to check: " + error +
+                (unconfirmed ? " — trying again shortly" : " — the ticked state is used"));
+            return new LookResult(unconfirmed ? DeferredSchedule() : UnreadSchedule(), null);
         }
 
         // Every exit past this point closes the window — the look is a visit like any other.
@@ -1631,7 +1652,11 @@ public sealed class PetTool : ToolBase
         // describes the pet that was just taken out, so without this a freshly landed pet has no
         // figure from the game at all — only the panel estimate, which a pet from the return slot may
         // not have. Null whenever the line was unreadable or said something other than a finish.
-        double? LandedLineMinutes = null);
+        double? LandedLineMinutes = null,
+        // Nothing was ATTEMPTED for this row — the boarding window would not come up, so not one
+        // click was sent. A wait, not a failure: there is nothing to retry in five minutes but the
+        // open, and a strike for a closed window would count against a row that was never touched.
+        bool Deferred = false);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
     /// are due — one at a time, in row order — and close once.
@@ -1657,11 +1682,12 @@ public sealed class PetTool : ToolBase
         Log($"visit: opening the breeder once for {batch.Count} row(s) — " +
             string.Join(", ", batch.Select(NameOf)));
 
-        if (!OpenBoarding(ser, out var openError))
+        if (!OpenBoarding(ser, out var openError, out var openUnconfirmed))
         {
-            Log("  FAILED opening: " + openError);
+            Log(openUnconfirmed ? "  the open was not confirmed: " + openError : "  FAILED opening: " + openError);
             var failed = new Dictionary<PetSlotConfig, RowOutcome>();
-            foreach (var row in batch) failed[row] = new RowOutcome(false, openError, null, false);
+            foreach (var row in batch)
+                failed[row] = new RowOutcome(false, openError, null, false, Deferred: openUnconfirmed);
 
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
@@ -1708,6 +1734,31 @@ public sealed class PetTool : ToolBase
             // READ FIRST, and read EVERYTHING — the due rows to act on, and the rest because this
             // reading is also what re-derives their next.
             schedule = alreadyRead ?? ReadRows(ser);
+
+            // ── THE READING CAN ADD ROWS TO THIS VISIT, NOT ONLY CANCEL THEM ────────────────────
+            // The batch is chosen from the SCHEDULE before the window opens, and the read is the
+            // authority on when a row is due — but until now it could only cancel an act, never join
+            // one. Live, 2026-10-11 15:34: the visit belonged to Row 4, and its own read found ROW 2's
+            // slot EMPTY — a boarding that had stopped, so Row 2 was due THAT INSTANT. The reading
+            // came one moment too late to be acted on, so Row 2 got its own visit 40 seconds later:
+            // open, read everything again, reload, close. That close-and-reopen pair is exactly what
+            // the player asked about.
+            //
+            // Same rule as the batch itself: strictly due NOW, from THIS read — a row joins because
+            // the fresh reading says it needs attention, which is the same evidence the veto trusts,
+            // pointed the other way. The veto still runs per row afterwards, so a joining row gets no
+            // less scrutiny than one the schedule sent.
+            var ordered = _cfg.Pet.ActiveRows.ToList();
+            foreach (var row in _cfg.Pet.ActiveRows)
+            {
+                if (batch.Contains(row)) continue;
+                if (!schedule.TryGetValue(row, out var reading) || reading.Next > DateTime.Now) continue;
+
+                batch.Add(row);
+                Log($"  {NameOf(row)} also reads due NOW — it joins this visit instead of getting a " +
+                    "second open and close of its own");
+            }
+            batch.Sort((a, b) => ordered.IndexOf(a).CompareTo(ordered.IndexOf(b)));
 
             // THE FRONT IS CHECKED AGAIN PER ROW, because the check in the main loop is a few clicks
             // and an OCR pass old by now — and every action from here presses keys and buttons at
@@ -1990,8 +2041,9 @@ public sealed class PetTool : ToolBase
     /// reason — a keystroke with no dialog in front of it is a no-op, where a missing keystroke in
     /// front of one is a reload that stops dead.
     /// </summary>
-    private bool OpenBoarding(SerialPort ser, out string error)
+    private bool OpenBoarding(SerialPort ser, out string error, out bool unconfirmed)
     {
+        unconfirmed = false;
         // THE ALREADY-OPEN PROBE, and it only runs when the tool has a reason to suspect the window
         // is still up: a close whose click could not be sent, or a run killed between open and close
         // (BoardingWindowMayBeOpen, persisted for exactly those two). The ordinary open pays nothing
@@ -2063,12 +2115,39 @@ public sealed class PetTool : ToolBase
             _bagPage = -1;
 
             if (BoardingWindowLooksOpen(ser) == false)
-                Log("  the boarding window STILL did not come up on the second try — carrying on and " +
-                    "letting the reads decide. Either it really is not up, or its reference is stale " +
-                    "and will be re-learned from the first read that proves the window");
-            else
-                Log("  the second attempt opened it");
+            {
+                // DEFER, DO NOT CARRY ON. The first version's choice was "carry on and let the reads
+                // decide" — and the live evidence refused it: at 13:56 on 2026-10-11 the window
+                // really was closed (the player had the game's own menu open, and 目錄 is a TOGGLE,
+                // so the tool's click closed it), the reads then described the game WORLD, and the
+                // visit pressed the end toggle at the world and failed two rows. Clicks sent at a
+                // closed window can only act on the world.
+                //
+                // AND THE REFERENCE MUST NOT GATE THE RUN FOR EVER: a STALE crop answers "not there"
+                // while the window is genuinely open, and deferring on that would starve the pets.
+                // Two consecutive unconfirmed opens therefore THROW THE REFERENCE AWAY — with none,
+                // the probe answers "unknown" and the open proceeds blind exactly as it always did,
+                // and the first read that proves the window learns the crop again.
+                if (++_openUnconfirmed >= 2)
+                {
+                    Log("  the open has gone unconfirmed twice in a row — CLEARING the X's reference " +
+                        "so a crop that may be stale cannot gate every open; the first proven read " +
+                        "will learn it again");
+                    _cfg.Pet.CloseButtonPng = null;
+                    _openUnconfirmed = 0;
+                    _persistState?.Invoke();
+                }
+
+                error = "the boarding window did not come up (the X never appeared) after two tries — " +
+                        "nothing was clicked into it and the rows keep their place";
+                unconfirmed = true;
+                return false;
+            }
+
+            Log("  the second attempt opened it");
         }
+
+        _openUnconfirmed = 0;   // a confirmed open clears the run of bad luck
         return true;
     }
 
