@@ -13,6 +13,38 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-13 (90) — the US client: a switch, and an empty dictionary that says why
+
+**The ask:** *"I want to be able to use some tools for the english version of client"*, clarified to the
+tools that read no text at all — gem, buy, sell, spammer, quest, the pet reads — with the switch on the
+Setup tab and no English dictionary needed. That last part the player worked out themselves: *"those
+tools don't really need another OCR?"* They do not, and PLAN-US-CLIENT says so in its own table: those
+tools match position, colour, keys and digits; the dictionary is the **Tuner's** vocabulary.
+
+**Built (PLAN-US-CLIENT §4.2, §4.3, §4.5):**
+- **`AppConfig.ApplyVariant`** — resolves a name to its title and dictionary file and sets both, or
+  changes nothing and says what the known names are. Tested for the known, the case-insensitive and the
+  unknown case.
+- **`LauncherService.SwitchVariant`** — resolves, then LOADS the dictionary, and only then commits and
+  saves (`SaveDefaults`); a failed load rolls the previous variant and title back. The order is the
+  safety: a config pointing at a variant whose dictionary is missing is not a degraded launcher, it is
+  one that throws in its constructor and never opens a window — the shape the swallowed-startup-error
+  note describes. The cached diagnostic OCR engine is dropped with it, since it holds the old words.
+- **The Setup tab's "Game client"** — one button per variant, built from `game.variants` rather than
+  hard-coded, with the active one marked and a status line that says the dictionary's entry count and
+  warns loudly when it is empty.
+- **`config/attributes.us.yaml` ships, EMPTY, with the reason in its header** — the loader refuses a
+  MISSING dictionary (right for the Tuner, wrong for everything else), so the file existing is what
+  lets the suite be pointed at the US client today. A test pins that it parses and stays empty: content
+  here is words the Tuner matches, and words written anywhere but from that client are what the repo's
+  own rule forbids.
+
+**Still not built: §4.4** — moving the per-level and time-line phrases into the dictionary, which is
+what the *Tuner* would need on the US client. Out of the chosen scope.
+
+**Verified.** 292 tests pass; Core and the test project build clean. The launcher-side changes compile in
+the next restart cycle.
+
 ## 2026-10-11 (89) — review 2: the per-row rate never fired, and the join could revive a dropped row
 
 Four reviewers over the ten commits since f40b3ab (the card, the why, the growth/stage correction, the

@@ -1501,6 +1501,60 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         ShowStored();
 
+        // ── GAME CLIENT ──────────────────────────────────────────────────────────────────────────
+        // The client switch lives here because Setup already owns "what am I pointed at", and this is
+        // the one thing a player changes when they move between clients. One button per known variant,
+        // built from the config rather than hard-coded, so adding a client is a block in defaults.yaml.
+        var clientStatus = new TextBlock
+        {
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        var clientButtons = new StackPanel { Orientation = Orientation.Horizontal };
+
+        void ShowClient()
+        {
+            var game = _service.Config.Game;
+            foreach (var child in clientButtons.Children)
+                if (child is UiButton b && b.Tag is string name)
+                    b.Appearance = string.Equals(name, game.Variant, StringComparison.OrdinalIgnoreCase)
+                        ? ControlAppearance.Primary
+                        : ControlAppearance.Secondary;
+
+            var active = game.Active;
+            clientStatus.Text = active is null
+                ? $"No variant set — the window title is \"{_service.Config.Window.Title}\"."
+                : $"Active: {game.Variant} — window \"{active.Title}\", dictionary {active.Attributes}, " +
+                  $"{_service.Attributes.Attributes.Count} attribute(s)." +
+                  (_service.Attributes.Attributes.Count == 0
+                      ? "  ⚠ The dictionary is EMPTY: the Tuner will match nothing until it is filled " +
+                        "from that client. Every other tool is unaffected."
+                      : "");
+        }
+
+        foreach (var (name, variant) in _service.Config.Game.Variants)
+        {
+            var button = MakeButton($"{name} — {variant.Title}", ControlAppearance.Secondary);
+            button.Tag = name;
+            button.Click += (_, _) =>
+            {
+                if (_service.SwitchVariant(name, out var message)) ShowClient();
+                else clientStatus.Text = "Not switched: " + message;
+            };
+            clientButtons.Children.Add(button);
+        }
+        ShowClient();
+
+        panel.Children.Add(Section("Game client",
+            Hint("Which game client the suite drives. The window title and the Tuner's wordings come from " +
+                 "this choice, so switching is one click instead of a file edit. A tool that is RUNNING " +
+                 "keeps the wordings it started with; its next Start picks the new ones up. Only the " +
+                 "Tuner reads text — the Gem Composer, Buy/Sell, Spammer, Quest and the pet reads work " +
+                 "on any client, which is why a US dictionary may stay empty while everything else runs."),
+            clientButtons,
+            clientStatus));
+
         return MakeTab("Setup", panel);
     }
 

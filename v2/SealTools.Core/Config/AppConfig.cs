@@ -23,6 +23,32 @@ public sealed class AppConfig
     public TooltipConfig Tooltip { get; set; } = new();
     public QuestConfig Quest { get; set; } = new();
     public GameConfig Game { get; set; } = new();
+
+    /// <summary>Points the config at another client: sets <see cref="Variant"/> and resolves
+    /// <c>window.title</c> from it exactly as a load does, returning the dictionary file that client
+    /// needs — or null with <paramref name="error"/> set when the name is not a known variant (in which
+    /// case NOTHING is changed).
+    ///
+    /// The caller commits around the dictionary load: the Setup tab's switch resolves first, loads the
+    /// dictionary second, and rolls back by re-applying the previous variant if that load fails — so an
+    /// install can never be left pointing at a client whose dictionary is missing, which is a launcher
+    /// that will not start at all.</summary>
+    public string? ApplyVariant(string name, out string? error)
+    {
+        error = null;
+        var wanted = (name ?? "").Trim();
+        if (!Game.Variants.TryGetValue(wanted, out var variant))
+        {
+            error = $"\"{wanted}\" is not a known game variant. Known: " +
+                    string.Join(", ", Game.Variants.Keys) + ".";
+            return null;
+        }
+
+        Game.Variant = wanted;
+        Window.Title = variant.Title;
+        return variant.Attributes;
+    }
+
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
@@ -71,6 +97,7 @@ public sealed class GameConfig
         string.IsNullOrWhiteSpace(Variant)
             ? null
             : Variants.TryGetValue(Variant.Trim(), out var v) ? v : null;
+
 }
 
 /// <summary>One client: the window to find, and the dictionary that client's text needs.</summary>

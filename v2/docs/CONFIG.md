@@ -11,7 +11,8 @@ Settings that are **the same on every machine and every user**. This file is che
 
 - `game.variant` + `game.variants.*` — **which client** (tw / us), each with its window title and its
   attribute dictionary. The variant **sets `window.title` at load**, so `window.title` is only the
-  source when no variant is set. See [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md)
+  source when no variant is set. Also switchable at runtime from the **Setup** tab, one button per
+  variant, which writes this key. See [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md)
 - `window.title`, `arduino.*` (VID/PID/baud)
 - `hotkeys.*`
 - `tuner.grade_order`, `tuner.target_grade`

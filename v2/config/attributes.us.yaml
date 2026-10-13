@@ -1,0 +1,19 @@
+# Seal Tools v2 — the US client's OCR attribute dictionary. DELIBERATELY EMPTY.
+#
+# WHY IT EXISTS AT ALL, EMPTY. `game.variant: us` names this file, and the loader REFUSES to start
+# when a variant's dictionary is missing — an absent dictionary matches nothing silently, which looks
+# exactly like the game having changed. That refusal is right for the Tuner and wrong for everything
+# else: the Gem Composer, Buy, Sell, Spammer, Quest and the pet reader match NO text at all (position,
+# colour, keys, and digits), so they run on the US client with this file empty. Shipping it lets the
+# suite be pointed at the US client today; filling it is what makes the TUNER work there.
+#
+# HOW TO FILL IT. `attributes.us.yaml.example` is the template and the method — do not write it from a
+# list. The TW dictionary next door was GROWN: the tuner logs every read (logs\ocr_log.jsonl plus the
+# pixels in logs\reads\), and each misread that mattered became a `variants` entry. English fails
+# differently from Chinese — l/I/1, O/0, rn/m — so start with the exact names, run the Tuner on the US
+# client, and add the garbled forms the log records.
+#
+# UNTIL IT IS FILLED: the Setup tab says the US dictionary is empty, and the Tuner will read every
+# attribute as "no attribute". Every other tool is unaffected.
+
+attributes: []

@@ -918,6 +918,24 @@ Records the display environment the calibration was measured in.
 | Stored calibration | The saved scale, client size and timestamp — or "none yet". |
 | ⚠ warning | Appears when your live client size differs from the stored one. **Recalibrate — do not trust the old coordinates.** |
 
+### Game client — the tw / us switch
+
+One button per known client (`tw — TW_LIVE`, `us — US_LIVE`), built from `game.variants` in
+`config/defaults.yaml`. Pressing one points the whole suite at that client: the window title and the
+Tuner's wordings come from the choice, and it is written to the config, so it survives a restart. A
+tool that is **running** keeps the wordings it started with; its next Start picks the new ones up.
+
+**Only the Tuner reads the game's text.** The Gem Composer, Buy/Sell, Spammer, Quest and the pet reads
+match no words at all — position, colour, keys, and digits — so they run on either client with no
+setup. That is why the US client's dictionary (`config/attributes.us.yaml`) **ships empty**: the
+switch will say so, the Tuner will match nothing until it is filled from that client, and everything
+else is unaffected.
+
+If a client's dictionary file is missing altogether, the switch **refuses** and says how to fix it —
+a config pointing at a client whose dictionary is absent is a launcher that will not start.
+
+---
+
 This is the tab that tells you whether an existing calibration still applies, which is the first thing
 to check on a machine you have not calibrated.
 

@@ -462,6 +462,62 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>The Setup tab's switch, as the config sees it: a known name sets the variant and the
+    /// resolved title and hands back the dictionary to load; an unknown name changes NOTHING and says
+    /// what the known ones are. The caller (LauncherService) loads that dictionary between the two, so
+    /// an install can never be left pointing at a client whose dictionary is missing — which would be a
+    /// launcher that throws in its constructor rather than one that starts degraded.</summary>
+    [Fact]
+    public void SelectingAVariantResolvesItAndHandsBackItsDictionary()
+    {
+        var cfg = new AppConfig();
+
+        var dictionary = cfg.ApplyVariant("us", out var error);
+
+        Assert.Null(error);
+        Assert.Equal("attributes.us.yaml", dictionary);
+        Assert.Equal("us", cfg.Game.Variant);
+        Assert.Equal("US_LIVE", cfg.Window.Title);
+
+        // Case is the variants map's business, not the player's — it is case-insensitive, so a
+        // hand-typed "TW" must work.
+        Assert.Equal("attributes.yaml", cfg.ApplyVariant("TW", out var error2));
+        Assert.Null(error2);
+        Assert.Equal("TW_LIVE", cfg.Window.Title);
+
+        // An unknown name leaves BOTH fields alone: nothing half-switched.
+        var title = cfg.Window.Title;
+        var variant = cfg.Game.Variant;
+        Assert.Null(cfg.ApplyVariant("nope", out var error3));
+        Assert.NotNull(error3);
+        Assert.Contains("nope", error3);
+        Assert.Contains("tw", error3);
+        Assert.Equal(title, cfg.Window.Title);
+        Assert.Equal(variant, cfg.Game.Variant);
+    }
+
+    /// <summary>The US dictionary ships EMPTY ON PURPOSE, and this pins it. The loader refuses a
+    /// MISSING dictionary (the test below), and the text-free tools — gem, buy, sell, spammer, quest,
+    /// and the pet reads — need the suite to be pointable at the US client today. It must not quietly
+    /// gain content, because content here is words the Tuner matches, and words written from anywhere
+    /// but that client are the thing the repo's own rule forbids.</summary>
+    [Fact]
+    public void TheShippedUsDictionaryExistsAndIsEmptyOnPurpose()
+    {
+        var path = "";
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "v2", "config", "attributes.us.yaml");
+            if (File.Exists(candidate)) { path = candidate; break; }
+        }
+
+        Assert.False(string.IsNullOrEmpty(path),
+            "v2/config/attributes.us.yaml was not found by walking up from " + AppContext.BaseDirectory);
+
+        var attrs = new ConfigLoader(Path.GetDirectoryName(path)!).LoadAttributes("attributes.us.yaml");
+        Assert.Empty(attrs.Attributes);
+    }
+
     /// <summary>A variant's dictionary that is MISSING must fail, and say what to do about it. The
     /// alternative — shipping an empty one — matches nothing, so every attribute reads as "no
     /// attribute": silent, and indistinguishable from the game having changed.</summary>
