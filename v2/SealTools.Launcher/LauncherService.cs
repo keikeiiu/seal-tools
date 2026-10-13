@@ -883,8 +883,11 @@ public sealed class LauncherService : IDisposable
         }
     }
 
-    /// <summary>Persists machine-specific coordinates (local.yaml) written by the calibrator.</summary>
-    public void SaveLocal(ConfigLoader.LocalOverrides local) => _loader.SaveLocal(local);
+    /// <summary>Applies a change to local.yaml: the loader re-reads the file, hands it to
+    /// <paramref name="mutate"/>, and writes it back — all under one lock. This is the only way
+    /// local.yaml is written, so a caller cannot hand over a snapshot it loaded earlier and delete a
+    /// block another writer saved in between (see ConfigLoader.UpdateLocal for what that cost).</summary>
+    public void UpdateLocal(Action<ConfigLoader.LocalOverrides> mutate) => _loader.UpdateLocal(mutate);
 
     /// <summary>Loads the machine-specific overlay, or null when local.yaml is absent.</summary>
     public ConfigLoader.LocalOverrides? LoadLocal() => _loader.LoadLocal();
@@ -950,10 +953,15 @@ public sealed class LauncherService : IDisposable
     {
         try
         {
-            var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet ??= new ConfigLoader.LocalPet();
-            ConfigLoader.LocalPet.ApplySession(local.Pet, Config.Pet);
-            _loader.SaveLocal(local);
+            // The read happens inside the gate now (UpdateLocal), which matters more here than
+            // anywhere else: this runs on the tool's thread while the WPF thread is saving a
+            // calibration, and the two used to race — this one saving a local.yaml it had loaded
+            // before the other's write, taking that calibration back out of the file.
+            _loader.UpdateLocal(local =>
+            {
+                local.Pet ??= new ConfigLoader.LocalPet();
+                ConfigLoader.LocalPet.ApplySession(local.Pet, Config.Pet);
+            });
         }
         catch (Exception ex)
         {

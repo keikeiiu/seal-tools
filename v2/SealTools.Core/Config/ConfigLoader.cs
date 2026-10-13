@@ -79,7 +79,11 @@ public sealed class ConfigLoader
         {
             var examplePath = PathOf("local.yaml.example");
             if (File.Exists(examplePath))
-                File.Copy(examplePath, localPath);
+                // Through the same writer as every other save, not File.Copy: a copy interrupted
+                // halfway leaves a TRUNCATED local.yaml that loads as a valid empty config, and the
+                // player then runs on v1 starting coordinates without an error anywhere. The atomic
+                // write leaves either the old state or the whole file.
+                WriteAtomically(localPath, File.ReadAllText(examplePath));
         }
 
         if (!File.Exists(localPath))
@@ -211,7 +215,7 @@ public sealed class ConfigLoader
             foreach (var (name, step) in defaults.Spammer.StartupStep)
                 StartupFor(defaults.Spammer, name).Step = step;
 
-        local.Spammer = new LocalSpammer
+        var adopted = new LocalSpammer
         {
             Active = defaults.Spammer.Active,
             Presets = defaults.Spammer.Presets,
@@ -222,7 +226,20 @@ public sealed class ConfigLoader
             Combos = defaults.Spammer.Combos,
             Startup = defaults.Spammer.Startup,
         };
-        SaveLocal(local);
+
+        // Written through the gated path like every other writer, and the guard is re-checked against
+        // the file as it stands NOW: another process can have adopted in the gap since this Load()
+        // read local.yaml, and writing ours blind would replace the winner's presets with our copy.
+        LocalSpammer? inFile = null;
+        UpdateLocal(fresh =>
+        {
+            fresh.Spammer ??= adopted;
+            inFile = fresh.Spammer;
+        });
+
+        // The session follows the file, so even the process that lost that race reads the presets
+        // that are actually stored rather than a second set of its own.
+        local.Spammer = inFile;
     }
 
     /// <summary>The startup block for a preset, created if it has none — so folding a LEGACY entry in
@@ -455,12 +472,28 @@ public sealed class ConfigLoader
         }
     }
 
-    // Atomic write so the launcher can save config while tools re-read it — and since 2026-10-03, so
-    // that two WRITERS cannot collide on one temp name. See WriteAtomically.
-    public void SaveLocal(LocalOverrides local)
+    /// <summary>Reads local.yaml, applies <paramref name="mutate"/> to it, and writes it back — all
+    /// under <see cref="SaveGate"/>, which is the entire point of the method.
+    ///
+    /// The gate used to cover only the file publish, so every caller loaded a snapshot and saved it
+    /// later with nothing held in between. The launcher's threads and the pet tool's PersistPetState
+    /// are independent, and whichever of two writers saved second wrote its own older snapshot back:
+    /// the other's block was silently DELETED from the file, and neither caller could tell. Reading
+    /// inside the lock makes that unrepresentable — a writer says WHAT to change, never what the whole
+    /// file should contain.
+    ///
+    /// The callback may therefore run more than once in a process's lifetime but never concurrently,
+    /// and it sees the file as it is now rather than as it was when some earlier Load() ran. A file
+    /// that cannot be PARSED fails the save rather than being overwritten — the read comes first, so
+    /// an unreadable local.yaml says so instead of being replaced by whatever was in memory.</summary>
+    public void UpdateLocal(Action<LocalOverrides> mutate)
     {
-        var path = PathOf("local.yaml");
-        WriteAtomically(path, LocalHeader + Serializer.Serialize(local));
+        lock (SaveGate)
+        {
+            var local = LoadLocal() ?? new LocalOverrides();
+            mutate(local);
+            WriteAtomically(PathOf("local.yaml"), LocalHeader + Serializer.Serialize(local));
+        }
     }
 
     // Re-serialize the portable sections to defaults.yaml. Machine-specific parts

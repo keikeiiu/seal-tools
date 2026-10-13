@@ -188,22 +188,20 @@ public class ConfigLoaderTests
     }
 
     [Fact]
-    public void SaveLocalPersistsTheCalibrationEnvironmentBlock()
+    public void UpdateLocalPersistsTheCalibrationEnvironmentBlock()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal()!;
-            local.Calibration = new CalibrationInfo
+            loader.UpdateLocal(local => local.Calibration = new CalibrationInfo
             {
                 DpiScale = 1.5,
                 MonitorDpi = 144,
                 Screen = new System.Collections.Generic.List<int> { 3840, 2160 },
                 ClientSize = new System.Collections.Generic.List<int> { 2865, 1789 },
                 MeasuredAt = "2026-09-09 21:00:00",
-            };
-            loader.SaveLocal(local);
+            });
 
             var reloaded = new ConfigLoader(dir).Load();
             Assert.Equal(1.5, reloaded.Calibration.DpiScale);
@@ -627,7 +625,8 @@ public class ConfigLoaderTests
             var cfg = loader.Load();
 
             loader.SaveDefaults(cfg);
-            loader.SaveLocal(loader.LoadLocal()!);
+            // A no-op change: the point is the header the write emits, not what it carries.
+            loader.UpdateLocal(_ => { });
 
             foreach (var name in new List<string> { "defaults.yaml", "local.yaml" })
             {
@@ -684,8 +683,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            loader.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = "red1",
                 GuardPx = 12,
@@ -704,8 +702,7 @@ public class ConfigLoaderTests
                         },
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -753,8 +750,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            loader.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = "a",
                 ActiveSequence = "nightly",
@@ -777,8 +773,7 @@ public class ConfigLoaderTests
                         },
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -816,8 +811,9 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            // One block, written three times with a different active sequence each time — through the
+            // loader's read-modify-write, the way the Quest tab writes it.
+            var questBlock = new ConfigLoader.LocalQuest
             {
                 Active = "a",
                 Presets = new Dictionary<string, QuestPreset>
@@ -831,17 +827,17 @@ public class ConfigLoaderTests
             };
 
             // Nothing chosen at all.
-            loader.SaveLocal(local);
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
 
             // A name nobody recognises.
-            local.Quest.ActiveSequence = "typo";
-            loader.SaveLocal(local);
+            questBlock.ActiveSequence = "typo";
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
 
             // And the real one resolves.
-            local.Quest.ActiveSequence = "nightly";
-            loader.SaveLocal(local);
+            questBlock.ActiveSequence = "nightly";
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.NotNull(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
         }
         finally
@@ -857,8 +853,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = new ConfigLoader.LocalPet
+            loader.UpdateLocal(local => local.Pet = new ConfigLoader.LocalPet
             {
                 MenuButton = new List<int> { 815, 1735 },
                 FeedIcon = new List<int> { 900, 1400 },
@@ -882,8 +877,7 @@ public class ConfigLoaderTests
                         BoardingRunning = true,
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -909,7 +903,7 @@ public class ConfigLoaderTests
             // wrong for the shape.
             //
             // Asserted here rather than only in a unit test of the predicate, because the direction
-            // that matters is the ROUND TRIP: written by SaveLocal, read back by Load.
+            // that matters is the ROUND TRIP: written by UpdateLocal, read back by Load.
             Assert.Equal(5, slot.Stacks);
             Assert.True(slot.BoardingRunning);
 
@@ -930,8 +924,14 @@ public class ConfigLoaderTests
 
             // A zero-sized rectangle is not a calibration and must not be adopted — the same guard the
             // buy/sell grid gets. Without it all 64 derived centres land on the same pixel.
-            local.Pet.BagGrid = new List<int> { 0, 0, 0, 0 };
-            new ConfigLoader(dir).SaveLocal(local);
+            // Through a SECOND loader instance, so nothing in memory carries the block: the
+            // read-modify-write is the only thing putting it in the file, which is the shape the
+            // launcher's own threads have.
+            new ConfigLoader(dir).UpdateLocal(l =>
+            {
+                l.Pet ??= new ConfigLoader.LocalPet();
+                l.Pet.BagGrid = new List<int> { 0, 0, 0, 0 };
+            });
             Assert.Null(new ConfigLoader(dir).Load().Pet.BagGrid);
         }
         finally
@@ -1408,9 +1408,7 @@ public class ConfigLoaderTests
             var migrated = loader.Load();
 
             // Save it back the way the UI would, then load again.
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(migrated.Pet);
-            loader.SaveLocal(local);
+            loader.UpdateLocal(local => local.Pet = ConfigLoader.LocalPet.From(migrated.Pet));
 
             var again = new ConfigLoader(dir).Load().Pet;
             var slot = Assert.Single(again.Slots);
@@ -1434,13 +1432,11 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(new PetConfig
+            loader.UpdateLocal(local => local.Pet = ConfigLoader.LocalPet.From(new PetConfig
             {
                 WaitAfterEmptyMinutes = 2,
                 ActionWaitMs = 1234,
-            });
-            loader.SaveLocal(local);
+            }));
 
             var cfg = new ConfigLoader(dir).Load();
             Assert.Equal(2, cfg.Pet.WaitAfterEmptyMinutes);
@@ -1509,14 +1505,13 @@ public class ConfigLoaderTests
     }
 
     [Fact]
-    public void SaveLocalPersistsSpammerPresets()
+    public void UpdateLocalPersistsSpammerPresets()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal()!;
-            local.Spammer = new ConfigLoader.LocalSpammer
+            loader.UpdateLocal(local => local.Spammer = new ConfigLoader.LocalSpammer
             {
                 Active = "Knight0-9",
                 Presets = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, double>>
@@ -1527,8 +1522,7 @@ public class ConfigLoaderTests
                         ["F1"] = 1.5,
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var reloaded = new ConfigLoader(dir).Load();
             Assert.Equal("Knight0-9", reloaded.Spammer.Active);

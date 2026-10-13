@@ -1003,16 +1003,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (_configExpanded && _miniToolIds.Count == 0 && Height > _collapsedHeight)
                 _configExpandedHeight = Height;
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Ui = new ConfigLoader.LocalUi
+            _service.UpdateLocal(local => local.Ui = new ConfigLoader.LocalUi
             {
                 Left = double.IsNaN(Left) ? null : Left,
                 Top = double.IsNaN(Top) ? null : Top,
                 Width = double.IsNaN(Width) ? null : Width,
                 ExpandedHeight = _configExpandedHeight > 0 ? _configExpandedHeight : null,
                 Pinned = Topmost,
-            };
-            _service.SaveLocal(local);
+            });
         }
         catch { /* never let this break shutdown */ }
     }
@@ -1479,9 +1477,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (detected is { } d) cal.Screen = new List<int> { d.ScreenWidth, d.ScreenHeight };
             cal.MeasuredAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Calibration = cal;
-            SaveReport(() => _service.SaveLocal(local), result,
+            SaveReport(() => _service.UpdateLocal(local => local.Calibration = cal), result,
                 $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.");
             ShowStored();
         };
@@ -2509,8 +2505,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // defaults.yaml is the template publish.bat ships, so a preset saved there would be
             // published with the next release. The in-memory config is already correct: `presets`
             // is the same dictionary the spammer tool reads.
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Spammer = new ConfigLoader.LocalSpammer
+            SaveReport(() => _service.UpdateLocal(local => local.Spammer = new ConfigLoader.LocalSpammer
             {
                 Active = current,
                 Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -2526,8 +2521,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // save drops it from the file — the loader folds it into this on the way in, and
                 // writing both would leave two sources for the same setting.
                 Startup = _service.Config.Spammer.Startup,
-            };
-            SaveReport(() => _service.SaveLocal(local), result,
+            }), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +
                 $"{order.Count} in the order, {comboList.Count} combo(s)).");
             UpdateSummary();
@@ -3884,16 +3878,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
-        if (_tunerSpringPoint is { } sp)
-            local.Tuner.SpringPoint = new List<int> { (int)Math.Round(sp.X), (int)Math.Round(sp.Y) };
-        if (_tunerDisplay is { } d)
-        {
-            local.Calibration = ToCalibration(d);
-            _service.Config.Calibration = local.Calibration;
-        }
-        if (!TrySaveCalibration(() => _service.SaveLocal(local), _tunerHint!,
+        // Built outside the save so the in-memory config can be refreshed from the same values, and
+        // so the early return below still leaves nothing half-applied.
+        var springPoint = _tunerSpringPoint is { } sp
+            ? new List<int> { (int)Math.Round(sp.X), (int)Math.Round(sp.Y) }
+            : null;
+        var calibration = _tunerDisplay is { } d ? ToCalibration(d) : null;
+        if (calibration != null) _service.Config.Calibration = calibration;
+
+        if (!TrySaveCalibration(() => _service.UpdateLocal(local =>
+            {
+                local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
+                if (springPoint != null) local.Tuner.SpringPoint = springPoint;
+                if (calibration != null) local.Calibration = calibration;
+            }), _tunerHint!,
                 "Tuner saved to config\\local.yaml."))
             return;
         // Refresh the in-memory config too, or the next tuner run still uses the
@@ -4193,26 +4191,26 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
         // touch gem.Movements here.
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
-        // them by rebuilding LocalGem from scratch.
-        var gem = local.Gem ?? new ConfigLoader.LocalGem();
-        gem.GradePositions = positions;
-        gem.ResourceGems = resources;
-        gem.ResultGemArea = resultArea;
-        gem.EmptySignature = emptySig;
-        gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
-        local.Gem = gem;
-        if (_gemDisplay is { } d)
-        {
-            local.Calibration = ToCalibration(d);
-            _service.Config.Calibration = local.Calibration;
-        }
         // Which move set the composer uses is a preference, not a coordinate — it lives in the
         // portable config (defaults.yaml) like gem.start_grade/empty_mode. Both files are written
         // here, so a failure in either must stop before the "saved" dialog below claims success.
         _service.Config.Gem.MoveMode = _gemMoveMode?.SelectedItem as string ?? "tuned";
-        if (!TrySaveCalibration(() => { _service.SaveLocal(local); _service.SaveConfig(); }, _gemHint!,
+        var gemCalibration = _gemDisplay is { } d ? ToCalibration(d) : null;
+        if (gemCalibration != null) _service.Config.Calibration = gemCalibration;
+
+        if (!TrySaveCalibration(() => { _service.UpdateLocal(local =>
+            {
+                // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
+                // them by rebuilding LocalGem from scratch.
+                var gem = local.Gem ?? new ConfigLoader.LocalGem();
+                gem.GradePositions = positions;
+                gem.ResourceGems = resources;
+                gem.ResultGemArea = resultArea;
+                gem.EmptySignature = emptySig;
+                gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
+                local.Gem = gem;
+                if (gemCalibration != null) local.Calibration = gemCalibration;
+            }); _service.SaveConfig(); }, _gemHint!,
                 "Gem Composer saved to config\\local.yaml."))
             return;
         // Refresh in-memory config so the next gem run uses the just-calibrated
@@ -4290,13 +4288,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        var lg = local.Gem ?? new ConfigLoader.LocalGem();
-        lg.GradePositions = gem.GradePositions;
-        lg.ResourceGems = gem.ResourceGems;
-        lg.ResultGemArea = gem.ResultGemArea;
-        local.Gem = lg;
-        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            var lg = local.Gem ?? new ConfigLoader.LocalGem();
+            lg.GradePositions = gem.GradePositions;
+            lg.ResourceGems = gem.ResourceGems;
+            lg.ResultGemArea = gem.ResultGemArea;
+            local.Gem = lg;
+        }), _gemHint!,
             "Coordinates saved to config\\local.yaml.");
     }
 
@@ -4307,11 +4306,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var row in _gemMoveRows)
             SetGemMovement(row.Key, ParseMove(row.Dx), ParseMove(row.Dy));
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        var gem = local.Gem ?? new ConfigLoader.LocalGem();
-        gem.Movements = _service.Config.Gem.Movements;
-        local.Gem = gem;
-        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            var gem = local.Gem ?? new ConfigLoader.LocalGem();
+            gem.Movements = _service.Config.Gem.Movements;
+            local.Gem = gem;
+        }), _gemHint!,
             "Composer moves saved to config\\local.yaml.");
     }
 
@@ -4719,7 +4719,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
-    /// <summary>Runs a config save and reports the outcome on a tab's InfoBar. SaveLocal/SaveDefaults
+    /// <summary>Runs a config save and reports the outcome on a tab's InfoBar. UpdateLocal/SaveDefaults
     /// write files and throw on I/O failure, and the success bar used to be raised after the call —
     /// so a read-only config directory or a full disk made Save look like it did nothing at all,
     /// with the exception absorbed by the app-level handler and only a log line to show for it.</summary>
@@ -5143,8 +5143,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void SaveBuySell(TextBlock hint, string success)
     {
         var bs = _service.Config.BuySell;
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.BuySell = new ConfigLoader.LocalBuySell
+        TrySaveCalibration(() => _service.UpdateLocal(local => local.BuySell = new ConfigLoader.LocalBuySell
         {
             BagGrid = bs.BagGrid,
             BagSlot = bs.BagSlot,
@@ -5154,8 +5153,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             MaxButton = bs.MaxButton,
             Presets = bs.Presets,
             SellCap = bs.SellCap,
-        };
-        TrySaveCalibration(() => _service.SaveLocal(local), hint, success);
+        }), hint, success);
     }
 
     /// <summary>Where a run would put the cursor, without clicking. The buy dry run's whole point:
@@ -5865,9 +5863,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Tooltip = cfg;
-        TrySaveCalibration(() => _service.SaveLocal(local), _tooltipHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local => local.Tooltip = cfg), _tooltipHint!,
             $"Saved to config\\local.yaml — offset ({cfg.OffsetX}, {cfg.OffsetY}) at " +
             $"{cfg.Width}x{cfg.Height}. Measured in this machine's pixels, so it does not travel.");
     }
@@ -6703,8 +6699,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (quest.ActiveSequenceOrNull is { } activeSequence)
                 activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = quest.Active,
                 Presets = quest.Presets.ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -6716,8 +6711,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // next launch — a setting that looks like it saves because the box keeps its new value
                 // for the rest of the session.
                 GuardPx = quest.GuardPx,
-            };
-            SaveReport(() => _service.SaveLocal(local), result,
+            }), result,
                 $"Flow \"{quest.Active}\" written to local.yaml — {Active().Steps.Count} step(s), " +
                 $"{Active().Loops} loop(s).");
 
@@ -8975,9 +8969,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void PetSessionSave(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet ??= new ConfigLoader.LocalPet();
-        ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
 
         // The queue is reported by NAME, not by count. "2 pet icons" does not tell you whether the
         // name you typed went in with the crop — and the name is only read at capture time, so the
@@ -8986,7 +8977,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? "no queued pets"
             : $"{pet.Queue.Count} queued pet(s): " + string.Join(", ", pet.Queue.Select(q => q.Label ?? "(no name)"));
 
-        TrySaveCalibration(() => _service.SaveLocal(local), hint,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
+        }), hint,
             $"Saved {pet.FoodSlots.Count} food cell(s), the return slot, {queued}, and the boarding " +
             "flags. The geometry on Calibrate Pet was left alone.");
     }
@@ -9627,11 +9622,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         // exactly as the file had them, because they are the Pet tab's business and this screen has no
         // opinion about them. It writes ONTO the loaded block rather than replacing it; assigning a
         // fresh object is what blanked the other half twice before.
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet ??= new ConfigLoader.LocalPet();
-        ConfigLoader.LocalPet.ApplyCalibration(local.Pet, pet);
-
-        TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplyCalibration(local.Pet, pet);
+        }), _petHint!,
             "Saved the calibration to config\\local.yaml. The bag marks, the queue and the boarding " +
             "flags are the Pet tab's and were left alone.");
 
