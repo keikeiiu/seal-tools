@@ -13,7 +13,7 @@ echo [!] Unknown mode "%MODE%". Usage: publish.bat [public^|local]
 exit /b 1
 :mode_ok
 
-set RELTAG=v2.14
+set RELTAG=v2.15
 set PUB=SealTools.Launcher\bin\Release\net8.0-windows\win-x64\publish
 :: The sketch lives at the repo root, beside v2\ - not under it. This script is run from v2\.
 :: Arduino needs the .ino inside a folder of the same name, so the zip keeps the folder.
@@ -80,6 +80,10 @@ if /i "%MODE%"=="local" (
   :: a config file that is not named here does not ship — and the error a missing dictionary raises
   :: tells the player to copy this file, which would be an instruction to copy something absent.
   copy /Y config\attributes.us.yaml.example %PUB%\config\ >nul
+  :: And the EMPTY dictionary itself, so the Setup tab client switch works out of the box:
+  :: the loader refuses a MISSING one (right for the Tuner, wrong for every tool that reads
+  :: no text), and the switch status line says it is empty until it is filled from the client.
+  copy /Y config\attributes.us.yaml %PUB%\config\ >nul
   echo       template config only - local.yaml re-seeded on first run
 )
 

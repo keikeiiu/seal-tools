@@ -13,6 +13,31 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-13 (91) — release: v2.15
+
+**What shipped.** The pet feeder's visit-flow rework (PLAN-PET-FLOW's four steps, each with its own
+design record), the fixes three weeks of `pet.log` turned up — the covered-window slot read that was
+the biggest row-killer, the silent failures, the reason logging, the deferral, the join — the feeder's
+per-row card, the count read's 3×/9×/24× ladder, and the US client switch. The dated reasoning for
+every piece is entries 69–90 above; this entry is what the release itself changed.
+
+**FILES.** `publish.bat` RELTAG → v2.15; the root README's title, latest-download, fallback row for
+v2.14, firmware link, history row and unzip line; `v2/README.md`'s version line; notes in
+`docs/RELEASE-v2.15.md`.
+
+**The links were changed ONE AT A TIME and each checked** — the habit v2.13's note records (a bulk
+string replace once left a fallback row pointing at the wrong asset), and the check itself was written
+to be able to fail: each URL's filename and tag are extracted and compared.
+
+**Nothing needs a reflash, and that is a finding rather than an assumption:** the only sketch change
+since v2.14 is a comment (`FW_VERSION` is still 2), confirmed with `git diff v2.14...HEAD -- arduino/`
+rather than remembered. `FirmwareSketchTests` pins the level against the command set and passes.
+
+**Verified, and owed.** The build is the gate (`dotnet build` 0 warnings, 0 errors) and **292 tests
+pass**. Two adversarial review rounds preceded the release; the newest behaviour (the join, the
+open-deferral, the ladder, the switch) is deployed and lightly exercised, and a watched multi-row
+visit with a join is still owed — the release notes say so in their own table rather than in prose.
+
 ## 2026-10-13 (90) — the US client: a switch, and an empty dictionary that says why
 
 **The ask:** *"I want to be able to use some tools for the english version of client"*, clarified to the
