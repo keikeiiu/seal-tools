@@ -4,6 +4,14 @@ Written 2026-10-08, measured against `feature/input-arbiter`. **Nothing here has
 for a verdict.** Every count below was counted rather than estimated, and where a claim is a judgement
 rather than a measurement it says so.
 
+> **Partly superseded 2026-10-14 by [PLAN-DEPLOY.md](PLAN-DEPLOY.md).** The classification, the
+> `defaults.yaml`-is-user-state diagnosis and the fear of losing the calibration on the first post-change run
+> are all kept. The relocation into `profile/` is examined there and declined: an update can cover a file
+> because the archive names it, not because of the folder it sits in, so a move buys no safety — and the
+> player fixed the constraint on 2026-10-13 ("the config should still put at the same root path … so that it
+> is easier to move"). §1's count is also stale for v2.15: 14 non-test `AppContext.BaseDirectory` uses, all
+> of them `logs/`, with Spammer, Tuner and Shop at zero — `config/` already resolves through `FindRootDir`.
+
 This is not a v3 proposal. See §7.
 
 ---
