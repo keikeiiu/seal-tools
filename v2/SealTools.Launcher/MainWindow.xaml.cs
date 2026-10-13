@@ -8435,7 +8435,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                             // is knife-edge on these digits, so a slot that reads only at 9x or 24x is
                             // read by the run and would otherwise show "(nothing)" here — sending the
                             // player to re-draw a strip over a slot that was never broken.
-                            foreach (var rung in SealTools.Pet.PetTool.CountReadUpscales)
+                            var rungs = SealTools.Pet.PetTool.CountReadUpscales;
+                            foreach (var rung in rungs)
                             {
                                 // Left behind so a blank result can be told from a wrong region by looking.
                                 var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
@@ -8449,10 +8450,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                                 // Stop at the first rung that reads — later rungs are what a run pays
                                 // only when the earlier ones failed.
-                                if (agreed is not null || rung == SealTools.Pet.PetTool.CountReadUpscales[PetTool.CountReadUpscales.Count - 1])
+                                if (agreed is not null || rung == rungs[rungs.Count - 1])
                                 {
                                     reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}" +
-                                              (rung == 3 ? "" : $" (at {rung}x)"));
+                                              (rung == rungs[0] ? "" : $" (at {rung}x)"));
                                     break;
                                 }
                             }
