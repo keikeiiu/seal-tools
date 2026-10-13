@@ -45,6 +45,54 @@ public class FeederEtaTests
         Assert.Null(FeederEta.CompletionMinutes(r));
     }
 
+    /// <summary>The 餵養值/growth the level form counts to — what the card shows as `→ +9`, and the
+    /// reason the parser keeps the line verbatim. It is the GROWTH (+0 … +9, ending at a finished
+    /// pet), NOT the stage: the player corrected both readings on 2026-10-11 — *"the pet feeding
+    /// level is not the pet rank level"* and *"there is no stage 8 stage 9"*. The stage comes from
+    /// hovering the pet icon (the panel's `(6階)`), which is a different number entirely. Display
+    /// only: the level form drives nothing.</summary>
+    [Theory]
+    [InlineData("到2為止預計所需時間：約 20分", 2)]
+    [InlineData("到6為止预計所需時間：約19分", 6)]
+    [InlineData("到9為止预計所需時間：約94分", 9)]
+    [InlineData("到3为止预计所需时间：约 12分", 3)]   // the OCR's Simplified 止, mixed scripts
+    [InlineData("代養完成預計所需時間：約14分", null)]   // the completion form names no growth
+    [InlineData("該欄位約27日9時51分16秒後到期。", null)] // the shelf life is not one either
+    [InlineData("到6為止", 6)]
+    [InlineData("到12為止預計所需時間：約 20分", null)]   // above the game's own maximum (+9)
+    public void TheLevelFormNamesTheGrowthItCountsTo(string line, int? expected)
+    {
+        Assert.Equal(expected, FeederEta.GrowthTarget(line));
+    }
+
+    /// <summary>The feeding rate the window prints beside every row — the line that answers the
+    /// player's *"the reason why it is 3 food per pet is those pets are stage 6 pets"*, read per row
+    /// because rows may hold pets at different stages.
+    ///
+    /// THE STRINGS BELOW ARE THE LIVE OCR'S OWN OUTPUT, from pet.log 2026-10-11 — the first version of
+    /// the regex demanded 個/个 and matched NONE of them (the review's finding): the dominant form has
+    /// its item count eaten (`每1分最取适`, 37 occurrences), and the one that survives arrives as
+    /// `固`. So the ending is not matched at all; only the two numbers are.</summary>
+    [Theory]
+    [InlineData("每1分 攝取3個", 3)]                    // the clean form, from the 2026-09-21 measurement
+    [InlineData("每 1 分 攝取 5 個", 5)]
+    [InlineData("每2分 攝取6個", 3)]                    // "3 per minute", stated as 6 in 2
+    [InlineData("每1分攝取4个", 4)]                     // Simplified 个, no spaces
+    [InlineData("每1分瑜取3固", 3)]                     // LIVE: 個 arrives as 固
+    [InlineData("每1分输取3固", 3)]
+    [InlineData("每1分最取适", null)]                   // LIVE and dominant: the item count is GONE
+    [InlineData("每分最取尚", null)]                    // and here the minute base too — nothing to read
+    [InlineData("每1分最取适 到7為止预計所需時間：約25分", null)]  // joined lines: the 7 is not an item count
+    [InlineData("該欄位約27日9時51分16 秒後到期。", null)]
+    [InlineData("代養完成預計所需時間：約14分", null)]
+    [InlineData("到6為止预計所需時間：約19分", null)]
+    [InlineData("每1分 攝取300個", null)]               // implausible: rejected, not clamped
+    [InlineData("每0分 攝取3個", null)]
+    public void TheRateLineIsReadPerRow(string line, int? expected)
+    {
+        Assert.Equal(expected, FeederEta.ParseRate(new[] { line }));
+    }
+
     /// <summary>THE TRAP: the food's shelf life carries a 約 and a number near a 分, and reading it as a
     /// countdown would schedule a row twenty-seven days out.</summary>
     [Fact]

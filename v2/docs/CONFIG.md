@@ -11,13 +11,18 @@ Settings that are **the same on every machine and every user**. This file is che
 
 - `game.variant` + `game.variants.*` — **which client** (tw / us), each with its window title and its
   attribute dictionary. The variant **sets `window.title` at load**, so `window.title` is only the
-  source when no variant is set. See [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md)
+  source when no variant is set. Also switchable at runtime from the **Setup** tab, one button per
+  variant, which writes this key. See [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md)
 - `window.title`, `arduino.*` (VID/PID/baud)
 - `hotkeys.*`
 - `tuner.grade_order`, `tuner.target_grade`
 - `tuner.grade_colors.*`, `tuner.models.*`, `tuner.filter.*`
 - `reference_window.*`
 - **Behavior preferences** (not tied to hardware):
+  - `pet.items_per_minute` — **the FALLBACK rate only.** The boarding window prints the feeding rate
+    beside every row (`每1分 攝取3個`) and the pet feeder reads it, per row, because the rate follows
+    the pets' feeding stage and rows need not hold pets at the same stage. This value answers only
+    when that line could not be read.
   - `gem.start_grade`
   - `gem.empty_mode` — `"stop"` | `"advance_grade"` | `"advance_grade_clear"`
   - `gem.empty_streak` — consecutive empties before acting
@@ -36,6 +41,10 @@ overlay created from `local.yaml.example`).
 - `gem.empty_distance` — the difference threshold: pixels-vs-crop when the crop exists, colour distance
   against the signature when it does not
 - `arduino.port` (optional override)
+- `pet.close_button_png`, `pet.boarding_window_may_be_open` — the pet feeder's close guard, **written
+  by the run itself** (never hand-edit): a crop of the boarding window's X, learned from a window
+  whose contents the run had just read, and whether the run believes that window may still be on
+  screen after a close it could not send. See PLAN-PET-CLOSE-GUARD.md.
 - `spammer.active` + `spammer.presets.*` — **your own** key rotations. Not machine-specific, but
   personal: `defaults.yaml` is the file `publish.bat public` copies into the release, so a preset
   written there would ship with the next zip. See the note under "Why the split?" below.

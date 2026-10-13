@@ -462,6 +462,62 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>The Setup tab's switch, as the config sees it: a known name sets the variant and the
+    /// resolved title and hands back the dictionary to load; an unknown name changes NOTHING and says
+    /// what the known ones are. The caller (LauncherService) loads that dictionary between the two, so
+    /// an install can never be left pointing at a client whose dictionary is missing — which would be a
+    /// launcher that throws in its constructor rather than one that starts degraded.</summary>
+    [Fact]
+    public void SelectingAVariantResolvesItAndHandsBackItsDictionary()
+    {
+        var cfg = new AppConfig();
+
+        var dictionary = cfg.ApplyVariant("us", out var error);
+
+        Assert.Null(error);
+        Assert.Equal("attributes.us.yaml", dictionary);
+        Assert.Equal("us", cfg.Game.Variant);
+        Assert.Equal("US_LIVE", cfg.Window.Title);
+
+        // Case is the variants map's business, not the player's — it is case-insensitive, so a
+        // hand-typed "TW" must work.
+        Assert.Equal("attributes.yaml", cfg.ApplyVariant("TW", out var error2));
+        Assert.Null(error2);
+        Assert.Equal("TW_LIVE", cfg.Window.Title);
+
+        // An unknown name leaves BOTH fields alone: nothing half-switched.
+        var title = cfg.Window.Title;
+        var variant = cfg.Game.Variant;
+        Assert.Null(cfg.ApplyVariant("nope", out var error3));
+        Assert.NotNull(error3);
+        Assert.Contains("nope", error3);
+        Assert.Contains("tw", error3);
+        Assert.Equal(title, cfg.Window.Title);
+        Assert.Equal(variant, cfg.Game.Variant);
+    }
+
+    /// <summary>The US dictionary ships EMPTY ON PURPOSE, and this pins it. The loader refuses a
+    /// MISSING dictionary (the test below), and the text-free tools — gem, buy, sell, spammer, quest,
+    /// and the pet reads — need the suite to be pointable at the US client today. It must not quietly
+    /// gain content, because content here is words the Tuner matches, and words written from anywhere
+    /// but that client are the thing the repo's own rule forbids.</summary>
+    [Fact]
+    public void TheShippedUsDictionaryExistsAndIsEmptyOnPurpose()
+    {
+        var path = "";
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "v2", "config", "attributes.us.yaml");
+            if (File.Exists(candidate)) { path = candidate; break; }
+        }
+
+        Assert.False(string.IsNullOrEmpty(path),
+            "v2/config/attributes.us.yaml was not found by walking up from " + AppContext.BaseDirectory);
+
+        var attrs = new ConfigLoader(Path.GetDirectoryName(path)!).LoadAttributes("attributes.us.yaml");
+        Assert.Empty(attrs.Attributes);
+    }
+
     /// <summary>A variant's dictionary that is MISSING must fail, and say what to do about it. The
     /// alternative — shipping an empty one — matches nothing, so every attribute reads as "no
     /// attribute": silent, and indistinguishable from the game having changed.</summary>
@@ -807,6 +863,8 @@ public class ConfigLoaderTests
                 MenuButton = new List<int> { 815, 1735 },
                 FeedIcon = new List<int> { 900, 1400 },
                 CloseButton = new List<int> { 880, 140 },
+                CloseButtonPng = "close-ref-png",
+                BoardingWindowMayBeOpen = true,
                 PageTabs = new List<List<int>> { new() { 700, 180 }, new() { 745, 180 }, new() { 790, 180 } },
                 BagGrid = new List<int> { 660, 150, 408, 408 },
                 BagSlot = new List<int> { 660, 150, 51, 51 },
@@ -859,6 +917,14 @@ public class ConfigLoaderTests
             Assert.Equal(1500, PetConfig.LoadItemsFor(slot));
             Assert.Equal(500, cfg.Pet.LoadMinutesFor(slot));
 
+            // The close probe's pair — SESSION state the run writes about itself. The save direction
+            // has a reflection fence over it; the LOAD merge (ApplyOverrides) has none, and this is
+            // where fields have silently gone missing twice before, so the round trip is the test.
+            // The belief in particular must survive a restart: the window a killed run leaves open is
+            // exactly the case only the next run can notice.
+            Assert.Equal("close-ref-png", cfg.Pet.CloseButtonPng);
+            Assert.True(cfg.Pet.BoardingWindowMayBeOpen);
+
             // The two grids are independent calibrations, and this is the assertion that keeps them so.
             Assert.Null(cfg.BuySell.BagGrid);
 
@@ -901,6 +967,8 @@ public class ConfigLoaderTests
             // LocalPet against the config, so a field this fixture omits is null on BOTH
             // sides and passes whether or not the projection carries it.
             FoodIconPng = "food-png",
+            CloseButtonPng = "close-png",
+            BoardingWindowMayBeOpen = true,
             ReturnSlot = new List<int> { 34, 35 },
             MaxButton = new List<int> { 40, 41 },
             WaitAfterEmptyMinutes = 3,

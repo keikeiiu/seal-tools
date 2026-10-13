@@ -131,4 +131,78 @@ public class IconMatchTests
         Assert.True(all[0].Score > 0.5,
             $"an unrelated icon should stay far away; it scored {all[0].Score:0.###}");
     }
+
+    /// <summary>The crop <see cref="IconMatch.ScoreCell"/> is given in production: the cell at its
+    /// pitch plus the search radius on every side, taken from a full bag capture. Exactly what the
+    /// runtime grab does — the margin is what lets the offset search run inside the crop.</summary>
+    private static Mat CropAround(Mat bag, int cell)
+    {
+        var (cx, cy) = BagGrid.Centres(Grid)[cell];
+        var side = Cell + 2 * IconMatch.SearchRadius;
+        using var box = new Mat(bag, new Rect(cx - side / 2, cy - side / 2, side, side));
+        return box.Clone();
+    }
+
+    /// <summary>The per-use check the visit needs (PLAN-PET-FLOW §6.3): a stored cell re-scored
+    /// before it is clicked, with the SAME comparison the sweep used. The shifted case is the point —
+    /// the sprite moves within its cell between the sweep and the click, and the check must not read
+    /// that as "the pet is gone" and skip a cell that still holds it.</summary>
+    [Fact]
+    public void AStoredCellIsScoredWithTheSameOffsetSearchTheSweepUsed()
+    {
+        using var pattern = Pattern();
+        using var icon = Window(pattern, 0, 0);
+
+        foreach (var (dx, dy) in new[] { (0, 0), (3, 0), (-3, 3), (0, -3) })
+        {
+            using var shifted = Window(pattern, dx, dy);
+            using var bag = BagWithCell(17, shifted);
+            using var crop = CropAround(bag, 17);
+
+            var score = IconMatch.ScoreCell(crop, icon, Cell, Cell);
+
+            Assert.NotNull(score);
+            Assert.True(score < 0.05,
+                $"the same item shifted by ({dx},{dy}) must still verify; it scored {score:0.###}");
+        }
+    }
+
+    /// <summary>And the case it exists for: the cell no longer holds what the sweep found — an
+    /// earlier row of the same visit boarded it away, or the bag compacted. That must read as a
+    /// POSITIVE "not the thing", so the walk moves on instead of clicking an empty cell.</summary>
+    [Fact]
+    public void AStoredCellThatChangedScoresAboveTheLimit()
+    {
+        using var pattern = Pattern();
+        using var icon = Window(pattern, 0, 0);
+
+        using var other = Window(pattern, 0, 0);
+        Cv2.Circle(other, new Point(12, 12), 9, new Scalar(60, 220, 90), -1);
+
+        using var bag = BagWithCell(17, other);
+        using var crop = CropAround(bag, 17);
+
+        var score = IconMatch.ScoreCell(crop, icon, Cell, Cell);
+
+        Assert.NotNull(score);
+        Assert.True(score > SealTools.Pet.PetTool.MatchLimit,
+            $"a cell that changed must not verify; it scored {score:0.###}");
+    }
+
+    /// <summary>Unknown is not a match and not a mismatch — it is null, and the caller keeps meaning
+    /// act. A grab that failed, a crop too small to host the search, a pitch of zero: all of them are
+    /// "could not judge", never "the pet is gone".</summary>
+    [Fact]
+    public void AStoredCellThatCannotBeJudgedIsNullNotAMismatch()
+    {
+        using var pattern = Pattern();
+        using var icon = Window(pattern, 0, 0);
+        using var bag = BagWithCell(17, Window(pattern, 0, 0));
+        using var crop = CropAround(bag, 17);
+
+        Assert.Null(IconMatch.ScoreCell(new Mat(), icon, Cell, Cell));
+        Assert.Null(IconMatch.ScoreCell(crop, new Mat(), Cell, Cell));
+        Assert.Null(IconMatch.ScoreCell(crop, icon, 0, 0));
+        Assert.Null(IconMatch.ScoreCell(crop, icon, crop.Width + 1, crop.Height + 1));
+    }
 }

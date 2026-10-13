@@ -172,6 +172,21 @@ public sealed class PetTool : ToolBase
     /// covers the seconds between one stack and the next.</summary>
     private int _bagPage = -1;
 
+    /// <summary>Consecutive opens whose confirmation said the window never came up. Two in a row
+    /// throws the X's reference away — see OpenBoarding — so a stale crop cannot gate every open for
+    /// ever.</summary>
+    private int _openUnconfirmed;
+
+    /// <summary>Whether the read just taken saw the BOARDING WINDOW's own contents — an empty slot
+    /// matching its reference, a feeder count read, or a time line parsed. Reset at the top of
+    /// <see cref="ReadRows"/> and consumed right after it by <see cref="EnsureCloseReference"/>.
+    ///
+    /// It exists for one decision: whether a capture of the X may be trusted as a reference. Every
+    /// other answer the tool takes from the screen is read and used within seconds; this one is kept
+    /// for days and decides whether an open gets skipped, so its provenance has to be a fact the run
+    /// established — not the assumption that a click landed.</summary>
+    private bool _windowProofSeen;
+
     /// <summary>What the guard read about the pet it just boarded, and which line that pet is.
     ///
     /// Set by <see cref="RememberBoarded"/> when the pet actually goes in, and read immediately after by
@@ -205,6 +220,52 @@ public sealed class PetTool : ToolBase
     /// per run rather than kept in memory for the life of the process.</summary>
     private IReadOnlyList<PetFeeding.Line> _feeding = Array.Empty<PetFeeding.Line>();
 
+    /// <summary>The game's time line for a row, VERBATIM, from the last read — "到9為止预計所需時間：
+    /// 約94分" and the like. Kept raw because it is a sentence rather than a number, and because the
+    /// level form's meaning (the GROWTH the line counts to) is exactly what the player wants to see
+    /// spelled out.</summary>
+    private readonly Dictionary<PetSlotConfig, string?> _lastEtaLine = new();
+
+    /// <summary>What each row last boarded: the species (from its queue entry, i.e. the player's
+    /// preset) and the hover panel's stage/+/%, as one short phrase for the card. Set when a pet is
+    /// placed, kept across visits in memory — the panel can only be read while the cell is hovered,
+    /// so a restart starts blind for one cycle, exactly like <see cref="_rowSpecies"/>.</summary>
+    private readonly Dictionary<PetSlotConfig, string> _rowPet = new();
+
+    /// <summary>Items per minute as the GAME states it for this row — `每1分 攝取3個`, read off the
+    /// row's own text. Null when the line was not there or did not parse, in which case the config's
+    /// <see cref="PetConfig.ItemsPerMinute"/> answers (see <see cref="RateFor"/>).
+    ///
+    /// The rate follows the pets' feeding stage, which is why a single configured number cannot be
+    /// right for four rows holding pets at different stages — the player, 2026-10-11: *"the reason
+    /// why it is 3 food per pet is those pets are stage 6 pets"*, and *"possible we can deduce
+    /// that?"*. It does not have to be deduced: the window prints it beside every row.</summary>
+    private readonly Dictionary<PetSlotConfig, int?> _lastRate = new();
+
+    /// <summary>That row's feeding rate for every minutes-from-items calculation: what the game said
+    /// about THIS row at its last read, or the configured number when it said nothing. One place, so
+    /// the schedule, the load arithmetic and the card cannot use different rates for one row.
+    ///
+    /// PER ROW because the rate follows the pets' feeding stage, and rows need not hold pets at the
+    /// same stage — the player, 2026-10-11: *"it is important as they may have different stage pet
+    /// in the future"*. A single configured number would then mis-time whichever rows it did not
+    /// match.</summary>
+    private int RateFor(PetSlotConfig row) =>
+        _lastRate.TryGetValue(row, out var measured) && measured is { } rate
+            ? rate
+            : Math.Max(1, _cfg.Pet.ItemsPerMinute);
+
+    /// <summary>Minutes the given row's full load lasts, at THAT ROW's rate — the configured
+    /// <see cref="PetConfig.LoadMinutesFor"/> with the measured rate when there is one. A faster
+    /// eater (a higher-stage pet) empties sooner, so using the measured rate shortens the row's
+    /// fallback cycle: the safe direction, and the one the config comment anticipated when it noted
+    /// that a stage-7 row saying 4/min should be readable rather than wrong.</summary>
+    private int LoadMinutesFor(PetSlotConfig row)
+    {
+        var rate = RateFor(row);
+        return rate > 0 ? PetConfig.LoadItemsFor(row) / rate : 0;
+    }
+
     /// <summary>Records what was read about the pet that just went into the loader. See
     /// <see cref="_boardedPanel"/>.</summary>
     private void RememberBoarded(PetSlotConfig row, int entry, PetPanel? panel)
@@ -216,6 +277,14 @@ public sealed class PetTool : ToolBase
 
         // And teach the ROW, so the pet that comes back to the return slot can still be estimated.
         if (!string.IsNullOrEmpty(_boardedSpecies)) _rowSpecies[row] = _boardedSpecies!;
+
+        // …and teach the CARD what this row is carrying: the species (which the player picked as a
+        // preset on the queue entry) beside the panel's own reading — "stage 6, +7, 52.18%". Both
+        // halves are optional and either may be missing; what is known is shown.
+        var species = _boardedSpecies
+            ?? (_rowSpecies.TryGetValue(row, out var remembered) ? remembered : null);
+        var parts = new[] { species, panel?.Describe() }.Where(s => !string.IsNullOrEmpty(s)).ToList();
+        if (parts.Count > 0) _rowPet[row] = string.Join("  ·  ", parts);
     }
 
     /// <summary>How long the pet that was just boarded still needs, or null when that cannot be
@@ -319,12 +388,30 @@ public sealed class PetTool : ToolBase
         // It also opens the breeder and clicks, so it needs the game — and it is the first thing that
         // can be deferred. A run started while another tool is busy therefore starts and WAITS to look,
         // rather than reporting rows it never read.
+        //
+        // THE RUN START DOES NOT WAIT FOR THE GAME TO BE FOCUSED. The first version of the front
+        // guard did, and the player refused it with the reason that settles the question: *"your new
+        // action gives me a burden to click the game window, which I did not need before."* It is
+        // also the codebase's own rule — the gem flow settled it on 2026-09-18, "one click both
+        // focuses the game and presses the button; never add a focus-click" — and the look's first
+        // click on 目錄 does exactly that: it focuses the game on its way to the button.
+        //
+        // What the guard may never do is act on a screen the game is not the one SHOWING — and that
+        // is checked where it can actually hurt, per read and per visit, not by demanding focus
+        // first. The player keeps the areas the tool touches visible by habit; a check that insists
+        // on focus would defer visits that have always worked.
         var looked = ClaimGame(state,
             () => $"Starting up — waiting for {GameOwner} before reading the rows", ct);
+
+        // The strike counts exist before the look now, because the look can reload: its hand-off
+        // visits report outcomes the same way the loop's do.
+        var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
+        LookResult? look = null;
         Dictionary<PetSlotConfig, DateTime> next;
         try
         {
-            next = looked ? InspectRows(ser, state) : new Dictionary<PetSlotConfig, DateTime>();
+            look = looked ? InspectRows(ser, state, failures) : null;
+            next = look?.Next ?? new Dictionary<PetSlotConfig, DateTime>();
         }
         finally
         {
@@ -349,7 +436,19 @@ public sealed class PetTool : ToolBase
         // looking sat there claiming to be looking, for as long as its first reload was away. A
         // progress note is not a state, and on this tool the gap between the two is hours.
         state.Message = null;
-        var failures = _cfg.Pet.ActiveRows.ToDictionary(r => r, _ => 0);
+
+        // ── THE LOOK'S HAND-OFF (§4.2) ──────────────────────────────────────────────────────────
+        // When the reading found rows due RIGHT NOW — the usual reason the tool was started — they
+        // were reloaded in the window the look already had open, and come back as a visit's results.
+        // They fold back exactly like a visit from the loop: one set of rules for the whole run. No
+        // beep here, deliberately: the run is still starting, and the original start was silent.
+        if (look?.Acted is { } first)
+            FoldBack(first, next, failures, state);
+
+        // The last thing written about the game window not being in front. Held here so the wait
+        // says it once per episode rather than once per retry — the same rule ClaimGame follows,
+        // for the same reason: this can repeat for hours if the player leaves the PC.
+        var frontWaitSaid = "";
 
         // THE CARD'S STANDING LINE. A reload is hours apart, so a card that only reported the last
         // thing that happened said nothing at all for most of a run — the player asked for "which row
@@ -358,6 +457,52 @@ public sealed class PetTool : ToolBase
         // of showing a number that was true when it was written.
         void PublishSchedule()
         {
+            // ONE LINE PER ROW, always — the player asked to see all four rows' condition rather
+            // than only the soonest one: *"if I have 4 pets pending to feed … list out all 4
+            // conditions"*. The summary line stays (it is the glance that says what is next overall);
+            // the per-row list is what says that row 1 is boarding on 516 items while row 4 was
+            // given up on. The status word comes from the same two facts the schedule does —
+            // whether the row is boarding, and whether it still has a next at all — and the detail
+            // is the last feeder reading, shown as the reading it is: the tray drains between visits
+            // and nothing here is a live count.
+            var rows = new List<ToolRowState>();
+            foreach (var row in _cfg.Pet.ActiveRows)
+            {
+                var hasNext = next.TryGetValue(row, out var at);
+                var status = !hasNext ? "given up"
+                    : row.BoardingRunning ? "boarding"
+                    : "waiting for a reload";
+                // The pet it is carrying, when that is known — the numbers live in the why line, which
+                // keeps each row to two short lines rather than a paragraph.
+                // THE PET, and — when the game's own line names one — the stage it says the pet is
+                // heading for, on the SAME line (the player's ask: "maybe just a deduced level 6 at
+                // the same line"). That deduction is the whole message of the level form; everything
+                // else the first version spelled out turned out to be noise.
+                var detail = _rowPet.TryGetValue(row, out var pet) ? pet : null;
+                if (_lastEtaLine.TryGetValue(row, out var etaLine) &&
+                    FeederEta.GrowthTarget(etaLine) is { } growthTo)
+                {
+                    // `→ +9` in the panel's own vocabulary: the growth the game's line counts to,
+                    // where +9/100 % is the finished pet. NOT a stage — the player, 2026-10-11:
+                    // *"there is no stage 8 stage 9."*
+                    detail = string.IsNullOrEmpty(detail)
+                        ? $"→ +{growthTo}"
+                        : $"{detail}  ·  → +{growthTo}";
+                }
+
+                // The ROW's own feeding rate, when the window stated one — the number that says why a
+                // row's arithmetic is what it is, and the visible half of the per-row rate reading
+                // ("it is important as they may have different stage pet in the future").
+                if (_lastRate.TryGetValue(row, out var measuredRate) && measuredRate is { } r)
+                {
+                    detail = string.IsNullOrEmpty(detail)
+                        ? $"{r}/min (game line)"
+                        : $"{detail}  ·  {r}/min (game line)";
+                }
+                rows.Add(new ToolRowState(NameOf(row), status, detail, hasNext ? at : null));
+            }
+            state.Rows = rows;
+
             var boarding = next.Keys.Where(r => r.BoardingRunning).Select(NameOf).ToList();
             if (next.Count == 0)
             {
@@ -406,16 +551,65 @@ public sealed class PetTool : ToolBase
                                 .ToList();
                 if (batch.Count == 0) batch.Add(soonest);
 
+                // THE GAME WINDOW MUST BE IN FRONT BEFORE THE VISIT — before the claim, before the
+                // open, before any read. This is the guard that would have prevented 2026-10-01: the
+                // window was covered, the slot read (the one read the fore gate was missing) answered
+                // "a pet is in the loader" from the covering window, and the visit pressed the end
+                // toggle at whatever was in front — 57 of the 90 strikes in pet.log, all silent.
+                //
+                // A DEFERRAL, not a failure, and no click is sent: the rows keep their place and are
+                // tried again in RetryMinutes, the same shape as the NothingToBoard wait. Waiting here
+                // rather than polling is deliberate — the feeder must hold NOTHING between operations
+                // (that is what makes it resident), and a 2-second poll while the player works would
+                // be a claim on the game's attention that this tool never makes.
+                // Defers the whole batch when the game window is not in front — no click is sent and
+                // no strike is counted; the rows keep their place and are tried again in RetryMinutes.
+                // A local function because it is needed TWICE: here, and again after the gate wait.
+                bool DeferIfNotInFront()
+                {
+                    if (GameIsInFront())
+                    {
+                        frontWaitSaid = "";
+                        return false;
+                    }
+
+                    var line = $"The game window isn't in front — {NameOf(soonest)} keeps its place; " +
+                               $"nothing was clicked, and it is tried again in {RetryMinutes:0} min.";
+                    if (line != frontWaitSaid)
+                    {
+                        frontWaitSaid = line;
+                        Console.WriteLine(line);
+                        Log("  " + line);
+                    }
+                    state.Message = line;
+
+                    foreach (var row in batch) next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                    PublishSchedule();
+                    return true;
+                }
+
+                if (DeferIfNotInFront()) continue;
+
                 // The soonest row is due, but the game may belong to another tool. Deferring here needs
                 // no bookkeeping at all: next[row] is left in the past, so the next pass picks this same
                 // row again — which is why the wait belongs here and not in the scheduler. It is never
                 // a silent wait; see WaitingForRow.
                 if (!ClaimGame(state, () => WaitingForRow(soonest, next[soonest], GameOwner), ct)) break;
 
+                // AND THE FRONT IS CHECKED AGAIN, because that wait can last HOURS while another tool
+                // holds the gate, and the front is whatever it is when the wait ends — not what it was
+                // before the wait began. Claiming and releasing is the cheap way to un-claim cleanly:
+                // the tool holds nothing while it waits, and it will not hold anything it cannot use.
+                if (DeferIfNotInFront())
+                {
+                    ReleaseGame();
+                    continue;
+                }
+
                 VisitResult visited;
                 try
                 {
-                    visited = Visit(ser, state, batch);
+                    visited = Visit(ser, state, batch, failures, next);
                 }
                 catch (OperationCanceledException)
                 {
@@ -428,10 +622,7 @@ public sealed class PetTool : ToolBase
                     // re-feeds any row that still needs it (Run opens with InspectRows), so the
                     // SCHEDULE is never left wrong — it is the GAME that may be, and that is the one
                     // thing this process cannot put back.
-                    state.Message = batch.Count == 1
-                        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
-                        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
-                          + " — some may not have been fed. Check them in game.";
+                    state.Message = StoppedDuring(batch);
                     throw;
                 }
                 finally
@@ -439,76 +630,18 @@ public sealed class PetTool : ToolBase
                     ReleaseGame();
                 }
 
-                // THE RE-MEASURE, for every row the visit did NOT act on. A row it did reload gets its
-                // next from the reload below, because the reading was taken BEFORE the reload and
-                // describes the state that reload just replaced.
-                foreach (var (readRow, readNext) in visited.Schedule)
-                    if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
-                        next[readRow] = readNext;
-
-                foreach (var (row, result) in visited.Rows)
-                {
-                    if (!next.ContainsKey(row)) continue;
-
-                    if (result.Ok)
-                    {
-                        failures[row] = 0;
-
-                        // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
-                        // There are TWO pet figures now and either may be absent — the estimate from
-                        // the panel the guard read at placement, and the game's own line read after the
-                        // pet was landed. The smaller wins; the food's is the full load just put in.
-                        // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
-                        // panel read, no row for that line at that stage, and an unreadable time line
-                        // all land here.
-                        var loaded = _cfg.Pet.LoadMinutesFor(row);
-                        var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
-                            ? Math.Min(a, b)
-                            : result.PetMinutes ?? result.LandedLineMinutes;
-                        var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
-                        next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
-
-                        state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
-                                        (fromPet is { } m && m < loaded
-                                            ? $" (the pet finishes first, in {m:0} min)"
-                                            : "");
-                        Console.WriteLine(state.Message);
-                    }
-                    else if (result.NothingToBoard)
-                    {
-                        // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
-                        // or none is in there. The player may simply not have another yet, and a row
-                        // must not be counted against, or dropped, for the state of the bag.
-                        failures[row] = 0;
-                        next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
-                        state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
-                        Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
-                            $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
-                        Console.WriteLine(state.Message);
-                    }
-                    else
-                    {
-                        failures[row]++;
-                        state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {result.Error}";
-                        Console.WriteLine(state.Message);
-
-                        // A row that keeps failing is DROPPED rather than taking the run with it. With
-                        // four rows that matters: one bad calibration should not stop the other three
-                        // being fed, and previously any row reaching MaxFailures stopped everything.
-                        if (failures[row] >= MaxFailures)
-                        {
-                            Log($"  {NameOf(row)} given up on after {MaxFailures} failures — the other " +
-                                "rows carry on");
-                            next.Remove(row);
-                            continue;
-                        }
-                        next[row] = DateTime.Now.AddMinutes(RetryMinutes);
-                    }
-                }
+                FoldBack(visited, next, failures, state);
 
                 PublishSchedule();
-                if (visited.Rows.Values.All(r => r.Ok)) Beep(523, 100);
-                else Beep(200, 400);
+                // THE TONE REPORTS WHAT THE VISIT DID TO ITS BATCH. An empty result set is newly
+                // reachable — every due row vetoed, or a focus steal abandoning the visit before its
+                // first row — and `All(...)` on an empty set is vacuously true, which played the
+                // success tone for a visit that reloaded nothing. Nothing acted on ⇒ no tone at all.
+                if (visited.Rows.Count > 0)
+                {
+                    var allOk = visited.Rows.Values.All(r => r.Ok);
+                    Beep(allOk ? 523 : 200, allOk ? 100 : 400);
+                }
             }
         }
         finally
@@ -518,6 +651,109 @@ public sealed class PetTool : ToolBase
 
         Console.WriteLine("Pet tool done.");
         return 0;
+    }
+
+    /// <summary>The note left on the card when a stop lands inside a visit — the same words for the
+    /// loop's visits and for the look's hand-off, because the player's problem is the same either way:
+    /// the reload was cut and this process cannot put the game back.</summary>
+    private string StoppedDuring(List<PetSlotConfig> batch) => batch.Count == 1
+        ? $"Stopped during {NameOf(batch[0])} — it may not have been fed. Check it in game."
+        : $"Stopped during {batch.Count} rows ({string.Join(", ", batch.Select(NameOf))})"
+          + " — some may not have been fed. Check them in game.";
+
+    /// <summary>Folds one visit's results into the schedule and the strike counts — the row rules the
+    /// tool has always had, in one place because there are now TWO callers: the main loop, and the
+    /// look's hand-off at run start. They must not drift: a run whose first reload followed
+    /// different rules from its second would be a run nobody can reason about.
+    ///
+    /// THE RE-MEASURE comes first, for every row the visit did NOT act on — a row it did reload gets
+    /// its next below, because the reading was taken BEFORE the reload and describes the state that
+    /// reload just replaced. A vetoed row arrives here as exactly this: read, not acted on, so its
+    /// fresh next is what the veto read.
+    ///
+    /// The card's message and the log are written here too, because they are about the SAME facts the
+    /// schedule is made from, and a second copy is a second thing to keep in step.</summary>
+    private void FoldBack(VisitResult visited, Dictionary<PetSlotConfig, DateTime> next,
+        Dictionary<PetSlotConfig, int> failures, ToolState state)
+    {
+        foreach (var (readRow, readNext) in visited.Schedule)
+            if (next.ContainsKey(readRow) && !visited.Rows.ContainsKey(readRow))
+                next[readRow] = readNext.Next;
+
+        foreach (var (row, result) in visited.Rows)
+        {
+            if (!next.ContainsKey(row)) continue;
+
+            if (result.Ok)
+            {
+                failures[row] = 0;
+
+                // WHICHEVER RUNS OUT FIRST: what the pet still needs, or what was just loaded.
+                // There are TWO pet figures now and either may be absent — the estimate from
+                // the panel the guard read at placement, and the game's own line read after the
+                // pet was landed. The smaller wins; the food's is the full load just put in.
+                // With neither, this is CycleMinutesFor exactly as before: no queue entry and no
+                // panel read, no row for that line at that stage, and an unreadable time line
+                // all land here.
+                var loaded = LoadMinutesFor(row);
+                var fromPet = result.PetMinutes is { } a && result.LandedLineMinutes is { } b
+                    ? Math.Min(a, b)
+                    : result.PetMinutes ?? result.LandedLineMinutes;
+                var wait = fromPet is { } needs ? Math.Max(0, Math.Min(needs, loaded)) : loaded;
+                next[row] = DateTime.Now.AddMinutes(wait + WaitAfterEmptyMinutes);
+
+                state.Message = $"{NameOf(row)} reloaded. Next {next[row]:HH:mm}." +
+                                (fromPet is { } m && m < loaded
+                                    ? $" (the pet finishes first, in {m:0} min)"
+                                    : "");
+                Console.WriteLine(state.Message);
+            }
+            else if (result.Deferred)
+            {
+                // NOT A FAILURE AND NOT A WAIT FOR A PET: the boarding window would not come up, so
+                // NOTHING was attempted for this row — not one click was sent. Five minutes, no
+                // strike, and the card says which of the two waits it is.
+                failures[row] = 0;
+                next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+                state.Message = $"{NameOf(row)} is waiting for the boarding window to open.";
+                Log($"  {NameOf(row)}: the boarding window would not open — no reload was attempted, " +
+                    $"so nothing is counted against the row; trying again in {RetryMinutes:0} min.");
+                Console.WriteLine(state.Message);
+            }
+            else if (result.NothingToBoard)
+            {
+                // NOT A FAILURE. The bag holds no pet that can be fed — every one has finished,
+                // or none is in there. The player may simply not have another yet, and a row
+                // must not be counted against, or dropped, for the state of the bag.
+                failures[row] = 0;
+                next[row] = DateTime.Now.AddMinutes(NoPetRetryMinutes);
+                state.Message = $"{NameOf(row)} is waiting for a pet that can be fed.";
+                Log($"  {NameOf(row)}: nothing in the bag can be boarded — the row keeps its " +
+                    $"place and is looked at again in {NoPetRetryMinutes} min. NOT a failure.");
+                Console.WriteLine(state.Message);
+            }
+            else
+            {
+                failures[row]++;
+                state.Message = $"{NameOf(row)} failed {failures[row]}/{MaxFailures}: {result.Error}";
+                Console.WriteLine(state.Message);
+
+                // A row that keeps failing is DROPPED rather than taking the run with it. With
+                // four rows that matters: one bad calibration should not stop the other three
+                // being fed, and previously any row reaching MaxFailures stopped everything.
+                if (failures[row] >= MaxFailures)
+                {
+                    // The reason comes with the death, not only with the earlier strikes: a
+                    // row's give-up is the last thing anyone reads about it, and the card
+                    // that carried the reason is gone by then.
+                    Log($"  {NameOf(row)} given up on after {MaxFailures} failures — " +
+                        $"{result.Error} — the other rows carry on");
+                    next.Remove(row);
+                    continue;
+                }
+                next[row] = DateTime.Now.AddMinutes(RetryMinutes);
+            }
+        }
     }
 
     /// <summary>The owner name this tool claims the game under — the same as its tool id, so a card
@@ -592,6 +828,32 @@ public sealed class PetTool : ToolBase
     /// <summary>Gives the game back. Always called — a tool that dies holding the gate would leave the
     /// launcher waiting on it for the rest of the session.</summary>
     private void ReleaseGame() => _gate?.Release(GateOwner);
+
+    /// <summary>Whether the game window is open, restored and IN FRONT — the precondition every
+    /// screen read and every click in this tool shares.
+    ///
+    /// The reads are SCREEN GRABS, so whatever is in front of the game is what gets measured. Two of
+    /// them already refuse to judge an image that is not the game — the feeder counts and the icon
+    /// sweep — and the composer refuses its empty box for the same reason. This is that same check,
+    /// in one place, so the reads that were missing it cannot drift from the ones that had it.
+    ///
+    /// WHY IT MATTERS, measured 2026-10-11. pet.log holds **194 slot reads of exactly 1.000** —
+    /// "completely different from the empty reference" — and the feeder counts failed to read in 104
+    /// of the reads that followed one. Four rows reading "occupied by 1.000" in the same second, with
+    /// no count and no time line, is not four pets: it is one covered window. The slot read was the
+    /// one screen read WITHOUT this gate, so it answered "a pet is in the loader" from whatever was
+    /// covering the game — the reload then pressed the end toggle at the covering window, read the
+    /// same covered image back, and failed with no reason written to the log at all (the
+    /// pet-did-not-come-back branch, the only !ok return in ReloadRowInPlace that logs nothing). That
+    /// path is **57 of the 90 strikes** that dropped a row across three weeks, and 24 of the 30
+    /// give-up events.</summary>
+    private bool GameIsInFront()
+    {
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        return hwnd != IntPtr.Zero
+            && !WindowFinder.IsMinimized(hwnd)
+            && WindowFinder.ForegroundWindow() == hwnd;
+    }
 
     /// <summary>Why a run can't start, or null when it can. Checked before anything moves, so a
     /// half-calibrated setup says what is missing instead of clicking into empty screen.</summary>
@@ -698,21 +960,84 @@ public sealed class PetTool : ToolBase
     ///
     /// Only the first line is a proof, and that is enough: the rows it settles are exactly the ones a
     /// blind reload would have disturbed for no reason.</summary>
-    private Dictionary<PetSlotConfig, DateTime> InspectRows(SerialPort ser, ToolState state)
+    /// <summary>What the run's opening look produced: the schedule every row starts from, and — when
+    /// the reading found rows due right now — the results of reloading them in the window it already
+    /// had open, which the caller folds back exactly like a visit's (see <see cref="FoldBack"/>).</summary>
+    private sealed record LookResult(Dictionary<PetSlotConfig, DateTime> Next, VisitResult? Acted);
+
+    private LookResult InspectRows(SerialPort ser, ToolState state,
+        Dictionary<PetSlotConfig, int> failures)
     {
         state.Message = "Checking what is already running…";
-        Log("start: opening the breeder to check each row (no reload)");
+        Log("start: opening the breeder to check each row (reloading any row that is due now)");
 
-        if (!OpenBoarding(ser, out var error))
+        if (!OpenBoarding(ser, out var error, out var unconfirmed))
         {
-            Log("  couldn't open the breeder to check: " + error + " — the ticked state is used");
-            return UnreadSchedule();
+            // UNCONFIRMED is the window that never came up — five minutes and a fresh look, not the
+            // configured cycle, for the same reason the front-loss path uses it: the game is there
+            // and the difference may be as small as the player's own menu being open.
+            Log("  couldn't open the breeder to check: " + error +
+                (unconfirmed ? " — trying again shortly" : " — the ticked state is used"));
+            return new LookResult(unconfirmed ? DeferredSchedule() : UnreadSchedule(), null);
         }
 
         // Every exit past this point closes the window — the look is a visit like any other.
         try
         {
-            return ReadRows(ser);
+            var schedule = ReadRows(ser);
+
+            // THE FRONT IS CHECKED AGAIN AFTER THE READ. A look that started in front can lose it
+            // mid-way — the player alt-tabs back to the launcher — and every read behind the fore
+            // gate then answers "couldn't read", which ScheduleFor treats as a FULL LOAD and parks
+            // on the configured cycle: 205-505 minutes for a row that may be dry right now. Five
+            // minutes and a fresh look is the honest answer, and the plan's failure direction says
+            // the cheap retry wins over the confident guess.
+            if (!GameIsInFront())
+            {
+                Log("  the game window left the front while reading — every row is looked at again " +
+                    $"in {RetryMinutes:0} min");
+                state.Message = "The game window left the front while reading the rows — " +
+                                $"trying again in {RetryMinutes:0} min.";
+                return new LookResult(DeferredSchedule(), null);
+            }
+
+            // The run's own schedule wants only the moment; the SOURCE stays inside a visit, where
+            // the veto reads it against the batch. Nothing outside a visit can cancel a reload, so
+            // nothing outside one needs to know what a reading was worth.
+            var next = schedule.ToDictionary(kv => kv.Key, kv => kv.Value.Next);
+
+            // ── THE HAND-OFF (§4.2) ─────────────────────────────────────────────────────────────
+            // The look has just read every row — so it already knows whether any of them is due NOW,
+            // which is the usual reason the tool was started. It used to close this window, give the
+            // game back, and then immediately re-claim and re-open for the very row it had read, with
+            // a second ReadRows inside: two complete open/read/close cycles seconds apart. The rows
+            // due now are reloaded HERE instead, in this window, by the same code a loop visit runs.
+            var ordered = _cfg.Pet.ActiveRows.ToList();
+            var now = DateTime.Now;
+            var batch = next.Where(kv => kv.Value <= now)
+                            .Select(kv => kv.Key)
+                            .OrderBy(r => ordered.IndexOf(r))
+                            .ToList();
+            if (batch.Count == 0) return new LookResult(next, null);
+
+            Log($"look: {batch.Count} row(s) are due right now — reloading them in this same window " +
+                "(no close and reopen)");
+
+            VisitResult visited;
+            try
+            {
+                // The look's own reading is handed over: the window has not been touched since it was
+                // taken, so re-reading it would be §4.2's second `ReadRows` all over again.
+                visited = ReadAndReload(ser, state, batch, failures, next, schedule);
+            }
+            catch (OperationCanceledException)
+            {
+                // The same note the main loop leaves, from the same words: a stop landed mid-reload
+                // and the game may be left half-done. The close still runs — this method's finally.
+                state.Message = StoppedDuring(batch);
+                throw;
+            }
+            return new LookResult(next, visited);
         }
         finally
         {
@@ -730,7 +1055,21 @@ public sealed class PetTool : ToolBase
     private Dictionary<PetSlotConfig, DateTime> UnreadSchedule()
     {
         var schedule = new Dictionary<PetSlotConfig, DateTime>();
-        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null);
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = ScheduleFor(row, null, null).Next;
+        return schedule;
+    }
+
+    /// <summary>The schedule for a look whose READING is not evidence — the window left the front
+    /// while the rows were being read. Every row comes back in <see cref="RetryMinutes"/>.
+    ///
+    /// Deliberately NOT <see cref="UnreadSchedule"/>: an unreadable row is treated there as a full
+    /// load and parked on the 205-505-minute cycle, which is right when nothing can be done about it
+    /// (the breeder would not open at all) and wrong here — the game was there a moment ago, and a
+    /// row may be dry NOW. Five minutes costs three tab clicks when the front comes back.</summary>
+    private Dictionary<PetSlotConfig, DateTime> DeferredSchedule()
+    {
+        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        foreach (var row in _cfg.Pet.ActiveRows) schedule[row] = DateTime.Now.AddMinutes(RetryMinutes);
         return schedule;
     }
 
@@ -741,9 +1080,10 @@ public sealed class PetTool : ToolBase
     ///
     /// It WRITES the rows: BoardingRunning is set from what the slot says. The schedule comes back so
     /// the caller can re-derive every row's next from THIS reading rather than from an old one.</summary>
-    private Dictionary<PetSlotConfig, DateTime> ReadRows(SerialPort ser)
+    private Dictionary<PetSlotConfig, RowReading> ReadRows(SerialPort ser)
     {
-        var schedule = new Dictionary<PetSlotConfig, DateTime>();
+        var schedule = new Dictionary<PetSlotConfig, RowReading>();
+        _windowProofSeen = false;
 
         // The engine is built here and disposed with the look, rather than held for the life of the
         // run: the counts are wanted once per visit, and an ONNX session parked in memory for days to
@@ -755,12 +1095,19 @@ public sealed class PetTool : ToolBase
             // its slot is the first thing that would act on it.
             foreach (var row in _cfg.Pet.ActiveRows)
             {
-                var difference = PetSlotDifference(row);
-                var empty = difference is { } d ? d <= _cfg.Pet.PetSlotOccupiedAbove : (bool?)null;
+                var (difference, empty) = PetSlotState(row);
+                // The veto's first gate, taken from THIS read: a slot that came back as occupied
+                // above the threshold. A held ticked flag is not a reading, so this is false when
+                // the slot could not be read at all — unknown must keep meaning act.
+                var slotOccupied = empty == false;
                 switch (empty)
                 {
                     case true:
                         row.BoardingRunning = false;
+                        // An empty slot MATCHED ITS REFERENCE, which is the strongest proof there is
+                        // that these pixels came from the boarding window — a covered screen cannot
+                        // match a crop of the window's own furniture.
+                        ProveWindow(ser);
                         Log($"  {NameOf(row)}: slot reads EMPTY, so this row is not boarding — " +
                             "it will be reloaded now");
                         break;
@@ -769,8 +1116,13 @@ public sealed class PetTool : ToolBase
                         Log($"  {NameOf(row)}: a pet is in the loader");
                         break;
                     default:
-                        Log($"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
-                            $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
+                        Log(difference is { } band && band >= PetSlotNotTheWindowAbove
+                            ? $"  {NameOf(row)}: the slot's pixels are NOT the boarding window " +
+                              $"(they differ from its empty reference by {band:0.###}) — keeping the " +
+                              $"ticked state ({(row.BoardingRunning ? "boarding" : "not boarding")}). " +
+                              "Either the window did not open or something covers it"
+                            : $"  {NameOf(row)}: slot couldn't be read — keeping the ticked state " +
+                              $"({(row.BoardingRunning ? "boarding" : "not boarding")})");
                         break;
                 }
 
@@ -783,12 +1135,28 @@ public sealed class PetTool : ToolBase
 
                 // Only worth reading a feeder on a row that is actually boarding — an empty one has
                 // nothing loaded and will be filled in a moment anyway.
-                if (!row.BoardingRunning) { schedule[row] = ScheduleFor(row, null, null); continue; }
+                if (!row.BoardingRunning)
+                {
+                    _lastEtaLine[row] = null;
+                    schedule[row] = ScheduleFor(row, null, null) with { SlotOccupied = slotOccupied };
+                    continue;
+                }
 
                 ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
-                var left = ReadFeederCounts(ocr, row);
-                var eta = ReadEta(ocr, row);
-                schedule[row] = ScheduleFor(row, left, eta);
+                var left = ReadFeederCounts(ocr, row, out var countsFromDigits);
+                var eta = ReadEta(ocr, row, out var rate);
+                _lastRate[row] = rate;
+                // Only when they DISAGREE: a line that matches the config is the silence every run
+                // has, and a line that does not is evidence the config is wrong for this row.
+                if (rate is { } gameRate && gameRate != _cfg.Pet.ItemsPerMinute)
+                    Log($"  {NameOf(row)}: the game's own rate line says {gameRate}/min — the config " +
+                        $"says {_cfg.Pet.ItemsPerMinute}/min; THIS ROW's arithmetic uses {gameRate}");
+                schedule[row] = ScheduleFor(row, left, eta) with { SlotOccupied = slotOccupied };
+                _lastEtaLine[row] = eta?.Line;
+
+                // The other two proofs — see ProveWindow for why the set is this narrow.
+                if (countsFromDigits || (eta is not null && FeederEta.CompletionMinutes(eta) is not null))
+                    ProveWindow(ser);
 
                 // The time line is quoted RAW, because it is a sentence rather than a number and the
                 // only way to know the region found it is to see what it read. A row whose line is
@@ -797,10 +1165,10 @@ public sealed class PetTool : ToolBase
 
                 if (left is { } items)
                     Log($"  {NameOf(row)}: {items} item(s) left in the feeder — reloading in " +
-                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
+                        $"{Math.Max(0, (schedule[row].Next - DateTime.Now).TotalMinutes):0} min{quoted}");
                 else
                     Log($"  {NameOf(row)}: the feeder counts couldn't be read — reloading in " +
-                        $"{Math.Max(0, (schedule[row] - DateTime.Now).TotalMinutes):0} min{quoted}");
+                        $"{Math.Max(0, (schedule[row].Next - DateTime.Now).TotalMinutes):0} min{quoted}");
             }
             _persistState?.Invoke();
         }
@@ -810,6 +1178,35 @@ public sealed class PetTool : ToolBase
         }
 
         return schedule;
+    }
+
+    /// <summary>What one row's read said, and where the number came from. The next time is what the
+    /// schedule always needed; the SOURCE is what the veto needs, because "the counts could not be
+    /// read" falls back to the configured cycle — a number that LOOKS like a comfortable future and
+    /// is not a reading at all. Keeping them in one value is the point: the branch that produces the
+    /// number is the only place that knows what it is worth, so the number and its worth cannot
+    /// drift apart.</summary>
+    private readonly record struct RowReading(DateTime Next, ScheduleSource Source,
+        bool SlotOccupied = false);
+
+    /// <summary>Where a row's next came from. Only <see cref="ScheduleSource.CountRead"/> counts as
+    /// a READING for the veto — food was SEEN — and even that one needs the slot to have been read
+    /// as occupied on the same pass; see <see cref="ConsiderVeto"/>.</summary>
+    private enum ScheduleSource
+    {
+        /// <summary>A feeder count came back and there is food in the tray.</summary>
+        CountRead,
+        /// <summary>The game's own completion line parsed. On its own — with no count — this is NOT
+        /// food evidence, and the veto never skips on it.</summary>
+        CompletionRead,
+        /// <summary>Counts came back as zero — reload now.</summary>
+        CountEmpty,
+        /// <summary>The row is not boarding — reload now.</summary>
+        NotBoarding,
+        /// <summary>Nothing readable: the configured cycle is assumed.</summary>
+        CycleFallback,
+        /// <summary>RELOAD EVERY ROW ON START — every row is due; no reading can cancel that.</summary>
+        StartOverride,
     }
 
     /// <summary>When a row next needs a reload, from what was read about it.
@@ -828,10 +1225,10 @@ public sealed class PetTool : ToolBase
     /// Null means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
     /// (fall back to the configured cycle, which assumes a full load). The two are different and the
     /// caller logs which.</summary>
-    private DateTime ScheduleFor(PetSlotConfig row, int? itemsLeft, FeederEta.Reading? eta)
+    private RowReading ScheduleFor(PetSlotConfig row, int? itemsLeft, FeederEta.Reading? eta)
     {
-        if (_cfg.Pet.ReloadOnStart) return DateTime.Now;
-        if (!row.BoardingRunning) return DateTime.Now;
+        if (_cfg.Pet.ReloadOnStart) return new RowReading(DateTime.Now, ScheduleSource.StartOverride);
+        if (!row.BoardingRunning) return new RowReading(DateTime.Now, ScheduleSource.NotBoarding);
 
         // THE GAME'S OWN COMPLETION TIME, when it gives one. A pet that finishes is MAILED, so the row
         // will be empty then and wants a new one — the case that otherwise waits out a whole cycle with
@@ -841,21 +1238,99 @@ public sealed class PetTool : ToolBase
 
         if (itemsLeft is not { } items)
         {
-            // No counts. A finish time is still a real answer, and a far better one than the cycle.
+            // No counts. A finish time is still a real answer, and a far better one than the cycle —
+            // but it is not FOOD evidence, and the source says so.
             return finish is { } f
-                ? DateTime.Now.AddMinutes(f + WaitAfterEmptyMinutes)
-                : DateTime.Now.AddMinutes(CycleMinutesFor(row));
+                ? new RowReading(DateTime.Now.AddMinutes(f + WaitAfterEmptyMinutes),
+                    ScheduleSource.CompletionRead)
+                : new RowReading(DateTime.Now.AddMinutes(CycleMinutesFor(row)),
+                    ScheduleSource.CycleFallback);
         }
 
-        if (itemsLeft <= 0) return DateTime.Now;
+        if (itemsLeft <= 0) return new RowReading(DateTime.Now, ScheduleSource.CountEmpty);
 
-        var rate = Math.Max(1, _cfg.Pet.ItemsPerMinute);
+        var rate = RateFor(row);
         var food = Math.Max(0, itemsLeft.Value / (double)rate);
 
-        // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself.
-        return DateTime.Now.AddMinutes(
-            (finish is { } fin ? Math.Min(food, fin) : food) + WaitAfterEmptyMinutes);
+        // WHICHEVER RUNS OUT FIRST — the food in the tray, or the pet itself. The source stays
+        // CountRead even when the finish wins the min: a count was read and it was above zero, which
+        // is the food evidence the veto needs.
+        return new RowReading(
+            DateTime.Now.AddMinutes((finish is { } fin ? Math.Min(food, fin) : food) +
+                                    WaitAfterEmptyMinutes),
+            ScheduleSource.CountRead);
     }
+
+    /// <summary>How much fresh feeding time makes a timer-driven reload not worth doing — the veto's
+    /// threshold, and one of the plan's open questions (⚑2) until this was measured.
+    ///
+    /// MEASURED, 2026-10-11, on the same pet.log the plan was written from: every batch row's own
+    /// visit-opening read falls into exactly two groups — **165 reads at 0 minutes, one at 12, and
+    /// thirty at 41 or more**. The stretch between 13 and 40 is EMPTY, so a margin anywhere inside it
+    /// fires on every recorded case; 30 is its middle, chosen the same way MatchLimit was, by sitting
+    /// where the measurements left room rather than by tuning until an answer came out.
+    ///
+    /// The number's real job is the case the log does not have: a fresh read with six minutes left is
+    /// not worth deferring for, because the deferral is not free — it spends the whole visit again
+    /// (open, read, close) when the six minutes are up. And the direction is safe by construction:
+    /// the veto only ever fires on food SEEN (see ConsiderVeto), so a margin that is too tight skips
+    /// a reload that was going to be early anyway, and one that is too loose simply acts.</summary>
+    private const double VetoMarginMinutes = 30;
+
+    /// <summary>Whether the fresh reading lets this row's reload be SKIPPED — and when it does not,
+    /// which gate kept the veto off, for the log. The note is written for `pet.log`: every firing
+    /// and every near-firing goes in, so the margin can be corrected from a run's evidence rather
+    /// than argued about.
+    ///
+    /// POSITIVE-ONLY, the plan's §2.1 rule, and it is the whole safety of the thing. A skip needs
+    /// food SEEN on this visit: the slot freshly read as occupied, a count that came back as a
+    /// number, and that number above zero. Every other state acts — an unreadable count, a slot that
+    /// could not be read, a completion line with no count beside it (zero recorded instances in three
+    /// weeks, and no evidence it is trustworthy on a dry tray), and the cycle fallback. A misread
+    /// count that says "full" would skip a reload that was needed, and an unfed pet cannot be undone;
+    /// unknown keeps meaning act.
+    ///
+    /// <paramref name="strikes"/> is only logged. A veto leaves the strike count untouched — the row
+    /// proved it can be fed — so a row with strikes standing can still be dropped by a later failure,
+    /// and the count on this line is what makes that visible before it happens.</summary>
+    private static (bool Skip, string Note) ConsiderVeto(RowReading fresh, int strikes)
+    {
+        var standing = strikes > 0 ? $" ({strikes} strike(s) standing)" : "";
+
+        if (fresh.Source == ScheduleSource.StartOverride)
+            return (false, "RELOAD EVERY ROW ON START is on — acting");
+
+        if (!fresh.SlotOccupied)
+            return (false, $"the slot was not read as occupied ({DescribeSource(fresh.Source)}) — " +
+                           "acting" + standing);
+
+        if (fresh.Source != ScheduleSource.CountRead)
+            return (false, $"no count came back ({DescribeSource(fresh.Source)}) — acting, because " +
+                           "unknown must never cancel a reload" + standing);
+
+        var ahead = fresh.Next - DateTime.Now;
+        if (ahead <= TimeSpan.FromMinutes(VetoMarginMinutes))
+            return (false, $"the fresh read leaves {ahead.TotalMinutes:0} min of food (within the " +
+                           $"{VetoMarginMinutes:0} min margin) — acting" + standing);
+
+        return (true, $"the timer had it due, but the fresh read found food still in the feeder — " +
+                      $"{ahead.TotalMinutes:0} min to go (> {VetoMarginMinutes:0} min margin), next " +
+                      $"{fresh.Next:HH:mm}. Nothing ended, moved, loaded or started; its next comes " +
+                      "from this reading" + standing);
+    }
+
+    /// <summary>Where a reading came from, for a log line — the words a person reads in pet.log, not
+    /// the enum name.</summary>
+    private static string DescribeSource(ScheduleSource source) => source switch
+    {
+        ScheduleSource.CountRead => "a feeder count was read, with food in it",
+        ScheduleSource.CompletionRead => "only the game's completion line was read",
+        ScheduleSource.CountEmpty => "the counts read zero",
+        ScheduleSource.NotBoarding => "the row is not boarding",
+        ScheduleSource.CycleFallback => "nothing was readable, so the configured cycle is assumed",
+        ScheduleSource.StartOverride => "RELOAD EVERY ROW ON START",
+        _ => source.ToString(),
+    };
 
     /// <summary>Every active row's time line, read in one pass at the END of a visit — see the call
     /// site for why. A row whose line is unreadable maps to null, which is the ordinary case and not an
@@ -865,19 +1340,33 @@ public sealed class PetTool : ToolBase
         var result = new Dictionary<PetSlotConfig, FeederEta.Reading?>();
         using var ocr = new OcrEngine(_cfg, _attrs, _rootDir);
         foreach (var row in _cfg.Pet.ActiveRows)
-            result[row] = ReadEta(ocr, row);
+            result[row] = ReadEta(ocr, row, out _);
         return result;
     }
 
     /// <summary>The row's time line — the game's own statement of when this boarding completes. Null
     /// when there is nothing readable there, which the schedule answers with the food figure.</summary>
-    private static FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row)
+    private FeederEta.Reading? ReadEta(OcrEngine ocr, PetSlotConfig row, out int? rate)
     {
+        rate = null;
         if (FeederLayout.EtaRegion(row.FeederStrip) is not { } region) return null;
 
-        return FeederEta.Parse(ocr.ReadLines(
+        // THE SAME FORE GATE AS EVERY OTHER SCREEN READ — and this one had none. The line it reads is
+        // a sentence of the boarding window's own wording, so a covered read is not a lesser reading
+        // of the same thing, it is a reading of something else; and a completion-form line is one of
+        // the three proofs the X's reference is learned from (ProveWindow). A covered window must
+        // answer "nothing readable" here like it does everywhere else.
+        if (!GameIsInFront()) return null;
+
+        // ONE OCR PASS, TWO LINES OUT of the same region: the time line and the feeding rate the
+        // window prints beside it (每1分 攝取3個). The rate is per ROW and follows the pets'
+        // feeding stage, which is why one configured number cannot serve four rows — the player,
+        // 2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*.
+        var lines = ocr.ReadLines(
             new RegionConfig { Left = region[0], Top = region[1], Width = region[2], Height = region[3] },
-            3, null));
+            3, null);
+        rate = FeederEta.ParseRate(lines);
+        return FeederEta.Parse(lines);
     }
 
     /// <summary>How many food items are left in a row, read off the counts the game draws on each of
@@ -893,8 +1382,10 @@ public sealed class PetTool : ToolBase
     /// looks emptier than it is — and reloading early is nearly free, because ending boarding returns
     /// the leftover food with the pet. Overstating would leave a pet unfed, which is the one thing
     /// here that cannot be undone.</summary>
-    private int? ReadFeederCounts(OcrEngine ocr, PetSlotConfig row)
+    private int? ReadFeederCounts(OcrEngine ocr, PetSlotConfig row, out bool digitsRead)
     {
+        digitsRead = false;
+
         // The row's slots, derived from the strip the player dragged rather than from one box per
         // slot. No strip means no reading, which the caller treats as "assume a full load".
         if (FeederLayout.SlotBoxes(row.FeederStrip, row.Stacks) is not { } slots) return null;
@@ -918,9 +1409,23 @@ public sealed class PetTool : ToolBase
         var seen = new List<string>();
         for (int i = 0; i < slots.Count; i++)
         {
-            var n = FeederCountOf(ocr, slots[i]);
+            // THE FORE GATE IS RE-CHECKED PER SLOT, because each slot is its own screen grab taken a
+            // fraction of a second apart and the visit-level check is now a second or two old. A
+            // focus loss mid-read would otherwise let a capture of whatever is in front parse as a
+            // count — and a count is FOOD EVIDENCE to the veto, which would then cancel a reload that
+            // was genuinely needed. A read that spans a focus loss is discarded whole (null), not
+            // kept in part: half a reading is exactly the confident wrong number this read refuses.
+            if (WindowFinder.ForegroundWindow() != hwnd)
+            {
+                Log("  the game window left the front while the counts were being read — the whole " +
+                    "reading is discarded");
+                return null;
+            }
+
+            var (n, fromDigits) = FeederCountOf(ocr, slots[i]);
             seen.Add(n is { } v ? v.ToString(CultureInfo.InvariantCulture) : "—");
             if (n is { } value) { total += value; counted++; }
+            if (fromDigits) digitsRead = true;
         }
 
         Log($"  feeder counts: [{string.Join(" / ", seen)}] -> {total} " +
@@ -941,35 +1446,89 @@ public sealed class PetTool : ToolBase
     /// when BOTH return the same thing. That is not belt-and-braces: the measured failure of a
     /// slightly-wrong crop is a confident WRONG number — "300" came back as "0" at 0.56 and "84" as
     /// "4" at 0.89 — and clipping changes the answer between two crops while a genuine read does not.
-    /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.</summary>
-    /// <summary>One food slot's count, or null when it cannot be read.
+    /// See <see cref="FeederCount"/> and <see cref="FeederLayout"/>.
     ///
-    /// ONE read of ONE crop, because that is what the measurements showed is needed: given the right
-    /// crop the count reads at 0.99-1.00 at every upscale. Two earlier revisions did more — four crops
-    /// with a majority vote, and before that a proportional fraction of the slot — and both were
-    /// machinery around a crop nobody had found yet. There is nothing to search for now: the crop is
-    /// four tenths of the way across each slot, computed from the slot itself.</summary>
-    private int? FeederCountOf(OcrEngine ocr, List<int>? slotBox)
+    /// ONE crop, four tenths of the way across the slot and computed from the slot itself — that is
+    /// settled (see <see cref="FeederLayout"/> for the four attempts it took). What the crop cannot
+    /// fix is the READER, which is knife-edge on these digits: **one crop is read at up to
+    /// <see cref="CountReadUpscales"/>.Length upscales** before the slot is given up on, because the
+    /// scale that reads a legible number is not the same for every capture (PROGRESS 86). The first
+    /// rung is the old single read, so a slot that reads pays exactly what it always did.</summary>
+    /// <summary>The count, and whether it came from DIGITS the OCR actually read. The flag is not
+    /// decoration: a 0 from the colour verdict "this cell has no food" is a fact about a crop and can
+    /// be produced by the game world, while digits are the boarding window speaking — and only the
+    /// latter may teach the X's reference crop (see <see cref="ProveWindow"/>).</summary>
+    /// <summary>The upscales one slot's count is read at, in order, when the previous one came back
+    /// with nothing. THREE RUNGS, and they are MEASURED rungs rather than a retry loop.
+    ///
+    /// The reader is KNIFE-EDGE on these digits, and the working scale is not the same for every
+    /// image: 2026-10-11, probed offline through the real recogniser over every saved crop — a crisp
+    /// `120` reads at 3× and at nothing else (9× and 24× return junk), a failed `108` reads as the
+    /// REVERSED `801` at 3× and correctly only at 9×, and a failed `267` reads only at 24×. Same
+    /// footprint, same digits, same edge energy in all of them; no single scale reads them all, and a
+    /// fixed retry at 3× (the previous version of this) could only ever catch a genuinely transient
+    /// frame.
+    ///
+    /// So the rungs are the three scales the corpus actually needed, and the FIRST one is today's
+    /// read — a successful slot pays exactly what it always did (~118 ms measured). Only a failure
+    /// walks the ladder, and the whole ladder costs ~0.65 s where the old three same-scale attempts
+    /// cost ~0.33 s; with about one unreadable slot per look, that is ~0.3 s every few hours.
+    ///
+    /// What survives every rung unchanged is the guard: `FeederCount.Parse` rejects anything above
+    /// 300, so a reversed or garbled read becomes NO READING rather than a confident wrong number.
+    /// The empty-slot colour check runs BETWEEN rungs, so a genuinely empty slot still pays for one
+    /// verdict and no ladder.
+    ///
+    /// PUBLIC so the launcher's Test read walks the SAME rungs: a diagnostic with its own copy of the
+    /// scale would report "(nothing)" for a slot the run reads fine, and the player would re-draw a
+    /// strip over a slot that was never broken — the same rule the MatchLimit comment states.</summary>
+    public static IReadOnlyList<int> CountReadUpscales { get; } = new[] { 3, 9, 24 };
+
+    private (int? Count, bool FromOcr) FeederCountOf(OcrEngine ocr, List<int>? slotBox)
     {
-        if (RegionFor(slotBox) is not { } region) return null;
+        if (RegionFor(slotBox) is not { } region) return (null, false);
 
-        if (ReadStack(ocr, region) is { } count) return count;
+        for (var attempt = 1; attempt <= CountReadUpscales.Count; attempt++)
+        {
+            // THE FORE GATE, RE-CHECKED PER RUNG. Each rung is its own screen grab, and the ladder spends
+            // a second or more inside one slot — so a focus lost in between would otherwise let a rung
+            // OCR whatever window is in front and hand its digits back as this slot's count, which the
+            // visit then treats as FOOD EVIDENCE. The per-slot gate above cannot cover this: it ran
+            // before the first rung. A read that spans a focus loss is discarded whole, here as there.
+            if (attempt > 1 && !GameIsInFront())
+            {
+                Log("  the game window left the front while a slot was being re-read — this slot's " +
+                    "reading is discarded");
+                return (null, false);
+            }
 
-        // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
-        // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
-        // case that is genuinely odd. This order cost a live run two confusing saves before it was
-        // right: the log said "a slot read NOTHING" about a slot that was simply empty.
-        //
-        // NO NUMBER is either a crop the reader failed on or a slot with NOTHING IN IT, and those mean
-        // opposite things: one says "assume a full load", the other says "reload now". The pixels settle
-        // it. See FeederCount.WarmFraction.
-        if (SlotHasNoFood(region) is true) return 0;
+            if (ReadStack(ocr, region, CountReadUpscales[attempt - 1]) is { } count) return (count, true);
 
-        // FOOD IS THERE AND NO NUMBER WAS READ. That one is worth its pixels: a crop in the wrong place
-        // and a crop the reader cannot see text in look identical in the log and need opposite fixes —
-        // and today a slot holding a legible 300 read as nothing and left three theories and no evidence.
+            // AN EMPTY SLOT IS NOT A FAILURE. It holds no food, so it has no digits, and zero is the right
+            // answer — taken FIRST, so a healthy run writes no files and the save below fires only on the
+            // case that is genuinely odd. This order cost a live run two confusing saves before it was
+            // right: the log said "a slot read NOTHING" about a slot that was simply empty.
+            //
+            // NO NUMBER is either a crop the reader failed on or a slot with NOTHING IN IT, and those mean
+            // opposite things: one says "assume a full load", the other says "reload now". The pixels settle
+            // it. See FeederCount.WarmFraction.
+            if (SlotHasNoFood(region) is true) return (0, false);
+
+            if (attempt < CountReadUpscales.Count)
+            {
+                Log($"  a slot with food read nothing at {CountReadUpscales[attempt - 1]}x " +
+                    $"(attempt {attempt} of {CountReadUpscales.Count}) — reading it again at " +
+                    $"{CountReadUpscales[attempt]}x");
+                SleepCheck(0.2);   // let the next frame commit before the next grab
+            }
+        }
+
+        // FOOD IS THERE AND NO NUMBER WAS READ, every attempt. That one is worth its pixels: a crop in
+        // the wrong place and a crop the reader cannot see text in look identical in the log and need
+        // opposite fixes — and today a slot holding a legible 300 read as nothing and left three
+        // theories and no evidence.
         SaveFailedSlotCrop(ocr, region);
-        return null;
+        return (null, false);
     }
 
     /// <summary>Saves the image a failed slot read was given, so a blank reading arrives with its
@@ -1014,6 +1573,9 @@ public sealed class PetTool : ToolBase
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
 
+        // Same fore gate as every other screen read — a covered game would answer about the cover.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
         var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
         {
             Left = region[0], Top = region[1], Width = region[2], Height = region[3],
@@ -1044,14 +1606,14 @@ public sealed class PetTool : ToolBase
     private List<int>? RegionFor(List<int>? slotBox) =>
         FeederLayout.ReadRegion(slotBox, _cfg.Pet.FeederCountLeftFraction);
 
-    /// <summary>One crop, read to a number.</summary>
-    private int? ReadStack(OcrEngine ocr, List<int> box)
+    /// <summary>One crop, read to a number at one upscale.</summary>
+    private int? ReadStack(OcrEngine ocr, List<int> box, int upscale)
     {
         var region = new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] };
         // Scored, so the caller can pick the BEST line rather than the first survivor: this crop comes
         // back with the real count beside junk from the food icon, and which is which is the score.
         var min = _cfg.Pet.FeederCountMinScore;
-        return FeederCount.Parse(ocr.ReadLinesScored(region, 3, null, min), min);
+        return FeederCount.Parse(ocr.ReadLinesScored(region, upscale, null, min), min);
     }
 
     /// <summary>How long one load lasts, minus the safety margin — i.e. when to reload next.
@@ -1062,7 +1624,7 @@ public sealed class PetTool : ToolBase
     /// different times and one timer cannot serve both.</summary>
     private double CycleMinutesFor(PetSlotConfig row)
     {
-        var full = _cfg.Pet.LoadMinutesFor(row);
+        var full = LoadMinutesFor(row);
         if (full <= 0) return 60;   // a broken rate must not spin the loop
         return Math.Max(5, full + WaitAfterEmptyMinutes);
     }
@@ -1077,7 +1639,7 @@ public sealed class PetTool : ToolBase
     /// own hours-old timer comes round.</summary>
     private sealed record VisitResult(
         Dictionary<PetSlotConfig, RowOutcome> Rows,
-        Dictionary<PetSlotConfig, DateTime> Schedule);
+        Dictionary<PetSlotConfig, RowReading> Schedule);
 
     /// <summary>One row's result from a visit. <paramref name="PetMinutes"/> is how long the pet that
     /// was boarded still needs, or null when that could not be answered — the caller falls back to the
@@ -1096,7 +1658,13 @@ public sealed class PetTool : ToolBase
         // describes the pet that was just taken out, so without this a freshly landed pet has no
         // figure from the game at all — only the panel estimate, which a pet from the return slot may
         // not have. Null whenever the line was unreadable or said something other than a finish.
-        double? LandedLineMinutes = null);
+        double? LandedLineMinutes = null,
+        // No RELOAD was attempted for this row — the boarding window would not come up, so the row's
+        // own steps (end, place, load, start) never ran. A wait, not a failure: a strike for a window
+        // that never opened would count against a row that was never touched. (The OPEN itself did
+        // click — twice, trying to bring the window up — which is why this says "no reload", not "no
+        // click".)
+        bool Deferred = false);
 
     /// <summary>Everything one boarding-window open should do: read every row, then do the rows that
     /// are due — one at a time, in row order — and close once.
@@ -1112,45 +1680,160 @@ public sealed class PetTool : ToolBase
     ///
     /// A ROW THAT FAILS DOES NOT TAKE THE VISIT WITH IT. Each row is reported separately, the rest are
     /// still attempted, and the window closes once at the end either way.</summary>
-    private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch)
+    private VisitResult Visit(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
+        Dictionary<PetSlotConfig, int> failures, Dictionary<PetSlotConfig, DateTime> next)
     {
         var results = new Dictionary<PetSlotConfig, RowOutcome>();
-        var schedule = new Dictionary<PetSlotConfig, DateTime>();
-
         state.Message = batch.Count > 1
             ? $"Opening the breeder for {batch.Count} rows…"
             : $"{NameOf(batch[0])}: opening the boarding window…";
         Log($"visit: opening the breeder once for {batch.Count} row(s) — " +
             string.Join(", ", batch.Select(NameOf)));
 
-        if (!OpenBoarding(ser, out var openError))
+        if (!OpenBoarding(ser, out var openError, out var openUnconfirmed))
         {
-            Log("  FAILED opening: " + openError);
-            foreach (var row in batch) results[row] = new RowOutcome(false, openError, null, false);
+            Log(openUnconfirmed ? "  the open was not confirmed: " + openError : "  FAILED opening: " + openError);
+            var failed = new Dictionary<PetSlotConfig, RowOutcome>();
+            foreach (var row in batch)
+                failed[row] = new RowOutcome(false, openError, null, false, Deferred: openUnconfirmed);
 
             // NO SCHEDULE, deliberately. The reader never ran, so there is nothing to re-derive — and
             // returning the fallback schedule here would OVERWRITE every other row's measured next with
             // "assume a full load", turning one failed open into a run-wide loss of what was known.
-            return new VisitResult(results, new Dictionary<PetSlotConfig, DateTime>());
+            return new VisitResult(failed, new Dictionary<PetSlotConfig, RowReading>());
         }
 
         // Every exit past this point closes the window: leaving it open would sit on top of the game
         // while the tool waits out its next cycle, and the next cycle would click 目錄 behind it.
         try
         {
+            return ReadAndReload(ser, state, batch, failures, next);
+        }
+        finally
+        {
+            // Muted, for the same reason as the look path above: the window close is cleanup, and a
+            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
+            WithoutCancellation(() => CloseBoarding(ser));
+        }
+    }
+
+    /// <summary>Everything a visit does with the boarding window ALREADY OPEN: the reading that is
+    /// also the schedule, the veto, the row loop, and the second time-line pass. Split out of
+    /// <see cref="Visit"/> for one caller — the run's opening LOOK (see <see cref="InspectRows"/>):
+    /// when the look finds rows due right now, they are reloaded in the window it already has open,
+    /// and §4.2's waste (close, release, re-claim, reopen for the very row just read) is gone. It is
+    /// ONE body, so the look's reload and the loop's reload cannot drift apart.
+    ///
+    /// <paramref name="alreadyRead"/> is the look's OWN reading of this same window, handed over so
+    /// the hand-off does not pay a second full OCR pass for a window nothing has touched in between.
+    /// §4.2 lists that second `ReadRows` as half the waste; skipping it is the other half.</summary>
+    private VisitResult ReadAndReload(SerialPort ser, ToolState state, List<PetSlotConfig> batch,
+        Dictionary<PetSlotConfig, int> failures, Dictionary<PetSlotConfig, DateTime> next,
+        Dictionary<PetSlotConfig, RowReading>? alreadyRead = null)
+    {
+        var results = new Dictionary<PetSlotConfig, RowOutcome>();
+        var schedule = new Dictionary<PetSlotConfig, RowReading>();
+
+        // The bag every row of THIS visit works from — the sweep, its reason, and whether it has been
+        // taken. One per visit, dead with the frame (plan ⚑5).
+        var bag = new VisitBag();
+
+        {
             // READ FIRST, and read EVERYTHING — the due rows to act on, and the rest because this
             // reading is also what re-derives their next.
-            schedule = ReadRows(ser);
+            schedule = alreadyRead ?? ReadRows(ser);
 
+            // ── THE READING CAN ADD ROWS TO THIS VISIT, NOT ONLY CANCEL THEM ────────────────────
+            // The batch is chosen from the SCHEDULE before the window opens, and the read is the
+            // authority on when a row is due — but until now it could only cancel an act, never join
+            // one. Live, 2026-10-11 15:34: the visit belonged to Row 4, and its own read found ROW 2's
+            // slot EMPTY — a boarding that had stopped, so Row 2 was due THAT INSTANT. The reading
+            // came one moment too late to be acted on, so Row 2 got its own visit 40 seconds later:
+            // open, read everything again, reload, close. That close-and-reopen pair is exactly what
+            // the player asked about.
+            //
+            // Same rule as the batch itself: strictly due NOW, from THIS read — a row joins because
+            // the fresh reading says it needs attention, which is the same evidence the veto trusts,
+            // pointed the other way. The veto still runs per row afterwards, so a joining row gets no
+            // less scrutiny than one the schedule sent.
+            var ordered = _cfg.Pet.ActiveRows.ToList();
+            foreach (var row in _cfg.Pet.ActiveRows)
+            {
+                if (batch.Contains(row)) continue;
+
+                // A ROW THE RUN HAS GIVEN UP ON IS NOT REVIVED HERE. The fold drops a row after
+                // MaxFailures strikes (next.Remove), and that drop is what stops unbounded clicking on
+                // a row that keeps failing — so the join must not quietly undo it and run a full
+                // reload attempt whose outcome the fold then discards (the row is no longer in next).
+                // A fresh read saying "due now" is not new evidence about a row the run already judged.
+                if (!next.ContainsKey(row)) continue;
+                if (!schedule.TryGetValue(row, out var reading) || reading.Next > DateTime.Now) continue;
+
+                batch.Add(row);
+                Log($"  {NameOf(row)} also reads due NOW — it joins this visit instead of getting a " +
+                    "second open and close of its own");
+            }
+            batch.Sort((a, b) => ordered.IndexOf(a).CompareTo(ordered.IndexOf(b)));
+
+            // THE FRONT IS CHECKED AGAIN PER ROW, because the check in the main loop is a few clicks
+            // and an OCR pass old by now — and every action from here presses keys and buttons at
+            // whatever window is in front. A focus stolen mid-visit abandons the REST of the visit;
+            // the row already in flight runs to its own failure path, which now says why.
+            var frontLost = false;
+            var vetoed = 0;
             foreach (var row in batch)
             {
-                var ok = ReloadRowInPlace(ser, state, row, out var rowError, out var petMinutes,
+                if (!GameIsInFront())
+                {
+                    frontLost = true;
+                    Log("  the game window left the front — the rest of this visit is abandoned; " +
+                        "the rows not reached were not touched");
+                    state.Message = "The game window left the front — the rest of the visit was skipped.";
+                    break;
+                }
+
+                // THE VETO — the fresh read may CANCEL the reload the timer asked for (plan §2).
+                // A vetoed row is simply absent from `results`, which is all the fold-back needs:
+                // "read but not acted on → take the freshly measured next" already exists, and it is
+                // exactly right here — the next comes from the reading that did the vetoing.
+                // The default is spelled out rather than `default(RowReading)`: the enum's zero value
+                // is CountRead, so a missing entry would silently LOOK like positive food evidence.
+                // It cannot be missing today — ReadRows writes every active row — but the cost of
+                // being wrong in that direction is an unfed pet, so the fallback is the safe one.
+                var fresh = schedule.TryGetValue(row, out var read)
+                    ? read
+                    : new RowReading(DateTime.Now, ScheduleSource.CycleFallback);
+                var (skip, note) = ConsiderVeto(fresh, failures.TryGetValue(row, out var prior) ? prior : 0);
+                if (skip)
+                {
+                    vetoed++;
+                    Log($"  veto: {NameOf(row)} — {note}");
+                    state.Message = $"{NameOf(row)} isn't due on a fresh read — next {fresh.Next:HH:mm}.";
+                    continue;
+                }
+                Log($"  veto check: {NameOf(row)} — {note}");
+
+                var ok = ReloadRowInPlace(ser, state, row, bag, out var rowError, out var petMinutes,
                     out var nothingToBoard);
                 results[row] = new RowOutcome(ok, rowError, petMinutes, nothingToBoard);
 
                 if (!ok)
-                    Log($"  {NameOf(row)} failed inside the visit — the other rows carry on");
+                    Log($"  {NameOf(row)} failed inside the visit — {rowError} — the other rows carry on");
             }
+
+            // "EVERY due row" only when every due row was actually adjudicated: a front-loss
+            // abandonment leaves later rows unjudged, and the line must not claim a verdict for them.
+            if (vetoed > 0 && results.Count == 0 && !frontLost)
+                Log($"  visit: every due row is still fed on a fresh read — nothing reloaded " +
+                    $"({vetoed} vetoed)");
+
+            if (frontLost)
+                // NO SCHEDULE, deliberately, and for the same reason the failed-open path returns an
+                // empty one: the reading above was taken off a covered screen too, so its fallbacks
+                // are not evidence about the rows — returning them would park a dry row on the
+                // configured cycle for 205-505 minutes. The rows not touched keep the next they had;
+                // the main loop's front check defers them properly on the next pass.
+                return new VisitResult(results, new Dictionary<PetSlotConfig, RowReading>());
 
             // ── THE SECOND READ, while the window is still open ──────────────
             //
@@ -1180,20 +1863,15 @@ public sealed class PetTool : ToolBase
                 }
 
                 // A row it did NOT act on: only ever pull its next earlier. The reading from the top
-                // of the visit still stands when this one says nothing.
+                // of the visit still stands when this one says nothing — and so does its SOURCE: a
+                // later time is not new evidence about what the earlier read was worth.
                 if (finish is not { } mins || !schedule.TryGetValue(row, out var current)) continue;
                 var candidate = DateTime.Now.AddMinutes(mins + WaitAfterEmptyMinutes);
-                if (candidate >= current) continue;
+                if (candidate >= current.Next) continue;
 
                 Log($"  {NameOf(row)}: finish line read on the second pass — {mins:0} min to go");
-                schedule[row] = candidate;
+                schedule[row] = current with { Next = candidate };
             }
-        }
-        finally
-        {
-            // Muted, for the same reason as the look path above: the window close is cleanup, and a
-            // stop arriving here used to abort it — and to replace whatever exception was unwinding.
-            WithoutCancellation(() => CloseBoarding(ser));
         }
 
         return new VisitResult(results, schedule);
@@ -1210,12 +1888,18 @@ public sealed class PetTool : ToolBase
     ///
     /// The rows are still serviced one at a time, which is the player's own ordering constraint
     /// (2026-09-19): each row is offloaded and re-boarded before the next is touched.</summary>
-    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row,
+    private bool ReloadRowInPlace(SerialPort ser, ToolState state, PetSlotConfig row, VisitBag bag,
         out string error, out double? petMinutes, out bool nothingToBoard)
     {
         error = "";
         petMinutes = null;
         nothingToBoard = false;
+
+        // Whether THIS reload ended the row's boarding — the trigger for the fallback sweep, and it
+        // has to be read before the end block clears it. A row that was boarding has its pet in the
+        // loader when the visit's sweep ran, so if the shared list holds nothing feedable this flag
+        // is what says "your own pet came back a moment ago; look again".
+        var justEnded = row.BoardingRunning;
 
         // A plain block rather than a try/finally: there is nothing to clean up per row any more, and
         // the braces are kept so this stays a reviewable diff against the method it was — this is the
@@ -1269,13 +1953,21 @@ public sealed class PetTool : ToolBase
                             "asked and a boarding may now be running with nothing in it. Stopping " +
                             "rather than clicking on: check the row in the game, and re-capture its " +
                             "empty-slot reference on Calibrate Pet if the slot is empty.";
+                    // THE ONE !ok PATH THAT USED TO LOG NOTHING, and it is the one that mattered
+                    // most: measured on 2026-10-11, 77 of the 131 in-visit failures in pet.log sat
+                    // between this press and the visit's own "failed inside the visit" line with no
+                    // reason anywhere — 57 of the 90 strikes that dropped a row. The error text went
+                    // only to the card, which is overwritten by the next line and gone when the tool
+                    // stops. Every other failure path here already logs its own reason; this one
+                    // said nothing, so in the log the press read as the last thing that happened.
+                    Log("  FAILED ending: " + error);
                     return false;
                 }
             }
 
             state.Message = $"{NameOf(row)}: placing the pet…";
             Log("  placing the pet");
-            if (!PlacePet(ser, row, out error, out nothingToBoard))
+            if (!PlacePet(ser, row, bag, justEnded, out error, out nothingToBoard))
             {
                 Log("  FAILED placing the pet: " + error);
                 return false;
@@ -1340,6 +2032,14 @@ public sealed class PetTool : ToolBase
                     (landed is null
                         ? "nothing"
                         : $"{landed.Line}  ({(landed.IsCompletion ? "COMPLETION — drives a schedule" : "level form — drives nothing by design")})"));
+
+                // AND THE ROW'S STORED LINE AND RATE ARE REFRESHED FROM THIS READ, because everything
+                // stored before it describes the pet that was just taken OUT. The card's `→ +N` and
+                // RateFor were both showing the PREVIOUS boarding's numbers after a reload — a row
+                // whose new pet is at another stage would then be timed at the old pet's rate. This
+                // read exists for exactly this moment (the landed pet's own line), so it feeds both.
+                _lastEtaLine[row] = landed?.Line;
+                _lastRate[row] = FeederEta.ParseRate(raw);
             }
             catch (Exception ex)
             {
@@ -1364,12 +2064,44 @@ public sealed class PetTool : ToolBase
     /// reason — a keystroke with no dialog in front of it is a no-op, where a missing keystroke in
     /// front of one is a reload that stops dead.
     /// </summary>
-    private bool OpenBoarding(SerialPort ser, out string error)
+    private bool OpenBoarding(SerialPort ser, out string error, out bool unconfirmed)
     {
-        if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
-        SleepCheck(WindowWait);
-        if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+        unconfirmed = false;
+        // THE ALREADY-OPEN PROBE, and it only runs when the tool has a reason to suspect the window
+        // is still up: a close whose click could not be sent, or a run killed between open and close
+        // (BoardingWindowMayBeOpen, persisted for exactly those two). The ordinary open pays nothing
+        // for it. A positive match skips the two clicks, because both of their targets are
+        // coordinates in the CLOSED world — 目錄 sits behind the window, and the feed icon's panel is
+        // not showing — so clicking them is how a left-open window became a blind click into it.
+        var alreadyOpen = _cfg.Pet.BoardingWindowMayBeOpen && BoardingWindowLooksOpen(ser) == true;
+        if (alreadyOpen)
+        {
+            Log("  the boarding window is ALREADY OPEN (the probe matched its X) — skipping the 目錄 " +
+                "and feed-icon clicks");
+        }
+        else
+        {
+            if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
+            SleepCheck(WindowWait);
+            if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+        }
 
+        // THE WINDOW IS OPEN FROM THE FEED-ICON CLICK ON, and the belief is written HERE — not at the
+        // end of the tail. Between this line and that one sit two waits, an Enter and a write that can
+        // fail, and a Stop or a kill inside them would leave the window on screen while local.yaml
+        // said nothing was open — and the window a dead run leaves behind is the case the NEXT run is
+        // the only one that can notice. Persisted on change only: it rides the file the reload records
+        // already write.
+        if (!_cfg.Pet.BoardingWindowMayBeOpen)
+        {
+            _cfg.Pet.BoardingWindowMayBeOpen = true;
+            _persistState?.Invoke();
+        }
+
+        // Everything from here is shared by both paths. The Enter in particular: it clears the
+        // out-of-food message, which blocks 結束代養, and with no message in front of it the player
+        // confirmed it is a no-op — the one keystroke that is right in both worlds. It is NOT a click,
+        // so the already-open path can send it.
         SleepCheck(ActionWait);
         if (!Enter(ser, out error)) return false;
         Log("  enter (clears the out-of-food message if the breeder opened with one)");
@@ -1377,21 +2109,261 @@ public sealed class PetTool : ToolBase
 
         // The bag comes up on whatever page it likes, so anything known about the page is now wrong.
         _bagPage = -1;
+
+        // ── CONFIRM THE WINDOW ACTUALLY CAME UP, AND RE-OPEN ONCE IF IT DID NOT ─────────────────
+        // The player's report, 2026-10-11: *"in some cases, the first click may fail and cause the
+        // breeding window not open."* A window that never opened is the DANGEROUS state rather than a
+        // missing feature — the reads then describe the game world while everything downstream
+        // believes it is looking at rows, and the signature is indistinguishable from a covered
+        // window in the log (slots "occupied by 1.000"; counts 0 or unreadable).
+        //
+        // The X's learned reference is the confirmation, and it is POSITIVE-ONLY in both directions:
+        // only a confident "something else is at that spot" retries; unknown — no reference learned
+        // yet, the game not in front, a grab that failed — carries on exactly as the open always did.
+        // A second positive failure DEFERS the visit (see below), and the reference it may be stale
+        // against is thrown away on the second such open in a row, so a dead crop cannot gate the run
+        // for ever. (SUPERSEDED 2026-10-11, review 2: the first version carried on into the reads
+        // here, "letting them decide" — the 13:56 live incident showed what the reads then describe,
+        // which is the world.)
+        if (BoardingWindowLooksOpen(ser) == false)
+        {
+            Log("  the boarding window did NOT come up (the X is not where its reference says) — " +
+                "sending the two opening clicks again");
+            if (!Click(ser, _cfg.Pet.MenuButton!, right: false, "the 目錄 button", out error)) return false;
+            SleepCheck(WindowWait);
+            if (!Click(ser, _cfg.Pet.FeedIcon!, right: false, "the pet feed icon", out error)) return false;
+            SleepCheck(ActionWait);
+            if (!Enter(ser, out error)) return false;
+            SleepCheck(ActionWait);
+            _bagPage = -1;
+
+            if (BoardingWindowLooksOpen(ser) == false)
+            {
+                // DEFER, DO NOT CARRY ON. The first version's choice was "carry on and let the reads
+                // decide" — and the live evidence refused it: at 13:56 on 2026-10-11 the window
+                // really was closed (the player had the game's own menu open, and 目錄 is a TOGGLE,
+                // so the tool's click closed it), the reads then described the game WORLD, and the
+                // visit pressed the end toggle at the world and failed two rows. Clicks sent at a
+                // closed window can only act on the world.
+                //
+                // AND THE REFERENCE MUST NOT GATE THE RUN FOR EVER: a STALE crop answers "not there"
+                // while the window is genuinely open, and deferring on that would starve the pets.
+                // Two consecutive unconfirmed opens therefore THROW THE REFERENCE AWAY — with none,
+                // the probe answers "unknown" and the open proceeds blind exactly as it always did,
+                // and the first read that proves the window learns the crop again.
+                if (++_openUnconfirmed >= 2)
+                {
+                    Log("  the open has gone unconfirmed twice in a row — CLEARING the X's reference " +
+                        "so a crop that may be stale cannot gate every open; the first proven read " +
+                        "will learn it again");
+                    _cfg.Pet.CloseButtonPng = null;
+                    _openUnconfirmed = 0;
+                    _persistState?.Invoke();
+                }
+
+                error = "the boarding window did not come up (the X never appeared) after two tries — " +
+                        "no reload was attempted and the rows keep their place";
+                unconfirmed = true;
+                return false;
+            }
+
+            Log("  the second attempt opened it");
+        }
+
+        _openUnconfirmed = 0;   // a confirmed open clears the run of bad luck
         return true;
     }
+
+    /// <summary>How many times the X is clicked before the close is given up on. TWO, and the second
+    /// one is the fix rather than a hedge: the measured failure is the cursor placement failing to
+    /// CONVERGE — 17 in pet.log, e.g. "the cursor wouldn't move to (844,327) — it stopped at
+    /// (861,327)" — which is intermittent, and a retry re-aims from wherever the first attempt left
+    /// the cursor. The same reasoning as <see cref="PlaceAttempts"/> and
+    /// <see cref="FoodDragAttempts"/>: an intermittent action cannot be made reliable by aiming
+    /// better, it can only be re-tried, and the count only bounds it.</summary>
+    private const int CloseAttempts = 2;
 
     private void CloseBoarding(SerialPort ser)
     {
         _bagPage = -1;
         if (!IsPoint(_cfg.Pet.CloseButton)) return;
+
         // Logged even though it cannot fail the reload: it is the cleanup, and on a failed reload it
         // is the LAST thing that moves the cursor. Without a line here the log ends at the failure and
         // the closing reads as a step that ran and did something unexplained.
-        if (!Click(ser, _cfg.Pet.CloseButton!, right: false, "the boarding X", out var err))
-            Log("  close: couldn't reach the X — " + err);
-        else
-            Log("  close: clicked the boarding window's X");
+        for (var attempt = 1; attempt <= CloseAttempts; attempt++)
+        {
+            if (Click(ser, _cfg.Pet.CloseButton!, right: false, "the boarding X", out var err))
+            {
+                Log(attempt == 1
+                    ? "  close: clicked the boarding window's X"
+                    : $"  close: the X went through on attempt {attempt} of {CloseAttempts}");
+
+                // The click WAS SENT, so the window is taken to be closed — the assumption every
+                // click in this tool makes, kept here deliberately: nothing can see the result of a
+                // click that went out. The probe exists for the failure where NO click went out at
+                // all, which is the only kind that leaves the belief false.
+                if (_cfg.Pet.BoardingWindowMayBeOpen)
+                {
+                    _cfg.Pet.BoardingWindowMayBeOpen = false;
+                    _persistState?.Invoke();
+                }
+                SleepCheck(ClickWait);
+                return;
+            }
+
+            Log($"  close: couldn't reach the X — {err}" +
+                (attempt < CloseAttempts ? " — trying once more" : ""));
+            SleepCheck(ActionWait);
+        }
+
+        // BOTH ATTEMPTS FAILED, so the window may still be OPEN — and the belief is left standing, so
+        // the next open PROBES for it before clicking 目錄 (see OpenBoarding). The probe is consulted
+        // only because of this belief; a probe that cannot answer falls back to the old blind click,
+        // which is the failure this line is here to make findable.
+        Log("  close: the X could not be reached — the boarding window may still be OPEN; " +
+            "the next open will probe for it first");
+    }
+
+    /// <summary>How far the probe's box extends each way from the X's point — 14 gives the 28x28 crop
+    /// the probe design measured (2026-10-11, on the player's own capture): the X's glyph is about
+    /// 26 px wide, and a 28x28 crop compared at the matcher's 6-px inset leaves a 16x16 window wholly
+    /// on the button, while 32x32 starts catching the animated world behind the window's corner. The
+    /// calibrated point is the ONLY stored number; the box is derived from it here, so a re-marked X
+    /// can never disagree with its reference.</summary>
+    private const int CloseProbeRadius = 14;
+
+    /// <summary>How different the X's region may look from its learned reference and still count as
+    /// "the window is open". MEASURED for the probe design on the player's own capture: identical
+    /// content scored 0.000, the button's glyph alone occupies 0.36 of the compared window, and the
+    /// same window against other screen patches scored 0.98-1.00. 0.10 is three and a half times
+    /// below the glyph's own ink, so even a coincidentally matching surround cannot carry a MISSING X
+    /// — and the cost of being too strict is the old blind open, which is what happens today anyway.
+    /// The score is logged on every probe so one live run can correct this from evidence.</summary>
+    private const double CloseProbeMaxDifference = 0.10;
+
+    /// <summary>The client-relative rectangle the X's reference and the live probe both use — the
+    /// calibrated point expanded by <see cref="CloseProbeRadius"/>, or null when there is no point to
+    /// expand.</summary>
+    private List<int>? CloseProbeRegion() => IsPoint(_cfg.Pet.CloseButton)
+        ? new List<int>
+        {
+            _cfg.Pet.CloseButton![0] - CloseProbeRadius, _cfg.Pet.CloseButton![1] - CloseProbeRadius,
+            CloseProbeRadius * 2, CloseProbeRadius * 2,
+        }
+        : null;
+
+    /// <summary>Whether the boarding window looks like it is already on screen: true only for a
+    /// CONFIDENT match of the X against the reference it learned, null whenever that cannot be told,
+    /// false for a positive mismatch. Every caller must treat null as "open the old way".
+    ///
+    /// The cursor is parked first, and that is not tidiness: the measured failed close leaves the
+    /// cursor beside the X ("it stopped at (861,327)"), and a reference crop can never contain the
+    /// arrow — the same reason the bag scans park the cursor before every capture.
+    ///
+    /// A covered game returns null rather than an answer, like every other read in this tool: the
+    /// capture would be of the covering window, and "the cover looks different from the X" is not
+    /// evidence that the window is closed (nor that it is open).</summary>
+    private bool? BoardingWindowLooksOpen(SerialPort ser)
+    {
+        var region = CloseProbeRegion();
+        if (region == null) return null;
+
+        using var reference = IconMatch.FromBase64(_cfg.Pet.CloseButtonPng);
+        if (reference == null) return null;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
+        ParkCursor(ser);
         SleepCheck(ClickWait);
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+        });
+        if (cap == null) return null;
+
+        using var now = cap.Image;
+        var score = IconMatch.DifferingFraction(reference, now);
+        var open = score <= CloseProbeMaxDifference;
+        Log($"  boarding-open probe: {score:0.###} vs {CloseProbeMaxDifference:0.###} — " +
+            (open ? "the window looks OPEN" : "no match, treated as closed"));
+        return open;
+    }
+
+    /// <summary>Records that the read in progress PROVED the boarding window is up, and learns or
+    /// refreshes the X's reference from it — once per read, at the moment the proof is in hand rather
+    /// than after the remaining rows' OCR passes (a player can close the window at any moment; this
+    /// tool runs for days beside them, and the crop's provenance is the whole safety of the probe).
+    ///
+    /// THE PROOF SET IS NARROW ON PURPOSE — three structures of the window's own interior, and
+    /// nothing else:
+    ///   * a slot that MATCHED ITS EMPTY REFERENCE — a covered screen cannot match a crop of the
+    ///     window's own furniture;
+    ///   * DIGITS read off a feeder slot by the OCR — not the colour verdict "this cell has no food",
+    ///     which is a fact about a crop and could be produced by the game world;
+    ///   * the game's own COMPLETION-form time line, which is a sentence of the window's wording.
+    /// A reading that could have come from the world must never teach the reference: a world crop
+    /// MATCHES THE WORLD, so the probe would then call a closed window open and skip the only step
+    /// that opens it — the one direction this guard must not fail in.</summary>
+    private void ProveWindow(SerialPort ser)
+    {
+        if (_windowProofSeen) return;
+        _windowProofSeen = true;
+        EnsureCloseReference(ser);
+    }
+
+    /// <summary>Learns — or corrects — the reference crop of the boarding X, from a capture of a
+    /// window whose contents have just been READ. Called only from <see cref="ProveWindow"/>, in the
+    /// moment of the proof.
+    ///
+    /// WHY THE PROOF MATTERS. A crop taken on faith could be of the game world, and a world crop
+    /// MATCHES THE WORLD — which would make a closed window look open and skip the only step that
+    /// brings it up, the one direction this guard must never fail in. The proof is the tool's own
+    /// evidence that the boarding window is the thing that produced those pixels.
+    ///
+    /// An existing reference that still matches writes nothing — it is the same picture, and
+    /// local.yaml is the file the launcher's own saves also write. One that no longer matches is
+    /// REPLACED, because a re-rendered X (resolution, skin) must not kill the guard silently; the
+    /// replacement is logged, and it happens only from a proven-open window like the first one.</summary>
+    private void EnsureCloseReference(SerialPort ser)
+    {
+        var region = CloseProbeRegion();
+        if (region == null) return;
+
+        var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return;
+        if (WindowFinder.ForegroundWindow() != hwnd) return;
+
+        ParkCursor(ser);
+        SleepCheck(ClickWait);
+
+        var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
+        {
+            Left = region[0], Top = region[1], Width = region[2], Height = region[3],
+        });
+        if (cap == null) return;
+
+        using var now = cap.Image;
+        using var reference = IconMatch.FromBase64(_cfg.Pet.CloseButtonPng);
+        if (reference != null)
+        {
+            var score = IconMatch.DifferingFraction(reference, now);
+            if (score <= CloseProbeMaxDifference) return;
+
+            Log($"  the boarding X's reference no longer matches the open window ({score:0.###}) — " +
+                "replacing it with what is on screen now");
+        }
+        else
+        {
+            Log("  learning the boarding X's reference from this open window — a close that never " +
+                "reaches the X can then be noticed before the next open clicks 目錄 behind it");
+        }
+
+        _cfg.Pet.CloseButtonPng = IconMatch.ToBase64(now);
+        _persistState?.Invoke();
     }
 
     /// <summary>Right-click the marked cell to put the pet back into the boarding slot.
@@ -1407,7 +2379,8 @@ public sealed class PetTool : ToolBase
     /// not necessarily land here. IconMatch exists for exactly that case and is deliberately not wired
     /// in yet — proving the rest of the flow end to end is worth more than solving the hard case
     /// first.</summary>
-    private bool PlacePet(SerialPort ser, PetSlotConfig row, out string error, out bool nothingToBoard)
+    private bool PlacePet(SerialPort ser, PetSlotConfig row, VisitBag bag, bool justEnded,
+        out string error, out bool nothingToBoard)
     {
         error = "";
         nothingToBoard = false;
@@ -1425,158 +2398,262 @@ public sealed class PetTool : ToolBase
             return false;
         }
 
-        // THE RETURN SLOT IS TRIED FIRST (player, 2026-09-22). It is ONE cell and one hover against a
-        // three-page scan, and it is where the pet this row was just feeding comes back to — so it is
-        // both the cheapest thing to check and the likeliest thing to board.
-        //
-        // The guard below decides whether it is usable: a cell holding a pet that can still be fed is
-        // boarded, and anything else — no pet there at all, or one already finished — falls through to
-        // the scan. This is the reverse of what the code used to do, which was the queue first with
-        // deliberately NO fallback to the return slot; that reasoning held while the slot was assumed
-        // empty, and it is not.
-        var candidates = new List<PetCandidate>();
-        if (pet.ReturnSlot is { Count: 2 } back && back[1] >= 0 && back[1] < centres.Count)
-        {
-            Log($"  trying the return slot first: page {back[0] + 1}, cell {back[1]}");
-            candidates.Add(new PetCandidate(-1, back[0], back[1], 0, "the return slot"));
-        }
-
-        // …THEN THE SCAN, for the case the slot could not answer. A pet that is not in the bag either
-        // finished and was mailed or was never there, which is the honest end state and is reported as
-        // a WAIT rather than as a failure — see the caller.
-        var why = "the queue has no icons in it";
-        if (pet.Queue.Count > 0) candidates.AddRange(FindQueuedPetCandidates(ser, out why));
-
-        if (candidates.Count == 0)
-        {
-            error = pet.ReturnSlot is not { Count: 2 }
-                ? "Neither a queued pet icon nor a return slot is set — there is nothing to " +
-                  "right-click. Mark the return slot or capture a pet icon, on the Pet tab."
-                : $"No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished " +
-                  "it was mailed, so this is the queue being empty of live pets — capture the next " +
-                  "one's icon on the Pet tab.";
-            nothingToBoard = true;   // a WAIT, not a fault — see the caller
-            return false;
-        }
-
         // Built once for the placement and disposed with it — the same lifetime rule InspectRows
         // follows. LAZY, because a placement with nothing to check should not pay for an ONNX session.
         OcrEngine? ocr = null;
         try
         {
-            var refused = new List<string>();
-
-            foreach (var cand in candidates)
+            // THE SWEEP IS THE VISIT'S, TAKEN BY ITS FIRST PLACEMENT (plan §1.2/§6.3). The bag is the
+            // visit's state — it belongs to the window that is open, not to the row being reloaded —
+            // and a plural batch used to pay one full three-page sweep PER ROW. The first placement
+            // takes it and every row after walks the same list; **the sharing saves the sweep, never
+            // the check**, so each stored cell is re-read before it is clicked (see CellHoldsQueuedPet).
+            //
+            // TAKEN HERE RATHER THAN BEFORE THE ROW LOOP, deliberately: the first row of a plural batch
+            // ends its own boarding before it places, and the pet that comes back is IN THE BAG at this
+            // moment. Sweeping before the row loop would look at a bag every boarding row's pet has
+            // left — the one moment the sweep is provably least useful. It also means the ordinary
+            // single-row reload keeps the sweep exactly where it has always been.
+            var tookSweep = !bag.Swept;
+            if (tookSweep)
             {
-                if (cand.Cell < 0 || cand.Cell >= centres.Count)
+                // The food re-mark rides on this sweep and runs exactly once per visit, never
+                // skipped — so it also runs for a setup with NO pet queue but a food icon, which
+                // used to get no re-mark at all and slowly emptied a list it never refreshed.
+                bag.Candidates = pet.Queue.Count > 0 || HasFoodIcon()
+                    ? FindQueuedPetCandidates(ser, remarkFood: true, out bag.Why)
+                    : new List<PetCandidate>();
+                bag.Swept = true;
+                Log($"  the visit's bag sweep: {bag.Candidates.Count} queued pet candidate(s)" +
+                    (bag.Candidates.Count > 0 ? ", shared by every row of this visit" : ""));
+            }
+            else
+            {
+                Log($"  the visit's bag sweep was already taken — {bag.Candidates!.Count} candidate(s) " +
+                    "to re-verify before they are used");
+            }
+
+            // THE RETURN SLOT IS TRIED FIRST (player, 2026-09-22), still: ONE cell and one hover
+            // against the sweep, and it is where the pet this row was just feeding comes back to.
+            var candidates = new List<PetCandidate>();
+            if (pet.ReturnSlot is { Count: 2 } back && back[1] >= 0 && back[1] < centres.Count)
+            {
+                Log($"  trying the return slot first: page {back[0] + 1}, cell {back[1]}");
+                candidates.Add(new PetCandidate(-1, back[0], back[1], 0, "the return slot"));
+            }
+
+            // …THEN THE STORED POSITIONS. A pet that is not in the bag either finished and was mailed
+            // or was never there, which is the honest end state and is reported as a WAIT rather than
+            // as a failure — see the caller.
+            candidates.AddRange(bag.Candidates!);
+
+            // NOTE: the empty-list case does NOT return early any more. An empty list is exactly when
+            // the fallback below may be the only thing that finds this row's own returned pet — the
+            // early return that used to sit here bypassed it, and a config with queue icons and no
+            // return slot (which Ready permits) would have had a just-ended row give up on a bag that
+            // its own end press had just put its pet back into.
+
+            // WALKS ONE CANDIDATE LIST AND BOARDS THE FIRST USABLE PET. One walk, used for the visit's
+            // shared list and for a fallback's fresh one — the second is the first with a newer list,
+            // not a copy of it. `error`/`nothingToBoard` describe THIS list only; the caller decides
+            // whether a fallback sweep is worth one more walk.
+            //
+            // A "did not go in after N right-clicks" is a FAILURE of the walk, not an exhaustion: the
+            // pet was found and would not board, which no fresh sweep can fix, and today it is the
+            // row's failure — so it must never trigger the fallback.
+            bool TryBoard(List<PetCandidate> list, out string walkError, out bool walkNothing)
+            {
+                walkError = "";
+                walkNothing = false;
+                var refused = new List<string>();
+
+                foreach (var cand in list)
                 {
-                    error = $"Cell {cand.Cell} is outside the bag grid.";
+                    if (cand.Cell < 0 || cand.Cell >= centres.Count)
+                    {
+                        walkError = $"Cell {cand.Cell} is outside the bag grid.";
+                        return false;
+                    }
+
+                    // After a scan the bag is left on whichever page was swept last, so the page the
+                    // cell lives on has to be brought back up before anything is clicked on it.
+                    if (!SelectPage(ser, cand.Page, out walkError)) return false;
+
+                    var (cx, cy) = centres[cand.Cell];
+                    var cellCentre = new List<int> { cx, cy };
+
+                    if (cand.Entry >= 0)
+                        Log($"  found a queued pet: page {cand.Page + 1}, cell {cand.Cell}, match {cand.Score:0.###}");
+
+                    // ── §6.3: THE STORED CELL IS RE-READ BEFORE IT IS CLICKED ────────────────────
+                    // The sweep found this cell minutes ago, and this visit has since boarded pets
+                    // out of other cells and dragged food out of more — so the list is a memory, and
+                    // a memory is not a licence to click. The verification is POSITIVE-ONLY, like the
+                    // veto: a confident match proceeds, a confident mismatch skips and says so, and
+                    // an unreadable one carries on exactly as before (unknown must never remove a
+                    // boarding). It runs before the hover, because the hover moves the cursor onto
+                    // the cell and the arrow would land in the verification's own capture.
+                    if (cand.Entry >= 0)
+                    {
+                        var holds = CellHoldsQueuedPet(ser, cellCentre, out var holdScore);
+                        if (holds == false)
+                        {
+                            Log($"  the cell at page {cand.Page + 1} cell {cand.Cell} scores " +
+                                $"{holdScore:0.###} against every queued icon now — it no longer " +
+                                "holds a pet, so it is not clicked");
+                            continue;
+                        }
+                        if (holds is null)
+                            Log($"  the cell at page {cand.Page + 1} cell {cand.Cell} couldn't be " +
+                                "re-read — carrying on with it, because unknown must not cancel a boarding");
+                    }
+
+                    // THE +9/100% GUARD. A finished pet cannot be boarded: the right-click simply does not
+                    // place it, which in a live run looked like "the pet did not go in after 3 right-clicks"
+                    // — three attempts spent on a pet that could never go in — and boarding one raises the
+                    // error dialog that wedges everything after it.
+                    //
+                    // UNKNOWN BOARDS AS BEFORE. A null panel (no tooltip calibrated, the cursor won't move,
+                    // the read throws, the panel doesn't parse) falls through to the click. The guard may
+                    // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
+                    // direction this whole tool treats as the unrecoverable one.
+                    PetPanel? boarded = null;
+                    if (_cfg.Tooltip.IsSet)
+                    {
+                        // BOTH KINDS ARE HOVERED NOW — the return slot as well as a matched cell — because
+                        // for the slot the hover IS the decision: nothing there means nothing to
+                        // right-click, and a pet there that has finished means trying the scan instead.
+                        ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
+                        boarded = ReadHoverPanel(ocr, ser, cx, cy);
+
+                        if (boarded is { IsFinished: true })
+                        {
+                            refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
+                            Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
+                                $"{boarded.Describe()} — NOT boarding it, trying the next one");
+                            continue;
+                        }
+
+                        // THE RETURN SLOT MUST ACTUALLY HOLD A PET. A matched candidate boards even when its
+                        // panel cannot be read — unknown must never remove a boarding — but the slot is a
+                        // fixed cell that is normally empty, so NO PANEL there means there is nothing to
+                        // click rather than that we do not know. Right-clicking an empty cell is the guess
+                        // the icon matching exists to avoid.
+                        if (boarded == null && cand.Entry < 0)
+                        {
+                            Log($"  nothing in the return slot (page {cand.Page + 1}, cell {cand.Cell}) — " +
+                                "scanning for a queued pet instead");
+                            continue;
+                        }
+
+                        if (boarded == null)
+                            Log("  the hover panel couldn't be read — boarding this one as before");
+                    }
+
+                    // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost
+                    // roughly half its boarded time to reloads that loaded food into an empty slot and
+                    // reported success — and the placement is verified to within 2px, so the cursor was on
+                    // target when the click went out. An intermittent action cannot be made reliable by
+                    // aiming better; it can only be checked and repeated.
+                    for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
+                    {
+                        if (!Click(ser, cellCentre, right: true,
+                                $"the PET at cell {cand.Cell} (page {cand.Page + 1})", out walkError))
+                            return false;
+
+                        SleepCheck(Math.Max(PlaceSettle, ActionWait));
+
+                        switch (PetSlotIsEmpty(row))
+                        {
+                            case false:
+                                if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
+                                RememberBoarded(row, cand.Entry, boarded);
+                                return true;
+
+                            case null:
+                                // No reference, or the region couldn't be read. Unknown is NOT failure —
+                                // refusing to run because a safety net is absent would be worse than the
+                                // thing it guards.
+                                Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
+                                RememberBoarded(row, cand.Entry, boarded);
+                                return true;
+
+                            default:
+                                Log($"  pet slot is still EMPTY after attempt {attempt}");
+                                break;
+                        }
+                    }
+
+                    walkError = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot " +
+                                "still looks empty. Nothing was loaded. Check the return slot on the " +
+                                "Pet tab.";
                     return false;
                 }
 
-                // After a scan the bag is left on whichever page was swept last, so the page the cell
-                // lives on has to be brought back up before anything is clicked on it.
-                if (!SelectPage(ser, cand.Page, out error)) return false;
-
-                var (cx, cy) = centres[cand.Cell];
-
-                if (cand.Entry >= 0)
-                    Log($"  found a queued pet: page {cand.Page + 1}, cell {cand.Cell}, match {cand.Score:0.###}");
-
-                // THE +9/100% GUARD. A finished pet cannot be boarded: the right-click simply does not
-                // place it, which in a live run looked like "the pet did not go in after 3 right-clicks"
-                // — three attempts spent on a pet that could never go in — and boarding one raises the
-                // error dialog that wedges everything after it.
-                //
-                // UNKNOWN BOARDS AS BEFORE. A null panel (no tooltip calibrated, the cursor won't move,
-                // the read throws, the panel doesn't parse) falls through to the click. The guard may
-                // only ever REMOVE a boarding; inventing one would leave a pet unfed, which is the
-                // direction this whole tool treats as the unrecoverable one.
-                PetPanel? boarded = null;
-                if (_cfg.Tooltip.IsSet)
-                {
-                    // BOTH KINDS ARE HOVERED NOW — the return slot as well as a matched cell — because
-                    // for the slot the hover IS the decision: nothing there means nothing to
-                    // right-click, and a pet there that has finished means trying the scan instead.
-                    ocr ??= new OcrEngine(_cfg, _attrs, _rootDir);
-                    boarded = ReadHoverPanel(ocr, ser, cx, cy);
-
-                    if (boarded is { IsFinished: true })
-                    {
-                        refused.Add($"{cand.Label} at page {cand.Page + 1} cell {cand.Cell}");
-                        Log($"  {cand.Label} at page {cand.Page + 1} cell {cand.Cell} reads " +
-                            $"{boarded.Describe()} — NOT boarding it, trying the next one");
-                        continue;
-                    }
-
-                    // THE RETURN SLOT MUST ACTUALLY HOLD A PET. A matched candidate boards even when its
-                    // panel cannot be read — unknown must never remove a boarding — but the slot is a
-                    // fixed cell that is normally empty, so NO PANEL there means there is nothing to
-                    // click rather than that we do not know. Right-clicking an empty cell is the guess
-                    // the icon matching exists to avoid.
-                    if (boarded == null && cand.Entry < 0)
-                    {
-                        Log($"  nothing in the return slot (page {cand.Page + 1}, cell {cand.Cell}) — " +
-                            "scanning for a queued pet instead");
-                        continue;
-                    }
-
-                    if (boarded == null)
-                        Log("  the hover panel couldn't be read — boarding this one as before");
-                }
-
-                // Click, then LOOK. A right-click can fail to register — a live 12-hour run lost
-                // roughly half its boarded time to reloads that loaded food into an empty slot and
-                // reported success — and the placement is verified to within 2px, so the cursor was on
-                // target when the click went out. An intermittent action cannot be made reliable by
-                // aiming better; it can only be checked and repeated.
-                for (var attempt = 1; attempt <= PlaceAttempts; attempt++)
-                {
-                    if (!Click(ser, new List<int> { cx, cy }, right: true,
-                            $"the PET at cell {cand.Cell} (page {cand.Page + 1})", out error))
-                        return false;
-
-                    SleepCheck(Math.Max(PlaceSettle, ActionWait));
-
-                    switch (PetSlotIsEmpty(row))
-                    {
-                        case false:
-                            if (attempt > 1) Log($"  the pet went in on attempt {attempt}");
-                            RememberBoarded(row, cand.Entry, boarded);
-                            return true;
-
-                        case null:
-                            // No reference, or the region couldn't be read. Unknown is NOT failure —
-                            // refusing to run because a safety net is absent would be worse than the
-                            // thing it guards.
-                            Log("  pet slot not checked (no empty-slot reference, or it couldn't be read)");
-                            RememberBoarded(row, cand.Entry, boarded);
-                            return true;
-
-                        default:
-                            Log($"  pet slot is still EMPTY after attempt {attempt}");
-                            break;
-                    }
-                }
-
-                error = $"The pet did not go in after {PlaceAttempts} right-clicks — the slot still looks " +
-                        "empty. Nothing was loaded. Check the return slot on the Pet tab.";
+                // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
+                // there, they are simply all finished, and the fix is a different one — capture the icon of
+                // a pet that still needs feeding.
+                // Nothing usable, and the two shapes of that need different sentences: pets WERE found and
+                // every one has finished, or nothing was found at all — the return slot empty and no queued
+                // icon matching anything in the bag.
+                walkError = refused.Count > 0
+                    ? "Every pet that could be boarded reads +9/100%. Refused " +
+                      string.Join("; ", refused) + ". Capture the icon of a pet that can still be fed, " +
+                      "on the Pet tab."
+                    : "The return slot holds no pet, and no queued icon matched one in the bag. Capture " +
+                      "the icon of a pet that can still be fed, on the Pet tab.";
+                walkNothing = true;   // a WAIT, not a fault — see the caller
                 return false;
             }
 
-            // Every candidate was refused. Distinct from "no queued pet is in the bag": the pets ARE
-            // there, they are simply all finished, and the fix is a different one — capture the icon of
-            // a pet that still needs feeding.
-            // Nothing usable, and the two shapes of that need different sentences: pets WERE found and
-            // every one has finished, or nothing was found at all — the return slot empty and no queued
-            // icon matching anything in the bag.
-            error = refused.Count > 0
-                ? "Every pet that could be boarded reads +9/100%. Refused " +
-                  string.Join("; ", refused) + ". Capture the icon of a pet that can still be fed, " +
-                  "on the Pet tab."
-                : "The return slot holds no pet, and no queued icon matched one in the bag. Capture " +
-                  "the icon of a pet that can still be fed, on the Pet tab.";
-            nothingToBoard = true;   // a WAIT, not a fault — see the caller
+            if (TryBoard(candidates, out error, out nothingToBoard)) return true;
+            if (!nothingToBoard) return false;   // a hard failure — today's path, never re-swept
+
+            // ── THE FALLBACK SWEEP, AT MOST ONE PER ROW ─────────────────────────────────────────
+            // The hole this closes is the one the sweep's move creates: a row that was BOARDING has
+            // its pet in the loader when the sweep runs, so no stored position can name it — and if
+            // the bag holds no feedable substitute either, the walk above ends with nothing. That row
+            // ends its own boarding moments before this walk, so a fresh sweep taken NOW sees the pet
+            // wherever it landed. It fires only on "nothing usable" (a hard failure above returns
+            // first — a pet that would not go in is today's failure and no sweep fixes it), only for a
+            // row whose boarding just ended, and never for the row that took the visit's sweep (its
+            // sweep already ran after its own end). The list it finds REPLACES the shared one, so the
+            // rows after this inherit the fresher reading — and the food re-mark stays with the
+            // visit's single sweep, never here.
+            if (justEnded && !tookSweep)
+            {
+                Log("  the shared list had nothing to board and this row's own pet came back after it " +
+                    "was swept — sweeping once more for this row");
+                bag.Candidates = pet.Queue.Count > 0
+                    ? FindQueuedPetCandidates(ser, remarkFood: false, out bag.Why)
+                    : new List<PetCandidate>();
+
+                if (bag.Candidates.Count > 0)
+                {
+                    if (TryBoard(bag.Candidates, out var freshError, out var freshNothing)) return true;
+                    if (!freshNothing)
+                    {
+                        // The fresh walk found a pet and FAILED on it — that reason is the row's, and
+                        // it is more specific than the first walk's "nothing matched".
+                        error = freshError;
+                        nothingToBoard = false;
+                        return false;
+                    }
+                }
+            }
+
+            // NOTHING USABLE, and the shape of that needs the right sentence. With an EMPTY list the
+            // walk had nothing to say — the foreach never ran, so its text is the generic "no queued
+            // icon matched" — and the two real shapes of empty are "nothing is configured to find a
+            // pet by" and "the bag holds none". With a non-empty list the walk's own text already
+            // distinguishes refused-by-the-guard from matched-nothing, so it stands.
+            if (candidates.Count == 0)
+                error = pet.ReturnSlot is not { Count: 2 }
+                    ? "Neither a queued pet icon nor a return slot is set — there is nothing to " +
+                      "right-click. Mark the return slot or capture a pet icon, on the Pet tab."
+                    : $"No queued pet is in the bag ({bag.Why}). Right-clicked nothing. If the pet " +
+                      "finished it was mailed, so this is the queue being empty of live pets — capture " +
+                      "the next one's icon on the Pet tab.";
             return false;
         }
         finally
@@ -1664,7 +2741,33 @@ public sealed class PetTool : ToolBase
     /// matched. The ENTRY matters because the guard below has to name the pet it refused to board.</summary>
     private readonly record struct PetCandidate(int Entry, int Page, int Cell, double Score, string Label);
 
-    private List<PetCandidate> FindQueuedPetCandidates(SerialPort ser, out string why)
+    /// <summary>The bag ONE VISIT works from: the queued pets the visit's sweep found, and the state
+    /// that says whether that sweep has run. Created in <see cref="Visit"/>, walked by every row of
+    /// the visit, and dead when the frame is — the window closes, the world may have moved, and the
+    /// next visit re-reads everything (plan ⚑5: one visit, trivially correct).
+    ///
+    /// Null and empty mean different things about <see cref="Candidates"/>: null is "no sweep has run
+    /// yet", empty is "a sweep ran and the bag holds nothing feedable". The walk is entered with an
+    /// empty list every so often, and it must be the honest one of the two.</summary>
+    private sealed class VisitBag
+    {
+        public List<PetCandidate>? Candidates;
+
+        /// <summary>Why the sweep found nothing, for the no-pet error text. Replaced by the fallback's
+        /// own reason when that runs.</summary>
+        public string Why = "the queue has no icons in it";
+
+        /// <summary>Whether the visit's sweep has been taken. Once true, later rows walk the list
+        /// rather than sweeping again — that is the whole point of the holder.</summary>
+        public bool Swept;
+    }
+
+    /// <summary>Whether a food icon is configured — the sweep's second job (re-marking the food
+    /// cells) only exists when one is, and a sweep that can do NEITHER of its two jobs is three tab
+    /// clicks and three captures for nothing.</summary>
+    private bool HasFoodIcon() => !string.IsNullOrWhiteSpace(_cfg.Pet.FoodIconPng);
+
+    private List<PetCandidate> FindQueuedPetCandidates(SerialPort ser, bool remarkFood, out string why)
     {
         why = "";
         var found = new List<PetCandidate>();
@@ -1700,7 +2803,12 @@ public sealed class PetTool : ToolBase
         //
         // The food MOVES as stacks are consumed, so a marked list goes stale and the reload stalls on
         // cells that no longer hold anything. Re-marking on every scan is what keeps it true.
-        using var foodIcon = string.IsNullOrWhiteSpace(pet.FoodIconPng)
+        //
+        // <paramref name="remarkFood"/> is false for a row's FALLBACK sweep, and that is the whole
+        // difference between the two kinds: the re-mark happens exactly ONCE per visit (with the
+        // visit's own sweep) and is never skipped, while a fallback exists only to find a pet and must
+        // not re-write a list whose consumption the other rows are still counting against.
+        using var foodIcon = !remarkFood || string.IsNullOrWhiteSpace(pet.FoodIconPng)
             ? null
             : IconMatch.FromBase64(pet.FoodIconPng);
         var foodFound = new List<List<int>>();
@@ -1815,44 +2923,73 @@ public sealed class PetTool : ToolBase
         return found;
     }
 
+    /// <summary>Above this difference the slot is no longer showing the BOARDING WINDOW at all, and
+    /// the answer must be "unknown" rather than "occupied".
+    ///
+    /// MEASURED across `pet.log` (2026-10-11): an empty slot reads **0.000**, a pet in the slot reads
+    /// **0.65-0.785**, and everything that is not the window — the game world under a window that
+    /// never opened, or a covering window — reads **0.91 and up** (194 reads of exactly 1.000). The
+    /// stretch between 0.785 and 0.91 is empty, so 0.85 sits in it the same way MatchLimit and
+    /// VetoMarginMinutes do, by where the measurements left room.
+    ///
+    /// Why it matters as much as the fore gate does: a confident "a pet is in the loader" read off
+    /// pixels that are NOT the window is what pressed the end toggle at the game world — 57 of the
+    /// 90 strikes that dropped a row in the log. Both the covered case and the "the first click
+    /// missed and the window never opened" case produce that read.</summary>
+    private const double PetSlotNotTheWindowAbove = 0.85;
+
     /// <summary>Whether this row's pet slot in the boarding window still looks empty.
     ///
-    /// Null when it cannot be told — no reference captured, or the region unreadable — which callers
-    /// treat as "carry on" rather than "failed": a missing check must not stop a run that would
-    /// otherwise work.</summary>
-    private bool? PetSlotIsEmpty(PetSlotConfig row) => PetSlotDifference(row) is { } d
-        ? d <= _cfg.Pet.PetSlotOccupiedAbove
-        : null;
+    /// Null when it cannot be told — no reference captured, the region unreadable, or a difference in
+    /// the band that is not the window at all — which callers treat as "carry on" rather than
+    /// "failed": a missing check must not stop a run that would otherwise work.</summary>
+    private bool? PetSlotIsEmpty(PetSlotConfig row) => PetSlotState(row).Empty;
 
-    /// <summary>How unlike the row's empty reference its slot looks right now, or null when it cannot
-    /// be told — no reference captured, no window, an unreadable grab.
+    /// <summary>What the row's slot shows: how unlike its empty reference it looks right now, and what
+    /// that NUMBER MEANS — true (empty), false (a pet is in the loader) or null (cannot be told).
     ///
-    /// Split out from the yes/no so the NUMBER can be logged. A slot that reads "occupied" by a hair
-    /// is a reference that no longer matches its box — a re-drawn box leaves the crop stale, and the
-    /// comparison can only resize, not re-aim — and that failure is invisible in a boolean: it looks
-    /// exactly like a pet being there. It cost a live run an empty boarding started on a row with no
-    /// pet, which the game answered with an error box over everything.
+    /// One capture, two answers, because the number has to be logged while the decision is a
+    /// three-way one: the raw difference goes on the log line so a marginal reference can be seen
+    /// coming (a slot that reads "occupied" by a hair is a re-drawn box leaving a stale crop, and
+    /// that is invisible in a boolean — it looks exactly like a pet being there; it once started an
+    /// empty boarding, which the game answered with an error box over everything).
     ///
-    /// The threshold it is compared against is deliberately LOW, because the cost of the strict
-    /// direction is a retry and the cost of the loose direction is not noticing a pet that never went
-    /// in. PetSlotOccupiedAbove carries that reasoning.</summary>
-    private double? PetSlotDifference(PetSlotConfig row)
+    /// The three-way split itself is <see cref="PetSlotNotTheWindowAbove"/>: below it, the low
+    /// threshold <see cref="PetConfig.PetSlotOccupiedAbove"/> says empty-or-pet; above it, the pixels
+    /// are not the window and the answer is null. The cost of the strict direction here is a retry;
+    /// the cost of the loose direction is not noticing a pet that never went in.</summary>
+    private (double? Difference, bool? Empty) PetSlotState(PetSlotConfig row)
     {
-        if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return null;
+        if (!BagGrid.IsValidRect(row.BoardingPetSlot)) return (null, null);
 
         using var reference = IconMatch.FromBase64(row.PetSlotEmptyPng);
-        if (reference == null) return null;
+        if (reference == null) return (null, null);
 
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
-        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
+        if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return (null, null);
+
+        // THE FORE GATE, and it is the whole of the 2026-10-11 finding: without it a covered game
+        // read as "a pet is in the loader" at exactly 1.000, because a screen grab of the covering
+        // window shares no pixels with the empty-slot reference. See GameIsInFront for the numbers.
+        // Unknown is the right answer — every caller keeps its previous belief on null, where a
+        // confident "occupied" starts an end press at whatever is covering the game.
+        if (WindowFinder.ForegroundWindow() != hwnd) return (null, null);
 
         var box = row.BoardingPetSlot!;
         var cap = ScreenCapture.CaptureClientRegion(hwnd,
             new RegionConfig { Left = box[0], Top = box[1], Width = box[2], Height = box[3] });
-        if (cap == null) return null;
+        if (cap == null) return (null, null);
 
         using var now = cap.Image;
-        return IconMatch.DifferingFraction(reference, now);
+        var difference = IconMatch.DifferingFraction(reference, now);
+
+        bool? empty = difference switch
+        {
+            var d when d <= _cfg.Pet.PetSlotOccupiedAbove => true,
+            var d when d < PetSlotNotTheWindowAbove => false,
+            _ => null,   // not the boarding window — see PetSlotNotTheWindowAbove
+        };
+        return (difference, empty);
     }
 
     /// <summary>One transaction per stack, filling as many of the row's slots as it holds — see
@@ -1871,25 +3008,45 @@ public sealed class PetTool : ToolBase
         var drag = FoodLoadMode.IsDrag(pet.FoodLoadMode);
         for (int stack = 0; stack < stacks; stack++)
         {
-            var cell = NextFoodCell(pet);
-            if (cell == null)
+            // THE CELL IS PICKED AND RE-READ BEFORE ANYTHING IS CLICKED ON IT (plan §5's "per drag:
+            // verify the food cell before loading"). The list was re-marked by this visit's sweep, so
+            // a cell that no longer reads as food means the bag moved under the list — a compaction,
+            // or a stack leaving in a way the counter did not predict. Clicking one of those loads
+            // nothing and reports success, so the walk moves to the NEXT marked cell rather than
+            // spending the stack on an empty one. A cell that cannot be judged (no food icon, a grab
+            // that failed) is used exactly as before: unknown is not evidence of emptiness.
+            int page;
+            int index;
+            List<int> bagCell;
+            while (true)
             {
-                error = $"No food cells left — {pet.FoodSlotsUsed} of {pet.FoodSlots.Count} used. " +
-                        "Mark the cells holding food again on the Pet tab.";
-                return false;
+                var cell = NextFoodCell(pet);
+                if (cell == null)
+                {
+                    error = $"No food cells left — {pet.FoodSlotsUsed} of {pet.FoodSlots.Count} used. " +
+                            "Mark the cells holding food again on the Pet tab.";
+                    return false;
+                }
+
+                (page, index) = cell.Value;
+                if (!SelectPage(ser, page, out error)) return false;
+
+                var centres = BagGrid.Centres(pet.BagGrid!);
+                if (index >= centres.Count)
+                {
+                    error = $"A marked food cell ({index}) is outside the bag grid.";
+                    return false;
+                }
+                bagCell = new List<int> { centres[index].X, centres[index].Y };
+
+                if (CellHoldsFood(ser, bagCell, out var foodScore) != false) break;
+
+                Log($"  food cell {pet.FoodSlotsUsed}/{pet.FoodSlots.Count} (page {page + 1}, cell " +
+                    $"{index}) scores {foodScore:0.###} against the food icon — it no longer holds " +
+                    "food, so the next marked cell is used instead");
             }
 
-            var (page, index) = cell.Value;
-            if (!SelectPage(ser, page, out error)) return false;
-
-            var centres = BagGrid.Centres(pet.BagGrid!);
-            if (index >= centres.Count)
-            {
-                error = $"A marked food cell ({index}) is outside the bag grid.";
-                return false;
-            }
-            var (cx, cy) = centres[index];
-            var bagCell = new List<int> { cx, cy };
+            var (cx, cy) = (bagCell[0], bagCell[1]);
 
             List<int>? slot = null;
             if (drag)
@@ -2076,15 +3233,25 @@ public sealed class PetTool : ToolBase
 
     /// <summary>One bag cell's pixels, centred on <paramref name="centre"/> at the grid's pitch — the
     /// same crop the icon capture uses. Null when the window or the grab is unavailable, which the
-    /// caller reads as "don't know" rather than as "it moved" or "it didn't".</summary>
-    private Mat? CaptureBagCell(List<int> centre)
+    /// caller reads as "don't know" rather than as "it moved" or "it didn't".
+    ///
+    /// <paramref name="margin"/> grows the crop on every side. The drag check leaves it at zero (it
+    /// only ever compares the cell against itself), while the icon re-score needs
+    /// <see cref="IconMatch.SearchRadius"/> pixels of room so the sweep's own offset search can run
+    /// inside the crop — see <see cref="IconMatch.ScoreCell"/>.</summary>
+    private Mat? CaptureBagCell(List<int> centre, int margin = 0)
     {
         var hwnd = WindowFinder.FindByTitle(_cfg.Window.Title);
         if (hwnd == IntPtr.Zero || WindowFinder.IsMinimized(hwnd)) return null;
         if (!BagGrid.IsValidRect(_cfg.Pet.BagGrid)) return null;
 
-        var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
-        var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+        // Same fore gate as every other screen read: the before/after pair this feeds is only a
+        // comparison of the bag when both images are of the game. Covered, both are the cover and
+        // compare "unchanged" — which reads as a failed drag and re-drags a cell nobody touched.
+        if (WindowFinder.ForegroundWindow() != hwnd) return null;
+
+        var w = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!)) + 2 * margin;
+        var h = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!)) + 2 * margin;
 
         var cap = ScreenCapture.CaptureClientRegion(hwnd, new RegionConfig
         {
@@ -2094,6 +3261,81 @@ public sealed class PetTool : ToolBase
             Height = h,
         });
         return cap?.Image;
+    }
+
+    /// <summary>Whether a stored cell still holds a QUEUED PET, from a fresh grab — the plan's §6.3
+    /// verification, in three outcomes: true (a queued icon still matches), false (something else is
+    /// there now, a positive read), null (the grab or the icons could not be judged — the walk
+    /// carries on, because unknown must never cancel a boarding).
+    ///
+    /// It asks the SWEEP'S OWN QUESTION — "is any queued pet in this cell" — not "is this the exact
+    /// instance that was found". The sweep treats every cell holding a queued icon as a candidate, so
+    /// a cell that now holds a different queued pet is still one, and refusing it would throw away a
+    /// boarding the sweep would have taken. The comparison is the sweep's own offset search and
+    /// threshold (`IconMatch.ScoreCell`, `MatchLimit`), so verify and sweep cannot disagree about
+    /// what "a match" is.</summary>
+    private bool? CellHoldsQueuedPet(SerialPort ser, List<int> centre, out double score)
+    {
+        score = 1;
+        if (_cfg.Pet.Queue.Count == 0) return null;
+
+        // THE CURSOR IS PARKED FIRST, exactly as the sweep parks before its page captures: the arrow
+        // would land inside this crop and eat a slice of the sprite, scoring a cell that DOES hold
+        // the pet as one that no longer does — a positive mismatch, which skips it. The walk's own
+        // comment only reasoned about the LATER hover putting the arrow there; the preceding
+        // candidate's hover does it too (the return slot and a scan candidate can be the same cell).
+        ParkCursor(ser);
+        SleepCheck(ClickWait);
+
+        using var crop = CaptureBagCell(centre, IconMatch.SearchRadius);
+        if (crop == null) return null;
+
+        var pitchX = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
+        var pitchY = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+
+        var judged = false;
+        foreach (var entry in _cfg.Pet.Queue)
+        {
+            using var icon = IconMatch.FromBase64(entry.Png);
+            if (icon == null) continue;
+            if (IconMatch.ScoreCell(crop, icon, pitchX, pitchY) is not { } s) continue;
+
+            judged = true;
+            if (s < score) score = s;
+        }
+
+        return judged ? score <= MatchLimit : null;
+    }
+
+    /// <summary>Whether a marked food cell still holds FOOD, from a fresh grab — the same three
+    /// outcomes as <see cref="CellHoldsQueuedPet"/>, against the food icon instead of the queue.
+    ///
+    /// The sweep just re-marked the cells, so within the same visit a mismatch means the bag really
+    /// moved under the list — the game compacted a row, or a stack left in a way the counter did not
+    /// predict. Clicking such a cell loads nothing while reporting success, which is the failure the
+    /// drag check exists for and this catches one step earlier. No food icon configured ⇒ unknown,
+    /// which is today's behaviour.</summary>
+    private bool? CellHoldsFood(SerialPort ser, List<int> centre, out double score)
+    {
+        score = 1;
+        using var icon = IconMatch.FromBase64(_cfg.Pet.FoodIconPng);
+        if (icon == null) return null;
+
+        // Parked for the same reason as the pet-cell check: a stack can be clicked with the cursor
+        // still resting on it (the previous drag's landing), and the arrow in the crop reads as "this
+        // cell changed".
+        ParkCursor(ser);
+        SleepCheck(ClickWait);
+
+        using var crop = CaptureBagCell(centre, IconMatch.SearchRadius);
+        if (crop == null) return null;
+
+        var pitchX = (int)Math.Round(BagGrid.PitchX(_cfg.Pet.BagGrid!));
+        var pitchY = (int)Math.Round(BagGrid.PitchY(_cfg.Pet.BagGrid!));
+        if (IconMatch.ScoreCell(crop, icon, pitchX, pitchY) is not { } s) return null;
+
+        score = s;
+        return s <= MatchLimit;
     }
 
     /// <summary>Whether the stack left the bag cell, or null when it cannot be told.

@@ -111,7 +111,33 @@ can be paused with its hotkey (see the **Hotkeys** tab).
 **The Pet Feeder's card is different in two ways.** It is *resident*, so starting another tool leaves
 it running (see [The window](#while-a-tool-runs-mini-mode) above), and its live status is a **standing
 line** rather than a run counter — `boarding Row 1  ·  next Row 2 at 19:40  ·  2 more queued`, built
-from the boarding state and the schedule on the **Pet** tab.
+from the boarding state and the schedule on the **Pet** tab. **Under it the card lists every breeding
+row**, one line each, so all of the rows' condition is visible at once rather than only the soonest:
+
+```
+· Row 1: boarding  ·  真蔚藍鳳凰  ·  stage 6, +7, 52.18%  ·  → +9  ·  3/min (game line)  ·  next 07:14 (in 2h 41m)
+· Row 2: waiting for a reload  ·  next 19:40 (in 3h 12m)
+· Row 4: given up
+```
+
+Each line carries that row's own countdown, recomputed as the card refreshes, and — when the game's
+own time line names one — **`→ +N`**: the **餵養值 (growth)** that line counts to, in the panel's own
+vocabulary (`+9` is the last of them, and `+9` at 100 % is a finished pet). That is the whole message
+of the so-called *level* form ("到9為止预計所需時間：約94分" — *up to +9*): the game writes two kinds
+of time line, and only the *completion* form ("完成 … 約N分", when the pet finishes) drives the
+schedule. The level form is shown as the one number it carries and deliberately drives nothing.
+
+**Three different numbers sit close together, and they are not each other:** the hover panel's
+`(6階)` is the **stage** (there is no stage 8 or 9); the panel's `+7` and the line's `到9為止` are the
+**餵養值/growth** (+0 … +9); the `52.18%` is that growth bar's fill. The stage comes from hovering the
+pet icon — which is exactly what the tool reads when it places one.
+
+**`3/min (game line)` is the row's own feeding rate**, read from the window's own line
+(`每1分 攝取3個`) rather than assumed: the rate follows the pet's feeding stage, so rows holding pets
+at different stages eat at different speeds and each row's arithmetic uses its own number. The
+**Pet** tab's items-per-minute setting is only the fallback for a row whose line could not be read.
+
+A row that was given up on (three failures in a row) has no next time and says so.
 
 ### Buy Items has extra controls on its card
 
@@ -891,6 +917,24 @@ Records the display environment the calibration was measured in.
 | **Save Setup** | Writes the `calibration:` block to `config/local.yaml`. |
 | Stored calibration | The saved scale, client size and timestamp — or "none yet". |
 | ⚠ warning | Appears when your live client size differs from the stored one. **Recalibrate — do not trust the old coordinates.** |
+
+### Game client — the tw / us switch
+
+One button per known client (`tw — TW_LIVE`, `us — US_LIVE`), built from `game.variants` in
+`config/defaults.yaml`. Pressing one points the whole suite at that client: the window title and the
+Tuner's wordings come from the choice, and it is written to the config, so it survives a restart. A
+tool that is **running** keeps the wordings it started with; its next Start picks the new ones up.
+
+**Only the Tuner reads the game's text.** The Gem Composer, Buy/Sell, Spammer, Quest and the pet reads
+match no words at all — position, colour, keys, and digits — so they run on either client with no
+setup. That is why the US client's dictionary (`config/attributes.us.yaml`) **ships empty**: the
+switch will say so, the Tuner will match nothing until it is filled from that client, and everything
+else is unaffected.
+
+If a client's dictionary file is missing altogether, the switch **refuses** and says how to fix it —
+a config pointing at a client whose dictionary is absent is a launcher that will not start.
+
+---
 
 This is the tab that tells you whether an existing calibration still applies, which is the first thing
 to check on a machine you have not calibrated.

@@ -7,8 +7,14 @@ Written 2026-09-28.
 of that example. Four tests, one of which was **proven to bite** by dropping `game` from `SaveDefaults`
 and watching it fail (`Expected: "US_LIVE" / Actual: "TW_LIVE"`).
 
-**NOT built: §4.3 (the Setup-tab switch — changing clients is still a file edit) and §4.4 (moving the
-two phrase sets into the dictionary — so the per-level and time-line phrases are still TW-only).**
+**BUILT 2026-10-13: §4.2 (`LauncherService.SwitchVariant`, with a rollback so an install can never be
+left pointing at a client whose dictionary is missing), §4.3 (the Setup tab's one-button-per-variant
+switch) and §4.5 (`attributes.us.yaml` ships, EMPTY and saying why).** See PROGRESS entry 90.
+
+**STILL NOT BUILT: §4.4** (moving the two phrase sets into the dictionary — so the per-level and
+time-line phrases are still TW-only). The player's chosen scope was the tools that read no text at all
+— gem, buy, sell, spammer, quest and the pet reads — and none of them needs §4.4 or a filled US
+dictionary; §4.4 is what the *Tuner* would need on the US client.
 
 And the honest headline is at the end: the code makes a second client *possible*, and only the US client
 itself can make it *work*.

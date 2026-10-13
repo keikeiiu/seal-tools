@@ -132,6 +132,37 @@ public static class IconMatch
         return best;
     }
 
+    /// <summary>One cell's score against an icon — the sweep's own comparison, for ONE cell, with
+    /// the same inset, tolerance and offset search. Lower is better, as everywhere here; null when
+    /// the crop or the icon cannot be judged.
+    ///
+    /// WHY IT EXISTS. The visiting bag sweep runs once per visit and its candidates outlive the
+    /// moment they were found: an earlier row of the same visit boards a pet out of one of those
+    /// cells, a stack is dragged out of another, or the bag compacts. The plan's rule (§6.3) is that
+    /// sharing the sweep saves the SWEEP, never the CHECK — so a stored cell is re-scored from a
+    /// fresh grab immediately before it is used, and this is that comparison. One comparison routine,
+    /// one place to fix: IconMatch's own rule, applied to one cell.
+    ///
+    /// <paramref name="crop"/> must be the cell at its grid pitch PLUS <see cref="SearchRadius"/> on
+    /// every side, centred: a crop of exactly one cell cannot host the ±radius search (the window
+    /// would fall off its edge), and comparing without the search would score a shifted sprite as a
+    /// different item — which is the very bug the search exists to fix. The pitches are passed rather
+    /// than inferred from the crop so a caller that forgets the margin fails loudly (null) instead of
+    /// silently comparing a different-sized window than the sweep did.</summary>
+    public static double? ScoreCell(Mat crop, Mat icon, int pitchX, int pitchY,
+        int inset = DefaultInset, int tolerance = DefaultTolerance, int radius = SearchRadius)
+    {
+        if (crop.Empty() || icon.Empty() || pitchX <= 0 || pitchY <= 0) return null;
+        // The crop has to be able to HOST the whole search: a cell plus the radius on each side. A
+        // tighter one would compare at offsets the sweep never used, which is how a verification and
+        // the thing it verifies start disagreeing.
+        if (crop.Width < pitchX + 2 * radius || crop.Height < pitchY + 2 * radius) return null;
+
+        var score = BestOffsetScore(crop, (crop.Width / 2, crop.Height / 2), pitchX, pitchY, icon,
+            inset, tolerance, radius);
+        return score == double.MaxValue ? null : score;
+    }
+
     /// <summary>Every cell's score, best first — the shape the calibration test wants. Reading only
     /// the winner hides how close the runner-up was, and a runner-up at 0.02 is a tool that will
     /// eventually click the wrong item.</summary>

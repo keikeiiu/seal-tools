@@ -23,6 +23,32 @@ public sealed class AppConfig
     public TooltipConfig Tooltip { get; set; } = new();
     public QuestConfig Quest { get; set; } = new();
     public GameConfig Game { get; set; } = new();
+
+    /// <summary>Points the config at another client: sets <see cref="Variant"/> and resolves
+    /// <c>window.title</c> from it exactly as a load does, returning the dictionary file that client
+    /// needs — or null with <paramref name="error"/> set when the name is not a known variant (in which
+    /// case NOTHING is changed).
+    ///
+    /// The caller commits around the dictionary load: the Setup tab's switch resolves first, loads the
+    /// dictionary second, and rolls back by re-applying the previous variant if that load fails — so an
+    /// install can never be left pointing at a client whose dictionary is missing, which is a launcher
+    /// that will not start at all.</summary>
+    public string? ApplyVariant(string name, out string? error)
+    {
+        error = null;
+        var wanted = (name ?? "").Trim();
+        if (!Game.Variants.TryGetValue(wanted, out var variant))
+        {
+            error = $"\"{wanted}\" is not a known game variant. Known: " +
+                    string.Join(", ", Game.Variants.Keys) + ".";
+            return null;
+        }
+
+        Game.Variant = wanted;
+        Window.Title = variant.Title;
+        return variant.Attributes;
+    }
+
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
@@ -71,6 +97,7 @@ public sealed class GameConfig
         string.IsNullOrWhiteSpace(Variant)
             ? null
             : Variants.TryGetValue(Variant.Trim(), out var v) ? v : null;
+
 }
 
 /// <summary>One client: the window to find, and the dictionary that client's text needs.</summary>
@@ -388,6 +415,36 @@ public sealed class PetConfig
     /// the bag's), so the flow has to know which it is pressing.</summary>
     public List<int>? CloseButton { get; set; }
 
+    /// <summary>A crop of the boarding window's X, as it looks with the window OPEN, taken from a
+    /// live capture the moment the window was provably up — a base64 PNG, like the other reference
+    /// crops, and SESSION state rather than a calibration: it is learned by the run, not drawn by
+    /// the player.
+    ///
+    /// It exists so a run can answer "is the boarding window still open?" before its next open
+    /// clicks 目錄. pet.log holds 17 closes where the cursor could not reach the X (most recently
+    /// 2026-10-09), and each left the window on the screen for the next open to click behind. The
+    /// reference is compared with a live grab of the same rectangle at the same client coordinates,
+    /// the same stored-crop-vs-live-region shape the empty-slot check has run daily since 2026-09-17.
+    ///
+    /// LEARNED FROM A PROVEN-OPEN WINDOW, deliberately — not cropped at calibration time. What makes
+    /// a capture trustworthy here is that the boarding window's own contents were just READ out of
+    /// it (an empty slot matching, a feeder count, a time line); a crop taken earlier, on a screen
+    /// the tool cannot verify, could as easily be the bag's X or the game world, and a reference of
+    /// the world would match the world — turning a closed window into a skipped open. See
+    /// PetTool.BoardingWindowMayBeOpen for the other half.</summary>
+    public string? CloseButtonPng { get; set; }
+
+    /// <summary>Whether the tool believes the boarding window is still on screen — set when it
+    /// opens the window, cleared when it sends a close click, and LEFT SET when a close cannot be
+    /// reached (the measured failure) or a run is killed between the two.
+    ///
+    /// It is a gate, not an answer: the probe is only CONSULTED while this is true, so the common
+    /// open pays nothing for it — and when it is true and the probe cannot tell, the old blind click
+    /// happens, which is exactly today's behaviour. Persisted for the same reason the reload records
+    /// it: the window a killed run leaves open outlives the process, and the next run's first open
+    /// is the one that has to notice.</summary>
+    public bool BoardingWindowMayBeOpen { get; set; }
+
     /// <summary>The bag's ITEM1 / ITEM2 / ITEM3 tab points, in page order. Absolute tabs, not
     /// next/prev: clicking a tab lands on that page whatever page you were on, so nothing has to be
     /// read back to know where the tool is.</summary>
@@ -583,10 +640,15 @@ public sealed class PetConfig
     /// <summary>The game's per-stack cap, and a game constant rather than a setting.</summary>
     public const int StackSize = 300;
 
-    /// <summary>Items the game consumes per minute while boarding runs. Stage 6 is 3; the boarding
-    /// window states this itself (`每1分 攝取3個`), so it is a measured game constant rather than a
-    /// guess — and each row states its own, so a stage-7 row saying 4 is readable rather than a number
-    /// this config is simply wrong about.</summary>
+    /// <summary>Items the game consumes per minute while boarding runs — **the FALLBACK now**: the
+    /// boarding window states the rate itself, per row (`每1分 攝取3個`), and the tool reads it and
+    /// uses THAT row's number wherever items become minutes. This value answers only when the line
+    /// could not be read, which is what it always was in practice: a measured game constant (stage 6
+    /// is 3) rather than a guess.
+    ///
+    /// Per ROW matters because the rate follows the pets' feeding stage, and rows need not hold pets
+    /// at the same stage (player, 2026-10-11) — a stage-7 row saying 4/min is then read rather than
+    /// mis-timed by a number this config is simply wrong about. See <c>FeederEta.ParseRate</c>.</summary>
     public int ItemsPerMinute { get; set; } = 3;
 
     /// <summary>How many items one reload puts into the given row, DERIVED from that row's stack count

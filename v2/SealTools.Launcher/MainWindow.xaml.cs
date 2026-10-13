@@ -848,15 +848,18 @@ public partial class MainWindow : FluentWindow, IDisposable
         // down instead of showing a number that was true when it was written.
         if (!string.IsNullOrEmpty(state.Schedule))
         {
-            var wait = "";
-            if (state.NextActionAt is { } at)
-            {
-                var left = at - DateTime.Now;
-                wait = left <= TimeSpan.Zero
-                    ? "   (due now)"
-                    : $"   (in {(left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes:00}m" : $"{left.Minutes}m {left.Seconds:00}s")})";
-            }
+            var wait = state.NextActionAt is { } at ? "   (" + Countdown(at) + ")" : "";
             lines.Add(state.Schedule + wait);
+        }
+
+        // ONE LINE PER ROW, for the tools that have rows — the pet feeder's four breeding rows. Each
+        // carries its own moment, so every row counts down on each tick exactly like the summary
+        // does, and the player can see all four conditions at a glance instead of only the soonest.
+        foreach (var row in state.Rows)
+        {
+            lines.Add($"· {row.Name}: {row.Status}" +
+                      (string.IsNullOrEmpty(row.Detail) ? "" : $"  ·  {row.Detail}") +
+                      (row.NextAt is { } at ? $"  ·  next {at:HH:mm} ({Countdown(at)})" : ""));
         }
 
         if (!string.IsNullOrEmpty(state.Grade)) lines.Add($"Grade: {state.Grade}");
@@ -868,6 +871,17 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!string.IsNullOrEmpty(state.FilterStatus)) lines.Add($"Filter: {state.FilterStatus}");
         if (!string.IsNullOrEmpty(state.Message)) lines.Add("⚠ " + state.Message);
         return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>How long until a moment, as the card writes it. Shared by the summary line and the
+    /// per-row lines so a row's countdown reads exactly like the summary's — the same words for the
+    /// same fact, one place to change them.</summary>
+    private static string Countdown(DateTime at)
+    {
+        var left = at - DateTime.Now;
+        return left <= TimeSpan.Zero
+            ? "due now"
+            : $"in {(left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes:00}m" : $"{left.Minutes}m {left.Seconds:00}s")}";
     }
 
     // ── Config tabs ─────────────────────────────────────────────────────────
@@ -1486,6 +1500,60 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         }
         ShowStored();
+
+        // ── GAME CLIENT ──────────────────────────────────────────────────────────────────────────
+        // The client switch lives here because Setup already owns "what am I pointed at", and this is
+        // the one thing a player changes when they move between clients. One button per known variant,
+        // built from the config rather than hard-coded, so adding a client is a block in defaults.yaml.
+        var clientStatus = new TextBlock
+        {
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        var clientButtons = new StackPanel { Orientation = Orientation.Horizontal };
+
+        void ShowClient()
+        {
+            var game = _service.Config.Game;
+            foreach (var child in clientButtons.Children)
+                if (child is UiButton b && b.Tag is string name)
+                    b.Appearance = string.Equals(name, game.Variant, StringComparison.OrdinalIgnoreCase)
+                        ? ControlAppearance.Primary
+                        : ControlAppearance.Secondary;
+
+            var active = game.Active;
+            clientStatus.Text = active is null
+                ? $"No variant set — the window title is \"{_service.Config.Window.Title}\"."
+                : $"Active: {game.Variant} — window \"{active.Title}\", dictionary {active.Attributes}, " +
+                  $"{_service.Attributes.Attributes.Count} attribute(s)." +
+                  (_service.Attributes.Attributes.Count == 0
+                      ? "  ⚠ The dictionary is EMPTY: the Tuner will match nothing until it is filled " +
+                        "from that client. Every other tool is unaffected."
+                      : "");
+        }
+
+        foreach (var (name, variant) in _service.Config.Game.Variants)
+        {
+            var button = MakeButton($"{name} — {variant.Title}", ControlAppearance.Secondary);
+            button.Tag = name;
+            button.Click += (_, _) =>
+            {
+                if (_service.SwitchVariant(name, out var message)) ShowClient();
+                else clientStatus.Text = "Not switched: " + message;
+            };
+            clientButtons.Children.Add(button);
+        }
+        ShowClient();
+
+        panel.Children.Add(Section("Game client",
+            Hint("Which game client the suite drives. The window title and the Tuner's wordings come from " +
+                 "this choice, so switching is one click instead of a file edit. A tool that is RUNNING " +
+                 "keeps the wordings it started with; its next Start picks the new ones up. Only the " +
+                 "Tuner reads text — the Gem Composer, Buy/Sell, Spammer, Quest and the pet reads work " +
+                 "on any client, which is why a US dictionary may stay empty while everything else runs."),
+            clientButtons,
+            clientStatus));
 
         return MakeTab("Setup", panel);
     }
@@ -8363,16 +8431,32 @@ public partial class MainWindow : FluentWindow, IDisposable
                         {
                             var regionConfig = new RegionConfig
                             { Left = region[0], Top = region[1], Width = region[2], Height = region[3] };
-                            // Left behind so a blank result can be told from a wrong region by looking.
-                            var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
-                                "reads", $"{what.Replace(" ", "")}_{stamp}.png");
-                            var lines = await Task.Run(() => _service.ReadTextScored(
-                                regionConfig, 3, debugPath, pet.FeederCountMinScore));
-                            var shown = lines.Count == 0
-                                ? "(nothing)"
-                                : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
-                            agreed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
-                            reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}");
+                            // WALK THE SAME RUNGS A RUN WALKS (PetTool.CountReadUpscales): the reader
+                            // is knife-edge on these digits, so a slot that reads only at 9x or 24x is
+                            // read by the run and would otherwise show "(nothing)" here — sending the
+                            // player to re-draw a strip over a slot that was never broken.
+                            var rungs = SealTools.Pet.PetTool.CountReadUpscales;
+                            foreach (var rung in rungs)
+                            {
+                                // Left behind so a blank result can be told from a wrong region by looking.
+                                var debugPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logs",
+                                    "reads", $"{what.Replace(" ", "")}_{stamp}_{rung}x.png");
+                                var lines = await Task.Run(() => _service.ReadTextScored(
+                                    regionConfig, rung, debugPath, pet.FeederCountMinScore));
+                                var shown = lines.Count == 0
+                                    ? "(nothing)"
+                                    : string.Join(" | ", lines.Select(l => $"{l.Text}@{l.Score:0.00}"));
+                                agreed = SealTools.Core.FeederCount.Parse(lines, pet.FeederCountMinScore);
+
+                                // Stop at the first rung that reads — later rungs are what a run pays
+                                // only when the earlier ones failed.
+                                if (agreed is not null || rung == rungs[rungs.Count - 1])
+                                {
+                                    reads.Add($"{shown}{(agreed is { } v ? $"={v}" : "")}" +
+                                              (rung == rungs[0] ? "" : $" (at {rung}x)"));
+                                    break;
+                                }
+                            }
                         }
                     }
                     catch (Exception ex)

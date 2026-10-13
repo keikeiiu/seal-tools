@@ -37,6 +37,87 @@ public static class FeederEta
     private static readonly Regex AboutMinutes =
         new(@"約\s*(\d{1,4})\s*分", RegexOptions.Compiled);
 
+    /// <summary>`到9為止` — the 餵養值 / growth the line counts down TO. 「到9為止预計所需時間：約94分」
+    /// says "estimated time to reach +9", and +9 with a full bar is a finished pet (see
+    /// <c>PetPanel.MaxGrowth</c>). 止 is matched in both scripts because the OCR mixes them line by
+    /// line — the measured logs show Traditional 為止 beside Simplified 预 in the same sentence.</summary>
+    private static readonly Regex GrowthTo = new(@"到\s*(\d{1,2})\s*[為为]止", RegexOptions.Compiled);
+
+    /// <summary>The GROWTH (餵養值, +0 … +9) a line says the pet is heading for, or null when it names
+    /// none.
+    ///
+    /// THREE NUMBERS LIVE NEAR EACH OTHER, and the first version of this method confused two of them
+    /// — the player caught it: *"there is no stage 8 stage 9."* The hover panel's `(6階)` is the
+    /// **stage** (it has no 8/9); the panel's `+7` and this line's `到9為止` are the **growth**, which
+    /// runs +0 … +9 and ends at +9/100 % — the finished pet. The card shows `→ +9` for that reason,
+    /// in the panel's own vocabulary.
+    ///
+    /// DISPLAY ONLY: the level form drives nothing (see <see cref="CompletionMinutes"/>), and this
+    /// exists so a card can say what the line is counting to instead of quoting a sentence nobody
+    /// reads.</summary>
+    public static int? GrowthTarget(string? line)
+    {
+        if (line is null) return null;
+        var match = GrowthTo.Match(line);
+        return match.Success && int.TryParse(match.Groups[1].Value, NumberStyles.Integer,
+            CultureInfo.InvariantCulture, out var growth) && growth >= 0 && growth <= PetPanel.MaxGrowth
+            ? growth
+            : null;
+    }
+
+    /// <summary>`每1分 攝取3個` — the game's own statement of the FEEDING RATE, and the line the
+    /// player pointed at when they explained that the rate follows the pets' feeding stage
+    /// (2026-10-11: *"the reason why it is 3 food per pet is those pets are stage 6 pets"*).
+    ///
+    /// MATCHED LOOSELY, because the live OCR mangles this line far worse than a dictionary word: the
+    /// forms actually in pet.log are `每1分最取适` (37 times — the ITEM COUNT IS GONE), `每分最取尚`,
+    /// `每1分瑜取3固` and `每1分输取3固`. So the ending is NOT matched at all — `個` arrives as `固`,
+    /// `适`, `尚` — and only the two NUMBERS are required: the minute base after 每, and the nearest
+    /// number after 分. When the item count did not survive there is nothing to read and this returns
+    /// null, which is the honest answer (the configured rate stands; it is the fallback).
+    ///
+    /// The gap is capped and excludes the time line's own characters, so a line where the OCR joined
+    /// the rate sentence to 「到7為止…約25分」 cannot read the 7 as an item count.</summary>
+    private static readonly Regex RateLine = new(
+        @"每\s*(\d{1,3})\s*分[^\d到約為止]{0,6}(\d{1,4})", RegexOptions.Compiled);
+
+    /// <summary>Items per minute as the game states it, or null when the line is not there or does
+    /// not parse.
+    ///
+    /// WHY IT EXISTS, and why reading beats deducing: the player asked whether the tool could work
+    /// the rate out from the pets' stage ("possible we can deduce that?"). It does not have to — the
+    /// window prints the rate beside every row ("每1分 攝取3個"), so the row can carry its OWN rate
+    /// instead of one configured number for all four. That matters the moment two rows hold pets at
+    /// different feeding stages, which is exactly when a single constant starts mis-timing one of
+    /// them. A stage→rate table would have been a guess; this is a reading.
+    ///
+    /// Implausible values are rejected rather than clamped: a misread rate would silently rescale
+    /// every time this row computes, and the caller falls back to the configured number instead.</summary>
+    public static int? ParseRate(IEnumerable<string>? lines)
+    {
+        if (lines == null) return null;
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var match = RateLine.Match(line);
+            if (!match.Success) continue;
+            if (!int.TryParse(match.Groups[1].Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var minutes) || minutes <= 0) continue;
+            if (!int.TryParse(match.Groups[2].Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var items)) continue;
+
+            // Whole items per minute, 1..30: the config's own scale, and wide enough that no honest
+            // line is refused while a two-digit misread still is.
+            if (items <= 0 || items > 30 * minutes) continue;
+            var rate = (int)Math.Round(items / (double)minutes);
+            if (rate is >= 1 and <= 30) return rate;
+        }
+
+        return null;
+    }
+
     /// <summary>Reads the time line out of a row's text, or null when there is nothing to read.
     ///
     /// Null is an ordinary answer — an older window, a mangled read, a pet whose line says something

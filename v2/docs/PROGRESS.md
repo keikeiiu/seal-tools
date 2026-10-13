@@ -13,6 +13,625 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-13 (90) — the US client: a switch, and an empty dictionary that says why
+
+**The ask:** *"I want to be able to use some tools for the english version of client"*, clarified to the
+tools that read no text at all — gem, buy, sell, spammer, quest, the pet reads — with the switch on the
+Setup tab and no English dictionary needed. That last part the player worked out themselves: *"those
+tools don't really need another OCR?"* They do not, and PLAN-US-CLIENT says so in its own table: those
+tools match position, colour, keys and digits; the dictionary is the **Tuner's** vocabulary.
+
+**Built (PLAN-US-CLIENT §4.2, §4.3, §4.5):**
+- **`AppConfig.ApplyVariant`** — resolves a name to its title and dictionary file and sets both, or
+  changes nothing and says what the known names are. Tested for the known, the case-insensitive and the
+  unknown case.
+- **`LauncherService.SwitchVariant`** — resolves, then LOADS the dictionary, and only then commits and
+  saves (`SaveDefaults`); a failed load rolls the previous variant and title back. The order is the
+  safety: a config pointing at a variant whose dictionary is missing is not a degraded launcher, it is
+  one that throws in its constructor and never opens a window — the shape the swallowed-startup-error
+  note describes. The cached diagnostic OCR engine is dropped with it, since it holds the old words.
+- **The Setup tab's "Game client"** — one button per variant, built from `game.variants` rather than
+  hard-coded, with the active one marked and a status line that says the dictionary's entry count and
+  warns loudly when it is empty.
+- **`config/attributes.us.yaml` ships, EMPTY, with the reason in its header** — the loader refuses a
+  MISSING dictionary (right for the Tuner, wrong for everything else), so the file existing is what
+  lets the suite be pointed at the US client today. A test pins that it parses and stays empty: content
+  here is words the Tuner matches, and words written anywhere but from that client are what the repo's
+  own rule forbids.
+
+**Still not built: §4.4** — moving the per-level and time-line phrases into the dictionary, which is
+what the *Tuner* would need on the US client. Out of the chosen scope.
+
+**Verified.** 292 tests pass; Core and the test project build clean. The launcher-side changes compile in
+the next restart cycle.
+
+## 2026-10-11 (89) — review 2: the per-row rate never fired, and the join could revive a dropped row
+
+Four reviewers over the ten commits since f40b3ab (the card, the why, the growth/stage correction, the
+per-row rate, the retry, the ladder, the join, the deferral), two independent verifiers on every
+finding. All but one confirmed; the one refuted was a rounding nit. The two that mattered:
+
+**The per-row rate feature never fired, silently.** `FeederEta.ParseRate` demanded an ending of 個/个 —
+and the live OCR never produces one. pet.log's actual forms: `每1分最取适` (37 times — **the item count
+is gone**), `每分最取尚`, and `每1分瑜取3固` / `每1分输取3固` (the digit survives, 個 arrives as 固). So
+every rung of the feature was inert and the configured rate answered everything. The regex now matches
+only the two numbers (`每N分` then the nearest number, gap capped and excluding the time line's own
+characters so a line the OCR joined to 「到7為止…約25分」 cannot read the 7 as a count), and the tests
+carry the live strings. The dominant form still returns null — its count is genuinely not in the
+image — which is the honest answer: the config's rate stands.
+
+**The join could revive a given-up row.** The join iterated every active row with no check that the
+run still tracks it, so a row `FoldBack` had dropped (after three strikes) could rejoin any later
+visit, run a full reload attempt, and have its outcome silently discarded — "given up" no longer
+stuck. The join now takes the run's `next` and skips rows that are not in it: a fresh read saying
+"due now" is not new evidence about a row the run already judged.
+
+**Also fixed:** the rate and the row's time line are now refreshed from the post-start read (they
+described the pet that was just taken OUT — a row whose new pet is at another stage was timed at the
+old pet's rate); the ladder re-checks the foreground before each rung (a focus lost mid-ladder could
+hand a covering window's digits back as a count, which the visit treats as food evidence); the
+launcher's Test read walks the same rungs (`CountReadUpscales` is public for it — a diagnostic with
+its own copy of the scale would report "(nothing)" for a slot the run reads fine); the Deferred
+wording says "no reload was attempted" rather than "no click was sent" (the open itself does click);
+the refuted "ONE read of ONE crop … reads at 0.99-1.00 at every upscale" summary over `FeederCountOf`
+is replaced; `_lastItems` (write-only since the why-line was removed) is gone; the `ToolRowState`
+contract, both guides' sample row, and the close-guard plan (a dated superseding note, not a rewrite)
+are corrected.
+
+**Verified.** 290 tests pass (five new rate cases on the live strings); Pet + Core build clean. The
+launcher-side change compiles in the next restart cycle.
+
+## 2026-10-11 (88) — the reading can join a visit, and an unconfirmed open defers instead of blundering
+
+**Two live findings from the same afternoon, both from the player watching the tool.**
+
+**1. "Why does it close and reopen when several pets need reloading?"** — 15:34 on 2026-10-11, the log
+answers it: the visit belonged to Row 4, and that visit's OWN read found Row 2's slot EMPTY (its
+boarding had stopped, so Row 2 was due that instant). The batch is chosen from the schedule BEFORE the
+window opens, so the reading could only ever CANCEL an act, never join one — Row 2 therefore got a
+second visit 40 seconds later: open, read everything again, close. The player watched exactly that
+pair. **Fixed:** after `ReadRows`, any active row whose FRESH reading is due now joins the current
+visit (row order restored). Same rule as the batch itself, and the veto still runs per row, so a
+joining row gets no less scrutiny than one the schedule sent.
+
+**2. The open that never happened, and the world it acted on.** At 13:56 and 15:09 the confirmation
+probe said twice that the X was not there — the window genuinely never came up (the player had the
+game's own menu open, and 目錄 is a TOGGLE: the tool's click closed it). The first version's choice
+was "carry on and let the reads decide", and the reads did not save it: they described the game
+WORLD, the visit pressed the end toggle at the world, and two rows failed and burned strikes. **Fixed:**
+a doubly-unconfirmed open now **defers the visit** — not one click is sent, the rows keep their place,
+`Deferred` is a wait rather than a failure in the fold — and because a STALE reference would also
+answer "not there" while the window is genuinely open, **two consecutive unconfirmed opens throw the
+reference away** (`close_button_png` cleared, persisted): with none, the probe answers unknown and the
+open proceeds blind as it always did, and the first read that proves the window learns the crop again.
+The look path uses `DeferredSchedule` (+5 min) for the same case rather than the cycle.
+
+**Verified.** Pet + Tests build clean; 285 tests pass. Owed: the live run after the next restart.
+
+## 2026-10-11 (87) — the count read walks a scale ladder (option 1 of 86, built)
+
+**The player chose option 1 and asked its cost first** — *"the effect would be we use more time on
+ocr?"* — so it was measured before it was written: one recognition on a real 40x60 crop, median of
+five, on this machine: **3x = 118 ms, 9x = 202 ms, 24x = 330 ms**. The ladder's first rung IS today's
+read, so a slot that reads pays exactly what it always did; only a failure walks the rest, and the
+whole ladder costs ~0.65 s against the old three same-scale attempts' ~0.33 s — with about one
+unreadable slot per look, ~0.3 s every few hours.
+
+**`CountReadUpscales = { 3, 9, 24 }`**, the three scales the corpus actually needed: the same probe
+shows a crisp `120` reading at 3x and at NOTHING else (9x and 24x return junk — so a good crop must
+never be pushed up the ladder, and never is), a reversed `108` needing 9x, and a `267` needing 24x.
+The same-scale retry of (85) is replaced by it; re-capture still happens per rung, so a transient
+frame is covered too. `FeederCount.Parse`'s >300 rejection and the between-rungs empty-slot colour
+check are unchanged — a reversed or garbled rung still becomes NO READING, never a confident number.
+
+## 2026-10-11 (86) — the count read, characterised: the reader is knife-edge on these digits
+
+**Where this stands.** Entry 85 added a retry because one capture looked soft. The next live look
+(refused-closes and all) kept failing on the *partial* stacks while the full ones (`300`) always read —
+and the failed crops, probed offline against the real recogniser, turned out to be **statistically
+indistinguishable from the ones that read at 0.998**: same size, same digit colour and stroke weight,
+same height (46 px upscaled), same position in the crop, same edge energy (Laplacian variance 1185–1353
+for the failures, 1190–1282 for the successes). Whatever decides the outcome is **sub-pixel
+rendering**, and the reader is on a knife edge about it.
+
+**What the offline probe actually found** (a throwaway console at `c:\tmp\ocr_probe` driving
+`OcrEngine.ReadImageFile` over every saved crop):
+
+| crop | what the recogniser says |
+|---|---|
+| a crisp `120` / `273` / `276` / `279` / `300` | the right number, at 3×, 6× and 9× |
+| `108` (failed live) | **`801` at 3×** — the digits read in REVERSE — and `108` only at 9× |
+| `267` (failed live) | nothing until **24×**, then `267` |
+| `264`, `144` (failed live) | nothing at any scale, 3×–24× |
+| the crisp `120` at 24× | nothing — too big |
+
+So there is **no single upscale that reads them all**, and the failures are not one phenomenon: a
+reversed read, a garbage read (`4944`), and true no-reads, from crops that measure the same.
+
+**Why the tool is still safe on every one of them.** `FeederCount.Parse` rejects anything above 300,
+so a reversed `801` becomes *no reading* rather than a confident wrong number; `4944` likewise; and a
+no-read understates the slot, which is the direction the schedule prefers (reload early — the leftover
+food returns with the pet). The residual is the reversed read whose mirror happens to be ≤ 300 (e.g.
+`102` → accepted as `201`, an overstatement) — rare, and the class to close if a fix is wanted.
+
+**The options, for the player to pick (nothing built beyond the retry):**
+1. **A scale ladder on the failure path** — re-read at 6× and 9× before giving up. Closes the reversed
+   class (the `108` case), costs ~0.5 s only when a read has already failed.
+2. **A digit-template reader** — the counts are a fixed font, and the saved crops between them contain
+   every digit; the tool's own `IconMatch` (offset search, differing-fraction) is the proven machinery
+   and reads pets at 1.0. The most reliable option and the most work.
+3. **Leave it** — every failure is safe, and the cost is an occasional reload an hour early.
+
+**Measured on the way, worth keeping:** ~11 unreadable slot reads in ~50 minutes of monitored looks
+(≈1 per look), always on PARTIAL stacks; the full `300` stacks never failed.
+
+## 2026-10-11 (85) — a slot's count read is retried, because the failure is a capture
+
+**The report:** the player, watching a slot whose count sat at 144, saw the tool read it as *nothing*
+— and the card then scheduled the row from one slot only. They read the slot by eye: 132 a few minutes
+later, so the tray was never the question.
+
+**What was ruled out, in order:**
+- *The score gate* — the saved crop was run offline through the real recogniser with a throwaway probe
+  (`OcrEngine.ReadImageFile`, gates from 0.0 up); it finds **no line at all** in that image.
+- *The crop's height* — measured: the digits end ~14 px (source) above the crop's edge. An overspill
+  change was written for it and **reverted** when the measurement refused it.
+- *The digits being unreadable in principle* — the SAME SLOT, seven minutes later, read
+  **120 at 0.998**, and put side by side the failed capture is visibly **soft** (glowing edges) where
+  the good one is crisp.
+
+**The cause, and why the fix is a retry:** each slot is its own screen grab, and a grab can land on a
+frame the compositor is still committing. An intermittent capture cannot be fixed by aiming better —
+the rule every retry in this tool already follows (`PlaceAttempts`, `FoodDragAttempts`,
+`CloseAttempts`) — so `FeederCountOf` reads a slot up to `CountReadAttempts` (3) times, with a short
+beat between attempts, and the empty-slot colour verdict runs BETWEEN attempts so a genuinely empty
+slot still pays for one check and no retry.
+
+**Verified.** 285 tests pass; Pet + Tests build clean. The temporary evidence mode (every crop saved,
+every line logged with its score) that made this diagnosable was removed with the fix — the tool is
+back to saving only the failures that survive all three attempts.
+
+## 2026-10-11 (84) — three pet numbers, told apart at last
+
+**The player, over several messages:** *"there is no stage 8 stage 9"*, *"u know the stage be
+hovering on the pet icon"*, and *"stage and + N is both important information we need to know and
+deduce."*
+
+**What the first version got wrong:** it labelled the game's `到9為止` number `→ stage 9`. There is no
+stage 8 or 9. Three different numbers sit near each other and the card was mixing two of them:
+
+| number | where | what it is |
+|---|---|---|
+| `(6階)` | hover panel — read by hovering the pet icon, which is what the tool does at every placement | the **stage** (no 8/9) |
+| `+7` / `到9為止` | the panel's growth, and the line's countdown target | the **餵養值 / growth**, +0 … +9; `+9` at 100 % is a finished pet (`PetPanel.MaxGrowth`) |
+| `52.18%` | the panel | that growth bar's fill |
+
+**What changed:** `FeederEta.LevelTarget` → `GrowthTarget` (bounds checked against
+`PetPanel.MaxGrowth`, the game's own maximum, in the class that owns it), the card shows `→ +9` in
+the panel's own vocabulary, and both guides carry the table above. **Both numbers stay on the row**
+— the stage from the hover panel and the line's growth target are each worth knowing, and the rate
+line's `N/min` beside them. The stage's source is the hover panel, which the tool has always read at
+placement; the line's target is the deduction this row's `→ +N` contributes.
+
+**Verified.** 284 tests pass.
+
+## 2026-10-11 (83) — the feeding rate is read per row, from the game's own line
+
+**The player's point, in three messages:** *"the reason why it is 3 food per pet it is those pet is
+stage 6 pets"*, *"possible we can deduce that?"*, and — the one that settles the design — *"it is
+important as they may have different stage pet in the future."*
+
+**They do not have to be deduced, and reading is strictly better.** `AppConfig.ItemsPerMinute`'s own
+comment had already recorded the ground truth: the boarding window prints the rate beside every row
+(`每1分 攝取3個`) and *"a stage-7 row saying 4 is readable rather than a number this config is simply
+wrong about"* — written when the config was born, never wired up. It is wired now:
+
+- `FeederEta.ParseRate` reads `每N分 攝取M個` off the SAME OCR pass that reads the time line (one
+  region, one read), rejecting implausible values (1..30/min, whole numbers) rather than clamping —
+  a misread rate would silently rescale every time that row computes.
+- The pet tool keeps `_lastRate` per row and `RateFor(row)` resolves measured-first,
+  config-fallback. `ScheduleFor`, `CycleMinutesFor` and the reload fold's load arithmetic all go
+  through it, so one row cannot be timed at two different rates; a faster eater shortening the
+  fallback cycle is the safe direction.
+- The card shows the row's own `3/min (game line)` beside its stage, and a rate that disagrees with
+  the config is logged as evidence (`the game's own rate line says 4/min — the config says 3/min;
+  THIS ROW's arithmetic uses 4`).
+- `pet.items_per_minute` is documented everywhere as the FALLBACK it now is.
+
+**Owed, and asked of the player:** a **stage→rate table** would let the tool answer when the line is
+unreadable; only two data points exist (stage 6 → 3, and the comment's stage 7 → 4), and a guessed
+table is exactly what this repo refuses to ship. The loading is ready for it (`RateFor` is one place).
+
+**Verified.** 284 tests pass (nine new rate cases, including the measured line, the Simplified 个,
+and the two implausible-value rejections).
+
+## 2026-10-11 (82) — the row is one line again, with the feeding-stage deduction on it
+
+**The player, twice over:** *"possible to simplify even more? → maybe just a deduced level 6 at the
+same line?"* (81) had trimmed the `why:` to a hint; this removes the second line altogether.
+
+**What changed:** `why:` is gone — `ToolRowState.Why`, the `_rowWhy` bookkeeping, `WhyFromReading` and
+every write to it. What survives is the single deduction the player actually wanted from the game's
+line: **`→ stage N`**, appended to the row's own line when the line names a stage
+(`FeederEta.LevelTarget`). The row reads
+`· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → stage 9 · next 07:14 (in 2h 41m)`.
+
+**A correction that came with it, and matters:** that number is the **feeding (代養) stage**, not the
+pet's rank or level — the player caught the first version calling it "level": *"the pet feeding level
+is not the pet rank level."* It is the same scale the hover panel's `stage N` shows, and the card
+uses the word *stage* so the two can never be read as the same thing.
+
+**Why this is a simplification and not a loss:** the numbers the why line carried (tray minutes,
+cycle fallback, retry timing) are the tool's own arithmetic and are already in `pet.log` where they
+are checked; the card's job is what the player glances at, and the only thing on it that they could
+not deduce themselves was what the game's foreign-language line was saying.
+
+**Verified.** 274 tests pass; Pet + Tests build clean.
+
+## 2026-10-11 (81) — the row's why, trimmed to a hint
+
+**The player's verdict on (80):** *"i dont need fully on how the calculation is done, too much, maybe
+a short hint that u deduce this is level 6 is fine."* The first version spelled out the arithmetic and
+quoted the game's line in full; what they actually wanted from it was the one deduction — that the
+line names a stage.
+
+**What changed:** every `why:` is now a handful of words — `tray 501 item(s) ≈ 167 min (last read)`,
+`nothing readable — cycle 505 min`, `not boarding`, `full load — 500 min`, `no feedable pet — keeps
+its place, looked up again in 30 min`, `given up after 3 failures` — and the level form contributes
+exactly `game line says level 6`, from the new `FeederEta.LevelTarget` (pinned by six theory cases on
+the real measured strings, including that the completion form and the shelf-life line name no stage).
+The pet's identity moved to the row line where it belongs, and the numbers live only in the why.
+
+**Verified.** 274 tests pass; Pet + Tests build clean. Guides updated in both languages.
+
+## 2026-10-11 (80) — every row's time says WHY it is that time
+
+**The player's follow-up to (79):** *"also information on why it is calculated this way — (hidden
+message is that it is level 6 pet right?) from the preset."* They had spotted that the game's line
+「到6為止预計所需時間：約19分」 is telling you something (the stage the pet is heading for) and that
+the card was silently not using it, with no way to tell that from a line it *had* used.
+
+**What each row now carries:** the pet it boarded (species from the **queue entry — the player's own
+preset** — beside the hover panel's reading, `stage 6, +7, 52.18%`), the last feeder count, its own
+countdown, and a **`why:` line**: the feeder arithmetic (`516 item(s) ≈ 172 min of food at 3/min,
++ 5 min grace`), the game's own line, the pet's estimate from the panel and the feeding table, or
+the configured cycle when nothing could be read. When the line is the **level** form it says so —
+"the stage it is heading for; it does not drive the schedule" — which is the exact question the
+player asked.
+
+**How it cannot drift:** `_rowWhy` is written by the code that produced each `next[row]` — the read
+side in `WhyFromReading` (switched on the same `ScheduleSource` the number comes from), the fold for
+reloaded, waiting and given-up rows, and the front deferral. The card only prints what was recorded,
+so a time and its explanation are two views of one decision.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Guides updated in both languages.
+
+## 2026-10-11 (79) — the Pet Feeder's card lists every row
+
+**The player's ask:** *"if I have 4 pets pending to feed … list out all 4 conditions."* The card's
+standing line could say which row was soonest and could not say that row 1 is boarding on 516 items
+while row 4 was given up on.
+
+**What it shows now:** the standing line, then one line per breeding row —
+`· Row 1: boarding · 516 item(s) at the last read · next 07:14 (in 2h 41m)` — with the status word
+(`boarding` / `waiting for a reload` / `given up`), the last feeder reading, and **that row's own
+countdown**, recomputed on every card tick like the summary's.
+
+**How, and why this shape.** `ToolState` gained `Rows` (`ToolRowState`: name, status, detail, its own
+`NextAt`), written by the tool and replaced wholesale on every publish, the same rule `Attributes`
+follows so the UI can read the list without a lock. The pet tool fills it in `PublishSchedule` — the
+one place that already knows every row's next — and remembers each row's last feeder count
+(`_lastItems`) as the reads happen. The launcher renders it in `FormatStatus`, where the countdown
+logic already lived; that logic became one `Countdown` helper so a row's clock and the summary's
+cannot drift apart.
+
+**Deliberately not live:** the item figure says "at the last read". The tray drains continuously and
+nothing reads it between visits, so a number that looked live would be a number that was true hours
+ago — the guide says so in both languages (`USER_GUIDE.md` and its zh-TW twin).
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The launcher needs a restart to show it.
+
+## 2026-10-11 (78) — the open is confirmed, and the slot read stops believing the world
+
+**The player found the hole the front guard does not cover:** *"in some cases, the first click may
+fail and cause the breeding window not open."* With the start-wait gone (entry 77), the look's first
+click both focuses the game and presses 目錄 — but a click that misses leaves the window closed while
+everything downstream believes it is looking at rows. And this state is **invisible to the front
+gates**: the click focused the game, so the game IS in front; the pixels are just the world. The
+measured signature is identical to a covered window — slots "occupied by 1.000", counts 0 or
+unreadable — and it ends the same way: the end toggle pressed at the game world, 57 strikes. The
+04:05 live run on the new build is the proof that both states exist: it read four rows cleanly AND
+logged `learning the boarding X's reference from this open window` — the probe's reference is now
+real, so it can answer.
+
+**Two guards, both positive-only, neither able to silence a run:**
+
+- **Confirm the open** (`OpenBoarding`, after the clicks): the X's learned reference answers whether
+  the window came up. A positive "the X is not there" **re-opens once**; unknown carries on as
+  always. A second failure is only **logged loudly** and the reads decide — failing the open there
+  would let a stale reference kill every future open (no successful read, so no re-learn, forever),
+  and a run that stops feeding is the outcome this tool refuses.
+- **The slot read stops believing the world** (`PetSlotNotTheWindowAbove = 0.85`): the measured bands
+  are empty slot **0.000**, pet in the slot **0.65-0.785**, and not-the-window **0.91 and up** (194
+  reads of exactly 1.000). 0.85 sits in the empty gap, and a reading inside it is now **unknown**
+  rather than "a pet is in the loader" — so a missed open turns into the existing unknown handling
+  (the end press passes its check, the bag scan finds nothing, the row takes a 30-minute wait)
+  instead of three strikes and a dropped row. The raw number is still logged, with a line saying
+  plainly that the pixels are not the boarding window.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Owed: the same watched run — this time to see
+`the boarding window is ALREADY OPEN` or `did NOT come up` lines, and the slot band's new log line,
+if either state ever occurs live.
+
+## 2026-10-11 (77) — the run start does not ask the player for focus
+
+**The player refused the start-wait, and the refusal is right.** The front guard's first version made
+the run WAIT until the game window was the focused window before the look. The player: *"your new
+action gives me a burden to click the game window, which I did not need before"* — and *"in practical
+usage, I would not let the launcher cover the needed click area."*
+
+**Two things were wrong with it.** (1) It contradicted a rule this codebase already settled: the gem
+flow's *"one click both focuses the game and presses the button; never add a focus-click"* — and the
+look's first click on 目錄 does exactly that, so a run started from the launcher has always focused
+the game on its own. (2) It gated on the wrong fact: **foreground is not the requirement — "the areas
+the tool touches are not covered" is.** A game sitting unfocused beside a browser satisfies the real
+requirement and fails the focus test, so the wait would defer work that has always succeeded.
+
+**The evidence agrees.** Of 131 `run started` lines in `pet.log`, **120 read their counts on the
+first try and ZERO showed the covered-window pattern** — the look has never once met a covered screen.
+The covered events (194 reads of exactly 1.000, the 57 strikes) all happened during VISITS, hours in.
+
+**What changed:** `WaitForGameInFront` is gone; the run claims the game and looks, as it always did.
+**What stayed:** the read gates (a covered screen answers "unknown" instead of a confident wrong
+answer), the per-slot front re-check in the feeder counts, and the visit-level deferral — the parts
+that act on the tool's own reads rather than on the player's attention. The visit deferral is kept
+deliberately even though its gate is the same coarse foreground test: it never asks the player for an
+action, it costs five minutes, and its measured case is the one that dropped rows.
+
+**Verified.** Pet + Tests build clean; 268 tests pass.
+
+## 2026-10-11 (76) — the whole branch, adversarially reviewed; eleven defects fixed
+
+**Method.** Four reviewers took the branch apart by area (veto + schedule provenance; close guard;
+sweep; hand-off + foreground + docs), then two independent verifiers tried to REFUTE every finding —
+one by constructing the triggering state in the code, one by consequence and the project's own rules
+(*unknown keeps meaning act*; an unfed pet is the unrecoverable direction). **Both verifiers confirmed
+all fourteen findings**, and their suggested fixes agreed. Eleven distinct fixes landed (some findings
+were the same defect seen twice); the rest of the confirmed set was documentation wording.
+
+**The two that mattered, both in the close guard's provenance chain:**
+- **The window proof could be satisfied without the window.** `_windowProofSeen` accepted any
+  non-null feeder count — including the **colour-derived 0** ("this crop has no food in it", a fact
+  about a crop, producible by the game world) — and any parsed time line at any score. A failed open
+  plus a world read could therefore teach `close_button_png` from the world, and a world crop matches
+  the world: the one path that turns a closed window into a skipped open. The proof is now three
+  narrow window-interior structures only — an empty slot that **matched its reference**, **digits**
+  read by the OCR, and the **completion-form** time line — and the capture runs at the instant the
+  proof lands, not after the remaining rows' OCR passes (a player can close the window meanwhile).
+  `ReadEta` also gained the foreground gate every other screen read had, for the same reason.
+- **The front guard went stale across the gate wait.** `GameIsInFront()` was checked *before*
+  `ClaimGame`, which can spend hours waiting for another tool — so the front at the moment the gate
+  was granted was untested, and the look's first two clicks could land on whatever took it. Both call
+  sites now re-check after the claim (the look gives the gate back and waits again; the loop defers
+  the batch five minutes, releasing the gate).
+
+**The rest.** The may-be-open belief is written the moment the feed-icon click is sent, not at the
+end of the open's tail (a stop or a kill in between left the window on screen with the belief false).
+The fallback sweep can now fire on an empty candidate list — the early return that used to skip it
+meant a queue-without-return-slot config never re-swept for a just-returned pet, which is the one
+case the fallback exists for. The per-use verification parks the cursor first (the arrow in the crop
+could score a live cell as gone). The feeder-counts read re-checks the front **per slot** and
+discards the whole reading if it ever fails. The success beep no longer plays for a visit that acted
+on nothing, the "every due row is still fed" line is no longer written when a row was never judged,
+and the look's hand-off no longer pays §4.2's redundant second `ReadRows` — the look hands its own
+reading to `ReadAndReload`.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The review's own record: the two verifiers'
+counterexample and invariant passes, both confirming this set and nothing else.
+
+## 2026-10-11 (75) — the look and the first visit share one window
+
+**PLAN-PET-FLOW §8 step 4, the last of the four** (§4.2). The plan's own words: *"Two complete
+open/read/close cycles seconds apart, and one of the two `ReadRows` is redundant."*
+
+**What it was.** A run started because a row was due — the usual reason — looked once (open, read,
+close, release the game), then the loop immediately re-claimed the game and opened the same window
+again for the very row it had just read, with a second `ReadRows` inside. The plan's first draft
+claimed a measured open/close imbalance from `pet.log`; that arithmetic was withdrawn (the log spans
+restarts with different logging) and the waste was argued from the code. This entry's change removes
+it without needing the measurement.
+
+**What it is now.** The look's own reading picks the rows due NOW and reloads them in the window it
+already has open, through the same body a loop visit runs (`ReadAndReload` — extracted from `Visit`
+so the two cannot drift), folded back by the same code (`FoldBack` — extracted from the loop, because
+there are now two callers and a run whose first reload followed different rules from its second would
+be a run nobody can reason about). Nothing due → close, release, sleep, exactly as before. A stop
+mid-hand-off leaves the same "may not have been fed — check it in game" note, from the same words
+(`StoppedDuring`). The hand-off is deliberately silent: no beep, because the run is still starting
+and the original start was.
+
+**This also makes `RELOAD EVERY ROW ON START` do what PLAN-RELOAD-VISIT §5 says it is for** — every
+row due at once, on demand — now inside the look's own window rather than as a separate four-open
+sequence.
+
+**Verified.** 268 tests pass; Pet + Tests build clean. The whole four-step flow is now in, and what
+remains is what the plan says every step needs: **one watched live cycle** with `pet.log` open —
+which settles the close guard and the veto, and needs the bag to compact at least once to prove the
+sweep's re-verify rule.
+
+## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
+
+**PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
+[PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
+
+**The saving, and where the sweep actually goes.** A plural batch paid one full three-page sweep per
+row — worst on the visit that follows downtime, which is the one with the most rows. The sweep is now
+taken by the visit's FIRST PLACEMENT and shared. That is one step later than the plan's diagram puts
+it, on evidence: a boarding row's pet is in the loader until its own end press, so a sweep before the
+row loop looks at a bag that provably lacks the pet those rows need — and the fixed return slot the
+saving would then lean on measures empty 173 of 258 tries in `pet.log`. Taken at the first placement,
+the list includes the just-returned pet, the single-row reload is byte-for-byte today's flow, and a
+plural batch pays at most today's per-row cost.
+
+**The check survives the sharing.** A stored cell is re-read against the queued icons before it is
+clicked (`CaptureBagCell` with the search radius + the new `IconMatch.ScoreCell`, the sweep's own
+comparison applied to one cell): a match proceeds, a positive mismatch skips and logs page/cell/score,
+an unreadable one carries on — unknown must not cancel a boarding. The food cells get the same
+one-cell read against the food icon before a stack is spent on them.
+
+**The recovered hole.** A row whose own boarding just ended has its pet in neither the shared list nor
+(usually) the return slot, so when the shared walk yields nothing usable that row runs **one** fallback
+sweep, after its own end press; the list it finds replaces the shared one. Bound: one per row, so at
+most today's sweeps per visit. The food re-mark stays with the visit's single sweep — never on a
+fallback, whose write would reset a counter the other rows are still counting against — and it now
+also runs for a setup with **no pet queue but a food icon**, which previously re-marked nothing, ever.
+
+**Verified.** 268 tests pass (three new ones pin the single-cell verification's three outcomes);
+Pet + Tests build clean. Still owed: the live run the plan requires for this step, and its
+bag-compaction case, which is what would prove the re-verify rule and show how often the fallback
+fires.
+
+## 2026-10-11 (73) — the fresh read may cancel a reload; the margin, measured rather than argued
+
+**PLAN-PET-FLOW §8 step 2, the veto half** (§2 and its ⚑2/⚑3; the reclassification half had already
+shipped in `7832b76`, and ⚑7's reason-logging landed in (71)). Two policies were designed
+independently and judged by two lenses; both judges agreed on the safety shape and split only on the
+margin, which the evidence settled.
+
+**The rule.** A due row's reload is skipped iff the fresh reading shows food SEEN on this visit: the
+slot freshly read as occupied, a feeder count that came back as a number, and that number above zero,
+with more than **30 minutes** to go. Every other state acts — unreadable counts, an unreadable slot, a
+completion line with no count beside it (zero instances in three weeks, and no evidence it is
+trustworthy on a dry tray), the cycle fallback, and `RELOAD EVERY ROW ON START`. Unknown keeps meaning
+act; a misread count that says "full" must never cancel a reload, because an unfed pet cannot be
+undone.
+
+**The margin is the measurement.** ⚑2 asked "how much margin" and called the answer *"one line of
+instrumentation away"*. The line was already in `pet.log`: every batch row's own visit-opening read is
+**165 at 0 minutes, one at 12, and thirty at 41-plus** — the 13-40 stretch is empty, so a margin
+anywhere inside it fires on every recorded case, and 30 sits in its middle. `ScheduleFor` now returns
+the next **with its source** (`RowReading`), so the number and what it is worth are produced by the
+same branch and cannot drift; `:407`'s "reload the soonest anyway" is untouched and its forced row is
+veto-eligible like any other (⚑3: the fallback decides *which* row the visit is for, the veto decides
+*whether to act* — different information, different times).
+
+**The honest caveat, kept from the judges.** The veto DEFERS the reload, it does not avoid it: the
+reload count is load-limited, and what a firing costs is one extra open+read+close. That is why the
+margin cannot be zero, and why this is a correctness change (the read now owns the decision) rather
+than a saving.
+
+**Verified.** Pet + Tests build clean; 265 tests pass. Fires and near-fires are both logged
+(`veto:` / `veto check:`), so the margin is correctable from the next live run rather than argued
+about.
+
+## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
+
+**PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:
+[PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
+two lenses; the built design is the judges' winner with one change of provenance.
+
+**The measured problem.** 17 closes in `pet.log` could not reach the X; each left the window open for
+the next open to click 目錄 *behind* — both open clicks are coordinates in the closed world. Two
+corrections the judgement made to the plan's reading, now on the record: those coordinates are
+HidPointer's **logical-space** goals (the configured X has not moved; the placement gave up 18 px
+short), and the 17 split 7 same-run / 9–10 **across a run boundary** — which is why the belief is
+persisted, not held in memory.
+
+**Built.** The X is clicked twice (`CloseAttempts`, commit `7daf94a` — the failure is non-convergence,
+so a retry re-aims). A close whose click could not be sent leaves `pet.boarding_window_may_be_open`
+standing; the next open then compares the X's region against `pet.close_button_png`. The reference is
+**learned at runtime from a window whose contents were just read** — an empty slot matched, a count or
+a time line came back — not cropped at calibration time: a crop taken on faith could be the game
+world, and a world crop matches the world, which would turn a closed window into a skipped open. A
+match skips only the two clicks; the clearing Enter and everything after run unchanged. Every probe
+logs its score; every learn and replacement is logged.
+
+**Open, and recorded in the design doc:** a mis-marked X can, in the belief-gated states, still match
+(a bound, not an elimination — two X buttons share the screen); the hardening path is a second
+independent live signal (the toggle label's OCR, after an offline readability check). No live run has
+exercised the probe yet.
+
+**Verified.** Pet + Tests build clean; 265 tests pass, with the new keys under the config reflection
+fences and a save→load round trip.
+
+## 2026-10-11 (71) — every failure writes its reason, and a row's death carries the last one
+
+**From the same log reading as (69).** The plan's §3 second gap — "for some failures the log records
+no reason at all" — turned out to be the *dominant* case rather than a corner: **77 of the 131
+in-visit failures** had nothing between the action and the failure line. All 77 came through
+`ReloadRowInPlace`'s pet-did-not-come-back branch, the one `!ok` return there that never called
+`Log`. It printed to the card, which the next line overwrites and which is gone when the tool stops.
+
+- That branch now logs `FAILED ending: …`, the same shape as its four siblings (`FAILED placing the
+  pet`, `FAILED loading the food`, `FAILED ending` at the toggle, `FAILED starting`).
+- A give-up writes the **last reason with the death**: `Row 1 given up on after 3 failures —
+  <why> — the other rows carry on`. The rejection line is the last thing anyone reads about a row;
+  the card that carried its reason is long gone by then, and a dropped row is the shape of an unfed
+  pet.
+
+**Verified.** Pet project builds clean; 265 tests pass. Branch `feature/pet-flow`.
+
+## 2026-10-11 (70) — the look defers when it loses the front; the close retries the X once
+
+**Two small fixes in the same family as (69), both from the same evidence.**
+
+- **A look that loses the front mid-read defers instead of parking rows.** The fore gate turns a
+  covered read into "couldn't read", and `ScheduleFor` treats that as a FULL LOAD — 205/505 minutes
+  for a row that may be dry right now. `InspectRows` now re-checks the front after `ReadRows` and,
+  when it is gone, schedules every row at `RetryMinutes` (`DeferredSchedule`) — deliberately not
+  `UnreadSchedule`, which stays the answer for "the breeder would not open at all": there, nothing
+  else can be done; here, the game was there a moment ago.
+- **The close retries the X once** (`CloseAttempts = 2`). The measured failure is the cursor
+  placement failing to converge — 17 in `pet.log`, "it stopped at (861,327)" against (844,327) — and
+  a retry re-aims from wherever the first attempt left the cursor. Same shape as `PlaceAttempts` and
+  `FoodDragAttempts`. A close that fails twice now says the window may still be OPEN, which is the
+  line that makes the next guard's work findable in the log.
+
+**Verified.** Pet project builds clean; 265 tests pass. On branch `feature/pet-flow`, the commit that
+carries this entry.
+
+## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
+
+**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](PLAN-PET-FLOW.md), branch `feature/pet-flow`)
+with its smallest, most certain step — and the reconnaissance found something the plan had not: the
+reason the feeder silently gives up on rows.
+
+**What the log said when it was asked why.** The plan's §3 flagship ("20 of 30 give-ups are *No queued
+pet is in the bag*") is a **miscount** — 20 is the count of that log *line*, and the give-ups from it
+are 4, all before commit `7832b76` (2026-09-21) which already made that state a wait. Re-measured on
+the whole 26,722-line log: **77 of the 131 in-visit failures have no reason line at all**, and all 77
+follow the end-boarding toggle press. That is `PetTool.cs`'s pet-did-not-come-back branch — the one
+`!ok` return in `ReloadRowInPlace` that logs nothing. It is **57 of the 90 strikes** behind the 30
+give-ups, 24 of the 30 events.
+
+**Why the pet "did not come back out".** Not the pet: the screen. `pet.log` holds **194 slot reads of
+exactly 1.000** — completely unlike the empty-slot reference — and in 104 of the reads that followed
+one the feeder counts were also unreadable. Four rows reading "occupied" in the same second, with no
+numbers anywhere, is one **covered window**. Every screen read in the tool checks
+`ForegroundWindow()` before trusting its grab — except `PetSlotDifference`, the slot-occupancy read.
+So a covered game read as "a pet is in the loader", the reload pressed 結束代養 at whatever window was
+in front, read the same covered image back as proof the press failed, and burned a strike — quietly.
+
+**What changed.**
+- `PetSlotDifference`, `CaptureBagCell` and `SlotHasNoFood` got the same foreground gate the feeder
+  counts and the icon sweep already had. Unknown now means unknown instead of a confident wrong
+  answer.
+- **The run waits for the game before the LOOK** (`WaitForGameInFront`) — holding nothing while it
+  waits, saying so on the card, because the player who presses Start on the launcher has the
+  *launcher* focused.
+- **A visit whose window is not in front defers**: rows keep their place, retried in `RetryMinutes`,
+  no strike, no click. The front is re-checked before every row; a focus lost mid-visit abandons the
+  rest of the visit and returns no schedule (a covered read's fallbacks are not evidence — returning
+  them would park a dry row on the 205/505-minute cycle).
+
+**Verified.** Pet + Tests projects build clean; **265 tests pass**. Live verification still owed — the
+plan's own rule for every step in this work.
+
+**Left open.** Mid-visit focus loss can still let the row in flight press blind (bounded: the rest of
+the visit stops, and the reads now answer "unknown"); whether clicks should refuse outright when the
+window is not in front is a step-2-shaped decision, not this one. The four plan steps themselves are
+next, in the plan's order, each its own commit on `feature/pet-flow`.
+
 ## 2026-10-08 (68) — program vs profile: deployment planned, not built
 
 **The plan is [PLAN-PATHS.md](PLAN-PATHS.md); nothing in it is built.** It exists because "should the

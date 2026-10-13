@@ -150,8 +150,10 @@ public sealed class LauncherService : IDisposable
     /// <summary>The merged config (portable + local). Mutable so edits are reflected live by the tools.</summary>
     public AppConfig Config { get; }
 
-    /// <summary>The OCR attribute dictionary from attributes.yaml.</summary>
-    public AttributesConfig Attributes { get; }
+    /// <summary>The OCR attribute dictionary from the ACTIVE variant's file. Replaceable, because the
+    /// Setup tab's switch swaps clients at runtime — see <see cref="SwitchVariant"/>. Read by every
+    /// tool construction, so a run started after a switch gets the new dictionary.</summary>
+    public AttributesConfig Attributes { get; private set; }
 
     /// <summary>The id of the tool the UI calls current, or null when there is none. Through the lock
     /// because a worker thread clears this when a tool finishes on its own — see
@@ -702,6 +704,61 @@ public sealed class LauncherService : IDisposable
 
     /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
     public void SaveConfig() => _loader.SaveDefaults(Config);
+
+    /// <summary>Points the suite at another game client — the Setup tab's switch, and the only way to
+    /// change clients without editing files. False with a reason when it cannot.
+    ///
+    /// THE ORDER IS THE SAFETY. The variant is resolved first, its dictionary is LOADED second, and the
+    /// config is only left switched once that load succeeded — otherwise the previous variant is
+    /// re-applied (title included). That matters because a config pointing at a variant whose dictionary
+    /// is missing is not a degraded launcher, it is one that THROWS in its constructor and never opens a
+    /// window at all — the swallowed-startup-error shape.
+    ///
+    /// A tool that is RUNNING keeps the dictionary it was constructed with, and picks the new one up on
+    /// its next Start. The window title is shared config, so a live tool starts looking for the new
+    /// client's window — which is the point of switching.</summary>
+    public bool SwitchVariant(string name, out string message)
+    {
+        message = "";
+        var previousName = Config.Game.Variant;
+        var previousTitle = Config.Window.Title;
+
+        var dictionary = Config.ApplyVariant(name, out var error);
+        if (dictionary is null)
+        {
+            message = error ?? "Unknown game variant.";
+            return false;
+        }
+
+        try
+        {
+            Attributes = _loader.LoadAttributes(dictionary);
+        }
+        catch (ConfigException ex)
+        {
+            // Put it back exactly as it was: a half-switched config is a launcher that will not start.
+            Config.Game.Variant = previousName;
+            Config.Window.Title = previousTitle;
+            message = ex.Message;
+            return false;
+        }
+
+        // The diagnostic engine holds the OLD dictionary; it is built lazily and cached, so it has to
+        // be dropped or every diagnostic read after a switch would use the previous client's words.
+        _diagnosticOcr?.Dispose();
+        _diagnosticOcr = null;
+
+        // The variant lives in defaults.yaml, and SaveDefaults is what rewrites that file.
+        SaveConfig();
+
+        message = $"Now on the {Config.Game.Variant} client — window \"{Config.Window.Title}\", " +
+                  $"dictionary {dictionary} ({Attributes.Attributes.Count} attribute(s))." +
+                  (Attributes.Attributes.Count == 0
+                      ? " It is EMPTY: the Tuner will match nothing until it is filled from the client; " +
+                        "every other tool is unaffected."
+                      : "");
+        return true;
+    }
 
     /// <summary>Why the calibrated bag grid and its single-slot box disagree, or null when they
     /// agree. The calibrator shows this while dragging, and refuses to save on it — the whole grid
