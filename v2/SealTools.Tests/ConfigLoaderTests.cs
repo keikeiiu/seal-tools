@@ -407,6 +407,44 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>A PARTIAL block — which is what the fold writes, since it carries only the values the
+    /// player changed — must leave everything it does not mention standing, and must still apply a value
+    /// it DOES state when that value is zero or empty. This is the rule the whole mirror is shaped
+    /// around: with non-nullable fields, "not stated" and "zero" are the same thing, which is how a
+    /// projection has blanked a setting four times in this repo (ocr_retries 3 → 0 among them).</summary>
+    [Fact]
+    public void APartialSettingsBlockLeavesTheRestStanding()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var before = loader.Load();
+
+            File.AppendAllText(Path.Combine(dir, "local.yaml"),
+                "\nsettings:\n  tuner:\n    guard_px: 33\n  gem:\n    colored_gap_min: 0\n");
+
+            var after = new ConfigLoader(dir).Load();
+
+            Assert.Equal(33, after.Tuner.GuardPx);
+            // Stated as ZERO on purpose: 0 is a legal colored_gap_min, so a `> 0` guard would have read
+            // a deliberate value as silence and quietly left the shipped one in place.
+            Assert.Equal(0, after.Gem.ColoredGapMin);
+            // And every value the block does not mention is untouched.
+            Assert.Equal(before.Tuner.MaxRetries, after.Tuner.MaxRetries);
+            Assert.Equal(before.Tuner.SpringMode, after.Tuner.SpringMode);
+            Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(before.Gem.MoveMode, after.Gem.MoveMode);
+            Assert.Equal(before.Window.Title, after.Window.Title);
+            Assert.Equal(before.Hotkeys.Start, after.Hotkeys.Start);
+            Assert.Equal(before.Pet.ItemsPerMinute, after.Pet.ItemsPerMinute);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// <summary>The reason the writer shape changed, as a test. Two writers that each change a different
     /// part of local.yaml must both survive; before the gated read-modify-write the second one saved the
     /// snapshot it had loaded earlier and deleted the first one's block — silently, from two threads that

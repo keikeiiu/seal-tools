@@ -737,7 +737,11 @@ public sealed class ConfigLoader
         /// comment or a bare key, because every writer re-serialises from the object graph and would
         /// strip anything it does not know about — the marker is what makes "fold once" true, so it has
         /// to survive every save. Written by the fold in step 2; carried through untouched by
-        /// <see cref="SaveSettings"/>.</summary>
+        /// <see cref="SaveSettings"/>.
+        ///
+        /// Until then it is null, and this writer emits a null as a BARE key — `legacy_folded:` with no
+        /// value — the same shape the file already gives its unset optionals (`startup_step:`,
+        /// `sell_slots:`). So the line shows up from the first settings save, meaning nothing yet.</summary>
         public bool? LegacyFolded { get; set; }
     }
 
