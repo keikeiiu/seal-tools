@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using SealTools.Core.Config;
 using Xunit;
+using YamlDotNet.RepresentationModel;
 
 namespace SealTools.Tests;
 
@@ -118,6 +119,316 @@ public class ConfigLoaderTests
             Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
             Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
             Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── The portable settings block (PLAN-DEPLOY.md step 1) ─────────────────────────────────────────
+    //
+    // The settings block is the same portable data in the machine's own file, so that one day the save
+    // target can move there and an update cannot cover it. Nothing calls SaveSettings yet; these exist
+    // first because the failure they guard is a value written to a file and then silently discarded on
+    // the way back — which is how ocr_retries, gem.move_mode, a hand-added pet: block and a whole
+    // spammer block were each lost once.
+
+    /// <summary>Every leaf path in a YAML file, dotted — enough to compare what two writers emit without
+    /// depending on their types, which is the only way to fence an anonymous projection.</summary>
+    private static List<string> YamlPaths(string file, string? onlyUnder = null)
+    {
+        var stream = new YamlStream();
+        using (var reader = new StreamReader(file))
+            stream.Load(reader);
+
+        var paths = new List<string>();
+        Walk(stream.Documents[0].RootNode, "");
+        return onlyUnder == null
+            ? paths
+            : paths.Where(p => p.StartsWith(onlyUnder + ".", StringComparison.Ordinal))
+                   .Select(p => p[(onlyUnder.Length + 1)..]).ToList();
+
+        void Walk(YamlNode node, string prefix)
+        {
+            switch (node)
+            {
+                case YamlMappingNode map when map.Children.Count > 0:
+                    foreach (var (key, value) in map.Children)
+                        Walk(value, prefix.Length == 0 ? key.ToString() : $"{prefix}.{key}");
+                    break;
+                case YamlMappingNode:
+                    paths.Add(prefix + " {}");
+                    break;
+                case YamlSequenceNode seq when seq.Children.Count > 0:
+                    Walk(seq.Children[0], prefix + "[]");
+                    break;
+                case YamlSequenceNode:
+                    paths.Add(prefix + " []");
+                    break;
+                default:
+                    paths.Add(prefix);
+                    break;
+            }
+        }
+    }
+
+    private static YamlNode? Child(YamlNode? node, string key)
+    {
+        if (node is not YamlMappingNode map) return null;
+        foreach (var (k, v) in map.Children)
+            if (k.ToString() == key) return v;
+        return null;
+    }
+
+    /// <summary>The settings subtree of a local.yaml, or null when the file carries none.</summary>
+    private static YamlNode? SettingsNode(string file) => Child(RootNode(file), "settings");
+
+    private static YamlNode RootNode(string file)
+    {
+        var stream = new YamlStream();
+        using (var reader = new StreamReader(file))
+            stream.Load(reader);
+        return stream.Documents[0].RootNode;
+    }
+
+    /// <summary>The fence for the mirror, and it compares what the two WRITERS actually emit rather than
+    /// two lists of names kept in step by hand: the projection into defaults.yaml, the mirror into
+    /// local.yaml's settings block. A field added to one and forgotten in the other fails here — which is
+    /// the whole reason the mirror exists rather than a second hand-written list.
+    ///
+    /// Two differences are deliberate and named:
+    ///   arduino.port — the projection writes it (as "") because a SHIPPED file must clear whatever port
+    ///     the builder's machine had; the mirror must not carry it, because a port is not portable and
+    ///     local.yaml keeps this machine's own in the arduino block beside it.
+    ///   legacy_folded — the fold's marker, which has no counterpart in a shipped file.</summary>
+    [Fact]
+    public void TheSettingsMirrorCarriesExactlyThePortableProjection()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+
+            loader.SaveDefaults(cfg);
+            loader.SaveSettings(cfg);
+
+            var projected = YamlPaths(Path.Combine(dir, "defaults.yaml"));
+            var mirrored = YamlPaths(Path.Combine(dir, "local.yaml"), onlyUnder: "settings");
+
+            var missingFromMirror = projected.Except(mirrored).Where(p => p != "arduino.port").ToList();
+            var extraInMirror = mirrored.Except(projected).Where(p => p != "legacy_folded").ToList();
+
+            Assert.Empty(missingFromMirror);
+            Assert.Empty(extraInMirror);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The same list the test above walks, pointed at the new path and READ BACK: every portable
+    /// section, set to a value that differs from its default so a missing link cannot pass. The existing
+    /// trip through defaults.yaml is <see cref="SaveDefaultsPreservesEveryPortableField"/>; this is the
+    /// trip through local.yaml, which is the one the update cannot cover.</summary>
+    [Fact]
+    public void SaveSettingsPreservesEveryPortableField()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var before = loader.Load();
+
+            before.Window.Title = "MY_WINDOW";
+            before.ReferenceWindow.Width = 111;
+            before.ReferenceWindow.Height = 222;
+            before.Game.Variant = "us";
+            before.Arduino.Vid = 0x1234;
+            before.Arduino.Pid = new List<int> { 5, 6 };
+            before.Arduino.Baud = 57600;
+            before.Hotkeys.Start = 65;
+            before.Hotkeys.Quit = 66;
+            before.Hotkeys.AdvanceGrade = 67;
+            before.Hotkeys.Pause = 68;
+            before.Tuner.GradeOrder = new List<string> { "S", "A" };
+            before.Tuner.TargetGrade = "S";
+            before.Tuner.MaxRetries = 4;
+            before.Tuner.SaveCaptures = true;
+            before.Tuner.OcrRetries = 5;
+            before.Tuner.SpringMode = "hid";
+            before.Tuner.MouseGuard = "stop";
+            before.Tuner.GuardPx = 11;
+            before.Tuner.RecenterMax = 7;
+            before.Tuner.Models.Detector = "det.onnx";
+            before.Tuner.Timing.OcrDelay = 0.75;
+            before.Tuner.GradeColors.Yellow.RMin = 77;
+            before.Tuner.Filter.Enabled = true;
+            before.Gem.Grades = new List<string> { "A", "B" };
+            before.Gem.StartGrade = "A";
+            before.Gem.EmptyMode = "advance_grade";
+            before.Gem.EmptyStreak = 4;
+            before.Gem.ColoredGapMin = 55;
+            before.Gem.SaveEmptyCaptures = true;
+            before.Gem.MoveMode = "tuned";
+            before.Pet.ItemsPerMinute = 7;
+            before.Pet.PetSlotOccupiedAbove = 0.25;
+
+            loader.SaveSettings(before);
+            var after = new ConfigLoader(dir).Load();
+
+            Assert.Equal("MY_WINDOW", Child(Child(SettingsNode(Path.Combine(dir, "local.yaml")), "window"), "title")?.ToString());
+            Assert.Equal(111, after.ReferenceWindow.Width);
+            Assert.Equal(222, after.ReferenceWindow.Height);
+            // window.title is the RESOLVED copy when a variant is set — the variant is the authority, as
+            // the defaults.yaml test above records — so the title to compare is the one it resolves to.
+            Assert.Equal("US_LIVE", after.Window.Title);
+            Assert.Equal("us", after.Game.Variant);
+            Assert.Equal("attributes.us.yaml", after.Game.Variants["us"].Attributes);
+            Assert.Equal(0x1234, after.Arduino.Vid);
+            Assert.Equal(new List<int> { 5, 6 }, after.Arduino.Pid);
+            Assert.Equal(57600, after.Arduino.Baud);
+            Assert.Equal(65, after.Hotkeys.Start);
+            Assert.Equal(66, after.Hotkeys.Quit);
+            Assert.Equal(67, after.Hotkeys.AdvanceGrade);
+            Assert.Equal(68, after.Hotkeys.Pause);
+            Assert.Equal(new List<string> { "S", "A" }, after.Tuner.GradeOrder);
+            Assert.Equal("S", after.Tuner.TargetGrade);
+            Assert.Equal(4, after.Tuner.MaxRetries);
+            Assert.True(after.Tuner.SaveCaptures);
+            Assert.Equal(5, after.Tuner.OcrRetries);
+            Assert.Equal("hid", after.Tuner.SpringMode);
+            Assert.Equal("stop", after.Tuner.MouseGuard);
+            Assert.Equal(11, after.Tuner.GuardPx);
+            Assert.Equal(7, after.Tuner.RecenterMax);
+            Assert.Equal("det.onnx", after.Tuner.Models.Detector);
+            Assert.Equal(0.75, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(77, after.Tuner.GradeColors.Yellow.RMin);
+            Assert.True(after.Tuner.Filter.Enabled);
+            Assert.Equal(new List<string> { "A", "B" }, after.Gem.Grades);
+            Assert.Equal("A", after.Gem.StartGrade);
+            Assert.Equal("advance_grade", after.Gem.EmptyMode);
+            Assert.Equal(4, after.Gem.EmptyStreak);
+            Assert.Equal(55, after.Gem.ColoredGapMin);
+            Assert.True(after.Gem.SaveEmptyCaptures);
+            Assert.Equal("tuned", after.Gem.MoveMode);
+            Assert.Equal(7, after.Pet.ItemsPerMinute);
+            Assert.Equal(0.25, after.Pet.PetSlotOccupiedAbove);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>With NO variant the title stands on its own through the new path too — the case the
+    /// variant would otherwise hide.</summary>
+    [Fact]
+    public void WithNoVariantTheSettingsTitleStillRoundTrips()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Game.Variant = "";
+            cfg.Window.Title = "MY_OWN_TITLE";
+
+            loader.SaveSettings(cfg);
+
+            Assert.Equal("MY_OWN_TITLE", new ConfigLoader(dir).Load().Window.Title);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The block goes to the machine's file and nowhere else. defaults.yaml is what publish.bat
+    /// copies into a release zip, so a save that touched it would be publishing one machine's settings —
+    /// and until step 4 of the plan lands it is still the file the launcher reads its values from, so a
+    /// write here would also be a behaviour change in a step that promises none.</summary>
+    [Fact]
+    public void SaveSettingsWritesLocalYamlAndLeavesDefaultsAlone()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            var defaultsPath = Path.Combine(dir, "defaults.yaml");
+            var untouched = File.ReadAllBytes(defaultsPath);
+
+            cfg.Tuner.GuardPx = 13;
+            loader.SaveSettings(cfg);
+
+            Assert.Equal(untouched, File.ReadAllBytes(defaultsPath));
+            Assert.Equal("13", Child(Child(SettingsNode(Path.Combine(dir, "local.yaml")), "tuner"), "guard_px")?.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>2026-10-13: the client switch rewrote defaults.yaml and left a stray key in it. The cause
+    /// is GameConfig.Active — a reference INTO Variants — which the serialiser writes twice, the second
+    /// time as a YAML anchor/alias pair (`us: &amp;o0 … active: *o0`). The mirror names the variant and the
+    /// table and never the resolved object, and this pins that with a variant actually set, because with
+    /// none the alias cannot appear at all.
+    ///
+    /// Scoped to the settings subtree on purpose: `active:` is a legitimate key elsewhere in local.yaml
+    /// (the spammer's active preset), so the whole-file check would fail for the wrong reason.</summary>
+    [Fact]
+    public void TheSettingsBlockNamesTheVariantAndNeverAliasesIt()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Game.Variant = "us";
+
+            loader.SaveSettings(cfg);
+
+            var game = Child(SettingsNode(Path.Combine(dir, "local.yaml")), "game");
+            Assert.NotNull(game);
+            Assert.Null(Child(game, "active"));
+            Assert.Equal("us", Child(game, "variant")?.ToString());
+            var written = File.ReadAllText(Path.Combine(dir, "local.yaml"));
+            Assert.DoesNotContain("&o", written);
+            Assert.DoesNotContain("*o", written);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The reason the writer shape changed, as a test. Two writers that each change a different
+    /// part of local.yaml must both survive; before the gated read-modify-write the second one saved the
+    /// snapshot it had loaded earlier and deleted the first one's block — silently, from two threads that
+    /// both reported success (the WPF thread saving a calibration, and the pet tool's PersistPetState).</summary>
+    [Fact]
+    public void TwoWritersEachKeepTheOthersBlock()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Tuner.GuardPx = 13;
+            loader.SaveSettings(cfg);
+
+            // The other writer, which loaded nothing and knows only its own block.
+            loader.UpdateLocal(l => l.Ui = new ConfigLoader.LocalUi { Left = 456, Pinned = true });
+
+            var local = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(456, local.Ui!.Left);
+            Assert.Equal(13, local.Settings!.Tuner!.GuardPx);
+            Assert.Equal(13, new ConfigLoader(dir).Load().Tuner.GuardPx);
         }
         finally
         {
