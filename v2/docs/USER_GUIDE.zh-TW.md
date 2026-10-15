@@ -142,7 +142,7 @@ Buy Items 是唯一需要在啟動**之前**做決定的工具，所以它的卡
 
 ## Tuner 分頁
 
-Magic Tuner 要洗什麼，以及它怎麼判斷每一次結果。儲存到 `config/defaults.yaml`（可攜設定）。
+Magic Tuner 要洗什麼，以及它怎麼判斷每一次結果。儲存到 `config/local.yaml`（可攜設定）。
 
 ### Goal
 
@@ -189,21 +189,21 @@ Magic Tuner 要洗什麼，以及它怎麼判斷每一次結果。儲存到 `con
 
 ### 儲存
 
-**Save Tuner Config** 會把以上設定全部寫入 `config/defaults.yaml`。結果會顯示在按鈕下方的 InfoBar —
+**Save Tuner Config** 會把以上設定全部寫入 `config/local.yaml`。結果會顯示在按鈕下方的 InfoBar —
 如果寫入失敗，它會明說，而不是假裝儲存成功。
 
 ---
 
 ## Gem 分頁
 
-Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
+Gem Composer 的行為設定。儲存到 `config/local.yaml`。
 
 | 控制項 | 說明 |
 |---|---|
 | **Start grade** | 合成器開始的等級：`N`、`G`、`DG`。 |
 | **On empty result** | 合成結果欄位為空時要怎麼做，也就是某個等級的資源用完了。**Stop**（停止）、**Advance to next grade**（前往下一個等級）、或 **Clear resources, then advance**（先對三個資源欄位按右鍵，清除卡住的寶石，再前往下一個等級）。 |
 | **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與 `diff=…` 記錄（僅供除錯，每輪都有磁碟 I/O）。空欄偵測的判斷方式見 [CALIBRATION.md](CALIBRATION.md)。 |
-| **Save Gem Config** | 把以上設定寫入 `config/defaults.yaml`。 |
+| **Save Gem Config** | 把以上設定寫入 `config/local.yaml`。 |
 
 點擊座標、結果欄位與移動方式都在 **Calibrate Gem** 分頁，不在這裡。
 
@@ -212,7 +212,7 @@ Gem Composer 的行為設定。儲存到 `config/defaults.yaml`。
 ## Spammer 分頁
 
 Skill Spammer 的按鍵輪替設定。儲存到 **`config/local.yaml`** — 這些是個人設定，所以不會進到
-`publish.bat` 每次發佈都會附上的 `defaults.yaml`。
+`publish.bat` 每次發佈都會附上的預設範本 `config/defaults.yaml.example`。
 
 Arduino 支援任何單一字母或數字，以及 **F1–F12**。它送不出的按鍵會被略過，並在工具卡片上顯示 `⚠`。
 
@@ -498,7 +498,7 @@ Quest Hand-in 工具的流程：它在任務 NPC 面前要送出的輸入，以�
 | 控制項 | 功能 |
 |---|---|
 | **Test one loop** | 把流程跑**一次**。它用的是和正式執行相同的程式碼，所以測試會拒絕的流程，正式執行也會拒絕。它在 UI 執行緒之外跑，所以視窗在跑的時候仍然有反應。 |
-| **Save** | 把流程寫入 `config/local.yaml`。流程是**個人設定**，所以放在那裡而不是 `defaults.yaml` — 後者是公開版本會附上的檔案。 |
+| **Save** | 把流程寫入 `config/local.yaml`。流程是**個人設定**，所以放在那裡而不是範本 `config/defaults.yaml.example` — 後者是公開版本會附上的檔案。 |
 
 **測試的時候請盯著遊戲畫面。** 不讀取畫面的執行，唯一的判斷依據就是畫面上發生了什麼。
 
@@ -513,10 +513,13 @@ Quest Hand-in 工具的流程：它在任務 NPC 面前要送出的輸入，以�
 
 ## Attributes 分頁
 
-OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過濾規則比對用的名稱）、**Category**，
+OCR 屬性字典的唯讀檢視，字典依你的客戶端而定（TW 是 `config/attributes.yaml`，其他變體是
+`config/attributes.<name>.yaml`）：**Name**（過濾規則比對用的名稱）、**Category**，
 以及會自動修正成該名稱的 **OCR variants** — 也就是 OCR 實際產生的那些亂碼形式。
 
-沒有任何控制項。要新增屬性請直接編輯 `attributes.yaml` 並重新啟動 — 啟動器在啟動時會把它快取起來。
+沒有任何控制項。要新增屬性請編輯你所屬客戶端的字典 — TW 是 `config/attributes.yaml`，其他變體是
+`config/attributes.<name>.yaml` — 並重新啟動，啟動器在啟動時會把它快取起來。`config/attributes.yaml`
+隨版本維護，直接改它會被下次更新取代。
 
 ---
 
@@ -568,7 +571,7 @@ OCR 屬性字典的唯讀檢視（`config/attributes.yaml`）：**Name**（過�
 
 | 控制項 | 功能 |
 |---|---|
-| **Composer move mode** | 合成器要用哪一組移動。`tuned` 會送出調校過的次數；`arduino` 會把游標定位到每條路線的目標點（閉環），而且每次移動都會重新校正，所以不需要調校。按 **Save Gem Composer** 後寫入 `defaults.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
+| **Composer move mode** | 合成器要用哪一組移動。`tuned` 會送出調校過的次數；`arduino` 會把游標定位到每條路線的目標點（閉環），而且每次移動都會重新校正，所以不需要調校。按 **Save Gem Composer** 後寫入 `config/local.yaml`。詳見 [MOVE-SETS.md](MOVE-SETS.md)。 |
 
 **非**目前使用中的那一組會變淡到 45% 並停用，避免兩張表混淆。這個選單有自己的一張卡片，
 正是為了讓它在任一組使用中時都還能點。
@@ -841,17 +844,18 @@ Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3
 
 ### Game client — tw / us 切換
 
-每個已知客戶端一個按鈕（`tw — TW_LIVE`、`us — US_LIVE`），由 `config/defaults.yaml` 的
-`game.variants` 生成。按下去就把整套工具指向該客戶端：視窗標題與 Tuner 的詞彙都跟著它，並寫進設定
-（重啟後仍生效）。**正在執行**的工具會沿用啟動時的詞彙，下次 Start 才換。
+每個已知客戶端一個按鈕（`tw — TW_LIVE`、`us — US_LIVE`），由範本 `config/defaults.yaml.example`
+的 `game.variants` 生成。按下去就把整套工具指向該客戶端：視窗標題與 Tuner 的詞彙都跟著它，並寫進
+`config/local.yaml`（重啟後仍生效）。**正在執行**的工具會沿用啟動時的詞彙，下次 Start 才換。
 
 **只有 Tuner 會讀遊戲文字。** Gem Composer、Buy/Sell、Spammer、Quest 與寵物讀取完全不匹配文字
-（位置、顏色、按鍵、數字），所以兩個客戶端都能直接跑——這也是美版字典
-（`config/attributes.us.yaml`）**刻意保持空白**的原因：切過去時卡片會說明，Tuner 在有內容之前會
-匹配不到任何屬性，其他工具不受影響。
+（位置、顏色、按鍵、數字），所以兩個客戶端都能直接跑——這也是美版字典**一開始是空的**原因 — 第一次
+切到美版時，載入器會把 `config/attributes.us.yaml.example` 複製成 `config/attributes.us.yaml`：切過去時
+卡片會說明，Tuner 在有內容之前會匹配不到任何屬性，其他工具不受影響。
 
-若某客戶端的字典檔整個不存在，切換會**拒絕**並說明怎麼補——指向「字典缺失」的客戶端，等於啟動器
-根本開不起來。
+若某客戶端還沒有字典檔，第一次使用時會**從它的範本 `config/attributes.<name>.yaml.example` 種出來**，
+所以全新安裝不必手動複製任何檔案，切換就能用。只有既無字典、也無範本的客戶端才會被拒絕 — 那一種會讓
+啟動器開不起來。
 
 ---
 
@@ -869,7 +873,7 @@ Register→Resource1、Resource1→Resource2、Resource2→Resource3、Resource3
 | **Quit (immediate)** | 立即停止工具。預設 `F11`。 |
 | **Advance grade (gem)** | 讓合成器前往下一個等級。預設 `G`。 |
 | **Pause (graceful stop)** | 完成目前循環後停止。預設 `CapsLock`。 |
-| **Save Hotkeys** | 寫入 `config/defaults.yaml`。名稱無效會被拒絕並顯示訊息，而不是照樣儲存。 |
+| **Save Hotkeys** | 寫入 `config/local.yaml`。名稱無效會被拒絕並顯示訊息，而不是照樣儲存。 |
 
 輸入名稱：`F1`–`F24`、`Esc`、`CapsLock`、`Space`、`Tab`、`Enter`，或單一字母／數字。
 

@@ -153,7 +153,7 @@ you do not have to open Configuration to run it:
 
 ## Tuner tab
 
-What the Magic Tuner rolls for and how it judges each result. Saved to `config/defaults.yaml`
+What the Magic Tuner rolls for and how it judges each result. Saved to `config/local.yaml`
 (portable).
 
 ### Goal
@@ -201,21 +201,21 @@ whatever the filter and the grade say. **+ Add Override** appends a row.
 
 ### Save
 
-**Save Tuner Config** writes all of the above to `config/defaults.yaml`. The result appears in an
+**Save Tuner Config** writes all of the above to `config/local.yaml`. The result appears in an
 InfoBar under the button — a failure says so rather than pretending to have saved.
 
 ---
 
 ## Gem tab
 
-Behaviour of the Gem Composer. Saved to `config/defaults.yaml`.
+Behaviour of the Gem Composer. Saved to `config/local.yaml`.
 
 | Control | Meaning |
 |---|---|
 | **Start grade** | The grade the composer begins on: `N`, `G`, `DG`. |
 | **On empty result** | What to do when the composed-result box is empty — which means a grade ran out of resources. **Stop**, **Advance to next grade**, or **Clear resources, then advance** (right-clicks the three resource slots first, for a stuck gem). |
 | **Save empty-check captures** | Writes the sampled result-box crop plus a `diff=…` line every cycle. Debug only, with disk I/O every cycle. See [CALIBRATION.md](CALIBRATION.md) for how the empty check decides. |
-| **Save Gem Config** | Writes the above to `config/defaults.yaml`. |
+| **Save Gem Config** | Writes the above to `config/local.yaml`. |
 
 The click points, the result box and the move sets are all in **Calibrate Gem**, not here.
 
@@ -224,7 +224,8 @@ The click points, the result box and the move sets are all in **Calibrate Gem**,
 ## Spammer tab
 
 Key rotation for the Skill Spammer. Saved to **`config/local.yaml`** — presets are personal, so they
-stay out of the `defaults.yaml` that `publish.bat` ships with every release.
+stay out of the shipped defaults template (`config/defaults.yaml.example`) that `publish.bat` puts in
+every release.
 
 The Arduino can send any single letter or digit, plus **F1–F12**. Anything it cannot send is skipped
 and reported as a `⚠` on the tool card.
@@ -541,7 +542,7 @@ nothing" and "the game behaved differently today" look identical.
 | Control | What it does |
 |---|---|
 | **Test one loop** | Runs the flow **once**. It is the same code a real run uses, so a flow the test refuses is a flow the run would refuse too. It runs off the UI thread, so the window stays responsive while it works. |
-| **Save** | Writes the flow to `config/local.yaml`. Flows are **personal**, so they live there and not in `defaults.yaml` — that is the file a public build ships. |
+| **Save** | Writes the flow to `config/local.yaml`. Flows are **personal**, so they live there and not in the shipped defaults template (`config/defaults.yaml.example`) — that is the file a public build ships. |
 
 **Watch the game when you test.** A blind run's only verdict is what happens on screen.
 
@@ -558,12 +559,15 @@ nothing" and "the game behaved differently today" look identical.
 
 ## Attributes tab
 
-A read-only view of the OCR attribute dictionary (`config/attributes.yaml`): **Name** (what a filter
+A read-only view of the OCR attribute dictionary for your client (`config/attributes.yaml` for TW,
+`config/attributes.<name>.yaml` for any other variant): **Name** (what a filter
 rule matches), **Category**, and the **OCR variants** that are auto-corrected to that name — the
 garbled forms OCR actually produces.
 
-No controls. To add an attribute, edit `attributes.yaml` and restart — the launcher caches it at
-startup.
+No controls. To add an attribute, edit the dictionary for your client — `config/attributes.yaml` for
+TW, `config/attributes.<name>.yaml` for any other variant — and restart; the launcher caches it at
+startup. `config/attributes.yaml` ships with the release, so an edit there is replaced by the next
+update.
 
 ---
 
@@ -616,7 +620,7 @@ Nothing here writes config or calibrates anything on its own.
 
 | Control | What it does |
 |---|---|
-| **Composer move mode** | Which move set the composer uses. `tuned` sends the hand-tuned counts; `arduino` places the cursor on each route's destination point, closed loop, and re-aims on every move so nothing needs tuning. Saved to `defaults.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
+| **Composer move mode** | Which move set the composer uses. `tuned` sends the hand-tuned counts; `arduino` places the cursor on each route's destination point, closed loop, and re-aims on every move so nothing needs tuning. Saved to `config/local.yaml` by **Save Gem Composer**. See [MOVE-SETS.md](MOVE-SETS.md). |
 
 Whichever set is **not** active is dimmed to 45 % and disabled, so the two grids cannot be confused.
 The selector has its own card precisely so it stays clickable while either set is active.
@@ -920,19 +924,23 @@ Records the display environment the calibration was measured in.
 
 ### Game client — the tw / us switch
 
-One button per known client (`tw — TW_LIVE`, `us — US_LIVE`), built from `game.variants` in
-`config/defaults.yaml`. Pressing one points the whole suite at that client: the window title and the
-Tuner's wordings come from the choice, and it is written to the config, so it survives a restart. A
+One button per known client (`tw — TW_LIVE`, `us — US_LIVE`), built from `game.variants` in the
+shipped template (`config/defaults.yaml.example`). Pressing one points the whole suite at that
+client: the window title and the Tuner's wordings come from the choice, and it is written to
+`config/local.yaml`, so it survives a restart. A
 tool that is **running** keeps the wordings it started with; its next Start picks the new ones up.
 
 **Only the Tuner reads the game's text.** The Gem Composer, Buy/Sell, Spammer, Quest and the pet reads
 match no words at all — position, colour, keys, and digits — so they run on either client with no
-setup. That is why the US client's dictionary (`config/attributes.us.yaml`) **ships empty**: the
-switch will say so, the Tuner will match nothing until it is filled from that client, and everything
-else is unaffected.
+setup. That is why the US client's dictionary **starts empty** — the loader copies
+`config/attributes.us.yaml.example` to `config/attributes.us.yaml` the first time the US client is
+used: the switch will say so, the Tuner will match nothing until it is filled from that client, and
+everything else is unaffected.
 
-If a client's dictionary file is missing altogether, the switch **refuses** and says how to fix it —
-a config pointing at a client whose dictionary is absent is a launcher that will not start.
+A client whose dictionary does not exist yet is **seeded from its template**
+(`config/attributes.<name>.yaml.example`) the first time it is used, so the switch works on a fresh
+install with nothing to copy by hand. Only a client with neither a dictionary nor a template is
+refused — that one leaves the launcher unable to start.
 
 ---
 
@@ -951,7 +959,7 @@ Global hotkeys for the running tool.
 | **Quit (immediate)** | Stops the tool at once. Default `F11`. |
 | **Advance grade (gem)** | Advances the composer to the next grade. Default `G`. |
 | **Pause (graceful stop)** | Finishes the current cycle, then stops. Default `CapsLock`. |
-| **Save Hotkeys** | Writes them to `config/defaults.yaml`. An invalid name is refused with a message rather than saved. |
+| **Save Hotkeys** | Writes them to `config/local.yaml`. An invalid name is refused with a message rather than saved. |
 
 Type a key name: `F1`–`F24`, `Esc`, `CapsLock`, `Space`, `Tab`, `Enter`, or a single letter or digit.
 
