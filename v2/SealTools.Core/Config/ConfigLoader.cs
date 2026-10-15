@@ -70,7 +70,12 @@ public sealed class ConfigLoader
 
     public AppConfig Load()
     {
-        var defaults = Deserialize<AppConfig>("defaults.yaml");
+        // THE BASE. An install that has taken an update has the shipped template — the zip carries the
+        // defaults as config/defaults.yaml.example precisely so that extracting an update cannot cover
+        // the player's own defaults.yaml — and reads that. A checkout has only the tracked file, so a
+        // dev run reads exactly what it read before.
+        var baseIsShipped = File.Exists(PathOf("defaults.yaml.example"));
+        var defaults = Deserialize<AppConfig>(baseIsShipped ? "defaults.yaml.example" : "defaults.yaml");
 
         // First run on a new machine: seed the machine-specific config from the
         // example template (v1 coords as a starting point), then calibrate in-app.
@@ -94,10 +99,43 @@ public sealed class ConfigLoader
 
         var local = Deserialize<LocalOverrides>("local.yaml");
 
+        // THE LEGACY FILE. On an install that has taken an update, this is the player's own old
+        // defaults.yaml — the only copy of every setting they ever saved, because SaveDefaults wrote the
+        // whole portable projection into it. It is read ONCE: the fold below moves those values into
+        // local.yaml, and from then on the marker stops this file being read at all.
+        var alreadyFolded = local.Settings?.LegacyFolded == true;
+        var legacy = baseIsShipped && !alreadyFolded && File.Exists(PathOf("defaults.yaml"))
+            ? Deserialize<AppConfig>("defaults.yaml")
+            : null;
+
+        // Normalise both files the same way, because the fold compares like with like: a pre-presets
+        // flat `spammer.keys` becomes a preset in memory first, so the comparison never meets two shapes
+        // of the same setting — and a leaf with no destination has nowhere to land.
+        if (legacy != null) MigrateSpammerPresets(legacy);
+        MigrateSpammerPresets(defaults);
+
+        // THE FOLD, once. It compares section by section and writes only what the player changed, so a
+        // default a later release changes still arrives for every key they never touched.
+        var folded = legacy != null && FoldIntoLocal(legacy, defaults);
+
+        // A successful fold has just written local.yaml, so the copy read above is stale. Re-read it, or
+        // the player's own values arrive only on the NEXT launch — which is exactly the launch after the
+        // one that was supposed to bring them across.
+        if (folded) local = Deserialize<LocalOverrides>("local.yaml");
+
+        // The legacy file as a VALUES LAYER — the pre-fold behaviour, kept only as the fallback for a
+        // fold that could not be written (read-only medium, full disk). It sits BELOW local.yaml, which
+        // is why it is applied before ApplyOverrides.
+        if (legacy != null && !folded)
+            ApplySettings(defaults, FromConfig(legacy));
+
         // Order matters: legacy keys become a preset in memory, adoption copies whatever presets are
         // left into local.yaml, and only then does local.yaml override the result.
-        MigrateSpammerPresets(defaults);
-        AdoptSpammerPresetsIntoLocal(defaults, local);
+        //
+        // The adoption reads whichever file actually holds the player's presets — the legacy file on an
+        // install that has taken an update, since the shipped template has none — and its own guard makes
+        // it once-only, so every later launch does nothing.
+        AdoptSpammerPresetsIntoLocal(legacy ?? defaults, local);
         ApplyOverrides(defaults, local);
 
         // AFTER the merge, because the migration only fills gaps: a file that already carries
@@ -309,77 +347,85 @@ public sealed class ConfigLoader
         }
     }
 
+    /// <summary>Applies a settings block onto the config being loaded: what the fold writes into
+    /// local.yaml, or — while a fold is still pending — the legacy file's own portable values.
+    ///
+    /// Every guard is "is it PRESENT", never "is it non-empty". A block written by the fold is partial by
+    /// design, so a value it does not mention must leave the shipped one standing; and a value it states
+    /// as empty is a choice, not an omission.
+    ///
+    /// Applied FIRST in <see cref="ApplyOverrides"/>, so the machine-specific half below keeps the last
+    /// word wherever the two ever name the same field. Today they never do: LocalTuner, LocalGem and
+    /// LocalArduino carry geometry, points and the port, and this block carries none of those.</summary>
+    private static void ApplySettings(AppConfig defaults, LocalSettings? settings)
+    {
+        if (settings is null) return;
+
+        if (settings.Window != null) defaults.Window = settings.Window;
+        if (settings.ReferenceWindow != null) defaults.ReferenceWindow = settings.ReferenceWindow;
+        if (settings.Game is { } game && defaults.Game != null)
+        {
+            // Per name, like every other dictionary in this file: a client a later release adds to the
+            // shipped defaults must still arrive, and the player's own entry must still win.
+            if (game.Variants is { Count: > 0 } variants)
+                foreach (var (name, variant) in variants)
+                    defaults.Game.Variants[name] = variant;
+            // Unconditional when present: an empty variant is the real choice "use window.title", and
+            // skipping it on emptiness would make going back impossible — the same reasoning as
+            // quest.active_sequence below.
+            if (game.Variant != null) defaults.Game.Variant = game.Variant;
+        }
+        if (settings.Arduino is { } arduino)
+        {
+            if (arduino.Vid is { } vid) defaults.Arduino.Vid = vid;
+            if (arduino.Pid is { } pid) defaults.Arduino.Pid = pid;
+            if (arduino.Baud is { } baud) defaults.Arduino.Baud = baud;
+        }
+        if (settings.Hotkeys != null) defaults.Hotkeys = settings.Hotkeys;
+        // Guarded like the local tuner half below, and for the same recorded reason: a bare `tuner:` key
+        // in the base makes it null, and dereferencing that threw before Validate could report the empty
+        // section.
+        if (settings.Tuner is { } tuner && defaults.Tuner != null)
+        {
+            if (tuner.GradeOrder is { } gradeOrder) defaults.Tuner.GradeOrder = gradeOrder;
+            if (tuner.TargetGrade != null) defaults.Tuner.TargetGrade = tuner.TargetGrade;
+            if (tuner.MaxRetries is { } maxRetries) defaults.Tuner.MaxRetries = maxRetries;
+            if (tuner.SaveCaptures is { } saveCaptures) defaults.Tuner.SaveCaptures = saveCaptures;
+            if (tuner.OcrRetries is { } ocrRetries) defaults.Tuner.OcrRetries = ocrRetries;
+            if (tuner.SpringMode != null) defaults.Tuner.SpringMode = tuner.SpringMode;
+            if (tuner.MouseGuard != null) defaults.Tuner.MouseGuard = tuner.MouseGuard;
+            if (tuner.GuardPx is { } guardPx) defaults.Tuner.GuardPx = guardPx;
+            if (tuner.RecenterMax is { } recenterMax) defaults.Tuner.RecenterMax = recenterMax;
+            if (tuner.Models != null) defaults.Tuner.Models = tuner.Models;
+            if (tuner.Timing != null) defaults.Tuner.Timing = tuner.Timing;
+            if (tuner.GradeColors != null) defaults.Tuner.GradeColors = tuner.GradeColors;
+            if (tuner.Filter != null) defaults.Tuner.Filter = tuner.Filter;
+        }
+        if (settings.Gem is { } gem)
+        {
+            // `is { Count: > 0 }`, unlike the scalars above: an empty grade list is not a state the
+            // composer can run, so writing one must not replace a shipped list with nothing.
+            if (gem.Grades is { Count: > 0 } grades) defaults.Gem.Grades = grades;
+            if (gem.StartGrade != null) defaults.Gem.StartGrade = gem.StartGrade;
+            if (gem.EmptyMode != null) defaults.Gem.EmptyMode = gem.EmptyMode;
+            if (gem.EmptyStreak is { } emptyStreak) defaults.Gem.EmptyStreak = emptyStreak;
+            if (gem.ColoredGapMin is { } coloredGapMin) defaults.Gem.ColoredGapMin = coloredGapMin;
+            if (gem.SaveEmptyCaptures is { } saveEmptyCaptures) defaults.Gem.SaveEmptyCaptures = saveEmptyCaptures;
+            if (gem.MoveMode != null) defaults.Gem.MoveMode = gem.MoveMode;
+        }
+        if (settings.Pet is { } petSettings)
+        {
+            if (petSettings.ItemsPerMinute is { } itemsPerMinute) defaults.Pet.ItemsPerMinute = itemsPerMinute;
+            if (petSettings.PetSlotOccupiedAbove is { } petSlotOccupiedAbove)
+                defaults.Pet.PetSlotOccupiedAbove = petSlotOccupiedAbove;
+        }
+    }
+
     private static void ApplyOverrides(AppConfig defaults, LocalOverrides local)
     {
-        // The PORTABLE settings first — this is the layer defaults.yaml used to be — so everything below
-        // it, which was measured on THIS machine, still wins wherever the two name the same field. Today
-        // they never do: LocalTuner, LocalGem and LocalArduino carry geometry, points and the port, and
-        // the settings mirror carries none of those.
-        //
-        // Every guard is "is it PRESENT", never "is it non-empty": a block written by the fold is partial
-        // by design, so a value it does not mention must leave the shipped one standing — and a value it
-        // states as empty is a choice, not an omission.
-        if (local.Settings is { } settings)
-        {
-            if (settings.Window != null) defaults.Window = settings.Window;
-            if (settings.ReferenceWindow != null) defaults.ReferenceWindow = settings.ReferenceWindow;
-            if (settings.Game is { } game && defaults.Game != null)
-            {
-                // Per name, like every other dictionary in this file: a client a later release adds to
-                // the shipped defaults must still arrive, and the player's own entry must still win.
-                if (game.Variants is { Count: > 0 } variants)
-                    foreach (var (name, variant) in variants)
-                        defaults.Game.Variants[name] = variant;
-                // Unconditional when present: an empty variant is the real choice "use window.title",
-                // and skipping it on emptiness would make going back impossible — the same reasoning as
-                // quest.active_sequence below.
-                if (game.Variant != null) defaults.Game.Variant = game.Variant;
-            }
-            if (settings.Arduino is { } arduino)
-            {
-                if (arduino.Vid is { } vid) defaults.Arduino.Vid = vid;
-                if (arduino.Pid is { } pid) defaults.Arduino.Pid = pid;
-                if (arduino.Baud is { } baud) defaults.Arduino.Baud = baud;
-            }
-            if (settings.Hotkeys != null) defaults.Hotkeys = settings.Hotkeys;
-            // Guarded like the local tuner half below, and for the same recorded reason: a bare `tuner:`
-            // key in the base makes it null, and dereferencing that threw before Validate could report
-            // the empty section.
-            if (settings.Tuner is { } tuner && defaults.Tuner != null)
-            {
-                if (tuner.GradeOrder is { } gradeOrder) defaults.Tuner.GradeOrder = gradeOrder;
-                if (tuner.TargetGrade != null) defaults.Tuner.TargetGrade = tuner.TargetGrade;
-                if (tuner.MaxRetries is { } maxRetries) defaults.Tuner.MaxRetries = maxRetries;
-                if (tuner.SaveCaptures is { } saveCaptures) defaults.Tuner.SaveCaptures = saveCaptures;
-                if (tuner.OcrRetries is { } ocrRetries) defaults.Tuner.OcrRetries = ocrRetries;
-                if (tuner.SpringMode != null) defaults.Tuner.SpringMode = tuner.SpringMode;
-                if (tuner.MouseGuard != null) defaults.Tuner.MouseGuard = tuner.MouseGuard;
-                if (tuner.GuardPx is { } guardPx) defaults.Tuner.GuardPx = guardPx;
-                if (tuner.RecenterMax is { } recenterMax) defaults.Tuner.RecenterMax = recenterMax;
-                if (tuner.Models != null) defaults.Tuner.Models = tuner.Models;
-                if (tuner.Timing != null) defaults.Tuner.Timing = tuner.Timing;
-                if (tuner.GradeColors != null) defaults.Tuner.GradeColors = tuner.GradeColors;
-                if (tuner.Filter != null) defaults.Tuner.Filter = tuner.Filter;
-            }
-            if (settings.Gem is { } gem)
-            {
-                // `is { Count: > 0 }`, unlike the scalars above: an empty grade list is not a state the
-                // composer can run, so writing one must not replace a shipped list with nothing.
-                if (gem.Grades is { Count: > 0 } grades) defaults.Gem.Grades = grades;
-                if (gem.StartGrade != null) defaults.Gem.StartGrade = gem.StartGrade;
-                if (gem.EmptyMode != null) defaults.Gem.EmptyMode = gem.EmptyMode;
-                if (gem.EmptyStreak is { } emptyStreak) defaults.Gem.EmptyStreak = emptyStreak;
-                if (gem.ColoredGapMin is { } coloredGapMin) defaults.Gem.ColoredGapMin = coloredGapMin;
-                if (gem.SaveEmptyCaptures is { } saveEmptyCaptures) defaults.Gem.SaveEmptyCaptures = saveEmptyCaptures;
-                if (gem.MoveMode != null) defaults.Gem.MoveMode = gem.MoveMode;
-            }
-            if (settings.Pet is { } petSettings)
-            {
-                if (petSettings.ItemsPerMinute is { } itemsPerMinute) defaults.Pet.ItemsPerMinute = itemsPerMinute;
-                if (petSettings.PetSlotOccupiedAbove is { } petSlotOccupiedAbove)
-                    defaults.Pet.PetSlotOccupiedAbove = petSlotOccupiedAbove;
-            }
-        }
+        // The portable layer first — the layer defaults.yaml used to be — then this machine's own
+        // measurements on top of it.
+        ApplySettings(defaults, local.Settings);
 
         if (local.Calibration != null) defaults.Calibration = local.Calibration;
         // `defaults.Tuner` can itself be null — a bare `tuner:` key in defaults.yaml makes it so — and
@@ -639,54 +685,129 @@ public sealed class ConfigLoader
     /// Nothing calls this yet. PLAN-DEPLOY.md step 1 adds it so the fence and the round-trip can exist
     /// before anything depends on them; the save paths move onto it in step 4, which also deletes
     /// SaveDefaults.</summary>
-    public void SaveSettings(AppConfig cfg)
-    {
-        UpdateLocal(local =>
-        {
-            var s = local.Settings ??= new LocalSettings();
+    public void SaveSettings(AppConfig cfg) =>
+        // Merged rather than replaced: a fresh block would drop the fold's marker, and the marker is what
+        // makes "fold once" true.
+        UpdateLocal(local => MergeSettings(FromConfig(cfg), local.Settings ??= new LocalSettings()));
 
-            s.Window = cfg.Window;
-            s.ReferenceWindow = cfg.ReferenceWindow;
-            // Named, never the resolved object: GameConfig.Active is a reference INTO Variants, and
-            // serialising that graph emits the alias pair (`us: &o0 … active: *o0`) that put a stray key
-            // in a saved file on 2026-10-13.
-            s.Game = new LocalSettingsGame { Variant = cfg.Game.Variant, Variants = cfg.Game.Variants };
-            // No port: that one is this machine's, and it stays in LocalArduino where the calibrator
-            // put it. The projection writes it as "" for the same reason.
-            s.Arduino = new LocalSettingsArduino { Vid = cfg.Arduino.Vid, Pid = cfg.Arduino.Pid, Baud = cfg.Arduino.Baud };
-            s.Hotkeys = cfg.Hotkeys;
-            s.Tuner = new LocalSettingsTuner
+    /// <summary>The portable settings of <paramref name="cfg"/>, as the mirror. This is the ONE place the
+    /// projection's section list is written down for READING — SaveSettings writes it into local.yaml and
+    /// the fold compares two of them — so neither can drift from the other.
+    ///
+    /// `game` is named, never the resolved object: GameConfig.Active is a reference INTO Variants, and
+    /// serialising that graph writes the variant twice, the second time as a YAML alias
+    /// (`us: &amp;o0 … active: *o0`) — the stray key a save left in defaults.yaml on 2026-10-13. And
+    /// arduino carries no port: that one is this machine's and stays in LocalArduino, which is why the
+    /// projection writes it as "".</summary>
+    private static LocalSettings FromConfig(AppConfig cfg) => new()
+    {
+        Window = cfg.Window,
+        ReferenceWindow = cfg.ReferenceWindow,
+        Game = new LocalSettingsGame { Variant = cfg.Game.Variant, Variants = cfg.Game.Variants },
+        Arduino = new LocalSettingsArduino { Vid = cfg.Arduino.Vid, Pid = cfg.Arduino.Pid, Baud = cfg.Arduino.Baud },
+        Hotkeys = cfg.Hotkeys,
+        Tuner = new LocalSettingsTuner
+        {
+            GradeOrder = cfg.Tuner.GradeOrder,
+            TargetGrade = cfg.Tuner.TargetGrade,
+            MaxRetries = cfg.Tuner.MaxRetries,
+            SaveCaptures = cfg.Tuner.SaveCaptures,
+            OcrRetries = cfg.Tuner.OcrRetries,
+            SpringMode = cfg.Tuner.SpringMode,
+            MouseGuard = cfg.Tuner.MouseGuard,
+            GuardPx = cfg.Tuner.GuardPx,
+            RecenterMax = cfg.Tuner.RecenterMax,
+            Models = cfg.Tuner.Models,
+            Timing = cfg.Tuner.Timing,
+            GradeColors = cfg.Tuner.GradeColors,
+            Filter = cfg.Tuner.Filter,
+        },
+        Gem = new LocalSettingsGem
+        {
+            Grades = cfg.Gem.Grades,
+            StartGrade = cfg.Gem.StartGrade,
+            EmptyMode = cfg.Gem.EmptyMode,
+            EmptyStreak = cfg.Gem.EmptyStreak,
+            ColoredGapMin = cfg.Gem.ColoredGapMin,
+            SaveEmptyCaptures = cfg.Gem.SaveEmptyCaptures,
+            MoveMode = cfg.Gem.MoveMode,
+        },
+        Pet = new LocalSettingsPet
+        {
+            ItemsPerMinute = cfg.Pet.ItemsPerMinute,
+            PetSlotOccupiedAbove = cfg.Pet.PetSlotOccupiedAbove,
+        },
+    };
+
+    /// <summary>Carries the sections <paramref name="from"/> holds onto <paramref name="to"/>, leaving
+    /// every section it does not hold alone. With <paramref name="differFrom"/> given, a section is
+    /// carried only when that one's WRITTEN form differs — the fold's rule, and what keeps a value the
+    /// player never touched out of the block so it goes on tracking the shipped template.
+    ///
+    /// Sections are carried WHOLE, never field by field: the apply side assigns the object, so half a
+    /// section would drag the other half's defaults in with it.
+    ///
+    /// <see cref="LocalSettings.LegacyFolded"/> is deliberately not in this list. The marker is not a
+    /// setting, and a merge that carried it would be able to clear it.</summary>
+    private static void MergeSettings(LocalSettings from, LocalSettings to, LocalSettings? differFrom = null)
+    {
+        if (Carry(from.Window, differFrom?.Window)) to.Window = from.Window;
+        if (Carry(from.ReferenceWindow, differFrom?.ReferenceWindow)) to.ReferenceWindow = from.ReferenceWindow;
+        if (Carry(from.Game, differFrom?.Game)) to.Game = from.Game;
+        if (Carry(from.Arduino, differFrom?.Arduino)) to.Arduino = from.Arduino;
+        if (Carry(from.Hotkeys, differFrom?.Hotkeys)) to.Hotkeys = from.Hotkeys;
+        if (Carry(from.Tuner, differFrom?.Tuner)) to.Tuner = from.Tuner;
+        if (Carry(from.Gem, differFrom?.Gem)) to.Gem = from.Gem;
+        if (Carry(from.Pet, differFrom?.Pet)) to.Pet = from.Pet;
+    }
+
+    /// <summary>True when a section should be carried: it must be present, and — when there is something
+    /// to compare against — it must differ from that in the form it would be WRITTEN in. Comparing the
+    /// serialised form rather than the objects makes "differs" mean "the file would say something
+    /// different", which is the only sense the fold cares about.</summary>
+    private static bool Carry<T>(T? from, T? compare) where T : class
+        => from != null && (compare == null || Serializer.Serialize(from) != Serializer.Serialize(compare));
+
+    /// <summary>Moves the player's own portable values out of the legacy defaults file and into
+    /// local.yaml's settings block, ONCE, and reports whether it succeeded.
+    ///
+    /// Reading is per leaf, writing is per SECTION: a section is carried whole as soon as any of its
+    /// leaves differs from the shipped template, because the apply side assigns objects — `hotkeys.start`
+    /// on its own would carry the default 0 for the other three keys.
+    ///
+    /// 'Differs from the shipped template' is how it reads 'the player changed it', and the direction it
+    /// errs in is the safe one: a default a release changed under a key nobody touched is preserved
+    /// rather than silently applied, and the release note naming that key is the habit that covers it.
+    ///
+    /// The source is never written, moved or deleted — it is the rollback copy and the record of what the
+    /// player had. A write that cannot happen returns false rather than throwing: the marker stays unset,
+    /// so the caller keeps reading the legacy file for the session and the fold retries next launch.</summary>
+    private bool FoldIntoLocal(AppConfig legacy, AppConfig shipped)
+    {
+        var differing = new LocalSettings();
+        MergeSettings(FromConfig(legacy), differing, differFrom: FromConfig(shipped));
+
+        try
+        {
+            UpdateLocal(local =>
             {
-                GradeOrder = cfg.Tuner.GradeOrder,
-                TargetGrade = cfg.Tuner.TargetGrade,
-                MaxRetries = cfg.Tuner.MaxRetries,
-                SaveCaptures = cfg.Tuner.SaveCaptures,
-                OcrRetries = cfg.Tuner.OcrRetries,
-                SpringMode = cfg.Tuner.SpringMode,
-                MouseGuard = cfg.Tuner.MouseGuard,
-                GuardPx = cfg.Tuner.GuardPx,
-                RecenterMax = cfg.Tuner.RecenterMax,
-                Models = cfg.Tuner.Models,
-                Timing = cfg.Tuner.Timing,
-                GradeColors = cfg.Tuner.GradeColors,
-                Filter = cfg.Tuner.Filter,
-            };
-            s.Gem = new LocalSettingsGem
-            {
-                Grades = cfg.Gem.Grades,
-                StartGrade = cfg.Gem.StartGrade,
-                EmptyMode = cfg.Gem.EmptyMode,
-                EmptyStreak = cfg.Gem.EmptyStreak,
-                ColoredGapMin = cfg.Gem.ColoredGapMin,
-                SaveEmptyCaptures = cfg.Gem.SaveEmptyCaptures,
-                MoveMode = cfg.Gem.MoveMode,
-            };
-            s.Pet = new LocalSettingsPet
-            {
-                ItemsPerMinute = cfg.Pet.ItemsPerMinute,
-                PetSlotOccupiedAbove = cfg.Pet.PetSlotOccupiedAbove,
-            };
-        });
+                var s = local.Settings ??= new LocalSettings();
+                MergeSettings(differing, s);
+                // Unconditional, and in the SAME write. A machine that never changed a value must still
+                // stop folding, or the next launch would fold the old template against a newer release's
+                // and pin that release's defaults as the player's own.
+                s.LegacyFolded = true;
+            });
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     // Machine-specific overlay shape (mirrors local.yaml).
@@ -721,7 +842,13 @@ public sealed class ConfigLoader
     ///
     /// The nested whole objects (window, reference_window, hotkeys, models, timing, grade_colors,
     /// filter) are the exception: they are copied and applied whole, so they keep the shape of the type
-    /// they mirror and reuse it directly.</summary>
+    /// they mirror and reuse it directly.
+    ///
+    /// Note what an unset section looks like on disk: this writer emits a null as a BARE key, so a folded
+    /// block shows the sections it does not carry as `tuner:` with nothing under them. That is the same
+    /// shape the file already gives its other unset values (`spring_point:`, `startup_step:`), and a
+    /// reader must treat it as absent rather than as an empty object — which is exactly what the nullable
+    /// fields and the presence guards are for.</summary>
     public sealed class LocalSettings
     {
         public WindowConfig? Window { get; set; }

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using SealTools.Core;
 using SealTools.Core.Config;
 using Xunit;
 using YamlDotNet.RepresentationModel;
@@ -181,6 +182,18 @@ public class ConfigLoaderTests
         return null;
     }
 
+    /// <summary>True when a section carries no value at all. This writer emits a null as a BARE key, so
+    /// an unset section is present in the file as an empty scalar — the same shape the real local.yaml
+    /// already gives its `spring_point:` and `startup_step:`. "Carries nothing" is therefore the right
+    /// test for "the fold did not bring this section across"; "absent" would be wrong.</summary>
+    private static bool CarriesNothing(YamlNode? node) => node switch
+    {
+        null => true,
+        YamlScalarNode scalar => string.IsNullOrWhiteSpace(scalar.Value),
+        YamlMappingNode map => map.Children.Count == 0,
+        _ => false,
+    };
+
     /// <summary>The settings subtree of a local.yaml, or null when the file carries none.</summary>
     private static YamlNode? SettingsNode(string file) => Child(RootNode(file), "settings");
 
@@ -190,6 +203,271 @@ public class ConfigLoaderTests
         using (var reader = new StreamReader(file))
             stream.Load(reader);
         return stream.Documents[0].RootNode;
+    }
+
+    // ── Step 2: the base rule, the fold, and the root marker (PLAN-DEPLOY.md §4, §6) ─────────────────
+    //
+    // An install that takes an update gets config/defaults.yaml.example — the shipped template — beside
+    // its own config/defaults.yaml, which holds every setting the player ever saved. The first launch
+    // after that moves their own values into local.yaml once and stops reading the old file; the tests
+    // below are the whole of that contract.
+
+    /// <summary>The shipped defaults as this release writes them — the file the zip carries under
+    /// config/defaults.yaml.example. Using the repo's own file rather than a hand-made stub is what makes
+    /// these tests exercise the real key set, comments and all.</summary>
+    private static string ShippedDefaults() => File.ReadAllText(Path.Combine(FindConfigDir(), "defaults.yaml"));
+
+    /// <summary>A temp install AFTER an update has landed: the shipped template beside the player's own
+    /// legacy defaults.yaml, and a seeded local.yaml. `legacy` defaults to the shipped text, so a test
+    /// names only the values it wants the player to have changed.</summary>
+    private static string MakeTempInstall(string shipped, string? legacy = null)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_install_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var src = FindConfigDir();
+        File.Copy(Path.Combine(src, "attributes.yaml"), Path.Combine(dir, "attributes.yaml"));
+        File.WriteAllText(Path.Combine(dir, "defaults.yaml.example"), shipped);
+        File.WriteAllText(Path.Combine(dir, "defaults.yaml"), legacy ?? shipped);
+        File.Copy(Path.Combine(src, "local.yaml.example"), Path.Combine(dir, "local.yaml"));
+        return dir;
+    }
+
+    [Fact]
+    public void TheFoldCarriesOnlyWhatThePlayerChanged()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var legacyBytes = File.ReadAllBytes(Path.Combine(dir, "defaults.yaml"));
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("S", cfg.Tuner.TargetGrade);
+
+            var settings = SettingsNode(Path.Combine(dir, "local.yaml"));
+            Assert.NotNull(settings);
+            // The section holding the change was carried whole — the apply side assigns the object, so a
+            // lone `target_grade` leaf would have dragged the other twelve tuner defaults in with it.
+            Assert.False(CarriesNothing(Child(settings, "tuner")));
+            Assert.Equal("S", Child(Child(settings, "tuner"), "target_grade")?.ToString());
+            Assert.Equal("3", Child(Child(settings, "tuner"), "ocr_retries")?.ToString());
+            // And the sections that do NOT differ were not carried at all, which is the point of the
+            // whole design: they go on tracking the shipped template, so a default a later release
+            // changes still reaches this machine.
+            Assert.True(CarriesNothing(Child(settings, "window")));
+            Assert.True(CarriesNothing(Child(settings, "hotkeys")));
+            Assert.True(CarriesNothing(Child(settings, "gem")));
+            Assert.True(CarriesNothing(Child(settings, "pet")));
+            Assert.True(CarriesNothing(Child(settings, "arduino")));
+
+            // The legacy file is the rollback copy: never written, never moved, never deleted.
+            Assert.Equal(legacyBytes, File.ReadAllBytes(Path.Combine(dir, "defaults.yaml")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldMarksItselfDoneEvenWhenNothingDiffers()
+    {
+        // A player who never changed a value: nothing to carry, and the marker still has to be set — or
+        // the next release's launch would fold this template against that release's example and pin
+        // every default it changed as the player's own.
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped);
+        try
+        {
+            new ConfigLoader(dir).Load();
+
+            var settings = SettingsNode(Path.Combine(dir, "local.yaml"));
+            Assert.Equal("true", Child(settings, "legacy_folded")?.ToString());
+            Assert.True(CarriesNothing(Child(settings, "tuner")));
+            Assert.True(CarriesNothing(Child(settings, "window")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldRunsOnceAndTheLegacyFileIsNeverReadAgain()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var first = new ConfigLoader(dir).Load();
+            Assert.Equal("S", first.Tuner.TargetGrade);
+
+            var afterFirstLoad = File.ReadAllBytes(Path.Combine(dir, "local.yaml"));
+
+            // A second launch writes nothing at all: the marker means the legacy file is not read.
+            var second = new ConfigLoader(dir).Load();
+            Assert.Equal("S", second.Tuner.TargetGrade);
+            Assert.Equal(afterFirstLoad, File.ReadAllBytes(Path.Combine(dir, "local.yaml")));
+
+            // Which is decisive with the legacy file GONE: the value cannot have come from it.
+            File.Delete(Path.Combine(dir, "defaults.yaml"));
+            Assert.Equal("S", new ConfigLoader(dir).Load().Tuner.TargetGrade);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AChangedShippedDefaultIsCarriedAcrossAsThePlayersOwn()
+    {
+        // The fold's approximation, pinned so nobody later mistakes it for a bug: it reads "the player
+        // changed it" as "it differs from the shipped template", so a default a RELEASE changed, under a
+        // key this player never touched, is carried across as if they had chosen it. The direction is the
+        // safe one — a saved value beats a silent behaviour change — and the release note that names the
+        // key is the habit that covers it.
+        var shippedNow = ShippedDefaults().Replace("target_grade: DG", "target_grade: S");
+        var legacyFromTheOldRelease = ShippedDefaults();
+        var dir = MakeTempInstall(shippedNow, legacyFromTheOldRelease);
+        try
+        {
+            Assert.Equal("DG", new ConfigLoader(dir).Load().Tuner.TargetGrade);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldLeavesTheMachineHalfOfLocalYamlAlone()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var before = new ConfigLoader(dir).LoadLocal()!;
+            Assert.NotNull(before.Tuner?.Ocr);
+
+            new ConfigLoader(dir).Load();
+
+            // The fold writes local.yaml, which is also where this machine's calibration lives — the one
+            // thing in the install that cannot be regenerated from the repo.
+            var after = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(before.Tuner!.Ocr!.Region.Left, after.Tuner!.Ocr!.Region.Left);
+            Assert.Equal(before.Gem!.GradePositions!.Count, after.Gem!.GradePositions!.Count);
+            Assert.NotNull(after.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AFoldThatCannotBeWrittenStillLoadsTheLegacyValues()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        var localPath = Path.Combine(dir, "local.yaml");
+        try
+        {
+            // A read-only local.yaml stands in for the medium the plan names: the atomic writer's Move
+            // cannot replace it, so the fold fails the way it would on a read-only stick or a full disk.
+            File.SetAttributes(localPath, FileAttributes.ReadOnly);
+            var untouched = File.ReadAllBytes(localPath);
+
+            // Nothing throws...
+            var cfg = new ConfigLoader(dir).Load();
+
+            // ...the legacy values are still in force for this session, from the fallback layer...
+            Assert.Equal("S", cfg.Tuner.TargetGrade);
+            // ...the marker was not set, so the fold retries on the next launch...
+            Assert.Equal(untouched, File.ReadAllBytes(localPath));
+            // ...and the failed write left no litter.
+            Assert.Empty(Directory.GetFiles(dir, "local.yaml.*.tmp"));
+        }
+        finally
+        {
+            File.SetAttributes(localPath, FileAttributes.Normal);
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ACheckoutWithNoShippedTemplateReadsExactlyWhatItDidBefore()
+    {
+        // No defaults.yaml.example: a repo checkout, and every install that has not taken an update.
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("TW_LIVE", cfg.Window.Title);
+            Assert.Equal("DG", cfg.Tuner.TargetGrade);
+
+            // And no fold ran: without a shipped template there are not two files to compare.
+            Assert.Null(new ConfigLoader(dir).LoadLocal()!.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AFreshInstallWithOnlyTheShippedTemplateLoads()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_fresh_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var src = FindConfigDir();
+        File.Copy(Path.Combine(src, "attributes.yaml"), Path.Combine(dir, "attributes.yaml"));
+        File.Copy(Path.Combine(src, "defaults.yaml"), Path.Combine(dir, "defaults.yaml.example"));
+        File.Copy(Path.Combine(src, "local.yaml.example"), Path.Combine(dir, "local.yaml.example"));
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("TW_LIVE", cfg.Window.Title);
+            // local.yaml was seeded, and no fold ran: there is no legacy file to fold.
+            Assert.True(File.Exists(Path.Combine(dir, "local.yaml")));
+            Assert.Null(new ConfigLoader(dir).LoadLocal()!.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheRootMarkerAcceptsEitherDefaultsName()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_root_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "config"));
+        try
+        {
+            Assert.False(RootDir.IsRoot(dir));
+
+            File.WriteAllText(Path.Combine(dir, "config", "defaults.yaml"), "window:\n");
+            Assert.True(RootDir.IsRoot(dir));
+            File.Delete(Path.Combine(dir, "config", "defaults.yaml"));
+
+            // The name an install has after an update, and the reason the probe had to widen: without it
+            // a folder that has taken one is no longer recognisable as an install at all.
+            File.WriteAllText(Path.Combine(dir, "config", "defaults.yaml.example"), "window:\n");
+            Assert.True(RootDir.IsRoot(dir));
+
+            // And the walk finds it from below, which is what a dev run needs.
+            var nested = Path.Combine(dir, "bin", "Debug", "net8.0-windows");
+            Directory.CreateDirectory(nested);
+            Assert.Equal(dir, RootDir.Find(nested));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     /// <summary>The fence for the mirror, and it compares what the two WRITERS actually emit rather than

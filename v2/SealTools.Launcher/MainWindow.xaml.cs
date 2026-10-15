@@ -10176,19 +10176,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         FontSize = 12,
     };
 
-    private static string FindRootDir()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "config", "defaults.yaml")))
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate the v2 root (config/defaults.yaml).");
-    }
+    // The walk itself lives in Core (RootDir) so that the marker rule — a defaults file under either of
+    // its two names — is testable: the launcher is net8.0-windows and stays out of the test project.
+    private static string FindRootDir() => RootDir.Find();
 }
