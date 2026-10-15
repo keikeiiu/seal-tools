@@ -975,7 +975,7 @@ public sealed class SpammerConfig
     public Dictionary<string, Dictionary<string, double>> Presets { get; set; } = new();
 
     /// <summary>Legacy flat key list (pre-presets). Read on load for migration only — SpammerConfig
-    /// is never serialized (SaveDefaults writes an explicit shape), so this is not written back.</summary>
+    /// is never serialized (a save writes an explicit shape), so this is not written back.</summary>
     public Dictionary<string, double>? Keys { get; set; }
 
     /// <summary>The keys of the active preset, empty when that preset is missing. The empty result

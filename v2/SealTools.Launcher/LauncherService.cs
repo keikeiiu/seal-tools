@@ -702,8 +702,12 @@ public sealed class LauncherService : IDisposable
             TaskScheduler.Default);
     }
 
-    /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
-    public void SaveConfig() => _loader.SaveDefaults(Config);
+    /// <summary>Persists the portable settings into config/local.yaml's `settings:` block — the file the
+    /// player owns. Machine coords are written beside them by the calibrator, through the same loader.
+    ///
+    /// It used to write defaults.yaml, which is the template publish.bat ships: a save target inside a
+    /// shipped file is a setting the next update overwrites.</summary>
+    public void SaveConfig() => _loader.SaveSettings(Config);
 
     /// <summary>Points the suite at another game client — the Setup tab's switch, and the only way to
     /// change clients without editing files. False with a reason when it cannot.
@@ -748,7 +752,8 @@ public sealed class LauncherService : IDisposable
         _diagnosticOcr?.Dispose();
         _diagnosticOcr = null;
 
-        // The variant lives in defaults.yaml, and SaveDefaults is what rewrites that file.
+        // The variant is one of the portable settings, so this lands in local.yaml's `settings:` block —
+        // the file the player owns. It used to live in defaults.yaml, which the zip ships a template for.
         SaveConfig();
 
         message = $"Now on the {Config.Game.Variant} client — window \"{Config.Window.Title}\", " +

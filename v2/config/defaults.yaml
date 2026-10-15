@@ -1,12 +1,14 @@
-# ── Portable settings ─────────────────────────────────────────────────────────────
+# ── Portable settings — the TEMPLATE ──────────────────────────────────────────────
 # The same on every machine. Anything measured on ONE machine belongs in local.yaml, not here.
 #
-# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you press Save on the
-# Tuner, Gem or Hotkeys tab. It serialises a fixed list of keys, which means:
-#   * every comment in here is lost on the next save, including any you add;
-#   * any key the launcher does not know about is DROPPED, silently — this is how a spammer
-#     block once disappeared, taking a player's key rotations with it. Presets are personal
-#     and live in local.yaml, which is why there is no spammer section below.
+# THIS FILE SHIPS; NOTHING SAVES INTO IT. publish.bat packages it as config/defaults.yaml.example, and
+# the app reads that copy as its base. Pressing Save on the Tuner, Gem, Hotkeys or Quest tab writes into
+# config/local.yaml's `settings:` block instead — your own file, beside this one. That split is the
+# point: a file that ships is a file an update replaces, so a setting saved here would be overwritten by
+# the next release. It used to be exactly that, and the values are folded out of it on the way in.
+#
+# Editing it HERE is how a new default reaches everyone: change a value, commit it, and the next release
+# ships it. A machine that already saved its own value for that key keeps its own — see docs/CONFIG.md.
 #
 # Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.
 
@@ -133,3 +135,18 @@ gem:
   colored_gap_min: 40
   save_empty_captures: false
   move_mode: arduino
+
+# The two feeder settings that are not measurements of one machine.
+#
+# `items_per_minute` is the fallback rate the schedule uses when the game's own rate line cannot be
+# read — the resident feeder prefers the `每N分 攝取N個` line it reads on screen, and falls back to this.
+# `pet_slot_occupied_above` is the OCR score above which a slot read counts as "holding a pet": a
+# property of the CROP rather than of the display, which is why it is portable.
+#
+# This block was ABSENT from this file for several releases — the app wrote it into a saved copy, so a
+# machine that had ever saved one kept working while a fresh install silently fell back to the two
+# property defaults. The test that compares this template against the settings the app writes is what
+# found it; a release that adds a default has to add it here for anyone to receive it.
+pet:
+  items_per_minute: 3
+  pet_slot_occupied_above: 0.05

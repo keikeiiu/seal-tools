@@ -31,39 +31,28 @@ public sealed class ConfigLoader
     // it cannot carry comments through: whatever prose a save destroys is gone for good, and the only
     // comments that survive are the ones the writer emits itself. That is what this is.
     //
-    // It says the two things a reader has to know before editing the file, because both have already
-    // cost real data. Comments vanish on the next save from any tab. And a key the serializer's
-    // anonymous object does not mention is DROPPED - that is not a theory, it is how a machine's
-    // spammer presets were deleted outright (the block lived here, a Save from the Tuner tab rewrote
-    // the file without it, and nothing said so). Presets live in local.yaml now and the adoption path
-    // catches strays, but the underlying behaviour has not changed and will not without a rework.
-    private const string DefaultsHeader =
-        "# ── Portable settings ─────────────────────────────────────────────────────────────\n" +
-        "# The same on every machine. Anything measured on ONE machine belongs in local.yaml, not here.\n" +
-        "#\n" +
-        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you press Save on the\n" +
-        "# Tuner, Gem or Hotkeys tab. It serialises a fixed list of keys, which means:\n" +
-        "#   * every comment in here is lost on the next save, including any you add;\n" +
-        "#   * any key the launcher does not know about is DROPPED, silently — this is how a spammer\n" +
-        "#     block once disappeared, taking a player's key rotations with it. Presets are personal\n" +
-        "#     and live in local.yaml, which is why there is no spammer section below.\n" +
-        "#\n" +
-        "# Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.\n" +
-        "\n";
-
-    // The same warning for local.yaml. It loses comments the same way, and its comments are the more
-    // valuable ones - local.yaml.example ships a page of guidance explaining that the seeded values
-    // are v1 starting points and will be wrong until the calibrators run, all of which the first
-    // save deletes.
+    // This is now the ONLY file a save rewrites, which is why it carries both halves: the machine's own
+    // measurements and the portable settings that used to live in defaults.yaml. defaults.yaml is a
+    // shipped template that an update replaces, so a save target inside it was a setting an update
+    // could cover.
     private const string LocalHeader =
-        "# ── Machine-specific settings ─────────────────────────────────────────────────────\n" +
-        "# Everything measured or tuned on THIS machine: coordinates, the display environment, the\n" +
-        "# Arduino port override, and your own spammer presets. Gitignored, and excluded from the\n" +
-        "# public zip by publish.bat — do not commit it or share it.\n" +
+        "# ── This machine's configuration ──────────────────────────────────────────────────\n" +
+        "# Two halves, and they travel differently.\n" +
         "#\n" +
-        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you calibrate or save\n" +
-        "# a preset. It serialises a fixed list of keys, so every comment here is lost on the next\n" +
-        "# save and any key the launcher does not know about is DROPPED. Keep a copy if you hand-edit.\n" +
+        "# The MEASURED half: coordinates, the display environment, the Arduino port override, and the\n" +
+        "# calibration images beside this file. True only on THIS machine.\n" +
+        "#\n" +
+        "# The `settings:` block: the PORTABLE half — the same values on every machine. It lives here\n" +
+        "# rather than in defaults.yaml because this file is YOURS. defaults.yaml is the template\n" +
+        "# publish.bat ships, so anything saved there would be replaced by the next update. A hand-added\n" +
+        "# spammer preset is personal too, and that is why presets live here as well.\n" +
+        "#\n" +
+        "# Gitignored, and excluded from the public zip by publish.bat — do not commit it or share it.\n" +
+        "#\n" +
+        "# READ THIS BEFORE EDITING. A save REWRITES this whole file's owned blocks — the ones named in\n" +
+        "# docs/CONFIG.md — and leaves any other TOP-LEVEL block alone, so a block of your own survives.\n" +
+        "# Inside an owned block, a key the launcher does not know about is DROPPED, and comments are\n" +
+        "# lost everywhere: the writer serialises values and cannot carry prose. Keep a copy if you edit.\n" +
         "#\n" +
         "# Documented in docs/CONFIG.md; calibrating is docs/CALIBRATION.md.\n" +
         "\n";
@@ -100,8 +89,8 @@ public sealed class ConfigLoader
         var local = Deserialize<LocalOverrides>("local.yaml");
 
         // THE LEGACY FILE. On an install that has taken an update, this is the player's own old
-        // defaults.yaml — the only copy of every setting they ever saved, because SaveDefaults wrote the
-        // whole portable projection into it. It is read ONCE: the fold below moves those values into
+        // defaults.yaml — the only copy of every setting they ever saved, because the old save path wrote
+        // the whole portable projection into it. It is read ONCE: the fold below moves those values into
         // local.yaml, and from then on the marker stops this file being read at all.
         var alreadyFolded = local.Settings?.LegacyFolded == true;
         var legacy = baseIsShipped && !alreadyFolded && File.Exists(PathOf("defaults.yaml"))
@@ -235,8 +224,8 @@ public sealed class ConfigLoader
     }
 
     // Presets used to be saved into defaults.yaml — the file publish.bat copies into the public zip.
-    // SaveDefaults no longer writes them, so the first Save on ANY other tab (tuner, gem and hotkeys
-    // all call it) rewrites defaults.yaml without a spammer block. On a machine that only ever ran
+    // The save path stopped writing them, so the first Save on ANY other tab (tuner, gem and hotkeys
+    // all called it) rewrote defaults.yaml without a spammer block. On a machine that only ever ran
     // the older build those presets existed nowhere else, so that Save deleted them outright and the
     // next launch quietly created a blank "default". Adopt them into local.yaml before that can
     // happen.
@@ -300,15 +289,26 @@ public sealed class ConfigLoader
 
         if (!File.Exists(PathOf(name)))
         {
-            // A variant's dictionary is not shipped — only the TW one has content, because only the TW
-            // client has been played — so the missing file is made to say what to do about it. Shipping
-            // an EMPTY one instead would remove this error and quietly do the worse thing: match
-            // nothing, reading every attribute as "no attribute", which looks like the game changed.
+            // A variant's dictionary ships as its TEMPLATE and nothing else (attributes.us.yaml.example),
+            // because a filled one is something the player grows in place — and an update must not be
+            // able to cover it. So a missing dictionary is SEEDED from the template, which is the
+            // instruction the old error message gave by hand and the same seed shape local.yaml has.
+            //
+            // The template carries `attributes: []` rather than a bare `attributes:` key on purpose: the
+            // consumers enumerate that list (the switch's status line, the attributes tab, the rules
+            // editor) and a null one throws where an empty one means "nothing named yet".
             var example = name + ".example";
-            throw new ConfigException(File.Exists(PathOf(example))
-                ? $"config/{name} does not exist. Copy config/{example} to it and fill in this " +
-                  "client's attribute names, or set game.variant back to tw."
-                : $"Missing config file: {PathOf(name)}");
+            if (File.Exists(PathOf(example)))
+            {
+                WriteAtomically(PathOf(name), File.ReadAllText(PathOf(example)));
+            }
+            else
+            {
+                // No template either. Still loud, and for the original reason: a dictionary that matches
+                // nothing reads every attribute as "no attribute", silently, which looks exactly like
+                // the game having changed.
+                throw new ConfigException($"Missing config file: {PathOf(name)}");
+            }
         }
 
         return Deserialize<AttributesConfig>(name);
@@ -606,85 +606,96 @@ public sealed class ConfigLoader
     {
         lock (SaveGate)
         {
+            var path = PathOf("local.yaml");
+            // Whatever is in the file that this app does not own is carried through the save verbatim.
+            // A save re-serialises an object graph, so before this it DELETED any top-level block the
+            // class does not model — a hand-added one, or one a future release added that this build
+            // does not know about. That is the same silent-deletion shape this file has paid for four
+            // times, and the reason the header can no longer say "any key is dropped".
+            var foreign = ForeignBlocks(File.Exists(path) ? File.ReadAllText(path) : "");
             var local = LoadLocal() ?? new LocalOverrides();
             mutate(local);
-            WriteAtomically(PathOf("local.yaml"), LocalHeader + Serializer.Serialize(local));
+            WriteAtomically(path, LocalHeader + Serializer.Serialize(local) + foreign);
         }
     }
 
-    // Re-serialize the portable sections to defaults.yaml. Machine-specific parts
-    // (ocr geometry, gem positions/movements, port, dpi) live in local.yaml and are excluded.
-    public void SaveDefaults(AppConfig cfg)
+    /// <summary>The top-level blocks of local.yaml this app owns and rewrites. Every property of
+    /// <see cref="LocalOverrides"/> is one of these, and a test walks the class to keep that true — a
+    /// block added to the class but forgotten here would be preserved by accident and never updated.</summary>
+    public static readonly string[] OwnedLocalBlocks =
     {
-        var portable = new
-        {
-            // window.title is written as the RESOLVED value — a copy, when a variant is set, because the
-            // variant is the authority and `game` below carries it. It is kept because a config with NO
-            // variant uses `window.title` as its only source, and DROPPING it from this list would mean
-            // such a file loses its title on the next save and then fails the required-field check.
-            window = cfg.Window,
-            reference_window = cfg.ReferenceWindow,
-            // NAMED, never the object. GameConfig.Active is a reference INTO Variants, and serialising
-            // that graph writes the variant twice — the second time as a YAML alias, `us: &o0 … active:
-            // *o0` — which is the stray key a save left in this file on 2026-10-13. `active` is derived
-            // from `variant` anyway, so the copy tells a reader nothing the name does not.
-            //
-            // The step-1 fence is what caught this: it compares the keys this projection emits against
-            // the keys the settings mirror emits, and `game.active` had no counterpart there.
-            game = new { variant = cfg.Game.Variant, variants = cfg.Game.Variants },
-            arduino = new { vid = cfg.Arduino.Vid, pid = cfg.Arduino.Pid, baud = cfg.Arduino.Baud, port = "" },
-            hotkeys = cfg.Hotkeys,
-            tuner = new
-            {
-                grade_order = cfg.Tuner.GradeOrder,
-                target_grade = cfg.Tuner.TargetGrade,
-                max_retries = cfg.Tuner.MaxRetries,
-                save_captures = cfg.Tuner.SaveCaptures,
-                ocr_retries = cfg.Tuner.OcrRetries,
-                spring_mode = cfg.Tuner.SpringMode,
-                mouse_guard = cfg.Tuner.MouseGuard,
-                guard_px = cfg.Tuner.GuardPx,
-                recenter_max = cfg.Tuner.RecenterMax,
-                models = cfg.Tuner.Models,
-                timing = cfg.Tuner.Timing,
-                grade_colors = cfg.Tuner.GradeColors,
-                filter = cfg.Tuner.Filter,
-            },
-            // move_mode belongs here (docs/MOVE-SETS.md says the composer's choice is written to
-            // defaults.yaml) but was missing from this list, so every Save silently reset it to the
-            // property default. Same shape as the ocr_retries regression; the round-trip test now
-            // covers it with a non-default value.
-            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures, move_mode = cfg.Gem.MoveMode },
-            // Two settings the feeder reads (PetTool uses both) that no config file could carry: they
-            // live on PetConfig, and this projection had no `pet` block at all — so a `pet:` block
-            // hand-added to defaults.yaml was read on load and then DELETED by the next Save from any
-            // tab. Only these two are portable: the pet flow's geometry and its run state belong to
-            // local.yaml through LocalPet, and a test walks PetConfig to keep that split honest.
-            pet = new
-            {
-                items_per_minute = cfg.Pet.ItemsPerMinute,
-                pet_slot_occupied_above = cfg.Pet.PetSlotOccupiedAbove,
-            },
-            // spammer is deliberately absent: presets are personal and live in local.yaml. Leaving
-            // it here would write the merged in-memory presets back out on every Save Config
-            // (tuner, gem, hotkeys all call this), pushing a player's rotations into the file
-            // publish.bat ships. The spammer block in defaults.yaml is a static seed, not saved.
-        };
+        "calibration", "tuner", "gem", "arduino", "ui", "spammer", "buy_sell", "pet", "tooltip",
+        "quest", "settings",
+    };
 
-        WriteAtomically(PathOf("defaults.yaml"), DefaultsHeader + Serializer.Serialize(portable));
+    /// <summary>The top-level blocks in <paramref name="text"/> that this app does NOT own, as raw text to
+    /// append after a save — verbatim, comments included, so a hand-added or future block survives
+    /// untouched. Empty when there is nothing foreign, which is the normal case.</summary>
+    private static string ForeignBlocks(string text)
+    {
+        if (text.Length == 0) return "";
+
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var kept = new List<string>();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!TryTopLevelKey(lines[i], out var key) || IsOwned(key)) continue;
+
+            // Walk back over the comment lines that introduce the block, so a hand-written explanation
+            // travels with it. A blank line stops the walk, which keeps the file's own header out.
+            var from = i;
+            while (from > 0 && lines[from - 1].StartsWith('#')) from--;
+
+            var to = i + 1;
+            while (to < lines.Length && !TryTopLevelKey(lines[to], out _)) to++;
+
+            kept.Add(string.Join("\n", lines, from, to - from).TrimEnd('\n'));
+            i = to - 1;
+        }
+
+        return kept.Count == 0 ? "" : "\n" + string.Join("\n", kept) + "\n";
+    }
+
+    private static bool IsOwned(string key)
+    {
+        foreach (var owned in OwnedLocalBlocks)
+        {
+            if (owned == key) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>True when the line opens a top-level block: column zero, not a comment, and a bare
+    /// `name:` — which is how the writer emits every block it owns.</summary>
+    private static bool TryTopLevelKey(string line, out string key)
+    {
+        key = "";
+        if (line.Length == 0 || line[0] == '#' || char.IsWhiteSpace(line[0])) return false;
+
+        var colon = line.IndexOf(':');
+        if (colon <= 0) return false;
+
+        for (var i = 0; i < colon; i++)
+        {
+            if (!char.IsLetterOrDigit(line[i]) && line[i] != '_') return false;
+        }
+
+        key = line[..colon];
+        return true;
     }
 
     /// <summary>Writes the portable settings into local.yaml's `settings:` block — the same sections and
-    /// the same fields <see cref="SaveDefaults"/> projects, so that moving the save target moves the
-    /// VALUES rather than re-deriving them.
+    /// the same fields the shipped template carries, so that moving the save target moved the VALUES
+    /// rather than re-deriving them.
+    ///
+    /// This is what SaveDefaults used to do, into the file publish.bat ships. That file is a template an
+    /// update replaces, so a save target inside it was a setting an update could cover — which is the
+    /// whole reason this block exists. Nothing writes defaults.yaml any more.
     ///
     /// The block is MUTATED rather than replaced, and that is the point of it being a block at all: a
     /// fresh object would drop the fold's marker and anything else this release does not know about —
-    /// the silent-deletion shape this file and its tests have already paid for four times.
-    ///
-    /// Nothing calls this yet. PLAN-DEPLOY.md step 1 adds it so the fence and the round-trip can exist
-    /// before anything depends on them; the save paths move onto it in step 4, which also deletes
-    /// SaveDefaults.</summary>
+    /// the silent-deletion shape this file and its tests have paid for four times.</summary>
     public void SaveSettings(AppConfig cfg) =>
         // Merged rather than replaced: a fresh block would drop the fold's marker, and the marker is what
         // makes "fold once" true.
@@ -824,9 +835,9 @@ public sealed class ConfigLoader
         public TooltipConfig? Tooltip { get; set; }
         public LocalQuest? Quest { get; set; }
 
-        /// <summary>The PORTABLE settings, in the machine's own file. Mirrors <see cref="SaveDefaults"/>'
-        /// projection — the same sections, the same fields — so that when the save path moves here the
-        /// values it carries are the ones defaults.yaml used to hold.
+        /// <summary>The PORTABLE settings, in the machine's own file. Mirrors the shipped template's
+        /// sections and fields exactly — that is what the fence compares — so that the values a save
+        /// carries here are the ones defaults.yaml holds a template for.
         ///
         /// They live here rather than in defaults.yaml because that file is what publish.bat copies into
         /// the release zip: a save target that is also a shipped file is a file an update can cover.
@@ -1247,8 +1258,8 @@ public sealed class ConfigLoader
         public Dictionary<string, QuestSequence>? Sequences { get; set; }
 
         /// <summary>Carried HERE and not in defaults.yaml, for the reason the tool-level scalars on the
-        /// Pet tab had to be: `SaveDefaults` rewrites defaults.yaml from an explicit field list, so a
-        /// setting with no line in that list is written once and silently dropped by the next Save from
+        /// Pet tab had to be: the old save path rewrote defaults.yaml from an explicit field list, so a
+        /// setting with no line in that list was written once and silently dropped by the next Save from
         /// any tab. The flows are the personal half and this is the behaviour half, but both are the
         /// Quest tab's to keep.</summary>
         public int? GuardPx { get; set; }
