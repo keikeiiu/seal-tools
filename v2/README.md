@@ -219,11 +219,13 @@ publish.bat local    :: personal build -> dist\SealTools-v<version>-local.zip (y
 ```
 
 The published `publish\` folder is the distributable: `SealTools.Launcher.exe` + native OCR DLLs +
-`config\` + `models\`. Copy it to the target PC and run the exe — no install.
+`config\` + `models\` + `docs\` (the pet feeding table). Copy it to the target PC and run the exe —
+no install.
 
-> **Two packaging modes.** `publish.bat` (public, the default) ships only the config *templates* —
-> `attributes.yaml`, `defaults.yaml`, `local.yaml.example` — so the zip is safe to share without
-> leaking your calibration. `publish.bat local` ships your full `config\` (including `local.yaml` and
+> **Two packaging modes.** `publish.bat` (public, the default) ships only program files and templates —
+> never one the app writes or that you grow in place: `attributes.yaml`, `defaults.yaml.example`,
+> `local.yaml.example`, `attributes.us.yaml.example`, plus `docs\pet-data.csv` — so the zip is safe to
+> share without leaking your calibration. `publish.bat local` ships your full `config\` (including `local.yaml` and
 > the `calib_*.png` screenshots) for reinstalling on the same machine already calibrated. The exe
 > re-seeds `config\local.yaml` from the example on first run, and a fresh machine calibrates its own.
 > The script clears the previous mode's config before copying, so a public build can never carry a

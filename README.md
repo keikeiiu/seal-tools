@@ -9,8 +9,8 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 ## Download
 
 **Take the latest — [SealTools-v2.15.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15.zip).**
-Self-contained (exe + OCR models + config templates) — unzip and run. Installation, including flashing
-the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
+Self-contained (exe + OCR models + config templates + the pet feeding table) — unzip and run.
+Installation, including flashing the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
 
 Older releases are kept only when they are a useful fallback:
 

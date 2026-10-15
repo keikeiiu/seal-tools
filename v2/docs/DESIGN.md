@@ -29,9 +29,10 @@ starting defers to the first rather than fighting it for the mouse. The pet feed
 shaped the rule — it is *resident*, so its card keeps a standing line while another tool uses the game,
 and the rules for that are in §4.
 
-**Directories.** The launcher finds the repository root by walking up for `config/defaults.yaml`, so the
-`.exe` can be run from anywhere under it. Calibration images sit in `config/`; evidence — captures and
-scan reports — lands in `logs/reads/` beside the binary.
+**Directories.** The launcher finds the application root by walking up for a defaults file —
+`config/defaults.yaml` in a checkout, `config/defaults.yaml.example` in an install that has taken an
+update — so the `.exe` can be run from anywhere under it. Calibration images sit in `config/`; evidence
+— captures and scan reports — lands in `logs/reads/` beside the binary.
 
 ---
 
@@ -80,9 +81,10 @@ table in `attributes.yaml`. What has been measured about it, and must not be re-
 Three layers, and the split is the whole point — [CONFIG.md](CONFIG.md) owns the detail.
 
 ```
-config/defaults.yaml   portable, committed. Anything the same on every machine.
-config/local.yaml      per machine. Calibration, geometry, presets, run state, everything measured.
-config/attributes.yaml the OCR dictionary and the text fixes.
+config/defaults.yaml.example portable, the base the app reads. Anything the same on every machine.
+config/defaults.yaml         legacy user state after an update — the player's own saved values, folded into local.yaml once and never read again.
+config/local.yaml            per machine. Calibration, geometry, presets, run state, everything measured — plus the portable `settings:` block a save writes and the fold lands in.
+config/attributes.yaml       the OCR dictionary and the text fixes.
 ```
 
 **Two traps, both live, both recorded here because both have bitten repeatedly:**
