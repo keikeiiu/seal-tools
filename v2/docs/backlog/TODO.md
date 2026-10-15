@@ -51,15 +51,17 @@ needs new machinery, just a small driver per feature.
   the natural home) and a hard cap per run so it can't empty a bag by accident.
 - [ ] **Auto-buy items.** The mirror image: calibrate the vendor's list + a quantity control, buy a
   configured amount, stop on gold or stock limits.
-- [ ] **Auto-submit missions.** Calibrate the quest-list entry + the submit/complete button (and any
-  confirmation dialog); click through the finished missions one by one. Needs a way to know when
-  nothing is left to submit — a capture/OCR check on the list, or a fixed cap — so it stops rather
-  than clicking empty rows.
+- [ ] **Auto-submit missions — DELIVERED, as the Quest Hand-in tool.** This idea became a tool of its
+  own in v2.13 (2026-09-26) and gained sequences in v2.14. It is worth knowing that it does NOT work
+  the way this bullet sketched: rather than reading the quest list to find what is finished, it is
+  deliberately blind — it replays a flow you author at the NPC, N times, and stops on the count. See
+  [USER_GUIDE.md](../spec/USER_GUIDE.md) and the archived [PLAN-QUEST.md](../archive/PLAN-QUEST.md).
 - [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
-- [~] **Park the cursor before a capture.** Done for the BAG captures (2026-09-19) and for the feeder
-  counts (2026-09-21, where the read also refuses when the game is not in front). **Still open for the
-  OCR bands**: the tuner's read regions can have the pointer in them, and that one wants a measurement
-  first; see [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
+- [~] **Park the cursor before a capture.** Done for the BAG captures — `PetTool.ParkCursor` runs before
+  the boarding-window probe, the close-reference capture, the page sweep and both cell verifications
+  (2026-09-19). **Still open for the OCR bands**: the tuner's read regions can have the pointer in them,
+  and that one wants a measurement first; see [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
+  Note the feeder-count read does NOT park: it declines to read at all while the game is not in front.
 
 ## Needs a code change before it can be tested
 
@@ -131,28 +133,34 @@ them as leads rather than findings.
   the same by-hand weakness that let this projection drop a field three times. Closing it means the
   fixture covering every field, or the test noticing a property it was never given a value for.
 
-**Reported by the audit, not reproduced (verify before acting):**
+**The rest of the audit's leads — every one re-checked against the code on 2026-10-16.** Two of them had
+been FIXED since without this file being told, which is why they now carry their fixes: an open list that
+keeps a closed item is as wrong as a plan whose status lives in its own prose.
 
 - `OcrEngine` filters attribute rows with `a.Y >= 10` where `Y` is the *bucket start* (`rk * rowHeight`),
   not the measured Y — so a large calibrated `row_height` can bucket every row to 0 and drop all of
   them. Suspected line; needs a config with a large `row_height` to trigger.
-- `ConfigValidator` dereferences `c.Tuner` unguarded: a bare `tuner:` line (a section key with no
-  value) gives an NRE instead of the descriptive `ConfigException` the file's other guards exist to
-  produce.
+- `ConfigValidator` dereferences `c.Tuner` unguarded: a bare `tuner:` line gives an NRE instead of the
+  descriptive `ConfigException`. **FIXED 2026-10-03 (PROGRESS 54)** — `ConfigValidator.cs:27-32` reports
+  the empty section by name; this entry sat here contradicting the "all four are now FIXED" block above
+  it until 2026-10-16, when an audit of this file found it.
 - `PetTool`'s "try the return slot first" path puts the fall-through-to-scan branch **inside**
   `if (_cfg.Tooltip.IsSet)`, so with the tooltip uncalibrated the scan is unreachable and a row with
   no `PetSlotEmptyPng` can report "boarded" after clicking nothing.
-- `LauncherService.StopTool` writes releases on the same `SerialPort` a tool thread may be mid-drag on,
-  so a Stop during a food drag can release the button mid-move and drop the stack.
 - The documented "the read refuses when the game is not in front" holds for the feeder counts and the
-  bag scan but **not** for the slot-occupancy checks — with anything covering the game, a slot reads
-  "occupied" and the row is scheduled for hours while nothing is boarding.
+  bag scan but **not** for the slot-occupancy checks. **FIXED 2026-10-11 (`b1f2007`, PROGRESS 69)** —
+  this was the finding behind the visit-flow rework's first commit, and the worst row-killer in three
+  weeks of `pet.log`: the slot read now gates on the foreground window and the code says so. Found
+  still listed here by the 2026-10-16 audit of this file.
 - `SealTuner` does not reset attempt/repeat state on a Stop→Start (the spammer has a `Reset()`), and
-  `GradeIndex()` returns `-1` for a `target_grade` typo, which `gradeOk = idx >= -1` accepts.
+  `target_grade` is compared by POSITION — `GradeIndex(grade) >= GradeIndex(effectiveGrade)` — so a
+  grade the tuner cannot resolve is silently accepted rather than refused.
 - `GemComposer` gates auto-advance on `EmptySignature != null` even though the saved crop is the
   primary test; and `Gem.Grades` has no length validation, so an empty list throws before the loop's
   `try`.
-- **No tests cover any of `SealTools.Pet`** — the largest and most recently changed file.
+- **No test constructs `PetTool`** — the largest and most recently changed file. The test project
+  references `SealTools.Pet`, but its one use is the `PetTool.MatchLimit` constant in `IconMatchTests`;
+  nothing exercises the tool's own logic, so every branch in it is reasoned rather than verified.
 
 ## Settled (measured — do not reopen)
 
@@ -219,6 +227,12 @@ the context — three of the four would be *reverted* by a well-meaning cleanup.
   `WaitForCursorToSettle`, so the whole test cycle would have to move off the dispatcher with progress
   marshalled back. That is a refactor of five handlers for a diagnostic button, not a two-line
   change. Revisit if the UI ever needs to stay responsive during a test run.
+- **`StopTool` releases held keys before it cancels the tool's own loop.** It writes the releases on the
+  same `SerialPort` a tool thread may be mid-drag on, so a Stop during a food drag can release the button
+  mid-move. Left alone deliberately: a Stop that waited for the thread first would not free the buttons
+  when the thread is stuck, which is the case the release exists for, and the only mid-drag case is the
+  pet feeder's food move. Recorded here rather than under "reported, not reproduced" — it is a design
+  choice, not a defect awaiting confirmation.
 
 ## Out of scope
 
