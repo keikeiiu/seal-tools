@@ -13,6 +13,89 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-15 (92) — an update can no longer cover a config
+
+**Goal.** Make deploying a new build unable to overwrite what the player owns. This entry is the
+reasoning the code cannot carry: why the answer was a member list rather than a folder move, and what
+three adversarial review rounds changed about it.
+
+**What was decided, and why**
+
+- **No file moves.** [PLAN-PATHS.md](PLAN-PATHS.md) proposed relocating the live files into a `profile/`
+  folder. The player fixed the constraint on 2026-10-13 — the config stays at the same root path so the
+  whole folder stays easy to move — and the reviews agreed the relocation buys nothing: an update covers
+  a file because the archive NAMES it, not because of the folder it sits in. [PLAN-DEPLOY.md](PLAN-DEPLOY.md)
+  keeps PLAN-PATHS' diagnosis and declines its relocation.
+- **The zip ships program files only.** `config/defaults.yaml` goes out as `config/defaults.yaml.example`
+  — the app's BASE, and so the name an update replaces — the empty `config/attributes.us.yaml` stops
+  shipping because the loader now SEEDS a missing dictionary from its `.example`, and `docs/pet-data.csv`
+  joins the zip, which is why no installed copy has ever had a feeding estimate.
+- **An allow-list, not a deny-list.** `publish.bat` opens the produced zip and fails on any member that is
+  not a declared program file, so a future `copy` line for a new writer's file fails at the build rather
+  than shipping quietly; a test reads the script and asserts the same list.
+- **The save target left the shipped file.** `SaveDefaults` is deleted: the portable settings go to
+  `config/local.yaml`'s `settings:` block, the player's own file. The warnings-as-errors gate proved no
+  caller survived, exactly as the plan predicted.
+- **The fold, once.** An install that updates reads its legacy `config/defaults.yaml` ONCE and carries the
+  values the player changed into `local.yaml`; after that it is never read, deleting it is lossless, and
+  keys the player never touched keep tracking the template so a later release's changed default still
+  arrives. What is carried is a SECTION, not a leaf: the apply side assigns objects, so
+  `settings.hotkeys.start` alone would carry the default 0 for the other three keys.
+- **The reviews changed the design twice.** Six independent reviews of the first plan each failed it, and
+  the failure was the same from three directions: keeping `defaults.yaml` forever as a values layer, with
+  the advice that the player may delete it by hand, is a data-loss trap — that file held EVERY setting
+  they had ever saved, because the old save wrote the whole projection into it — and keeping it shadows
+  every future default change. Hence the fold.
+
+**Measured, and what the tests caught**
+
+- **The four recorded field-addition losses in this repo were on the WRITE side**, not the read side: a
+  new key missing from a projection that rewrites a file. `ocr_retries` 3 → 0, `move_mode` reset on every
+  save, a hand-added `pet:` block deleted, a whole spammer block deleted, and a per-row empty-slot
+  reference dropped — which read three empty rows as occupied and started an empty boarding on a live run.
+  ADDING a key is safe by construction (the C# initialiser takes it); forgetting one in a writer is what
+  costs data. So the fence covers all four hops a portable key crosses, and it caught two live bugs on its
+  first runs: the stray `game.active` alias key from 2026-10-13, still being written, and a shipped
+  template with no `pet:` block at all.
+- **Two bugs of my own, found by writing the tests.** The fold's first version left the session applying
+  the `local.yaml` it had read BEFORE the fold wrote it — the player's values would have arrived one
+  launch late. And an unset section is written as a bare key, so "did the fold carry this?" has to allow
+  for that rather than assert absence.
+- **`publish.bat` had to be patched byte-wise**: it is CRLF on disk and LF in git, so an editor that
+  writes LF leaves a file `cmd` reads by byte offset and eats a character per line. Its first patch also
+  landed in the wrong branch — `) else (` appears twice and the models step matched first — which is why
+  the patch is line-indexed now.
+
+**Commits** (branch `feature/frozen-templates`, not merged)
+
+| Commit | What |
+|---|---|
+| `5c61c71` | `docs(plan)`: PLAN-DEPLOY, and PLAN-PATHS marked partly superseded |
+| `6306040` | `fix(core)`: local.yaml goes through one gated read-modify-write |
+| `cc83770` | `feat(core)`: the `settings:` block, and the fence over it |
+| `a403977` | `docs(plan)`: how a new key reaches an install that predates it |
+| `f613281` | `test(core)`: the partial block, and what a null marker writes |
+| `1901ba3` | `feat(core)`: the shipped template is the base, and the fold |
+| `4889c98` | `feat(core)`: the zip, the save target, and no pruning |
+| `0048d99` | `feat(launcher)`: the Setup tab's mismatch line |
+
+**Verified.** 318 tests pass and the full solution builds with 0 warnings — the gate for steps 1 and 2,
+which ran with the launcher closed. Steps 3–6 were gated by `dotnet test` plus a Release compile of the
+launcher, because it held its own Debug output for the rest of the session.
+
+**Left open**
+
+- **The release.** Version literals, the README's download rows and `RELEASE-v2.16.md` are NOT written —
+  those belong to the release, which is the player's to trigger.
+- **A watched run on a real install.** Every fold test builds its own fixture; the first launch of a real
+  updated install is where the fold runs for the first time.
+- **The Debug solution gate owes itself for steps 3–6** once the launcher is closed.
+- A hand-edited bare `game:` or `variants:` key in `defaults.yaml` still throws a NullReference where the
+  validator should report an empty section — the shape the repo already fixed for `tuner:`. Pre-existing,
+  untouched here, and a validator rule is a change of its own.
+
+---
+
 ## 2026-10-13 (91) — release: v2.15
 
 **What shipped.** The pet feeder's visit-flow rework (PLAN-PET-FLOW's four steps, each with its own
