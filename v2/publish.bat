@@ -123,22 +123,7 @@ if errorlevel 1 (
 :: missing program file.
 if /i "%MODE%"=="public" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$root = (Resolve-Path '%PUB%').Path;" ^
-    "$names = Get-ChildItem -Recurse -File '%PUB%' | ForEach-Object {" ^
-    "  $_.FullName.Substring($root.Length + 1).Replace('\','/') };" ^
-    "$cfg = @('config/attributes.yaml','config/defaults.yaml.example'," ^
-    "'config/local.yaml.example','config/attributes.us.yaml.example');" ^
-    "$bad = @(); foreach ($n in $names) {" ^
-    "  if ($n -like 'config/*') { if ($cfg -notcontains $n) { $bad += $n } }" ^
-    "  elseif ($n -eq 'SealTools.Launcher.exe') { }" ^
-    "  elseif ($n -match '\.dll$') { }" ^
-    "  elseif ($n -match '^models/.+\.onnx$') { }" ^
-    "  elseif ($n -eq 'docs/pet-data.csv') { }" ^
-    "  else { $bad += $n } };" ^
-    "$need = @('config/defaults.yaml.example','config/local.yaml.example'," ^
-    "'config/attributes.us.yaml.example','config/attributes.yaml','docs/pet-data.csv');" ^
-    "foreach ($m in $need) { if ($names -notcontains $m) { $bad += 'MISSING: ' + $m } };" ^
-    "if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host ('[!] ' + $_) }; exit 1 }"
+    "$root = (Resolve-Path '%PUB%').Path; $cfg = @('config/attributes.yaml','config/defaults.yaml.example','config/local.yaml.example','config/attributes.us.yaml.example'); $need = @('config/defaults.yaml.example','config/local.yaml.example','config/attributes.us.yaml.example','config/attributes.yaml','docs/pet-data.csv'); $bad = @(); foreach ($f in Get-ChildItem -Recurse -File '%PUB%') { $n = $f.FullName.Substring($root.Length + 1).Replace('\','/'); if ($n -like 'config/*') { if ($cfg -notcontains $n) { $bad += $n } } elseif ($n -eq 'SealTools.Launcher.exe') { } elseif ($n -match '\.dll$') { } elseif ($n -match '^models/.+\.onnx$') { } elseif ($n -eq 'docs/pet-data.csv') { } else { $bad += $n } }; foreach ($m in $need) { if (-not (Test-Path (Join-Path $root $m))) { $bad += 'MISSING: ' + $m } }; if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host ('[!] ' + $_) }; exit 1 }"
   if errorlevel 1 (
     echo [!] The public zip carries a file a player owns, or is missing one it needs.
     echo     Nothing was published. The offending names are listed above.
