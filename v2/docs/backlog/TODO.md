@@ -21,23 +21,20 @@ why is in [DESIGN.md](../spec/DESIGN.md)**; the design guardrails (things not to
 
 ## Planned (design written, not built)
 
-- [x] **Tuner spring positioning + cursor guard** — **shipped in v2.4** (branch `v2-tuner-spring`,
-  built 2026-09-11 and merged). `tuner.spring_mode` (manual/hid) + `spring_point`, a 4th Calibrate
-  Tuner step + Test Click, and `tuner.mouse_guard` (off/stop/recenter) — `defaults.yaml` ships
-  `spring_mode: hid` and `mouse_guard: stop`. Reasoning and the two data questions that shaped it:
-  [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
+**A plan's state is not tracked here — it is on the board in
+[plans/README.md](../plans/README.md)**, one row per live plan with what has shipped and what has not.
+That board is the only place a plan's status is written down, so it is the only place to change one.
+This section is for work that belongs to no single plan.
+
 - [ ] **A full tuner run and a composer cycle in the current build.** The residency work rewrote the
   shared Start/Stop path and only the pet tool has exercised it — see [HANDOVER.md](../records/HANDOVER.md).
-- [~] **UI cleanup (tabs, buttons, text-box layout).** The **WPF-UI rebuild shipped** — the plan's
-  steps 0–9 are done (palette to theme brushes, then `Hotkeys`, `Arduino`, `Setup`, `Gem`, `Spammer`,
-  `Attributes`, `Tuner`, `Calibrate Tuner`, `Calibrate Gem` rebuilt on `ui:Card`/`ui:` controls), and
-  the `NavigationView` rail was **tried and reverted** — the tab strip read better and clicking a rail
-  item did not switch the page. What is left of that plan is the button label/weight convention.
-  **For a next pass**, the measured start is [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md): extract the calibration
-  canvas (copy-pasted 5×), collapse the four button factories into one, and the two cross-cutting
-  items the earlier plan never covered — accessibility, and the status poll's dependency on a
-  `ToolState` thread-safety claim that does not hold. Plan and its reasoning:
-  [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).
+- [~] **The UI pass, continued.** The WPF-UI rebuild shipped (the plan's steps 0–9) and the
+  `NavigationView` rail was **tried and reverted** — the tab strip read better, and clicking a rail item
+  did not switch the page. What is left is the button label/weight convention, plus the measured start in
+  [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md): extract the calibration canvas (copy-pasted 5×),
+  collapse the four button factories into one, and the two cross-cutting items the earlier plan never
+  covered — accessibility, and the status poll's dependency on a `ToolState` thread-safety claim that
+  does not hold.
 
 ## Ideas for later (captured, not designed)
 

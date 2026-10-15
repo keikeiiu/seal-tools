@@ -53,6 +53,14 @@ with `#pragma` or by adding to `NoWarn`.
   `archive/` holds finished plans, kept for their reasoning. When a plan's work ships its durable
   reasoning belongs in `spec/` and the plan moves to `archive/` (its README states the rule;
   `spec/DESIGN.md` §7 is the map).
+- **A change has a lifecycle, and every stage has a home.** An idea is captured in `backlog/IDEAS.md`;
+  when it earns a design it becomes `plans/PLAN-<name>.md`, whose ⚑ questions the player answers
+  **before** anything is built; the build lands as commits, each with a `records/PROGRESS.md` entry and
+  the `spec/` document updated in the same commit; a release adds a row to the root README's table and a
+  `records/RELEASE-vX.Y.md`; and when the work ships, the reasoning graduates into `spec/` and the plan
+  moves to `archive/`. **A live plan's STATUS lives only on the board in `plans/README.md`** — never in
+  the plan's own text, where it drifts (a pet-feeder section read "design, not built" long after the
+  queue it described had shipped).
 - **Firmware and app are versioned together.** If a change needs a firmware change,
   `FirmwareSketchTests` and `FirmwareVersionTests` are the guard — run them and say so in the
   release notes, because a user has to reflash for it to take effect.

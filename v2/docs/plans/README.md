@@ -7,12 +7,19 @@ Read one for what it proposes and why. Do NOT read one to find out how something
 [../spec/](../spec/DESIGN.md), and a plan that has shipped moves to [../archive/](../archive/README.md)
 so that "how does this work?" is never answered by a document that is half aspiration.
 
+**The table below is the STATUS of every live plan, and the only place one is written down.** A plan's
+own text carries its design and its reasoning; it does not say whether it is built, because that claim
+drifts — the pet-feeder plan's §13 read "design, not built" long after the queue it describes had
+shipped. So: when a plan is added, add its row; when its state changes, change the row; and when its
+work ships, the reasoning graduates into [../spec/](../spec/DESIGN.md), the plan gets an ARCHIVED banner
+and moves to [../archive/](../archive/README.md), and this row goes away.
+
 | plan | state |
 |---|---|
 | [PLAN-DEPLOY.md](PLAN-DEPLOY.md) | steps 1–6 built on `feature/frozen-templates`; **not shipped** until the release |
 | [PLAN-PATHS.md](PLAN-PATHS.md) | **declined** — its relocation is rejected by PLAN-DEPLOY; kept for the diagnosis |
 | [PLAN-ARBITER.md](PLAN-ARBITER.md) | steps 1–2 shipped; 3–4 not, so the deadline machinery is inert |
-| [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md) | mostly built — **§13 still says "the queue: design, not built" and the queue IS built**; wants a pass |
+| [PLAN-PET-AUTOFEED.md](PLAN-PET-AUTOFEED.md) | mostly built — the reload path is verified live; **the queue in §13 shipped too**, so what is left of that section wants a pass |
 | [PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md) | partly built |
 | [PLAN-RELOAD-VISIT.md](PLAN-RELOAD-VISIT.md) | partly built |
 | [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) | step 2 not started |

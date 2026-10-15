@@ -845,7 +845,7 @@ knowing, and it is the most likely explanation for a click that lands on the rig
 
 ---
 
-## 13. The pet queue — design, not built
+## 13. The pet queue — boarding the next pet by itself
 
 Goal: **board the next pet by itself.** You keep a line of pets waiting; when the boarded one
 finishes, the tool puts the next one in.
