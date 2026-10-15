@@ -4,8 +4,10 @@ Plans that are **built and shipped**. They are kept because the reasoning inside
 code looks the way it does — and a design decision without its reasoning gets reversed by whoever finds
 it inconvenient next.
 
-**Nothing here is pending work.** How it works now is [DESIGN.md](../spec/DESIGN.md). What is still open is
-[TODO.md](../backlog/TODO.md). What was done, and when, is [PROGRESS.md](../records/PROGRESS.md).
+**Nothing here is pending work.** How it works now is [DESIGN.md](../spec/DESIGN.md). What we are
+executing is [TODO.md](../backlog/TODO.md) (and what is known-broken but unscheduled is
+[KNOWN-ISSUES.md](../backlog/KNOWN-ISSUES.md)). What was done, and when, is
+[PROGRESS.md](../records/PROGRESS.md).
 
 | plan | what it built | landed |
 |---|---|---|

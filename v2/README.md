@@ -239,11 +239,12 @@ no install.
 Not kept here. This file carried its own progress log and list of open gaps until v2.11, and both had
 gone stale against the work — so the answer lives in the documents that own it:
 
-- **What was done, and why** — [docs/docs/records/PROGRESS.md](docs/records/PROGRESS.md), dated, newest first.
-- **How it works now** — [docs/DESIGN.md](docs/spec/DESIGN.md).
-- **What is still open** — [docs/docs/backlog/TODO.md](docs/backlog/TODO.md).
-- **The guardrails** (measured rules that look like improvements to reverse) — [docs/REVIEW.md](docs/spec/REVIEW.md)
-  Part D and [docs/DESIGN.md](docs/spec/DESIGN.md) §5.
+- **What was done, and why** — [docs/records/PROGRESS.md](docs/records/PROGRESS.md), dated, newest first.
+- **How it works now** — [docs/spec/DESIGN.md](docs/spec/DESIGN.md).
+- **What is still open** — [docs/backlog/TODO.md](docs/backlog/TODO.md), and what is known-broken but
+  unscheduled is [docs/backlog/KNOWN-ISSUES.md](docs/backlog/KNOWN-ISSUES.md).
+- **The guardrails** (measured rules that look like improvements to reverse) —
+  [docs/spec/REVIEW.md](docs/spec/REVIEW.md) Part D and [docs/spec/DESIGN.md](docs/spec/DESIGN.md) §5.
 
 Two things from the old local list stay here because they are cheap to get wrong and expensive to
 rediscover:

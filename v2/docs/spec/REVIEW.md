@@ -174,3 +174,63 @@ These are settled by evidence/memory — **do not reverse them**:
 - **Stop/start loop:** run the Launcher, start + stop a tool repeatedly — confirm no "crashed" log and no UI freeze.
 - **Fresh-checkout smoke:** confirm `local.yaml` loads without the `ConfigValidator` exception.
 - **Gem/OCR spot check:** run Gem Composer calibrate + one combine cycle on the 150% display to confirm coordinates unchanged after DPI cleanup.
+
+---
+
+## Part F — Decisions not to change
+
+Findings that are **real and deliberately left alone**, with the reasoning — so they are not
+rediscovered as bugs and "fixed" without it. Several would be *reverted* by a well-meaning cleanup.
+Moved here from `TODO.md` on 2026-10-16: a decision not to act is not open work, and an open list that
+keeps things nobody intends to do stops being a plan.
+
+- **The spammer's non-fast path is unreachable from the UI (reclassified 2026-10-03).** A key WITHOUT
+  the `*` did not register in the game (found 2026-10-02, `F4`–`F10`); the Notepad test that would
+  split "the game rejects a 30–80 ms press" from "the board drops it" was **never run**. Rather than
+  chase it, **the rows editor stopped producing such keys**: it writes `*name` for every key — which
+  is what all four presets already stored — and its "Fast" tick box is gone. The firmware's `K`/`k`
+  split and `SkillSpammer.SendKey` are untouched, and the Advanced raw list still accepts a bare
+  `key:seconds`, so the normal 30–80 ms hold survives for a hand-edited setup. **Untested, and now
+  without a user**: do not shorten `HOLD_NORMAL_MIN/MAX` blind — run the Notepad test first if a held
+  skill is ever wanted. See [PROGRESS.md](../records/PROGRESS.md), 2026-10-03.
+- **A null attribute value satisfies a bounded filter rule.** `AttrMatcher.ValueOk` passes when the
+  OCR read the attribute NAME but not its number, so a rule with `min`/`max` is satisfied by an
+  unreadable value. **Deliberate**: 減少傷害 is rare enough that the name match is the signal, and
+  failing a roll over a number that failed to read would mean missing one that should have stopped
+  the run. Bounds still apply whenever a value *was* read. Pinned by `AttrMatcherTests`; comment at
+  the method.
+- **`Arduino.Find` duplicates `Diagnose` on purpose.** Both format the VID/PID hex and run the same
+  WMI query, and `Diagnose` already computes the flag `Find` wants — but `Find` carries a name-based
+  fallback for when the VID/PID lookup finds nothing, and `Diagnose` does not. The obvious dedup would
+  silently delete that fallback, which exists for exactly the case where the device is not reporting
+  its IDs properly. Comment at `Arduino.Find`.
+- **Tuner mouse guard fails open.** `SealTuner.CheckMouseGuard` returns "no drift, carry on" when the
+  game window can't be measured, so a window that is closed, renamed, minimized or alt-tabbed turns
+  the guard *off* rather than tripping it, and the loop goes on to click wherever the cursor sits.
+  Not fixed: it needs the window to move mid-run, which does not happen in normal use, and failing
+  *closed* would change run behaviour in a way that wants a live run to confirm. Comment at the call
+  site.
+- **`Thread.Sleep` on the UI thread in the calibrator's test buttons.** `GemTestFullCycle` and the
+  other HID test handlers sleep on the dispatcher — roughly 18 s of frozen window for a full cycle.
+  Left alone because the real fix is not `await Task.Delay`: `HidPointer.To` blocks internally in
+  `WaitForCursorToSettle`, so the whole test cycle would have to move off the dispatcher with progress
+  marshalled back. That is a refactor of five handlers for a diagnostic button, not a two-line
+  change. Revisit if the UI ever needs to stay responsive during a test run.
+- **`StopTool` releases held keys before it cancels the tool's own loop.** It writes the releases on the
+  same `SerialPort` a tool thread may be mid-drag on, so a Stop during a food drag can release the button
+  mid-move. Left alone deliberately: a Stop that waited for the thread first would not free the buttons
+  when the thread is stuck, which is the case the release exists for, and the only mid-drag case is the
+  pet feeder's food move.
+
+### Settled by measurement — do not reopen
+
+- **Capture method.** `PrintWindow` returns a **black frame** for this game; `CopyFromScreen` returns
+  the real screen. Everything now captures with `CopyFromScreen` (client-area origin). Evidence:
+  `logs/captures/diag_printwindow.png` vs `diag_copyfromscreen.png` (2026-09-09). The calibrator's
+  **Diagnose capture** button reports the frame/client rects and saves a sample capture if you need to
+  re-check.
+
+### Out of scope
+
+- Check-in stays the standalone Python script (`v1/checkin/checkin.py`).
+- v1 (Python) is frozen — do not port further from it.

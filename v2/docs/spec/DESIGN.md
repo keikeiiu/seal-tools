@@ -177,7 +177,7 @@ measured per-level cost that decides how long a pet still needs.
 | [`../plans/`](../plans/README.md) | **Proposal** | work **not yet done**, or partly done — a to-do with its reasoning. `PLAN-*.md`, for as long as any of it is unbuilt |
 | [`../investigations/`](../investigations/README.md) | **Investigation** | a measurement whose **findings** are the value, whether or not anything was built from them — [ANALYSIS-UI](../investigations/ANALYSIS-UI.md), [CURSOR-INVESTIGATION](../investigations/CURSOR-INVESTIGATION.md) and the food-load analysis |
 | [`../records/`](../records/README.md) and [`../archive/`](../archive/README.md) | **Record** | what happened, and when — dated, append-only: [PROGRESS](../records/PROGRESS.md), the `RELEASE-*` notes, and the finished plans kept for their reasoning |
-| [`../backlog/`](../backlog/README.md) | (lists, not documents) | what is open now ([TODO](../backlog/TODO.md)) and what is merely wanted ([IDEAS](../backlog/IDEAS.md)) |
+| [`../backlog/`](../backlog/README.md) | (lists, not documents) | what we are executing ([TODO](../backlog/TODO.md)), what is real and broken but **unscheduled** ([KNOWN-ISSUES](../backlog/KNOWN-ISSUES.md)), and what is merely wanted ([IDEAS](../backlog/IDEAS.md)) |
 
 A `PLAN-*` is therefore **a proposal, not a design record**. When its work ships, the durable reasoning
 belongs in a specification above and the plan goes to [archive/](../archive/README.md) — so that "how does

@@ -170,7 +170,24 @@ poll, and the highlight style. No new plumbing, no firmware change.
 
 ## 8. Game-side mini-features
 
-Already captured in TODO.md: auto-sell, auto-buy, auto-submit missions, anti-AFK nudge.
+Moved here from `TODO.md` on 2026-10-16: an idea nobody has designed is not work we are executing.
+
+- [ ] **Auto-sell items.** Calibrate the vendor's sell slot + the inventory grid; click an item, read
+  whether it matches a keep-list, sell the rest. Needs a keep/sell rule set (the attribute matcher is
+  the natural home) and a hard cap per run so it can't empty a bag by accident.
+- [ ] **Auto-buy items.** The mirror image: calibrate the vendor's list + a quantity control, buy a
+  configured amount, stop on gold or stock limits.
+- [ ] **Anti-AFK nudge** (toggle) — a tiny periodic movement, using the same placement code.
+- [~] **Park the cursor before a capture.** Done for the BAG captures — `PetTool.ParkCursor` runs before
+  the boarding-window probe, the close-reference capture, the page sweep and both cell verifications
+  (2026-09-19). **Still open for the OCR bands**: the tuner's read regions can have the pointer in them,
+  and that one wants a measurement first; see
+  [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md). The feeder-count read does NOT park — it
+  declines to read at all while the game is not in front.
+
+*(Auto-submit missions is not here: it was built, as the Quest Hand-in tool, in v2.13 — and it works
+differently from this sketch, being deliberately blind and stopping on a loop count.)*
+
 Additional candidates, same shape (calibrated points + placement + HID click + a capture pass):
 
 - **Auto-pot** — watch the HP/MP bar (colour/OCR) and press a key below a threshold.
