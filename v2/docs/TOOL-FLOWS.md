@@ -1433,7 +1433,7 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    open, and the next open compares the X against a reference crop the run learned from a window
    whose contents it had just READ. Only a confident match skips the two blind clicks — every other
    answer opens the old way. The residual (a mis-marked X can, in the belief-gated states, match) is
-   recorded in [PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) with its hardening path.
+   recorded in [PLAN-PET-CLOSE-GUARD.md](archive/PLAN-PET-CLOSE-GUARD.md) with its hardening path.
 
 8. **The fresh read can cancel a reload the timer asked for — and the honest accounting is that it
    DEFERS the reload rather than avoiding it.** With the veto, the reload happens when the tray
@@ -1453,7 +1453,7 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    just-returned pet, the ordinary single-row reload is byte-for-byte today's flow, and a plural
    batch pays at most today's per-row cost. The food re-mark rides the one sweep and is never
    skipped on a visit that acts — including for a setup with no pet queue but a food icon, which
-   used to get no re-mark at all. See [PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
+   used to get no re-mark at all. See [PLAN-PET-SWEEP.md](archive/PLAN-PET-SWEEP.md).
 
 10. **The look and the first visit share one window.** A run started because a row is due used to
     open the breeder for the look, close it, give the game back, and then re-claim and re-open for

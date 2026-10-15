@@ -1,7 +1,13 @@
 # The bag sweep — once per visit, with every stored cell re-read before it is used
 
+> **ARCHIVED 2026-10-16.** Shipped in v2.15 (2026-10-13): the bag sweep, once per visit, with every stored cell re-read before it is used (PROGRESS 74). A design record for PLAN-PET-FLOW.md's step 3.
+>
+> It lives here with the plan it belongs to, and is kept for its REASONING — a design decision
+> without its reasoning gets reversed by whoever finds it inconvenient next. How it works now is
+> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+
 Design record, 2026-10-11, branch `feature/pet-flow`. Step 3 of
-[PLAN-PET-FLOW.md](archive/PLAN-PET-FLOW.md) §8 ("one scan per visit, with the per-use re-verification" —
+[PLAN-PET-FLOW.md](PLAN-PET-FLOW.md) §8 ("one scan per visit, with the per-use re-verification" —
 §1.2 and §6.3). Two structures were designed independently and judged adversarially; the judge chose
 the one below and named six amendments, all applied.
 

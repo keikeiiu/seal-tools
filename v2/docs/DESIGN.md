@@ -169,6 +169,24 @@ measured per-level cost that decides how long a pet still needs.
 
 ## 7. Where the rest lives
 
+**What a document IS decides where it lives, and the folder's names say which.** Four kinds:
+
+| kind | what it is | where it lives |
+|---|---|---|
+| **Specification** | how the system works **now**. It has to stay true, and it changes in the same commit as the behaviour it describes. | this file, [TOOL-FLOWS.md](TOOL-FLOWS.md), [CONFIG.md](CONFIG.md), [COORDINATES.md](COORDINATES.md), [CALIBRATION.md](CALIBRATION.md), [MOVE-SETS.md](MOVE-SETS.md), [REVIEW.md](REVIEW.md), [INSTALL.md](INSTALL.md), [USER_GUIDE.md](USER_GUIDE.md) |
+| **Proposal** | work **not yet done**, or partly done — a to-do with its reasoning | `PLAN-*.md`, beside this file, for as long as any of it is unbuilt; `IDEAS.md` and `TODO.md` hold the backlog and the open list |
+| **Investigation** | a measurement whose **findings** are the value, whether or not anything was built from them | [ANALYSIS-UI.md](ANALYSIS-UI.md), [ANALYSIS-FOOD-LOAD.md](ANALYSIS-FOOD-LOAD.md), [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md) |
+| **Record** | what happened, and when — dated, append-only | [PROGRESS.md](PROGRESS.md), `RELEASE-*.md`, and [archive/](archive/README.md) |
+
+A `PLAN-*` is therefore **a proposal, not a design record**. When its work ships, the durable reasoning
+belongs in a specification above and the plan goes to [archive/](archive/README.md) — so that "how does
+this work?" is never answered by a document that is half aspiration. That failure has already happened
+once: the resident-pet plan shipped in v2.11 and was still being read as pending work the next morning.
+
+Two documents are named for what produced them rather than for what they are, and both are
+**specifications** by role: [AUDIT-PET-FLOW.md](AUDIT-PET-FLOW.md) (an audit that became TOOL-FLOWS'
+companion, describing the feeder's flow as it stands) and [PET-TAB-DESIGN.md](PET-TAB-DESIGN.md).
+
 | question | document |
 |---|---|
 | coordinates, DPI, logical vs physical pixels | [COORDINATES.md](COORDINATES.md) |

@@ -47,7 +47,10 @@ with `#pragma` or by adding to `NoWarn`.
 - **`v2/docs/` is the specification.** `TOOL-FLOWS.md`, `DESIGN.md`, `CONFIG.md`,
   `COORDINATES.md` and `USER_GUIDE.md` describe how the tools are meant to behave. Read the
   relevant one before changing behaviour, and update it in the same commit. `PLAN-*.md` are
-  design records: don't rewrite them to match a change, add a new one.
+  **proposals** — work not yet done, or partly done — so don't rewrite one to match a change;
+  add a new one. When a plan's work ships, its durable reasoning belongs in a specification and
+  the plan moves to `v2/docs/archive/` (its README states the rule; `DESIGN.md` §7 says which
+  kind each document is).
 - **Firmware and app are versioned together.** If a change needs a firmware change,
   `FirmwareSketchTests` and `FirmwareVersionTests` are the guard — run them and say so in the
   release notes, because a user has to reflash for it to take effect.

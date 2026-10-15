@@ -570,7 +570,7 @@ sweep's re-verify rule.
 ## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
 
 **PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
-[PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md).
+[PLAN-PET-SWEEP.md](archive/PLAN-PET-SWEEP.md).
 
 **The saving, and where the sweep actually goes.** A plural batch paid one full three-page sweep per
 row — worst on the visit that follows downtime, which is the one with the most rows. The sweep is now
@@ -635,7 +635,7 @@ about.
 ## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
 
 **PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:
-[PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
+[PLAN-PET-CLOSE-GUARD.md](archive/PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
 two lenses; the built design is the judges' winner with one change of provenance.
 
 **The measured problem.** 17 closes in `pet.log` could not reach the X; each left the window open for

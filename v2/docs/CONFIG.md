@@ -49,7 +49,7 @@ portable settings. This file is NOT committed (it's the per-machine overlay crea
 - `pet.close_button_png`, `pet.boarding_window_may_be_open` — the pet feeder's close guard, **written
   by the run itself** (never hand-edit): a crop of the boarding window's X, learned from a window
   whose contents the run had just read, and whether the run believes that window may still be on
-  screen after a close it could not send. See PLAN-PET-CLOSE-GUARD.md.
+  screen after a close it could not send. See archive/PLAN-PET-CLOSE-GUARD.md.
 - `spammer.active` + `spammer.presets.*` — **your own** key rotations. Not machine-specific, but
   personal: `defaults.yaml` is the source `publish.bat public` copies into the release — under the
   name `config/defaults.yaml.example` — so a preset written there would still ship with the next
