@@ -37,9 +37,9 @@ firmware zip:
 
 | File | What it is | When you want it |
 |---|---|---|
-| `SealTools-v2.11.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
-| `SealTools-v2.11-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
-| `SealTools-v2.11-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
+| `SealTools-v2.15.zip` | The app, with **template config only**. | **Normal install.** You calibrate on this machine. |
+| `SealTools-v2.15-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino`. | Whenever the board is not already flashed. |
+| `SealTools-v2.15-local.zip` | The app with a **full `config\`** — someone's real calibration and `local.yaml`. | **Only** to restore *this* machine after wiping it. See the warning below. |
 
 > ⚠ **Do not use the `-local` zip on a different machine.** It carries coordinates measured on the PC
 > it was built from. On a machine with a different resolution, DPI scale or game client size, every
@@ -92,7 +92,7 @@ those two look identical later.
 
 ## 3. Install the app
 
-1. Unzip `SealTools-v2.11.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
+1. Unzip `SealTools-v2.15.zip` anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no
    installer and nothing is written outside the folder.
 2. Run `SealTools.Launcher.exe`.
    **Recommended: right-click → Run as administrator.** The app opens a serial port, and on some
@@ -105,13 +105,19 @@ hidden until you need them.
 
 ### First run creates your config
 
-The zip ships `config\defaults.yaml`, `config\attributes.yaml` and `config\local.yaml.example`. On
-first launch, `ConfigLoader` copies the example to `config\local.yaml` if it does not exist.
+The zip ships `config\defaults.yaml.example` (the base config the app reads), `config\attributes.yaml`,
+`config\attributes.us.yaml.example` and `config\local.yaml.example`, plus `docs\pet-data.csv` (the pet
+feeding table). On first launch, `ConfigLoader` copies `local.yaml.example` to `config\local.yaml` if it
+does not exist, and seeds a missing `config\attributes.us.yaml` from its `.example` the first time the
+US client is used.
 
-- **`defaults.yaml`** — portable settings, the same for everyone (window title, hotkeys, filter rules,
-  VID/PID). Written by the **Tuner**, **Gem** and **Hotkeys** tabs.
-- **`local.yaml`** — everything measured on *this* machine, plus your personal spammer presets.
-  Written by the calibrators and the **Spammer** tab. Never commit it, never share it.
+- **`defaults.yaml.example`** — the template the app reads as its base: portable settings, the same for
+  everyone (window title, hotkeys, filter rules, VID/PID). Nothing writes it. An install updating from
+  an older release has its own saved values folded out of the old `config\defaults.yaml` and into
+  `local.yaml` on first launch (see [Updating](#updating)).
+- **`local.yaml`** — everything measured on *this* machine, your personal spammer presets, and (after
+  an update) the portable settings folded out of the old `defaults.yaml`. Written by the calibrators,
+  the **Spammer** tab and the first-launch fold. Never commit it, never share it.
 - **`logs\`** — runtime logs, next to `config\`. `logs\captures\` fills up only if you turn capture
   logging on.
 
@@ -143,13 +149,18 @@ Before calibrating anything that clicks, do the two prerequisites:
   options → Pointer Options` → uncheck **"Enhance pointer precision"**. The game is an OS-cursor
   title, so the distance a relative move travels depends on this setting; leaving it on makes the
   Gem Composer drift between runs. See [CALIBRATION.md §4](CALIBRATION.md).
-- **Tell it which game client you have.** `defaults.yaml` carries `game.variant: tw` — set it to `us`
-  for the US client, or leave it empty and `window.title` stands on its own. Nothing will find the
-  window otherwise, and the symptom is "game window not found" from every capture button.
+- **Tell it which game client you have.** The **Setup** tab has one button per known client — press
+  `us` for the US client, `tw` for the TW one; the choice is written to `config\local.yaml`. Leave it
+  unset and `window.title` stands on its own, and hand-editing `config\defaults.yaml` will not work —
+  after an update that file is your legacy copy, folded into `local.yaml` once and then never read.
+  Nothing will find the window otherwise, and the symptom is "game window not found" from every
+  capture button.
   **The variant sets the window title *and* which attribute dictionary is read**, because the two
   clients do not share the words the tools match against — see [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md).
-  A `us` variant needs its own dictionary: copy `config\attributes.us.yaml.example` to
-  `config\attributes.us.yaml` and fill it in, or the launcher refuses to start and says so.
+  A `us` variant needs its own dictionary, and the app makes it for you: the first time the US client
+  is used it writes `config\attributes.us.yaml` from the shipped `config\attributes.us.yaml.example`,
+  and you fill that in. Until it is filled, the Tuner matches nothing on the US client — every other
+  tool is unaffected. Only a client with neither a dictionary nor a `.example` beside it is refused.
 
 ### Why calibration is not optional
 
@@ -184,12 +195,16 @@ Do these in order. Each one is read-only or costs nothing:
 
 ## Updating
 
-Unzip the new version over the old one **except for `config\`**, or simply unzip it to a new folder
-and copy your `config\local.yaml` across. Your calibration and presets live there and in nothing else.
+Unzip the new version over the old one and let Windows overwrite — the zip carries only program files,
+so nothing needs excluding and nothing needs copying by hand. To carry your state into a fresh folder
+instead, copy the user-state files — `config\local.yaml`, `config\defaults.yaml`,
+`config\attributes.us.yaml` and the four `calib_*.png` — into it, extract the zip over the result, and
+check they all arrived.
 
-Do not copy `defaults.yaml` from an old install unless you have customised it — it is the file that
-carries the portable behavior defaults, and a stale one can silently miss new keys. Compare the old
-and new side by side if you have edited it.
+There is nothing to reconcile by hand. The shipped template is `config\defaults.yaml.example`, which
+the app reads as its base and an update replaces; your own saved values are folded out of an old
+`config\defaults.yaml` into `config\local.yaml` once, on the first launch after the update. After that
+the old file is never read again, and you can delete it.
 
 ## Uninstalling
 
