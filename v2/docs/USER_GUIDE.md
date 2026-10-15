@@ -103,7 +103,7 @@ starting it does not shrink the window.
 |---|---|
 | **Start** | Opens the Arduino port if needed, then runs that tool. If the board cannot be found you get a message box saying why — check the **Arduino** tab. |
 | **Stop** | Cancels the tool, waits for its loop to exit, and releases the port. |
-| Live status | Refreshes about every 750 ms: `● RUNNING` / `● paused`, then any of `Grade`, `Remaining`, `Attempt`, `Cycle`, `Current`, the matched attribute lines, `Filter:` and a `⚠` warning (for example an unsupported spammer key). |
+| Live status | Refreshes about every 750 ms: `● RUNNING` / `● paused`, then any of `Grade`, `Remaining`, `Attempt`, `Cycle`, `Current`, the matched attribute lines, `Filter:` and a `⚠` warning (for example an unsupported spammer key). A tool that works through parts lists **one line per part** — the pet feeder's breeding rows, the gem composer's grades. |
 
 Starting a tool makes it act immediately — there is no separate "go" step. A running tuner or composer
 can be paused with its hotkey (see the **Hotkeys** tab).
@@ -216,6 +216,15 @@ Behaviour of the Gem Composer. Saved to `config/local.yaml`.
 | **On empty result** | What to do when the composed-result box is empty — which means a grade ran out of resources. **Stop**, **Advance to next grade**, or **Clear resources, then advance** (right-clicks the three resource slots first, for a stuck gem). |
 | **Save empty-check captures** | Writes the sampled result-box crop plus a `diff=…` line every cycle. Debug only, with disk I/O every cycle. See [CALIBRATION.md](CALIBRATION.md) for how the empty check decides. |
 | **Save Gem Config** | Writes the above to `config/local.yaml`. |
+
+**The card counts cycles per grade.** `Cycle:` is the run's total; above it, one line per grade — `· N:
+12 cycles` — says where the run spent them, which is the interesting number: 40 cycles on N and 3 on DG
+is a different run from 3 and 40. The counts start again every time you press **Start**, and every grade
+is listed even before the run reaches it.
+
+Each run also appends to `logs/gem.log`: a line when a grade finishes, a line when you move on by hand
+with the advance-grade hotkey, and the run's whole tally when it ends — so a run you were not watching
+can still be read afterwards.
 
 The click points, the result box and the move sets are all in **Calibrate Gem**, not here.
 

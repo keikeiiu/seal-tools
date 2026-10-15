@@ -95,7 +95,7 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 |---|---|
 | **Start** | 需要時開啟 Arduino 埠，然後啟動該工具。找不到 Arduino 時會跳出訊息說明原因（請看 **Arduino** 分頁）。 |
 | **Stop** | 取消工具、等待它的迴圈結束，並釋放序列埠。 |
-| 即時狀態 | 約每 750 毫秒更新一次：`● RUNNING` / `● paused`，接著是 `Grade`、`Remaining`、`Attempt`、`Cycle`、`Current`、符合的屬性列、`Filter:`，以及任何 `⚠` 警告（例如不支援的技能鍵）。 |
+| 即時狀態 | 約每 750 毫秒更新一次：`● RUNNING` / `● paused`，接著是 `Grade`、`Remaining`、`Attempt`、`Cycle`、`Current`、符合的屬性列、`Filter:`，以及任何 `⚠` 警告（例如不支援的技能鍵）。會分部分處理的工具會**每個部分列一行**——寵物餵食器的飼養列、寶石合成器的等級。 |
 
 按下 Start 後工具就會直接開始運作，沒有額外的「開始」步驟；不過在工具執行中，可以用工具本身的熱鍵
 暫停（見 **Hotkeys** 分頁）。
@@ -204,6 +204,10 @@ Gem Composer 的行為設定。儲存到 `config/local.yaml`。
 | **On empty result** | 合成結果欄位為空時要怎麼做，也就是某個等級的資源用完了。**Stop**（停止）、**Advance to next grade**（前往下一個等級）、或 **Clear resources, then advance**（先對三個資源欄位按右鍵，清除卡住的寶石，再前往下一個等級）。 |
 | **Save empty-check captures** | 每個循環都儲存取樣的結果欄位截圖與 `diff=…` 記錄（僅供除錯，每輪都有磁碟 I/O）。空欄偵測的判斷方式見 [CALIBRATION.md](CALIBRATION.md)。 |
 | **Save Gem Config** | 把以上設定寫入 `config/local.yaml`。 |
+
+**卡片會逐等級計算循環次數。** `Cycle:` 是整輪的總數；它上面每個等級列一行——`· N: 12 cycles`——說明這一輪把時間花在哪裡，而那才是有用的數字：N 跑 40 輪、DG 跑 3 輪，跟反過來是完全不同的兩輪。每次按 **Start** 就重新開始計算，而且還沒走到的等級也會先列出來。
+
+每一輪也會附加寫入 `logs/gem.log`：某個等級結束時一行、你用「前往下一個等級」的熱鍵手動跳過時一行、這一輪結束時整份統計——所以沒人盯著看的那一輪，事後仍然讀得出來。
 
 點擊座標、結果欄位與移動方式都在 **Calibrate Gem** 分頁，不在這裡。
 

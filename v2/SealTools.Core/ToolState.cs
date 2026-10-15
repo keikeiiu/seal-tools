@@ -34,13 +34,18 @@ public sealed class ToolState
     public string? Schedule { get; set; }
     public DateTime? NextActionAt { get; set; }
 
-    // ONE ENTRY PER ROW, for the tools that have rows — the pet feeder's four breeding rows are the
-    // only ones. The player asked for it in as many words: *"if I have 4 pets pending to feed …
-    // list out all 4 conditions"* — the summary above says which row is soonest, and it cannot say
-    // that row 4 is boarding with 675 items while row 2 is waiting for a pet. Each entry carries its
-    // OWN moment so the card can recompute every row's countdown on each UI tick, exactly as
-    // NextActionAt does for the summary. Same replace-wholesale rule as Attributes: the tool thread
-    // swaps the whole list, never mutates one in place.
+    // ONE ENTRY PER ITEM, for the tools that have them — the pet feeder's four breeding rows, and the
+    // gem composer's grades, which use the same mechanism for a different reason. The player asked for
+    // both in as many words: *"if I have 4 pets pending to feed … list out all 4 conditions"*, and
+    // *"N how many cycle, G how many cycle, DG how many cycle"* — in each case the summary above says
+    // one thing about the whole run and cannot say what is happening to each part of it.
+    //
+    // An entry may carry its OWN moment (the pet feeder does, so the card recomputes every row's
+    // countdown on each UI tick, exactly as NextActionAt does for the summary); a tool with nothing to
+    // count down to leaves it null and the card omits that part of the line.
+    //
+    // Same replace-wholesale rule as Attributes: the tool thread swaps the whole list, never mutates
+    // one in place.
     private IReadOnlyList<ToolRowState> _rows = Array.Empty<ToolRowState>();
     public IReadOnlyList<ToolRowState> Rows
     {

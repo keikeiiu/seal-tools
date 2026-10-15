@@ -327,6 +327,7 @@ placement/route, when the last grade is done, or when something is not calibrate
 | Term | What it is |
 |---|---|
 | **Cycle** | One combine: Move Register→Combine, click, empty check, Move Combine→Register, then either the deregister+register clicks or an advance. |
+| **Cycles per grade** | `GradeCycles` (Core) — how many cycles THIS RUN has spent on each grade, reset by each Start. Shown on the card as one line per grade, and written to `logs/gem.log`. |
 | **Grade** | One of `gem.grades` (e.g. `N`/`G`/`DG`); the current one is `grades[gidx]`, starting at `gem.start_grade`. |
 | **Register** | The register/combine button; routes named `register_combine`, `combine_register`, `radio_<grade>`. |
 | **Route** | One composer movement. `gem.move_mode=="arduino"` places the cursor on the route's destination point; otherwise it sends the hand-tuned counts in `gem.movements`. |
@@ -346,6 +347,7 @@ placement/route, when the last grade is done, or when something is not calibrate
   1  arm the stop     WatchCancellation — any later sleep can throw the stop
   2  read the grades  grades = gem.grades; gidx = index of start_grade
   3  seed the state   running=false · cycle=0 · emptyCount=0 · f12Was · f9Was
+                      the per-grade tally, all zero — the card lists the grades
 
   4  LOOP  ←── the body below returns here, from the ⟲ marks
   ┌───────────────────────────────────────────────────────────────────────
@@ -358,7 +360,8 @@ placement/route, when the last grade is done, or when something is not calibrate
   │
   │ c  F12 / F9      ◆ F12 rising edge? ──► flip running; on: Beep +
   │                  │                         select the grade — see stage 9
-  │                  ◆ F9 rising edge?  ──► next grade (WRAPS round the list),
+  │                  ◆ F9 rising edge?  ──► log the grade being left BY HAND, next
+  │                                            grade (WRAPS round the list),
   │                                            select the grade — see stage 9
   │
   │ d  the idle      ◆ not running? ──► ⟲ continue, nothing sent
@@ -426,6 +429,28 @@ combine has run. **Nothing is left held down and no window is left open:** the t
 self-contained primitives — a click, a right-click, and HID moves (and the closed-loop placement in
 `HidPointer.To`) — it never uses `LeftDown`/`LeftUp`, so there is no drag to release and no window it
 opens. Its only teardown is the `finally`. What persists after a stop is the cursor's physical position.
+
+### Cycles per grade, and the log
+
+The single `Cycle` counter says how much work a run has done; `GradeCycles` says where it went, because
+40 cycles on N and 3 on DG is a different run from 3 on N and 40 on DG. The tally is **reset by each
+Start** — the panel's and F12's alike — counts one per cycle against the grade current at that moment,
+and is published to the card as **one line per grade**. Every grade appears, including one not reached
+yet: a list that grows as the run proceeds moves under the reader's eye, and `DG: 0 cycles` is itself
+information.
+
+It is also written to **`logs/gem.log`** under the application root, which is the only place a run can
+say anything afterwards — the launcher is a WinExe, so every `Console.WriteLine` in this tool goes
+nowhere. Four kinds of line:
+
+| Line | When |
+|---|---|
+| `run started at N` | the reset, so a log holding two runs can be told apart |
+| `grade N finished — 12 cycles` | the grade ran out, which is why the composer moved on |
+| `grade N left by hand — 4 cycles` | F9 moved it on instead; the count is still the count |
+| `run ended — N 12 · G 8 · DG 3 · 23 total` | however the run ended, a stop and a pause included |
+
+The total is the sum of the grades rather than a counter of its own, so the two cannot disagree.
 
 ### Every action sent to the game
 
