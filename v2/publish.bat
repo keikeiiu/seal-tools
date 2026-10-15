@@ -77,7 +77,7 @@ if /i "%MODE%"=="local" (
   :: The shipped defaults go out under the TEMPLATE name. The app reads config\defaults.yaml.example
   :: as its BASE when it exists, and that name is what an update replaces - so extracting an update
   :: cannot cover the player's own config\defaults.yaml, which is where every setting they ever
-  :: saved lives (SaveDefaults wrote the whole portable projection into it).
+  :: saved lives - the old save path wrote the whole portable projection into it.
   copy /Y config\defaults.yaml      %PUB%\config\defaults.yaml.example >nul
   copy /Y config\local.yaml.example %PUB%\config\ >nul
   :: The US dictionary TEMPLATE, and the only US dictionary that ships. The loader SEEDS a missing
