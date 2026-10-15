@@ -1,10 +1,18 @@
 # Plan — lifecycle state, and who may write to the board
 
+> **ARCHIVED 2026-10-16.** Shipped in v2.6 (2026-10-06): the Hold Space stop, `arduino.port` honoured, and the tool-lifecycle lock — and the calibration gate, as `PLAN-ARBITER.md`'s step 2 (PROGRESS 57–60).
+>
+> Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
+> and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
+> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+
+# Plan — lifecycle state, and who may write to the board
+
 Written 2026-10-06. **NOT BUILT — plan only.**
 
 Written after an external read-only audit of `cc6551b` (2026-10-06) whose findings were then checked
 against the source. Four of them are real and are itemised below; the rest it found were already open in
-[TODO.md](TODO.md) and are listed at the end so they are not counted twice.
+[TODO.md](../TODO.md) and are listed at the end so they are not counted twice.
 
 **The four are independent.** Each is a separate commit, smallest first, and each says how it is
 verified — because "it compiles" is not verification for any of them.
@@ -17,7 +25,7 @@ verified — because "it compiles" is not verification for any of them.
 covered *"a click during **Starting** cancels"*. The inverse was left open.
 
 **Evidence.** `StopTool` clears the current id **synchronously**, before the worker has left its loop
-([LauncherService.cs:509](../SealTools.Launcher/LauncherService.cs#L509)):
+([LauncherService.cs:509](../../SealTools.Launcher/LauncherService.cs#L509)):
 
 ```csharp
 _running.Remove(target);
@@ -50,7 +58,7 @@ immediately, and confirm the run does **not** come back.
 ## Item 2 (S) — `arduino.port` is loaded and never read
 
 **Evidence.** `ArduinoConfig.Port` is documented *"empty = auto-detect"* and is merged from `local.yaml`
-at [ConfigLoader.cs:312](../SealTools.Core/Config/ConfigLoader.cs#L312) — and **read nowhere else in the
+at [ConfigLoader.cs:312](../../SealTools.Core/Config/ConfigLoader.cs#L312) — and **read nowhere else in the
 project**. `ArduinoPortAsync` always calls `Arduino.Find(Config.Arduino.Vid, Config.Arduino.Pid)`. So a
 player who names a port gets it silently ignored.
 
@@ -74,12 +82,12 @@ missing → the reported error`), extracted as a pure function so it needs no bo
 ## Item 3 (S) — `_running` is a `Dictionary` with no lock
 
 **Evidence, and the code says it itself.** `_running` is a plain `Dictionary`, and
-[LauncherService.cs:138](../SealTools.Launcher/LauncherService.cs#L138) describes the neighbouring
+[LauncherService.cs:138](../../SealTools.Launcher/LauncherService.cs#L138) describes the neighbouring
 `PortGate` as *"Thread-safe, **unlike `_running`**"*. It is:
 
 - **read** by the UI timer every 750 ms, per card (`StateFor`);
 - **written** by `StartToolAsync` on the UI thread;
-- **written** by the self-end continuation ([line 428](../SealTools.Launcher/LauncherService.cs#L428)),
+- **written** by the self-end continuation ([line 428](../../SealTools.Launcher/LauncherService.cs#L428)),
   which runs on a **worker thread** when a tool finishes on its own.
 
 Concurrent read and write on `Dictionary` is undefined behaviour — a corrupted lookup or a spin, not a
@@ -100,7 +108,7 @@ registry.
 
 ## Item 4 (M) — calibration input bypasses the gate entirely
 
-> **Superseded in shape by [PLAN-ARBITER.md](PLAN-ARBITER.md) — decided 2026-10-06.** The same audit
+> **Superseded in shape by [PLAN-ARBITER.md](../PLAN-ARBITER.md) — decided 2026-10-06.** The same audit
 > designs the destination this item is the first slice of: an arbiter that owns the one Arduino and
 > grants the input lease. This item is therefore built as **that arbiter's entry point**, not as a guard
 > bolted on beside `PortGate` — a second ownership rule is exactly what the audit warns against. The 19
@@ -109,7 +117,7 @@ registry.
 > still the reason this lands last.
 
 **Evidence.** `MainWindow` never references `.Gate` — **zero** occurrences — while **19** call sites in
-it obtain the port and write to it directly ([MainWindow.xaml.cs](../SealTools.Launcher/MainWindow.xaml.cs),
+it obtain the port and write to it directly ([MainWindow.xaml.cs](../../SealTools.Launcher/MainWindow.xaml.cs),
 `ArduinoPortAsync` at 1188, 2894, 2954, 3041, 3096, 3184, 3707, 4980, 5022, 5437, 5604, 6661, 8304,
 8427, 8833, 9107, 9180, 9748 …).
 
@@ -117,7 +125,7 @@ So a Test Click, a "hold space" test, or a calibrate-step button can interleave 
 gesture — a pet drag being the one that loses something real if it is interrupted (it drops a stack).
 
 **The fix, and the size is why this is last.** Not the arbiter from
-[PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4 — that is the L version and it is not needed to close this.
+[PLAN-SCHEDULING.md](../PLAN-SCHEDULING.md) §4 — that is the L version and it is not needed to close this.
 The smallest correct thing:
 
 - **One accessor on `LauncherService` that the UI uses for test/calibration input**: it refuses while **a
@@ -145,11 +153,11 @@ Both were found by the same audit and both were **already open** — listed so t
   work with its own design.
 - **Stop releasing the mouse during a pet drag.** Open in TODO.md from the 2026-09-22 audit. Closing it
   properly means **making a complete gesture the unit of ownership** — which is
-  [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4, and it needs the arbiter rather than a guard.
+  [PLAN-SCHEDULING.md](../PLAN-SCHEDULING.md) §4, and it needs the arbiter rather than a guard.
 
 And one where the audit **overstates**: *"screen capture can read a window covering the game."* The pet
-path already guards this — [PetTool.cs:886](../SealTools.Pet/PetTool.cs#L886) and
-[:1661](../SealTools.Pet/PetTool.cs#L1661) both check `ForegroundWindow() != hwnd` and refuse. The claim
+path already guards this — [PetTool.cs:886](../../SealTools.Pet/PetTool.cs#L886) and
+[:1661](../../SealTools.Pet/PetTool.cs#L1661) both check `ForegroundWindow() != hwnd` and refuse. The claim
 holds only for launcher-side scans (the food scan checks that the window exists, not that it is in
 front), so if it is taken up at all it is a fifth, smaller item.
 

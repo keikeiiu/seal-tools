@@ -3,7 +3,7 @@
 Written 2026-10-06. **NOT BUILT — plan only.**
 
 The design below is the **player's**, given 2026-10-06. It came out of the same external read-only
-audit of `cc6551b` as [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md) — it was that audit's answer to *"any other
+audit of `cc6551b` as [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md) — it was that audit's answer to *"any other
 integration like MQ / database / other IT methods to make the program more solid?"* — and was then
 developed with the player into the flow recorded here.
 

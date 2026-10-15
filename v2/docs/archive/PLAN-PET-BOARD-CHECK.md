@@ -1,5 +1,11 @@
 # Plan — finding the feedable pets in the bag
 
+> **ARCHIVED 2026-10-16.** Shipped: the feedable scan, the queue it writes, and the run-side guard for a pet that has finished (PROGRESS 2026-09-21, entries 9–10, verified live in 18).
+>
+> Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
+> and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
+> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+
 **Goal.** The bag holds a mix of pets: some at **+9 / 100%**, which cannot be fed any more, and some at
 **+0**, which need food. The tool has to say which is which.
 

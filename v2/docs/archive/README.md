@@ -12,6 +12,11 @@ it inconvenient next.
 | [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md) | the buy/sell tool — the scroll-and-match flow, presets, the attribute filter | v2.9, verified live 2026-09-14 |
 | [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md) | reading the hover tooltip — the calibrated offset, the hover read, `PetPanel` | 2026-09-18, parser 2026-09-19 |
 | [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) | running tools alongside the pet feeder — per-tool records, slot-aware `StopTool`, the port gate, the deferral | v2.11, 2026-09-21 |
+| [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md) | the tool lifecycle — Hold Space stopping, `arduino.port`, the `_running` lock, and the calibration gate | v2.6, 2026-10-06 (gate as PLAN-ARBITER step 2) |
+| [PLAN-PET-FLOW.md](PLAN-PET-FLOW.md) | the pet feeder's visit flow — close retry and open probe, the veto, the single sweep, the shared look/visit window | v2.15, 2026-10-13 |
+| [PLAN-PET-BOARD-CHECK.md](PLAN-PET-BOARD-CHECK.md) | the feedable scan, the queue it writes, and the finished-pet guard | 2026-09-21 |
+| [PLAN-QUEST.md](PLAN-QUEST.md) | the quest hand-in tool, and its sequences | v2.13 (tool), v2.14 (sequences) |
+| [STATUS.md](STATUS.md) | a superseded status snapshot — kept as the record of a working session, not as truth | stopped at v2.4, superseded 2026-09-22 |
 
 **The rule this folder exists to keep:** a plan is a *proposal*. When one completes, its durable
 reasoning belongs in `DESIGN.md` and the plan comes here — so that "how does this work?" is never

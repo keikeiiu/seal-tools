@@ -1,5 +1,11 @@
 # Plan — the quest hand-in tool
 
+> **ARCHIVED 2026-10-16.** Shipped in v2.13 (2026-09-26), and its sequences in v2.14 (2026-09-30). The flow itself is still unproven on a live game — that is a verification owed, not a build step.
+>
+> Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
+> and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
+> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+
 Written 2026-09-26, from the player's description and four decisions taken before any code.
 
 **BUILT 2026-09-26** — config, tool, project, card, tab, step editor, preset picker and Test one loop.

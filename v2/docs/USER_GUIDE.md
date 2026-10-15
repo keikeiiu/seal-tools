@@ -485,7 +485,7 @@ all** and why there is no calibrate tab beside this one.
 > no second opinion. A wrong flow does its loop count in wrong actions, and the game accepts every one.
 > **Test one loop** first, then a short count, then the real one.
 
-Read [PLAN-QUEST.md](PLAN-QUEST.md) for why it is built this way.
+Read [PLAN-QUEST.md](archive/PLAN-QUEST.md) for why it is built this way.
 
 ### Flow
 

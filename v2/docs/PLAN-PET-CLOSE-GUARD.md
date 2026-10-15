@@ -1,7 +1,7 @@
 # The boarding window's close — retry, and an already-open probe
 
 Design record, 2026-10-11, branch `feature/pet-flow`. Step 1 of
-[PLAN-PET-FLOW.md](PLAN-PET-FLOW.md) §8 ("close retry + already-open guard"), which asked ⚑6: *retry
+[PLAN-PET-FLOW.md](archive/PLAN-PET-FLOW.md) §8 ("close retry + already-open guard"), which asked ⚑6: *retry
 the X, or probe whether the window is already open before the next open?* — and answered itself *"the
 probe is strictly more useful: it also covers a window left open by a stopped run."*
 

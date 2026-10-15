@@ -1,7 +1,7 @@
 # Seal Tools — Design, Review & Action Plan
 
 > **Historical snapshot (2026-09-09).** This is the original design review the fix work was based on.
-> Most of Part B and the Part C action plan are now implemented — see [STATUS.md](STATUS.md) for the
+> Most of Part B and the Part C action plan are now implemented — see [STATUS.md](archive/STATUS.md) for the
 > current state and [TODO.md](TODO.md) for what is still open. **Part D (guardrails) remains
 > authoritative** and must not be reversed.
 >

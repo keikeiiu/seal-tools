@@ -700,7 +700,7 @@ carries this entry.
 
 ## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
 
-**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](PLAN-PET-FLOW.md), branch `feature/pet-flow`)
+**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](archive/PLAN-PET-FLOW.md), branch `feature/pet-flow`)
 with its smallest, most certain step — and the reconnaissance found something the plan had not: the
 reason the feeder silently gives up on rows.
 
@@ -1151,7 +1151,7 @@ needs a board. Until it passes, this is source-verified only.
 
 ## 2026-10-06 (59) — the tool lifecycle gets one owner
 
-**Item 3 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
+**Item 3 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
 a plain field, read and written by **two threads**:
 
 - the UI thread reads both every 750 ms (per card) and writes them on Start and Stop;
@@ -1194,7 +1194,7 @@ mistaken for one of them.
 
 ## 2026-10-06 (58) — `arduino.port` is honoured, or it says why not
 
-**Item 2 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
+**Item 2 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
 `local.yaml.example` as *"optional override; empty = auto-detect"* and is merged from `local.yaml` on
 every load — and until now it was read by **nothing**. `ArduinoPortAsync` always called
 `Arduino.Find(Vid, Pid)`, so a player who named a port got it silently ignored.
@@ -1226,7 +1226,7 @@ config's own comment now states the behaviour, since that is where the setting i
 
 ## 2026-10-06 (57) — Hold Space: a press while STOPPING no longer starts it again
 
-**Item 1 of [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
+**Item 1 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
 by an external read-only audit of `cc6551b`, then checked here against the source before being believed.
 
 **The evidence.** `StopTool` clears the current id **synchronously**, before the worker has left its
@@ -1977,7 +1977,7 @@ and F12/F11 are read through `GetAsyncKeyState`, which the anti-cheat blocks whi
 
 **`StopTool` already handled this correctly** — it sets `_startCancelled` for a stop arriving mid-start
 and `StartToolCoreAsync` refuses on it. The toggle simply never reached that path. So the fix is
-[`39bdf98`](39bdf98): ask the question of `StartingId` as well as `CurrentId`, and a second press now
+`39bdf98`: ask the question of `StartingId` as well as `CurrentId`, and a second press now
 means "I did not want that" and reports "Start cancelled."
 
 **The second half is feedback.** The button read "Hold Space" for the entire cold start, which is what
@@ -2059,7 +2059,7 @@ asked for the relaunch. 180/180 tests pass, 0 warnings.
 of that"* — and, in the same breath, a selector and counter on the CARD like Buy's, so the loop number
 can be changed without opening Configuration.
 
-**Three commits:** the plan in [PLAN-QUEST.md](PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
+**Three commits:** the plan in [PLAN-QUEST.md](archive/PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
 then the engine (config, projection, tool, tests), then the editor on the tab and the card controls.
 
 **The design decision that is really a consequence.** Every flow in a sequence clicks the SAME place and
@@ -2226,7 +2226,7 @@ so rather than leaving it to be discovered.
 
 ---
 
-## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](PLAN-QUEST.md))
+## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](archive/PLAN-QUEST.md))
 
 **The player's ask:** hand in quests repeatedly by replaying a sequence at the quest NPC. The flow differs
 per quest, so it has to be the player's own and savable. **The tool reads nothing** — no capture, no OCR,
@@ -3170,7 +3170,7 @@ every call because it was written for a single read. Pages are reported as they 
 scan is not four minutes of a window that looks hung.
 
 **Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — no hover has
-been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](PLAN-PET-BOARD-CHECK.md), which also
+been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](archive/PLAN-PET-BOARD-CHECK.md), which also
 records what is deliberately *not* in v1: queueing the feedable pets, and the run-side guard (whose
 blind-`Enter` dismissal is unverified for *this* dialog — Enter may confirm it rather than dismiss it).
 

@@ -1,5 +1,11 @@
 # Plan — the pet feeder's visit flow
 
+> **ARCHIVED 2026-10-16.** Shipped in v2.15 (2026-10-13): all four steps of §8 — the close retry and the open probe, the veto, the single sweep, and the shared look/first-visit window (PROGRESS 70–75, 91).
+>
+> Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
+> and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
+> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+
 Written 2026-10-10, revised the same day after the player read the first draft.
 **DESIGN ONLY — no code changed, nothing built.**
 

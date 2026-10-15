@@ -63,7 +63,7 @@ v2/
   docs/DESIGN.md         # how it works and why — the doc a plan's reasoning graduates into
   docs/PET-TAB-DESIGN.md # the Pet tab, the schedule and the reload flow
   docs/ANALYSIS-UI.md    # the launcher UI, measured — the start for a next UI pass
-  docs/PLAN-QUEST.md     # the quest hand-in tool — built; the flow is unproven on a live game
+  docs/archive/README.md # finished plans, with their reasoning — nothing there is pending work
   docs/PLAN-TUNER-SPRING.md  # the tuner spring + cursor guard reasoning (built; shipped in v2.4)
   docs/PLAN-UI-CLEANUP.md    # launcher UI rework — steps 0-9 shipped, shell reverted
   docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features

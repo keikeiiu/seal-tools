@@ -1392,7 +1392,7 @@ be read.
 
 ### In-visit detail lives elsewhere
 
-**[AUDIT-PET-FLOW.md](../AUDIT-PET-FLOW.md)** is this section's in-visit companion and covers everything
+**[AUDIT-PET-FLOW.md](AUDIT-PET-FLOW.md)** is this section's in-visit companion and covers everything
 between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately collapses into one box:
 
 - **§1 the cast**, **§2 the complete action inventory** — every click, Enter, hover, right-click, drag,
