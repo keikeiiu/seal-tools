@@ -4,7 +4,7 @@
 >
 > Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
 > and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
-> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+> [DESIGN.md](../spec/DESIGN.md); what is still open is [TODO.md](../backlog/TODO.md).
 
 # Seal Tools v2 — Fix Execution Status (branch `v2-saving-attempt`)
 
@@ -37,8 +37,8 @@
 >   nothing else. The live calibration is **`v2/config/local.yaml`**, and `SealTools-v2.3-local.zip` in
 >   `dist/` is a dated backup of it, not the source of truth.
 >
-> **Use instead:** [PROGRESS.md](../PROGRESS.md) for what was done and when, [DESIGN.md](../DESIGN.md) for
-> how it works now, [TODO.md](../TODO.md) for what is open. The per-pass commit list below is kept only
+> **Use instead:** [PROGRESS.md](../records/PROGRESS.md) for what was done and when, [DESIGN.md](../spec/DESIGN.md) for
+> how it works now, [TODO.md](../backlog/TODO.md) for what is open. The per-pass commit list below is kept only
 > as the reasoning for changes that are already in the code.
 
 What follows is the state of the fix work **at the time it was written** — every row is one commit,
@@ -46,15 +46,15 @@ and the build was clean (`0 warnings / 0 errors`) with all tests passing at ever
 history, not as a description of the tree.
 
 For the original design review and the guardrails that must not be reversed, see
-[REVIEW.md](../REVIEW.md). For the config file split, see [CONFIG.md](../CONFIG.md). For per-machine
-calibration steps, see [CALIBRATION.md](../CALIBRATION.md).
+[REVIEW.md](../spec/REVIEW.md). For the config file split, see [CONFIG.md](../spec/CONFIG.md). For per-machine
+calibration steps, see [CALIBRATION.md](../spec/CALIBRATION.md).
 
 ---
 
 ## Pass 5 — WPF-UI adoption and the launcher shell (v2.3, latest)
 
 Branch `v2-ui-cleanup`, merged to `main` and tagged `v2.3`. Design and the per-tab checklist:
-[PLAN-UI-CLEANUP.md](../PLAN-UI-CLEANUP.md).
+[PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).
 
 | # | Commit | Change |
 |---|--------|--------|
@@ -77,13 +77,13 @@ card, and a full composer run advanced correctly with the inset fix (gem frames 
 `0.000`).
 
 **Still open:** the v2.3 zip is not built or published; the robustness list and the tuner spring plan
-are in [IDEAS.md](../IDEAS.md) and [PLAN-TUNER-SPRING.md](../PLAN-TUNER-SPRING.md); the tuner's OCR
-row-bucket question ([TODO.md](../TODO.md)) still needs evidence.
+are in [IDEAS.md](../backlog/IDEAS.md) and [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md); the tuner's OCR
+row-bucket question ([TODO.md](../backlog/TODO.md)) still needs evidence.
 
 ## Pass 4 — Arduino cursor, move sets, empty check (v2.2)
 
-Branch `v2-arduino-moves`. Detail: [CURSOR-INVESTIGATION.md](../CURSOR-INVESTIGATION.md),
-[MOVE-SETS.md](../MOVE-SETS.md), [PROGRESS.md](../PROGRESS.md).
+Branch `v2-arduino-moves`. Detail: [CURSOR-INVESTIGATION.md](../investigations/CURSOR-INVESTIGATION.md),
+[MOVE-SETS.md](../spec/MOVE-SETS.md), [PROGRESS.md](../records/PROGRESS.md).
 
 | # | Commit | Change |
 |---|--------|--------|
@@ -103,12 +103,12 @@ combining each grade until the result box reads empty (`diff 0.44–0.54` with a
 gate `0.01`), and stops after DG.
 
 **Still open:** why `SetCursorPos` is refused in this process (no longer load-bearing — nothing calls
-it), and the tuner's OCR row-bucket question ([TODO.md](../TODO.md)).
+it), and the tuner's OCR row-bucket question ([TODO.md](../backlog/TODO.md)).
 
 ## Pass 3 — physical coordinate space
 
 Fixing the capture crop led to reworking the coordinate model. Design and measured evidence:
-[docs/COORDINATES.md](../COORDINATES.md).
+[docs/spec/COORDINATES.md](../spec/COORDINATES.md).
 
 | # | Commit | Change |
 |---|--------|--------|
@@ -126,7 +126,7 @@ logical and wrong in the physical space; `gem.movements` (HID counts) are unaffe
 **Status 2026-09-09:** done and verified on the live game — capture, cursor path (`SetCursorPos`
 logical), composer Test Click / Test Move, and Check OCR (in-session and saved-geometry). The
 one-off debugging aids added while chasing this (`Diagnose capture`, the full-frame OCR dump, the two
-Debug cursor buttons) are kept as diagnostics. Remaining live checks are in [TODO.md](../TODO.md).
+Debug cursor buttons) are kept as diagnostics. Remaining live checks are in [TODO.md](../backlog/TODO.md).
 
 ## Pass 2 — review fixes
 
@@ -186,7 +186,7 @@ only intact copy of the calibration.
   `diag_copyfromscreen.png`). All capture now uses `CopyFromScreen` in physical pixels. Do not
   reintroduce `PrintWindow`.
 - **Recalibration is pending** after the physical-coordinate change (Pass 3) — see
-  [TODO.md](../TODO.md).
+  [TODO.md](../backlog/TODO.md).
 - **OCR row-bucket pooling.** A fixed `row_height` grid can pool two attribute rows. **Evidence first**
   — `ocr_log.jsonl` already records each raw item with its bucket key; do not change the bucketing blind.
 - **Machine-specific Debug Cursor / Debug Physical buttons** in the Gem calibrate tab — diagnostic value

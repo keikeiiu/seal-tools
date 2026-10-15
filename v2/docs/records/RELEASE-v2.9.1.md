@@ -31,8 +31,8 @@ rows — a design replaced by a single dragged list region.
 | `SealTools-v2.9.1.zip` | The app. Self-contained — no .NET or Python needed. Template config only; `config\local.yaml` is created on first run. |
 | `SealTools-v2.9.1-firmware.zip` | The Arduino sketch. Unzip and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. Required only if your board is not already flashed. |
 
-Installing, including flashing the board, is in `v2/docs/INSTALL.md`. Tools and every button are in
-`v2/docs/USER_GUIDE.md`.
+Installing, including flashing the board, is in `v2/docs/spec/INSTALL.md`. Tools and every button are in
+`v2/docs/spec/USER_GUIDE.md`.
 
 ## Upgrading from v2.9
 
@@ -47,4 +47,4 @@ would then name a commit that is not the build in that zip. The tag still exists
 works, and v2.3 remains available as the last build before buy/sell.
 
 Full history: the [version table](https://github.com/keikeiiu/seal-tools#version-history) and
-`v2/docs/PROGRESS.md`.
+`v2/docs/records/PROGRESS.md`.

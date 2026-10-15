@@ -71,7 +71,7 @@ The title and the dictionary have to be chosen together, and a list answers only
 
 ### 2.2 Geometry is shared — probably, and testably
 
-The calibration is **client-relative physical pixels**, and [COORDINATES.md](COORDINATES.md) records that
+The calibration is **client-relative physical pixels**, and [COORDINATES.md](../spec/COORDINATES.md) records that
 the game's UI **does not scale with the window** ("the HP bar keeps its pixel size, the world view
 expands"). So the UI is drawn at fixed pixel sizes anchored inside the client area. **If the US client is
 the same build with translated text, the same client size gives the same coordinates.**

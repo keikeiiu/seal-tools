@@ -3,14 +3,14 @@
 Planning note, 2026-09-10. **Implemented 2026-09-11 on `v2-tuner-spring`** (features 1 + 2 below, and
 the `GemPointer → HidPointer` rename). What remains open is the two data questions at the bottom — the
 "does the game warp the cursor" measurement in particular still decides whether `stop` is safe or
-`recenter` should be the recommended guard default. Work items were mirrored in [TODO.md](TODO.md).
+`recenter` should be the recommended guard default. Work items were mirrored in [TODO.md](../backlog/TODO.md).
 
 ## Why this is possible now
 
 The tuner has **no positioning at all** today: `SealTuner.Run` sends `C` (click) + `E` (Enter) per
 attempt and assumes you already put the mouse on the 發條 (spring) button. v2.2 gave us a cursor
 placement that cannot be refused and verifies itself (`GemPointer.To` — closed loop against
-`GetCursorPos`, see [MOVE-SETS.md](MOVE-SETS.md)), so the tuner can put the cursor on the spring
+`GetCursorPos`, see [MOVE-SETS.md](../spec/MOVE-SETS.md)), so the tuner can put the cursor on the spring
 itself and keep it there.
 
 ## Feature 1 — place the cursor on the spring at start
@@ -22,7 +22,7 @@ itself and keep it there.
 | `manual` (default) | **today's behaviour, unchanged** — you put the mouse on the 發條 button yourself; the tuner only sends `C` + `E`. No placement, no cursor polling. |
 | `hid` (advanced) | the tuner places the cursor on the spring with the Arduino closed loop at run start, and (if the guard is on) keeps it there. |
 
-This mirrors `gem.move_mode: tuned \| arduino` (see [MOVE-SETS.md](MOVE-SETS.md)): the old way stays
+This mirrors `gem.move_mode: tuned \| arduino` (see [MOVE-SETS.md](../spec/MOVE-SETS.md)): the old way stays
 the default and nothing changes for an untouched install.
 
 | piece | detail |
@@ -98,4 +98,4 @@ If the game does warp the cursor, `recenter` is the natural default and `stop` b
       one full run; if it never moves by more than a pixel, `stop` is safe.
 - [ ] **Does the cursor over the tuning UI affect OCR?** `logs/ocr_log.jsonl` records every raw item
       with its `rowKey`; compare attempts where the pointer sat over the read bands against ones where
-      it didn't. This also feeds the open `BuildLines` row-bucket question in [TODO.md](TODO.md).
+      it didn't. This also feeds the open `BuildLines` row-bucket question in [TODO.md](../backlog/TODO.md).

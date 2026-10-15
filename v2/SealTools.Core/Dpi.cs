@@ -15,7 +15,7 @@ public sealed record DisplayInfo(
 
 // Measures the display scale of the monitor a window is on.
 //
-// The process runs DPI-UNAWARE (see docs/COORDINATES.md), so every Win32 call is virtualised and
+// The process runs DPI-UNAWARE (see docs/spec/COORDINATES.md), so every Win32 call is virtualised and
 // GetDpiForWindow reports 96 — the real scale is invisible. The only way to learn it is to read the
 // window twice: once normally, once with THIS THREAD briefly switched to per-monitor-aware. The
 // ratio of the two client widths is the scale (2865/1910 = 1.5 on the reference machine).

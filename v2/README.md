@@ -1,11 +1,11 @@
 # Seal Tools v2 (C# / .NET WPF)
 
 **Version 2.15** (2026-10-13) — the current release; see the tag `v2.15` and
-[docs/RELEASE-v2.15.md](docs/RELEASE-v2.15.md).
+[docs/docs/records/RELEASE-v2.15.md](docs/records/RELEASE-v2.15.md).
 
 The **version history is not repeated here.** It lives in one place —
 [../README.md](../README.md#version-history) has the one-line-per-release table, and
-[docs/PROGRESS.md](docs/PROGRESS.md) has the dated reasoning behind each. This file kept its own copy
+[docs/docs/records/PROGRESS.md](docs/records/PROGRESS.md) has the dated reasoning behind each. This file kept its own copy
 until v2.11 and the copy had gone eight releases stale, which is the argument for not having two.
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Python build with a
@@ -52,26 +52,17 @@ v2/
   SealTools.Quest/       # QuestTool (replays a player-authored input flow)
   SealTools.Pet/         # PetTool (the resident feeder)
   SealTools.Launcher/    # WPF-UI desktop app (the UI + tool lifecycle)
-  SealTools.Tests/       # xUnit tests — 206 cases across 18 files
+  SealTools.Tests/       # xUnit tests — 324 cases across 25 files
   config/                # defaults.yaml, attributes.yaml, local.yaml.example (+ local.yaml, gitignored)
   models/                # PP-OCRv4 ONNX models (gitignored, copied from rapidocr-onnxruntime)
-  docs/INSTALL.md        # install: board, firmware, app, first calibration, updating
-  docs/USER_GUIDE.md     # every card, tab and button explained
-  docs/CURSOR-INVESTIGATION.md  # why the cursor is placed with the Arduino, not SetCursorPos
-  docs/MOVE-SETS.md      # the composer's two move sets: tuned counts vs arduino point placement
-  docs/PROGRESS.md       # dated log of what was done and why (append per session)
-  docs/DESIGN.md         # how it works and why — the doc a plan's reasoning graduates into
-  docs/PET-TAB-DESIGN.md # the Pet tab, the schedule and the reload flow
-  docs/ANALYSIS-UI.md    # the launcher UI, measured — the start for a next UI pass
-  docs/archive/README.md # finished plans, with their reasoning — nothing there is pending work
-  docs/PLAN-TUNER-SPRING.md  # the tuner spring + cursor guard reasoning (built; shipped in v2.4)
-  docs/PLAN-UI-CLEANUP.md    # launcher UI rework — steps 0-9 shipped, shell reverted
-  docs/IDEAS.md          # wider backlog: reliability, safety, UX, code health, mini-features
-  docs/HANDOVER.md       # prompt for the next session: state, conventions, open threads
-  docs/TODO.md           # what is still open
-  docs/CALIBRATION.md    # per-machine calibration guide
-  docs/COORDINATES.md    # coordinate space, DPI and capture — read before touching them
-  docs/archive/          # finished plans, kept for their reasoning
+  docs/                  # every document, in one folder per KIND — the map is spec/DESIGN.md §7
+  docs/spec/             # how it works NOW: DESIGN, TOOL-FLOWS, CONFIG, COORDINATES, CALIBRATION,
+                         #   MOVE-SETS, REVIEW, INSTALL, USER_GUIDE (+ zh-TW), PET-DATA, PET-TAB-DESIGN
+  docs/plans/            # proposals — work not yet done, or partly done (PLAN-*.md, 15 of them)
+  docs/investigations/   # measurements whose findings are the value, built-on or not
+  docs/records/          # what happened and when: PROGRESS, the RELEASE-* notes, HANDOVER
+  docs/backlog/          # TODO (what is open now) and IDEAS (the wider backlog)
+  docs/archive/          # finished plans, kept for their reasoning — nothing there is pending work
   publish.bat            # build + package the .exe
 ```
 
@@ -126,10 +117,10 @@ You only need the tabs for the tools you actually run.
 
 Coordinates are **client-area-relative physical pixels** (game window client top-left = origin). The
 process runs **DPI-unaware**, so captures and measurements switch one thread to per-monitor-aware
-briefly to get real physical pixels — see `docs/COORDINATES.md` for the full model and the measured
+briefly to get real physical pixels — see `docs/spec/COORDINATES.md` for the full model and the measured
 evidence. Relative `D dx dy` moves are **raw hand-tuned HID counts** — not computed from pixel deltas
 and never scaled (see prerequisite below). Full step-by-step detail, including the verification
-buttons, is in `docs/CALIBRATION.md`.
+buttons, is in `docs/spec/CALIBRATION.md`.
 
 The **Setup** tab shows the detected environment (monitor size/scale, game window rects) and stores
 the scale and reference client size a calibration was measured against; **Detect** fills it in and the
@@ -248,11 +239,11 @@ no install.
 Not kept here. This file carried its own progress log and list of open gaps until v2.11, and both had
 gone stale against the work — so the answer lives in the documents that own it:
 
-- **What was done, and why** — [docs/PROGRESS.md](docs/PROGRESS.md), dated, newest first.
-- **How it works now** — [docs/DESIGN.md](docs/DESIGN.md).
-- **What is still open** — [docs/TODO.md](docs/TODO.md).
-- **The guardrails** (measured rules that look like improvements to reverse) — [docs/REVIEW.md](docs/REVIEW.md)
-  Part D and [docs/DESIGN.md](docs/DESIGN.md) §5.
+- **What was done, and why** — [docs/docs/records/PROGRESS.md](docs/records/PROGRESS.md), dated, newest first.
+- **How it works now** — [docs/DESIGN.md](docs/spec/DESIGN.md).
+- **What is still open** — [docs/docs/backlog/TODO.md](docs/backlog/TODO.md).
+- **The guardrails** (measured rules that look like improvements to reverse) — [docs/REVIEW.md](docs/spec/REVIEW.md)
+  Part D and [docs/DESIGN.md](docs/spec/DESIGN.md) §5.
 
 Two things from the old local list stay here because they are cheap to get wrong and expensive to
 rediscover:
@@ -260,4 +251,4 @@ rediscover:
 - **Capture is `CopyFromScreen` in physical pixels** everywhere, on a thread briefly switched to
   per-monitor-aware. `PrintWindow` returns a **black frame** for this game — do not reintroduce it.
 - **A `local.yaml` written before v2.1 holds logical, not physical, coordinates** — recalibrate once
-  (see [docs/COORDINATES.md](docs/COORDINATES.md)). Hand-tuned `gem.movements` are HID counts and survive.
+  (see [docs/COORDINATES.md](docs/spec/COORDINATES.md)). Hand-tuned `gem.movements` are HID counts and survive.

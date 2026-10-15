@@ -5,8 +5,8 @@ frame and the quest sequences. Copy the block below as the first message.
 
 ---
 
-> Continue Seal Tools v2. Read `v2/docs/PROGRESS.md` first (newest entry first — it records what was
-> decided and why, which the code and commit titles don't), then `v2/docs/TODO.md`. Do not re-derive
+> Continue Seal Tools v2. Read `v2/docs/records/PROGRESS.md` first (newest entry first — it records what was
+> decided and why, which the code and commit titles don't), then `v2/docs/backlog/TODO.md`. Do not re-derive
 > what those say.
 >
 > **A launcher is RUNNING (PID 32932, started 09-30 21:53).** Its binaries are the current `v2/` code —
@@ -26,7 +26,7 @@ frame and the quest sequences. Copy the block below as the first message.
 >    and selecting the window title AND the attribute dictionary. **Not built:** the Setup-tab switch
 >    (§4.3, so switching is still a file edit) and moving the two hardcoded phrase sets into the
 >    dictionary (§4.4). **Blocked on the player:** the English dictionary itself — names, OCR variants
->    and the fixes table, which cannot be written from here. Plan: [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md).
+>    and the fixes table, which cannot be written from here. Plan: [PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md).
 >    **One measurement already taken:** the US client runs at window `1926×1112` / client `1910×1073`
 >    against the TW calibration's `1926×1232` / `1910×1193` — **same width, 120 px shorter**. Resize the
 >    US window to match *before* judging whether the calibration transfers, then look: the calibrate tabs
@@ -37,15 +37,15 @@ frame and the quest sequences. Copy the block below as the first message.
 >    re-marks the food cells (see PROGRESS entry 47).
 > 3. **The quest sequences are unverified live too** — `Test one loop` on a single flow was reported
 >    working; a sequence has not been run.
-> 4. **The pet feeder's own list** — [PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md): §2 the
+> 4. **The pet feeder's own list** — [PLAN-PET-FEEDER-NEXT.md](../plans/PLAN-PET-FEEDER-NEXT.md): §2 the
 >    intermittent COUNT read (crop-armed, waiting for its evidence), §3 the cursor placement failures (no
 >    cause, instrument first), and **the second time-line read still lives in `Visit` rather than
 >    `ReadRows`, so the run-start look gets no retry** — that gap was found and deliberately left.
-> 5. **The 2026-09-22 audit's findings, unfixed**, are in [TODO.md](TODO.md): the four `PetConfig`
+> 5. **The 2026-09-22 audit's findings, unfixed**, are in [TODO.md](../backlog/TODO.md): the four `PetConfig`
 >    properties no config file can carry, the unlocked `.tmp` race between the UI save and the pet tool's,
 >    `AttrMatcher`'s `int.Parse` on unbounded digits, and **the projection guard's reach being only what
 >    its fixture remembers**.
-> 6. **The launcher UI** — [ANALYSIS-UI.md](ANALYSIS-UI.md) has the measurements and a proposed order:
+> 6. **The launcher UI** — [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md) has the measurements and a proposed order:
 >    extract the calibration canvas (copy-pasted 5×), collapse the four button factories into one, then
 >    accessibility and the layout constants. **The blocking test handlers are the player's call** — the
 >    only item that changes observable behaviour.

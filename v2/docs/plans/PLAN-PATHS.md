@@ -87,7 +87,7 @@ profile/                          <- never replaced by an update
 ```
 
 `profile.json` is what makes PC #2 a copy instead of a re-calibration: the file named in
-[IDEAS.md](IDEAS.md) §3 as "export / import calibration", scoped to a whole folder rather than to
+[IDEAS.md](../backlog/IDEAS.md) §3 as "export / import calibration", scoped to a whole folder rather than to
 `local.yaml` alone.
 
 ## 5. The sequence
@@ -130,10 +130,10 @@ Do not delete the old files; a player who rolls back to v2.x must not find their
   still gets safe updates. See the ⚑ in §8.
 - **Not a rewrite of anything.** The OCR `text_fixes` table, the capture quirks, the closed-loop Arduino
   placement and the calibration geometry are the irreplaceable part and none of them are touched.
-- **Not the OCR swap.** [IDEAS.md](IDEAS.md) §6 would embed the models and delete `publish.bat` step 3
+- **Not the OCR swap.** [IDEAS.md](../backlog/IDEAS.md) §6 would embed the models and delete `publish.bat` step 3
   (and ~25 MB), which is a deployment win — but it must land **before** the English dictionary is built,
   so it is sequenced by that constraint, not by this plan.
-- **Not the Launcher extraction.** [ANALYSIS-UI.md](ANALYSIS-UI.md) §5 owns that order.
+- **Not the Launcher extraction.** [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md) §5 owns that order.
 
 ## 8. Open questions for the player ⚑
 
@@ -157,8 +157,8 @@ the `LocalPetLegacy` / `MigratePetSlots` precedent.
 **Reasoned, not measured:** that `SaveDefaults` makes `defaults.yaml` unrecoverable if clobbered on
 update (it is regenerated from the *merged in-memory* config, so a shipped file replacing it loses
 whatever the player had saved); the ordering claim that A makes D small; and the effort sizes, which
-follow the convention in [IDEAS.md](IDEAS.md) rather than an estimate from having built it.
+follow the convention in [IDEAS.md](../backlog/IDEAS.md) rather than an estimate from having built it.
 
 **Not checked:** the rest of the C# beyond the files named above, and `INSTALL.md` /
-[CALIBRATION.md](CALIBRATION.md) / `USER_GUIDE.md`, all of which describe the current layout to the
+[CALIBRATION.md](../spec/CALIBRATION.md) / `USER_GUIDE.md`, all of which describe the current layout to the
 player and would need updating in step E.

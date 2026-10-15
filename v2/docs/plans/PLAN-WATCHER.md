@@ -139,7 +139,7 @@ arena, fishing, 摆摊 or selling. So the rate is just the per-feed count × 60:
 Stage 6 and 7 take the **same food** and differ only in count — x3 and x4, confirmed against the item
 pages for 真蔬果男妖精仙子 (stage 6) and the stage-7 spirit, which agree with the news page's table.
 
-**All 327 normal pets are tabulated in [PET-DATA.md](PET-DATA.md)** — per-pet stage, boarding food and
+**All 327 normal pets are tabulated in [PET-DATA.md](../spec/PET-DATA.md)** — per-pet stage, boarding food and
 count, scraped from the item pages. Battle pets are a separate category and are not in it. The table
 confirmed the rule above per pet, and confirmed the one exclusion cleanly: of the 92 stage-7 pets,
 exactly the 32 with `.G` names have no boarding food at all.
@@ -214,7 +214,7 @@ wrong item**, and unlike a mis-aimed sale there is no undo. Two things follow:
 - the lock is a **prerequisite**, not a nicety, and the watcher should say so if it cannot be assumed;
 - the handover dialog names the item, so if a cheap confirmation is ever wanted, that is the natural
   place to check before confirming — OCR on the dialog, not on the bag. (The project deliberately has
-  no bag OCR; see [PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
+  no bag OCR; see [PLAN-BUY-SELL.md](../archive/PLAN-BUY-SELL.md) on why the sell selection is yours and visible.)
 
 #### Backing out of a dialog
 

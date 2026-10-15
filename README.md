@@ -3,14 +3,14 @@
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
 
-> The original Python build lives under [`v1/`](v1/) — its launcher, tools, docs and tests — and is
-> documented in [v1/README.md](v1/README.md). v2 lives entirely under [`v2/`](v2/).
+> The original Python build lives under [`v1/`](v1) — its launcher, tools, docs and tests — and is
+> documented in [v1/README.md](v1/README.md). v2 lives entirely under [`v2/`](v2).
 
 ## Download
 
 **Take the latest — [SealTools-v2.15.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15.zip).**
 Self-contained (exe + OCR models + config templates + the pet feeding table) — unzip and run.
-Installation, including flashing the board, is in **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)**.
+Installation, including flashing the board, is in **[v2/docs/INSTALL.md](v2/docs/spec/INSTALL.md)**.
 
 Older releases are kept only when they are a useful fallback:
 
@@ -37,7 +37,7 @@ every release — before that it was only in the repo, so a downloaded zip had n
 What went into each build. **Not every version has a download** — older release assets are removed
 once they stop being useful, and v2.4 and v2.6 were never published as releases at all. Every version
 is a git tag, so `git show v2.6` still works, and the full reasoning behind each is in
-[v2/docs/PROGRESS.md](v2/docs/PROGRESS.md).
+[v2/docs/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md).
 
 | Version | Date | What it added |
 |---|---|---|
@@ -52,8 +52,8 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 | v2.6 | 2026-09-13 | Safety and correctness pass, none of it visible: one tool start at a time, a stop during a cold start honoured, a failed config save reported instead of leaving the click looking inert, and the tuner stopping on a failed OCR read rather than below the target grade. Spammer presets left in `defaults.yaml` are now adopted into `local.yaml` instead of being deleted by the next save from any other tab. Hold Space releases the spacebar on stop; the firmware releases held keys when the host disappears. *(No release published; tag only.)* |
 | v2.4 | 2026-09-12 | Tuner cursor placement (`spring_mode: hid`) and the mouse guard (`off` / `stop` / `recenter`). OCR fixes: `DG`/`XG`/`SG` no longer parsed as a bare `G`, and attribute lines the matcher used to drop are restored. *(No release published; tag only.)* |
 | v2.3 | 2026-09-11 | The WPF-UI launcher: card-based tabs, pin-on-top, shrinking to the running tool's card, and placement remembered across restarts. Arduino closed-loop cursor placement. Pixel-based empty-result detection, comparing only the box's interior so a moved window can't stall the composer. A run ends after the last grade. Spammer presets moved to `local.yaml` so they stop shipping in the public zip. |
-| v2.1 | 2026-09-10 | Capture actually worked: `PrintWindow` returned a black frame for this game and was replaced by `CopyFromScreen`, which also fixed a silently cropped OCR region. Coordinates became physical pixels with the display environment recorded beside them (the **Setup** tab). Spammer presets and the first [user guide](v2/docs/USER_GUIDE.md). |
-| v2.0 | 2026-09-06 | First C#/.NET release — a full native rebuild of the Python tools under [`v1/`](v1/). |
+| v2.1 | 2026-09-10 | Capture actually worked: `PrintWindow` returned a black frame for this game and was replaced by `CopyFromScreen`, which also fixed a silently cropped OCR region. Coordinates became physical pixels with the display environment recorded beside them (the **Setup** tab). Spammer presets and the first [user guide](v2/docs/spec/USER_GUIDE.md). |
+| v2.0 | 2026-09-06 | First C#/.NET release — a full native rebuild of the Python tools under [`v1/`](v1). |
 
 
 ## Quick start
@@ -83,12 +83,12 @@ Seven tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 
 ## Full docs
 
-- **[v2/docs/INSTALL.md](v2/docs/INSTALL.md)** — board, app, first calibration, updating.
-- **[v2/docs/USER_GUIDE.md](v2/docs/USER_GUIDE.md)** — every card, tab and button explained.
-- **[v2/docs/DESIGN.md](v2/docs/DESIGN.md)** — how it works and why, in one place.
-- **[v2/docs/CALIBRATION.md](v2/docs/CALIBRATION.md)** — per-machine calibration walkthrough.
-- **[v2/docs/MOVE-SETS.md](v2/docs/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
-- **[v2/docs/PROGRESS.md](v2/docs/PROGRESS.md)** — dated log of what was done and why.
+- **[v2/docs/INSTALL.md](v2/docs/spec/INSTALL.md)** — board, app, first calibration, updating.
+- **[v2/docs/USER_GUIDE.md](v2/docs/spec/USER_GUIDE.md)** — every card, tab and button explained.
+- **[v2/docs/DESIGN.md](v2/docs/spec/DESIGN.md)** — how it works and why, in one place.
+- **[v2/docs/CALIBRATION.md](v2/docs/spec/CALIBRATION.md)** — per-machine calibration walkthrough.
+- **[v2/docs/MOVE-SETS.md](v2/docs/spec/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
+- **[v2/docs/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md)** — dated log of what was done and why.
 - **[v2/README.md](v2/README.md)** — architecture, config files, logging and build instructions.
 
 ## Disclaimer

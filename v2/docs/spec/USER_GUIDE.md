@@ -21,7 +21,7 @@ The launcher opens as just the tool cards. The configuration tabs stay out of th
 them:
 
 ![The launcher as it opens: tool cards, a Configuration chevron, and the Hold Space and pin
-buttons](images/launcher-cards.png)
+buttons](../images/launcher-cards.png)
 
 *(The two screenshots on this page are from **v2.9.1** — five cards and twelve tabs. The app now opens
 with **seven** cards and sixteen tabs; the Pet Feeder card and the `Pet`, `Calibrate Pet` and
@@ -42,7 +42,7 @@ neither. *(That is the pair: hiding the cards opens the tabs, closing the tabs r
 and returns the window to the size it had before.
 
 ![The same window with Configuration expanded: the cards, both rows of tabs, and the Tuner tab's
-Goal card below](images/launcher-expanded.png)
+Goal card below](../images/launcher-expanded.png)
 
 There are **sixteen tabs**, and at the default window width they **wrap onto two rows** — and they do
 not wrap in reading order, so `Tuner` can end up on the *second* row with the calibration and config
@@ -485,7 +485,7 @@ all** and why there is no calibrate tab beside this one.
 > no second opinion. A wrong flow does its loop count in wrong actions, and the game accepts every one.
 > **Test one loop** first, then a short count, then the real one.
 
-Read [PLAN-QUEST.md](archive/PLAN-QUEST.md) for why it is built this way.
+Read [PLAN-QUEST.md](../archive/PLAN-QUEST.md) for why it is built this way.
 
 ### Flow
 

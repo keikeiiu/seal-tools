@@ -1088,7 +1088,7 @@ public class ConfigLoaderTests
         }
     }
 
-    // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
+    // ── the game variant — docs/plans/PLAN-US-CLIENT.md ────────────────────────────────────────────────
 
     /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the
     /// US-client change is small: every tool already reads `window.title`, so none of them — the OCR

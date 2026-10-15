@@ -4,7 +4,7 @@
 >
 > It lives here with the plan it belongs to, and is kept for its REASONING — a design decision
 > without its reasoning gets reversed by whoever finds it inconvenient next. How it works now is
-> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+> [DESIGN.md](../spec/DESIGN.md); what is still open is [TODO.md](../backlog/TODO.md).
 
 Design record, 2026-10-11, branch `feature/pet-flow`. Step 3 of
 [PLAN-PET-FLOW.md](PLAN-PET-FLOW.md) §8 ("one scan per visit, with the per-use re-verification" —

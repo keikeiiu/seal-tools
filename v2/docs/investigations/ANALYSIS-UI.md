@@ -6,7 +6,7 @@ Written before any change, from a read of `SealTools.Launcher/MainWindow.xaml.cs
 Every number below was counted rather than estimated, and where a claim is a judgement rather than a
 measurement it says so. The counts are as of `main` @ `1f42591` (2026-09-22) and will drift.
 
-**How this relates to [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).** That plan's WPF-UI rebuild **shipped**
+**How this relates to [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).** That plan's WPF-UI rebuild **shipped**
 — its Progress table marks steps 0–9 done and the shell attempted and reverted, and the code agrees
 (`Section()` returns a `ui:Card`, and the launcher uses `Wpf.Ui.Controls` throughout). Its own
 remaining open item is the button label/weight convention. This document is not a second copy of it:
@@ -88,7 +88,7 @@ is the *construction*.
 `GemTestFullCycle`, `GemTestClick`, `GemTestMovement`, `GemTestRelativeMove`, `GemTestArduinoRoute`,
 `TunerSpringTestClick`.
 
-**Correction to the existing note.** [TODO.md](TODO.md) says "roughly 18 s of frozen window for a full
+**Correction to the existing note.** [TODO.md](../backlog/TODO.md) says "roughly 18 s of frozen window for a full
 cycle". The sleeps account for 5.5 s of that; the rest is `HidPointer.To` blocking internally in
 `WaitForCursorToSettle`. TODO.md's reasoning for deferring the fix (it is a five-handler refactor, not
 a two-line change, because the tools' blocking placement has to move off the dispatcher too) is

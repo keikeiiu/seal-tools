@@ -7,7 +7,7 @@ grids, and buttons whose labels say what they do.
 > **Status: steps 0–9 shipped; the shell was tried and reverted (see Progress below).** What remains
 > here is the button label/weight convention. The measurement for a *next* pass — the capture canvas
 > extracted, one button factory, accessibility, and the dispatcher/poll questions — is
-> [ANALYSIS-UI.md](ANALYSIS-UI.md), which counts the current file rather than proposing a different
+> [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md), which counts the current file rather than proposing a different
 > direction.
 
 ## Answers so far
@@ -229,7 +229,7 @@ the existing code-built shell, so this decision is not irreversible.
 2. Pure moves/renames first; the shared row builder second (introduced with the first tab that needs
    it, then applied as tabs are touched); Advanced toggles last, decided per tab.
 3. Screenshot before/after per tab into `logs/captures/ui/` (gitignored — local review only), and update the matching
-   [USER_GUIDE.md](USER_GUIDE.md) rows in the same commit — button names must match the guide.
+   [USER_GUIDE.md](../spec/USER_GUIDE.md) rows in the same commit — button names must match the guide.
 4. No behaviour changes, no config keys renamed, no calibration flow reordered.
 
 ## Non-goals

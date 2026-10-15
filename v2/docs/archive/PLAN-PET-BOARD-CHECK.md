@@ -4,7 +4,7 @@
 >
 > Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
 > and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
-> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+> [DESIGN.md](../spec/DESIGN.md); what is still open is [TODO.md](../backlog/TODO.md).
 
 **Goal.** The bag holds a mix of pets: some at **+9 / 100%**, which cannot be fed any more, and some at
 **+0**, which need food. The tool has to say which is which.

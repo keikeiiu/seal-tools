@@ -4,7 +4,7 @@
 >
 > Kept for its REASONING, not as pending work — the reasoning is why the code looks the way it does,
 > and a decision without it gets reversed by whoever finds it inconvenient next. How it works now is
-> [DESIGN.md](../DESIGN.md); what is still open is [TODO.md](../TODO.md).
+> [DESIGN.md](../spec/DESIGN.md); what is still open is [TODO.md](../backlog/TODO.md).
 
 Written 2026-09-26, from the player's description and four decisions taken before any code.
 

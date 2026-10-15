@@ -65,7 +65,7 @@ decides *who* may command the bot in a group.
 | `v2/docs/*.md` | 41 files, 949 KB |
 | root `README.md` | release table + quick start |
 | `v2/config/attributes.yaml` | the attribute dictionary (game wording) |
-| `v2/docs/PET-DATA.md` | per-pet feeding values |
+| `v2/docs/spec/PET-DATA.md` | per-pet feeding values |
 
 ---
 
@@ -178,7 +178,7 @@ do not know it.
 ## How to answer
 
 - 繁體中文 by default; otherwise answer in the language you were asked in.
-- **Cite the file** you used, e.g. `v2/docs/CALIBRATION.md`.
+- **Cite the file** you used, e.g. `v2/docs/spec/CALIBRATION.md`.
 - Quote the sentence that decides it when the exact wording matters.
 - **If the docs do not answer it, say so plainly.** Never invent a config key, a
   coordinate, a version number or a behaviour.
@@ -197,14 +197,14 @@ do not know it.
 
 | question | file |
 |---|---|
-| install, board, first calibration | `v2/docs/INSTALL.md` |
-| every card, tab and button | `v2/docs/USER_GUIDE.md` (zh-TW twin alongside) |
-| what each tool sends to the game | `v2/docs/TOOL-FLOWS.md` |
-| how it works, and why | `v2/docs/DESIGN.md` |
-| calibrating this machine | `v2/docs/CALIBRATION.md` |
-| the pet feeder and feeding values | `v2/docs/PET-TAB-DESIGN.md`, `v2/docs/PET-DATA.md` |
+| install, board, first calibration | `v2/docs/spec/INSTALL.md` |
+| every card, tab and button | `v2/docs/spec/USER_GUIDE.md` (zh-TW twin alongside) |
+| what each tool sends to the game | `v2/docs/spec/TOOL-FLOWS.md` |
+| how it works, and why | `v2/docs/spec/DESIGN.md` |
+| calibrating this machine | `v2/docs/spec/CALIBRATION.md` |
+| the pet feeder and feeding values | `v2/docs/spec/PET-TAB-DESIGN.md`, `v2/docs/spec/PET-DATA.md` |
 | what changed in a release | `README.md` |
-| why a coordinate or cursor behaves oddly | `v2/docs/COORDINATES.md` |
+| why a coordinate or cursor behaves oddly | `v2/docs/spec/COORDINATES.md` |
 ```
 
 **If you chose Option B**, change the "Where the knowledge is" block to point at

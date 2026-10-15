@@ -15,9 +15,9 @@ Everything else (the `.exe`, models, behavior flags) is portable.
   (`GetClientRect` + `ClientToScreen`), *excluding* the title bar and border. Not window-relative,
   not screen-absolute.
 - **Physical pixels.** Values are real screen pixels. The process stays **DPI-unaware** (PerMonitorV2
-  makes `SetCursorPos` fail — see `docs/COORDINATES.md`); captures and measurements briefly switch one
+  makes `SetCursorPos` fail — see `docs/spec/COORDINATES.md`); captures and measurements briefly switch one
   thread to per-monitor-aware to get true physical coordinates, and the cursor is positioned by the
-  **Arduino** (a closed `D dx dy` loop against `GetCursorPos` — see `docs/CURSOR-INVESTIGATION.md`).
+  **Arduino** (a closed `D dx dy` loop against `GetCursorPos` — see `docs/investigations/CURSOR-INVESTIGATION.md`).
 - **Absolute clicks:** position the cursor at the calibrated client-relative physical point, then an
   Arduino `C` (HID click).
 - **Relative moves:** raw Arduino HID counts, sent as `D dx dy`. They are **hand-tuned values, not
@@ -38,7 +38,7 @@ Everything else (the `.exe`, models, behavior flags) is portable.
 > wrong in the new space — recalibrate. Hand-tuned `gem.movements` (HID counts) are unaffected.
 
 The **Setup** tab shows the detected monitor scale and game client size and stores them with the
-calibration, so a different machine can tell whether it must recalibrate. See `docs/COORDINATES.md`.
+calibration, so a different machine can tell whether it must recalibrate. See `docs/spec/COORDINATES.md`.
 
 ## 2. Calibrate Tuner
 

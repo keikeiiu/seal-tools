@@ -133,7 +133,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // to persist an accurate row_height instead of the loose attr.Height/3 guess.
     private int? _tunerAttrPitch;
     // Display measurement from the last capture of each tab (scale + physical client rect), saved
-    // with the calibration so another machine can convert (docs/COORDINATES.md).
+    // with the calibration so another machine can convert (docs/spec/COORDINATES.md).
     private DisplayInfo? _tunerDisplay;
     private DisplayInfo? _gemDisplay;
     private Point? _tunerDragStart;
@@ -1124,7 +1124,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // A titled section: a bordered Card with a header, which is how every tab groups its controls.
     // Card rather than CardControl on purpose — CardControl measures its content with unbounded
-    // width, so wrapping text runs past the border (see docs/PLAN-UI-CLEANUP.md).
+    // width, so wrapping text runs past the border (see docs/plans/PLAN-UI-CLEANUP.md).
     private static Card Section(string title, params UIElement[] children)
     {
         var body = new StackPanel();
@@ -1390,7 +1390,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game window's " +
             "client area. Detect reads the current setup; the scale and reference client size stay editable " +
             "if detection is wrong. If another machine's values differ from the stored calibration, " +
-            "recalibrate there (see docs/COORDINATES.md)."));
+            "recalibrate there (see docs/spec/COORDINATES.md)."));
 
         var monitor = Mono();
         var window = Mono();
@@ -1460,7 +1460,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             warning.Text = diffs.Count == 0
                 ? "This machine matches the stored calibration."
                 : "⚠ This machine differs from the stored calibration — " + string.Join("; ", diffs) +
-                  ". Recalibrate on this machine (see docs/COORDINATES.md).";
+                  ". Recalibrate on this machine (see docs/spec/COORDINATES.md).";
         }
 
         void ShowStored()
@@ -3223,7 +3223,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // v1 does a single cursor-place + C — no focus-click, no double click. Mirror that: put the
         // cursor on the point with the Arduino and click once. A cursor that can't be placed is
-        // reported, never clicked through (docs/CURSOR-INVESTIGATION.md).
+        // reported, never clicked through (docs/investigations/CURSOR-INVESTIGATION.md).
         try
         {
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
@@ -3713,7 +3713,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         return items;
     }
 
-    // Environment block recorded with a calibration (physical pixels). See docs/COORDINATES.md.
+    // Environment block recorded with a calibration (physical pixels). See docs/spec/COORDINATES.md.
     private static CalibrationInfo ToCalibration(DisplayInfo d) => new()
     {
         DpiScale = Math.Round(d.Scale, 4),
@@ -5530,7 +5530,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Universal by design, which is why it is its own tab rather than a section of a tool's: the panel
     // is anchored to the POINTER, so its offset from the pointer is the same everywhere in the game
     // even though its SIZE varies by what is under it. One calibration therefore serves every
-    // hover-read this suite ever does. See docs/PLAN-HOVER-INFO.md.
+    // hover-read this suite ever does. See docs/docs/archive/PLAN-HOVER-INFO.md.
     //
     // The tool PLACES the cursor rather than reading where it happens to be. That is what makes the
     // offset exact: the pointer is at a coordinate the tool chose, so nothing has to be inferred from
@@ -5923,7 +5923,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // ── Pet food auto-replacement — calibrator ──────────────────────────────
     //
-    // Marks the boarding (代養) flow; see docs/PLAN-PET-AUTOFEED.md. Two things make this tab unlike
+    // Marks the boarding (代養) flow; see docs/plans/PLAN-PET-AUTOFEED.md. Two things make this tab unlike
     // the others:
     //
     //   * The marks live on TWO screens that cannot both be up. 目錄 and the pet feed icon are on the
@@ -6298,7 +6298,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
-    /// <summary>The Quest Hand-in tab: the flow the tool replays. See docs/PLAN-QUEST.md.
+    /// <summary>The Quest Hand-in tab: the flow the tool replays. See docs/docs/archive/PLAN-QUEST.md.
     ///
     /// A flow is a NAMED preset, like a spammer key rotation, because the dialogue differs per quest.
     ///
@@ -7347,7 +7347,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The consumer the hover read has been waiting for since 2026-09-18: not "what is this one
         // pet", but "which of these can still be fed". The bag mixes +9/100% pets, which cannot take
         // food and raise an error dialog if boarded, with +0 pets that need it — see
-        // docs/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
+        // docs/docs/archive/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
         var scanFeedable = MakeButton("Scan bag for feedable pets", ControlAppearance.Secondary);
         // The destructive twin, and deliberately a SEPARATE button rather than a checkbox on the one
         // beside it: a scan you press to look at must not quietly rewrite the queue.
@@ -8661,7 +8661,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// The bag holds a mix: pets at +9/100% that cannot take food any more, and pets at +0 that need
     /// it. Telling the two apart is not bookkeeping — boarding a FINISHED pet raises an error dialog,
     /// and a blocking modal wedges everything after it, so a finished pet is a stuck run rather than a
-    /// wasted reload. See docs/PLAN-PET-BOARD-CHECK.md.
+    /// wasted reload. See docs/docs/archive/PLAN-PET-BOARD-CHECK.md.
     ///
     /// The parser is the FILTER, and that is forced rather than chosen: the icon matcher only knows
     /// pets that are already queued, and the pets this exists to find are precisely the ones nobody

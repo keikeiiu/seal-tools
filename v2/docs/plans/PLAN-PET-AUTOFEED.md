@@ -8,7 +8,7 @@ What that leaves unproven is everything around the reload rather than the reload
 the pet actually went in or the food actually landed, and the boarding state is still asserted by hand
 (see §4). Scope is deliberately narrow: **stage-6 pets, boarding only, one row.**
 
-Everything the design rests on is measured or confirmed — see [PET-DATA.md](PET-DATA.md) — except the
+Everything the design rests on is measured or confirmed — see [PET-DATA.md](../spec/PET-DATA.md) — except the
 open questions at the end.
 
 Goal: **keep a boarded pet fed without anyone watching.** The pet runs out of boarding food, the tool
@@ -73,7 +73,7 @@ beside the shop window. So this feature carries its own two-corner bag calibrati
 Past that it works the same way: you mark **every slot holding pet food — around ten of them, not two**
 — and that selection is the inventory. The tool consumes them highest index first and knows both where
 to click and how many are left, with no bag OCR anywhere: the project has none by design (see
-[PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
+[PLAN-BUY-SELL.md](../archive/PLAN-BUY-SELL.md)), and counting stacks by reading the bag would be a large new
 failure surface for something you can simply point at.
 
 **Highest index first, for the same reason `SellPass` does it.** Consuming from the top is correct
@@ -171,7 +171,7 @@ reproduce its arithmetic.
 remaining 喂养值 = base × 14.5 × (1 − pct/100)
 ```
 
-with `base` from [PET-DATA.md](PET-DATA.md) and the percentage straight off the panel — one subtraction
+with `base` from [PET-DATA.md](../spec/PET-DATA.md) and the percentage straight off the panel — one subtraction
 over the whole run to `+10`, with no level-by-level accumulation and no need to follow the pet's growth
 indicator at all.
 
@@ -180,7 +180,7 @@ two terms are both available:
 
 | Term | From |
 |---|---|
-| The level's total cost | [PET-DATA.md](PET-DATA.md) — `base × (1 + n/10)` for level `+n` |
+| The level's total cost | [PET-DATA.md](../spec/PET-DATA.md) — `base × (1 + n/10)` for level `+n` |
 | Which level it is on | the panel's `+N` |
 | How far through it | the panel's `[..%]` |
 
@@ -240,7 +240,7 @@ not.
 So there are two ways to handle the returned pet and both are bad:
 
 - **Find it** — which needs bag OCR, and this project has none by design
-  ([PLAN-BUY-SELL.md](archive/PLAN-BUY-SELL.md)).
+  ([PLAN-BUY-SELL.md](../archive/PLAN-BUY-SELL.md)).
 - **Reserve a slot** — which only works while nothing else changes the bag, and the whole premise is
   that the character is farming.
 
@@ -510,7 +510,7 @@ edge case — which is why the comparison is inclusive.
 So the check is on **growth and EXP together** — `+9` and `EXP >= 100` — and reading the growth alone
 would stop feeding a pet that has not finished, the opposite of the failure this guard exists to
 prevent. Both are on the pet's panel as `+N` and `[..%]`, and both read cleanly
-(see [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md)).
+(see [PLAN-HOVER-INFO.md](../archive/PLAN-HOVER-INFO.md)).
 
 ---
 
@@ -677,7 +677,7 @@ something the tool checks.
 
 - **`.G` pets.** They cannot be boarded at all — they go through the 喂养 window, one item at a time,
   with no auto-feed, and their time depends on which food is used. That is a **different feature**, not
-  a different row, and it shares only the icon. See [PET-DATA.md](PET-DATA.md) for the numbers.
+  a different row, and it shares only the icon. See [PET-DATA.md](../spec/PET-DATA.md) for the numbers.
 - **Stage 5.** The long job (2 d 22 h). Same flow, different config, and the one where a bug is
   expensive — so it comes after 6 is trusted.
 - **Death, revive, and the rest of the watcher.** [PLAN-WATCHER.md](PLAN-WATCHER.md).
@@ -705,7 +705,7 @@ The rows are already there; this is not a redesign of the window.
 | Food type | whatever you locked | **can differ**, because the pets can be at different stages |
 | Schedule | one clock | **per row** — a stage-6 pet burns 3/min and a stage-7 4/min, so one timer is wrong for one of them |
 
-The food point is the one that catches people out: [PET-DATA.md](PET-DATA.md) gives 一般宠物食物 for
+The food point is the one that catches people out: [PET-DATA.md](../spec/PET-DATA.md) gives 一般宠物食物 for
 stages 1–3, 营养满分宠物食物 for 4–5 and 高级宠物食物 for 6–7, so two pets on different stages are fed
 from two different items, in two different places.
 
@@ -718,7 +718,7 @@ one row to N. It is honest about who decides, and it needs no new reading.
 **A — automatic (later, if it earns its place).** The tool finds whatever pet is not yet `+9` 100 %,
 puts it in, and feeds it the right food for its stage. Feasible because **hovering a pet's bag icon
 shows its name and growth** (player, 2026-09-17) — and the name resolves to a stage through the table in
-[PET-DATA.md](PET-DATA.md), which is already scraped. So A reads something that exists rather than
+[PET-DATA.md](../spec/PET-DATA.md), which is already scraped. So A reads something that exists rather than
 inventing a signal.
 
 What A costs, stated plainly: a hover-and-wait per pet, an OCR of the tooltip, and the cursor moving
@@ -894,7 +894,7 @@ rather than acted on.
 the player's 7 pets. The crops were right: the matcher compared whole cells pixel-for-pixel, and a
 pet's sprite is drawn at a different SUB-CELL OFFSET in each cell, so it only matched where the sprite
 happened to land in the same place. Scoring each cell at a spread of offsets took it to 6 of 7, with
-the separation now 0.000 against 0.830 — see [PROGRESS.md](PROGRESS.md) for the numbers, and
+the separation now 0.000 against 0.830 — see [PROGRESS.md](../records/PROGRESS.md) for the numbers, and
 `IconMatch.SearchRadius` for the sweep that chose three.
 
 **What this costs:** an icon match is a *translation-tolerant* pixel comparison, not an identity. Two
@@ -1002,7 +1002,7 @@ start and close                       the start button → the X
 Everything except "which cell does the pet come from" is the existing reload, unchanged.
 
 **The remaining time is a by-product of the same read.** `wyz` is what makes it computable, and where
-it comes from is [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md) open question 4 — the panel itself, if it
+it comes from is [PLAN-HOVER-INFO.md](../archive/PLAN-HOVER-INFO.md) open question 4 — the panel itself, if it
 states the current level's 所需喂养值; the pet's name against the 327-entry table; or two reads a cycle
 apart. Worth stating as a goal here because it makes the *schedule* honest: today the cycle is
 `LoadItems ÷ ItemsPerMinute`, one rate for every pet, where PET-DATA's table gives 2/1/3/4 items per

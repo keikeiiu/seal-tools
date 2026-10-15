@@ -16,11 +16,11 @@ because it changes how something else should be done.
   cheap fingerprint of the captured UI against the calibration screenshot — and stop with
   "recalibrate" rather than clicking points that moved.
 - ~~**Harden the empty check**~~ — **done** [2026-09-10]: the check only judges while the game is the
-  foreground window, and logs a refusal otherwise. See [CALIBRATION.md](CALIBRATION.md).
+  foreground window, and logs a refusal otherwise. See [CALIBRATION.md](../spec/CALIBRATION.md).
 - **Game-window watchdog** (S). If the window closes or minimizes mid-run, stop cleanly.
 - **Passive watcher — death and pet notifications** (L) ⚑. Poll the game while you are not looking and
   either act or tell you: **death** by OCR on a calibrated region, **pet needs attention** by a pixel
-  diff on a menu-bar icon. Designed in [PLAN-WATCHER.md](PLAN-WATCHER.md) — it is a launcher-level
+  diff on a menu-bar icon. Designed in [PLAN-WATCHER.md](../plans/PLAN-WATCHER.md) — it is a launcher-level
   service rather than a tool card, because it must poll *without* holding the Arduino and only take the
   port in order to act. Notify-only is the recommended first phase.
 - **Surface crashes on the card** (S). A tool exception already writes `logs/error.log`; put the last
@@ -31,7 +31,7 @@ because it changes how something else should be done.
 ## 2. Safety and control
 
 - **Global human override** (M). Grab the mouse and the running tool stops — generalises the tuner
-  guard ([PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md)).
+  guard ([PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md)).
 - **Run budget** (S). Max cycles / minutes / clicks per run, always bounded.
 - **Dry-run mode** (M). Place the cursor and flash where it *would* click, without clicking. The
   fastest way to validate a fresh calibration.
@@ -117,7 +117,7 @@ because it changes how something else should be done.
   and `dist\SealTools-v2.3-local.zip` (2026-09-11). The old v2.0/v2.1 folders and zips are still there;
   delete them once the v2.3 release is confirmed.
 - **Decide whether the zip ships `local.yaml`** (S) — **decided**: two publish modes, `public` (templates
-  only) and `local` (full calibration). See [publish.bat](../publish.bat) and [README.md](../README.md).
+  only) and `local` (full calibration). See [publish.bat](../../publish.bat) and [README.md](../../README.md).
 - **Changelog** (S). One file, newest first, so a release note is a copy-paste.
 
 ## 7b. Spammer as a key pad (nice-to-have, designed not built)

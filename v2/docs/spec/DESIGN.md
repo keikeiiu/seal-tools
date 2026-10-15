@@ -1,7 +1,7 @@
 # Seal Tools v2 — technical design
 
 **How it works, and why it works that way.** This is the document a plan's reasoning graduates into.
-[PROGRESS.md](PROGRESS.md) is the dated history and [TODO.md](TODO.md) is what is open; this is the
+[PROGRESS.md](../records/PROGRESS.md) is the dated history and [TODO.md](../backlog/TODO.md) is what is open; this is the
 current truth about the shape of the thing.
 
 Topic detail lives in its own file and is linked rather than repeated — one document per question, so
@@ -16,7 +16,7 @@ SealTools.Launcher      WPF UI. Cards per tool, configuration tabs behind them. 
                         the service that starts and stops tools, and every calibrator.
 SealTools.Core          Everything shared: the OCR engine, the HID/Arduino link, the config model,
                         the geometry, the icon matcher, the attribute matcher.
-SealTools.Tests         xUnit. 206 tests, all pure — no game, no board, no screen.
+SealTools.Tests         xUnit. 324 tests, all pure — no game, no board, no screen.
 SealTools.Pet           The resident feeder: schedule, reload, placement, food.
 SealTools.Tuner         Seal-breaking: OCR the attributes, decide, click.
 SealTools.Shop          Buy/sell.
@@ -42,7 +42,7 @@ update — so the `.exe` can be run from anywhere under it. Calibration images s
 
 The cursor is moved by a **raw HID mouse on an Arduino**, not by `SetCursorPos`. The OS intermittently
 refuses the process its own cursor placement, and a game that reads raw input sees `SetCursorPos` moves
-as teleports — see [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md).
+as teleports — see [CURSOR-INVESTIGATION.md](../investigations/CURSOR-INVESTIGATION.md).
 
 - **`D dx dy` counts are RAW HID COUNTS, per machine, and are never scaled.** They are valid until the
   board, the pointer speed or the in-game display changes, and then they are re-measured by hand.
@@ -112,7 +112,7 @@ ClaimGame / ReleaseGame                 a tool takes the game for a bounded oper
 - **A resident tool is one that owns a schedule rather than an operation.** The pet feeder runs for days,
   so its card shows a standing line — what is boarding and when the next action is — and it yields the
   game whenever another tool claims it, resuming its wait afterwards. See
-  [archive/PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md) for the reasoning.
+  [archive/PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md) for the reasoning.
 - **The pet feeder ignores the quit hotkey** by construction: a press meant for a foreground run must not
   end a schedule that is feeding four pets.
 
@@ -169,17 +169,18 @@ measured per-level cost that decides how long a pet still needs.
 
 ## 7. Where the rest lives
 
-**What a document IS decides where it lives, and the folder's names say which.** Four kinds:
+**What a document IS decides where it lives, and each folder says which kind it holds.**
 
-| kind | what it is | where it lives |
+| folder | kind | what it holds |
 |---|---|---|
-| **Specification** | how the system works **now**. It has to stay true, and it changes in the same commit as the behaviour it describes. | this file, [TOOL-FLOWS.md](TOOL-FLOWS.md), [CONFIG.md](CONFIG.md), [COORDINATES.md](COORDINATES.md), [CALIBRATION.md](CALIBRATION.md), [MOVE-SETS.md](MOVE-SETS.md), [REVIEW.md](REVIEW.md), [INSTALL.md](INSTALL.md), [USER_GUIDE.md](USER_GUIDE.md) |
-| **Proposal** | work **not yet done**, or partly done — a to-do with its reasoning | `PLAN-*.md`, beside this file, for as long as any of it is unbuilt; `IDEAS.md` and `TODO.md` hold the backlog and the open list |
-| **Investigation** | a measurement whose **findings** are the value, whether or not anything was built from them | [ANALYSIS-UI.md](ANALYSIS-UI.md), [ANALYSIS-FOOD-LOAD.md](ANALYSIS-FOOD-LOAD.md), [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md) |
-| **Record** | what happened, and when — dated, append-only | [PROGRESS.md](PROGRESS.md), `RELEASE-*.md`, and [archive/](archive/README.md) |
+| **`spec/`** — this folder | **Specification** | how the system works **now**. It has to stay true, and it changes in the same commit as the behaviour it describes. This file, plus [TOOL-FLOWS](TOOL-FLOWS.md), [CONFIG](CONFIG.md), [COORDINATES](COORDINATES.md), [CALIBRATION](CALIBRATION.md), [MOVE-SETS](MOVE-SETS.md), [REVIEW](REVIEW.md), [INSTALL](INSTALL.md), [USER_GUIDE](USER_GUIDE.md) and the two pet data/design documents |
+| [`../plans/`](../plans/README.md) | **Proposal** | work **not yet done**, or partly done — a to-do with its reasoning. `PLAN-*.md`, for as long as any of it is unbuilt |
+| [`../investigations/`](../investigations/README.md) | **Investigation** | a measurement whose **findings** are the value, whether or not anything was built from them — [ANALYSIS-UI](../investigations/ANALYSIS-UI.md), [CURSOR-INVESTIGATION](../investigations/CURSOR-INVESTIGATION.md) and the food-load analysis |
+| [`../records/`](../records/README.md) and [`../archive/`](../archive/README.md) | **Record** | what happened, and when — dated, append-only: [PROGRESS](../records/PROGRESS.md), the `RELEASE-*` notes, and the finished plans kept for their reasoning |
+| [`../backlog/`](../backlog/README.md) | (lists, not documents) | what is open now ([TODO](../backlog/TODO.md)) and what is merely wanted ([IDEAS](../backlog/IDEAS.md)) |
 
 A `PLAN-*` is therefore **a proposal, not a design record**. When its work ships, the durable reasoning
-belongs in a specification above and the plan goes to [archive/](archive/README.md) — so that "how does
+belongs in a specification above and the plan goes to [archive/](../archive/README.md) — so that "how does
 this work?" is never answered by a document that is half aspiration. That failure has already happened
 once: the resident-pet plan shipped in v2.11 and was still being read as pending work the next morning.
 
@@ -190,13 +191,13 @@ companion, describing the feeder's flow as it stands) and [PET-TAB-DESIGN.md](PE
 | question | document |
 |---|---|
 | coordinates, DPI, logical vs physical pixels | [COORDINATES.md](COORDINATES.md) |
-| why the cursor is not placed with `SetCursorPos` | [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md) |
+| why the cursor is not placed with `SetCursorPos` | [CURSOR-INVESTIGATION.md](../investigations/CURSOR-INVESTIGATION.md) |
 | the config split | [CONFIG.md](CONFIG.md) |
 | calibrating a machine | [CALIBRATION.md](CALIBRATION.md) |
 | the composer's hand-tuned move sets | [MOVE-SETS.md](MOVE-SETS.md) |
 | the guardrails, in full | [REVIEW.md](REVIEW.md) |
 | what each tool sends to the game, and where it branches | [TOOL-FLOWS.md](TOOL-FLOWS.md) |
 | the pet feeder's in-visit detail (TOOL-FLOWS' companion) | [AUDIT-PET-FLOW.md](AUDIT-PET-FLOW.md) |
-| the launcher UI, measured (for a next UI pass) | [ANALYSIS-UI.md](ANALYSIS-UI.md) |
+| the launcher UI, measured (for a next UI pass) | [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md) |
 | how to use it | [USER_GUIDE.md](USER_GUIDE.md) |
-| finished plans, with their reasoning | [archive/](archive/README.md) |
+| finished plans, with their reasoning | [archive/](../archive/README.md) |

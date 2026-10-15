@@ -45,11 +45,11 @@ explain how a stop works.
 
 | Piece | What it does | Where |
 |---|---|---|
-| **`ToolBase`** | The shared skeleton: a hotkey-aware `SleepCheck` and the cancellation rule. | [ToolBase.cs](../SealTools.Core/ToolBase.cs) |
-| **`PortGate`** | One holder at a time. `TryAcquire` / `Release` / `Owner` / `AnnounceWaiting` / `WithdrawWaiting`, plus an optional **deadline** per claim. | [PortGate.cs](../SealTools.Core/PortGate.cs) |
-| **`HeldKeys`** | Which tools can leave something **held down** when they stop — only `holdspace` and `pet` today. Every stop path asks it. | [HeldKeys.cs](../SealTools.Core/HeldKeys.cs) |
-| **`PortChoice`** | Which serial port to open, and when to refuse instead. | [PortChoice.cs](../SealTools.Core/PortChoice.cs) |
-| **`ToolState`** | The card's live text. The UI polls it every 750 ms. | [ToolState.cs](../SealTools.Core/ToolState.cs) |
+| **`ToolBase`** | The shared skeleton: a hotkey-aware `SleepCheck` and the cancellation rule. | [ToolBase.cs](../../SealTools.Core/ToolBase.cs) |
+| **`PortGate`** | One holder at a time. `TryAcquire` / `Release` / `Owner` / `AnnounceWaiting` / `WithdrawWaiting`, plus an optional **deadline** per claim. | [PortGate.cs](../../SealTools.Core/PortGate.cs) |
+| **`HeldKeys`** | Which tools can leave something **held down** when they stop — only `holdspace` and `pet` today. Every stop path asks it. | [HeldKeys.cs](../../SealTools.Core/HeldKeys.cs) |
+| **`PortChoice`** | Which serial port to open, and when to refuse instead. | [PortChoice.cs](../../SealTools.Core/PortChoice.cs) |
+| **`ToolState`** | The card's live text. The UI polls it every 750 ms. | [ToolState.cs](../../SealTools.Core/ToolState.cs) |
 
 ### 1.1 How a run starts
 
@@ -1433,7 +1433,7 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    open, and the next open compares the X against a reference crop the run learned from a window
    whose contents it had just READ. Only a confident match skips the two blind clicks — every other
    answer opens the old way. The residual (a mis-marked X can, in the belief-gated states, match) is
-   recorded in [PLAN-PET-CLOSE-GUARD.md](archive/PLAN-PET-CLOSE-GUARD.md) with its hardening path.
+   recorded in [PLAN-PET-CLOSE-GUARD.md](../archive/PLAN-PET-CLOSE-GUARD.md) with its hardening path.
 
 8. **The fresh read can cancel a reload the timer asked for — and the honest accounting is that it
    DEFERS the reload rather than avoiding it.** With the veto, the reload happens when the tray
@@ -1453,7 +1453,7 @@ between `OpenBoarding` and `CloseBoarding`, which the diagram above deliberately
    just-returned pet, the ordinary single-row reload is byte-for-byte today's flow, and a plural
    batch pays at most today's per-row cost. The food re-mark rides the one sweep and is never
    skipped on a visit that acts — including for a setup with no pet queue but a food icon, which
-   used to get no re-mark at all. See [PLAN-PET-SWEEP.md](archive/PLAN-PET-SWEEP.md).
+   used to get no re-mark at all. See [PLAN-PET-SWEEP.md](../archive/PLAN-PET-SWEEP.md).
 
 10. **The look and the first visit share one window.** A run started because a row is due used to
     open the breeder for the look, close it, give the game back, and then re-claim and re-open for

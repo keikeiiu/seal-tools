@@ -52,7 +52,7 @@ public sealed class AppConfig
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
-/// docs/PLAN-HOVER-INFO.md.
+/// docs/docs/archive/PLAN-HOVER-INFO.md.
 ///
 /// A capability, not a setting of any one tool: the panel is anchored to the pointer, so its position
 /// relative to the pointer is the same everywhere in the game even though its SIZE varies by what is
@@ -62,7 +62,7 @@ public sealed class AppConfig
 /// All four values are client-relative PHYSICAL pixels, like every other calibrated coordinate here,
 /// which is why they belong in local.yaml: a box measured at one machine's scale means nothing at
 /// another's.</summary>
-/// <summary>Which game client this install is pointed at. See docs/PLAN-US-CLIENT.md.
+/// <summary>Which game client this install is pointed at. See docs/plans/PLAN-US-CLIENT.md.
 ///
 /// The TW and US clients are the same game with different text — and the text is not decoration here,
 /// it is what the suite MATCHES: the attribute dictionary, the per-level phrases, the feeder's time
@@ -113,7 +113,7 @@ public sealed class GameVariant
     public string Attributes { get; set; } = "attributes.yaml";
 }
 
-/// <summary>The quest hand-in tool's configured flows — see docs/PLAN-QUEST.md.
+/// <summary>The quest hand-in tool's configured flows — see docs/docs/archive/PLAN-QUEST.md.
 ///
 /// The tool REPLAYS an input sequence and reads nothing: no capture, no OCR, no window. That is why it
 /// has no calibration at all — the player puts the mouse where the clicks have to land, and the tool
@@ -184,7 +184,7 @@ public sealed class QuestPreset
 }
 
 /// <summary>Several flows in one run — A three times, then B twice, and the whole list repeated by a
-/// master loop. For the quests that share an NPC. See docs/PLAN-QUEST.md §11.
+/// master loop. For the quests that share an NPC. See docs/docs/archive/PLAN-QUEST.md §11.
 ///
 /// **EVERY FLOW IN A SEQUENCE CLICKS THE SAME PLACE**, and the initial wait belongs to the sequence,
 /// ONCE. That follows from the design rather than being a shortcut: the tool never moves the cursor, so
@@ -380,7 +380,7 @@ public sealed class PetQueueEntry
 /// here is machine-specific, so all of it lives in local.yaml beside the buy/sell grid; nothing
 /// belongs in the portable defaults.yaml.
 ///
-/// See docs/PLAN-PET-AUTOFEED.md. Two things about this shape are worth knowing before reading it:
+/// See docs/plans/PLAN-PET-AUTOFEED.md. Two things about this shape are worth knowing before reading it:
 /// the bag opened by the boarding window is at a DIFFERENT place from the one the shop opens beside,
 /// so <see cref="BagGrid"/> is its own calibration and must not be shared with
 /// <see cref="BuySellConfig.BagGrid"/>; and the points below are the click path, which is
@@ -743,7 +743,7 @@ public sealed class ReferenceWindowConfig
 
 /// <summary>The display environment a calibration was measured in — written by the calibrators,
 /// read by the Setup tab. All sizes are PHYSICAL pixels. Storing the scale makes the coordinates
-/// portable: another machine can tell it must convert or recalibrate (see docs/COORDINATES.md).</summary>
+/// portable: another machine can tell it must convert or recalibrate (see docs/spec/COORDINATES.md).</summary>
 public sealed class CalibrationInfo
 {
     /// <summary>Physical px per logical px at calibration time (e.g. 1.5).</summary>

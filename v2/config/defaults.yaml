@@ -8,9 +8,9 @@
 # the next release. It used to be exactly that, and the values are folded out of it on the way in.
 #
 # Editing it HERE is how a new default reaches everyone: change a value, commit it, and the next release
-# ships it. A machine that already saved its own value for that key keeps its own — see docs/CONFIG.md.
+# ships it. A machine that already saved its own value for that key keeps its own — see docs/spec/CONFIG.md.
 #
-# Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.
+# Documented in docs/spec/CONFIG.md. Keys and their meaning: docs/spec/USER_GUIDE.md.
 
 window:
   # The window to drive. FindByTitle is a SUBSTRING match, so the whole title is not needed.
@@ -19,7 +19,7 @@ window:
   # then only the value it resolved to. To switch clients, change `game.variant`, not this.
   title: TW_LIVE
 
-# Which game client this install is pointed at — see docs/PLAN-US-CLIENT.md.
+# Which game client this install is pointed at — see docs/plans/PLAN-US-CLIENT.md.
 #
 # The two clients are the same game with different TEXT, and the text is what the suite matches
 # against: the attribute dictionary, the per-level phrases, the feeder's time line. So a variant is

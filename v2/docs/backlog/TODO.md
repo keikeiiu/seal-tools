@@ -1,9 +1,9 @@
 # Seal Tools v2 — Open Work
 
-What is still open. Completed fixes and their commits are in [PROGRESS.md](PROGRESS.md) — the older
-[STATUS.md](archive/STATUS.md) is a historical snapshot and stops at v2.4; **how it works and
-why is in [DESIGN.md](DESIGN.md)**; the design guardrails (things not to reverse) are in
-[REVIEW.md](REVIEW.md); finished plans, with their reasoning, are in [archive/](archive/README.md).
+What is still open. Completed fixes and their commits are in [PROGRESS.md](../records/PROGRESS.md) — the older
+[STATUS.md](../archive/STATUS.md) is a historical snapshot and stops at v2.4; **how it works and
+why is in [DESIGN.md](../spec/DESIGN.md)**; the design guardrails (things not to reverse) are in
+[REVIEW.md](../spec/REVIEW.md); finished plans, with their reasoning, are in [archive/](../archive/README.md).
 
 ---
 
@@ -25,19 +25,19 @@ why is in [DESIGN.md](DESIGN.md)**; the design guardrails (things not to reverse
   built 2026-09-11 and merged). `tuner.spring_mode` (manual/hid) + `spring_point`, a 4th Calibrate
   Tuner step + Test Click, and `tuner.mouse_guard` (off/stop/recenter) — `defaults.yaml` ships
   `spring_mode: hid` and `mouse_guard: stop`. Reasoning and the two data questions that shaped it:
-  [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+  [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
 - [ ] **A full tuner run and a composer cycle in the current build.** The residency work rewrote the
-  shared Start/Stop path and only the pet tool has exercised it — see [HANDOVER.md](HANDOVER.md).
+  shared Start/Stop path and only the pet tool has exercised it — see [HANDOVER.md](../records/HANDOVER.md).
 - [~] **UI cleanup (tabs, buttons, text-box layout).** The **WPF-UI rebuild shipped** — the plan's
   steps 0–9 are done (palette to theme brushes, then `Hotkeys`, `Arduino`, `Setup`, `Gem`, `Spammer`,
   `Attributes`, `Tuner`, `Calibrate Tuner`, `Calibrate Gem` rebuilt on `ui:Card`/`ui:` controls), and
   the `NavigationView` rail was **tried and reverted** — the tab strip read better and clicking a rail
   item did not switch the page. What is left of that plan is the button label/weight convention.
-  **For a next pass**, the measured start is [ANALYSIS-UI.md](ANALYSIS-UI.md): extract the calibration
+  **For a next pass**, the measured start is [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md): extract the calibration
   canvas (copy-pasted 5×), collapse the four button factories into one, and the two cross-cutting
   items the earlier plan never covered — accessibility, and the status poll's dependency on a
   `ToolState` thread-safety claim that does not hold. Plan and its reasoning:
-  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+  [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).
 
 ## Ideas for later (captured, not designed)
 
@@ -62,7 +62,7 @@ needs new machinery, just a small driver per feature.
 - [~] **Park the cursor before a capture.** Done for the BAG captures (2026-09-19) and for the feeder
   counts (2026-09-21, where the read also refuses when the game is not in front). **Still open for the
   OCR bands**: the tuner's read regions can have the pointer in them, and that one wants a measurement
-  first; see [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+  first; see [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
 
 ## Needs a code change before it can be tested
 
@@ -91,7 +91,7 @@ them as leads rather than findings.
 
 **Confirmed by reading the code — all four are now FIXED (2026-10-03):**
 
-> Fixed in [PROGRESS.md](PROGRESS.md) entries 51 (`int.Parse`), 52 (the temp file), 54 (the empty
+> Fixed in [PROGRESS.md](../records/PROGRESS.md) entries 51 (`int.Parse`), 52 (the temp file), 54 (the empty
 > `tuner:` section) and 55 (the `pet` projection), each with a guard test that was seen to fail first.
 > What is kept below is the finding as it was written, because the reasoning is what a future reader
 > needs to judge the fixes.
@@ -170,7 +170,7 @@ them as leads rather than findings.
 Not tracked here. A "verified working on the live game (2026-09-09)" snapshot used to sit in this file
 and had become actively misleading — it still named the logical `SetCursorPos` path as the one in use,
 which v2.2 replaced with Arduino placement. Verification history belongs in
-[PROGRESS.md](PROGRESS.md), which is dated and keeps the measurements with the reasoning.
+[PROGRESS.md](../records/PROGRESS.md), which is dated and keeps the measurements with the reasoning.
 
 The live checks still outstanding are in **Planned** above (a full tuner run and a composer cycle in
 the current build, after the residency rewrite of the shared Start/Stop path).
@@ -197,7 +197,7 @@ the context — three of the four would be *reverted* by a well-meaning cleanup.
   split and `SkillSpammer.SendKey` are untouched, and the Advanced raw list still accepts a bare
   `key:seconds`, so the normal 30–80 ms hold survives for a hand-edited setup. **Untested, and now
   without a user**: do not shorten `HOLD_NORMAL_MIN/MAX` blind — run the Notepad test first if a held
-  skill is ever wanted. See [PROGRESS.md](PROGRESS.md), 2026-10-03.
+  skill is ever wanted. See [PROGRESS.md](../records/PROGRESS.md), 2026-10-03.
 
 - **A null attribute value satisfies a bounded filter rule.** `AttrMatcher.ValueOk` passes when the
   OCR read the attribute NAME but not its number, so a rule with `min`/`max` is satisfied by an

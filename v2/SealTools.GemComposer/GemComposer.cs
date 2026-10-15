@@ -203,7 +203,7 @@ public sealed class GemComposer : ToolBase
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
             //
             // A cursor that can't be placed must NOT be clicked through: the click would land
-            // wherever the pointer happens to be (docs/CURSOR-INVESTIGATION.md).
+            // wherever the pointer happens to be (docs/investigations/CURSOR-INVESTIGATION.md).
             var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
             if (!placed.Ok)
             {

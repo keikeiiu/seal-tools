@@ -50,11 +50,11 @@ public sealed class ConfigLoader
         "# Gitignored, and excluded from the public zip by publish.bat — do not commit it or share it.\n" +
         "#\n" +
         "# READ THIS BEFORE EDITING. A save REWRITES this whole file's owned blocks — the ones named in\n" +
-        "# docs/CONFIG.md — and leaves any other TOP-LEVEL block alone, so a block of your own survives.\n" +
+        "# docs/spec/CONFIG.md — and leaves any other TOP-LEVEL block alone, so a block of your own survives.\n" +
         "# Inside an owned block, a key the launcher does not know about is DROPPED, and comments are\n" +
         "# lost everywhere: the writer serialises values and cannot carry prose. Keep a copy if you edit.\n" +
         "#\n" +
-        "# Documented in docs/CONFIG.md; calibrating is docs/CALIBRATION.md.\n" +
+        "# Documented in docs/spec/CONFIG.md; calibrating is docs/spec/CALIBRATION.md.\n" +
         "\n";
 
     public AppConfig Load()

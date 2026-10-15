@@ -25,7 +25,7 @@ namespace SealTools.Pet;
 // are both known — and it is enough, because reloading early is nearly free (the leftover food comes
 // back) while leaving the pet unfed is the one thing here that cannot be undone.
 //
-// See docs/PLAN-PET-AUTOFEED.md.
+// See docs/plans/PLAN-PET-AUTOFEED.md.
 public sealed class PetTool : ToolBase
 {
     // Waits. Generous for the same reason the shop tool's are: a click that outruns the game lands on

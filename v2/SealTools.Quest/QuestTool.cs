@@ -10,7 +10,7 @@ namespace SealTools.Quest;
 ///
 /// **It reads nothing** — no capture, no OCR, no window lookup — which is why it has no calibration at
 /// all. The player puts the mouse where the clicks have to land during the initial wait, the tool clicks
-/// wherever it is, and the cursor is then watched so a run STOPS if it moves. See docs/PLAN-QUEST.md.
+/// wherever it is, and the cursor is then watched so a run STOPS if it moves. See docs/docs/archive/PLAN-QUEST.md.
 ///
 /// The trade that buys, in the plan's words: **a wrong flow does <c>Loops</c> wrong actions and the game
 /// accepts every one of them.** Nothing in here can notice that — only the player, watching one test
@@ -125,7 +125,7 @@ public sealed class QuestTool : ToolBase
     }
 
     /// <summary>A sequence: A three times, then B twice, and the whole list repeated by a master loop.
-    /// See docs/PLAN-QUEST.md §11.
+    /// See docs/docs/archive/PLAN-QUEST.md §11.
     ///
     /// **ONE POSITIONING WINDOW, at the start.** A flow's own initial wait means *"when I am run alone"*
     /// and does not apply here: the tool never moves the cursor, so a flow inside a sequence clicks where

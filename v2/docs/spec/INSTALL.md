@@ -101,7 +101,7 @@ those two look identical later.
 The launcher opens as six tool cards with **▸ Configuration** below them. The config tabs are
 hidden until you need them.
 
-![The launcher on first run](images/launcher-cards.png)
+![The launcher on first run](../images/launcher-cards.png)
 
 ### First run creates your config
 
@@ -156,7 +156,7 @@ Before calibrating anything that clicks, do the two prerequisites:
   Nothing will find the window otherwise, and the symptom is "game window not found" from every
   capture button.
   **The variant sets the window title *and* which attribute dictionary is read**, because the two
-  clients do not share the words the tools match against — see [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md).
+  clients do not share the words the tools match against — see [PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md).
   A `us` variant needs its own dictionary, and the app makes it for you: the first time the US client
   is used it writes `config\attributes.us.yaml` from the shipped `config\attributes.us.yaml.example`,
   and you fill that in. Until it is filled, the Tuner matches nothing on the US client — every other

@@ -39,7 +39,7 @@ public sealed class LauncherService : IDisposable
     /// <summary>The one tool that stays resident while other tools come and go. It holds nothing
     /// between reloads — it needs the game for ~30 s, five times a day — so it is the tool that WAITS,
     /// and every other Start leaves it alone. See <see cref="StopAll"/> for the rule and
-    /// docs/PLAN-RESIDENT-PET.md for why the tuner is deliberately not in this class.</summary>
+    /// docs/docs/archive/PLAN-RESIDENT-PET.md for why the tuner is deliberately not in this class.</summary>
     public const string ResidentId = "pet";
 
     private readonly string _rootDir;

@@ -8,7 +8,7 @@ decided and why, what was measured, what is still open. Link to the commit and t
 the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what the code already says.
 
 **This is the HISTORY, not the current truth.** When a change lands, what it means for how the tool
-works belongs in [DESIGN.md](DESIGN.md) — this file records what was done and when, and a reader looking
+works belongs in [DESIGN.md](../spec/DESIGN.md) — this file records what was done and when, and a reader looking
 for "how does this work" should never have to reconstruct it from a hundred dated entries.
 
 ---
@@ -21,10 +21,10 @@ three adversarial review rounds changed about it.
 
 **What was decided, and why**
 
-- **No file moves.** [PLAN-PATHS.md](PLAN-PATHS.md) proposed relocating the live files into a `profile/`
+- **No file moves.** [PLAN-PATHS.md](../plans/PLAN-PATHS.md) proposed relocating the live files into a `profile/`
   folder. The player fixed the constraint on 2026-10-13 — the config stays at the same root path so the
   whole folder stays easy to move — and the reviews agreed the relocation buys nothing: an update covers
-  a file because the archive NAMES it, not because of the folder it sits in. [PLAN-DEPLOY.md](PLAN-DEPLOY.md)
+  a file because the archive NAMES it, not because of the folder it sits in. [PLAN-DEPLOY.md](../plans/PLAN-DEPLOY.md)
   keeps PLAN-PATHS' diagnosis and declines its relocation.
 - **The zip ships program files only.** `config/defaults.yaml` goes out as `config/defaults.yaml.example`
   — the app's BASE, and so the name an update replaces — the empty `config/attributes.us.yaml` stops
@@ -106,7 +106,7 @@ every piece is entries 69–90 above; this entry is what the release itself chan
 
 **FILES.** `publish.bat` RELTAG → v2.15; the root README's title, latest-download, fallback row for
 v2.14, firmware link, history row and unzip line; `v2/README.md`'s version line; notes in
-`docs/RELEASE-v2.15.md`.
+`docs/records/RELEASE-v2.15.md`.
 
 **The links were changed ONE AT A TIME and each checked** — the habit v2.13's note records (a bulk
 string replace once left a fallback row pointing at the wrong asset), and the check itself was written
@@ -570,7 +570,7 @@ sweep's re-verify rule.
 ## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
 
 **PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
-[PLAN-PET-SWEEP.md](archive/PLAN-PET-SWEEP.md).
+[PLAN-PET-SWEEP.md](../archive/PLAN-PET-SWEEP.md).
 
 **The saving, and where the sweep actually goes.** A plural batch paid one full three-page sweep per
 row — worst on the visit that follows downtime, which is the one with the most rows. The sweep is now
@@ -635,7 +635,7 @@ about.
 ## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
 
 **PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:
-[PLAN-PET-CLOSE-GUARD.md](archive/PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
+[PLAN-PET-CLOSE-GUARD.md](../archive/PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
 two lenses; the built design is the judges' winner with one change of provenance.
 
 **The measured problem.** 17 closes in `pet.log` could not reach the X; each left the window open for
@@ -700,7 +700,7 @@ carries this entry.
 
 ## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
 
-**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](archive/PLAN-PET-FLOW.md), branch `feature/pet-flow`)
+**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](../archive/PLAN-PET-FLOW.md), branch `feature/pet-flow`)
 with its smallest, most certain step — and the reconnaissance found something the plan had not: the
 reason the feeder silently gives up on rows.
 
@@ -742,7 +742,7 @@ next, in the plan's order, each its own commit on `feature/pet-flow`.
 
 ## 2026-10-08 (68) — program vs profile: deployment planned, not built
 
-**The plan is [PLAN-PATHS.md](PLAN-PATHS.md); nothing in it is built.** It exists because "should the
+**The plan is [PLAN-PATHS.md](../plans/PLAN-PATHS.md); nothing in it is built.** It exists because "should the
 next version reorganise the codebase?" got the honest answer **no** — the code is in better shape than
 its own handover doc makes it sound — and then a second question, "including easier deployment to
 another PC?", turned out to have exactly one root cause.
@@ -797,7 +797,7 @@ the two-page shop file the second page's ids overwrote the first's and it **repo
 not exist**. A diagram was then **reshaped to satisfy that phantom**: both pages' containers forced to
 identical geometry. That is the worst thing a checker can do — not miss a defect, but invent one and be
 obeyed. It is page-aware now, and it is committed at
-[`diagrams/tools/fitcheck.py`](diagrams/tools/fitcheck.py) because the diagrams cannot be verified
+[`diagrams/tools/fitcheck.py`](../diagrams/tools/fitcheck.py) because the diagrams cannot be verified
 without it.
 
 **Also worth recording: the drawio editor silently keeps a stale render.** Four separate times — twice
@@ -845,11 +845,11 @@ entry 62 is left exactly as written, because this log is append-only — correct
 Recorded rather than quietly fixed because this repo's own rule is that a document which says something
 untrue is worse than a missing one, and this one said it in three places.
 
-**And the deliverable: [TOOL-FLOWS.md](TOOL-FLOWS.md)** — all eight tools, each with an ASCII flow
+**And the deliverable: [TOOL-FLOWS.md](../spec/TOOL-FLOWS.md)** — all eight tools, each with an ASCII flow
 diagram, an inventory of every action sent to the game, a decision table, and a "Worth a verdict" list
 kept separate from description. Every claim carries a `file.cs:NNN` citation. §1 is the machinery all
 eight share — start, stop, the gate, the cancellation rule — so no tool section has to repeat it, and
-§2 is the suite at a glance. Linked from [DESIGN.md](DESIGN.md) §7.
+§2 is the suite at a glance. Linked from [DESIGN.md](../spec/DESIGN.md) §7.
 
 **Two things the documenting turned up. One is settled; the other is not.**
 
@@ -859,7 +859,7 @@ eight share — start, stop, the gate, the cancellation rule — so no tool sect
   *"a sent action can be reported as a completed action"*, on the one tool that cannot even check — and
   the verdict on it is that the messages are meant to count attempts. **Written down rather than dropped**
   because a later reader re-derives the observation from the code alone, in the one place that has no way
-  to act on it. The items were removed from [TOOL-FLOWS.md](TOOL-FLOWS.md), where *"Worth a verdict"* is a
+  to act on it. The items were removed from [TOOL-FLOWS.md](../spec/TOOL-FLOWS.md), where *"Worth a verdict"* is a
   list of **open** questions and a settled one does not belong on it.
 - **The tuner's disconnect `catch` covers only `C`/`E`**, while its placements write outside the `try`;
   its mouse guard fails open; and a panel STOP does not abort the countdown. **Still open.**
@@ -1013,7 +1013,7 @@ player can judge.
   *"measured on a 0×0 client, recalibrate"*, a false warning the UI itself created.
 - **`ToolState.Remaining` / `NextActionAt` are multi-word structs** read by the 750 ms tick while the
   tool thread writes them. A torn read shows a garbage countdown. **Already recorded** in
-  [ANALYSIS-UI.md](ANALYSIS-UI.md) §3.5, listed only so it is not counted twice.
+  [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md) §3.5, listed only so it is not counted twice.
 
 ---
 
@@ -1069,7 +1069,7 @@ the part only the player can judge.
 **Two landed on the `feature/input-arbiter` branch.** Both are of the "cannot regress a tool" kind, which
 is why they went first.
 
-**The deadline policy — [PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4.1 + §4.2, PLAN-ARBITER step 1.** A
+**The deadline policy — [PLAN-SCHEDULING.md](../plans/PLAN-SCHEDULING.md) §4.1 + §4.2, PLAN-ARBITER step 1.** A
 claim now carries an optional deadline, and `ShouldStandDown(owner)` answers the single question that
 replaces every hand-written pair-wise rule: does whoever is waiting have a *sooner* deadline than mine? A
 holder with no deadline always yields to a waiter that has one.
@@ -1105,7 +1105,7 @@ checks — a test button refused while a tool runs, and a stop whose release is 
 
 ## 2026-10-06 (60) — the UI's input gets one door
 
-**PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](PLAN-ARBITER.md) step 2.** Not as a guard beside
+**PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](../plans/PLAN-ARBITER.md) step 2.** Not as a guard beside
 `PortGate`: the audit's instruction is to evolve or replace the gate, never to run two ownership rules,
 because two things deciding who may drive can disagree and neither is then authoritative.
 
@@ -1141,7 +1141,7 @@ published app was running and holding its own DLLs); and the check this item was
 nothing outside `LauncherService` reads the port directly.
 
 **Still open, and this entry is not the whole plan.** The arbiter arbitrates and nothing more so far: the
-**deadline policy** ([PLAN-SCHEDULING.md](PLAN-SCHEDULING.md) §4, where `ShouldStandDown` replaces the
+**deadline policy** ([PLAN-SCHEDULING.md](../plans/PLAN-SCHEDULING.md) §4, where `ShouldStandDown` replaces the
 hand-written pair-wise yield rules) and **operation-level leases** (a claim covering a whole gesture
 rather than a button press) are both unbuilt, and PLAN-ARBITER §7 orders them. **The live check has not
 been run** — press a test button while a tool is running, and confirm it refuses and says which — and it
@@ -1151,7 +1151,7 @@ needs a board. Until it passes, this is source-verified only.
 
 ## 2026-10-06 (59) — the tool lifecycle gets one owner
 
-**Item 3 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
+**Item 3 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
 a plain field, read and written by **two threads**:
 
 - the UI thread reads both every 750 ms (per card) and writes them on Start and Stop;
@@ -1184,7 +1184,7 @@ can be started and stopped without a board, and there is no way to inject one: t
 `Config`, `Attributes` and the port. The plan said so up front (*"either this lands after Item 4, or the
 test is written against `_running` alone by extracting the registry"*), and it has landed before Item 4.
 **The follow-up is the seam, not a test written against the current shape** — recorded in
-[TODO.md](TODO.md).
+[TODO.md](../backlog/TODO.md).
 
 **Verified:** 224/224, build 0 warnings, and every access site checked by grep to be inside the lock —
 which is a weaker claim than the other items in this plan can make, and is said plainly here so it is not
@@ -1194,7 +1194,7 @@ mistaken for one of them.
 
 ## 2026-10-06 (58) — `arduino.port` is honoured, or it says why not
 
-**Item 2 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
+**Item 2 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
 `local.yaml.example` as *"optional override; empty = auto-detect"* and is merged from `local.yaml` on
 every load — and until now it was read by **nothing**. `ArduinoPortAsync` always called
 `Arduino.Find(Vid, Pid)`, so a player who named a port got it silently ignored.
@@ -1226,7 +1226,7 @@ config's own comment now states the behaviour, since that is where the setting i
 
 ## 2026-10-06 (57) — Hold Space: a press while STOPPING no longer starts it again
 
-**Item 1 of [PLAN-OWNERSHIP.md](archive/PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
+**Item 1 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
 by an external read-only audit of `cc6551b`, then checked here against the source before being believed.
 
 **The evidence.** `StopTool` clears the current id **synchronously**, before the worker has left its
@@ -1508,7 +1508,7 @@ here is read-verified, not run-verified.
 **The ask:** *"instead maybe remove the option for toggle for fast, and set all spammer setup using
 fast anyway."*
 
-**The decision, and what it is not.** [TODO.md](TODO.md) recorded that a key without the `*` does not
+**The decision, and what it is not.** [TODO.md](../backlog/TODO.md) recorded that a key without the `*` does not
 register in the game — found 2026-10-02, never reproduced, and the Notepad test that would split the
 two possible causes was never run. Asked whether to run it, the player answered *"dont need to test we
 should be using it already right"*. All four presets in `local.yaml` carry `*` on every key, so the
@@ -1599,7 +1599,7 @@ would skip that many cells of a list they never belonged to.
 
 **Persistence checked rather than assumed** — the projection trap this repo has paid for four times.
 `PersistPetState` writes only the session half, so `FoodSlots` had to be in `ApplySession`, and it is
-([ConfigLoader.cs:690](../SealTools.Core/Config/ConfigLoader.cs#L690)). Had it been in the calibration
+([ConfigLoader.cs:690](../../SealTools.Core/Config/ConfigLoader.cs#L690)). Had it been in the calibration
 half instead, the scan would have run, logged its cells, and lost them on the next load.
 
 **The player caught a bug in it the same day:** *"why is the pet food not taken by position order?"*
@@ -1625,7 +1625,7 @@ for but is worth knowing.
 
 **The report:** *"last night I ran the spammer with the pet feeder, the pet feeder did not execute."*
 
-**It was working as designed, and the design says so.** [archive/PLAN-RESIDENT-PET.md:243-245](archive/PLAN-RESIDENT-PET.md#L243-L245)
+**It was working as designed, and the design says so.** [archive/PLAN-RESIDENT-PET.md:243-245](../archive/PLAN-RESIDENT-PET.md#L243-L245)
 has the row *"a pet reload comes due while a tool runs → the pet feeder waits, and says so on its card"*,
 and `PetTool.ClaimGame` polls **with no timeout** — its own comment says *"the wait can last for hours"*.
 
@@ -1987,7 +1987,7 @@ cancels. The refresh is called directly from the handler as well as on the 750 m
 changes at the press rather than up to 750 ms later.
 
 **The 2.1 s itself is SETTLED — leave it, decided 2026-10-01 with the player.** The wait is a blind,
-unconditional `await Task.Delay(2000)` ([LauncherService.cs:164](../SealTools.Launcher/LauncherService.cs#L164)),
+unconditional `await Task.Delay(2000)` ([LauncherService.cs:164](../../SealTools.Launcher/LauncherService.cs#L164)),
 not a read of anything the board says: opening a serial port asserts DTR, which resets an Arduino, and
 the sketch is not listening until its bootloader finishes. So the cold start buys nothing — it is the
 board booting, and the only choice is *when* it is paid.
@@ -2018,7 +2018,7 @@ click that did nothing, and only a *different* tool's Stop cleared it.
 
 - it reproduces on a build with **no pet feeder at all**, on a second PC. My first answer was that
   Hold Space was queued behind the pet feeder's game claim
-  ([LauncherService.cs:298](../SealTools.Launcher/LauncherService.cs#L298) — `id != ResidentId` sends
+  ([LauncherService.cs:298](../../SealTools.Launcher/LauncherService.cs#L298) — `id != ResidentId` sends
   holdspace through `WaitForGameAsync`, up to `GameWaitMs` = 45 s). That is
   **wrong**, and the resident/gate work is not the cause;
 - the **button** froze, not the window. A blocked dispatcher freezes everything it owns, so "only the
@@ -2026,7 +2026,7 @@ click that did nothing, and only a *different* tool's Stop cleared it.
   second candidate too (a slow synchronous `Arduino.Find` WMI query on the dispatcher).
 
 **So: instrument rather than guess a third time.** This is the repo's own precedent for a report with
-no reproducible cause ([PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md) §3, the cursor placement
+no reproducible cause ([PLAN-PET-FEEDER-NEXT.md](../plans/PLAN-PET-FEEDER-NEXT.md) §3, the cursor placement
 failures). **Nothing about the tool's behaviour changed — this commit is diagnostics only.**
 
 **What the trail records** (`v2/logs/holdspace.log`; both writers resolve the same root through
@@ -2059,7 +2059,7 @@ asked for the relaunch. 180/180 tests pass, 0 warnings.
 of that"* — and, in the same breath, a selector and counter on the CARD like Buy's, so the loop number
 can be changed without opening Configuration.
 
-**Three commits:** the plan in [PLAN-QUEST.md](archive/PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
+**Three commits:** the plan in [PLAN-QUEST.md](../archive/PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
 then the engine (config, projection, tool, tests), then the editor on the tab and the card controls.
 
 **The design decision that is really a consequence.** Every flow in a sequence clicks the SAME place and
@@ -2095,7 +2095,7 @@ inset — rather than inventing a second look for the same controls.
 
 ## 2026-09-28 (36) — the US client: the frame is built
 
-**What landed** ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md) §4.1, §4.2 and §4.5): `game.variant` plus a
+**What landed** ([PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md) §4.1, §4.2 and §4.5): `game.variant` plus a
 `game.variants` map, each naming a window title and an attribute dictionary; **resolved at load**, so
 `window.title` stays the single value every tool already reads and none of the ~15 call sites moved.
 Plus `attributes.us.yaml.example`, and the published-zip copy of it.
@@ -2132,7 +2132,7 @@ failed* — which is the worst version of it, because a no-op edit and a real on
 
 ---
 
-## 2026-09-28 (35) — plan: the US client ([PLAN-US-CLIENT.md](PLAN-US-CLIENT.md))
+## 2026-09-28 (35) — plan: the US client ([PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md))
 
 **The ask:** run the suite against the US client as well as the TW one, chosen by a setting.
 
@@ -2226,7 +2226,7 @@ so rather than leaving it to be discovered.
 
 ---
 
-## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](archive/PLAN-QUEST.md))
+## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](../archive/PLAN-QUEST.md))
 
 **The player's ask:** hand in quests repeatedly by replaying a sequence at the quest NPC. The flow differs
 per quest, so it has to be the player's own and savable. **The tool reads nothing** — no capture, no OCR,
@@ -2375,7 +2375,7 @@ the live config proved necessary, written up as **§1a**:
   blanks previously meant hand-editing `local.yaml` with the launcher stopped, since a save from this tab
   rewrites the whole queue from memory and would clobber it.
 
-Reused the existing shape rather than inventing one: [`BuildRulesEditor`](../SealTools.Launcher/MainWindow.xaml.cs)
+Reused the existing shape rather than inventing one: [`BuildRulesEditor`](../../SealTools.Launcher/MainWindow.xaml.cs)
 is already a row-per-item editor with a ✕ that removes from both the panel and the backing list, so the
 queue is a third instance of it. Chose per-entry over a "set all" control because the queue can hold two
 families at once and a bulk set would mislabel half of them silently.
@@ -2390,14 +2390,14 @@ at placement and never again.
 
 ---
 
-## 2026-09-22 (29) — the launcher UI, measured ([ANALYSIS-UI.md](ANALYSIS-UI.md))
+## 2026-09-22 (29) — the launcher UI, measured ([ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md))
 
 **Goal:** turn a UI audit into something durable, and decide where it belongs. Nothing in the code
 changed; the deliverable is a document plus a verdict to come.
 
-**Where it went, and why not a new plan.** [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md) already owns "the
+**Where it went, and why not a new plan.** [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md) already owns "the
 launcher UI rework", and its Progress table turned out to be the *current* one: steps 0–9 shipped and
-the `NavigationView` rail was tried and reverted. [TODO.md](TODO.md) and `v2/README.md` both still
+the `NavigationView` rail was tried and reverted. [TODO.md](../backlog/TODO.md) and `v2/README.md` both still
 described that work as not started, so those were corrected. What remains open in the plan is the
 button label/weight convention — so a second plan would have been two documents for one question,
 which is the fault this session already spent a commit repairing. The measurement went into
@@ -2437,7 +2437,7 @@ call rather than mine.
 
 **Goal:** check the docs against the code rather than against each other, and correct what no longer
 described the thing. No code was changed; the defects the audit turned up went into
-[TODO.md](TODO.md#from-the-2026-09-22-audit--found-not-fixed) instead, split into what was read out of
+[TODO.md](../backlog/TODO.md#from-the-2026-09-22-audit--found-not-fixed) instead, split into what was read out of
 the source and what still needs reproducing.
 
 **The pattern worth naming:** every stale doc was stale in the same direction — it described the state
@@ -2523,7 +2523,7 @@ originals. **`v2-reload-visit` was NOT deleted.**
 2. **The `USER_GUIDE` pass** — the drag food mode, the bag scan, the return-slot order and the computed
    schedule are all absent from it, in both languages.
 3. **Naming the pet line on entries that already exist** — without it the computed next-check is inert
-   for every pet already queued. Plan: [PLAN-PET-FEEDER-NEXT.md](PLAN-PET-FEEDER-NEXT.md).
+   for every pet already queued. Plan: [PLAN-PET-FEEDER-NEXT.md](../plans/PLAN-PET-FEEDER-NEXT.md).
 4. **The intermittent slot read** — the crop is saved on exactly that failure now; the next one brings
    its evidence.
 5. **The cursor placement failures** — biggest cost of the session, no cause attached, and the cursor
@@ -3170,7 +3170,7 @@ every call because it was written for a single read. Pages are reported as they 
 scan is not four minutes of a window that looks hung.
 
 **Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — no hover has
-been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](archive/PLAN-PET-BOARD-CHECK.md), which also
+been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](../archive/PLAN-PET-BOARD-CHECK.md), which also
 records what is deliberately *not* in v1: queueing the feedable pets, and the run-side guard (whose
 blind-`Enter` dismissal is unverified for *this* dialog — Enter may confirm it rather than dismiss it).
 
@@ -3633,13 +3633,13 @@ have claimed `● RUNNING` for a tool that was already gone; and the initial loo
 **Verified:** Release build clean, 109/109 tests. **Not verified: the launcher has not been run at all.**
 Every behavioural claim here is reasoning from the code. The live steps — including three cases no plan
 row covers (starting the pet while a tool runs, starting the pet twice, stopping it mid-reload) — are at
-the end of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md).
+the end of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md).
 
 ---
 
 ## 2026-09-20 (4) — Part 3's gate, and stopping short of the wiring on purpose
 
-**Only the first slice of [Part 3](archive/PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
+**Only the first slice of [Part 3](../archive/PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
 so nothing about the tool's behaviour has changed — deliberately, and this is the entry that explains
 why the rest was not written.
 
@@ -3672,7 +3672,7 @@ none of it is written.
 
 ## 2026-09-20 (3) — Part 2: the board can finally be asked a question
 
-**Goal.** The second part of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md) — a `V` command, so that a
+**Goal.** The second part of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md) — a `V` command, so that a
 board can report what it is running. Every command until now went one way, which is why "did the board
 ignore that, or did it act and nothing happened?" had no answer: both look like nothing.
 
@@ -3715,7 +3715,7 @@ the silence case without an old board.
 
 ## 2026-09-20 (2) — Part 1 of the resident-pet plan: the Hold Space toggle stops inverting
 
-**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md) — the live bug
+**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md) — the live bug
 on the other PC, where the Hold Space toggle will not stop and the spacebar stays held.
 
 **The bug is an inversion, and the guard was asking one question too many.** `CurrentId == "holdspace"`
@@ -3814,7 +3814,7 @@ green. It compares the stored object against the config now, and is mutation-che
 ### And the co-run question, answered by the game rather than by us
 
 The player asked whether the pet feeder could stay resident while other tools come and go. The
-investigation is in [PLAN-RESIDENT-PET.md](archive/PLAN-RESIDENT-PET.md), and the answer is **not about our
+investigation is in [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md), and the answer is **not about our
 code**: the boarding window and the **tuner's** window cannot both be open, and the tuner's must be
 closed first — so there is never a moment where two tools drive the game, and the cursor-lease design
 that asymmetry seemed to want has no subject. The tuner stays a manual schedule; everything else is
@@ -4008,7 +4008,7 @@ failure path because of `ecbbc5d`.
 
 **And a question the plan had already answered, re-opened and re-closed.** Topping up a starved feeder
 does **not** resume the feed: the game pops the error, the pet hangs unfed, and the only way forward is
-Enter → END → re-place the pet and the food → start (player, 2026-09-19). [§9](PLAN-PET-AUTOFEED.md)
+Enter → END → re-place the pet and the food → start (player, 2026-09-19). [§9](../plans/PLAN-PET-AUTOFEED.md)
 recorded "Answered: no" on 2026-09-17 without the mechanism, which is why the simplification was
 proposed, investigated, and killed a second time. **The mechanism is what §9 was missing.**
 
@@ -4050,7 +4050,7 @@ and varies 27× within a single stage, so two stage-6 pets cannot be told apart 
 ways to get it, in the order they would be tried: the panel itself, if it states the current level's
 所需喂养值 (then `wyz = that ÷ (1 + growth/10)`, one read, no table); the pet's name against the
 327-entry table; or two reads a cycle apart, which measure the rate and so `wyz`, with no table at all.
-The open question is now item 4 of [PLAN-HOVER-INFO.md](archive/PLAN-HOVER-INFO.md).
+The open question is now item 4 of [PLAN-HOVER-INFO.md](../archive/PLAN-HOVER-INFO.md).
 
 **The Pet tab's Test read is how that question gets answered.** It hovers the marked PET cell on its
 marked page, reads the panel at the calibrated offset, and reports the raw lines, the parse, and
@@ -4095,7 +4095,7 @@ a bag item and a quest letter — and the third was the pet:
 **`所需喂养值` is NOT in the panel**, so `wyz` cannot fall out of one read and the expected shortcut
 is dead. But the same read found the route that does work, and it is the one this project had ruled
 out: **the name reads cleanly and matches the scraped table exactly.** The panel's `真蔚蓝米鲁` is
-character-for-character [PET-DATA.md](PET-DATA.md)'s `真蔚蓝米鲁`, id 24759, stage 6, `wyz` 5200.
+character-for-character [PET-DATA.md](../spec/PET-DATA.md)'s `真蔚蓝米鲁`, id 24759, stage 6, `wyz` 5200.
 PLAN-HOVER-INFO's script-mismatch warning was about the game *displaying* Traditional — true, but the
 *recogniser* outputs Simplified and the table is Simplified, so the two agree as long as the name has
 no character that `text_fixes` converts. That caveat is the new open question.
@@ -4423,7 +4423,7 @@ What mattered most:
 - **`CaptureScreen` threw instead of returning the null its callers were already written against**, so
   a locked session or a zero-sized region took down the tool rather than being handled.
 
-Four items were deliberately **not** changed, and are recorded in [TODO.md](TODO.md) with their
+Four items were deliberately **not** changed, and are recorded in [TODO.md](../backlog/TODO.md) with their
 reasoning because three would be reverted by a well-meaning cleanup: the null attribute value that
 intentionally satisfies a bounded filter rule (`減少傷害` is rare enough that the name match is the
 signal), `Arduino.Find`'s duplicated WMI query — which carries a name-based fallback `Diagnose` does
@@ -4518,7 +4518,7 @@ The captures (`logs/captures/*.png`) are decisive: every DG frame shows all 3 li
 recurring confusions, all in `text_fixes.substring`:
 `每`→`国/盘/地`, `等級`→`等` (drops `級`), `幸運`→`幸莲`, `必殺技`→`必毅技` (`毅`≠`殺`).
 
-This **closes the open "OCR row-bucket pooling" question** ([TODO.md](TODO.md), [IDEAS.md](IDEAS.md)):
+This **closes the open "OCR row-bucket pooling" question** ([TODO.md](../backlog/TODO.md), [IDEAS.md](../backlog/IDEAS.md)):
 the evidence shows no `row_height` pooling — the lines are all read; the drop was in the matcher. The
 fix is `b42247f` (grade) and `3b8023b` (attributes.yaml cleanup rules). Note the launcher caches
 `attributes.yaml` at startup, so the cleanup rules need a restart to take effect.
@@ -4536,7 +4536,7 @@ capture run (2 drops, ~0.06%) — fixed in `54ad743`. Merged to `main` and tagge
 
 **Goal.** Give the Magic Tuner the composer's closed-loop cursor: put the mouse on the 發條 button
 automatically, opt-in, and stop (or re-centre) when the mouse moves away mid-run — the
-human-takes-over safety. Full design: [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md).
+human-takes-over safety. Full design: [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
 
 **What was decided, and why**
 
@@ -4626,7 +4626,7 @@ WPF with a second, hard-coded palette beside the theme.
 - **Adopt WPF-UI properly, one tab per commit.** Card-based sections, `ui:` controls, and the
   theme's semantic brushes instead of our hex ones. The information architecture carried over
   untouched: grouping, renames, the `Hotkeys` rename. Full checklist in
-  [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md).
+  [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).
 - **The shell change was tried and reverted.** A `ui:NavigationView` rail rendered correctly but
   clicking an item never switched the page, and the tab strip read better anyway — so the tabs
   stayed and the experiment is recorded so nobody retries it blind.
@@ -4650,7 +4650,7 @@ at `619×430`, pinned). Mini mode: `920×430` idle → `920×320` running → ba
 run advanced correctly with the inset fix.
 
 **Left open.** The v2.3 zip is not built or published. The robustness list, the tuner spring plan and
-the spammer key pad are all designed and waiting in [IDEAS.md](IDEAS.md).
+the spammer key pad are all designed and waiting in [IDEAS.md](../backlog/IDEAS.md).
 
 ---
 
@@ -4710,7 +4710,7 @@ instead of advancing a grade on a bad read) — and writes `refused: not foregro
 `empty_check.txt` so the reason is visible rather than silent. The refusal shares the same log path
 as a normal check, via a small `LogEmptyCheck` helper.
 
-This is item 1 of the "Small robustness wins" list in [IDEAS.md](IDEAS.md), which is now ticked off.
+This is item 1 of the "Small robustness wins" list in [IDEAS.md](../backlog/IDEAS.md), which is now ticked off.
 Not yet verified live: the refusal only fires when something steals focus from the game mid-run, so
 the next composer run with a stray click on the launcher is the observation to look for.
 
@@ -4809,14 +4809,14 @@ reacting to the process holding the Arduino port), then stop depending on the re
   `SetCursorPos` 30 times while holding it: 30/30 accepted. A second process managed 29/30 while the
   port stayed held. So the refusal is not about the Arduino at all — it stays specific to the
   launcher's process, and stays unexplained. Details and every earlier probe:
-  [CURSOR-INVESTIGATION.md](CURSOR-INVESTIGATION.md).
+  [CURSOR-INVESTIGATION.md](../investigations/CURSOR-INVESTIGATION.md).
 - **The cursor is now positioned with the Arduino** — a closed loop against `GetCursorPos`, which
   always worked in our process. The HID path cannot be refused, and a placement that fails now stops
   the tool instead of clicking somewhere arbitrary.
 - **The move set was added, not replaced.** The user asked for the inter-point movement to use the
   same mechanism as Test Click, explicitly *without* discarding the hand-tuned `gem.movements`
   counts. So both sets are live, selected by `gem.move_mode` (default `tuned` — nothing changes for
-  an untouched install). [MOVE-SETS.md](MOVE-SETS.md) explains both and how to test each.
+  an untouched install). [MOVE-SETS.md](../spec/MOVE-SETS.md) explains both and how to test each.
 
 **Measured (live, on the reference PC)**
 

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace SealTools.Core;
 
 /// <summary>What a pet's hover panel says — the read behind every decision the feeder makes about
-/// WHICH pet to board. See docs/PLAN-HOVER-INFO.md and docs/PLAN-PET-AUTOFEED.md §13.
+/// WHICH pet to board. See docs/docs/archive/PLAN-HOVER-INFO.md and docs/plans/PLAN-PET-AUTOFEED.md §13.
 ///
 /// Only the three NUMBERS are parsed, and that is the design rather than a shortcut. The panel reads
 /// as <c>（6）真蔚蓝凤凰+7[52.18%]</c> against a screen showing <c>(6階) 真蔚藍鳳凰 +7 [52.18%]</c>:

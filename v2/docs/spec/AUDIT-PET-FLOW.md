@@ -1,6 +1,6 @@
 # Audit — the pet feeder's action and decision flow
 
-Written 2026-10-06, from [PetTool.cs](../SealTools.Pet/PetTool.cs) as it stands. **An audit, not a
+Written 2026-10-06, from [PetTool.cs](../../SealTools.Pet/PetTool.cs) as it stands. **An audit, not a
 change.** Every action the tool sends to the game, and every branch it takes, in one place — so the
 flow can be judged rather than reconstructed from a 2 246-line file.
 
@@ -259,7 +259,7 @@ LoadFood(row)   — once per stack (row.Stacks)                                 
 
 ## 9. The one scheduling rule
 
-`ScheduleFor(row, itemsLeft, eta)` — [PetTool.cs:809](../SealTools.Pet/PetTool.cs#L809). Everything that
+`ScheduleFor(row, itemsLeft, eta)` — [PetTool.cs:809](../../SealTools.Pet/PetTool.cs#L809). Everything that
 decides *when* is here, and it is checked in this order:
 
 ```

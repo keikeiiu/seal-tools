@@ -59,7 +59,7 @@ Three things, all small:
   the launcher stopped, because the Pet tab's save rewrites the whole queue from memory and would clobber
   the edit.
 
-**Mechanism, and it already exists:** [`BuildRulesEditor`](../SealTools.Launcher/MainWindow.xaml.cs) is the
+**Mechanism, and it already exists:** [`BuildRulesEditor`](../../SealTools.Launcher/MainWindow.xaml.cs) is the
 factored shape for an editable row list — a row class holding its own controls plus a mapper back to the
 config type, a local `AddRow`, a `✕` that removes from **both** the panel and the backing list, an
 `+ Add`, and the caller reading the list back at save time. The Spammer key rows are the same shape, less
@@ -304,7 +304,7 @@ assumed.
 config, so a field the **fixture omits** is null on both sides and passes whether or not the projection
 carries it. It protects only what someone remembered to add to the fixture — which is the same
 "remembered by hand" weakness that let this projection drop a field three times. Recorded in
-[TODO.md](TODO.md).
+[TODO.md](../backlog/TODO.md).
 
 ---
 

@@ -25,7 +25,7 @@
 
 啟動器一開始只顯示工具卡片。設定分頁會收著，等到真的要設定東西時再打開：
 
-![啟動器剛開啟的樣子：工具卡片、Configuration 展開箭頭，以及 Hold Space 與釘選按鈕](images/launcher-cards.png)
+![啟動器剛開啟的樣子：工具卡片、Configuration 展開箭頭，以及 Hold Space 與釘選按鈕](../images/launcher-cards.png)
 
 *（本頁的兩張截圖來自 **v2.9.1**，當時是五張卡片、十二個分頁；現在是七張卡片、十六個分頁，多了 Pet
 Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。卡片以外的部分沒有改變。）*
@@ -41,7 +41,7 @@ Feeder 卡片與 `Pet`、`Calibrate Pet`、`Calibrate Tooltip` 三個分頁。�
 
 按 **▸ Configuration** 會展開所有分頁，視窗也會跟著長高；再按一次就會收起來，並把視窗還原成展開前的大小。
 
-![同一個視窗展開 Configuration 之後：卡片、兩列分頁，以及 Tuner 分頁的 Goal 卡片](images/launcher-expanded.png)
+![同一個視窗展開 Configuration 之後：卡片、兩列分頁，以及 Tuner 分頁的 Goal 卡片](../images/launcher-expanded.png)
 
 共有**十六個分頁**，在預設視窗寬度下會**折成兩列**，而且不是照閱讀順序折 — `Tuner` 可能落在**第二列**，
 校正與設定類分頁在它上面。折行的方式取決於視窗寬度；固定不變的是分頁的**定義順序**，本文也是照這個順序編排：
@@ -442,7 +442,7 @@ Quest Hand-in 工具的流程：它在任務 NPC 面前要送出的輸入，以�
 > **這就是它換來的東西。** 這裡沒有任何東西能察覺「流程只是稍微不對」：不讀取畫面，就沒有第二個意見。錯的流程
 > 會把它設定的次數全部做錯，而遊戲會照單全收。請先用 **Test one loop**，再跑一個短的次數，最後才跑真正的量。
 
-為什麼這樣設計，請看 [PLAN-QUEST.md](archive/PLAN-QUEST.md)。
+為什麼這樣設計，請看 [PLAN-QUEST.md](../archive/PLAN-QUEST.md)。
 
 ### Flow
 

@@ -44,7 +44,7 @@ spammer runs.
 **The yielding machinery already exists**, and it is the hard part:
 
 - the **spammer** releases the game when someone is waiting, presses nothing, re-acquires when it comes
-  free, and re-opens through its own rules ([SkillSpammer.cs](../SealTools.Spammer/SkillSpammer.cs),
+  free, and re-opens through its own rules ([SkillSpammer.cs](../../SealTools.Spammer/SkillSpammer.cs),
   the `yielded` block);
 - the **pet** announces itself *before* polling and withdraws when it is done;
 - **completion chaining already exists** as `Task`: `StopTool` returns a `ContinueWith` continuation, and
@@ -66,7 +66,7 @@ because there has only ever been one case.
 spammer yields to the pet. That is correct for two participants and it is *only* correct for two,
 because nothing states the general rule and nothing catches the pair somebody forgets.
 
-**And a third resident feature is already designed.** [IDEAS.md](IDEAS.md) §1 sketches a **passive
+**And a third resident feature is already designed.** [IDEAS.md](../backlog/IDEAS.md) §1 sketches a **passive
 watcher** — death and pet notifications — explicitly *"a launcher-level service rather than a tool card,
 because it must poll without holding the Arduino and only take the port in order to act."* It is a
 second resident thing that needs the port occasionally. The gate has no way to arbitrate between two of
@@ -130,7 +130,7 @@ nothing" failure this repo has paid for twice.
 
 - **A holder that cannot pause cannot yield, and almost none of them can.** "Pause" in the tuner and the
   composer is a **graceful STOP** — `PauseRequested` breaks out of the loop and the run is over
-  ([SealTuner.cs:252](../SealTools.Tuner/SealTuner.cs#L252), [GemComposer.cs:469](../SealTools.GemComposer/GemComposer.cs#L469)) —
+  ([SealTuner.cs:252](../../SealTools.Tuner/SealTuner.cs#L252), [GemComposer.cs:469](../../SealTools.GemComposer/GemComposer.cs#L469)) —
   and the tuner's mouse guard ends it outright. A yield would therefore *end* their run rather than
   suspend it, which is not a trade the gate may make on a tool's behalf. They hold the port and the pet
   waits, exactly as today.
