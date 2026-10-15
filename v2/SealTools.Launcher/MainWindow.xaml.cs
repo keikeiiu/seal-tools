@@ -1412,6 +1412,57 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         DisplayInfo? detected = null;
 
+        // The stored calibration against THIS machine, checked when the tab is built, when it is
+        // re-entered and when the launcher is activated — not only when Detect is pressed. The line it
+        // replaces appeared after Detect alone, so a machine that had drifted showed nothing until
+        // somebody happened to press the button, and even then it compared the client size only. A
+        // different scale or a different screen invalidates every stored coordinate just as completely.
+        string? lastResult = null;
+
+        void CheckAgainstStored()
+        {
+            var caution = Res("SystemFillColorCautionBrush");
+            var quiet = Res("TextFillColorSecondaryBrush");
+
+            if (_service.Config.Calibration.DpiScale is null && _service.Config.Calibration.ClientSize is null)
+            {
+                warning.Foreground = quiet;
+                warning.Text = "Nothing is stored to compare against yet — calibrate on this machine first.";
+                return;
+            }
+
+            // What Detect just measured, or a fresh reading. Reading needs the game window, so a closed
+            // game is the one case this cannot answer — and then the wording describes the LAST check
+            // rather than the present, because the game may have been opened since. A line that declared
+            // it closed would be wrong the moment it was.
+            var info = detected;
+            if (info is null)
+            {
+                var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+                if (hwnd != IntPtr.Zero) info = Dpi.Measure(hwnd);
+            }
+
+            if (info is null)
+            {
+                warning.Foreground = quiet;
+                warning.Text = lastResult is null
+                    ? "Not compared with this machine yet — the comparison reads the live game window, so it needs the game open."
+                    : $"Last check: {lastResult}. Not re-checked — the game window is not open.";
+                return;
+            }
+
+            var diffs = CalibrationCheck.Differences(_service.Config.Calibration, info);
+            lastResult = diffs.Count == 0
+                ? "this machine matched the stored calibration"
+                : "this machine differed — " + string.Join("; ", diffs);
+
+            warning.Foreground = diffs.Count == 0 ? quiet : caution;
+            warning.Text = diffs.Count == 0
+                ? "This machine matches the stored calibration."
+                : "⚠ This machine differs from the stored calibration — " + string.Join("; ", diffs) +
+                  ". Recalibrate on this machine (see docs/COORDINATES.md).";
+        }
+
         void ShowStored()
         {
             var c = _service.Config.Calibration;
@@ -1419,11 +1470,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 ? "Stored calibration: none yet — run Calibrate Tuner / Calibrate Gem."
                 : $"Stored calibration: scale {c.DpiScale} · client {string.Join("×", c.ClientSize ?? new List<int>())} · {c.MeasuredAt}";
 
-            warning.Text = detected is { } d && c.ClientSize is { Count: 2 } cs &&
-                           (cs[0] != d.PhysicalClient.Width || cs[1] != d.PhysicalClient.Height)
-                ? $"⚠ The calibration was measured on a {cs[0]}×{cs[1]} client; yours is " +
-                  $"{d.PhysicalClient.Width}×{d.PhysicalClient.Height} — recalibrate."
-                : "";
+            CheckAgainstStored();
         }
 
         var detect = MakeButton("Detect", ControlAppearance.Primary);
@@ -1459,6 +1506,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             monitor, window, fields, detectRow));
 
         panel.Children.Add(Section("Stored calibration", stored, warning));
+
+        // Re-check on re-entry and on activation, but only while the tab is actually on screen: each
+        // check reads the live window, and there is nothing to gain from doing that while the player is
+        // looking at another tab. Detect and Save refresh it too, through ShowStored.
+        panel.IsVisibleChanged += (_, e) => { if (e.NewValue is true) CheckAgainstStored(); };
+        Activated += (_, _) => { if (panel.IsVisible) CheckAgainstStored(); };
 
         var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
         var save = MakeButton("Save Setup", ControlAppearance.Primary);
@@ -1677,7 +1730,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.SpringMode = springMode.SelectedItem?.ToString() ?? "manual";
             cfg.Tuner.MouseGuard = mouseGuard.SelectedItem?.ToString() ?? "off";
             SaveReport(() => _service.SaveConfig(), result,
-                $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
+                $"Written to local.yaml — target {cfg.Tuner.TargetGrade}, " +
                 $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).");
         };
         panel.Children.Add(save);
@@ -1727,7 +1780,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Gem.EmptyMode = mode.Value;
             _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
             SaveReport(() => _service.SaveConfig(), result,
-                $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.");
+                $"Written to local.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -4616,7 +4669,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.Quit = q;
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
-            SaveReport(() => _service.SaveConfig(), result, "Hotkeys written to defaults.yaml.");
+            SaveReport(() => _service.SaveConfig(), result, "Hotkeys written to local.yaml.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
