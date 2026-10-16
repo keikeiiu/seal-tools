@@ -26,5 +26,6 @@ and moves to [../archive/](../archive/README.md), and this row goes away.
 | [PLAN-TUNER-SPRING.md](PLAN-TUNER-SPRING.md) | features 1–2 shipped in v2.4; the OCR-band cursor parking is open |
 | [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md) | steps 0–9 shipped, the navigation rail tried and reverted; the button convention is left |
 | [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md) | the switch shipped; the English dictionary is the player's to fill |
+| [PLAN-PRESET-DUPLICATE.md](PLAN-PRESET-DUPLICATE.md) | not started — three ⚑ questions decide the shape |
 | [PLAN-AGENT.md](PLAN-AGENT.md) · [PLAN-INPUT-BACKEND.md](PLAN-INPUT-BACKEND.md) · [PLAN-V3-RUST.md](PLAN-V3-RUST.md) | not started — **and all three want the same seam**, so one of them unblocks the others |
 | [PLAN-SEAL-KB-BOT.md](PLAN-SEAL-KB-BOT.md) · [PLAN-WATCHER.md](PLAN-WATCHER.md) | not started |
