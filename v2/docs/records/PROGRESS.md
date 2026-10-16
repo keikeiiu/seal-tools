@@ -13,6 +13,38 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (93) — a flow can be copied instead of retyped
+
+**Goal.** The player asked whether an existing quest flow could be copied into a new one, then asked for the Quest half so it could be used. Designed first: [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md), whose first finding was that the request is THREE pickers — the Quest flow picker, the Quest sequence picker and the Skill Spammer preset picker all already carry the same Add / Rename / Delete shape.
+
+**What was decided, and why**
+
+- **The name is generated, not prompted.** `name (copy)`, then `(copy 2)` … up to the first free one. Two details make it correct and both are easy to get wrong in opposite directions: the source's own suffix is stripped first (or a second copy of a flow becomes `mine (copy) (copy)`), and the count RESUMES from that suffix (or copying `mine (copy 2)` walks backwards into a free `mine (copy)` — a name that sorts above the preset it was copied from).
+- **The free-name scan ignores case; the dictionaries do not.** They are keyed case-sensitively, while every picker sorts `OrdinalIgnoreCase`, so a case-sensitive scan would happily produce `mine (copy)` beside a hand-typed `Mine (copy)`. The generated name is the one place that refuses to make two rows the player cannot tell apart.
+- **The copy is element by element, and it lives in Core.** `QuestPreset.Steps` and `QuestSequence.Entries` are lists of class instances, so copying the list alone leaves the copy and the original editing the same steps — silently, because both look correct on screen. It sits in `SealTools.Core.Config.PresetCopy` rather than beside the buttons because the Launcher is `net8.0-windows` and stays out of the test project, and both failure modes are pure logic over the config types.
+- **Rename still MOVES; only its justification was retired.** "Two flows with the same steps is how the wrong one gets run" was written when a copy could only appear by accident. The user guide now says a rename leaves nothing behind and points at Duplicate for the other thing, and the code comment says the same — the behaviour is unchanged, so deleting the move statement would have left the spec silent about something it still does.
+- **A duplicated sequence keeps pointing at the SAME flows.** Duplicating a sequence is not a reason for every flow inside it to be duplicated too, and re-pointing an entry is one edit in the rows below it.
+- **The copy becomes the one you are on**, like Create does: `quest.Active` / `quest.ActiveSequence` for the Quest tab.
+
+**What the tests caught**
+
+- The suffix strip, the resume, and the case-insensitive scan are each pinned by their own test — the three ways the generated name can be wrong, and the two of them were wrong in the plan's first draft.
+- **Aliasing is only caught by mutating the copy.** `ACopiedFlowSharesNothingWithItsSource` passes every equality assertion a shallow copy would also pass, and fails only when the copy's step is edited and the source is re-read. That is the failure this helper exists to prevent.
+- `DuplicatedFlowsAndSequencesSurviveASaveAndReload`: the generated name has to survive as a KEY and the copy's steps have to come back as ITS steps. A duplicate that reloaded as the preset it was copied from would look right on screen and be wrong on the next launch.
+
+**Still open.** The Spammer picker's Duplicate — its copy carries `Presets` only, exactly like Create, so the copy opens with no key order, no combos and no opening, and the hint has to say so. Plus ⚑2 (the pre-existing dangling-entry re-point) and ⚑3 (three hand-rolled pickers, or one shared) on the plan.
+
+**Commits** (branch `plan/preset-duplicate`, based on `feature/frozen-templates` because the docs folder reorg has not reached `main`)
+
+| commit | what |
+|---|---|
+| `cf30007` | the plan, its board row, and the IDEAS entry — nothing built |
+| this commit | the Quest half: `PresetCopy`, its 9 tests, both Duplicate buttons, and the two user guides |
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 333 passed, 0 failed. The first
+attempt hit a lock rather than a compiler — a launcher was open and holding its own output directory —
+so the gate was run once it was closed, which is why the Launcher is compiled by it rather than separately.
+
 ## 2026-10-15 (92) — an update can no longer cover a config
 
 **Goal.** Make deploying a new build unable to overwrite what the player owns. This entry is the

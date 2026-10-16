@@ -1469,6 +1469,81 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>A DUPLICATED flow and sequence through a real save and reload. The button itself cannot
+    /// be tested here (the Launcher is out of this project), so what is pinned is everything the button
+    /// hands to the config: the generated name has to survive as a KEY, and the copy's steps have to come
+    /// back as the copy's own steps rather than the original's.
+    ///
+    /// A duplicate that reloads as the preset it was copied from would look right on screen and be wrong
+    /// on the next launch, which is the same class of failure as a dropped step field.</summary>
+    [Fact]
+    public void DuplicatedFlowsAndSequencesSurviveASaveAndReload()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            loader.UpdateLocal(local =>
+            {
+                var source = new QuestPreset
+                {
+                    InitialWaitSeconds = 3,
+                    Loops = 2,
+                    Steps = new List<QuestStep>
+                    {
+                        new() { Action = SealTools.Core.QuestAction.Click, DelaySeconds = 0.3 },
+                    },
+                };
+                var sourceSequence = new QuestSequence
+                {
+                    Loops = 4,
+                    Entries = new List<QuestSequenceEntry> { new() { Preset = "red", Times = 2 } },
+                };
+
+                var presets = new Dictionary<string, QuestPreset> { ["red"] = source };
+                var sequences = new Dictionary<string, QuestSequence> { ["nightly"] = sourceSequence };
+
+                // What the two Duplicate buttons do, in the order they do it.
+                var copyName = PresetCopy.CopyName("red", presets.Keys);
+                presets[copyName] = PresetCopy.CopyQuestPreset(source);
+                var sequenceCopyName = PresetCopy.CopyName("nightly", sequences.Keys);
+                sequences[sequenceCopyName] = PresetCopy.CopyQuestSequence(sourceSequence);
+
+                local.Quest = new ConfigLoader.LocalQuest
+                {
+                    Active = copyName,
+                    ActiveSequence = sequenceCopyName,
+                    Presets = presets,
+                    Sequences = sequences,
+                };
+            });
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("red (copy)", cfg.Quest.Active);
+            Assert.Equal("nightly (copy)", cfg.Quest.ActiveSequence);
+            Assert.Equal(2, cfg.Quest.Presets.Count);
+            Assert.Equal(2, cfg.Quest.Sequences.Count);
+
+            var copy = cfg.Quest.ActivePreset;
+            Assert.Equal(3, copy.InitialWaitSeconds);
+            Assert.Equal(2, copy.Loops);
+            Assert.Single(copy.Steps);
+            Assert.Equal(SealTools.Core.QuestAction.Click, copy.Steps[0].Action);
+
+            // The sequence's copy still names the flow it named before: a duplicate re-points nothing.
+            var sequenceCopy = cfg.Quest.ActiveSequenceOrNull;
+            Assert.NotNull(sequenceCopy);
+            Assert.Equal(4, sequenceCopy!.Loops);
+            Assert.Equal("red", sequenceCopy.Entries[0].Preset);
+            Assert.Equal(2, sequenceCopy.Entries[0].Times);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// <summary>An empty `active_sequence` means "run the single flow" — the shape of every config written
     /// before sequences existed — and an UNKNOWN name must fall back the same way rather than leaving the
     /// tool with nothing to run.</summary>

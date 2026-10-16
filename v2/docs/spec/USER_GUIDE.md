@@ -492,7 +492,8 @@ Read [PLAN-QUEST.md](../archive/PLAN-QUEST.md) for why it is built this way.
 | Control | What it does |
 |---|---|
 | **Flow** picker | Which flow to run. One per quest, because the dialogue differs per quest; the list ends with **＋ Add new…**, which opens the naming row. |
-| **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it — two flows with the same steps is how the wrong one gets run. |
+| **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it: the name changes and nothing is left behind under the old one. For a second flow that starts out like this one, use **Duplicate**. |
+| **Duplicate** | Copies the flow you are on, steps and all, under a generated name — `name (copy)`, then `name (copy 2)` if that is taken — and switches to the copy ready to edit. The copy shares nothing with the original, so changing it leaves the original alone. Press **Save** to keep it. |
 | **Delete** | Asks first, and refuses to delete the last one. |
 | The naming row | **Create flow:** or **Rename to:**, a name box, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message rather than overwriting. |
 
@@ -506,6 +507,9 @@ master loops. For the quests that share an NPC.
 | **Sequence** | Which sequence runs when you press **Start**. The first item is **`(none — run the single flow above)`**, so this one control decides between a sequence and a single flow — there is no second switch. **＋ Add new sequence…** opens the naming row. |
 | **Master loops** | How many times the whole entry list is repeated. |
 | **Initial wait (s)** | The **one** positioning window for the entire sequence — see the warning below. |
+| **Rename** | Renames the sequence. Its entries still name the same flows. |
+| **Duplicate** | Copies the sequence and its entries under `name (copy)`, and switches to the copy. Its entries name the **same** flows — duplicating a sequence does not duplicate the flows inside it. |
+| **Delete** | Asks first. Afterwards **`(none)`** is selected again, so **Start** runs the single flow above. |
 | The entry rows | One per flow: pick the **flow**, set **× times**, `✕` to remove. **+ Add entry** appends one. |
 
 > ⚠ **Every flow in a sequence clicks the SAME place, and the initial wait happens ONCE.** The tool never

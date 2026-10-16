@@ -6403,6 +6403,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         var renameBtn = MakeInlineButton("Rename", ControlAppearance.Secondary);
+        var duplicateBtn = MakeInlineButton("Duplicate", ControlAppearance.Secondary);
         var deleteBtn = MakeInlineButton("Delete", ControlAppearance.Secondary);
 
         presetBox.SelectionChanged += (_, _) =>
@@ -6450,6 +6451,22 @@ public partial class MainWindow : FluentWindow, IDisposable
             hint.Text = $"Deleted. Now on \"{quest.Active}\".";
         };
 
+        // Copies the flow that is on screen, under a generated name, and switches to it: the point of a
+        // copy is to edit it into something else, so it opens on the one you just made. The steps are
+        // copied element by element (PresetCopy) — a shared list would make an edit to the copy land on
+        // the original too, with nothing on screen to say it had.
+        duplicateBtn.Click += (_, _) =>
+        {
+            var from = quest.Active;
+            var name = PresetCopy.CopyName(from, quest.Presets.Keys);
+            quest.Presets[name] = PresetCopy.CopyQuestPreset(quest.Presets[from]);
+            quest.Active = name;
+            RefreshPresetList(name);
+            ShowActive();
+            RefreshQuestCardTargets();
+            hint.Text = $"Copied \"{from}\" to \"{name}\" — press Save to keep it.";
+        };
+
         confirmBtn.Click += (_, _) =>
         {
             var name = presetName.Text.Trim();
@@ -6466,8 +6483,9 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             if (renaming)
             {
-                // The flow itself moves; the old name is dropped rather than left as a copy, because two
-                // flows with the same steps is how the wrong one gets run.
+                // The flow itself moves. Rename renames; it does not leave a copy behind under the old
+                // name, because a rename that quietly doubles the list is not a rename. A copy is what
+                // Duplicate is for, and that button says so.
                 var moved = quest.Presets[quest.Active];
                 quest.Presets.Remove(quest.Active);
                 quest.Presets[name] = moved;
@@ -6491,9 +6509,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
         renameBtn.Margin = new Thickness(6, 0, 0, 0);
+        duplicateBtn.Margin = new Thickness(6, 0, 0, 0);
         deleteBtn.Margin = new Thickness(6, 0, 0, 0);
         pickRow.Children.Add(presetBox);
         pickRow.Children.Add(renameBtn);
+        pickRow.Children.Add(duplicateBtn);
         pickRow.Children.Add(deleteBtn);
 
         panel.Children.Add(Section("Flow",
@@ -6594,6 +6614,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         var seqRename = MakeInlineButton("Rename", ControlAppearance.Secondary);
+        var seqDuplicate = MakeInlineButton("Duplicate", ControlAppearance.Secondary);
         var seqDelete = MakeInlineButton("Delete", ControlAppearance.Secondary);
 
         sequenceBox.SelectionChanged += (_, _) =>
@@ -6645,6 +6666,21 @@ public partial class MainWindow : FluentWindow, IDisposable
             hint.Text = "Deleted. Start runs the single flow above again.";
         };
 
+        // The copy keeps pointing at the SAME flows: duplicating a sequence is not a reason for every
+        // flow in it to be duplicated too, and re-pointing an entry is one edit in the rows below.
+        seqDuplicate.Click += (_, _) =>
+        {
+            if (quest.ActiveSequenceOrNull == null) { hint.Text = "Pick a sequence to copy."; return; }
+            var from = quest.ActiveSequence;
+            var name = PresetCopy.CopyName(from, quest.Sequences.Keys);
+            quest.Sequences[name] = PresetCopy.CopyQuestSequence(quest.Sequences[from]);
+            quest.ActiveSequence = name;
+            RefreshSequenceList(name);
+            ShowSequence();
+            RefreshQuestCardTargets();
+            hint.Text = $"Copied \"{from}\" to \"{name}\" — press Save to keep it.";
+        };
+
         seqConfirm.Click += (_, _) =>
         {
             var name = sequenceName.Text.Trim();
@@ -6690,9 +6726,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         var seqPickRow = new StackPanel { Orientation = Orientation.Horizontal };
         seqRename.Margin = new Thickness(6, 0, 0, 0);
+        seqDuplicate.Margin = new Thickness(6, 0, 0, 0);
         seqDelete.Margin = new Thickness(6, 0, 0, 0);
         seqPickRow.Children.Add(sequenceBox);
         seqPickRow.Children.Add(seqRename);
+        seqPickRow.Children.Add(seqDuplicate);
         seqPickRow.Children.Add(seqDelete);
 
         panel.Children.Add(Section("Sequence — several flows in one run",
