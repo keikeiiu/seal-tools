@@ -13,7 +13,7 @@ public sealed record GameCapture(Mat Image, DisplayInfo Display);
 // GDI CopyFromScreen capture — the only capture method. PrintWindow was measured to return a solid
 // black frame for this game; do not reintroduce it.
 //
-// Everything is captured in PHYSICAL pixels (docs/COORDINATES.md): the process is DPI-unaware, so
+// Everything is captured in PHYSICAL pixels (docs/spec/COORDINATES.md): the process is DPI-unaware, so
 // Win32 reports divided-down (logical) rects, but the screen blit is 1:1 physical. Requesting a
 // logical rect therefore grabbed only the top-left 2/3 of the game. Every capture here runs on a
 // thread switched to per-monitor-aware (Dpi.WithAwareContext) so the rects and the blit agree.

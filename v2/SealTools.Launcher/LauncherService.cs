@@ -39,7 +39,7 @@ public sealed class LauncherService : IDisposable
     /// <summary>The one tool that stays resident while other tools come and go. It holds nothing
     /// between reloads — it needs the game for ~30 s, five times a day — so it is the tool that WAITS,
     /// and every other Start leaves it alone. See <see cref="StopAll"/> for the rule and
-    /// docs/PLAN-RESIDENT-PET.md for why the tuner is deliberately not in this class.</summary>
+    /// docs/docs/archive/PLAN-RESIDENT-PET.md for why the tuner is deliberately not in this class.</summary>
     public const string ResidentId = "pet";
 
     private readonly string _rootDir;
@@ -702,8 +702,12 @@ public sealed class LauncherService : IDisposable
             TaskScheduler.Default);
     }
 
-    /// <summary>Persists the portable config (defaults.yaml). Machine coords are written separately by the calibrator.</summary>
-    public void SaveConfig() => _loader.SaveDefaults(Config);
+    /// <summary>Persists the portable settings into config/local.yaml's `settings:` block — the file the
+    /// player owns. Machine coords are written beside them by the calibrator, through the same loader.
+    ///
+    /// It used to write defaults.yaml, which is the template publish.bat ships: a save target inside a
+    /// shipped file is a setting the next update overwrites.</summary>
+    public void SaveConfig() => _loader.SaveSettings(Config);
 
     /// <summary>Points the suite at another game client — the Setup tab's switch, and the only way to
     /// change clients without editing files. False with a reason when it cannot.
@@ -748,7 +752,8 @@ public sealed class LauncherService : IDisposable
         _diagnosticOcr?.Dispose();
         _diagnosticOcr = null;
 
-        // The variant lives in defaults.yaml, and SaveDefaults is what rewrites that file.
+        // The variant is one of the portable settings, so this lands in local.yaml's `settings:` block —
+        // the file the player owns. It used to live in defaults.yaml, which the zip ships a template for.
         SaveConfig();
 
         message = $"Now on the {Config.Game.Variant} client — window \"{Config.Window.Title}\", " +
@@ -883,8 +888,11 @@ public sealed class LauncherService : IDisposable
         }
     }
 
-    /// <summary>Persists machine-specific coordinates (local.yaml) written by the calibrator.</summary>
-    public void SaveLocal(ConfigLoader.LocalOverrides local) => _loader.SaveLocal(local);
+    /// <summary>Applies a change to local.yaml: the loader re-reads the file, hands it to
+    /// <paramref name="mutate"/>, and writes it back — all under one lock. This is the only way
+    /// local.yaml is written, so a caller cannot hand over a snapshot it loaded earlier and delete a
+    /// block another writer saved in between (see ConfigLoader.UpdateLocal for what that cost).</summary>
+    public void UpdateLocal(Action<ConfigLoader.LocalOverrides> mutate) => _loader.UpdateLocal(mutate);
 
     /// <summary>Loads the machine-specific overlay, or null when local.yaml is absent.</summary>
     public ConfigLoader.LocalOverrides? LoadLocal() => _loader.LoadLocal();
@@ -950,10 +958,15 @@ public sealed class LauncherService : IDisposable
     {
         try
         {
-            var local = _loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet ??= new ConfigLoader.LocalPet();
-            ConfigLoader.LocalPet.ApplySession(local.Pet, Config.Pet);
-            _loader.SaveLocal(local);
+            // The read happens inside the gate now (UpdateLocal), which matters more here than
+            // anywhere else: this runs on the tool's thread while the WPF thread is saving a
+            // calibration, and the two used to race — this one saving a local.yaml it had loaded
+            // before the other's write, taking that calibration back out of the file.
+            _loader.UpdateLocal(local =>
+            {
+                local.Pet ??= new ConfigLoader.LocalPet();
+                ConfigLoader.LocalPet.ApplySession(local.Pet, Config.Pet);
+            });
         }
         catch (Exception ex)
         {

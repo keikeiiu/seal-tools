@@ -1,0 +1,5063 @@
+# Progress log
+
+A dated, append-only record of what was actually done and why — the reasoning that is not visible in
+the code or the commit titles. One entry per session or per landed victory, newest first.
+
+**How to use it:** append an entry when a change lands. Keep it short: what was the goal, what was
+decided and why, what was measured, what is still open. Link to the commit and to the doc that owns
+the detail (`CURSOR-INVESTIGATION.md`, `MOVE-SETS.md`, …). Do not restate what the code already says.
+
+**This is the HISTORY, not the current truth.** When a change lands, what it means for how the tool
+works belongs in [DESIGN.md](../spec/DESIGN.md) — this file records what was done and when, and a reader looking
+for "how does this work" should never have to reconstruct it from a hundred dated entries.
+
+---
+
+## 2026-10-17 (99) — the review of the three commits, and what it caught
+
+**Goal.** Adversarial review of the whole preset-duplicate range (`cc19282..8be0dbe`): three independent
+lenses (picker lifecycle, Quest Save path, tests/docs), one skeptic per finding told to refute it. 13
+findings, all 13 survived refutation. They cluster into six defects, all fixed here.
+
+**The two that changed behaviour**
+
+- **A flow rename left sequences dangling, and Save then gave advice the screen could not follow.** A
+  rename moves the dictionary key but nothing updated `Sequences[*].Entries[*].Preset`, and the Flow
+  picker's `AfterChange` rebuilt neither the entry rows nor their flow list. So the row kept the old
+  name, the next Save refused ("pick an existing flow"), and the new name was not in the dropdown.
+  Fixed twice over: `AfterRename` re-points every entry that named the old name (a rename is the same
+  flow), and `AfterChange` now also rebuilds the sequence editors so the new name is selectable
+  everywhere. `RefreshQuestCardTargets` is unchanged in intent, but see the count fix below.
+- **A null `Preset` was still silently re-pointed.** YamlDotNet writes `null`, not `""`, for a bare
+  `preset:` key, and the editor's `entry?.Preset ?? flowNames[0]` conflated "no entry" with "no name" —
+  so Save wrote the first flow in. `DanglingSequenceEntries` was worse: `ContainsKey(null)` throws,
+  and the call sits outside `SaveReport`, so the dispatcher swallowed it and Save looked like it did
+  nothing. Both now normalise with `?.Trim() ?? ""`, the same expression `QuestTool.RunSequence` uses;
+  two tests pin the null and the padded-name cases (the padded name runs, so it must not block Save).
+
+**The rest**
+
+- **The card's per-run count was reset by unrelated picker actions.** `RefreshQuestCardTargets` runs on
+  every flow switch/create/rename and unconditionally rewrote the count box. It — and the card's
+  `SelectionChanged` handler, which re-fires on every `ItemsSource` rebuild — now re-seed only when the
+  card's target actually changed. The count is a per-run override; nothing may quietly restore it.
+- **The Spammer name box never received focus.** `OpenPrompt` focused it before `PromptOpened` revealed
+  the editor the prompt lives in, and `Focus()` under a `Collapsed` ancestor fails. The owner now runs
+  first, then the focus.
+- **A refusal bar outlived the selection it complained about.** Picking a flow/sequence now closes that
+  card's InfoBar, so a red "pick a flow" does not sit under a flow the player has just picked.
+- **Duplicate/Rename on a hand-edited `active_sequence: " run "` reported "pick a sequence".** The
+  shared helper sees the raw active name; the picker is now handed the trimmed one, matching
+  `ActiveSequenceOrNull` and the deleted handler's deliberate `.Trim()`.
+- **Docs:** the Sequence guide still quoted `＋ Add new sequence…` (the shared picker says
+  `＋ Add new…`), the Rename row now says entries follow the new name, and the Save confirmation's
+  description matches the message (flow, sequence count, guard value — not "names every sequence").
+
+**Why the range is now reviewed.** The previous review pass covered the duplicate feature itself; this
+one covered the three follow-up commits, where a refactor plus a new Save gate could interact. Every
+one of the 13 findings required the intersection of two changes — which is why the earlier per-commit
+gate did not catch them.
+
+**A second pass over the fixes found three more**, a third pass over those found eight, and a fourth
+pass settled the remaining ones:
+
+- **The rename loop is null-tolerant.** Hand-edited YAML can make `sequences:` a null dictionary, a
+  value null, `entries:` a null list, or a list item a null entry. The callback runs AFTER the key has
+  already moved, so a throw left the rename half-applied with no message. The same guards are in
+  `DanglingSequenceEntries` (which used to throw on those values, outside `SaveReport` — Save then did
+  nothing and said nothing) and in the entries editor. Four Core tests pin the four shapes.
+- **Tolerance now reaches every reader, not just the editor and the Save gate.** The fourth pass found
+  the guard stopped at the editor: `QuestDefaultLoops` dereferenced a null sequence value during
+  `MainWindow`'s constructor (no window at all), the sequence picker's Result line read `.Entries.Count`
+  on a null list, `QuestTool.RunSequence` threw a raw NullReferenceException at Start, and a null entry
+  element took `AddRow`'s "new row" path and was silently replaced with the first flow before the
+  dangling check saw it. All four now use the same shape as the rest (`?.` / `isNew` separation /
+  an explicit refusal), and the two test comments that claimed "what the runner treats it as" were
+  corrected — the runner refuses, it does not guess.
+- **The card's loop count: a per-run override, re-seeded only under two conditions at once.** The
+  first fix stopped picker actions from resetting a dialled-in count. A second attempt reseeded on
+  every Save, which the third pass rejected (Save covers the whole tab; the card may aim elsewhere).
+  The final rule keeps the case the third pass missed: on Save the box is re-seeded only when the card
+  is aimed at the item just saved **and** the box still holds the value it was last seeded with
+  (`_questCountSeeded`). Editing the loops of the flow the card runs therefore takes effect, while a
+  count the player dialled in for this run survives.
+- **Renaming the flow or sequence the card is aimed at follows the name.** The card's target is a
+  name; without this, a rename made `RefreshQuestCardTargets` fall back to the first target and Start
+  silently ran something else.
+- **Bars state only what is still true.** A selection closes an ERROR bar (its advice is about the
+  previous target) but keeps a success note, whose "press Save quest to keep it" is still true; a
+  successful Save closes both bars AND rewrites the Result line ("Saved — nothing on this tab is
+  waiting to be written"), so the old "press Save quest to keep it" cannot outlive its truth. Delete
+  and "(none)" no longer claim what Start will run — the card's target wins at Start and the tab does
+  not know it.
+
+**A fifth pass, over those fixes, found one root cause behind seven findings.** A value-less YAML key
+(`run:`) is a dictionary entry whose VALUE is null, and `TryGetValue` reports it as PRESENT. The
+fourth pass guarded `QuestDefaultLoops` for that shape and left every other reader: `ActivePreset`
+returned the null (the launcher threw in its constructor and showed no window), Duplicate passed it
+to `PresetCopy`, the card's flow and sequence overrides handed it to the runner, and the Save gate
+(`ContainsKey`) accepted a sequence entry naming such a flow — which then threw at `Validate`. Fixed
+once, at the root: `QuestConfig.NormaliseNullBodies()` replaces each null body with an empty one after
+the merge in `ConfigLoader.Load` (keeping the key — dropping it would rename the player's flow),
+`ActivePreset` keeps its documented "never null" promise, `DanglingSequenceEntries` and `RunSequence`
+treat a null body as missing, and the card's override refuses one in a config built without the
+loader. Separately, `SaveReport` swallowed a write failure and returned void, so the Quest tab's
+success tail ran anyway and said "Saved" beside the red failure bar; it now returns success and the
+tab stops on failure. Four tests pin the repair (three at the model, one through `ConfigLoader.Load`).
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 351 passed, 0 failed. Launcher started and every tab constructed.
+
+## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
+
+**Goal.** Three things the player asked for together: the Quest tab already wrote its sequences and its mouse guard on the same Save as the flow, but the button sat inside "Try it, then keep it" under a **Save** label and reported only the flow it wrote, so there was no way to tell it covered the rest; and Rename (and Create, Duplicate, Delete) changed the list with no confirmation on screen.
+
+**What changed**
+
+- **`Save` is `Save quest` and has its own card.** The Test button keeps "Try it". The Save moved to **"Save — the whole tab"**, whose hint lists what it writes: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The success line went from `Flow "X" written — n step(s)` to giving the flow, the number of sequences and the guard value, so the message matches the button's claim.
+- **A create, rename, duplicate or delete in the Flow card reports in the Flow card.** A local `flowResult` InfoBar (the same `Wpf.Ui` control the Result card uses) sits directly under the picker: green "Flow updated" or red "Not changed". Before this the only output was the Result line at the bottom of the tab — off-screen from the button, which is why a rename looked like it had done nothing.
+- **The same for the Sequence card** (`seqResult`), including the refusal messages. Deleting still says `(none)` is selected again and Start runs the single flow.
+- **The Spammer tab already had this**, in its existing status line; no InfoBar was added there, because a second channel for the same message would be noise.
+
+**Why the pickers did not need their own change.** `PresetPicker` already routed every outcome through its `Report` callback; the Quest call sites were passing a lambda that wrote the old Result line. Pointing them at the new local functions was the whole wiring.
+
+**Docs.** Both `USER_GUIDE.md` and `USER_GUIDE.zh-TW.md`: "Try it, then keep it" split into "Try it" and "Save — the whole tab", the `Save quest` row rewritten, a paragraph in each picker section describing the in-card confirmation bars, and the dangling-entry refusal documented under Sequence.
+
+**Still open.** Nothing on the preset-duplicate plan. Buy and Game Variants remain out of scope.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed. Launcher started and every tab constructed.
+
+## 2026-10-17 (97) — the three preset pickers become one
+
+**Goal.** Answer ⚑3 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md): the Quest flow, Quest sequence and Skill Spammer pickers were three hand-rolled copies of the same Add / Rename / Duplicate / Delete shape, and the last three review passes had fixed the same defects in one copy while leaving the others.
+
+**What the helper owns.** `PresetPicker` (a nested class in `MainWindow`) builds the combo, the inline create/rename prompt, the two-row layout that fits the 319-px content column, and the three buttons. It also owns the rules that were identical in all three: names sorted ignore-case, `PresetCopy.CopyName` against every name in play, empty/duplicate-name refusal, one open prompt, and the generated copy note. A `PresetPickerOptions` record supplies what genuinely differs — the dictionary, what "active" means, the editor rebuild, the side maps a rename moves, the extra names a copy must avoid, the "(none)" row for sequences, and where feedback is printed.
+
+**Three defects fixed by writing it once**
+
+- **Create and Rename discarded unsaved edits.** Both rebuilt the step/entry editor from the dictionary, but the rows on screen had never been written back. This is the same class of bug the review fixed for Duplicate; `BeforeChange` now runs on every create, rename, copy, switch and Save.
+- **A prompt outlived a picker switch.** Rename reads the ACTIVE name at Confirm, so a Rename started on flow A and confirmed after switching to B renamed B to the text typed for A. The prompt is closed on a real switch now, and before a delete.
+- **A prompt outlived Delete**, with the same wrong-target Confirm. It is now closed before the mutation.
+
+**Why it is not unit-tested.** The helper is WPF and the Launcher stays out of the test project, so the gate is the build plus a launch that constructs every tab — the project's established rule for Launcher-only code. The pure half it calls, `PresetCopy`, is already covered.
+
+**Still open.** Nothing on the plan: ⚑1/⚑2/⚑3 are all answered and built. Buy and Game Variants remain out of scope.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed. Launcher started and every tab constructed.
+
+## 2026-10-17 (96) — a sequence entry that points at a deleted flow stops the Save
+
+**Goal.** Answer ⚑2 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) with the player's choice, (b): refuse and list. The entry editor had always filled a row whose flow name was gone with `flowNames[0]`, and `CommitQuestRows` then wrote that in — so deleting a flow silently changed what a sequence ran, and a Save made the guess permanent.
+
+**What changed**
+
+- **The missing name is kept, not replaced.** `BuildQuestEntriesEditor` adds the entry's own name to the picker when it is not a current flow, so the row still says what the entry says. It is visibly a name the picker further down does not offer, and **Save** is the point that refuses.
+- **The check is in Core and covers every sequence.** `QuestConfig.DanglingSequenceEntries()` returns (sequence, 1-based entry, flow) ordered by sequence then position. It is in Core because the Launcher is not in the test project, and it is over `Sequences`, not the active one, because this Save writes the whole quest block.
+- **Save refuses with a list.** The tab's InfoBar turns to Error, names each dangling entry, and says to pick a flow or remove the entry. Nothing is written; the in-memory edit stays on screen to be fixed.
+
+**Why refuse rather than guess.** A replacement flow is a different quest's dialogue at the same NPC. There is no signal on screen that the entry changed, and the run is blind, so the wrong guess is discovered only when a quest does not advance.
+
+**Tests.** Six cases in `QuestConfigTests`: a clean sequence, a deleted flow with its position, every hit rather than the first, an empty name, the stable order, and an inactive sequence. 343 passed.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed.
+
+## 2026-10-17 (95) — the duplicate feature reviewed against its own claims
+
+**Goal.** The feature was built and its gate was green, so the next pass was adversarial: six reviewers over the diff (logic, Spammer, Quest, docs, tests, repo rules), 30 findings, and a skeptic per finding to try to refute it. All 18 verified claims survived; the unverified twelve were either duplicates or "the launcher is not in the test project" notes, which the plan already states.
+
+**The real bug: unsaved edits were not copied.** Both Quest Duplicate buttons read the preset from config, but the step and entry editors write nothing back as you type — the only flush was Save (and Test one loop). So "Duplicate" copied the LAST SAVE and then `ShowActive`/`ShowSequence` rebuilt the editor from that stale copy, erasing the on-screen edit from both. The Spammer handler had flushed first; the plan's §4 only required it there, which is where the assumption went wrong. One `CommitQuestRows()` now serves Save, both Duplicate buttons and both picker switches, so the rows cannot be lost by leaving a flow either.
+
+**The rest, each confirmed by a second reader**
+
+- **Advanced mode was invisible to the Spammer Duplicate.** While Advanced is ticked the raw box is the truth and Save already read it; Duplicate read the stale rows instead, so it copied the pre-edit keys and the next Save applied the pending raw edit to the copy. One `LiveKeys()` now answers for Save, Create, Rename, Duplicate, both switches and the order/combos panels. The raw box also follows the preset in `LoadRows`, so it can no longer show another preset's text after a switch.
+- **A pending Rename/Create prompt outlived Duplicate** and its next Confirm acted on the copy, because both read `current`/`quest.Active` at Confirm time. Each Duplicate button now closes its prompt first.
+- **`CopyName` overflowed at the int boundary.** A source named `x (copy 2147483647)` produced `x (copy -2147483648)`, because the counter was an int. The counter is a long now, and two tests pin the boundary and the `(copy 0)` literal case.
+- **The picker rows did not fit at the width their own comment cited.** Measured: a 619-px window leaves 319 px of content column; one line needs ~473 (flow), ~499 (sequence) and ~389 (Spammer). A star column cannot shrink below the picker's MinWidth, so the Auto columns painted over the picker — the previous one-row fix only moved the failure. All three pickers now put the buttons on a second row under the picker, which fits at every allowed width.
+- **The Spammer copy name was checked only against `Presets.Keys`.** An orphaned Priority/Combos/Startup entry under a free name would have made the "fresh" copy inherit it, contradicting the status line. The scan now covers all four name-keyed maps.
+- **Two guide inaccuracies.** The Spammer row said Duplicate "makes it active", but only Save Preset writes `Spammer.Active`; the sequence row omitted "press Save to keep it". Both fixed in both languages. The IDEAS bullet was also removed — the idea is now a built plan, and the board is its status.
+
+**Still open.** ⚑2 (the dangling sequence entry re-point) and ⚑3 (three hand-rolled pickers versus one shared) on the plan — both are the player's decisions, not defects this pass could settle.
+
+**Commit.** This commit — the review fixes above, their tests, and the guide corrections.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 337 passed, 0 failed.
+
+## 2026-10-17 (94) — the Spammer picker gets Duplicate, and the picker rows become Grids
+
+**Goal.** Finish what [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) scoped: the Skill Spammer half of the copy feature, and the clipping the Quest rows acquired when their fourth control arrived.
+
+**What was decided, and why**
+
+- **The Spammer copy carries `Presets` only.** The other three per-preset maps — order, combos, opening — are keyed BY the preset name, so a new name starts with none of them. That is the state Create already leaves a preset in, and the tool reads an absent order or combo list as "no rule" rather than as an error. Copying them would mean renaming every reference inside them for no gain. The status line says all three are empty, because the copy otherwise looks complete.
+- **The copy is made from the rows on screen**, the same source Create and Rename use, so a key typed but not yet saved is carried instead of silently dropped. The source is committed first, then the copy switches in — the same sequence Create follows.
+- **The Quest flow and sequence picker rows are now Grids**, matching the Spammer picker: a star picker column plus one Auto column per button. The old horizontal `StackPanel`s measured with unbounded width, so a 200 px (flow) or 220 px (sequence) picker plus three buttons could run past the card — the exact defect the Spammer picker hit at 619 logical px, where Delete was clipped to "Delet". The picker now takes what is left rather than demanding its MinWidth.
+
+**What the tests caught.** `ACopiedSpammerPresetSharesNothingWithItsSource` pins the one thing a `Dictionary` copy can get wrong: if the helper ever hands back the same map, editing one preset's cooldowns edits the other's, invisibly. The test edits and removes from the copy and re-reads the source. `DuplicatedSpammerPresetSurvivesASaveAndReload` closes the last gap PLAN-PRESET-DUPLICATE.md §8 named — the Quest pair had a round-trip test, the Spammer half did not — and it asserts two surviving entries, because a copy that REPLACED its source would pass every key assertion.
+
+**Still open.** ⚑2 (the pre-existing dangling-entry re-point) and ⚑3 (three hand-rolled pickers, or one shared) on the plan. Buy and Game Variants stay out of scope.
+
+**Commits.** `673c59a` — the Spammer Duplicate, the two Grid conversions, its test and both user guides; then the Spammer save/reload test with this entry.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 335 passed, 0 failed.
+
+## 2026-10-17 (93) — a flow can be copied instead of retyped
+
+**Goal.** The player asked whether an existing quest flow could be copied into a new one, then asked for the Quest half so it could be used. Designed first: [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md), whose first finding was that the request is THREE pickers — the Quest flow picker, the Quest sequence picker and the Skill Spammer preset picker all already carry the same Add / Rename / Delete shape.
+
+**What was decided, and why**
+
+- **The name is generated, not prompted.** `name (copy)`, then `(copy 2)` … up to the first free one. Two details make it correct and both are easy to get wrong in opposite directions: the source's own suffix is stripped first (or a second copy of a flow becomes `mine (copy) (copy)`), and the count RESUMES from that suffix (or copying `mine (copy 2)` walks backwards into a free `mine (copy)` — a name that sorts above the preset it was copied from).
+- **The free-name scan ignores case; the dictionaries do not.** They are keyed case-sensitively, while every picker sorts `OrdinalIgnoreCase`, so a case-sensitive scan would happily produce `mine (copy)` beside a hand-typed `Mine (copy)`. The generated name is the one place that refuses to make two rows the player cannot tell apart.
+- **The copy is element by element, and it lives in Core.** `QuestPreset.Steps` and `QuestSequence.Entries` are lists of class instances, so copying the list alone leaves the copy and the original editing the same steps — silently, because both look correct on screen. It sits in `SealTools.Core.Config.PresetCopy` rather than beside the buttons because the Launcher is `net8.0-windows` and stays out of the test project, and both failure modes are pure logic over the config types.
+- **Rename still MOVES; only its justification was retired.** "Two flows with the same steps is how the wrong one gets run" was written when a copy could only appear by accident. The user guide now says a rename leaves nothing behind and points at Duplicate for the other thing, and the code comment says the same — the behaviour is unchanged, so deleting the move statement would have left the spec silent about something it still does.
+- **A duplicated sequence keeps pointing at the SAME flows.** Duplicating a sequence is not a reason for every flow inside it to be duplicated too, and re-pointing an entry is one edit in the rows below it.
+- **The copy becomes the one you are on**, like Create does: `quest.Active` / `quest.ActiveSequence` for the Quest tab.
+
+**What the tests caught**
+
+- The suffix strip, the resume, and the case-insensitive scan are each pinned by their own test — the three ways the generated name can be wrong, and the two of them were wrong in the plan's first draft.
+- **Aliasing is only caught by mutating the copy.** `ACopiedFlowSharesNothingWithItsSource` passes every equality assertion a shallow copy would also pass, and fails only when the copy's step is edited and the source is re-read. That is the failure this helper exists to prevent.
+- `DuplicatedFlowsAndSequencesSurviveASaveAndReload`: the generated name has to survive as a KEY and the copy's steps have to come back as ITS steps. A duplicate that reloaded as the preset it was copied from would look right on screen and be wrong on the next launch.
+
+**Still open.** The Spammer picker's Duplicate — its copy carries `Presets` only, exactly like Create, so the copy opens with no key order, no combos and no opening, and the hint has to say so. Plus ⚑2 (the pre-existing dangling-entry re-point) and ⚑3 (three hand-rolled pickers, or one shared) on the plan.
+
+**Commits** (branch `plan/preset-duplicate`, based on `feature/frozen-templates` because the docs folder reorg has not reached `main`)
+
+| commit | what |
+|---|---|
+| `cf30007` | the plan, its board row, and the IDEAS entry — nothing built |
+| this commit | the Quest half: `PresetCopy`, its 9 tests, both Duplicate buttons, and the two user guides |
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 333 passed, 0 failed. The first
+attempt hit a lock rather than a compiler — a launcher was open and holding its own output directory —
+so the gate was run once it was closed, which is why the Launcher is compiled by it rather than separately.
+
+## 2026-10-15 (92) — an update can no longer cover a config
+
+**Goal.** Make deploying a new build unable to overwrite what the player owns. This entry is the
+reasoning the code cannot carry: why the answer was a member list rather than a folder move, and what
+three adversarial review rounds changed about it.
+
+**What was decided, and why**
+
+- **No file moves.** [PLAN-PATHS.md](../plans/PLAN-PATHS.md) proposed relocating the live files into a `profile/`
+  folder. The player fixed the constraint on 2026-10-13 — the config stays at the same root path so the
+  whole folder stays easy to move — and the reviews agreed the relocation buys nothing: an update covers
+  a file because the archive NAMES it, not because of the folder it sits in. [PLAN-DEPLOY.md](../plans/PLAN-DEPLOY.md)
+  keeps PLAN-PATHS' diagnosis and declines its relocation.
+- **The zip ships program files only.** `config/defaults.yaml` goes out as `config/defaults.yaml.example`
+  — the app's BASE, and so the name an update replaces — the empty `config/attributes.us.yaml` stops
+  shipping because the loader now SEEDS a missing dictionary from its `.example`, and `docs/pet-data.csv`
+  joins the zip, which is why no installed copy has ever had a feeding estimate.
+- **An allow-list, not a deny-list.** `publish.bat` opens the produced zip and fails on any member that is
+  not a declared program file, so a future `copy` line for a new writer's file fails at the build rather
+  than shipping quietly; a test reads the script and asserts the same list.
+- **The save target left the shipped file.** `SaveDefaults` is deleted: the portable settings go to
+  `config/local.yaml`'s `settings:` block, the player's own file. The warnings-as-errors gate proved no
+  caller survived, exactly as the plan predicted.
+- **The fold, once.** An install that updates reads its legacy `config/defaults.yaml` ONCE and carries the
+  values the player changed into `local.yaml`; after that it is never read, deleting it is lossless, and
+  keys the player never touched keep tracking the template so a later release's changed default still
+  arrives. What is carried is a SECTION, not a leaf: the apply side assigns objects, so
+  `settings.hotkeys.start` alone would carry the default 0 for the other three keys.
+- **The reviews changed the design twice.** Six independent reviews of the first plan each failed it, and
+  the failure was the same from three directions: keeping `defaults.yaml` forever as a values layer, with
+  the advice that the player may delete it by hand, is a data-loss trap — that file held EVERY setting
+  they had ever saved, because the old save wrote the whole projection into it — and keeping it shadows
+  every future default change. Hence the fold.
+
+**Measured, and what the tests caught**
+
+- **The four recorded field-addition losses in this repo were on the WRITE side**, not the read side: a
+  new key missing from a projection that rewrites a file. `ocr_retries` 3 → 0, `move_mode` reset on every
+  save, a hand-added `pet:` block deleted, a whole spammer block deleted, and a per-row empty-slot
+  reference dropped — which read three empty rows as occupied and started an empty boarding on a live run.
+  ADDING a key is safe by construction (the C# initialiser takes it); forgetting one in a writer is what
+  costs data. So the fence covers all four hops a portable key crosses, and it caught two live bugs on its
+  first runs: the stray `game.active` alias key from 2026-10-13, still being written, and a shipped
+  template with no `pet:` block at all.
+- **Two bugs of my own, found by writing the tests.** The fold's first version left the session applying
+  the `local.yaml` it had read BEFORE the fold wrote it — the player's values would have arrived one
+  launch late. And an unset section is written as a bare key, so "did the fold carry this?" has to allow
+  for that rather than assert absence.
+- **`publish.bat` had to be patched byte-wise**: it is CRLF on disk and LF in git, so an editor that
+  writes LF leaves a file `cmd` reads by byte offset and eats a character per line. Its first patch also
+  landed in the wrong branch — `) else (` appears twice and the models step matched first — which is why
+  the patch is line-indexed now.
+
+**Commits** (branch `feature/frozen-templates`, not merged)
+
+| Commit | What |
+|---|---|
+| `5c61c71` | `docs(plan)`: PLAN-DEPLOY, and PLAN-PATHS marked partly superseded |
+| `6306040` | `fix(core)`: local.yaml goes through one gated read-modify-write |
+| `cc83770` | `feat(core)`: the `settings:` block, and the fence over it |
+| `a403977` | `docs(plan)`: how a new key reaches an install that predates it |
+| `f613281` | `test(core)`: the partial block, and what a null marker writes |
+| `1901ba3` | `feat(core)`: the shipped template is the base, and the fold |
+| `4889c98` | `feat(core)`: the zip, the save target, and no pruning |
+| `0048d99` | `feat(launcher)`: the Setup tab's mismatch line |
+
+**Verified.** 318 tests pass and the full solution builds with 0 warnings — the gate for steps 1 and 2,
+which ran with the launcher closed. Steps 3–6 were gated by `dotnet test` plus a Release compile of the
+launcher, because it held its own Debug output for the rest of the session.
+
+**Left open**
+
+- **The release.** Version literals, the README's download rows and `RELEASE-v2.16.md` are NOT written —
+  those belong to the release, which is the player's to trigger.
+- **A watched run on a real install.** Every fold test builds its own fixture; the first launch of a real
+  updated install is where the fold runs for the first time.
+- **The Debug solution gate owes itself for steps 3–6** once the launcher is closed.
+- A hand-edited bare `game:` or `variants:` key in `defaults.yaml` still throws a NullReference where the
+  validator should report an empty section — the shape the repo already fixed for `tuner:`. Pre-existing,
+  untouched here, and a validator rule is a change of its own.
+
+---
+
+## 2026-10-13 (91) — release: v2.15
+
+**What shipped.** The pet feeder's visit-flow rework (PLAN-PET-FLOW's four steps, each with its own
+design record), the fixes three weeks of `pet.log` turned up — the covered-window slot read that was
+the biggest row-killer, the silent failures, the reason logging, the deferral, the join — the feeder's
+per-row card, the count read's 3×/9×/24× ladder, and the US client switch. The dated reasoning for
+every piece is entries 69–90 above; this entry is what the release itself changed.
+
+**FILES.** `publish.bat` RELTAG → v2.15; the root README's title, latest-download, fallback row for
+v2.14, firmware link, history row and unzip line; `v2/README.md`'s version line; notes in
+`docs/records/RELEASE-v2.15.md`.
+
+**The links were changed ONE AT A TIME and each checked** — the habit v2.13's note records (a bulk
+string replace once left a fallback row pointing at the wrong asset), and the check itself was written
+to be able to fail: each URL's filename and tag are extracted and compared.
+
+**Nothing needs a reflash, and that is a finding rather than an assumption:** the only sketch change
+since v2.14 is a comment (`FW_VERSION` is still 2), confirmed with `git diff v2.14...HEAD -- arduino/`
+rather than remembered. `FirmwareSketchTests` pins the level against the command set and passes.
+
+**Verified, and owed.** The build is the gate (`dotnet build` 0 warnings, 0 errors) and **292 tests
+pass**. Two adversarial review rounds preceded the release; the newest behaviour (the join, the
+open-deferral, the ladder, the switch) is deployed and lightly exercised, and a watched multi-row
+visit with a join is still owed — the release notes say so in their own table rather than in prose.
+
+## 2026-10-13 (90) — the US client: a switch, and an empty dictionary that says why
+
+**The ask:** *"I want to be able to use some tools for the english version of client"*, clarified to the
+tools that read no text at all — gem, buy, sell, spammer, quest, the pet reads — with the switch on the
+Setup tab and no English dictionary needed. That last part the player worked out themselves: *"those
+tools don't really need another OCR?"* They do not, and PLAN-US-CLIENT says so in its own table: those
+tools match position, colour, keys and digits; the dictionary is the **Tuner's** vocabulary.
+
+**Built (PLAN-US-CLIENT §4.2, §4.3, §4.5):**
+- **`AppConfig.ApplyVariant`** — resolves a name to its title and dictionary file and sets both, or
+  changes nothing and says what the known names are. Tested for the known, the case-insensitive and the
+  unknown case.
+- **`LauncherService.SwitchVariant`** — resolves, then LOADS the dictionary, and only then commits and
+  saves (`SaveDefaults`); a failed load rolls the previous variant and title back. The order is the
+  safety: a config pointing at a variant whose dictionary is missing is not a degraded launcher, it is
+  one that throws in its constructor and never opens a window — the shape the swallowed-startup-error
+  note describes. The cached diagnostic OCR engine is dropped with it, since it holds the old words.
+- **The Setup tab's "Game client"** — one button per variant, built from `game.variants` rather than
+  hard-coded, with the active one marked and a status line that says the dictionary's entry count and
+  warns loudly when it is empty.
+- **`config/attributes.us.yaml` ships, EMPTY, with the reason in its header** — the loader refuses a
+  MISSING dictionary (right for the Tuner, wrong for everything else), so the file existing is what
+  lets the suite be pointed at the US client today. A test pins that it parses and stays empty: content
+  here is words the Tuner matches, and words written anywhere but from that client are what the repo's
+  own rule forbids.
+
+**Still not built: §4.4** — moving the per-level and time-line phrases into the dictionary, which is
+what the *Tuner* would need on the US client. Out of the chosen scope.
+
+**Verified.** 292 tests pass; Core and the test project build clean. The launcher-side changes compile in
+the next restart cycle.
+
+## 2026-10-11 (89) — review 2: the per-row rate never fired, and the join could revive a dropped row
+
+Four reviewers over the ten commits since f40b3ab (the card, the why, the growth/stage correction, the
+per-row rate, the retry, the ladder, the join, the deferral), two independent verifiers on every
+finding. All but one confirmed; the one refuted was a rounding nit. The two that mattered:
+
+**The per-row rate feature never fired, silently.** `FeederEta.ParseRate` demanded an ending of 個/个 —
+and the live OCR never produces one. pet.log's actual forms: `每1分最取适` (37 times — **the item count
+is gone**), `每分最取尚`, and `每1分瑜取3固` / `每1分输取3固` (the digit survives, 個 arrives as 固). So
+every rung of the feature was inert and the configured rate answered everything. The regex now matches
+only the two numbers (`每N分` then the nearest number, gap capped and excluding the time line's own
+characters so a line the OCR joined to 「到7為止…約25分」 cannot read the 7 as a count), and the tests
+carry the live strings. The dominant form still returns null — its count is genuinely not in the
+image — which is the honest answer: the config's rate stands.
+
+**The join could revive a given-up row.** The join iterated every active row with no check that the
+run still tracks it, so a row `FoldBack` had dropped (after three strikes) could rejoin any later
+visit, run a full reload attempt, and have its outcome silently discarded — "given up" no longer
+stuck. The join now takes the run's `next` and skips rows that are not in it: a fresh read saying
+"due now" is not new evidence about a row the run already judged.
+
+**Also fixed:** the rate and the row's time line are now refreshed from the post-start read (they
+described the pet that was just taken OUT — a row whose new pet is at another stage was timed at the
+old pet's rate); the ladder re-checks the foreground before each rung (a focus lost mid-ladder could
+hand a covering window's digits back as a count, which the visit treats as food evidence); the
+launcher's Test read walks the same rungs (`CountReadUpscales` is public for it — a diagnostic with
+its own copy of the scale would report "(nothing)" for a slot the run reads fine); the Deferred
+wording says "no reload was attempted" rather than "no click was sent" (the open itself does click);
+the refuted "ONE read of ONE crop … reads at 0.99-1.00 at every upscale" summary over `FeederCountOf`
+is replaced; `_lastItems` (write-only since the why-line was removed) is gone; the `ToolRowState`
+contract, both guides' sample row, and the close-guard plan (a dated superseding note, not a rewrite)
+are corrected.
+
+**Verified.** 290 tests pass (five new rate cases on the live strings); Pet + Core build clean. The
+launcher-side change compiles in the next restart cycle.
+
+## 2026-10-11 (88) — the reading can join a visit, and an unconfirmed open defers instead of blundering
+
+**Two live findings from the same afternoon, both from the player watching the tool.**
+
+**1. "Why does it close and reopen when several pets need reloading?"** — 15:34 on 2026-10-11, the log
+answers it: the visit belonged to Row 4, and that visit's OWN read found Row 2's slot EMPTY (its
+boarding had stopped, so Row 2 was due that instant). The batch is chosen from the schedule BEFORE the
+window opens, so the reading could only ever CANCEL an act, never join one — Row 2 therefore got a
+second visit 40 seconds later: open, read everything again, close. The player watched exactly that
+pair. **Fixed:** after `ReadRows`, any active row whose FRESH reading is due now joins the current
+visit (row order restored). Same rule as the batch itself, and the veto still runs per row, so a
+joining row gets no less scrutiny than one the schedule sent.
+
+**2. The open that never happened, and the world it acted on.** At 13:56 and 15:09 the confirmation
+probe said twice that the X was not there — the window genuinely never came up (the player had the
+game's own menu open, and 目錄 is a TOGGLE: the tool's click closed it). The first version's choice
+was "carry on and let the reads decide", and the reads did not save it: they described the game
+WORLD, the visit pressed the end toggle at the world, and two rows failed and burned strikes. **Fixed:**
+a doubly-unconfirmed open now **defers the visit** — not one click is sent, the rows keep their place,
+`Deferred` is a wait rather than a failure in the fold — and because a STALE reference would also
+answer "not there" while the window is genuinely open, **two consecutive unconfirmed opens throw the
+reference away** (`close_button_png` cleared, persisted): with none, the probe answers unknown and the
+open proceeds blind as it always did, and the first read that proves the window learns the crop again.
+The look path uses `DeferredSchedule` (+5 min) for the same case rather than the cycle.
+
+**Verified.** Pet + Tests build clean; 285 tests pass. Owed: the live run after the next restart.
+
+## 2026-10-11 (87) — the count read walks a scale ladder (option 1 of 86, built)
+
+**The player chose option 1 and asked its cost first** — *"the effect would be we use more time on
+ocr?"* — so it was measured before it was written: one recognition on a real 40x60 crop, median of
+five, on this machine: **3x = 118 ms, 9x = 202 ms, 24x = 330 ms**. The ladder's first rung IS today's
+read, so a slot that reads pays exactly what it always did; only a failure walks the rest, and the
+whole ladder costs ~0.65 s against the old three same-scale attempts' ~0.33 s — with about one
+unreadable slot per look, ~0.3 s every few hours.
+
+**`CountReadUpscales = { 3, 9, 24 }`**, the three scales the corpus actually needed: the same probe
+shows a crisp `120` reading at 3x and at NOTHING else (9x and 24x return junk — so a good crop must
+never be pushed up the ladder, and never is), a reversed `108` needing 9x, and a `267` needing 24x.
+The same-scale retry of (85) is replaced by it; re-capture still happens per rung, so a transient
+frame is covered too. `FeederCount.Parse`'s >300 rejection and the between-rungs empty-slot colour
+check are unchanged — a reversed or garbled rung still becomes NO READING, never a confident number.
+
+## 2026-10-11 (86) — the count read, characterised: the reader is knife-edge on these digits
+
+**Where this stands.** Entry 85 added a retry because one capture looked soft. The next live look
+(refused-closes and all) kept failing on the *partial* stacks while the full ones (`300`) always read —
+and the failed crops, probed offline against the real recogniser, turned out to be **statistically
+indistinguishable from the ones that read at 0.998**: same size, same digit colour and stroke weight,
+same height (46 px upscaled), same position in the crop, same edge energy (Laplacian variance 1185–1353
+for the failures, 1190–1282 for the successes). Whatever decides the outcome is **sub-pixel
+rendering**, and the reader is on a knife edge about it.
+
+**What the offline probe actually found** (a throwaway console at `c:\tmp\ocr_probe` driving
+`OcrEngine.ReadImageFile` over every saved crop):
+
+| crop | what the recogniser says |
+|---|---|
+| a crisp `120` / `273` / `276` / `279` / `300` | the right number, at 3×, 6× and 9× |
+| `108` (failed live) | **`801` at 3×** — the digits read in REVERSE — and `108` only at 9× |
+| `267` (failed live) | nothing until **24×**, then `267` |
+| `264`, `144` (failed live) | nothing at any scale, 3×–24× |
+| the crisp `120` at 24× | nothing — too big |
+
+So there is **no single upscale that reads them all**, and the failures are not one phenomenon: a
+reversed read, a garbage read (`4944`), and true no-reads, from crops that measure the same.
+
+**Why the tool is still safe on every one of them.** `FeederCount.Parse` rejects anything above 300,
+so a reversed `801` becomes *no reading* rather than a confident wrong number; `4944` likewise; and a
+no-read understates the slot, which is the direction the schedule prefers (reload early — the leftover
+food returns with the pet). The residual is the reversed read whose mirror happens to be ≤ 300 (e.g.
+`102` → accepted as `201`, an overstatement) — rare, and the class to close if a fix is wanted.
+
+**The options, for the player to pick (nothing built beyond the retry):**
+1. **A scale ladder on the failure path** — re-read at 6× and 9× before giving up. Closes the reversed
+   class (the `108` case), costs ~0.5 s only when a read has already failed.
+2. **A digit-template reader** — the counts are a fixed font, and the saved crops between them contain
+   every digit; the tool's own `IconMatch` (offset search, differing-fraction) is the proven machinery
+   and reads pets at 1.0. The most reliable option and the most work.
+3. **Leave it** — every failure is safe, and the cost is an occasional reload an hour early.
+
+**Measured on the way, worth keeping:** ~11 unreadable slot reads in ~50 minutes of monitored looks
+(≈1 per look), always on PARTIAL stacks; the full `300` stacks never failed.
+
+## 2026-10-11 (85) — a slot's count read is retried, because the failure is a capture
+
+**The report:** the player, watching a slot whose count sat at 144, saw the tool read it as *nothing*
+— and the card then scheduled the row from one slot only. They read the slot by eye: 132 a few minutes
+later, so the tray was never the question.
+
+**What was ruled out, in order:**
+- *The score gate* — the saved crop was run offline through the real recogniser with a throwaway probe
+  (`OcrEngine.ReadImageFile`, gates from 0.0 up); it finds **no line at all** in that image.
+- *The crop's height* — measured: the digits end ~14 px (source) above the crop's edge. An overspill
+  change was written for it and **reverted** when the measurement refused it.
+- *The digits being unreadable in principle* — the SAME SLOT, seven minutes later, read
+  **120 at 0.998**, and put side by side the failed capture is visibly **soft** (glowing edges) where
+  the good one is crisp.
+
+**The cause, and why the fix is a retry:** each slot is its own screen grab, and a grab can land on a
+frame the compositor is still committing. An intermittent capture cannot be fixed by aiming better —
+the rule every retry in this tool already follows (`PlaceAttempts`, `FoodDragAttempts`,
+`CloseAttempts`) — so `FeederCountOf` reads a slot up to `CountReadAttempts` (3) times, with a short
+beat between attempts, and the empty-slot colour verdict runs BETWEEN attempts so a genuinely empty
+slot still pays for one check and no retry.
+
+**Verified.** 285 tests pass; Pet + Tests build clean. The temporary evidence mode (every crop saved,
+every line logged with its score) that made this diagnosable was removed with the fix — the tool is
+back to saving only the failures that survive all three attempts.
+
+## 2026-10-11 (84) — three pet numbers, told apart at last
+
+**The player, over several messages:** *"there is no stage 8 stage 9"*, *"u know the stage be
+hovering on the pet icon"*, and *"stage and + N is both important information we need to know and
+deduce."*
+
+**What the first version got wrong:** it labelled the game's `到9為止` number `→ stage 9`. There is no
+stage 8 or 9. Three different numbers sit near each other and the card was mixing two of them:
+
+| number | where | what it is |
+|---|---|---|
+| `(6階)` | hover panel — read by hovering the pet icon, which is what the tool does at every placement | the **stage** (no 8/9) |
+| `+7` / `到9為止` | the panel's growth, and the line's countdown target | the **餵養值 / growth**, +0 … +9; `+9` at 100 % is a finished pet (`PetPanel.MaxGrowth`) |
+| `52.18%` | the panel | that growth bar's fill |
+
+**What changed:** `FeederEta.LevelTarget` → `GrowthTarget` (bounds checked against
+`PetPanel.MaxGrowth`, the game's own maximum, in the class that owns it), the card shows `→ +9` in
+the panel's own vocabulary, and both guides carry the table above. **Both numbers stay on the row**
+— the stage from the hover panel and the line's growth target are each worth knowing, and the rate
+line's `N/min` beside them. The stage's source is the hover panel, which the tool has always read at
+placement; the line's target is the deduction this row's `→ +N` contributes.
+
+**Verified.** 284 tests pass.
+
+## 2026-10-11 (83) — the feeding rate is read per row, from the game's own line
+
+**The player's point, in three messages:** *"the reason why it is 3 food per pet it is those pet is
+stage 6 pets"*, *"possible we can deduce that?"*, and — the one that settles the design — *"it is
+important as they may have different stage pet in the future."*
+
+**They do not have to be deduced, and reading is strictly better.** `AppConfig.ItemsPerMinute`'s own
+comment had already recorded the ground truth: the boarding window prints the rate beside every row
+(`每1分 攝取3個`) and *"a stage-7 row saying 4 is readable rather than a number this config is simply
+wrong about"* — written when the config was born, never wired up. It is wired now:
+
+- `FeederEta.ParseRate` reads `每N分 攝取M個` off the SAME OCR pass that reads the time line (one
+  region, one read), rejecting implausible values (1..30/min, whole numbers) rather than clamping —
+  a misread rate would silently rescale every time that row computes.
+- The pet tool keeps `_lastRate` per row and `RateFor(row)` resolves measured-first,
+  config-fallback. `ScheduleFor`, `CycleMinutesFor` and the reload fold's load arithmetic all go
+  through it, so one row cannot be timed at two different rates; a faster eater shortening the
+  fallback cycle is the safe direction.
+- The card shows the row's own `3/min (game line)` beside its stage, and a rate that disagrees with
+  the config is logged as evidence (`the game's own rate line says 4/min — the config says 3/min;
+  THIS ROW's arithmetic uses 4`).
+- `pet.items_per_minute` is documented everywhere as the FALLBACK it now is.
+
+**Owed, and asked of the player:** a **stage→rate table** would let the tool answer when the line is
+unreadable; only two data points exist (stage 6 → 3, and the comment's stage 7 → 4), and a guessed
+table is exactly what this repo refuses to ship. The loading is ready for it (`RateFor` is one place).
+
+**Verified.** 284 tests pass (nine new rate cases, including the measured line, the Simplified 个,
+and the two implausible-value rejections).
+
+## 2026-10-11 (82) — the row is one line again, with the feeding-stage deduction on it
+
+**The player, twice over:** *"possible to simplify even more? → maybe just a deduced level 6 at the
+same line?"* (81) had trimmed the `why:` to a hint; this removes the second line altogether.
+
+**What changed:** `why:` is gone — `ToolRowState.Why`, the `_rowWhy` bookkeeping, `WhyFromReading` and
+every write to it. What survives is the single deduction the player actually wanted from the game's
+line: **`→ stage N`**, appended to the row's own line when the line names a stage
+(`FeederEta.LevelTarget`). The row reads
+`· Row 1: boarding · 真蔚藍鳳凰 · stage 6, +7, 52.18% · → stage 9 · next 07:14 (in 2h 41m)`.
+
+**A correction that came with it, and matters:** that number is the **feeding (代養) stage**, not the
+pet's rank or level — the player caught the first version calling it "level": *"the pet feeding level
+is not the pet rank level."* It is the same scale the hover panel's `stage N` shows, and the card
+uses the word *stage* so the two can never be read as the same thing.
+
+**Why this is a simplification and not a loss:** the numbers the why line carried (tray minutes,
+cycle fallback, retry timing) are the tool's own arithmetic and are already in `pet.log` where they
+are checked; the card's job is what the player glances at, and the only thing on it that they could
+not deduce themselves was what the game's foreign-language line was saying.
+
+**Verified.** 274 tests pass; Pet + Tests build clean.
+
+## 2026-10-11 (81) — the row's why, trimmed to a hint
+
+**The player's verdict on (80):** *"i dont need fully on how the calculation is done, too much, maybe
+a short hint that u deduce this is level 6 is fine."* The first version spelled out the arithmetic and
+quoted the game's line in full; what they actually wanted from it was the one deduction — that the
+line names a stage.
+
+**What changed:** every `why:` is now a handful of words — `tray 501 item(s) ≈ 167 min (last read)`,
+`nothing readable — cycle 505 min`, `not boarding`, `full load — 500 min`, `no feedable pet — keeps
+its place, looked up again in 30 min`, `given up after 3 failures` — and the level form contributes
+exactly `game line says level 6`, from the new `FeederEta.LevelTarget` (pinned by six theory cases on
+the real measured strings, including that the completion form and the shelf-life line name no stage).
+The pet's identity moved to the row line where it belongs, and the numbers live only in the why.
+
+**Verified.** 274 tests pass; Pet + Tests build clean. Guides updated in both languages.
+
+## 2026-10-11 (80) — every row's time says WHY it is that time
+
+**The player's follow-up to (79):** *"also information on why it is calculated this way — (hidden
+message is that it is level 6 pet right?) from the preset."* They had spotted that the game's line
+「到6為止预計所需時間：約19分」 is telling you something (the stage the pet is heading for) and that
+the card was silently not using it, with no way to tell that from a line it *had* used.
+
+**What each row now carries:** the pet it boarded (species from the **queue entry — the player's own
+preset** — beside the hover panel's reading, `stage 6, +7, 52.18%`), the last feeder count, its own
+countdown, and a **`why:` line**: the feeder arithmetic (`516 item(s) ≈ 172 min of food at 3/min,
++ 5 min grace`), the game's own line, the pet's estimate from the panel and the feeding table, or
+the configured cycle when nothing could be read. When the line is the **level** form it says so —
+"the stage it is heading for; it does not drive the schedule" — which is the exact question the
+player asked.
+
+**How it cannot drift:** `_rowWhy` is written by the code that produced each `next[row]` — the read
+side in `WhyFromReading` (switched on the same `ScheduleSource` the number comes from), the fold for
+reloaded, waiting and given-up rows, and the front deferral. The card only prints what was recorded,
+so a time and its explanation are two views of one decision.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Guides updated in both languages.
+
+## 2026-10-11 (79) — the Pet Feeder's card lists every row
+
+**The player's ask:** *"if I have 4 pets pending to feed … list out all 4 conditions."* The card's
+standing line could say which row was soonest and could not say that row 1 is boarding on 516 items
+while row 4 was given up on.
+
+**What it shows now:** the standing line, then one line per breeding row —
+`· Row 1: boarding · 516 item(s) at the last read · next 07:14 (in 2h 41m)` — with the status word
+(`boarding` / `waiting for a reload` / `given up`), the last feeder reading, and **that row's own
+countdown**, recomputed on every card tick like the summary's.
+
+**How, and why this shape.** `ToolState` gained `Rows` (`ToolRowState`: name, status, detail, its own
+`NextAt`), written by the tool and replaced wholesale on every publish, the same rule `Attributes`
+follows so the UI can read the list without a lock. The pet tool fills it in `PublishSchedule` — the
+one place that already knows every row's next — and remembers each row's last feeder count
+(`_lastItems`) as the reads happen. The launcher renders it in `FormatStatus`, where the countdown
+logic already lived; that logic became one `Countdown` helper so a row's clock and the summary's
+cannot drift apart.
+
+**Deliberately not live:** the item figure says "at the last read". The tray drains continuously and
+nothing reads it between visits, so a number that looked live would be a number that was true hours
+ago — the guide says so in both languages (`USER_GUIDE.md` and its zh-TW twin).
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The launcher needs a restart to show it.
+
+## 2026-10-11 (78) — the open is confirmed, and the slot read stops believing the world
+
+**The player found the hole the front guard does not cover:** *"in some cases, the first click may
+fail and cause the breeding window not open."* With the start-wait gone (entry 77), the look's first
+click both focuses the game and presses 目錄 — but a click that misses leaves the window closed while
+everything downstream believes it is looking at rows. And this state is **invisible to the front
+gates**: the click focused the game, so the game IS in front; the pixels are just the world. The
+measured signature is identical to a covered window — slots "occupied by 1.000", counts 0 or
+unreadable — and it ends the same way: the end toggle pressed at the game world, 57 strikes. The
+04:05 live run on the new build is the proof that both states exist: it read four rows cleanly AND
+logged `learning the boarding X's reference from this open window` — the probe's reference is now
+real, so it can answer.
+
+**Two guards, both positive-only, neither able to silence a run:**
+
+- **Confirm the open** (`OpenBoarding`, after the clicks): the X's learned reference answers whether
+  the window came up. A positive "the X is not there" **re-opens once**; unknown carries on as
+  always. A second failure is only **logged loudly** and the reads decide — failing the open there
+  would let a stale reference kill every future open (no successful read, so no re-learn, forever),
+  and a run that stops feeding is the outcome this tool refuses.
+- **The slot read stops believing the world** (`PetSlotNotTheWindowAbove = 0.85`): the measured bands
+  are empty slot **0.000**, pet in the slot **0.65-0.785**, and not-the-window **0.91 and up** (194
+  reads of exactly 1.000). 0.85 sits in the empty gap, and a reading inside it is now **unknown**
+  rather than "a pet is in the loader" — so a missed open turns into the existing unknown handling
+  (the end press passes its check, the bag scan finds nothing, the row takes a 30-minute wait)
+  instead of three strikes and a dropped row. The raw number is still logged, with a line saying
+  plainly that the pixels are not the boarding window.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. Owed: the same watched run — this time to see
+`the boarding window is ALREADY OPEN` or `did NOT come up` lines, and the slot band's new log line,
+if either state ever occurs live.
+
+## 2026-10-11 (77) — the run start does not ask the player for focus
+
+**The player refused the start-wait, and the refusal is right.** The front guard's first version made
+the run WAIT until the game window was the focused window before the look. The player: *"your new
+action gives me a burden to click the game window, which I did not need before"* — and *"in practical
+usage, I would not let the launcher cover the needed click area."*
+
+**Two things were wrong with it.** (1) It contradicted a rule this codebase already settled: the gem
+flow's *"one click both focuses the game and presses the button; never add a focus-click"* — and the
+look's first click on 目錄 does exactly that, so a run started from the launcher has always focused
+the game on its own. (2) It gated on the wrong fact: **foreground is not the requirement — "the areas
+the tool touches are not covered" is.** A game sitting unfocused beside a browser satisfies the real
+requirement and fails the focus test, so the wait would defer work that has always succeeded.
+
+**The evidence agrees.** Of 131 `run started` lines in `pet.log`, **120 read their counts on the
+first try and ZERO showed the covered-window pattern** — the look has never once met a covered screen.
+The covered events (194 reads of exactly 1.000, the 57 strikes) all happened during VISITS, hours in.
+
+**What changed:** `WaitForGameInFront` is gone; the run claims the game and looks, as it always did.
+**What stayed:** the read gates (a covered screen answers "unknown" instead of a confident wrong
+answer), the per-slot front re-check in the feeder counts, and the visit-level deferral — the parts
+that act on the tool's own reads rather than on the player's attention. The visit deferral is kept
+deliberately even though its gate is the same coarse foreground test: it never asks the player for an
+action, it costs five minutes, and its measured case is the one that dropped rows.
+
+**Verified.** Pet + Tests build clean; 268 tests pass.
+
+## 2026-10-11 (76) — the whole branch, adversarially reviewed; eleven defects fixed
+
+**Method.** Four reviewers took the branch apart by area (veto + schedule provenance; close guard;
+sweep; hand-off + foreground + docs), then two independent verifiers tried to REFUTE every finding —
+one by constructing the triggering state in the code, one by consequence and the project's own rules
+(*unknown keeps meaning act*; an unfed pet is the unrecoverable direction). **Both verifiers confirmed
+all fourteen findings**, and their suggested fixes agreed. Eleven distinct fixes landed (some findings
+were the same defect seen twice); the rest of the confirmed set was documentation wording.
+
+**The two that mattered, both in the close guard's provenance chain:**
+- **The window proof could be satisfied without the window.** `_windowProofSeen` accepted any
+  non-null feeder count — including the **colour-derived 0** ("this crop has no food in it", a fact
+  about a crop, producible by the game world) — and any parsed time line at any score. A failed open
+  plus a world read could therefore teach `close_button_png` from the world, and a world crop matches
+  the world: the one path that turns a closed window into a skipped open. The proof is now three
+  narrow window-interior structures only — an empty slot that **matched its reference**, **digits**
+  read by the OCR, and the **completion-form** time line — and the capture runs at the instant the
+  proof lands, not after the remaining rows' OCR passes (a player can close the window meanwhile).
+  `ReadEta` also gained the foreground gate every other screen read had, for the same reason.
+- **The front guard went stale across the gate wait.** `GameIsInFront()` was checked *before*
+  `ClaimGame`, which can spend hours waiting for another tool — so the front at the moment the gate
+  was granted was untested, and the look's first two clicks could land on whatever took it. Both call
+  sites now re-check after the claim (the look gives the gate back and waits again; the loop defers
+  the batch five minutes, releasing the gate).
+
+**The rest.** The may-be-open belief is written the moment the feed-icon click is sent, not at the
+end of the open's tail (a stop or a kill in between left the window on screen with the belief false).
+The fallback sweep can now fire on an empty candidate list — the early return that used to skip it
+meant a queue-without-return-slot config never re-swept for a just-returned pet, which is the one
+case the fallback exists for. The per-use verification parks the cursor first (the arrow in the crop
+could score a live cell as gone). The feeder-counts read re-checks the front **per slot** and
+discards the whole reading if it ever fails. The success beep no longer plays for a visit that acted
+on nothing, the "every due row is still fed" line is no longer written when a row was never judged,
+and the look's hand-off no longer pays §4.2's redundant second `ReadRows` — the look hands its own
+reading to `ReadAndReload`.
+
+**Verified.** Pet + Tests build clean; 268 tests pass. The review's own record: the two verifiers'
+counterexample and invariant passes, both confirming this set and nothing else.
+
+## 2026-10-11 (75) — the look and the first visit share one window
+
+**PLAN-PET-FLOW §8 step 4, the last of the four** (§4.2). The plan's own words: *"Two complete
+open/read/close cycles seconds apart, and one of the two `ReadRows` is redundant."*
+
+**What it was.** A run started because a row was due — the usual reason — looked once (open, read,
+close, release the game), then the loop immediately re-claimed the game and opened the same window
+again for the very row it had just read, with a second `ReadRows` inside. The plan's first draft
+claimed a measured open/close imbalance from `pet.log`; that arithmetic was withdrawn (the log spans
+restarts with different logging) and the waste was argued from the code. This entry's change removes
+it without needing the measurement.
+
+**What it is now.** The look's own reading picks the rows due NOW and reloads them in the window it
+already has open, through the same body a loop visit runs (`ReadAndReload` — extracted from `Visit`
+so the two cannot drift), folded back by the same code (`FoldBack` — extracted from the loop, because
+there are now two callers and a run whose first reload followed different rules from its second would
+be a run nobody can reason about). Nothing due → close, release, sleep, exactly as before. A stop
+mid-hand-off leaves the same "may not have been fed — check it in game" note, from the same words
+(`StoppedDuring`). The hand-off is deliberately silent: no beep, because the run is still starting
+and the original start was.
+
+**This also makes `RELOAD EVERY ROW ON START` do what PLAN-RELOAD-VISIT §5 says it is for** — every
+row due at once, on demand — now inside the look's own window rather than as a separate four-open
+sequence.
+
+**Verified.** 268 tests pass; Pet + Tests build clean. The whole four-step flow is now in, and what
+remains is what the plan says every step needs: **one watched live cycle** with `pet.log` open —
+which settles the close guard and the veto, and needs the bag to compact at least once to prove the
+sweep's re-verify rule.
+
+## 2026-10-11 (74) — the bag sweep runs once per visit, and every stored cell is re-read
+
+**PLAN-PET-FLOW §8 step 3** (§1.2 and §6.3). Design record with the two structures and the evidence:
+[PLAN-PET-SWEEP.md](../archive/PLAN-PET-SWEEP.md).
+
+**The saving, and where the sweep actually goes.** A plural batch paid one full three-page sweep per
+row — worst on the visit that follows downtime, which is the one with the most rows. The sweep is now
+taken by the visit's FIRST PLACEMENT and shared. That is one step later than the plan's diagram puts
+it, on evidence: a boarding row's pet is in the loader until its own end press, so a sweep before the
+row loop looks at a bag that provably lacks the pet those rows need — and the fixed return slot the
+saving would then lean on measures empty 173 of 258 tries in `pet.log`. Taken at the first placement,
+the list includes the just-returned pet, the single-row reload is byte-for-byte today's flow, and a
+plural batch pays at most today's per-row cost.
+
+**The check survives the sharing.** A stored cell is re-read against the queued icons before it is
+clicked (`CaptureBagCell` with the search radius + the new `IconMatch.ScoreCell`, the sweep's own
+comparison applied to one cell): a match proceeds, a positive mismatch skips and logs page/cell/score,
+an unreadable one carries on — unknown must not cancel a boarding. The food cells get the same
+one-cell read against the food icon before a stack is spent on them.
+
+**The recovered hole.** A row whose own boarding just ended has its pet in neither the shared list nor
+(usually) the return slot, so when the shared walk yields nothing usable that row runs **one** fallback
+sweep, after its own end press; the list it finds replaces the shared one. Bound: one per row, so at
+most today's sweeps per visit. The food re-mark stays with the visit's single sweep — never on a
+fallback, whose write would reset a counter the other rows are still counting against — and it now
+also runs for a setup with **no pet queue but a food icon**, which previously re-marked nothing, ever.
+
+**Verified.** 268 tests pass (three new ones pin the single-cell verification's three outcomes);
+Pet + Tests build clean. Still owed: the live run the plan requires for this step, and its
+bag-compaction case, which is what would prove the re-verify rule and show how often the fallback
+fires.
+
+## 2026-10-11 (73) — the fresh read may cancel a reload; the margin, measured rather than argued
+
+**PLAN-PET-FLOW §8 step 2, the veto half** (§2 and its ⚑2/⚑3; the reclassification half had already
+shipped in `7832b76`, and ⚑7's reason-logging landed in (71)). Two policies were designed
+independently and judged by two lenses; both judges agreed on the safety shape and split only on the
+margin, which the evidence settled.
+
+**The rule.** A due row's reload is skipped iff the fresh reading shows food SEEN on this visit: the
+slot freshly read as occupied, a feeder count that came back as a number, and that number above zero,
+with more than **30 minutes** to go. Every other state acts — unreadable counts, an unreadable slot, a
+completion line with no count beside it (zero instances in three weeks, and no evidence it is
+trustworthy on a dry tray), the cycle fallback, and `RELOAD EVERY ROW ON START`. Unknown keeps meaning
+act; a misread count that says "full" must never cancel a reload, because an unfed pet cannot be
+undone.
+
+**The margin is the measurement.** ⚑2 asked "how much margin" and called the answer *"one line of
+instrumentation away"*. The line was already in `pet.log`: every batch row's own visit-opening read is
+**165 at 0 minutes, one at 12, and thirty at 41-plus** — the 13-40 stretch is empty, so a margin
+anywhere inside it fires on every recorded case, and 30 sits in its middle. `ScheduleFor` now returns
+the next **with its source** (`RowReading`), so the number and what it is worth are produced by the
+same branch and cannot drift; `:407`'s "reload the soonest anyway" is untouched and its forced row is
+veto-eligible like any other (⚑3: the fallback decides *which* row the visit is for, the veto decides
+*whether to act* — different information, different times).
+
+**The honest caveat, kept from the judges.** The veto DEFERS the reload, it does not avoid it: the
+reload count is load-limited, and what a firing costs is one extra open+read+close. That is why the
+margin cannot be zero, and why this is a correctness change (the read now owns the decision) rather
+than a saving.
+
+**Verified.** Pet + Tests build clean; 265 tests pass. Fires and near-fires are both logged
+(`veto:` / `veto check:`), so the margin is correctable from the next live run rather than argued
+about.
+
+## 2026-10-11 (72) — the boarding window's close guard: retry, belief, and a probe
+
+**PLAN-PET-FLOW §8 step 1** (its ⚑6 asked retry-vs-probe; the answer is both). Design record:
+[PLAN-PET-CLOSE-GUARD.md](../archive/PLAN-PET-CLOSE-GUARD.md) — three independently designed proposals, judged by
+two lenses; the built design is the judges' winner with one change of provenance.
+
+**The measured problem.** 17 closes in `pet.log` could not reach the X; each left the window open for
+the next open to click 目錄 *behind* — both open clicks are coordinates in the closed world. Two
+corrections the judgement made to the plan's reading, now on the record: those coordinates are
+HidPointer's **logical-space** goals (the configured X has not moved; the placement gave up 18 px
+short), and the 17 split 7 same-run / 9–10 **across a run boundary** — which is why the belief is
+persisted, not held in memory.
+
+**Built.** The X is clicked twice (`CloseAttempts`, commit `7daf94a` — the failure is non-convergence,
+so a retry re-aims). A close whose click could not be sent leaves `pet.boarding_window_may_be_open`
+standing; the next open then compares the X's region against `pet.close_button_png`. The reference is
+**learned at runtime from a window whose contents were just read** — an empty slot matched, a count or
+a time line came back — not cropped at calibration time: a crop taken on faith could be the game
+world, and a world crop matches the world, which would turn a closed window into a skipped open. A
+match skips only the two clicks; the clearing Enter and everything after run unchanged. Every probe
+logs its score; every learn and replacement is logged.
+
+**Open, and recorded in the design doc:** a mis-marked X can, in the belief-gated states, still match
+(a bound, not an elimination — two X buttons share the screen); the hardening path is a second
+independent live signal (the toggle label's OCR, after an offline readability check). No live run has
+exercised the probe yet.
+
+**Verified.** Pet + Tests build clean; 265 tests pass, with the new keys under the config reflection
+fences and a save→load round trip.
+
+## 2026-10-11 (71) — every failure writes its reason, and a row's death carries the last one
+
+**From the same log reading as (69).** The plan's §3 second gap — "for some failures the log records
+no reason at all" — turned out to be the *dominant* case rather than a corner: **77 of the 131
+in-visit failures** had nothing between the action and the failure line. All 77 came through
+`ReloadRowInPlace`'s pet-did-not-come-back branch, the one `!ok` return there that never called
+`Log`. It printed to the card, which the next line overwrites and which is gone when the tool stops.
+
+- That branch now logs `FAILED ending: …`, the same shape as its four siblings (`FAILED placing the
+  pet`, `FAILED loading the food`, `FAILED ending` at the toggle, `FAILED starting`).
+- A give-up writes the **last reason with the death**: `Row 1 given up on after 3 failures —
+  <why> — the other rows carry on`. The rejection line is the last thing anyone reads about a row;
+  the card that carried its reason is long gone by then, and a dropped row is the shape of an unfed
+  pet.
+
+**Verified.** Pet project builds clean; 265 tests pass. Branch `feature/pet-flow`.
+
+## 2026-10-11 (70) — the look defers when it loses the front; the close retries the X once
+
+**Two small fixes in the same family as (69), both from the same evidence.**
+
+- **A look that loses the front mid-read defers instead of parking rows.** The fore gate turns a
+  covered read into "couldn't read", and `ScheduleFor` treats that as a FULL LOAD — 205/505 minutes
+  for a row that may be dry right now. `InspectRows` now re-checks the front after `ReadRows` and,
+  when it is gone, schedules every row at `RetryMinutes` (`DeferredSchedule`) — deliberately not
+  `UnreadSchedule`, which stays the answer for "the breeder would not open at all": there, nothing
+  else can be done; here, the game was there a moment ago.
+- **The close retries the X once** (`CloseAttempts = 2`). The measured failure is the cursor
+  placement failing to converge — 17 in `pet.log`, "it stopped at (861,327)" against (844,327) — and
+  a retry re-aims from wherever the first attempt left the cursor. Same shape as `PlaceAttempts` and
+  `FoodDragAttempts`. A close that fails twice now says the window may still be OPEN, which is the
+  line that makes the next guard's work findable in the log.
+
+**Verified.** Pet project builds clean; 265 tests pass. On branch `feature/pet-flow`, the commit that
+carries this entry.
+
+## 2026-10-11 (69) — the game must be IN FRONT; the feeder's biggest row-killer, found in the log
+
+**Goal.** Start the visit-flow rework ([PLAN-PET-FLOW.md](../archive/PLAN-PET-FLOW.md), branch `feature/pet-flow`)
+with its smallest, most certain step — and the reconnaissance found something the plan had not: the
+reason the feeder silently gives up on rows.
+
+**What the log said when it was asked why.** The plan's §3 flagship ("20 of 30 give-ups are *No queued
+pet is in the bag*") is a **miscount** — 20 is the count of that log *line*, and the give-ups from it
+are 4, all before commit `7832b76` (2026-09-21) which already made that state a wait. Re-measured on
+the whole 26,722-line log: **77 of the 131 in-visit failures have no reason line at all**, and all 77
+follow the end-boarding toggle press. That is `PetTool.cs`'s pet-did-not-come-back branch — the one
+`!ok` return in `ReloadRowInPlace` that logs nothing. It is **57 of the 90 strikes** behind the 30
+give-ups, 24 of the 30 events.
+
+**Why the pet "did not come back out".** Not the pet: the screen. `pet.log` holds **194 slot reads of
+exactly 1.000** — completely unlike the empty-slot reference — and in 104 of the reads that followed
+one the feeder counts were also unreadable. Four rows reading "occupied" in the same second, with no
+numbers anywhere, is one **covered window**. Every screen read in the tool checks
+`ForegroundWindow()` before trusting its grab — except `PetSlotDifference`, the slot-occupancy read.
+So a covered game read as "a pet is in the loader", the reload pressed 結束代養 at whatever window was
+in front, read the same covered image back as proof the press failed, and burned a strike — quietly.
+
+**What changed.**
+- `PetSlotDifference`, `CaptureBagCell` and `SlotHasNoFood` got the same foreground gate the feeder
+  counts and the icon sweep already had. Unknown now means unknown instead of a confident wrong
+  answer.
+- **The run waits for the game before the LOOK** (`WaitForGameInFront`) — holding nothing while it
+  waits, saying so on the card, because the player who presses Start on the launcher has the
+  *launcher* focused.
+- **A visit whose window is not in front defers**: rows keep their place, retried in `RetryMinutes`,
+  no strike, no click. The front is re-checked before every row; a focus lost mid-visit abandons the
+  rest of the visit and returns no schedule (a covered read's fallbacks are not evidence — returning
+  them would park a dry row on the 205/505-minute cycle).
+
+**Verified.** Pet + Tests projects build clean; **265 tests pass**. Live verification still owed — the
+plan's own rule for every step in this work.
+
+**Left open.** Mid-visit focus loss can still let the row in flight press blind (bounded: the rest of
+the visit stops, and the reads now answer "unknown"); whether clicks should refuse outright when the
+window is not in front is a step-2-shaped decision, not this one. The four plan steps themselves are
+next, in the plan's order, each its own commit on `feature/pet-flow`.
+
+## 2026-10-08 (68) — program vs profile: deployment planned, not built
+
+**The plan is [PLAN-PATHS.md](../plans/PLAN-PATHS.md); nothing in it is built.** It exists because "should the
+next version reorganise the codebase?" got the honest answer **no** — the code is in better shape than
+its own handover doc makes it sound — and then a second question, "including easier deployment to
+another PC?", turned out to have exactly one root cause.
+
+**The measurement that made the case.** `AppContext.BaseDirectory` appears **20 times** across `Core`,
+`Launcher` and all six tools; `Environment.GetFolderPath`, `SpecialFolder` and `AppData` appear **zero**
+times. The install folder *is* the data folder, and the two publish modes, the hand-maintained copy list
+in `publish.bat` and the fact that an update cannot replace the folder all follow from it.
+
+**The finding worth keeping.** `defaults.yaml` reads as a program file and ships as one
+(`publish.bat:77`), but `SaveDefaults` rewrites it at runtime (`LauncherService.cs:704`). It is **user
+state seeded from a program template** — a plan that moved only `local.yaml` and the calibration PNGs
+would have left it to be clobbered by every update.
+
+**Not a v3.** Every step lands shippably and only one is player-visible, so this is v2.x work. A major
+version is for a changed user-visible contract, not for code that got better.
+
+**The handover's traps list is history, not current truth.** The config-projection bug class it records
+— *"the projection drops fields, four times now"* — is already closed by reflection guards in
+`ConfigLoaderTests.cs` (`EveryLocalPetFieldIsCopiedFromTheConfig`, plus the `LocalPetSlot`,
+`LocalPetQueueEntry` and `PetConfig` fences). A plan built from that list alone would over-scope. One
+claim in it does still hold: `ToolState`'s *"reads are atomic"* comment is false for its `int?` and
+`DateTime?` members.
+
+**Open:** the three ⚑ decisions in §8 of the plan.
+
+## 2026-10-08 (67) — the flows as editable diagrams
+
+**`v2/docs/diagrams/`** — one `.drawio` per tool (shop has two pages, buy and sell), cloned from an
+approved template so the set reads as one document. The player installed `drawio-skill` and the VS Code
+drawio extension for this; they are editable, not pictures.
+
+**The template took eight rounds, and that is the finding.** `spammer-flow.drawio` was corrected eight
+times, and **`validate.py --score` reported `0 error(s), 0 warning(s), 0 overlaps` on every single
+version** — including the ones with real defects. What actually found them:
+
+- **Rendering, four times**: an arrowhead sitting on a swimlane's title; an edge spanning the whole loop;
+  the yield drawn as a three-step pipeline when it is a branch; and a diamond hanging 60 px out of its
+  own container into the next one.
+- **The player, three times**: the diamond overflowing, the jog in the `on ANY exit` line, and the line
+  being off the spine.
+- **A checker written for it, twice** — see below.
+
+**The yield was drawn wrong twice, and reading the code is what caught it.** Three boxes read as a
+three-state sequence; the source is `if (yielded) {...} else if (holding && Waiting) {...}`, so it is
+**two** states with an entry — `waiting` was never a state of that tool, it is the same yielded state
+while the gate has not come free. Fixed by reading `SkillSpammer.cs` rather than the prose.
+
+**The worst failure in this entry is the checker's, not a diagram's.** `fitcheck.py` — written after the
+overflow that `validate.py` could not see — merged every cell in a file into one dict keyed by id, so on
+the two-page shop file the second page's ids overwrote the first's and it **reported an overflow that did
+not exist**. A diagram was then **reshaped to satisfy that phantom**: both pages' containers forced to
+identical geometry. That is the worst thing a checker can do — not miss a defect, but invent one and be
+obeyed. It is page-aware now, and it is committed at
+[`diagrams/tools/fitcheck.py`](../diagrams/tools/fitcheck.py) because the diagrams cannot be verified
+without it.
+
+**Also worth recording: the drawio editor silently keeps a stale render.** Four separate times — twice
+for the player, twice for me — it showed an old version while the file on disk was already correct. A
+defect was reported from one of those stale views and was not real. `Ctrl+Shift+P → View drawio file`
+re-reads from disk; the `●` on the tab is the warning that the editor is holding a buffer.
+
+**Verified:** every file parses, `validate.py` 0/0/0, fit check 0 overflows.
+**NOT visually reviewed** — none of the seven new diagrams has been rendered and looked at. Two of the
+eight corrections above were things only an eye could catch, so assume the rest need the same pass.
+
+---
+
+## 2026-10-08 (66) — every tool's flow in one place, and a correction to entry 62
+
+**The correction first, because it is the more important half.** Entry 62 says — and the `SleepCheck`
+doc comment repeated it — that `HoldSpace`, `SkillSpammer` and `ShopTool` *"clear `QuitPressed` to mean
+pause, so a stop signalled that way could be erased by the very tool it was meant to stop."* **That is
+false**, and it was found while documenting the tools for this entry.
+
+All three loops are the same shape:
+
+```csharp
+while (true)
+{
+    SleepCheck(…);
+    if (QuitPressed || ct.IsCancellationRequested) break;   // breaks HERE
+
+    if (state.Running && !running)
+    {
+        running = true;
+        QuitPressed = false;              // only reached with QuitPressed ALREADY false — a no-op
+```
+
+The clear sits **below** the break that reads the same flag, so it is only ever reached when there is
+nothing to clear. It is dead code from an older pause-toggle design. **`QuitPressed` means quit, plainly,
+and always did.**
+
+**What this does and does not change.** The throw-based design is unaffected and still correct — the
+requirement was to abandon a step *in progress*, and a flag cannot do that, because a flag is only read
+when control returns to the loop. But the *reason* given for not reusing `QuitPressed` was wrong, and it
+had been written into a commit message, entry 62, and the code. The code comment is corrected in place;
+entry 62 is left exactly as written, because this log is append-only — corrected here instead.
+
+Recorded rather than quietly fixed because this repo's own rule is that a document which says something
+untrue is worse than a missing one, and this one said it in three places.
+
+**And the deliverable: [TOOL-FLOWS.md](../spec/TOOL-FLOWS.md)** — all eight tools, each with an ASCII flow
+diagram, an inventory of every action sent to the game, a decision table, and a "Worth a verdict" list
+kept separate from description. Every claim carries a `file.cs:NNN` citation. §1 is the machinery all
+eight share — start, stop, the gate, the cancellation rule — so no tool section has to repeat it, and
+§2 is the suite at a glance. Linked from [DESIGN.md](../spec/DESIGN.md) §7.
+
+**Two things the documenting turned up. One is settled; the other is not.**
+
+- **The shop tool never verifies a purchase or a sale — SETTLED, player's verdict 2026-10-08: it does not
+  need to.** It has no capture, no OCR and no read-back of any kind, so `"Bought N"` and `"Sold N"` count
+  the commands it SENT rather than sales the game confirmed. That is the earlier audit's finding #3,
+  *"a sent action can be reported as a completed action"*, on the one tool that cannot even check — and
+  the verdict on it is that the messages are meant to count attempts. **Written down rather than dropped**
+  because a later reader re-derives the observation from the code alone, in the one place that has no way
+  to act on it. The items were removed from [TOOL-FLOWS.md](../spec/TOOL-FLOWS.md), where *"Worth a verdict"* is a
+  list of **open** questions and a settled one does not belong on it.
+- **The tuner's disconnect `catch` covers only `C`/`E`**, while its placements write outside the `try`;
+  its mouse guard fails open; and a panel STOP does not abort the countdown. **Still open.**
+
+This entry adds a document and corrects a claim; it changes no behaviour.
+
+---
+
+## 2026-10-08 (65) — a stop abandons the work, not the cleanup
+
+**A bug hunt over the whole branch before release**, because three of its changes alter live behaviour
+and **none of them had been near a board**. It found four real defects and **three were introduced by
+entry 62** — the `SleepCheck`-throws change. All four are fixed.
+
+**The rule they were all missing, now written into the code:** *a stop abandons the WORK, not the
+CLEANUP.* Entry 62 made `SleepCheck` throw so a step in progress could be abandoned — and it throws from
+**any** point, including inside teardown. The code that lets go of a button and closes a window also
+sleeps, and nothing had been asked what should happen there.
+
+**1. The pet's left mouse button could stay DOWN.** `DragFood` pressed with `LeftDown` *above* the
+`try`, so a cancellation in the `SleepCheck` below unwound **before the `try` was entered**, the
+`finally` never ran and `LeftUp` was never sent. A held left button follows the real cursor and drops
+whatever it is over on the next press — the exact hazard `HeldKeys` exists for. **Anything that presses
+now lives inside the same `try` whose `finally` releases.**
+
+**2. A Stop during a visit left the BOARDING WINDOW OPEN over the game.** `CloseBoarding` closes it
+through `Click()`, which sleeps before it writes — so with the token cancelled that sleep threw and the
+X was never clicked. The code says in as many words that the next cycle then clicks 目錄 behind it.
+**Deterministic, not a race.** And worse: the `finally` threw, which **replaces the exception it was
+unwinding**, so a real crash arriving beside a Stop was filed as a clean one by the launcher's new
+clause — the outcome worse than a noisy failure.
+
+**3. Stopping the tuner reported "Arduino disconnected".** Its `catch (Exception)` wraps two
+`SleepCheck`s, and `OperationCanceledException` derives from `Exception`, so a normal Stop put a **false
+cable fault** on the card. Now `when (ex is not OperationCanceledException)`.
+
+**4. `AcquireInputAsync` leaked the UI claim** if `ArduinoPortAsync` *threw* rather than returning null —
+the gate stayed owned by `"test"` and every later test was refused with `"test" is using the game right
+now` while no test was.
+
+**The mechanism for 1 and 2: `ToolBase.WithoutCancellation(Action)`** — nestable, restored in a
+`finally` so a teardown that throws cannot leave the tool unable to be stopped. `SleepCheck` honours it.
+It is a **named** thing rather than a flag set by hand, so "this is cleanup" is visible at the call
+site; the two pet `finally`s now say so.
+
+**Also confirmed clean**, and worth recording because a clean bill of health is a result: the
+`InputArbiter`/`InputLease` lifetime (the double-dispose guard is correct, a lease cannot outlive its
+port), every lock and their order, and `PetTool.ClaimGame` (sleeps between polls, no spin).
+
+**One thing the hunt found that is NOT a bug but is worth knowing:** `ShouldStandDown` has **no
+production caller** and no caller passes a deadline, so the deadline machinery is inert. PLAN-SCHEDULING
+§9 step 2 is marked *not started* and entry 61 says nothing was rewired — so the documents are honest —
+but "the gate carries a reason" is a design that is **built and not yet used**.
+
+**Verified:** 265/265 (four new tests on the mute: it suppresses, it is lifted when the block ends, an
+inner block does not un-mute an outer one, and a teardown that throws still lifts it), builds 0
+warnings. **Everything above is source-verified only.** The four fixes are exactly the paths a board
+test would exercise, and that test has not run.
+
+---
+
+## 2026-10-07 (64) — the Arduino card, laid out to be read
+
+**The player's report:** *"the text is too condense and hard for user to follow"*. Correct, and the
+reason was structural — the connection card was **one monospace block**, with the verdict, the ID it
+wants and a raw PnP dump all at the same weight. The sentence that matters sat between two that do not.
+
+**Rebuilt as labelled groups.** The verdict is first and alone; the ports are one per row with the one
+that **will be opened** first and marked; the raw PnP id — the longest string on the card and the one a
+player reads least — is a tooltip rather than half of every row. What is wrong now gets **its own line**
+under the verdict, because as the tail of a paragraph it was exactly where a player stops reading. The
+"no Arduino" case names the **charge-only cable** first: it is the most common cause and the one the
+player cannot see, since the board lights up and never enumerates.
+
+**Firmware now says what it MEANS.** The player's question was blunt and right: *"protocol level 2 make
+any sense to me or other users?"* It does not — it is a developer's unit, and a player has no way to
+tell whether 2 is good. `FirmwareVersion.Summary` is the same fact the other way round, in the shape
+`FoodLoadMode.Complaint` already uses: **what is decided, and the two ways out.** The only thing the
+level decides today is whether the board can **drag** food, and a board that cannot fails by doing
+**nothing** — identical from outside to a mis-aimed drag — so the sentence says that too.
+
+The card shows **both**, which the player asked for explicitly: the verdict, then the evidence.
+
+```
+OK — Up to date — it supports everything this launcher sends, dragging food included.
+Reported: protocol level 2 (current)
+
+Not OK — Older than this launcher's — it cannot drag food, and a drag would silently
+do nothing. Reflash the board, or set the Pet tab's food load back to right-click.
+Reported: protocol level 1 — older than this launcher's 2
+```
+
+"Correct or not" is decided by `FoodLoadMode.BoardCanDrag` — the one question the level answers — rather
+than by comparing numbers, so a **newer** board reads as fine rather than as a mismatch. `Describe` is
+unchanged and still what the log prints: it is the report's unit, not the player's.
+
+**Verified:** 257/257 (seven new tests on `Summary`), builds 0 warnings.
+**NOT verified visually** — the launcher is out of the test project's reach, and a screenshot needs a
+PowerShell execution policy the player has not granted. The layout is the player's to judge.
+
+---
+
+## 2026-10-07 (63) — the launcher UI audit, and nine things it said that were not so
+
+**A read-only audit of the launcher UI** (MainWindow.xaml.cs, 9,969 lines, plus the types it reads),
+looking for the failure this repo keeps paying for: *a message that tells the player the wrong thing*.
+Nine ranked findings, all of them that class. **Nine are fixed; three are not, and are named at the
+end.**
+
+**The two structural ones.**
+
+*The Arduino tab was asking a different question than Start.* The tab worked its answer out itself, from
+`Diagnose` — VID/PID match only — while the port actually opened comes from `PortChoice.Choose`, which
+also honours a port **named** in `arduino.port` and `Arduino.Find`'s **name-based fallback**, which
+`Diagnose` deliberately does not have. So the tab read green "Connected" for a port Start would refuse,
+and red "Not found" for one it would happily open — **on the one tab that exists to diagnose "Arduino not
+found"**. Now there is **one resolution with two readers** (`ResolveArduinoPort`), used by both
+`ArduinoPortAsync` and the tab, so they cannot drift apart again. The light reports what Start will
+**do**, the detail pane prints `arduino.port` and the resolution in words — neither was visible before —
+and `>>` marks the port that will be **opened** rather than the one whose IDs happen to match. Found
+while in there: `Diagnose` passes `""` for the friendly name, so the old line rendered
+**"Connected —  (COM5)"**, a hole where the name should have been.
+
+*A crash rendered exactly like a deliberate Stop.* The handler writes the reason to the tool's
+`ToolState`, and its comment says why that matters — *"the tool card is the only place the user can see
+this, the published WinExe has no console"*. But the teardown removes the tool from the registry
+microseconds later, the card reads the registry, and it fell through to a bare `"stopped"`. `LastCrash`
+on the service now holds it, the same shape as `LastArduinoError` and `LastReleaseError` — held there
+because it has to **outlive the run**, which is the whole difficulty. Cleared when that tool next
+starts, so it cannot describe a run already replaced.
+
+**The seven text defects.** The food-strip button told the player to draw **one slot** (the opposite of
+what it wants — its switch had no `feederstrip` arm and fell through to the bag-slot default, *because* a
+dead `feeder:<n>` branch above it read as a plausible default; the dead branch is removed); three
+0-based numbers where every other surface is 1-based, including one line that named the same cell twice
+and disagreed with itself; a "Test read" that carried a slot's number into the **next** slot and counted
+it twice; a scan summary that said cells "held no pet" for cells it had matched but could not read, the
+one thing its own counter's comment says is never claimed; a Pet tab that reported **ready** with zero
+rows and ended *"reloading every ."*; and a checklist printing `ok` beside a row reading `no`.
+
+**Verified:** 250/250, builds 0 warnings. **No test for any of it** — the launcher is `net8.0-windows`
+and the test project does not reference it, the seam TODO.md records. The wording is the part only the
+player can judge.
+
+**NOT fixed, and named so they are not mistaken for done:**
+
+- **A Hold Space release that fails on the F12 hotkey path** leaves the dot reading *"● idle"* with the
+  spacebar still down and no warning. `LastReleaseError` is set only by the service-side `ReleaseHeld`,
+  not by the tool's own write, and `holdspace` has no card for its `state.Message` to land on.
+- **Save Setup accepts a blank client size**, writing `{0,0}` — which later makes the tool warn
+  *"measured on a 0×0 client, recalibrate"*, a false warning the UI itself created.
+- **`ToolState.Remaining` / `NextActionAt` are multi-word structs** read by the 750 ms tick while the
+  tool thread writes them. A torn read shows a garbage countdown. **Already recorded** in
+  [ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md) §3.5, listed only so it is not counted twice.
+
+---
+
+## 2026-10-07 (62) — a stop that actually stops the feeder
+
+**The player's report:** Stop on the pet feeder did nothing. Verified against the source, and it was
+true in the way that matters — the CTS *was* cancelled and every tool loop reads the token, but a loop
+is only reached when the step it is running has finished, and a pet visit is several rows of OCR plus a
+reload whose wait alone is ~30 s. **So Stop was honoured only at a visit boundary**, which on a tool
+that runs for days reads exactly like a broken button.
+
+**The gap was `SleepCheck`.** It watched the quit hotkey and never the token — and the pet sets
+`ignoresQuitHotkey`, so for the pet it was a bare sleep. It now throws.
+
+**Throwing, not a flag, and that is the fix rather than a style choice.** There is no flag a caller
+could read in the middle of a visit; the work has to be abandoned from the inside, and an exception is
+how a step in progress unwinds. The tools' own `finally` blocks then run — the pet releases the game, a
+drag lets go of the button — which is the teardown a stop wants. It is also the design the repo already
+chose when it made the quit hotkey skip the pet; the difference is that a **deliberate** stop is no
+longer treated as an accidental keypress.
+
+**`QuitPressed` could not be reused for this**, and it was the obvious candidate: HoldSpace, SkillSpammer
+and ShopTool clear it to mean *pause*, so a stop signalled that way could be erased by the very tool it
+was meant to stop. The token is checked before the hotkey on every tick.
+
+**The worker had to stop calling a stop a crash.** Its single `catch (Exception)` puts the message on the
+card and a line in `logs/error.log`. A cancelled stop is neither, so it now has a clause of its own that
+reports and logs **nothing** — which is what a normal stop does today. Without it every Stop would have
+written *"pet stopped: The operation was cancelled."* and an error.log line.
+
+**The handover, which is the part for the human.** A stop lands wherever the pet had got to, and a drag
+cut between its press and its release leaves the stack on the ground where the cursor was. That is
+acceptable — the player pressed Stop and can put it back — but only if they are told to look. The visit
+is wrapped so a cancellation inside it names the row(s) and says they may not have been fed. **Nothing
+is repaired**, deliberately: `Run` opens with `InspectRows`, so a restart re-reads the game and re-feeds
+any row that still needs it. The SCHEDULE is never left wrong by an interruption; it is the GAME that may
+be, and that is the one thing this process cannot put back. A stop that arrives *between* visits sets no
+message — nothing was in flight, and inventing a warning there would train the player to ignore the real
+one.
+
+**Blunt instrument, said plainly.** `SleepCheck` is shared, so all seven tools now abandon a step in
+progress on cancel, not just the pet. That is the intended reading of a stop, and each tool's own
+`finally` blocks still run, but it is a behaviour change beyond the pet.
+
+**Verified:** 250/250 (six new tests pin the throw, the mid-sleep abort, and that the tool ignoring the
+quit hotkey still stops), launcher builds 0 warnings. **Not verified against the board** — the wording is
+the part only the player can judge.
+
+---
+
+## 2026-10-06 (61) — the gate learns why, and a release stops lying
+
+**Two landed on the `feature/input-arbiter` branch.** Both are of the "cannot regress a tool" kind, which
+is why they went first.
+
+**The deadline policy — [PLAN-SCHEDULING.md](../plans/PLAN-SCHEDULING.md) §4.1 + §4.2, PLAN-ARBITER step 1.** A
+claim now carries an optional deadline, and `ShouldStandDown(owner)` answers the single question that
+replaces every hand-written pair-wise rule: does whoever is waiting have a *sooner* deadline than mine? A
+holder with no deadline always yields to a waiter that has one.
+
+**Nothing was rewired, deliberately.** `TryAcquire` and `AnnounceWaiting` take the deadline as an
+optional argument, so every existing call site passes none and behaves exactly as before — 244/244 green,
+including the tests that already pinned the old behaviour, and the spammer still yields on
+`Waiting != null`. **The two halves are not separable**: `ShouldStandDown` returns false for a waiter
+that declared no deadline, so moving a caller onto it *before* its waiter declares one would stop it
+yielding entirely — silent starvation, not a crash. That is pinned by a test and called out in the
+method's own doc comment, and it is why §4.3 (the pet declaring its deadline, and the spammer asking the
+new question) is **not** in this entry.
+
+**Equal deadlines do not stand down** — PLAN-SCHEDULING §8's deferred tie-break, pinned as a decision
+rather than left to whichever way `<` happened to fall. Deadlines are cleared on release and on
+withdrawal: they belong to the claim, not to the name, or the next holder reads an urgency that was never
+its own.
+
+**`ReleaseHeld` no longer reports success for a write it never made.** It used `_arduino?.Write(...)`,
+which on a null or closed port wrote nothing, threw nothing and returned success — the method's own
+comment called it *"the one way this method can lie"*, and the mitigation was a log line the player never
+sees. It now reports the failure, and the status line beside the toggle already knew what to do with one:
+*"● input may be stuck"*, in red, with the remedy in its tooltip. That is the audit's finding #3, in the
+one place the repo admitted to it. Its other half — a sell that is sent but not verified — is still open.
+
+**No test for the release fix**, and it is the same seam as entry 59: the launcher is `net8.0-windows`
+and the test project does not reference it. Recorded, not hidden.
+
+**Verified:** 244/244; the launcher builds with 0 warnings. **Not verified: anything live.** Both live
+checks — a test button refused while a tool runs, and a stop whose release is refused — need the board.
+
+---
+
+## 2026-10-06 (60) — the UI's input gets one door
+
+**PLAN-OWNERSHIP item 4, built as [PLAN-ARBITER.md](../plans/PLAN-ARBITER.md) step 2.** Not as a guard beside
+`PortGate`: the audit's instruction is to evolve or replace the gate, never to run two ownership rules,
+because two things deciding who may drive can disagree and neither is then authoritative.
+
+**The bug.** `MainWindow` never referenced `.Gate` — **zero** occurrences — while **19** call sites took
+the port and wrote to it. A Test Click pressed while a tool was mid-gesture landed in the middle of that
+gesture; for the pet feeder mid-drag that drops the stack of food it was carrying.
+
+**The decision that was not obvious: the arbiter's logic lives in `Core`, not in `LauncherService`.**
+The launcher is `net8.0-windows` and the test project does not reference it — the same seam problem
+entry 59 hit, where the tool lifecycle landed with no test and the gap was recorded rather than hidden.
+Putting the guard in the service would have repeated it. In Core it is testable, and it is tested: nine
+tests, 233 in total.
+
+**The lease carries the port.** `InputLease.Port` is the only way the UI obtains the shared
+`SerialPort`, so "may I write?" and "here is what to write to" cannot get out of step, and the `using`
+hands the claim back on every path including a throw. `Dispose` is guarded by an exchange rather than a
+bool, because every lease carries the same owner name `"test"` — a stale second `Dispose` would
+otherwise release a claim taken since, which is a silent overlap and the one outcome the gate exists to
+prevent.
+
+**Seven sites would have lied.** Five Gem hints and the tuner hardcoded *"Arduino not found — plug it in
+and retry"* whatever the real reason, and the connection test said *"No Arduino — see Connection
+above."* Once a refusal is possible that tells the player their board is unplugged when a tool is
+running — the exact trap this item was flagged for. They now report `LastArduinoError` first, which is
+set on every refusal path, with the old string kept as the fallback.
+
+**The nineteenth site is deliberate.** `LauncherService`'s own tool-start keeps `ArduinoPortAsync`: it
+already holds the gate for the tool it is starting, so routing it through the arbiter would have it
+refuse itself.
+
+**Verified:** 233/233 tests; the launcher builds with 0 warnings (to a scratch output path, because the
+published app was running and holding its own DLLs); and the check this item was found by now passes —
+nothing outside `LauncherService` reads the port directly.
+
+**Still open, and this entry is not the whole plan.** The arbiter arbitrates and nothing more so far: the
+**deadline policy** ([PLAN-SCHEDULING.md](../plans/PLAN-SCHEDULING.md) §4, where `ShouldStandDown` replaces the
+hand-written pair-wise yield rules) and **operation-level leases** (a claim covering a whole gesture
+rather than a button press) are both unbuilt, and PLAN-ARBITER §7 orders them. **The live check has not
+been run** — press a test button while a tool is running, and confirm it refuses and says which — and it
+needs a board. Until it passes, this is source-verified only.
+
+---
+
+## 2026-10-06 (59) — the tool lifecycle gets one owner
+
+**Item 3 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md).** `_running` is a plain `Dictionary` and `_currentId`
+a plain field, read and written by **two threads**:
+
+- the UI thread reads both every 750 ms (per card) and writes them on Start and Stop;
+- a **worker** thread writes both when a tool finishes on its own — the continuation in
+  `StartToolCoreAsync`.
+
+A `Dictionary` read while another thread writes it is undefined behaviour: a corrupted lookup or a spin,
+not a clean exception. **The class already said so** — `Gate`'s comment described itself as *"thread-safe,
+**unlike `_running`**"*. That was true and deliberate while only one tool could exist; the resident pet
+feeder ended that, and the quest tool made it reachable by giving the suite its first tool that ends by
+itself.
+
+**One lock for both fields**, because they are one thing: "what is running, and which of them is
+current". Held only for dictionary work — never across a serial write, `ReleaseHeld`, a task continuation
+or a `Gate` call.
+
+**A lock rather than `ConcurrentDictionary`, and that is the substantive decision.** Two of the sites are
+check-then-act. The self-end continuation compares the **CTS** before removing, so that a tool which
+finished is not confused with one the player has already replaced; and `StopTool` looks the tool up and
+then deregisters it. A concurrent dictionary makes each *call* atomic and leaves the *pair* racing — it
+would look like a fix while leaving exactly the bug. That block is now one critical section with the rest
+of the teardown outside it.
+
+**`StopAll`'s `_running.Keys.ToList()` is taken under the lock too**, which is easy to miss: enumerating
+the live dictionary while a worker finishes a tool is the same undefined behaviour, and `ToList` does not
+copy safely on its own.
+
+**No test, and that is a real gap rather than a deliberate choice.** A meaningful test needs a tool that
+can be started and stopped without a board, and there is no way to inject one: the runner map closes over
+`Config`, `Attributes` and the port. The plan said so up front (*"either this lands after Item 4, or the
+test is written against `_running` alone by extracting the registry"*), and it has landed before Item 4.
+**The follow-up is the seam, not a test written against the current shape** — recorded in
+[TODO.md](../backlog/TODO.md).
+
+**Verified:** 224/224, build 0 warnings, and every access site checked by grep to be inside the lock —
+which is a weaker claim than the other items in this plan can make, and is said plainly here so it is not
+mistaken for one of them.
+
+---
+
+## 2026-10-06 (58) — `arduino.port` is honoured, or it says why not
+
+**Item 2 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md).** `ArduinoConfig.Port` is documented in
+`local.yaml.example` as *"optional override; empty = auto-detect"* and is merged from `local.yaml` on
+every load — and until now it was read by **nothing**. `ArduinoPortAsync` always called
+`Arduino.Find(Vid, Pid)`, so a player who named a port got it silently ignored.
+
+**The same class as the four `PetConfig` properties fixed in entry 55**: a setting that loads, looks
+honoured, and does nothing. It is the second one this repo has found in a week.
+
+**Honoured rather than deleted**, because a named port is genuinely useful — two boards, a COM number the
+OS reassigned, or a board whose IDs are not reported properly, which is exactly why `Arduino.Find`
+already carries a name-based fallback.
+
+**And the direction that matters is REFUSING.** A named port that this machine does not have is an
+**error**, not a fall-through to discovery: a player names a port precisely because they do not want the
+other one, so discovery would defeat the setting *silently* and in the direction of driving the wrong
+board.
+
+**`PortChoice.Choose(configured, available, discover)`** puts the decision in Core with **the I/O passed
+in** — the port list and the discovery call — so the whole matrix is testable with no board: a named port
+that exists, one that does not, `com3` against `COM3`, surrounding space, an empty or whitespace-only
+value, and the case where nothing is named and discovery finds nothing (which returns *no error*, because
+the caller is the only thing that knows the configured VID and PIDs to name in it).
+
+**Verified:** 224/224 (215 + nine `PortChoice` tests), build 0 warnings. **Proven by removal** — making
+the missing-port branch fall through to discovery failed exactly
+`ANamedPortThatDoesNotExistIsAnErrorRatherThanAFallThrough` and left the other eight passing. The example
+config's own comment now states the behaviour, since that is where the setting is explained.
+
+---
+
+## 2026-10-06 (57) — Hold Space: a press while STOPPING no longer starts it again
+
+**Item 1 of [PLAN-OWNERSHIP.md](../archive/PLAN-OWNERSHIP.md)**, and a hole in the 2026-10-02 fix (entry 39). Found
+by an external read-only audit of `cc6551b`, then checked here against the source before being believed.
+
+**The evidence.** `StopTool` clears the current id **synchronously**, before the worker has left its
+loop:
+
+```csharp
+_running.Remove(target);
+if (_currentId == target) _currentId = null;   // ← the button now reads "Hold Space"
+...
+running.Cts.Cancel();                          // ← but the loop is still winding down
+```
+
+The button asks exactly `CurrentId == "holdspace"`, so between those two lines a second press took the
+**start** branch and pressed the spacebar back down. Entry 39 fixed *"a press during **Starting**
+cancels"* and left the mirror image open — **and made it easier to hit**, because it added an immediate
+`RefreshStatus()` on the stop path, so the label flips to "Hold Space" at once instead of up to 750 ms
+later.
+
+**The rule is now a function, because it has been wrong three times.** `ToolToggle.Decide(loaded,
+starting, stopping)` in Core, with tests. The common thread in all three bugs is that the question asked
+was **"is it running?"** — a question with a *window* in it, so each fix closed one window and revealed
+another. The question that has no window is **"is it engaged at all?"**, and every engaged state means a
+press stops or cancels.
+
+**Three states are now one**, and the button says which:
+
+| | label | status |
+|---|---|---|
+| starting | `Starting...` | `● starting` |
+| holding | `Stop Space` | `● holding` |
+| **stopping** | **`Stopping...`** | **`● stopping`** |
+| idle | `Hold Space` | `● idle` |
+
+**`LauncherService.IsStopping(id)`** is the new surface: set when a stop is requested, cleared in the
+continuation that already disposes the CTS — so it is true for exactly as long as the tool is genuinely
+still on the way out. Its own lock, because it is set on the UI thread and cleared on a worker thread.
+`CurrentId` cannot answer this question; this can.
+
+**A detail that would have been a bug:** the flag is set **before** the continuation is attached, because
+the tool's task is often already complete by then and `ExecuteSynchronously` would otherwise run the
+continuation first and clear a flag that had not been set yet.
+
+**Verified:** 215/215 (210 + five `ToolToggle` tests), build 0 warnings. **The guard was proven by
+removal** — the `isStopping` term was dropped from `Decide` and the two tests that should fail did
+(`APressWhileStoppingDoesNotStartItAgain` and the exhaustive `EveryEngagedCombinationStops`), while the
+other three correctly still passed. **Not verified live:** the 2 s release window is in the launcher,
+and the click test on the board is the player's.
+
+---
+
+## 2026-10-06 (56) — the editor's key rename stops orphaning the references
+
+**The bug, found reviewing entry 49.** The rows editor now writes every key as `*name` (the fast tap),
+so saving a preset spelled bare RENAMES its keys — and `priority` and `combos` reference keys **by
+name**. `Commit` then pruned those references against names that had merely changed shape, so a
+bare-keyed config lost its ordering and its combos **on the first save, silently**. This repo's own
+`local.yaml` carries the scar: `JSBuffwithnoheal` went from bare `F4`–`F10` with a seven-entry priority
+list to starred keys with `priority: ['*7']`.
+
+**My first attempt was wrong, and the tests said so.** Folding it at LOAD looked better — one place,
+idempotent, same shape as the existing fold-ins — and it broke **five** config tests at once. Not because
+it was buggy but because it was **wrong-scoped**: normalising at load changes what a config *means*, and
+one of the things it removed was the deliberate ability to hand-edit a bare key for the normal 30–80 ms
+hold, which entry 49 kept on purpose. A rename the EDITOR performs should be absorbed where the editor
+performs it, not by rewriting everyone's file on the way in.
+
+**So the fold lives in `SpammerOrder.Respell`** and runs in `Commit`: each reference respelled to the
+form the preset actually stores, **one way only, and only where it is unambiguous**. A name matching
+neither spelling is left ALONE, so a genuine typo is still pruned by the normal rule rather than being
+rewritten into some key that happens to exist — "correcting" it would be the silent version of the same
+bug. It went into `SpammerOrder` rather than the UI for the same reason the ordering did: it is a rule
+about key names, and inside `MainWindow` no test could reach it.
+
+**The working copies are respelled in place**, so the Order and Combos panels and the key picker agree
+with what was written instead of holding names the file no longer contains.
+
+**Also fixed, same edit:** `RowsToKeys` now does `k.TrimStart('*')` before prepending its own star. A
+hand-typed or pasted `*1` was stored as `**1`, which `SendKey` refuses (length 2) and the run silently
+skips the key.
+
+**Verified:** 210/210 (206 + four `Respell` tests), build 0 warnings. **The guard was proven by
+removal** — the fold line was replaced with a pass-through and **three** of the four tests failed, while
+`ANameAlreadySpelledRightIsUnchanged` correctly still passed because it takes the other branch. That
+discrimination is the point: the tests distinguish "followed its key" from "was already right".
+
+---
+
+## 2026-10-03 (55) — the pet flow's two settings can finally be set, and the projection has a fence
+
+**The finding, and why it was worth fixing rather than deleting.** `PetConfig.ItemsPerMinute` (the 3/min
+burn rate) and `PetConfig.PetSlotOccupiedAbove` (the slot-occupied threshold) are read by `PetTool`
+(lines 298/830 and 737/757/1800), but **no config file could carry either**: they have no `LocalPet`
+counterpart, and `SaveDefaults` wrote an anonymous object with **no `pet` key at all** — so a `pet:`
+block hand-added to `defaults.yaml` was read once and then *deleted by the next Save from any tab*. Two
+more properties, `FeederSlotA`/`FeederSlotB`, are dead outright.
+
+**Red first.** `SaveDefaultsPreservesEveryPortableField` was extended with non-default values for both
+settings and round-trip assertions. Before the fix it failed `Expected: 7, Actual: 3` — the projection
+dropped `ItemsPerMinute` exactly as the audit said.
+
+**The fix is a `pet:` block in the portable projection**, carrying those two settings. Only those two:
+the pet flow's geometry and run state belong to `local.yaml` through `LocalPet`, and putting them here
+would write a machine's calibration into the file `publish.bat` ships.
+
+**A fence for the next field, because the existing guard cannot see this class of bug.**
+`EveryLocalPetFieldIsCopiedFromTheConfig` walks **LocalPet → PetConfig**, so a `PetConfig` property with
+no file counterpart is invisible to it — which is how four accumulated. The new
+`EveryPetConfigFieldIsCarriedByAFileOrDeliberatelyExcluded` walks the other way: every settable property
+must be carried by `LocalPet`, written by the portable projection, or listed with a reason. It passes
+today (its list is decided), and its value is the day someone adds a property without deciding.
+
+**The two legacy boxes are kept, not deleted, and that is a decision.** `FeederSlotA`/`FeederSlotB` read
+as food-count boxes whose consumer was replaced when `FeederLayout` derived the strip from the row
+geometry. Deleting the properties would make a hand-edited `feeder_slot_a:` an unknown key in someone's
+`defaults.yaml`, and the rule here is to deprecate by ignoring rather than by deleting — so they are
+listed in the fence with that reason instead.
+
+**Measured:** 206 tests, 0 failures (205 before this entry's fence), build 0 warnings / 0 errors, both
+from an actual run.
+
+---
+
+## 2026-10-03 (54) — an empty `tuner:` section reports itself instead of crashing
+
+**Two unguarded dereferences, and the audit had named the second one.** YamlDotNet sets a property to
+null when its key is present with no value, so a hand-edited bare `tuner:` makes the whole section null —
+and `ValidateObject` skips null values, so nothing upstream noticed. Then:
+
+- `ConfigLoader`'s local overlay read `defaults.Tuner.Ocr` while null-checking only the LOCAL half
+  (`local.Tuner?.Ocr`). **That is where the crash actually happened**, before validation ran at all.
+- `ConfigValidator` read `c.Tuner.Ocr` with no guard — the line the audit reported as the cause.
+
+**Both needed the guard:** with only the loader fixed, the validator's line is the next crash, so a fix
+at one site would have moved the failure rather than removed it.
+
+**Red first, then green.** `LoadRejectsAnEmptyTunerSectionWithAMessageNotANullReference` collapses the
+tuner block to a value-less key in a copy of `defaults.yaml` and asserts a `ConfigException` that names
+the section. It self-checks that the collapse happened (`Assert.DoesNotContain("grade_order", …)`), so it
+cannot pass by having proved nothing. Before the fix it failed with `Actual: NullReferenceException`;
+after both guards it passes.
+
+**Measured:** 205 tests, 0 failures (204 before this entry's test). Build 0 warnings / 0 errors — and
+both numbers now come from an actual run, not from a compile (entry 53 explains the host).
+
+---
+
+## 2026-10-03 (53) — the suite runs, and the count in the docs was wrong twice
+
+**204 tests pass, 0 fail.** That is Phase 1's test half, and it settles a drift three documents had been
+carrying: this file said 203/203, `README.md` said "174 cases across 18 files" and `DESIGN.md` said "172
+tests". The real number is **204** — 203 before this session plus the `AttrMatcher` overflow guard from
+entry 51 — so both of those were simply stale and are corrected here. "18 files" was right.
+
+**How it was run, precisely, because it is NOT `dotnet test`:** the sandbox refuses to start VSTest's
+test host at all. `testhost` opens a handle to its parent process (`Process.GetOrOpenProcessHandle` →
+`EnableRaisingEvents`) and the confined token is denied, so `dotnet test`, `dotnet test --arch x64` and
+`vstest.console /InIsolation` all die identically. What works is xunit's **own engine**
+(`xunit.runner.utility`'s `XunitFrontController`) hosted in a scratch console app: same test code, same
+assertions, same runner — a different host. Two details it needed, each worth recording because each
+cost a round to find:
+
+- the host's `deps.json` must carry `xunit.execution.dotnet`, so the `xunit` package goes in the host
+  project (referencing `xunit.runner.utility` alone is not enough);
+- `DOTNET_ADDITIONAL_DEPS=<testbin>/SealTools.Tests.deps.json` at run time, or the OpenCvSharp **native**
+  asset is never resolved and 11 image tests fail with `Unable to load DLL 'OpenCvSharpExtern'`.
+
+The suite also needs the repo around it: `ConfigLoaderTests` walks up from `AppContext.BaseDirectory` for
+a `config/defaults.yaml`, and `PetFeedingTests` for `docs/pet-data.csv`. So the run used a mirror of the
+test output plus copies of `v2/config` and `v2/docs` under `%TEMP%` — a test that writes cannot reach the
+player's real calibration that way.
+
+**What this verifies beyond the baseline:** entries 49, 50, 51 and 52 are all in this tree and all pass,
+the new overflow guard among them (it fails against the old code). The build is 0 warnings / 0 errors.
+
+---
+
+## 2026-10-03 (52) — the two config writers stop sharing one temp file
+
+**The race**, from the 2026-09-22 audit and confirmed by reading it: `SaveLocal` and `SaveDefaults` both
+did `File.WriteAllText(path + ".tmp", yaml)` and then `File.Move(tmp, path, overwrite: true)`, with
+nothing serializing them. The two writers are independent — the WPF thread saving a calibration, and the
+pet tool's `PersistPetState` — so they could be inside that ONE temp name at the same time. The comment
+on `SaveLocal` claimed atomicity, and it was right about concurrent *readers*, which is not the case
+that exists.
+
+**The fix is a gate and a unique name, and both halves matter:**
+
+- `WriteAtomically` takes a static `SaveGate` lock, so the replace is one writer at a time. Static, not
+  per instance: a second `ConfigLoader` must not be able to interleave with the first.
+- The temp name carries a fresh GUID per call, so a writer that died mid-save cannot leave a name for
+  the next one to collide with.
+- A failed write deletes its temp file, so a failure cannot leave litter in `config/` — or, worse, a
+  stale `.tmp` that the old code would have re-used as the *source* of a later replace.
+
+Serialization stays outside the lock; only the file work is serialized.
+
+**What this does NOT fix, said plainly so it is not assumed fixed:** the lock removes the collision on
+one temp name, but the read-modify-write around each save is still last-writer-wins. Two savers that
+each load, edit and write back can still lose one edit. The UI's calibration and the pet tool's run
+state touch different halves of `local.yaml` today, which is why it has not bitten. Closing *that* means
+one writer for the file or a merge on save — a design change, not this fix.
+
+**Verified:** the whole solution compiles, 0 warnings / 0 errors; the only `.tmp` construction left in
+`ConfigLoader.cs` is the one inside `WriteAtomically`, and both call sites go through it (checked, not
+assumed — a CRLF file and a removed line is exactly where a no-op edit hides). **No test:** a meaningful
+race test is inherently timing-dependent, and this session cannot start a test host. The change is
+constructive — one gate, one name per call — rather than statistical.
+
+---
+
+## 2026-10-03 (51) — AttrMatcher stops throwing on an over-long digit run
+
+**What was wrong**, from the 2026-09-22 audit and confirmed by reading the code: `AttrMatcher` was the
+one parser in this project using `int.Parse` on an unbounded `(\d+)` capture, at four sites —
+`ExtractValue`'s signed and unsigned branches, `ParseSigned`, and the per-level read. A single OCR line
+carrying an 11+ digit run therefore threw `OverflowException` straight out of `MatchAttributes`, and
+nothing on that path catches it: a bad read took the tuner down instead of being treated as a read that
+failed.
+
+**The fix is one helper, not four guards.** `TryInt(string) → int?`, used at all four sites;
+`ParseSigned` now returns `int?`. An overflowing run means "no value", which is a state the caller
+already has a rule for — the first test in `AttrMatcherTests` pins the deliberate rule that a matched
+NAME with an unreadable value still satisfies a bounded filter rule.
+
+**A behaviour choice, stated so it is not mistaken for an accident:** the two `ExtractValue` branches
+now *skip* a text whose number does not parse and go on to the next candidate, instead of returning
+null at the first match. That is one step further than the crash fix, and deliberately so — the loop
+exists to look at more than one text.
+
+**The guard test is written and NOT RUN.** `AnOverflowingNumberIsNoValueRatherThanAnException` feeds one
+line (`增加傷害`, `99999999999999999999`) through the real `MatchAttributes` and asserts the value is
+null. Against the old code it fails with the `OverflowException`, so it is not a check that cannot fail.
+It could not be executed here: this session's sandbox cannot start a test host (VSTest opens a handle to
+its parent process, which the sandbox denies). **Compile-verified only — run `dotnet test` before
+trusting it.**
+
+**Still open from the same audit:** the `.tmp` race in `ConfigLoader.SaveLocal`/`SaveDefaults`, the four
+`PetConfig` properties no config file can set, and `ConfigValidator`'s unguarded bare `tuner:`. The last
+of those wants a test that fails first, and a test cannot be *shown* to fail here — so they wait for a
+session that can run the suite.
+
+---
+
+## 2026-10-03 (50) — the tool ids exist once: what Start accepts is what runs
+
+**The trap this closes**, recorded in [HANDOVER.md](HANDOVER.md) and paid for once already:
+`StartToolAsync` carried a whitelist (`id is not ("tuner" or "gem" or …)`) that was a **second
+hand-kept copy of the launcher's card list**, while `RunTool` carried a `switch` with the same eight
+labels. A tool registered for its card and its tab but missed in the whitelist looked wired up and did
+nothing on Start — and because the exception left an `async void` handler there was no message box and
+no card line, only a line in `logs/error.log`. That is exactly what the quest tool did on its first
+launch.
+
+**The fix is a map, not a third list.** `LauncherService._toolRunners` maps id →
+`Func<SerialPort, ToolState, CancellationToken, int>`, built once in the constructor from the same
+expressions the switch used. The whitelist is now `_toolRunners.ContainsKey(id)` and the dispatch is
+`_toolRunners.TryGetValue(...)`, so **the two cannot disagree**: adding a tool is one entry in one
+place. The lambdas close over the same mutable `Pending*` properties the switch read at call time, so
+the "UI sets the preset, then presses Start" timing is unchanged.
+
+**The `_ => 1` arm** — the switch's silent fallback — became an explicit console line. An unknown id
+cannot reach `RunTool` (the guard rejects it first), so that path is a programming error rather than a
+user one; it still returns the old "one attempt" instead of throwing from a tool thread.
+
+**Still open, found while looking for other copies:** `HeldKeysTests.EveryToolId` is a hand-written
+array of ids (`tuner, gem, spammer, buy, sell`) whose own comment calls the duplication deliberate —
+but it is already **stale**: it predates `quest`, so that id is covered by nothing. It cannot be
+derived from this map either, because the test project deliberately does not reference the Launcher
+(`net8.0-windows`). Deriving it means moving the id list into `SealTools.Core`.
+
+**Verified:** the whole solution compiles, 0 warnings / 0 errors, and the ids now appear once. The
+tests were **not** run — this session's sandbox cannot start a test host — so the guard's behaviour
+here is read-verified, not run-verified.
+
+---
+
+## 2026-10-03 (49) — the spammer's Fast tick box is gone; every key is written as a fast tap
+
+**The ask:** *"instead maybe remove the option for toggle for fast, and set all spammer setup using
+fast anyway."*
+
+**The decision, and what it is not.** [TODO.md](../backlog/TODO.md) recorded that a key without the `*` does not
+register in the game — found 2026-10-02, never reproduced, and the Notepad test that would split the
+two possible causes was never run. Asked whether to run it, the player answered *"dont need to test we
+should be using it already right"*. All four presets in `local.yaml` carry `*` on every key, so the
+untested path had no user. The right disposition was therefore **not to fix it but to stop producing
+it** — the item moved from "Needs a live check" to "Accepted as-is", still marked untested.
+
+**The one hazard, and the shape that avoids it.** `*` is not a UI flag: it is the key's IDENTITY in the
+config. The presets store `'*1'`/`'*F4'`, and `priority` and `combos` reference keys by those same
+strings. Dropping `*` from the format would have needed a migration across all three maps and would
+have broken the `⚡` in `OrderLabel`/`ComboLabel`. So: **remove the control, keep the format.**
+`RowsToKeys` now always writes `*name` and `AddRow` strips it again for display, so what is stored is
+unchanged — zero migration, and a hand-edited config keeps working.
+
+**What went with the tick box:** `SpamKeyRow.Fast`, the `FastColumnWidth` constant and the measurement
+behind it (48 px clipped the glyph's right border and read as a "C"; 20 px removed it entirely), the
+column in the header and in the row grid, and the hint that told the player to leave the box OFF for a
+held skill — advice pointing at the path this suite has never used.
+
+**Not deleted:** the firmware's `K`/`k` split and `SkillSpammer.SendKey`'s `StartsWith('*')`. The
+Advanced raw list still takes a bare `key:seconds`. The UI stopped offering a choice nobody made; the
+protocol is unchanged.
+
+**Verification, stated plainly:** the launcher UI has no test coverage, so this was checked by
+compiling the whole solution (0 warnings / 0 errors) and by reading the diff. **Nobody has opened the
+Spammer tab yet.** The tick box was added deliberately in v2.6 — a future session tempted to add it
+back should read this first.
+
+---
+
+## 2026-10-02 (48) — v2.14 cut
+
+**A release, and a large one**, because the unreleased work had stacked up: the US-client frame and the
+quest sequences from the previous session came out with this one, alongside everything from today.
+
+**What is in it:** the spammer's order, combos, lead-in and opening step, the Start-casts change, and a
+rotation picker on its card; the spammer **yielding the game** so the pet feeder is no longer blocked by
+a tool that never ends; the food cells **re-marking themselves** during the pet scan; the **Hold Space**
+cold-start fix; and, from before, the **US client frame** and **quest sequences**.
+
+**The note is unusually honest about verification, on purpose.** Most of this was built in one session
+and only part of it has been run: the spammer's combos, lead-in, Start-cast and yielding all live inside
+`Run` where **no test reaches them**; the automatic food re-marking has not been watched; a quest
+*sequence* has not been run; and the Hold Space fix was found from a log but not yet confirmed on a live
+reproduction. The release note says all of that in a table rather than in prose, so it cannot be skimmed
+past.
+
+**The publishing check the last release earned.** v2.13's note records that a bulk string replace once
+left a fallback row pointing at the wrong asset. So the seven download links were changed **one at a
+time**, and then every one was checked by extracting the filename and the tag from each URL and comparing
+them — all seven match. The first attempt at that check was itself wrong (it compared `name=v2.14`
+against `tag=v2.14` as strings), which is worth recording: **a passing check that cannot fail is not a
+check**, and the same trap has now appeared twice in this file.
+
+**Artifacts verified rather than assumed:** 4 config files and 3 models present inside the zip, the exe
+at 174 MB, 144,644,801 bytes against v2.13's 144,621,073. `publish.bat` printed *"The system cannot find
+the drive specified"* during the config step and **everything it was supposed to copy was there anyway** —
+checked, not shrugged off, because a config file that silently does not ship is this repo's oldest trap.
+
+---
+
+## 2026-10-02 (47) — the food scan rides along with the pet scan
+
+**The ask:** *"every time we need to scan for pet position we can also scan for pet food position and
+update."*
+
+**It is a piggyback, not a second pass, and that is the whole design.** `FindQueuedPetCandidates` already
+does everything the food scan needs: it walks every calibrated bag page, clicks the tab, **parks the
+cursor off the bag**, captures the client, and saves the image. A separate food scan would click through
+the bag *again* for a picture already in hand — so the change is one more `IconMatch.ScoreAll` against
+the **same capture**, with the food icon instead of the pet icons.
+
+**A correction the player made, worth recording because two documents still say otherwise.** Asked to
+prove the scan before wiring it in, they answered *"I have run it always in the tab"*. So
+[RELEASE-v2.12.md](RELEASE-v2.12.md) and [HANDOVER.md](HANDOVER.md) — both of which state plainly that
+the food scan **has never run against a live bag** — are stale. The handover line is corrected, because a
+next session that reads it would spend time re-verifying something the player already relies on.
+
+**The safety property is the write, not the read.** The result is written **only when something was
+found**, and that is deliberate rather than conservative: an empty result is *ambiguous* — no food left,
+or a page that never came up — and the two cannot be told apart from here. Overwriting on an ambiguous
+empty scan would destroy the player's marked cells for good, and `ApplyCalibration`'s own comment records
+that this exact loss **"cost the player their food cells twice already"**. A stale list costs nothing by
+comparison: an exhausted one already stops the reload honestly instead of clicking into empty space.
+
+**The counter goes back to zero, and that is not a reset so much as an acknowledgement.** The list is
+what is in the bag *right now*, so nothing on it has been consumed yet — carrying the old counter over
+would skip that many cells of a list they never belonged to.
+
+**Persistence checked rather than assumed** — the projection trap this repo has paid for four times.
+`PersistPetState` writes only the session half, so `FoodSlots` had to be in `ApplySession`, and it is
+([ConfigLoader.cs:690](../../SealTools.Core/Config/ConfigLoader.cs#L690)). Had it been in the calibration
+half instead, the scan would have run, logged its cells, and lost them on the next load.
+
+**The player caught a bug in it the same day:** *"why is the pet food not taken by position order?"*
+Because `ScoreAll` returns cells sorted by match SCORE, and every cell holding the same food scores
+within a hair of the others — so the ORDER was effectively arbitrary and the feeder emptied the bag in a
+pattern nobody could predict. The tab's scan has always sorted by cell; the new tool-side one did not.
+
+**Fixed by single-sourcing the rule rather than by adding the missing `.OrderBy`.** `IconMatch.CellsHolding`
+now returns the cells in cell order, and BOTH scans call it. That matters more than the two-line fix: the
+defect was two scans each having to remember the ordering for itself, which is exactly how one of them
+came not to. The tab's version also stops carrying its own `.Where(...).OrderBy(...)` chain, so there is
+nothing left to keep in step by hand.
+
+**Limitation, said plainly:** it runs only when a pet scan runs — which means at least one queued pet and
+a walk that completes. A bag with no queued pets gets no food refresh, which follows from what was asked
+for but is worth knowing.
+
+203/203 tests, 0 warnings.
+
+---
+
+## 2026-10-02 (46) — the spammer yields the game, so the pet feeder can feed
+
+**The report:** *"last night I ran the spammer with the pet feeder, the pet feeder did not execute."*
+
+**It was working as designed, and the design says so.** [archive/PLAN-RESIDENT-PET.md:243-245](../archive/PLAN-RESIDENT-PET.md#L243-L245)
+has the row *"a pet reload comes due while a tool runs → the pet feeder waits, and says so on its card"*,
+and `PetTool.ClaimGame` polls **with no timeout** — its own comment says *"the wait can last for hours"*.
+
+**But the report exposes a hole in the rule, not a bug in it.** DESIGN.md §5 defines the rule as *"a
+tool takes the game for a **bounded operation**"* — and every tool that existed when it was written is
+bounded: the tuner, composer, buy and sell all finish on their own. **The spammer doesn't.** It runs
+until the player stops it, so "step aside and come back" quietly becomes "never come back", and the
+feeder — which is resident precisely so it does NOT have to be stopped — runs dry behind a tool that
+would have been happy to stand down for half a minute.
+
+**Two halves to the fix, and the first is the one that had to come first.**
+
+1. **The gate gained a WAITING signal** (`AnnounceWaiting` / `WithdrawWaiting` / `Waiting`). A claim can
+   be refused but never interrupted, so a holder has no way to learn that someone needs the game. The
+   gate still does not break a claim on anyone's behalf — it only makes the waiter *visible*, and the
+   holder decides.
+2. **The spammer stands down and comes back.** It releases the game, presses nothing, and re-acquires
+   when the gate frees. The loop keeps ticking while paused, so Stop and the hotkeys still work.
+
+**The pause is bounded by the ACTION, not a timer** — the player corrected this themselves (*"the pause
+should not be static"*), and it is what the code does: the wait ends when the gate comes free, so a
+40 s reload is waited out and a 10 s one is not waited 30.
+
+**Two details that are decisions rather than mechanics:**
+
+- **On resume the rotation re-opens through its STEP but NOT its lead-in.** The lead-in exists to give
+  you time to focus the game after Start; the game is already in front when a reload finishes, so
+  paying it again after every reload would be wrong. Without the step, a 30 s pause would end with
+  every expired cooldown firing at once.
+- **`Reset` clears the yielded flag**, and that is load-bearing rather than tidiness: the launcher
+  claims the gate on the tool's behalf at Start, so a stale flag would have the tool trying to
+  re-acquire what it already holds — refused every tick, forever, pressing nothing and saying only that
+  it is paused. Found while writing it, not while running it.
+
+**The graceful-stop check moved earlier in the loop** for the same class of reason: the yield path
+`continue`s past the rest of the tick, and a stop that can be missed for as long as a pet is feeding is
+not a graceful stop.
+
+**Scope, deliberately: the spammer only.** The quest hand-in holds the game the same way and can run
+just as long, so it has the same hole — but this is a concurrency change, and one tool at a time is how
+it gets to be verified.
+
+**Gate tests proven by removal** (the `_waiting` clear was disabled and `AcquiringClearsYourOwnWaitingMark`
+watched to fail). The tool half is inside `Run` and needs a board, so — as with the combos and the
+lead-in — **a live run is what confirms it.**
+
+203/203 tests, 0 warnings.
+
+---
+
+## 2026-10-02 (45) — a lead-in, and the per-preset maps stop multiplying
+
+**The ask:** *"can we add another spammer preset setup — how many seconds before we start the spammer"*,
+clarified twice as: per preset, **"some need it, some don't"**, with a countdown so a run that is waiting
+does not look like a run that failed. This is the "delay before the first press" offered back in entry 44
+and not taken then.
+
+**The rule is the same shape as the step:** the opening schedule is shifted by the lead-in, so
+`openingAt = now + LeadIn` and everything before it is simply not due yet. Absent, or 0, is no lead-in —
+which is how "some presets need it" is expressed, with no flag to set.
+
+**The countdown is NOT new machinery.** `ToolState.Schedule` + `NextActionAt` already exist for exactly
+this — the pet feeder's reload, hours apart, where *"the tool sets the MOMENT and the card does the
+arithmetic, so it counts down instead of showing a number that was true when it was written."* The
+lead-in reuses that line rather than inventing a second one.
+
+**And the per-preset maps stopped at three, as promised.** Entry 43 warned that a fourth would need a
+better answer than a fourth map. It did, so: `startup_step` (a bare `preset → double` map) became
+`startup` (a `preset → SpammerStartup` map, carrying `lead_in` and `step` together). **The next per-preset
+setting is now one more field on that object, not a fifth map** with its own projection handling and
+guard test.
+
+**The fold-in is the risky half, and it is tested twice.** A config written yesterday has
+`startup_step: {JSBuffwithnoheal: 2}`, and a shape change that dropped it would lose the player's stagger
+*silently* — a lost step and a preset that never had one are indistinguishable. So the loader reads the
+legacy map, folds it into the object, and nothing writes the old key again; three tests cover the new
+shape, the fold, and the precedence when a config carries **both**.
+
+**A drill that did not fire, and why that is worth recording.** Disabling the legacy fold left all three
+tests PASSING — because the edit had accidentally left **two copies** of the fold in the file, and the
+drill disabled the dead one while the live one kept running. That is the handover's own warning ("a no-op
+edit and a real one look identical") arriving in person. Checking the file rather than trusting the green
+tick found it; the second attempt failed the test correctly.
+
+197/197 tests, 0 warnings. Not verified live.
+
+---
+
+## 2026-10-02 (44) — startup stepping: the opening presses, spread out
+
+**The ask, and the word that needed pinning down:** *"can we set startup stepping so that we can prevent
+race conditions?"* "Race conditions" could have meant a delay *before* the first press; asked directly,
+it is the other thing — start makes every key due at once, so **the whole rotation fires into itself**
+and the game swallows all but the first. They chose to **spread the opening presses**, and to have the
+timing **per preset**.
+
+**This is the cost of entry 42, paid off.** Making Start cast is right for a long buff and wrong for a
+rotation with animations, and there was no third option between "everything at once" and "idle out every
+first cooldown". Now there is: `startup_step`.
+
+**The rule.** On Start, keys become due one step apart in the same order the walk uses. Staggered by
+**unit, not by key** — a combo is one move, so its keys share an offset and the combo's own gap does the
+spacing *inside* it; stepping the halves as well would space them twice. `last[k] = at - cd` puts a
+key's due moment exactly at `at`, so the arithmetic is the same shape as everything else here.
+
+**0 is the old behaviour, and absent means 0** — so every rotation saved before this existed is
+unchanged, and the tab REMOVES the entry when the box is 0 rather than writing `startup_step: 0` into
+every preset.
+
+**A third map keyed by preset name** (`priority`, `combos`, `startup_step`), which is a smell worth
+naming: three parallel maps for three per-preset settings, only because `Presets`' value type cannot
+carry them. Each needs its own projection handling and guard. If a fourth ever appears, the right answer
+is to stop and change the shape of `Presets` behind a migration rather than add a fourth map.
+
+**Both projection directions again**, and the guard proven by removal: the merge copy was taken out and
+`LocalYamlCarriesTheSpammerStartupStep` was watched to **fail**. Its failure mode is the quietest of the
+three — a gap that comes back as 0 is not an error, it is "no stagger", so the feature simply looks like
+it was never built.
+
+**Not verified live.** The staggering arithmetic is reasoned, not observed; the runtime is inside `Run`
+and needs a serial port, as with the combo state machine.
+
+195/195 tests, 0 warnings.
+
+---
+
+## 2026-10-02 (43) — a rotation picker on the Skill Spammer card
+
+**The ask:** *"add a selector like buy item for skill spammer for quick setup"* — then, twice, *"we only
+need to preset select"* and *"there is no need for + / -"*. So: a preset picker, and no count stepper.
+
+**It is Buy's control, not a lookalike.** Same measured row — 32px height, 11px font, the 6px right
+inset the rows below carry — and the same mechanism: one value behind two controls, with a `_syncing…`
+guard so their events cannot recurse. The value is **`Config.Spammer.Active`**, which is the one the tab
+already writes and the tool already reads at run start, so nothing new had to be invented.
+
+**Two things it deliberately does NOT do:**
+
+- **It does not write `local.yaml`.** The tab's Save stays the only place a rotation is persisted. A
+  card that wrote the file would be a second writer of it, and `SaveLocal`/`SaveDefaults` already share
+  a temp filename with no mutual exclusion (a standing item in TODO.md) — this would have widened a
+  known hole for a convenience.
+- **It does not get its own copy of the choice.** Setting `Active` and then telling the tab to re-read
+  it is the difference between two controls and two settings, which is the exact failure the Buy
+  comment warns about.
+
+**How the tab is told** is the one non-obvious bit: the tab's selected preset is a **local** of
+`BuildSpammerTab`, so the card cannot reach it by name. The method leaves an `Action` in a field — a
+closure over that local — and the card invokes it. The closure commits the tab's unsaved edits first,
+exactly as the tab's own picker does when it switches.
+
+**Also:** the card's list is refreshed when a preset is created, renamed or deleted on the tab, so a
+rotation made there appears on the card without a restart, and a deleted one leaves with it.
+
+194/194 tests, 0 warnings. Not verified live — the card's layout is reasoned from Buy's measurements,
+not seen.
+
+---
+
+## 2026-10-02 (42) — Start casts, instead of idling out the first cooldown
+
+**Found by the player asking the right question about a long timer.** *"If it is 1200 s, first run would
+be 1200 s later?"* — yes, and that is a defect rather than a preference. `Reset()` put **every** key on
+cooldown at Start (`last[k] = now`), which is a fine assumption for skills you recast in seconds and a
+wrong one for a 10- or 20-minute buff: on a short session the buff would **never go up at all**, and
+after every Stop→Start the clock began again from zero.
+
+**The change is one line:** `last[k] = started - cooldowns[k]` instead of `= started`. That is exactly
+the due boundary, so every key is due on the next tick and the run opens with a cast.
+
+**The cost, stated because it is real and was accepted knowingly:** for one tick *every* key is due at
+once. Combos space themselves out (their gap does the work), but loose keys go out **a tick apart — 20
+ms** until the rotation settles into its rhythm. The alternative offered was "reset only the short
+ones", which needs a threshold and a reason for it; "when you press Start, it casts" is the rule you can
+explain without one.
+
+**Untested, and honestly so.** The change lives in `Reset` inside `Run`, which needs a serial port — the
+arithmetic is one subtraction and the reasoning is above, but nothing automated pins it. A live run is
+what confirms it.
+
+194/194 tests, 0 warnings.
+
+---
+
+## 2026-10-01 (41) — combos: keys that must be cast together, in order
+
+**The player's real setup, which the priority list could not express.** Four skills on ~6 s cooldowns
+where **1→2 is a combo and 3→4 is a combo** — the order inside each pair is load-bearing, and each cast
+has an **animation**, so 2 cannot follow 1 immediately or its cast is swallowed. The rest of the window
+is filler. Asked directly, they chose **locked pairs** and **silent during the gap**.
+
+**What the priority list (entry 40) got and missed.** It already made `1,2,3,4` outrank the filler. It
+could not give the two things that matter: a **gap** between 1 and 2 (they would go out ~20 ms apart,
+and the animation would eat the second), and a **lock** — if 1 was on cooldown when 2 came due, 2 fired
+**alone** and the combo broke, silently.
+
+**The design, and the two rules that carry it:**
+
+- **A combo is ready only when EVERY key in it is off cooldown.** So the spammer never starts a 1→2 it
+  cannot finish, and the second half of a pair can never go out on its own. That is the lock.
+- **A running combo owns the tick.** No filler, no other combo, until its last step has gone out. The
+  first rule is about *starting*; this one is about the gap, and it is why the fillers cannot land
+  inside the animation.
+
+Combos are tried **before** any single key, and their members are **removed from the single-key walk**
+(`SpammerOrder.Singles`) — that subtraction is what makes the pair a unit, and it is the one line that
+would silently break the lock if it went missing. Each key's cooldown starts when **it** was cast, not
+when the combo began, or the second skill would come off cooldown a gap early every cycle.
+
+**Half a combo is worse than none**, so `SpammerOrder.Runnable` drops a combo with fewer than two keys
+and one naming a key the preset lacks: a typo would fire the first skill, spend its cooldown, and leave
+the effect un-triggered with nothing to show for it. Dropped, at least the failure is a rotation that
+does nothing rather than one that does half of something.
+
+**The third answer was not needed, and that is worth recording.** Asked what to do when a skill is due
+but the combo rule says wait, the player said *"i dunno as of now"*. It needs no answer: the walk runs
+the **first unit that is ready**, so a pair that is not ready is passed over rather than waited for.
+The only waiting is inside a combo already started, which they had already ruled on.
+
+**Additive again** — `combos:` is a fourth map keyed by preset name, so no `local.yaml` breaks. Both
+projection directions handled, and **both guards proven by removal**: the merge copy was taken out and
+`LocalYamlCarriesTheSpammerCombos` was watched to fail, then restored. The tab's Save carries `Combos`
+for the same reason it carries `Priority` — a field left out of that explicit list is not unsaved, it
+is deleted from the file.
+
+**The editor, in the same session.** A **Combos** card on the Spammer tab: a list of combos, each with
+a **gap (s)** box, an ordered list of steps with ↑ / ↓ / ✕ on each, a picker to append a step, and
+*Remove combo*. An empty list prints *"(no combos — every key is pressed on its own)"*.
+
+Three decisions in it:
+
+- **A key may belong to ONE combo only.** The picker offers keys not already owned by any combo,
+  because shared between two, which combo owns it would come down to which the walk reached first —
+  and the pair that did not get it would fire half-strength with nothing saying so.
+- **The gap box updates the model and does NOT rebuild the panel.** A rebuild on every keystroke takes
+  the caret out of the box, which is how a half-typed number becomes untypeable.
+- **Combo pruning happens on commit, not on display**, the same rule the tool applies at run time —
+  fewer than two keys, or a key the preset lacks, and it is dropped where it can be seen going. The
+  step list still SHOWS an unknown key greyed, like the Order card does, so it can be corrected rather
+  than vanishing.
+
+**`Commit` now carries both maps**, and Rename moves `combosMap` alongside `priority` while Delete
+removes both — the same hole the order had, closed before it opened rather than after.
+
+194/194 tests, 0 warnings.
+
+---
+
+## 2026-10-01 (40) — the spammer's rotation, and the "when we are able to" keys
+
+**The ask, in the player's words:** *"there are key rotation i need to hit in the loop whenever its
+cooldown is up in game. but I also want to key in other keys when we are able to."* Two tiers: the
+rotation, which **must** fire when due, and a filler set pressed only in the gaps. That is the
+preempt rule, and the player had already chosen it when asked directly.
+
+**The design decision, and it is about `local.yaml` rather than about loops.** The obvious shape —
+a `priority:` field on each key — changes the *type* of `Presets`' value, and every rotation already
+saved stops loading. The defaults.yaml header records what that costs: *"any key the launcher does not
+know about is DROPPED, silently — this is how a spammer block once disappeared, taking a player's key
+rotations with it."* So the order is a **separate map**, `preset name → [keys in precedence order]`:
+
+```yaml
+spammer:
+  presets:
+    default: { q: 30.0, w: 30.0, e: 1.5, t: 2.0 }
+  priority:
+    default: [q, w, e]        # absent = today's behaviour, exactly
+```
+
+**Preemption is opt-in per preset, and that is the part worth keeping.** An empty order means the loop
+sends every due key as it always has — so a preset written before this existed is byte-for-byte
+unchanged. Name an order and the rule turns on: one press per tick, highest first, the rest **held**
+(their cooldown is left alone, so they are delayed to a later tick rather than skipped). The reason it
+is opt-in rather than always-on is the failure it can cause: a top key whose cooldown is at or under
+the 20 ms tick is due every tick, and everything below it then never fires at all. The filler keys are
+the "when we are able to" half, and they keep their own cooldown like every other key — the alternative
+would be ~50 presses a second on every idle tick.
+
+**The projection needed both directions, and one was a live bug.** `LocalSpammer` gained `Priority`,
+the load merge carries it, and the adoption path carries it. But **the Spammer tab's Save rebuilds
+`LocalSpammer` from an explicit field list** — so with the field left out, saving any preset would have
+**deleted the order from `local.yaml`**, silently. Same shape as the quest sequences (entry 37) and the
+spammer block before that. It is carried through untouched now.
+
+**The guard was proven rather than assumed** — the drill this repo earned: the merge copy was removed,
+`LocalYamlCarriesTheSpammerPriorityOrder` was watched to **fail**, and the copy restored. The ordering
+itself lives in `SpammerOrder`, pulled out of `SkillSpammer.Run` for one reason — the run loop needs a
+serial port, and that helper is the half of the rule that is a decision rather than a press. Seven
+tests cover it: named-first, unnamed-after, typo skipped, duplicate taken at its first position, and
+the additive empty case.
+
+**The editor, in the same session.** An **Order** card on the Spammer tab, inside the existing Edit
+panel: a numbered list of the placed keys with ↑ / ↓ / ✕ on each row, and below it a picker offering
+only the keys this preset actually has and has not already placed — so a duplicate can never be added,
+which would press one key twice in a tick. An empty list prints *"(no order — every key gets pressed
+as soon as its cooldown is up)"* rather than sitting blank, because that is the behaviour, and a blank
+panel reads as "nothing is set up yet".
+
+Four decisions in it worth keeping:
+
+- **The order is a working copy, like `rows`.** It is written back into `priority` on every path that
+  leaves the current preset and on Save, so a half-made ordering is not lost when the picker moves.
+  Rename moves the order to the new preset name and Delete removes it — an order left under a deleted
+  name would be invisible in the tab, alive in the file, and resurrected by a later preset that reused
+  the name.
+- **A name whose key is gone is SHOWN, greyed, marked "(not in this preset)"** rather than hidden. It
+  is in `local.yaml`, and a list that silently drops a line the player wrote is one they cannot
+  correct. The tool skips unknown names at run time, so this is tidiness, not correctness.
+- **Pruning happens against the keys actually being saved** — in Advanced mode those are the raw
+  textbox keys, not the rows. Pruning against the rows would drop from the order any key that exists
+  only in the textbox.
+- **The grid's delete button, the add-key button and any keystroke in a Key box all rebuild the
+  picker**, so it can never offer a key the grid does not have. The `TextChanged` handler is attached
+  *after* AddRow sets the text, so the initial load does not fire it once per row.
+
+**One thing deliberately not done:** the card sits after **Advanced** rather than directly under
+**Keys**. Moving it is cosmetic and untested; the player can say if they want it higher.
+
+187/187 tests, 0 warnings.
+
+---
+
+## 2026-10-01 (39) — the Hold Space toggle: found, and fixed
+
+**The instrumented build answered it on the first reproduction** (entry 38 below explains why it was
+built). The log, verbatim — this is the whole fault:
+
+```
+17.504 [ui]  toggle-click currentId=(null) branch=start startInProgress=False
+17.601 [svc] arduino find COM5 took 89ms
+18.840 [ui]  toggle-click currentId=(null) branch=start startInProgress=True   ← the press meant to STOP
+18.840 [svc] start holdspace SWALLOWED - a start is already in flight
+19.670 [svc] start holdspace ok after 2161ms
+20.149 [ui]  currentId (null) -> holdspace holding=True
+```
+
+**Two hypotheses died on those same lines, and both had been argued for confidently this session:**
+`arduino find took 89ms` (so not the WMI query on the dispatcher), and **not one `UI-STALL` line** (so the
+dispatcher never froze — "the button froze" was a *state* reading, exactly as the player described it).
+A third, the pet-feeder game gate, had already been killed by the player: it reproduces on a build with
+no pet feeder, on a second PC. **Three wrong answers, and the log took one run to settle it.**
+
+**The cause is one wrong question.** The toggle decided stop-vs-start from `CurrentId == "holdspace"`,
+but `CurrentId` is set only when a start **completes**. So through the whole ~2.1 s cold start the
+button answered "not running", every press re-entered Start, and `StartToolAsync` **swallowed it,
+returning `true`** — so no message box appeared either. The spacebar stayed held, and the one control
+that releases it was the control that was dead: Hold Space has no card (`Tools[]` lists seven, not it),
+and F12/F11 are read through `GetAsyncKeyState`, which the anti-cheat blocks while the game is focused.
+
+**`StopTool` already handled this correctly** — it sets `_startCancelled` for a stop arriving mid-start
+and `StartToolCoreAsync` refuses on it. The toggle simply never reached that path. So the fix is
+`39bdf98`: ask the question of `StartingId` as well as `CurrentId`, and a second press now
+means "I did not want that" and reports "Start cancelled."
+
+**The second half is feedback.** The button read "Hold Space" for the entire cold start, which is what
+made a *busy* press look like a *dead* one — so the fixing press was the natural response. It now reads
+"Starting..." (with `● starting` on the status line, in the caution colour) and says pressing again
+cancels. The refresh is called directly from the handler as well as on the 750 ms tick, so the label
+changes at the press rather than up to 750 ms later.
+
+**The 2.1 s itself is SETTLED — leave it, decided 2026-10-01 with the player.** The wait is a blind,
+unconditional `await Task.Delay(2000)` ([LauncherService.cs:164](../../SealTools.Launcher/LauncherService.cs#L164)),
+not a read of anything the board says: opening a serial port asserts DTR, which resets an Arduino, and
+the sketch is not listening until its bootloader finishes. So the cold start buys nothing — it is the
+board booting, and the only choice is *when* it is paid.
+
+**Pre-opening at startup was proposed and then withdrawn**, because it is the worse trade: it would
+reboot the board on every launcher launch whether or not a tool is ever run, and hold COM5 from launch
+so the Arduino IDE or a serial monitor cannot have it. (`_arduino` is opened only by a tool start or a
+calibrate test button, and never closed by a tool stop — only by launcher `Dispose` and the re-open
+path — so an untouched launcher never touches the board at all.) Once per session, and now visible
+("Starting...") and cancellable, is the right place to pay it.
+
+If it ever does prove irritating in practice, the fix to reach for is a shorter or probe-based wait —
+**not** an earlier one — and it wants a live run saying so first, because the delay exists for a real
+hardware reason.
+
+**Still to do:** the diagnostics are deliberately **left in** until the fix is confirmed on a live run,
+then removed — `holdspace.log` and the `[ui]`/`[svc]` `HoldDiag` calls in `MainWindow` and
+`LauncherService`. Release only while the player's launcher was up; 180/180 tests, 0 warnings.
+
+---
+
+## 2026-10-01 (38) — an instrumented build, to find the Hold Space toggle
+
+**What the player reported:** the Hold Space toggle "froze and would not switch off" — a lag, then a
+click that did nothing, and only a *different* tool's Stop cleared it.
+
+**Two facts they gave, both of which killed a hypothesis this session was one step from building on:**
+
+- it reproduces on a build with **no pet feeder at all**, on a second PC. My first answer was that
+  Hold Space was queued behind the pet feeder's game claim
+  ([LauncherService.cs:298](../../SealTools.Launcher/LauncherService.cs#L298) — `id != ResidentId` sends
+  holdspace through `WaitForGameAsync`, up to `GameWaitMs` = 45 s). That is
+  **wrong**, and the resident/gate work is not the cause;
+- the **button** froze, not the window. A blocked dispatcher freezes everything it owns, so "only the
+  button stopped responding" is a *state* problem rather than a stalled thread — which killed the
+  second candidate too (a slow synchronous `Arduino.Find` WMI query on the dispatcher).
+
+**So: instrument rather than guess a third time.** This is the repo's own precedent for a report with
+no reproducible cause ([PLAN-PET-FEEDER-NEXT.md](../plans/PLAN-PET-FEEDER-NEXT.md) §3, the cursor placement
+failures). **Nothing about the tool's behaviour changed — this commit is diagnostics only.**
+
+**What the trail records** (`v2/logs/holdspace.log`; both writers resolve the same root through
+`FindRootDir`, so the launcher half and the service half land in one file):
+
+- the toggle click and **which branch it took**, with `CurrentId` at entry — the line that separates a
+  dead button from a button that ran and did nothing, which look identical from outside;
+- `CurrentId` on every **change**, so a stuck value shows up on its own rather than only through the
+  button it fails to repaint;
+- `start` begin / ok / REFUSED with elapsed ms, and the **SWALLOWED** case. `StartToolAsync` returns
+  *success* and starts nothing while a start is in flight; that is why a click can vanish with no
+  message box and nothing on any card;
+- `stop` enter / deregister, and `release` enter / ok / failed with the **port name** and elapsed ms.
+  The port name is the point: a null or closed port writes nothing and still reports success, which is
+  the one way `ReleaseHeld` can lie;
+- `arduino find … took Nms` — so a slow WMI query on the dispatcher is measured rather than assumed.
+  Absence of the line means the fast path was taken and no query ran at all;
+- a **UI-thread heartbeat**: 250 ms, logging only ticks late by more than 300 ms. Silence means the
+  dispatcher never stalled, which kills the whole "the UI was blocked" class at once.
+
+**No cause is claimed here.** The two that were claimed are both dead; this file exists so the third
+one is measured instead of guessed. Release build only while the player's launcher was up, then they
+asked for the relaunch. 180/180 tests pass, 0 warnings.
+
+---
+
+## 2026-09-30 (37) — quest sequences, and a card that can aim a run
+
+**What the player asked for:** *"preset a run 3 times then preset b 2 times and then have a master loop
+of that"* — and, in the same breath, a selector and counter on the CARD like Buy's, so the loop number
+can be changed without opening Configuration.
+
+**Three commits:** the plan in [PLAN-QUEST.md](../archive/PLAN-QUEST.md#11-sequences--several-flows-in-one-run-built-2026-09-30),
+then the engine (config, projection, tool, tests), then the editor on the tab and the card controls.
+
+**The design decision that is really a consequence.** Every flow in a sequence clicks the SAME place and
+the positioning wait belongs to the sequence ONCE. That is not a simplification — it falls out of the
+manual-placement design, since the tool never moves the cursor and a flow inside a sequence therefore
+cannot have a position of its own. It is also the thing that makes the feature sensible: **one NPC,
+several quests, one place to stand.**
+
+**And the question the player asked back, which was the right one.** I proposed "abort the sequence when a
+flow fails" and they asked *"how do you know it is failed?"* — the answer is that it cannot. The tool
+reads nothing, so it can see exactly three things (a step that cannot be sent, a serial write throwing,
+the mouse guard), and the first two are **transport**, not "the quest did not hand in". So no abort rule
+was written: a rule that can never fire is one a later reader would trust. Real detection needs the tool
+to read the screen, which is `Stop on a condition` (§9) and a feature of its own.
+
+**Shared, not duplicated:** the step loop, the positioning and the guard are one implementation used by
+both the single-flow and sequence runners. They differ only in how often and in what order they call it,
+and a second copy of the sending is where the guard would one day be checked in one path and not the
+other.
+
+**Two traps met and handled:**
+- the tab's Save rewrites `LocalQuest` from an explicit set, so it would have **deleted sequences** on the
+  next save. Both new fields are in it now — the same shape of bug this projection has had three times;
+- the card's count box had to **follow the target**: 5 loops means one thing for a sequence and another
+  for a flow, and a stale number there is how a run gets the wrong count.
+
+**The card mirrors Buy's measured row** — RowHeight 32, the 4/8px gaps, the 11px font and the 6px right
+inset — rather than inventing a second look for the same controls.
+
+180/180 tests pass. Release only: a tool was RUNNING, so no kill and no relaunch.
+
+---
+
+## 2026-09-28 (36) — the US client: the frame is built
+
+**What landed** ([PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md) §4.1, §4.2 and §4.5): `game.variant` plus a
+`game.variants` map, each naming a window title and an attribute dictionary; **resolved at load**, so
+`window.title` stays the single value every tool already reads and none of the ~15 call sites moved.
+Plus `attributes.us.yaml.example`, and the published-zip copy of it.
+
+**Four tests, and one was proven rather than assumed.** Following the drill this repo has earned: the
+`SaveDefaults` guard was checked by **dropping `game` from the field list and watching it fail** —
+`Expected: "US_LIVE" / Actual: "TW_LIVE"`, exactly the trap that keeps being written into CONFIG.md. The
+other three pin the safe directions: an unset *and* an unknown variant leave the configured title alone
+(blanking it would send every tool hunting a window called `""`), and a missing variant dictionary names
+the file to copy.
+
+**Two things found by checking rather than by luck:**
+
+- **`publish.bat` copies the config by an explicit list.** A new config file that is not named there
+  does not ship — so `attributes.us.yaml.example` would have been absent from the public zip while the
+  error message told the player to copy it. Added to the list, with a comment saying why the list is a
+  hazard.
+- **The template ships as `.example`, not as a live file.** An *empty* `attributes.us.yaml` would let
+  `variant: us` start happily and match nothing — every attribute reading as "no attribute", silently,
+  which is the failure this repo keeps meeting. Missing fails loudly and says what to do instead. That
+  is the same shape as `local.yaml.example`.
+
+**Not built, and deliberately:** the **Setup-tab switch** (so changing clients is still a file edit), and
+**moving the two hardcoded phrase sets into the dictionary** (so the per-level and time-line phrases are
+still TW-only — the US client reads no time line and schedules from food alone, which is the safe
+direction).
+
+**Constraint honoured:** a tool was RUNNING. Release build only — no kill, no relaunch.
+
+**A line-ending trap, hit and worth re-recording:** a patch against `ConfigLoader.cs` silently did
+nothing because the file is **CRLF** and the pattern ended in `\n`. It is the same failure the handover
+already warns about for `PetTool.cs`, and it presented as *a test that passed when it should have
+failed* — which is the worst version of it, because a no-op edit and a real one look identical.
+
+---
+
+## 2026-09-28 (35) — plan: the US client ([PLAN-US-CLIENT.md](../plans/PLAN-US-CLIENT.md))
+
+**The ask:** run the suite against the US client as well as the TW one, chosen by a setting.
+
+**What the reading found, and it is the whole plan.** Exactly **one** thing is a code change on the
+window side: `window.title` is already config, and `FindByTitle` is a substring match, so pointing at
+`US_LIVE` works today. Everything else that differs is either **content** (the attribute dictionary, the
+pet table, the filter rules that name dictionary entries) or **one of two hardcoded phrase sets**
+(`AttrMatcher`'s `每\D` per-level regex and its `'每'` gate, and `FeederEta`'s `約 N 分` / `完成` /
+`所需時間`).
+
+**And most of the suite does not care at all**, which is why this is not a rewrite. `PetPanel` parses
+digits and brackets only — so the hover-panel read works on an English client untouched. Grade letters
+are latin. `TextCleaner` has no vocabulary of its own. The composer, buy/sell and spammer match no text.
+And the quest tool reads nothing, so it already runs on the US client as shipped.
+
+**The design decision worth recording.** The variant is resolved **at LOAD**, where the config is
+deserialised: it sets `Window.Title` and picks the dictionary file. That is what keeps the change small —
+`Window.Title` stays the single value every tool already reads, so **none** of the ~15 call sites in
+`OcrEngine`, `GemComposer`, `HidPointer` and `MainWindow` move.
+
+The **alternative — a `titles: [TW_LIVE, US_LIVE]` list** that finds whichever client is up — was
+considered and rejected, and not only for churn: it answers *which window* while leaving *which text to
+match against* unanswered, and those have to be chosen together. A list is half a question.
+
+**The calibration question, answered from the record rather than by argument.** Calibration is
+client-relative physical pixels, and COORDINATES.md already measured that this game's UI does **not**
+scale with the window ("the HP bar keeps its pixel size, the world view expands") — so the UI is drawn at
+fixed pixel sizes anchored in the client area, and the same client size should give the same coordinates.
+The risk is translation changing *text length* on anything content-sized. It is testable in **one look**:
+the calibrate tabs draw the saved marks on a capture, so switching to US and capturing says whether the
+boxes still land. A per-variant calibration is deliberately **not** in the plan until the boxes ask for
+it.
+
+**The OCR side, split honestly, because the player called it big and is right about one of the three
+parts:**
+- **the model is a measurement** — the shipped recogniser is the **Chinese** one, which does read Latin,
+  but whether it reads English attribute names well enough for an exact dictionary match is unmeasured.
+  The model paths are config, so a swap is a config line plus a file — not code;
+- **the dictionary content is big and cannot be written from here** — its value is the *variants table*,
+  built from real misreads over many sessions, and English OCR fails completely differently (`l`/`I`/`1`,
+  `O`/`0`, `rn`/`m`). So US support is a **process**: run it, collect the misreads, fill the table — which
+  is exactly how the TW table was built, from `ocr_log.jsonl` and `logs/reads/`;
+- **the phrase sets are small code**, and the dictionary file is already their right home: it carries
+  `Whole`/`Substring`/`SimplifiedTraditional`/`Final`/**`Regex`** fixes, and `AttrMatcher` already
+  receives the whole `AttributesConfig`.
+
+**Built when this entry was written:** the plan only. The frame follows, in `defaults.yaml` —
+which means `game.variant` must go into `SaveDefaults`' explicit field list or it is written once and
+dropped by the next save from any tab.
+
+**Constraint for this build:** a tool is RUNNING. Release only — no kill, no relaunch.
+
+---
+
+## 2026-09-28 (34) — v2.13 cut
+
+Eight commits since v2.12, and the note is [RELEASE-v2.13.md](RELEASE-v2.13.md). The headline is the
+**Quest Hand-in** tool; the interesting part is what it flushed out.
+
+**The tool exposed a launcher bug on its first day.** The card stayed on "● RUNNING" after the loops
+finished — and the fault was not in the tool. `StartToolCoreAsync` had `try`/`catch` and **no `finally`**,
+so a tool's running flag was cleared only when it *crashed*. **It had never shown because every other tool
+loops until it is stopped**; this is the first that ends by itself, and any future one would have hit it.
+The teardown now mirrors the stop path and is guarded on the entry still being registered, which is what
+tells a self-end from a stop.
+
+**And checking my own claim about it found a second gap.** I had written that a run's completion "is in
+the log". It was not: **a tool's console output goes nowhere in the launcher** — no console in a WinExe,
+and nothing redirects one — and only the tuner and the pet write files. So a quest run had no durable
+record, which is precisely wrong for a tool whose card cannot tell a completed run from an interrupted
+one. Runs now append to `logs/quest.log` and every exit names itself. Corrected in a follow-up commit
+rather than by amending, because the repo does not rewrite commits.
+
+**A registration point that is a second copy of another list.** The tool's card and tab worked and Start
+did nothing: `StartToolAsync` carries a whitelist of ids duplicating the launcher's card list, and the
+new id was registered in three places and missed in that one. It fails *quietly* — the exception leaves an
+`async void` handler, so there is no message box and nothing on the card, only an entry in `error.log`.
+`Test one loop` bypassed that path entirely, which is what made it look like the tool. The whitelist is
+commented now as the copy that bites; consolidating the ids into one source is still open and would
+remove the class.
+
+**Two UI fixes, one of them not ours alone.** The `+ Add` button drifted into the middle of the list it
+adds to, because rows were appended *after* it — and the shared editor it was copied from had the same
+flaw, so the **Tuner tab's rule grid and override grid** have done it since they were written. Fixed in
+both. The other: `Save` sat 10 px below `Test one loop`, one button keeping `MakeButton`'s top margin
+while its neighbour had it overridden.
+
+**Said plainly in the note:** `Test one loop` is the one part of the new tool **reported working from a
+live game**. The card clearing after a run, and v2.12's food scan, are still unproven — and the note says
+so rather than leaving it to be discovered.
+
+---
+
+## 2026-09-26 (33) — the Quest Hand-in tool, built ([PLAN-QUEST.md](../archive/PLAN-QUEST.md))
+
+**The player's ask:** hand in quests repeatedly by replaying a sequence at the quest NPC. The flow differs
+per quest, so it has to be the player's own and savable. **The tool reads nothing** — no capture, no OCR,
+no window — which is why it has no calibration at all and no calibrate tab.
+
+**Four decisions taken before any code**, and three of them were the player's:
+manual click placement (the tuner's `manual` spring mode), so there is no point to place and the whole
+calibration layer disappears; a per-step delay, defaulted to 0.25 s as a placeholder; presets in
+`local.yaml` because they are personal and `defaults.yaml` is what a public zip ships; and the name.
+
+**The guard is the one place this beats an existing mechanism**, and the reason is what it does *not*
+need. The tuner's mouse guard compares the cursor against a calibrated point and needs the game window
+measured, so it is documented as **failing OPEN** — window gone, "no drift, carry on", and the loop keeps
+clicking. This one reads the cursor once at start and needs neither, so it can **fail CLOSED**: an
+unreadable cursor stops the run instead of clicking on at a place nothing is watching. Same 8 px.
+
+**A step that cannot be sent is refused before anything is clicked.** A `key` step with no character, or
+two, would send nothing — and at 500 loops, "sends nothing" and "the game behaved differently today" are
+the same observation. `QuestAction.Complaint` is the same shape as `FoodLoadMode.Complaint` for the same
+reason.
+
+**Two catches, both mine, both before the commit:**
+- **`GuardPx` was written to no file.** The save carried `Active` and `Presets` only, so the threshold
+  would revert to 8 on every launch while the box kept its new value for the session — the silent-revert
+  shape this repo keeps meeting. It is on `LocalQuest` now, with the merge, because `SaveDefaults`
+  rewrites `defaults.yaml` from an explicit field list and would drop it there.
+- **`ToolState.Running` is `LauncherService`'s.** The tool does not touch it; it was created running, and
+  a tool that set it would be fighting the service for the field.
+
+**A quest flow is the one config shape with a list of objects inside it**, so it has a round-trip test
+pinning the whole shape — flow, steps, each step's three fields, and the guard threshold. This is the
+tool with **no other eyes on it**: it reads nothing, so the config is the only place a dropped field could
+be caught. 174 tests.
+
+**Docs, in the same pass:** the Quest tab in `USER_GUIDE.md` and its zh-TW mirror (both now at sixteen
+tabs and seven cards), the architecture tree and tool tables in both READMEs, and `PLAN-QUEST.md` marked
+built.
+
+**Never run against the live game**, and for this tool that means the *flow* is unproven — nothing in it
+can tell a good flow from a bad one. Test one loop is the only verdict there is, and it runs the tool
+itself rather than a copy of its logic, so the test cannot pass something a run would refuse.
+
+---
+
+## 2026-09-23 (32) — v2.12 cut
+
+**The release the previous session's open item #1 asked for:** *"The docs still present v2.11 as the last
+release, while `main` is dozens of commits past it — the last two days of feeder work is unreleased. A
+note, or a release."* It is **91 commits**, and the note is [RELEASE-v2.12.md](RELEASE-v2.12.md).
+
+**What it took beyond the code.** `publish.bat`'s `RELTAG` moved to `v2.12`; the root README's title,
+download links, firmware link, fallback table and history row were updated; `v2/README.md`'s version line
+followed. One self-inflicted bug caught on the way through: a bulk string replace left the new **v2.11**
+fallback row pointing at **v2.10**'s asset — the kind of thing that only shows up as a 404 for a user,
+so it was fixed and the row kept, since v2.11 is a real published release.
+
+**Also folded in, because shipping the food feature without it would ship a known loss:** clicking a food
+cell by hand was the *one* place on that grid that did not save. The scan saves itself, the return slot
+saves itself, and this did not — so "click nineteen cells" and "press Scan" behaved differently for no
+reason a player could see, and an unsaved mark reverts on the next launch. `TogglePetCell`'s FOOD branch
+now calls `PetSessionSave` like its neighbour.
+
+**Said plainly in the note, not left to be discovered:** the **food scan has never run against a live
+bag**. It compiles, it is unit-tested, and its first run is the player's to judge. Everything else in the
+note was verified live on 2026-09-22/23, and the note says which is which.
+
+**Left open, and it is the same list the release note ends on:** the intermittent *count* read (§2 of
+PLAN-PET-FEEDER-NEXT, crop-armed and waiting for its evidence), the cursor placement failures (§3, no
+cause attached, instrument first), the `PetConfig` properties no config file can carry, and the projection
+guard whose reach is only what its fixture remembers.
+
+---
+
+## 2026-09-23 (31) — the return slot's species, and a measurement that settled two arguments
+
+**Built: the row remembers what it boarded** (PLAN-PET-FEEDER-NEXT §5). The return slot is tried
+**first**, and the pet in it is the one this row just finished feeding — but the candidate is built with
+`Entry = -1`, so `_boardedSpecies` was null and the estimate was impossible **by construction**. It is
+the largest single cause: of 23 estimate failures with 0 successes, **10 were return-slot boardings**, 7
+were blank-species entries, 6 were rows whose named line has no row at the pet's stage.
+
+It cannot be read instead — the hover panel is read off a **bag** cell, and a boarded pet is in the
+loader; and `PetPanel` has no name by design, its own comment recording that a name lookup "could not
+have worked" across the Simplified/Traditional split. So the line is **remembered**: `RememberBoarded`
+teaches the row, `MinutesForBoardedPet` falls back to it, and it only ever **learns** — a boarding with
+no line must not erase what the row's previous boarding established, which is exactly the case it exists
+for. In memory, not persisted: the projection has silently dropped a field three times and this avoids
+feeding it a fourth. Also fixed the log line that said "no pet line is named for this queue entry" for a
+pet with **no entry at all** — that wording is what mis-attributed the first diagnosis.
+
+**Two arguments settled by reading the log rather than by reasoning.** Both had been decided the wrong
+way in conversation, including by me:
+
+1. **The game's completion estimate is accurate, and driving the schedule with it works.** At `20:54:40`
+   Row 2 read `代餐完成预計所需時間：約26分` and was scheduled 31 min later; at `21:25:41` — 31 minutes
+   later, to the second — the visit found `slot reads EMPTY`, the pet having finished and been mailed
+   exactly when the game said. Not an inference; the timeline is in the log.
+2. **A freshly landed pet shows the LEVEL form, not the completion form.** Row 2, in the same minute as
+   its own reload, read `[到1為止预計所需時間：約57分]` and fell back to the full load. So reading the
+   line right after `StartBoarding` buys nothing, and that proposal is **dropped**. I had asserted this as
+   fact earlier in the session and it was an inference; it is now measured.
+
+**A proposal dropped for a reason worth keeping** (PLAN-PET-FEEDER-NEXT §6): "when blind, look again in
+20 minutes" is not a look. A due row is **reloaded**, and every reload **consumes a food cell** — so
+probing on a short interval drains the bag roughly ten times faster, and running out of cells is the one
+outcome that leaves a pet unboarded. It would trade the recoverable failure for the unrecoverable one. If
+a probe is ever wanted it must be read-only: open, read, close, the shape `InspectRows` already has.
+
+**Left in as an instrument, scheduling nothing:** every raw line under the slots is now logged after
+landing, plus what `FeederEta.Parse` picked. `Parse` returns on the **first** line carrying `約N分`, so a
+completion line that is on screen but never reached would look identical to one that is absent — and only
+the raw text separates those.
+
+Release build 0 warnings / 0 errors; 172/172 tests pass. Still **not verified in the launcher**, along
+with §1's rows — the restart is the player's call.
+
+---
+
+## 2026-09-23 (30) — the pet line, per queue entry (PLAN-PET-FEEDER-NEXT §1)
+
+**What prompted it.** The player reported the pet-finish check as "not working", and it was: the log has
+**zero** successes — 12 `no feeding estimate`, 0 `N min of feeding left`, and `the pet finishes first`
+has **never** printed. So every reloaded row is scheduled for the full load (205 min free / 505 paid)
+however close its pet is to done. Two independent causes, both in the live config:
+
+- **Three of five queue entries held no `species` at all.** Not carelessness: the **Which pet line**
+  picker is built once per launcher start pinned to index 0 (`"(no feeding estimate)"`) and was **never
+  seeded from the config**, so the first capture after any restart wrote an entry with no line. Nothing
+  displayed the value either — the queue list printed label + rect + PNG length, the thumbnail tooltips
+  the same, and never the line — so a blank was invisible short of reading `local.yaml`.
+- **The one line that WAS named has no row at the pet's stage.** `异色鸟蛋` stops at stage 5 in
+  `docs/pet-data.csv`; the pet reads stage 6. The player's answer settles it and matches the data: the
+  colour (异色) lines **merge into their normal line**, and stage 5 already carries identical values
+  (5000 / 72500 / 4834) under both names. So a stage-6 pet is named with the **normal** line — this is a
+  wrong pick, not a scrape gap. Recorded rather than fixed: it is a game rule, and a rule that lives in
+  the game belongs in the hint text before it belongs in the matcher.
+
+**Built** (one file, `MainWindow.xaml.cs`, additive): the queue is now **one row per pet** — crop, label,
+and its own line dropdown, with a ✕ that drops that row. Plus two things the plan's §1 did not cover and
+the live config proved necessary, written up as **§1a**:
+
+- **the capture picker seeds from the last line already on the queue**, so a restart no longer starts a
+  capture on the sentinel — and it needs **no new config field**, which matters because the projection
+  trap this repo has hit three times would otherwise get another field to drop;
+- **a per-row ✕**, because "Remove last" cannot reach an entry that is not last — repairing the three
+  blanks previously meant hand-editing `local.yaml` with the launcher stopped, since a save from this tab
+  rewrites the whole queue from memory and would clobber it.
+
+Reused the existing shape rather than inventing one: [`BuildRulesEditor`](../../SealTools.Launcher/MainWindow.xaml.cs)
+is already a row-per-item editor with a ✕ that removes from both the panel and the backing list, so the
+queue is a third instance of it. Chose per-entry over a "set all" control because the queue can hold two
+families at once and a bulk set would mislabel half of them silently.
+
+**Verified:** Release build 0 warnings / 0 errors, 172/172 tests. **NOT verified in the launcher** — that
+needs a restart, and a feeder run was live, which is the player's call.
+
+**Left open:** the mechanism-2 gap that no amount of naming fixes — **a pet boarded from the return slot
+is recorded `Entry = -1`, so it can never have a species**, and the return slot is tried *first*. Also the
+earlier question of whether a boarded pet should be re-checked on later visits, rather than estimated once
+at placement and never again.
+
+---
+
+## 2026-09-22 (29) — the launcher UI, measured ([ANALYSIS-UI.md](../investigations/ANALYSIS-UI.md))
+
+**Goal:** turn a UI audit into something durable, and decide where it belongs. Nothing in the code
+changed; the deliverable is a document plus a verdict to come.
+
+**Where it went, and why not a new plan.** [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md) already owns "the
+launcher UI rework", and its Progress table turned out to be the *current* one: steps 0–9 shipped and
+the `NavigationView` rail was tried and reverted. [TODO.md](../backlog/TODO.md) and `v2/README.md` both still
+described that work as not started, so those were corrected. What remains open in the plan is the
+button label/weight convention — so a second plan would have been two documents for one question,
+which is the fault this session already spent a commit repairing. The measurement went into
+`ANALYSIS-UI.md` instead, in the format `ANALYSIS-FOOD-LOAD.md` established, and the plan, the TODO
+entry and the README's doc list all point at it.
+
+**What was actually measured** (counted, not estimated — the file is 8,160 lines):
+
+- **The calibration canvas is copy-pasted five times**: the canvas, the overlay grid and 18 event
+  wirings are re-built in every calibrate tab. This is the largest duplication in the file and it is
+  why four of the five biggest methods are calibrate tabs.
+- **Four button factories, one of which exists to undo another** — `MakeInlineButton` removes the
+  10 px top margin `MakeButton` applies.
+- **Blocking on the dispatcher: 18 `Thread.Sleep` calls, 5,500 ms, across 6 `async void` handlers.**
+  This corrects TODO.md's "roughly 18 s for a full cycle" — 5.5 s is the sleeps and the rest is
+  `HidPointer.To` blocking in `WaitForCursorToSettle`. The part not recorded anywhere: being
+  `async void`, an exception inside them is unobservable.
+- **Accessibility: 2 calls in 8,160 lines** (both `AutomationProperties.SetName` on two test buttons),
+  zero `AccessKey`, zero `KeyboardNavigation`.
+- **The only data binding in the app is the Attributes grid's three columns**; status is a 750 ms
+  `DispatcherTimer` reading `ToolState` on the UI thread while tools write it — and the audit of Core
+  found the "reads are atomic" comment untrue for its nullable-struct members. Polling is a fine
+  choice; depending on a claim that does not hold is not.
+
+**What I recommended, and what I argued against.** The order: extract the canvas, collapse the button
+factories, then accessibility and the layout constants as tabs are touched. Explicitly *not* proposed:
+an MVVM rewrite or converting tabs to XAML — the plan priced that alternative and left it reversible,
+and the reasoning embedded in this file's comments is what a rewrite would destroy.
+
+**Left open:** whether the dispatcher-blocking handlers are in scope. It is the only item that changes
+observable behaviour, and it touches the window of a feeder that runs for days, so it is the player's
+call rather than mine.
+
+---
+
+## 2026-09-22 (28) — documentation audit: the docs had drifted from the tree
+
+**Goal:** check the docs against the code rather than against each other, and correct what no longer
+described the thing. No code was changed; the defects the audit turned up went into
+[TODO.md](../backlog/TODO.md#from-the-2026-09-22-audit--found-not-fixed) instead, split into what was read out of
+the source and what still needs reproducing.
+
+**The pattern worth naming:** every stale doc was stale in the same direction — it described the state
+at the moment it was written and nothing updated it when the next release landed. Four documents each
+announced a *different* "latest" version (v2/README v2.3, top-level README v2.10, STATUS v2.4,
+HANDOVER v2.11). The fix that follows from that is structural, not cosmetic:
+
+- **A changelog in two places rots in one of them.** `v2/README.md` carried its own version history
+  that had gone **eight releases** stale. It now points at the single history (top-level README) plus
+  PROGRESS. Same for its "progress log / known gaps" section, which was v2.3-era and duplicated
+  TODO.md — including an item TODO.md had already recorded as resolved.
+- **A line number in a doc is a claim with a short half-life.** `PET-TAB-DESIGN.md` cited a line for
+  every claim and promised they were accurate; `PetTool.cs` has been edited since, and it cited a
+  method (`ReloadRow`) that does not exist — the real name is `ReloadRowInPlace`. It now names methods
+  and UI labels, which survive an edit.
+- **A snapshot needs to say it is one.** `STATUS.md` stopped at v2.4 but reads as current, and it
+  still tells the reader that `v2/dist/` "holds the only intact copy of the calibration" — which is
+  now false and was the kind of instruction that loses a calibration if followed. It has the same
+  historical banner `REVIEW.md` already had, with that specific claim called out.
+
+**Corrected, with the evidence behind each:** the top-level README's version, download and firmware
+links (v2.11 is the latest release, `gh release list`), its missing v2.10/v2.11 history rows, and
+"Three tools" against six cards; `v2/README.md`'s banner, architecture tree (it put `OcrEngine` and
+`TextCleaner` in `Tuner` — both are in `Core`) and the two log locations, which really are two
+different directories and were documented as one; `INSTALL.md`'s v2.10 filenames, card count, a
+"Test Click" that is called **Place cursor + click** in Calibrate Gem, and **Buy / Sell** (not
+"Calibrate Buy / Sell"); `CONFIG.md` and `v2/README.md`'s **Save tuned counts**, which three docs
+called "Save Composer Moves" — `PLAN-UI-CLEANUP.md` had already recorded that rename, so the docs had
+been told and did not follow. Also `CONFIG.md`'s empty-detection section, which described the colour
+signature as the primary test when the saved crop (`config/calib_gem_result.png`) is primary and the
+signature is the fallback.
+
+**The gap that was a real gap, not drift:** `USER_GUIDE.md` opens "every card, tab and button" and had
+**twelve tabs and five cards**; the app has **fifteen and six**. `Pet`, `Calibrate Pet` and
+`Calibrate Tooltip` were undocumented in both the English and the zh-TW guide.
+
+**Those three sections are now written**, in both guides, from the tab builders themselves rather than
+from the release notes — the guide's job is what each control does, and only the code knows that. The
+zh-TW sections are new translations, not edits of the older ones. What is still behind in the zh-TW
+guide is the *pre-Pet* body: it describes five cards and twelve tabs in places, and its banner now
+says so plainly and defers to the English version rather than pretending to be level.
+
+**The screenshots are v2.9.1** and captioned as such rather than retaken. A fresh capture means
+poking the window of a feeder that is running live, which is not worth it for two pictures whose only
+difference is card and tab counts.
+
+**Also:** deleted `v2/docs/images$name.png` — 66 KB of junk from a shell variable that never expanded.
+
+**Left open:** everything in the new TODO audit section, above all the four unreachable `PetConfig`
+properties, which are live settings the tool reads and no config file can carry — and the zh-TW
+guide's older body, which wants a pass of its own.
+
+---
+
+## 2026-09-22 (27) — session close, and a git mistake worth not repeating
+
+**Landed and merged to `main`** as `e059c45` (PR #3, a **merge commit**): a window open now finishes
+every row that is due; every visit re-derives every row's schedule; the game's own time line is read and
+its completion form drives the next check; the feeding table and the pet-based figure; the return slot
+tried first and hovered to decide; an empty feeder read as a real zero; a tray at zero reloading now;
+"no pet available" as a wait rather than a failure; the deduped bag scan; and the docs restructure
+(`DESIGN.md`, `docs/archive/`). 172 tests, Release solution clean.
+
+**MY MISTAKE, recorded because the next session will otherwise repeat it.** PR #2 was merged with
+`gh pr merge --rebase` — my own choice, offered as a recommendation, not something the player asked for.
+GitHub replayed **38** commits rather than the 15 on the branch, because the 23 already on local `main`
+had **never been pushed**, so as far as GitHub was concerned the PR contained all of them. **Every SHA on
+`main` changed.** PROGRESS cites commit IDs, so the written record stopped resolving to the mainline —
+a record that cannot be checked is worth very little.
+
+**The player's words, which are now the rule: *"never rebase... just normal pull request"*** and
+*"we could lose commits"*. It is enforced in the repo now — no force-pushes. A diverged branch is
+resolved by **merging**, never by rewriting, and that is how this was fixed: PR #3 with `--merge` joined
+the two histories, so `bc6f438`, `967cc9f` and `f682b31` resolve from `main` again with nothing rewritten.
+`origin/backup-local-main` (`110c51a`) and `origin/v2-reload-visit` (`1218c57`) both still hold the
+originals. **`v2-reload-visit` was NOT deleted.**
+
+**Left open, in the order they matter:**
+
+1. **The docs still present v2.11 as the last release**, while `main` is dozens of commits past it — the
+   last two days of feeder work is unreleased and `HANDOVER.md` reads as though everything planned
+   shipped. A note, or a release.
+2. **The `USER_GUIDE` pass** — the drag food mode, the bag scan, the return-slot order and the computed
+   schedule are all absent from it, in both languages.
+3. **Naming the pet line on entries that already exist** — without it the computed next-check is inert
+   for every pet already queued. Plan: [PLAN-PET-FEEDER-NEXT.md](../plans/PLAN-PET-FEEDER-NEXT.md).
+4. **The intermittent slot read** — the crop is saved on exactly that failure now; the next one brings
+   its evidence.
+5. **The cursor placement failures** — biggest cost of the session, no cause attached, and the cursor
+   trace needs explaining before it can be seen.
+
+---
+
+## 2026-09-22 (26) — the return slot is tried FIRST, and hovered to decide
+
+**The player's ordering, and it is the cheap one:** *"when we need to reboard, look for the return slot
+first; if the return slot is not a pet we can board, then do the page scanning."*
+
+The return slot is **one cell and one hover** against a **three-page scan and three captures** — and it
+is where the pet this row was just feeding comes back to, so it is both the cheapest thing to check and
+the likeliest thing to board.
+
+**This reverses what the code did, deliberately.** It was the queue first with *"deliberately NO fallback
+to the return slot"* — the reasoning being that right-clicking a marked cell on the assumption that it
+holds the pet is the guess the icon matching exists to replace. That reasoning held while the slot was
+**assumed empty**, and it is not: the pet the reload just ending put back is sitting in it.
+
+**The hover IS the decision**, which is why the guard now runs on both kinds of candidate:
+
+```
+return slot, nothing readable there  →  nothing to right-click; scan instead
+return slot, a pet at +5 40%         →  board it
+return slot, a pet at +9 100%        →  finished; scan for one that can be fed
+no return slot marked                →  scan, as before
+```
+
+**One asymmetry kept on purpose.** A *matched* candidate still boards when its panel cannot be read —
+unknown must never remove a boarding — but the return slot does **not**, because it is a fixed cell that
+is normally empty, so no panel there means nothing to click rather than that we do not know. It only
+applies when the tooltip is calibrated; without one the slot is used as it was before.
+
+**The failure message now says which shape it is** — pets found and all finished, or nothing found at
+all — because they need different fixes.
+
+**Verified:** Release build clean, 0 warnings; 172/172 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (25) — "no pet available to feed" is a WAIT, not a failure
+
+**Live, and the player called it:** row 3 was empty, the bag held only `+9/100%` pets, and the guard
+refused all four candidates — which was **correct**, there was nothing boardable. But the row was counted
+as a **failure**, and three failures drop it for the day. A tool that gives up on a row because the
+player has not caught another pet yet is punishing them for their bag.
+
+> *"If find the bag is no available pet to feed it is not error."*
+
+**The two nothing-to-board paths now say so** — no candidates matched at all, or every candidate read
+`+9/100%` — and the outcome carries a `NothingToBoard` flag rather than being lumped in with a click that
+missed. The row keeps its place: **no failure counted, no drop.**
+
+**And it waits half an hour, not five minutes.** A real failure is retried in five because it might be a
+transient miss; this cannot be, because nothing changes until a feedable pet exists. Thirty minutes is a
+compromise between noticing soon and opening the boarding window on a bag that has not changed.
+
+**Everything else that run did was right**, and it is worth recording because three separate pieces were
+being watched for the first time:
+
+- **the time line read on this machine** — `[到2為止预計所需時間：約6分]`, first try, from ratios rather
+  than pixels. The OCR even wrote `预計` in Simplified where the game has `預計` and the parser did not
+  care, which is why it anchors on `約 N分`.
+- **row 3's pet finished and was mailed** exactly as the completion line had said it would — `slot reads
+  EMPTY` — instead of the row sitting untouched until midnight.
+- **the empty-slot threshold, measured live**: `0.0 %` for the empty slot against `46.2 %` and `31.6 %`
+  for slots holding food whose number the reader missed. Both directions correct on real pixels, with the
+  line at 2 %.
+
+**Verified:** Release build clean, 0 warnings; 172/172 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (24) — the game states the next check itself, and row 3 was the proof
+
+**The boarding window writes a time line under every row's food slots**, and it changes FORM when the pet
+is nearly done. Read off a live window:
+
+```
+代養完成預計所需時間：約14分        boarding COMPLETES in about 14 min   ← row 3
+到2為止預計所需時間：約 20分        reaches level 2 in about 20 min      ← rows 1, 2, 4
+該欄位約27日9時51分16 秒後到期。     the food's shelf life — not a countdown
+每1分 攝取3個。                     consumes 3 per minute
+```
+
+**Row 3 is why this matters.** Its line said the boarding completes in **14 minutes**, and the tool had the
+row scheduled for **00:31 — six hours out**. The pet would be mailed, the row would go empty, and nothing
+would look at it until midnight. That is the failure the player has been describing all day, stated by the
+game in plain text the whole time.
+
+**The rule:**
+
+```
+the line says 完成 in N min  →  next = now + N + margin        (the pet is finishing)
+otherwise                    →  next = the food figure          (which is what it did before)
+and either way               →  whichever runs out first
+```
+
+**The level form is deliberately NOT a trigger.** It resets every level and reads 20–39 minutes on a
+healthy pet, so visiting on it would visit constantly. It is parsed and quoted in the log; the food keeps
+the row fed.
+
+**The region is derived as RATIOS of the slot height**, not as pixels — `gap 0.53`, `line 0.40`,
+`width 4.7`, `x −0.10` — measured on two rows that agree (+10/+32 and +11/+34). That is the answer to
+*"how do you derive it for another PC"*: the strip is already calibrated per machine and scales with the
+UI, so a PC whose slots are taller gets a proportionally lower and taller region **with nothing new to
+calibrate or drag**. A fixed `+32` would be right here and wrong on any screen that scales.
+
+**The trap, and it was measured rather than reasoned about:** the food-expiry line carries a `約` and a
+number near a `分` too. It is excluded two ways — by 到期, and by requiring the number's unit to be 分
+(its number is followed by 日) — so a shelf life cannot be read as twenty-seven days of countdown.
+
+**Verified:** Release build clean, 0 warnings; **172/172** tests (ten added). **NOT verified live.**
+
+---
+
+## 2026-09-21 (23) — an empty feeder reads as "no digits", and the tool called that a full load
+
+**The bug that left a pet unfed.** Row 1's feeder ran dry. Both its slots read *nothing*, the tool said
+*"the feeder counts couldn't be read — assuming a full load"*, and scheduled the row **205 minutes** into
+the future. The row went unfed and the tool planned to wait until 20:42.
+
+**The read was correct. The interpretation was wrong**, and the crops prove it — both are blank cells,
+no food and no digits:
+
+```
+empty cell    0.0 %          warm pixels (R − B > 40)   ← both slots of the dry row
+has food     30.4 – 37.0 %                              ← every slot of a full one
+```
+
+**The code even states the distinction, and the distinction was unreachable.** Its comment reads
+*"NOTHING read is null; ZERO is a real reading meaning an empty feeder… null says 'assume a full load',
+zero says 'reload NOW'."* But **ZERO can never be produced**: an empty slot has no digits to read, so
+every empty feeder arrives as "nothing" and lands in the *assume a full load* branch. The one case that
+most needs reloading now was the one case that always waited.
+
+**The fix uses pixels the tool was already holding.** When the OCR returns no number, the slot's crop is
+measured for food colour: bare beige scores 0.0 %, an ochre icon 30 %+, and the threshold sits at 2 % —
+an order of magnitude inside the gap either way. Empty is then a **real reading of zero**, which the
+existing null-versus-zero logic already treats as *reload now*.
+
+**It costs a screen grab only on the slots that failed to read**, and the number is logged either way,
+so whether the threshold is sitting in a gap or on a cliff is visible rather than asserted.
+
+**Three theories died on the way here**, all recorded above: the two-digit crop theory (row 2 read `81`,
+two digits, perfectly), the fraction too-far-left theory (real, and fixed to 0.45 — but it never
+explained row 1, whose slots were empty), and the "read is flaky" theory (the read was never flaky;
+there was simply nothing to read).
+
+**Verified:** Release build clean, 0 warnings; **162/162** tests (four added). **Not verified live.**
+
+---
+
+## 2026-09-21 (22) — scope 4b: the next check is computed from the pet that was boarded
+
+**The chain is complete and it runs on data the tool already had.** The guard reads the boarded pet's
+growth and EXP% (`bc6f438`); the queue entry names the pet's LINE; the table turns those into minutes.
+
+```
+next[row] = min(the pet's remaining minutes, what was just loaded) + WaitAfterEmptyMinutes
+```
+
+**Whichever runs out first**, which is the player's rule — and a fresh reload is always a full load, so
+the food half is `LoadMinutesFor`. **A null pet figure leaves the arithmetic exactly as it was** —
+`CycleMinutesFor`, i.e. loaded + margin — so nothing regresses when no line is named, no panel was read,
+or the table has no row for that line at that stage. Null is the normal case, not an error.
+
+**The identification decision, made concrete.** The queue entry carries `Species` — one of **eleven**
+lines, not 327 pets, because a line holds many pets and they share one figure. It is picked once, when
+the icon is captured, because the icon IS the identity: the pet is found by matching that crop, so the
+species rides with the thing that is already unique. Matching the panel's NAME to the table was the
+alternative and is blocked — Traditional game text against Simplified site data.
+
+**The projection got all three places**, which is the point: `PetQueueEntry.Species`,
+`LocalPetQueueEntry.Species` + `ToConfig()`, and the save direction in `AppliedSession`. This projection
+has silently dropped a field **three times across two sessions**, so both directions are now pinned by
+tests using a **real non-ASCII species** — a null in the fixture would have passed whether or not the
+field was carried.
+
+**Verified:** Release build clean, 0 warnings; 158/158 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (21) — scope 4a: the feeding arithmetic, and the table that answers it
+
+**The formula was already in the repo** — `PET-DATA.md`, scraped 2026-09-15 and measured per level on
+2026-09-16 — and its own opening line says it exists so *"how long until this pet is done"* is a per-pet
+number rather than a rule of thumb. Nothing read it. Now `PetFeeding` does.
+
+```
+cost(+n)      = wyz × (1 + n/10)      n = 0 … 9
+to +9 / 100%  = wyz × 14.5            the +9 bar fills too — 14.5, not 9
+```
+
+**It collapses to one line, because the table already carries the total.** Whatever fraction of the
+total *value* is left is the same fraction of the total *minutes* — both describe the same run — so no
+per-item value and no per-minute rate has to be derived or configured:
+
+```
+minutes = remainingValue / line.TotalValue × line.Minutes
+```
+
+**The measured example the whole thing was for:** a stage-6 pet at `+9` 10 % has 8,892 of its 75,400
+feeding value left, so it is done in **~99 minutes** — where the configured cycle would have waited
+**505**. That is the player's *"if the pet is already +9 80 % you don't need another 2 hours"*, as
+arithmetic.
+
+**Two things the data taught, both found by tests failing rather than by reasoning:**
+
+- **The stage-7 `.G` pets sit at 33000 and cannot be boarded.** Left in, seven of the sixty-nine
+  `(species, stage)` pairs are ambiguous. They are dropped on load.
+- **`(species, stage)` does NOT identify a pet — it identifies a `wyz`.** A line holds several pets at
+  the same stage, all sharing one figure. The first version of the test asserted uniqueness and failed;
+  what holds, and what is now pinned, is that every row in a group agrees on `wyz` **and** on the total
+  value and minutes — or the answer would depend on which row was found first.
+
+The shipped csv is parsed by a test rather than trusted: it asserts the full table loads and every group
+agrees, from the real file, so it cannot rot while a fixture keeps passing.
+
+**Verified:** Release build clean, 0 warnings; **158/158** tests (nine added).
+
+---
+
+## 2026-09-21 (20) — scopes 2 and 3: the visit, and a schedule re-derived on every look
+
+**One open does every row that is due.** Four rows due at once used to be four opens and three closes —
+nine window operations where one would do — and two of a live run's four failed on the reopen. Now the
+loop collects every row whose `next` is in the past, orders them **row 1, 2, 3**, and hands them to one
+visit: open once, do them all, close once.
+
+**Scopes 2 and 3 collapsed into one change.** The visit has to read every row to decide what to do, and
+that same read is what re-derives every row's time — so batching the acting and re-measuring the
+schedule are the same code. Splitting them would have meant a visit that reads and then ignores what it
+read.
+
+**What moved:**
+
+| before | after |
+|---|---|
+| `InspectRows` — open, read, close | `InspectRows` = open + `ReadRows` + close; **`ReadRows`** is the look with the window already open |
+| `ReloadRow` — open, one row, close | **`ReloadRowInPlace`** — one row, window already open, no open or close |
+| — | **`Visit`** — owns the open and the close for the whole batch |
+
+**The subtlety worth recording.** A row the visit *acted on* takes its next from the reload; a row it did
+**not** touch takes its next from the read. That split is not fussiness: the reading happens **before**
+the reload, so for a row that was just reloaded it describes the state the reload replaced. Applying it
+there would schedule the next reload from a stale tray.
+
+**A bug caught in review, before it ran.** The open-failure path returned the *fallback* schedule for
+every active row — which the loop would then have applied to rows it had not read, overwriting each one's
+measured time with "assume a full load". A single failed open would have quietly discarded everything the
+run knew. It now returns **nothing**, so a look that did not happen re-derives nothing.
+
+**A side benefit, not designed for:** the read now refreshes `BoardingRunning` immediately before the
+reload, so the "end boarding first" decision uses the state as it *is*. At 15:32 that decision ran off a
+tick that could have been hours old.
+
+**Unchanged, deliberately:** the per-row failure counting and `MaxFailures`, `RetryMinutes`, the `+9/100%`
+guard, the drag check, and the row order. The single-row case — the normal one — goes through the same
+path it always did; the only addition is the read, a few seconds before a reload that takes minutes.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live.**
+
+---
+
+## 2026-09-21 (19) — scope 1: the bag page is not re-clicked when it is already showing
+
+**Measured, not assumed.** All **22 marked food cells are on one page**, and `SelectPage` ran before
+every stack — so a 5-stack row clicked that one tab five times, four of them provably redundant, each
+costing a cursor placement and about 1.2 s of waiting. Every one was also another chance for the cursor
+to miss, which is the failure that cost three rows today.
+
+**The change:** `_bagPage` remembers where the bag was put; `SelectPage` logs and returns when it is
+asked for the page already showing, and records the page when it clicks. The value is **dropped whenever
+the boarding window opens or closes**, because reopening brings the bag up on whatever page it likes.
+
+**The risk, stated rather than buried:** the page is never READ back, so this introduces a new way to be
+confidently wrong — skip a needed click and the next action aims at the wrong page. Two things bound it.
+Every page change in the tool goes through `SelectPage`, and the value is dropped at every window
+open and close — so the assumption only ever covers **the seconds between one stack and the next**.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live.**
+
+---
+
+## 2026-09-21 (18) — verified live: a finished pet is skipped, and a row feeds end to end
+
+**The first clean run.** Row 2, five stacks, all five dragged first time and boarding started:
+
+```
+16:06:02   the bag cell is 0.099 different at the drop, before the count dialog
+16:06:06   the bag cell is 0.822 different from before the drag    ← the stack left
+…
+16:06:30   starting boarding
+16:06:31   click the start button at (746,851)
+16:06:33   reload complete
+```
+
+**Three things were proved on that run, and all three were guesses this morning:**
+
+- **The guard skips a finished pet and boards the next one** — `A at page 2 cell 2 reads +9, 100% ←
+  finished (+10) — NOT boarding it, trying the next queued pet`, then cell 4, then the right-click.
+- **The drag check works, and its numbers are not marginal.** At the drop the cell reads **0.078–0.123**
+  (the stack is lifted and the game gives it back); after the count it reads **0.81–0.82** when the
+  stack left, and exactly **0.000** when it did not. The threshold at 0.10 sits inside a gap an order of
+  magnitude wide, and the failing case is zero rather than near the line.
+- **The drag itself is sound** — five in a row at the first attempt, no re-drag.
+
+**And the check earned its place on its first run, by catching a real failure.** A drag was attempted on
+`page 2, cell 15` — **a marked food cell with no food in it.** Three identical attempts, each reading
+`0.000` afterwards. Before the check existed, that reload would have clicked MAX and pressed Enter at a
+count dialog that was never raised, carried on, and reported success.
+
+**The cause is the one already written up as Issue C in ANALYSIS-FOOD-LOAD.md:** `NextFoodCell` walks
+the marked list as a **cursor** — "cell 2/23, now 3/23" — and a cursor cannot know that a cell it is
+pointing at is empty. The fix is the move this tool has already made once for rows: **look before
+acting** — check the cell holds something, and step to the next marked one if it does not.
+
+**Still open:** that cell cursor is unchanged, so the next reload can walk onto an empty cell again.
+Everything else on the food path is now checked.
+
+---
+
+## 2026-09-21 (17) — the food drag gets a look, a re-drag, and honest logging
+
+**Every other risky action in this tool checks its own effect.** The pet placement looks at the slot and
+retries three times; the boarding toggle checks it did not do the opposite; the feeder counts refuse to
+judge a capture that is not the game. **The food drag asserted success** — it sent the frames, logged
+`"picked up"` and `"stack 1 onto"`, and the run went on to click MAX and press Enter at a count dialog
+that a missed drag never raised. So a missed drag lost food *and* fired a stray click and keypress into
+the game, and neither was visible in the log.
+
+**What the log now records, per action:**
+
+- **where the cursor LANDED**, not just where it was sent — `landed (1313,267)` on every move. The step
+  logs used to print the intent, so a move that landed elsewhere read identically to one that hit.
+- the drag as **what it did** — `leftdown at (…)`, `leftup at (…)` — rather than "picked up", which was
+  a claim about the game made at send time.
+- the bag cell's difference **at the drop** and again **after the count**, both as numbers.
+
+**What it does about it:** the dragged bag cell is compared with how it looked before the drag. If it
+did not change, the drag is re-attempted, up to three times.
+
+**Unknown is not failure**, and that direction is deliberate: re-dragging a cell that is already empty
+picks nothing up and then fires MAX and Enter at a dialog that is not there — worse than the missed
+drag it would be fixing.
+
+**A hold between the press and the pull** (`DragGrabWait`, 0.35 s). The player watched the first drag
+miss and the second work, and the log agrees they differ: the first presses and drops inside the same
+second. The drag used to press and move in the same frame. **The size is a guess** — but the landed
+positions and the two cell-difference numbers are now in the log, so it can be corrected from evidence.
+
+**One measurement with no decision taken on it** (yet): the cell's difference *at the drop, before the
+count*. If the cell already reads empty then, a missed drag can be caught **before** the MAX click and
+the Enter — which are the stray input. One run's numbers answer which of the two it is.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (16) — the guard slept for eleven and a half minutes on its first hover
+
+**`SleepCheck` takes SECONDS and I passed `HoverDelayMs` — milliseconds — as 700.** It does not sleep a
+little long. It computes `steps = 700 / 0.05 = 14000` and sleeps `14000 × 50 ms`:
+
+```
+2026-09-21 15:32:27   found a queued pet: page 2, cell 2, match 0
+                      ... 700 seconds of nothing ...
+```
+
+The live run sat wedged exactly there — **responding, 0% CPU, no error** — which is why it read as
+"stopped" rather than as a crash. Nothing in the log said a word, because nothing was wrong except the
+unit.
+
+**The trap is that the same number is right one file over.** The launcher's own hover uses
+`await Task.Delay(... HoverDelayMs)`, and `Task.Delay` DOES take milliseconds. Only the tool-side
+`SleepCheck` takes seconds, and nothing in the name or the signature stops you passing the other one.
+
+**Also verified live in the same run**, and this one is good news: the start line now reads
+
+```
+run started — board firmware protocol level 2 (current)
+```
+
+**The reflash took** — the board answers `V` — which closes the "flash both boards" item's first half.
+And the icon scan found **8 candidates** on the player's bag, which is the every-cell fix working where
+one winner used to be.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **Not verified live** — the corrected
+hover has not been tried.
+
+---
+
+## 2026-09-21 (15) — the run needed the same fix the sweep got: every cell, not the best one
+
+**Starting the run would have boarded nothing**, and the sweep's own report said so before it happened.
+
+The run kept one cell per icon — `scores[0]`, the best match. With 8 pets across 2 icons, the
+best-matching instance of *each* icon was a **finished** one:
+
+```
+A cell 3, match 0.000, +9 100%   -> skipped
+B cell 2, match 0.000, +9 100%   -> skipped
+```
+
+Both skipped, the candidate list exhausted, row unboarded — with a `+0` `A` one cell away and three
+feedable `B`s on the next page. **"Try the next one" cannot work if the run does not know a next one
+exists**, and (13) fixed exactly this in the sweep without fixing it in the run.
+
+The run now takes **every cell under the limit per icon**, best first, so the guard walks a real list:
+
+```
+A cell 3  +9 100%  -> skip
+A cell 4  +0 0.06% -> board
+```
+
+Cost: ~1.5 s per candidate skipped, for a few candidates. The best/runner-up logging is unchanged —
+it still reports how close the call was for the icon's best cell.
+
+**Verified:** Release build clean, 0 warnings; 149/149 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (14) — "+99": the growth pattern read two digits where the game shows one
+
+**The sweep's report, read for the first time as a file** (`logs\reads\scan_20260921_152331.txt`), found
+**8 cells — exactly what the owner sees with their eye**: 3 × `B` on page 1, 3 × `A` and 2 × `B` on
+page 2, nothing on page 3. The finding and the reading both work.
+
+**And in that report was the failure the owner had been describing all along:**
+
+```
+B at cell 64 (match 0.13)  stage 6, +99, 100%   ← FEEDABLE
+```
+
+**`+99` is not a growth.** The game shows `+0 … +9` and nothing else, and the owner confirmed that pet
+is **+9/100%** — finished. `IsFinished` wants *exactly* 9, so 99 fell straight through as feedable and
+the run would have right-clicked a pet that cannot be boarded, into the error dialog.
+
+**The cause was the pattern, not the value:** `GrowthPattern` was `\+(\d{1,2})` — **two** digits. One
+digit is what the game ever shows. And two digits was wrong in *both* directions, the second of which
+was already pinned by a test nobody had connected to a live read: `+15 Days`, the paid extension's
+**duration** label, read as a growth of 15.
+
+**One digit fixes both at once.** `+99` reads 9 → finished, which is right; `+15 Days` reads 1 → not
+finished, which is the expectation `GrowthAboveTheMaximumIsNeverFinished` already held.
+
+**Clamping was my first attempt and it was worse.** Clamping anything above the maximum down to the
+maximum fixed `+99` and broke `+15 Days` — a +3 pet with a full bar would have been called finished and
+stopped being fed, which is the one direction this tool refuses. The test caught it. **A wrong value and
+a wrong pattern look identical in the symptom and need opposite fixes; the pattern is where the
+authority is.**
+
+**Verified:** Release build clean, 0 warnings; **149/149** tests (one added).
+
+---
+
+## 2026-09-21 (13) — one icon is a KIND of pet, and the sweep was taking only one cell
+
+**The player's bag: 8 pets, 2 icons.** The report from `Scan the bag for these pets` — 3×`B` on page 1,
+2×`B` and 3×`A` on page 2 — is **all eight**, so the matcher was never the problem.
+
+**The sweep was.** It kept only `scores[0]`, the single best cell per icon, so two icons could never
+report more than two pets. One icon stands for a **kind**, and a bag holds several of each: one icon
+legitimately matches many cells. It now takes **every** cell under the limit, one hover per cell —
+which is what `Scan the bag for these pets` has always done, and the two must not disagree.
+
+**And a correction this file owes.** I diagnosed the same symptom as `MatchLimit` being `0.12` — just
+inside the match band rather than in the gap between 0.20 and 0.83 — and proposed raising it to 0.25.
+`MatchLimit` **is 0.5**. The `0.12` came from *this document*, from the entry recording the value
+**before** it was changed; I read a historical note as current state and built a confident diagnosis on
+it. It was caught only by opening the file before editing, and nothing was changed. **A number quoted
+from a log is a quotation, and a quotation of a past state is not a measurement of the present one.**
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (12) — the sweep is rebuilt on the matcher that was already there
+
+**I invented a mechanism that already existed, and the player had to say so three times** — *"we had
+this logic in the flow"*, *"we always knew where the pet icons are"* — before I went and looked.
+
+**`IconMatch.ScoreAll(bag, grid, icon)` already answers "which bag cell holds this pet".** One capture
+per page, matched against the stored queue icon, no hovering at all. The run uses it before every
+boarding, and there was already a **"Scan the bag for these pets"** button sitting on the same tab
+doing it on demand. `OccupiedCells` — the closest-pair empty-reference detector from (11) — was a
+second answer to a question the codebase had already answered, and a worse one: it hovered cells to
+learn what the matcher gets from one screenshot.
+
+**Measured, the detector did work** — replayed over the live page captures it split 39 cells at exactly
+`0.000` from 25 at `0.47`+, and every threshold from 0.05 to 0.30 agreed. **That is not the point.**
+Being right does not justify a parallel mechanism: the next change to either one would have left two
+things that had to agree and no reason to.
+
+**What the sweep is now: find, then hover.** Photograph each page, `ScoreAll` each queued icon, and
+hover **only the cells that matched** to read the panel. The finding is the existing matcher; the new
+part is only the hover. About **130 lines came back out.**
+
+**What is genuinely given up, stated plainly:** the sweep can no longer *discover* a pet that has never
+been captured. It reports on the pets in the queue and nothing else. That is the honest scope, and it
+matches what the tool can actually do — discovering an unknown pet needs its icon, which is the manual
+"Mark a pet to queue" step.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (11) — the sweep stops hovering all 64 cells
+
+**Four and a half minutes to discover that most cells are empty.** The sweep hovered every cell on
+every page and let the OCR tell it what was there. The player's answer was the right one: *don't skip
+the empty ones, FIND the cells that hold something and ask only those.*
+
+**The mechanism needs no calibration and assumes nothing.** A bag is mostly empty, and an empty bag
+slot renders identically in every cell — so **the closest-matching pair of cells on a page are both
+empty, and that pair IS the page's empty reference**. Every other cell is then measured against it with
+`IconMatch.DifferingFraction` under `PetSlotOccupiedAbove`, which is the *same primitive and the same
+number* the boarding slot already uses for "is there something in this slot". Nothing new was invented;
+an existing measured rule was pointed at a second question.
+
+**It returns every occupied cell, pet or not.** Food and loot get hovered and rejected by the parser,
+which costs one hover each. Telling a pet's portrait from a stack of food is a harder problem than the
+one being solved, and `PetPanel.Parse` already solves it exactly.
+
+**The margin is a number in the log, not a claim.** Each page reports *busiest empty*, *quietest
+occupied*, the threshold and the empty floor — so the gap the threshold sits in is visible. This is the
+`MatchLimit` lesson applied before the fact rather than after: `0.12` was inherited, cost half of every
+scan, and the truth (0.0–0.15 against 0.83+) only came out because someone measured. If the gap here is
+thin, the log says so on the first sweep.
+
+**It falls back to the slow path, never to a wrong answer:** no page image means every cell is asked.
+
+**Also fixed: a name collision I introduced.** There was already a `PetScanBag(TextBlock hint)` — the
+older report of where the *queued* pets are — and the sweep was added as an overload of it. Two methods,
+one name, different jobs: it compiled, which is exactly why it would have bitten later. The sweep is now
+`PetScanFeedable`, and the doc comment says which question each one answers.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — the detector has
+never seen a bag.
+
+---
+
+## 2026-09-21 (10) — the sweep can now rebuild the queue
+
+**The scan found the feedable pets, and the run still could not use the answer.** The queue held icons
+of pets that had finished and been mailed, so the icon scan matched nothing and nothing boarded. The
+missing link was turning "this cell holds a pet that can still be fed" into "the queue knows this pet".
+
+**A second button, `Scan + rebuild the queue`** — the same sweep, then it replaces the queue with an
+icon for every pet that read as feedable. Finished pets get no icon, so the run cannot board one by
+accident; that is the guard from (9) with nothing left to guard against.
+
+**Icons come from a CLEAN page image, taken before any hover.** This is the part that is easy to get
+wrong: the tooltip follows the cursor, so an icon cropped from the screen while a panel is up has that
+panel lying over its neighbours. It is the same trap the icon scan already documents — *"a pet the
+cursor covers is a pet the matcher cannot see"*, which once cost a whole pet's worth of matching. So:
+park the cursor, grab the page once, then hover. The crop itself is the **same recipe the single-icon
+capture uses — `Pitch`, not the slot size** — so a swept icon and a hand-captured one are the same
+pixels and the matcher cannot tell them apart.
+
+**Labels say where, not what.** The panel states growth and EXP and no name, so a harvested entry is
+labelled `page 2, cell 3` — which is at least what the report above it is talking about.
+
+**The guard that matters: it never writes on nothing harvested.** A failed capture, or a page whose
+crops would not come out, must not be allowed to clear a queue the player built by hand. Replacing a
+queue with an empty one is the worst outcome available here and it is one edit away.
+
+**A separate button, not a checkbox on the existing one.** A scan you press to look at must not quietly
+rewrite the queue.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live.**
+
+---
+
+## 2026-09-21 (9) — the run refuses to board a +9/100% pet, and tries the next one
+
+**A finished pet cannot be placed.** The right-click simply does not put it in the slot, and a live run
+at 13:58 spent three attempts on one and reported *"the pet did not go in after 3 right-clicks"* — which
+reads as an intermittent click failure and is not one. Boarding one also raises the error dialog that
+wedges everything after it.
+
+**`FindQueuedPet` returned ONE winner**, so there was no "next one" to fall back to. It now returns a
+**best-first candidate list** — every queued icon whose best cell scores at or under `MatchLimit` — and
+`PlacePet` walks it: switch to the candidate's page, hover its cell, read the panel, and **skip it if it
+reads finished**, boarding the first pet that can still be fed. Same page loop and same page captures as
+before; the only new cost is about 1.5 s per candidate tried.
+
+**Unknown boards as before, and that was the player's call, not mine.** A null panel — no tooltip
+calibrated, the cursor won't move, the read throws, the panel doesn't parse — falls through to the
+click. The guard may only ever REMOVE a boarding. My instinct was the opposite (refuse on doubt,
+because a finished pet wedges the run), and it was overruled for a reason worth keeping: inventing a
+skip is the direction that leaves a pet unfed.
+
+**The hover is a MOVE, never a click** — a click on a pet in the bag SWITCHES THE EQUIPPED PET, so
+clicking to measure would change the thing being measured. Same rule as `FocusThenHover`.
+
+**The OcrEngine is built lazily and disposed with the placement**, following `InspectRows`: a placement
+with nothing to check should not pay for an ONNX session.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — and it cannot be,
+without a run.
+
+**Not covered, deliberately:** the return-slot path is not guarded. It is documented as kept empty, so
+there is normally no pet there to check, and guarding it would be a behaviour change beyond the ask.
+
+**And this alone does not get the +0 pet fed.** Today's queue holds icons of pets that finished and were
+mailed, so the guard finds only finished pets and boards nothing — better than three wasted right-clicks,
+still an unboarded row. For it to help, the +0 pet has to be IN the queue.
+
+---
+
+## 2026-09-21 (8) — the hover read finally gets a consumer: which pets can still be fed
+
+**The bag holds a mix of +9/100% pets and +0 pets, and the player needs to find the +0 ones.** The
+read that exists for it has been a capability with no consumer since 2026-09-18, waiting on exactly
+this.
+
+**The reason it matters is not wasted food.** Boarding an already-finished pet raises an **error
+dialog**, and a blocking modal wedges everything after it — so a finished pet is a stuck run, not a
+bad reload. That is what turned "nice to have" into the next thing built.
+
+**Nothing new was needed.** `PetPanel.IsFinished` (`Growth == 9 && Exp >= 100`) already existed and was
+already tested; so did the hover (a MOVE, never a click — a click on a bag pet switches the equipped
+pet), the calibrated tooltip region, `BagGrid.Centres`, the page tabs and the OCR read. `IsFinished`
+was called from nowhere in the run, and `PetPanel.Parse` from exactly one place.
+
+**The parser is the filter, and that is forced rather than chosen.** The icon matcher only knows pets
+that are already queued — and the pets this exists to find are precisely the ones nobody has queued
+yet. So the scan hovers every cell and lets `Parse` decide: a +0 pet renders no `+N` at all and reads
+as growth 0 (measured, 2026-09-19), while an empty cell or a stack of food simply does not parse as a
+pet panel.
+
+**A failed read is reported as neither, never as finished.** Skipping a pet that needed feeding is the
+one outcome here that cannot be undone — the same reasoning that makes `IsFinished` `==` and not `>=`.
+Unknown stays unknown.
+
+**Two choices worth knowing:** the launcher hides **once per page**, not once per cell (the per-crop
+hide pays a 300 ms compositor wait, which over 192 cells is a minute of flicker for nothing), and the
+focus click happens **once** rather than through `FocusThenHover`, which clicks the focus point on
+every call because it was written for a single read. Pages are reported as they finish so a four-minute
+scan is not four minutes of a window that looks hung.
+
+**Verified:** Release build clean, 0 warnings; 148/148 tests. **NOT verified live** — no hover has
+been performed against the game. Plan: [PLAN-PET-BOARD-CHECK.md](../archive/PLAN-PET-BOARD-CHECK.md), which also
+records what is deliberately *not* in v1: queueing the feedable pets, and the run-side guard (whose
+blind-`Enter` dismissal is unverified for *this* dialog — Enter may confirm it rather than dismiss it).
+
+---
+
+## 2026-09-21 (7) — released as v2.11
+
+**Merged to main and packaged.** `v2-pet-drag` fast-forwarded onto `main`, which is now 119 commits past
+the v2.10 tag — the release notes are [RELEASE-v2.11.md](RELEASE-v2.11.md) and they are the record of
+what changed, so this is only about the packaging.
+
+**The verification the v2.9 incident demands was run first**, because an incremental `dotnet publish`
+silently drops the 11 native OCR DLLs and the exe is 182 MB either way: the public zip's file list
+diffed against v2.10 gives **17 files against 17, no additions and no losses**, with `onnxruntime.dll`,
+`OpenCvSharpExtern.dll` and `libSkiaSharp.dll` all present and no `.pdb` or `.lib` strays. The public
+zip carries the three config templates and no `local.yaml`; the local zip carries the full `config\`
+with the four calibration screenshots.
+
+**Two features ship inert**, and both say so in the release notes rather than in a commit nobody reads:
+food-by-drag and the firmware `V` command need firmware 2, so until the board is flashed they fall back
+to exactly today's behaviour — right-click loading, and a board that cannot be asked its version. Which
+is the shape Part 2 was designed for: a board cannot report anything, including its own age, so the
+release cannot be wrong about it — only silent.
+
+---
+
+## 2026-09-21 (6) — the count read works, and it took five designs to get one
+
+**It reads. All slots, at 1.00.** That is the outcome; the route there is the useful part, because
+four of the five designs were mine and each failed on the same three-pixel band.
+
+**What holds: 40% across each slot to its own right edge, at the slot's full height, computed from the
+slot.** Nothing drawn. Two things about it were measured and are not negotiable:
+
+- **Full height.** A crop cut to the digits' height finds **NOTHING** while holding a perfectly legible
+  number — `174`, `36`, `18`, three separate crops, all legible to the eye, all zero detected boxes.
+  **The mechanism is not known.** The engine's own "text below ~20px" note does not explain it, because
+  the digits are ~66px tall upscaled. It is a measured rule with no explanation, and it is written down
+  as one.
+- **The left edge has a band about three pixels wide** — 0.369-0.431 of the slot. Outside it, in one
+  direction the detector finds nothing, and in the other it returns a **confidently wrong number**: a
+  clipped `138` came back as `3` at 0.99, the same confidence as a correct read.
+
+**The four failures, all the same mistake in different clothes.** A count box; a count slot read as
+drawn; a count slot applied by offset; and both of those again after redrawing. **The player missed the
+band four times, because a hand cannot put a box into three pixels** — and no instruction fixes that.
+Two of the attempts were designs I argued for, and the second one I argued for *after* the first had
+already failed.
+
+**What replaced them is computed, and the player's own conclusion.** "can you just ocr the count slot
+region now?" led to drawing it by hand, which failed; what actually works is not drawing it at all.
+`FeederCountLeftFraction` (0.40) is a SETTING on the Calibrate Pet tab rather than a constant, because a
+narrow band means another machine has to be able to move it — which was the player's objection to a
+constant two designs earlier, and it survived every rewrite since.
+
+**Two tools came out of the failures and both earn their place.** The **magenta line** on the capture
+draws where the read starts, so "0.40" stops being an abstract number; and the **row geometry editor**
+shows each row's strip as four typed numbers with its slots and crop positions beside them, because a
+capture cannot answer *"is this row a pixel out from its neighbours?"* — and that was a real failure:
+row 2's crops started 1-2px right of row 3's and its widest number ran past the crop edge, which is
+invisible on a picture and obvious in that column.
+
+**The read is also where it belongs now: Calibrate Pet, reading every ticked row in one press.** It used
+to sit on the Pet tab while reading the row selected on Calibrate Pet — state you cannot see from where
+the button is, which had already produced one confused report.
+
+**Verified live, including the part that matters — a run scheduling from the counts.** The Test read
+returns `300` at 1.00 on row 1's slots and `150`/`153` on rows 3 and 4; and then, started for real:
+
+```
+Row 1: 300 item(s) left in the feeder — reloading in 105 min
+```
+
+which is `300 / 3 per minute + 5 minutes after empty`, to the minute. **And the other path in the same
+log**, two attempts earlier, when the read failed: *"the feeder counts couldn't be read — assuming a
+full load, so reloading in 205 min"* — the configured cycle. Both are now proven on live data, and the
+tool says WHICH it used, so a fallback cannot pass for a reading.
+
+Also in that log, unplanned: *"board firmware did not answer — its firmware predates version
+reporting"* — Part 2's `V` command doing its job, and answering the sticky-spacebar question with a
+definite no from the other side of the port.
+
+**And one crash, mine, from the tool built to fix the last problem:** the geometry editor indexed a
+NULLABLE read region with `!`, and a half-typed width makes it null — `344` passes through `3`. It died
+while the player was typing, twice. The nullable was there for a reason and I overrode it in the one
+place a transient value is guaranteed to arrive.
+
+---
+
+## 2026-09-21 (5) — and then the player asked why it needed any of that
+
+**"we tested if we have the correct crop that we can read it anyway? why need this much logic?"** — and
+they were right, so most of (4) came back out the same night.
+
+**We had established exactly that.** Given the correct crop the count reads at 0.99-1.00 at every
+upscale, stably. So the run needs **one read of one crop**, and the four offsets and the majority vote
+were compensating for a crop nobody had found yet — machinery in every read for a problem that belongs
+in the calibration that finds the crop.
+
+**Removed:** `FeederLayout.ReadOffsets`, the multi-offset read, `FeederCount.Vote` and its five tests.
+The read is `ReadRegion(slot, fraction)` → `Parse`, once. 154 tests became 148 and the code lost the
+whole voting apparatus.
+
+**What is left is one number**, which is what the entire feature comes down to: how far across the slot
+the count is read from. `FeederCountLeftFraction`, a **setting on the Pet tab** rather than a constant,
+because the band that reads is a few pixels wide — the scan that measured it found 0.369-0.431 ("138")
+and 0.323-0.477 ("300"), so 0.40 sits in the overlap, and a machine outside it has to be able to move
+it without a rebuild. That was the player's objection to a constant two designs ago, and it survives the
+simplification.
+
+**So the calibration is now four strips and a number.** The count slot and the count box are both gone
+— the former because row 1's first slot is derived exactly (130 ÷ 2), the latter because a box cannot be
+drawn into a three-pixel band and no longer needs to be.
+
+**Verified:** Release build clean, 148/148. **Not verified live.**
+
+---
+
+## 2026-09-21 (4) — the count IS readable: derived region, four offsets, a vote
+
+**The read works now, and getting there killed two designs.** The count had to be read from the right
+part of a slot, and both attempts to let the player say where failed — the second one only after it was
+built.
+
+**The measurement that settled it, on the player's own slots:**
+
+```
+                        "138"                      "300"
+as drawn (21px tall)    nothing / "3" @0.99 (wrong) nothing
+full slot height        nothing, then reads        reads @0.99
+left edge swept:  0-12px off the crop   wrong or nothing
+                 13-22px                reads at EVERY upscale 2..6
+                 23px and beyond        junk
+```
+
+Two things fall out. **Height is not negotiable**: a crop 21px tall inside a 58px slot found ZERO
+detected boxes while holding a perfectly legible number, and read it the moment it was taken at the
+slot's full height. And **the left edge has a band about THREE PIXELS wide** — outside it the failure is
+not blank, it is a confident wrong number: a clipped `138` came back as **`3` at 0.99**, the same
+confidence as a correct read.
+
+**So both attempts to hand it to the player were wrong, and the second one was mine.**
+
+1. **A fraction of the slot** (`0.42`). The player pushed back — *"u think it would be consistent on
+   every pc?"* — and was right in principle: a fraction is resolution-independent only if the game draws
+   the number proportionally to the slot, and nobody had measured a second machine.
+2. **A dragged count box**, on the reasoning that a measured position beats an assumed proportion. The
+   reasoning was sound; the gesture was not. **Asked twice to put a box into a three-pixel band, the
+   player missed it twice** — and no instruction makes that a fair thing to ask. The player's own
+   conclusion, after two failures: *"do we need that count box?"*
+
+**What replaced it: the fraction, read at several offsets, with a vote.** `ReadLeftFraction` (0.40, the
+middle of the measured 38.9-43.5% band) from each slot's 40% mark to its own right edge at full height —
+and `ReadOffsets` reads it at 0.24 / 0.32 / 0.40 / 0.48, `FeederCount.Vote` taking the value at least two
+readings agree on. **The constant only has to be roughly right**, which is what makes a fitted number
+acceptable here and was not acceptable on its own. Offsets are spread WIDE (8% of a slot, enough to move
+a clip into the clear) and biased LEFT, because the two directions fail differently — too far left
+swallows the food icon and the detector finds nothing, which the score gate rejects; too far right CLIPS,
+which is the one failure that returns a plausible wrong number.
+
+**A tie votes nothing**, not the lower number: two readings saying 138 and two saying 300 means the
+offsets straddle a clip, and picking either would be a guess wearing a vote's clothes.
+
+**Calibration is now FOUR drags — the strips — and nothing else.** The reference slot and count box are
+gone from the config, the calibrator, both save projections and the tests. The derived regions are drawn
+on the capture (magenta; the faint one is the widest offset) so a wrong strip is visible before a run.
+
+**Also fixed: the Test read hid and showed the launcher once per CROP** — six flashes and six 300 ms
+compositor waits per press. It is hidden once for the whole read now.
+
+**Verified:** Release build clean, **154/154** tests; the vote is mutation-checked (letting a single
+reading carry, or breaking a tie by value, fails two). **Not verified:** none of this has read a live
+slot yet — the four-offset vote and the derived region have only been exercised against the two saved
+crops from the last run.
+
+---
+
+## 2026-09-21 (3) — six drags instead of twenty, and the fraction is the player's idea to kill
+
+**The player's correction, and it is a better design than mine.** I had the count read as a *fraction*
+of the slot box — `0.42` across to the right edge — and put it in config so another PC could move it.
+Their objection: *"u think it would be consistent on every pc? why dont let me drag on one reference
+slot and u calculate how much u need to cut."*
+
+**They are right, and the honest answer to the first half is that I do not know.** A fraction is
+resolution-independent only if the game draws the number at a size *proportional* to the slot. If it
+draws the digits at a fixed size while the slot scales, `0.42` is right on this machine and wrong on a
+smaller or larger one. I have measured exactly one machine, and carrying an unmeasured assumption to
+another PC is the specific error this file records over and over. A dragged reference is a
+**measurement**; a fraction is a guess wearing a decimal point.
+
+**Six drags, replacing fourteen hand-drawn boxes and both fractions:**
+
+| | |
+|---|---|
+| 4 | a strip across each row's food slots — divided by that row's stack count (2/5/5/5) |
+| 1 | ONE reference slot — the anchor |
+| 1 | the count region on that reference slot — its offset and size |
+
+Every other count region is `slotBox + (refText − refSlot)`, so the position is measured rather than
+proportioned, and a resolution where the digits render at a different relative size is expressed
+exactly rather than approximated.
+
+**Built, wired, and green: `Core.FeederLayout` plus every consumer.** Two decisions in the derivation
+worth naming: the slot segments are computed on the SLOT EDGES with integer arithmetic rather than by
+dividing the width and re-multiplying, because rounding the width first leaves a sliver unclaimed at the
+right end — which is precisely where the count is read from; and a missing reference returns null rather
+than a region at (0,0), so an un-migrated config reads as "nothing to read" instead of reading the
+top-left corner of the screen.
+
+**What the wiring replaced.** `PetSlotConfig.FeederSlots` (the fourteen boxes) became `FeederStrip`
+(one per row), and `FeederCountCropLeft`/`CropLeftShifted` became `FeederCountSlot`/`FeederCountText`
+plus a pixel shift. The food drag, the count read and the Test read all derive from those now, so none
+of them can drift from the calibration. `Ready()` gained its own check: a DRAG has to name the box, so
+in drag mode a row with no strip is refused before the run starts rather than failing three times and
+being dropped — right-click is untouched, because letting the game choose the box is the whole
+difference between the modes.
+
+**A legacy config keeps working, approximately.** A file written before the rows existed migrates its
+two old boxes into one strip by taking their SPAN. That is deliberately an approximation — those boxes
+framed the numbers, not the slots, so the span runs between the digits and comes out a little narrow —
+and it is carried only because without it such a file could not load food at all. The migration test
+asserts the span and says why.
+
+**The one number that eats into this, recorded before it bites:** dividing a strip into five is out by a
+pixel or two, because the player's own row 2 slots measured 62, 64, 66 and 62 apart rather than evenly.
+Harmless for the food DRAG — a 64px slot does not care about 2px — and survivable for the count read,
+whose individual crops tolerate 7–10px. But the crops' COMMON window measured only ~3px, so this is the
+thinnest part of the chain and the first thing to suspect if reads start disagreeing.
+
+---
+
+## 2026-09-21 (2) — the feeder count IS readable, but only from the right crop
+
+**It was never the model or the font.** The whole-slot image the tool has been feeding the OCR returns
+**zero detected boxes** — not a bad read, no read — and the same engine reads the same digits
+**perfectly** from the slot's right half at full height: `84` at 0.99, `300` at 1.00. Every earlier
+conclusion I drew about "PP-OCRv4 cannot read this font" was wrong, and wrong in a specific way worth
+naming: **I tested the image the tool was asking for, not the image the reader needed.**
+
+**Two things fall out of that immediately, and both are counter-intuitive:**
+
+- **Tighter is worse, not better.** Cutting the height off the crop finds nothing at all, exactly like
+  including the icon does. So the rule is not "less clutter"; it is a particular shape.
+- **The failure outside the window is a confident WRONG number.** At a slightly tighter crop `84` comes
+  back as **`4` at 0.89**, and `300` as **`0` at 0.56** — a full stack read as empty. That is far more
+  dangerous than the blank read we had, and it is why the count is read TWICE from two crops a few
+  pixels apart and only accepted when both agree.
+
+**The window is narrow and that is the honest headline.** Digits are right-aligned and grow leftward,
+so the crop a two-digit count needs is not the one a three-digit count needs:
+
+```
+"84"  correct for a left edge of 0.404 - 0.505 of the slot's width
+"300" correct for                      0.29  - 0.45
+```
+
+The overlap is about **three native pixels**. `FeederCount.CropLeft = 0.42` sits in it, with the second
+read at 0.45 — a three-percent shift, small because a wider pair does not fit inside the overlap. That
+makes the agreement check **weaker than it should be**, and it is exactly why this is wired into the
+Pet tab's Test read and not into scheduling: how often it holds on real slots is a measurement, not an
+assumption.
+
+**The confidence gate is measured, not chosen.** A genuine count scores 0.90–1.00; everything the food
+icon produces scores at most 0.63 in the same crop. 0.75 sits in that gap — and it also rejects a
+genuine read taken at the very edge of the window, which is the right call, since a marginal crop is the
+one that clips.
+
+**Also fixed while here:** `OcrEngine.ReadLines` returned only text, so a caller that has to CHOOSE
+between lines could not. `ReadLinesScored` now keeps each line's confidence, because the junk beside a
+real count can outscore one taken at a bad crop — so "drop the weak lines" was not enough.
+
+**Verified:** Release build clean, 144/144 tests (17 new). The agreement rule is mutation-checked:
+replacing it with "take whichever read succeeded" fails two tests, which is the clipped-digit case.
+**Not verified against a live slot, and deliberately not yet wired into scheduling** — the run path
+falls back to a full-load assumption whenever the two crops disagree.
+
+---
+
+## 2026-09-21 — "run only row 1" had no expression, so it has one now
+
+**The tool drove every row it was configured with, and there was no way to say otherwise.** `Ready()`
+demanded every row be fully marked, and the UI could ADD rows but never remove one — so the only way to
+run a single row was to delete the others from `local.yaml`, which takes their calibration with it. The
+player asked for exactly this, to keep feeding while the four-row placement bug is unexplained.
+
+**`PetSlotConfig.Enabled`, defaulting ON**, so every existing file describes exactly what it used to do.
+An unticked row is **invisible rather than skipped**: not validated, not read, not scheduled, not
+clicked. `Ready()` only demands the geometry of the rows it will actually drive, which also means a
+half-calibrated row no longer blocks a run that never touches it. Every consumer goes through
+`PetConfig.ActiveRows` — iterating the raw `Slots` list is exactly how a disabled row gets clicked
+anyway, and the doc comment on the helper says so.
+
+**The tick is on the Pet tab, beside the one-per-row boarding ticks — and the player is why.** It was
+built on Calibrate Pet first, next to the row strip, on the reasoning that a row is selected and edited
+there. That was the wrong call: *which rows to drive* is a RUN decision (a row being fed by hand this
+week, a row still being set up), not a fact about the machine, and this project's own split is
+"Calibrate writes the machine's half, the Pet tab writes the run's". The Pet tab already had the
+precedent — a per-row boarding tick that saves on toggle.
+
+**Where the UI lives and which projection writes it are independent, and that is not obvious.** `Enabled`
+has to appear in **both** projections, for two different reasons:
+
+- **`ApplySession`** — because the tick is on the Pet tab, so the session save is what a toggle calls.
+  This is the only thing that persists it.
+- **`ApplyCalibration`** — because that one **rebuilds** the row list from the fields it names, so a
+  field it does not carry is dropped by the next Calibrate save. A setting going missing without
+  anything failing, which is this project's most expensive recurring bug.
+
+**Worth knowing for the player's actual problem:** running row 1 alone is not merely "for now" — it is
+the configuration the current code is *correct* for. The right-click food bug only bites a row with an
+empty box somewhere ABOVE it, and row 1 has nothing above it. That is why row 1 has never failed once in
+the whole log. One row makes the ordering bug unreachable, with no reflash and no drag.
+
+**Verified:** Release build clean, 127/127 tests. The nested projection guard caught the new field
+immediately — `EveryNestedPetFieldIsCopied` failed until `Enabled` was added to `LocalPetSlot.ToConfig`
+AND to `ApplyCalibration`, which is precisely the class of omission that has silently dropped a field
+twice in this project. The fixture uses `false` rather than the default, so the guard cannot pass
+vacuously. **Not verified:** the tick has not been clicked — `MainWindow` is unreachable from the test
+project, so it is a compile check.
+
+### And moving it to the Pet tab exposed a hole in the guards worth more than the feature
+
+Deleting `t.Slots[i].Enabled = p.Slots[i].Enabled` from **`ApplySession`** left the whole suite green.
+The two existing guards both stop short of it: `EveryNestedPetFieldIsCopied` walks the LOAD
+(`LocalPetSlot.ToConfig`), and the split test only ever asserts the **calibration** half's rows. So the
+per-row fields the **session** half owns were covered by nothing at all.
+
+That is the `ActionWaitMs` shape exactly — a field some save never wrote, so it moves in the UI, appears
+to work, and is gone by the next launcher start. It was worth a test rather than a note, because the
+tick lives on the Pet tab and `ApplySession` is therefore the *only* thing that persists it.
+`TheSessionHalfCarriesThePerRowRunFlags` now does, and is mutation-checked: removing the line fails it.
+Both flags start `null` (they are `bool?`), so writing `false`/`true` is distinguishable from the field
+never being touched — a fixture using the defaults would have passed either way.
+
+### And a question answered while in there: the return slot is dead once a queue exists
+
+Asked by the player. `PlacePet` branches on `Queue.Count > 0` first, and the comment is explicit:
+*"THE QUEUE IS THE ANSWER when it exists, and there is deliberately NO fallback to the return slot if it
+finds nothing."* So the return slot is read **only when there is no queue at all** — with pet icons
+captured it is never consulted, and `Ready()` accepts either one. It is a fallback for the no-queue case,
+not a second opinion.
+
+**One reason to clear it anyway:** `Ready()` still validates the return slot's PAGE when it is marked,
+even for a run that will never read it. So a stale mark pointing at a bag page whose tab is no longer
+calibrated will block the start of a run that does not use it. A mark you do not need can only cause
+trouble.
+
+---
+
+## 2026-09-20 (6) — the food boxes are one queue, and a right-click cannot name one
+
+**The player found it in the game, and it is a design error rather than a quirk.** A right-click drops a
+food stack into the **earliest empty box in the boarder**, and every row's boxes are one queue ordered
+top-down — so a stack meant for a lower row lands in an upper row's box whenever that row has run dry.
+The tool has never looked at where the food went; it counts the clicks it sent and calls the reload
+complete, so this has been silently possible for as long as four rows have existed.
+
+**How it survived four-row testing, from the log rather than from reasoning.** When rows come due
+together the loop reloads them 1→2→3→4 — the 21:56 and 22:00 reloads on 2026-09-19, and 06:23–06:26 on
+2026-09-20 — so each row's food lands correctly because everything above it was *just* refilled. The
+failure needs a LOWER row reloaded while an UPPER row has an empty box: a window only
+`wait_after_empty_minutes` wide (5), because the reload is scheduled that far past the feeder emptying.
+**Row 1 is never exposed, and the player's own words were "the first row was fine because it is the
+first row".** That is the whole explanation, and it came out of reading `pet.log` for the redundant
+case rather than from any theory of mine.
+
+**And the code's own comment was wrong about the thing the fix needed.** `FeederSlots` is documented as
+framing the food COUNT, "normally two, and NOT Stacks wide, which is two whether the row holds two
+stacks or five". The live config holds 2/5/5/5 of them at ~63×56 px, where a count box would be a
+fraction of that. I asked rather than assumed — the answer is that the player drags each box around the
+**food item's icon** in the slot — and a drag was briefly designed around a target that does not exist.
+Comment corrected, and the measurement recorded in it.
+
+**The fix is a setting, and it has to be.** `pet.food_load_mode`: **right_click** (the game picks the box
+— works on every board ever flashed) or **drag** (the row's own box is named). Drag needs firmware 2 and
+the `L`/`l` commands, which is why it cannot be the default. And because an old board **ignores** those
+letters — the button is never pressed, the stack is never picked up, and it looks exactly like a
+mis-aimed drag — the tool **refuses to start** a drag-mode feeder on a board that cannot drag instead of
+running one that silently loads nothing. That refusal is the first place `FirmwareVersion` changes
+behaviour rather than being printed, which is what Part 2's number was for.
+
+**Two hazards that come with it, both handled:**
+
+- **A held mouse button is the stuck-spacebar bug wearing a different hat**, and worse — a left button
+  left down follows the player's *real* cursor and drops whatever it is over on the next press. Three
+  layers: the drag releases in a `finally`, so a failed move still lets go; `StopTool` now releases the
+  mouse as well as the spacebar, so every stop path does; and the firmware's host-gone failsafe releases
+  it too. `HeldKeys` grew from "needs a `U`" to "can leave something held", and `ReleaseSpace` became
+  `ReleaseHeld`, sending **both** commands always — choosing between them would mean the release path
+  had to be right about which tool was stopping, and being wrong about that is how a release path fails.
+- **A bad release can lose an item**, which nothing else in this tool can do. Not measured yet, and the
+  plan says so: a deliberate mis-drag before this runs unattended.
+
+**Verified:** sketch compiles for the Pro Micro via arduino-cli (11948 bytes, 41 %), Release build
+clean, **126/126 tests** (10 new on the mode and the board check). The projection guard is
+mutation-checked — deleting `t.FoodLoadMode = p.FoodLoadMode` fails two tests, which matters because
+that projection has silently dropped a field twice. **Not verified: nothing has been flashed and the
+launcher has not been run.** The drag path has never moved a real cursor.
+
+**On branch `v2-pet-drag`, not merged** — it cannot do anything until a board is reflashed.
+
+---
+
+## 2026-09-20 (5) — the pet feeder becomes resident, on a branch
+
+**The feature the player asked for**: *"while pet tool running we could very well need to buy sell and
+spam, and some gem compose."* Built on `v2-resident-pet`, **not merged** — it rewrites the exact code
+path the live pet feeder runs from, and it cannot be live-verified until that run ends. Same shape as
+the tuner-spring work.
+
+**It opens with a refactor that changes no behaviour** (`2b426c6`): `_cts` / `_toolTask` / `_state` /
+`_currentId` were four parallel fields that encoded "there is only ever one tool" in the shape of the
+class rather than in a rule anyone could read. They travel together as a `RunningTool` keyed by id now,
+so a stop is "cancel this one" and "is THAT tool still running?" is answerable. Also decided there:
+`_startInProgress` **stays** global, not per-slot as the plan wanted — one port, one boot delay, and
+two concurrent starts must still not both open it.
+
+**The whole rule is two lines.** Starting anything else displaces every other tool *except* the pet;
+starting the pet displaces only a *previous pet*. Both are `StopAll(keep:)` predicates rather than a
+"keeper id", and that is not style — a single keeper name **cannot express both**, and writing it as one
+reintroduced a real bug: pressing Start on the Pet card twice left the first pet loop alive and
+orphaned, still clicking, with no way to stop it. The predicate was the fix, not a tidy-up.
+
+**The gate is what makes the pet's decision safe to make off the dispatcher.** `_running` is a plain
+`Dictionary` — safe only because only the UI thread touches it. The pet runs on its own thread and has
+to ask "is the game free?", so it asks `Core.PortGate` instead, where the check and the claim are one
+operation under a lock. That is also why `IsRunning(id)` was written and then **deleted**: it would have
+been a second, unsafely-threaded way to ask the same question.
+
+**Two decisions with a cost, both recorded where they bite rather than only here:**
+
+- **The gate is handed back in the stop *continuation*, not at `Cancel()`.** Releasing the moment a stop
+  is requested would let the pet start clicking while the dying tool is still sending its last command.
+  The cost is that a loop which never exits keeps the game — and the pet says `waiting for <tool>` on its
+  card for as long as that lasts, which is the honest reading rather than a silent overlap.
+- **`_currentId` is deliberately never the resident.** Mini mode keys off it, and collapsing the window
+  onto a schedule that runs for days would hide everything else for the length of it. **A pet feeder
+  running alone therefore no longer shrinks the window** — the one behaviour change the plan's table did
+  not predict, and the right one, because the old collapse was justified by "only one tool can run, so
+  nothing is hidden that could be used anyway". That justification is exactly what residency deletes.
+
+**And the plan was wrong about `_startInProgress`.** It said the flag should become per-slot. It should
+not: one port, one boot delay, and two concurrent starts must still not both open it, so a single flag is
+the correct shape rather than a limitation. The per-slot version would have allowed the double-open the
+flag exists to prevent. Its wart is unchanged — a Start during another start is still a silent no-op.
+
+**Also worth naming:** the deferral sits exactly where the plan said, between `SleepUntil(next[row])` and
+the reload, and it needs no bookkeeping at all — `next[row]` is left in the past so the next pass picks
+the same row again. What it does need is a *voice*: the card says which tool it is waiting for and how
+long the row's food lasts, and past that point says `OUT of food`, because a starving pet and a feeding
+one look identical from outside. The moment is derived from `next[row] − WaitAfterEmptyMinutes` with no
+new state.
+
+**Two bugs found by reading my own diff rather than by a test**, both in code no test can reach: the
+early return when a run is stopped while waiting to look never cleared `state.Running`, so the card would
+have claimed `● RUNNING` for a tool that was already gone; and the initial look's release was not in a
+`finally`, so a throw out of it leaked the gate and nothing could ever take the game again.
+
+**Verified:** Release build clean, 109/109 tests. **Not verified: the launcher has not been run at all.**
+Every behavioural claim here is reasoning from the code. The live steps — including three cases no plan
+row covers (starting the pet while a tool runs, starting the pet twice, stopping it mid-reload) — are at
+the end of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md).
+
+---
+
+## 2026-09-20 (4) — Part 3's gate, and stopping short of the wiring on purpose
+
+**Only the first slice of [Part 3](../archive/PLAN-RESIDENT-PET.md) is built: `Core.PortGate`.** Nothing uses it,
+so nothing about the tool's behaviour has changed — deliberately, and this is the entry that explains
+why the rest was not written.
+
+**The gate is one Arduino and one cursor, so who holds it has to be answerable.** Two decisions are the
+whole class: a claim is **refused rather than queued or reference-counted** (including from the owner
+asking twice — a tool that claimed twice and released once would leave the gate free while it still
+ran), and **a release from anyone but the owner is ignored** (a stale tool finishing late must not free
+the gate its competitor is waiting on, which is precisely how two tools end up writing at once). It is
+not a lock around each serial write, and the waiting is the caller's job — two tools *interleaving* on
+the cursor is still wrong, so the gate makes them take turns.
+
+**9 tests, mutation-checked in one direction:** dropping the ownership check from `Release` fails two of
+them. The honest limit is recorded in the plan too — the racing test (30 callers, exactly one winner) is
+*evidence* for why the check and the claim share one lock, not proof; a check-then-act mutation is not
+reliably caught by 30 threads, so it is not the mutation that was used to check it.
+
+**Why it stopped there.** The rest of Part 3 rewrites `LauncherService`'s single-tool core — the four
+slots become per-tool, `StopTool` becomes slot-aware, `_startInProgress` becomes per-slot, `RefreshStatus`
+and mini mode change, `PetTool` defers, `ToolBase` learns to ignore the Quit hotkey, and nine comment
+sites asserting the one-tool invariant get corrected. That is a large change to the exact code path a
+**live pet feeder is running from right now**, and none of it can be live-verified without the game and
+a launcher restart. The docs already carry the reason that matters: a reload is the one permanent
+failure, and an unverified refactor under a run that is feeding four pets is the wrong trade to make
+unasked.
+
+**Verified:** 109/109 tests, Release build clean. **Not verified:** anything about the wiring, because
+none of it is written.
+
+---
+
+## 2026-09-20 (3) — Part 2: the board can finally be asked a question
+
+**Goal.** The second part of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md) — a `V` command, so that a
+board can report what it is running. Every command until now went one way, which is why "did the board
+ignore that, or did it act and nothing happened?" had no answer: both look like nothing.
+
+**The valuable half is the silence.** The sketch that predates `V` writes nothing at all, so a board
+that stays quiet is a definite **no**, not a failed read. That is only true because the sketch ignores
+unrecognised letters — which is also what makes the launcher's half **safe to ship before the flash**:
+sending `V` to an old board costs nothing and produces exactly the silence the code is written to read.
+
+**Two corrections to the plan, both in the file now.**
+
+- **The level starts at 1, not 3.** The plan's `3` was counting back over behaviour changes that predate
+  reporting — but no board can report anything today, so levels 2 and 3 cannot exist and cannot be told
+  apart. A future reader would hunt for two sketches that were never flashed. The plan's *reasoning*
+  about the number was right and is what stands: a protocol level, bumped when behaviour changes, so the
+  number answers "does this board have the feature I need?" rather than "how old is it?".
+- **"The board resets when the port opens" is not true here.** `Arduino.Open`'s own comment already
+  records that the 32U4 does not reset on DTR, and `setup()` calls `Serial.begin()` **before** its
+  `delay(3000)` — so a `V` written during that delay sits in the USB CDC buffer and is read as soon as
+  `loop()` starts. It is not lost. The retry stayed (cheap, and it is the DTR-resetting case that would
+  lose it), but the thing that actually decides this is the **read window**, sized to reach past the 3 s
+  mark. The plan named the right failure and reached for the wrong fix.
+
+**The decision went to `Core` again**, for the same reason as Part 1: "is this line a version reply, or
+something else that happened to arrive?" is the part worth pinning, and `LauncherService` is not
+reachable from the test project. 10 tests, mutation-checked — loosening the two-token rule lets
+`"V 1 extra"` parse and the suite fails.
+
+**And the sketch was compiled, not eyeballed.** The Arduino IDE ships `arduino-cli` at
+`resources/app/lib/backend/resources/arduino-cli.exe` (the user libraries are under
+`Arduino15/libraries`, so it needs `--libraries` to find `Mouse.h`). `arduino-cli compile --fqbn
+arduino:avr:micro` → 11878 bytes, 41 % of flash. Note that this is a **compile**, not an upload: the
+running launcher holds the port, so nothing has touched a board.
+
+**Verified:** Release build clean, 100/100 tests, sketch compiles. **Not verified:** that a board
+answers at all. It cannot be — a board without `V` has nothing to say, so the change is only
+observable after a flash, and a flash needs the port. The steps are in the plan, including how to force
+the silence case without an old board.
+
+---
+
+## 2026-09-20 (2) — Part 1 of the resident-pet plan: the Hold Space toggle stops inverting
+
+**Goal.** The first of the three parts of [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md) — the live bug
+on the other PC, where the Hold Space toggle will not stop and the spacebar stays held.
+
+**The bug is an inversion, and the guard was asking one question too many.** `CurrentId == "holdspace"`
+*and* `Running == true` — and when a release write has failed, `Running` is already false while the key
+is still down (`HoldSpace` sets `Running` **before** it writes the release), so the press fell to the
+`else`, which starts hold space and **re-holds the key the press was meant to let go of**.
+
+**The fix that matters is the service, not the button.** `StopTool` now releases the spacebar whenever
+the tool it is stopping holds a key, so the card's Stop, the toggle, another tool's Start, the Quit path
+and `Dispose` all release — instead of the toggle being the only path that could, and the tool's own
+`finally` being the only release when the loop is not what is being interrupted. The firmware's `U` is
+idempotent, so the two releases arriving together are harmless.
+
+**The decision went to `Core`, deliberately.** `LauncherService` is not reachable from the test project,
+so *"which ids need a `U` when stopped"* is `Core.HeldKeys.NeedsSpaceRelease`. One of its three tests
+lists every id `StartToolAsync` accepts and asserts none holds a key — a new tool cannot start doing so
+without that test failing.
+
+**And the plan was wrong about where a failed release gets reported.** It said the tool's `Release()`
+"reports on the card" and the service's copy was the silent one. The reverse is true: **Hold Space has
+no card** — it is the top-right button, and `Tools` does not contain it — so the `state.Message` that
+`HoldSpace.cs:32` sets is written and never rendered by anything. The service's swallow was therefore
+the *only* release path with any chance of being seen, and it was the one discarding the error. The
+message now lands on `LauncherService.LastSpaceReleaseError`, drawn on the status line beside the toggle
+as `● space may be stuck`, and cleared when a fresh hold is started (the state that warning describes is
+over). This is the fourth time this session-family that a message was written to a surface that does not
+exist.
+
+**One addition the bug implied rather than the plan naming it.** The toggle's *label* keyed on the same
+two-part `holding` test as its guard, so in exactly the broken state it read **"Hold Space"** while
+pressing it now stops. Label and guard key on `CurrentId` together; the dot stays on `Running`, because
+"holding" is a claim about the key being down and the tool only knows that while its loop says so.
+
+**Verified:** Release build clean, 84/84 tests pass (3 new). **Not verified:** this part has never run.
+`MainWindow` is unreachable from the test project, so the guard and the status line are a compile check
+only — the same standing limitation as the Buy tab's picker. The live steps are in the plan.
+
+**The run was not disturbed.** The pet feeder was live throughout; the compile check was `-c Release`
+and the Debug output it is running from was never touched.
+
+---
+
+## 2026-09-20 — the feeder ran all four rows, and three of my own conclusions were wrong
+
+**A long evening of live testing, and the theme is measurements overturning things I had already written
+down.** The run itself ended the session working: **all four rows reloaded at 21:56** and **row 1 again on
+schedule at 01:22:44**, unattended, with the icon scan finding `match 0` and a runner-up at `0.019`.
+
+### `MatchLimit` was a guess that had been costing half of every scan
+
+The player's scan found **6 of their 10 pets**. The crops were right; measured against their own pages,
+the pets scored **0.000–0.150** and everything else in the bag **0.831 and up**. The limit was **0.12** —
+the composer's empty-box number, carried over with the reasoning that strict is safe because a near-miss
+right-clicks the wrong item. Sound reasoning, an unmeasured number, and it was throwing away four pets a
+scan. It is **0.5** now: not tuned until the answer came out right, but placed in the middle of a gap
+from 0.32 to 0.83.
+
+**And the fix that looked obvious was wrong.** "The neighbours leak into the cell" suggested comparing
+only the middle — at coverage 0.7 *every* pet scored 0.84+, strictly worse, because an offset is a
+translation of the whole image and cropping harder does not chase one. Sweeping the search radius 3
+through 10 then showed it was **not an offset problem at all** — identical scores — so the threshold was
+the whole of it.
+
+### A capture is a picture of whatever is in front
+
+Rows failed with *"No queued pet is in the bag — the closest match was 0.915"*. The player found the
+cause: **their game window was not focused**, so every page was captured as whatever covered it. The
+verdict was right and the image was wrong, and those are indistinguishable in a log. Three guards now:
+a foreground check on the feeder read and the bag scan, and **parking the cursor off the bag** before
+each capture — a pet under the pointer reads as a different pet, which is the "park the cursor" item
+TODO has carried for weeks, arriving with a measurement attached.
+
+### Three of my own conclusions, corrected
+
+- **"Row 1's reference is genuinely a different pet"** — no. It was **the mouse arrow** over part of the
+  portrait; I had read a capture artefact as a fact about the game, twice.
+- **"All four rows have distinct empty-slot references"** — no. My extraction used `\s*` before the
+  value, which matches a newline, so for three empty ones it read the *next line's* first token and
+  hashed `boarding_running:` four times. I compared four copies of the same string and called them
+  distinct.
+- **The shared empty-slot reference** — the real bug underneath. One crop for all four rows read **three
+  empty rows as occupied**, so the tool left four starving pets in the bag and did nothing, then started
+  an **empty boarding** on one of them — which the game answered with an error box blocking every click.
+  Each row has its own reference now, and the reload **checks that the end press worked** rather than
+  assuming it.
+
+### And the projection bug, for the second time
+
+`LocalPetSlot.ToConfig()` — the **load** path — never copied `PetSlotEmptyPng`. So every launcher start
+discarded each row's reference and the next save wrote the blank back. Row 1 survived only because the
+migration re-supplies it, which made the loss look like "rows 2–4 have no reference" rather than like a
+projection bug. The reflection guard covered `LocalPet` but **not the nested types**; my first attempt at
+fixing the guard compared through `From`, which never calls `ToConfig`, so deleting the field left it
+green. It compares the stored object against the config now, and is mutation-checked.
+
+### And the co-run question, answered by the game rather than by us
+
+The player asked whether the pet feeder could stay resident while other tools come and go. The
+investigation is in [PLAN-RESIDENT-PET.md](../archive/PLAN-RESIDENT-PET.md), and the answer is **not about our
+code**: the boarding window and the **tuner's** window cannot both be open, and the tuner's must be
+closed first — so there is never a moment where two tools drive the game, and the cursor-lease design
+that asymmetry seemed to want has no subject. The tuner stays a manual schedule; everything else is
+plannable, because the pet feeder holds nothing between reloads. **Nothing is built.**
+
+**Also found while exploring it: the Hold Space toggle inverts.** Its guard asks `CurrentId` *and*
+`Running == true`; when `Running` has gone false with space still held, the press falls to the `else` and
+**re-holds** the key. v2.9.1's tag carries identical code, so the older launcher on the other PC is a red
+herring.
+
+**Left open:** the three parts of `PLAN-RESIDENT-PET.md`; the feeder-count read built but never verified
+against a live feeder; one pet still unexplained at 0.320 against the crops; and ~57 food cells a day.
+
+---
+
+## 2026-09-19 (5) — the four-row build, and a matcher that was only finding half the pets
+
+**The longest session yet, and the one that built the multi-pet feature end to end.** Four rows
+configured and driven one at a time, a queue of pet icons, a scan that finds the next pet by icon, and
+a start that no longer disturbs a feed already running. Then the player ran the scan and it found **3
+of their 7 pets** — which turned into the most valuable thing here.
+
+### The matcher was comparing whole cells, pixel-for-pixel
+
+Measured on the player's own bag capture, every crop against all 64 cells:
+
+```
+crop1 (blue):  6:0.000  7:0.000  4:0.434   then 53:0.832
+crop2 (gold):  3:0.000  2:0.556  1:0.562  0:0.784   then 60:0.838
+```
+
+Two pets scored **exactly zero** — pixel-identical to the crop — while their own kind scored 0.43 to
+0.78. The crops were right. **The pets' sprites are drawn at different sub-cell offsets**, so a
+pixel-exact comparison only matched the cells where the sprite happened to land in the same place.
+
+**The obvious fix was wrong, and the measurement is what said so.** Comparing only the middle of the
+cell — the answer to "the neighbours leak in", which is what it looked like — made it strictly worse:
+at coverage 0.7 *every* pet scored 0.84 or more. An offset is a translation of the whole image, and
+cropping harder does not chase a translation.
+
+Scoring each cell at a spread of offsets and keeping the best took it from **3 pets to 6**, with the
+separation now 0.000 against 0.830 — so `MatchLimit` stays at 0.12 and nothing has to be loosened. A
+sweep of radii 0/2/3/4/5/6 on the real bag: 0 found three, everything from 2 up found six with
+identical scores. Three, at a squared cost per cell.
+
+**And the seventh was the CURSOR** (player, 2026-09-19). I had written it up as a genuinely different
+pet — its sprite "drawn smaller, with the cell's frame visible around it" — and that was a bad read of
+my own evidence: what I took for a smaller sprite was part of the portrait covered by the mouse arrow.
+The capture reads the screen, so the pointer lands in the image, and a pet under it differs at every
+offset. It was never a different pet.
+
+Both bag captures now move the cursor to the buy/sell inert point first — the scan and the reload's own
+pet search. This is the "park the cursor" idea that had been sitting in TODO.md, arriving with a
+measurement attached rather than as a precaution.
+
+**The lesson, and it is the second time today:** I read a difference in a picture as a fact about the
+game when it was a fact about my own capture. `TODO.md` has carried "park the cursor off the OCR bands
+— needs a measurement first" for weeks; the measurement turned out to be a pet I had already declared
+different.
+
+### The rest, in order
+
+- **The rows became a list** (`pet_slots`), alongside `return_slot`, `food_slots` and a `queue`,
+  **with a migration** — `IgnoreUnmatchedProperties` means an old local.yaml does not fail, it
+  silently loses every key nothing maps to any more, which is a player's whole calibration.
+- **One schedule per row**, because the free row holds two food stacks and a paid row five: 200
+  minutes against 500. A failing row is dropped and the rest carry on, rather than one bad
+  calibration starving three.
+- **Saves are scoped to their tab.** Calibrate Pet writes the machine's half, the Pet tab writes the
+  run's — through writers that MUTATE the loaded block, because a scoped save that assigned a fresh
+  object would blank the half it is not about, which is how the food cells were lost twice.
+- **A start looks before it reloads.** Every row used to be due immediately, on the reasoning that the
+  tool cannot read the state so it must establish it. That expired: the boarding slot is readable, so
+  a run opens the breeder once, leaves the feeding rows alone, and schedules from what it saw.
+- **Marked-and-saved marks now show.** The overlay drew only the row being edited, so switching rows
+  looked like the previous one had been erased.
+
+### The pattern worth naming, because it recurred seven times
+
+**A number that belongs to a row, written down once as if it belonged to the tool.** The load size,
+the food-count drag chain, the overlay's box drawing, the feeder test read, both readiness checks and
+the checklist. Every one came from extending a single-pet tool rather than rewriting it, and the
+`Row` property — a `Slots[0]` accessor — was deleted because it made writing the next one a keystroke.
+
+### Three alignment bugs, all the same trap
+
+A control inheriting a default meant for a different context: two number fields of different widths
+centring against each other because a fixed `Width` plus the default `Stretch` centres in its column;
+and `MakeButton`'s 10px top margin sitting two buttons in a row at different heights, where
+`MakeInlineButton` already existed for exactly that and the lesson was already in this file.
+
+### Left open
+
+- **The seventh pet's capture**, and with it the question of whether a sprite that renders smaller is
+  a different pet or the same one at a different level. If icons change with level, a queue breaks as
+  pets grow — worth one deliberate check.
+- **The feeder counts are still unread**, so a row left alone is scheduled a full cycle out and that
+  assumes a full feeder. The counts would say, and reading them is the next thing worth building.
+- **The food budget**: ~57 marked cells a day across four rows, against a 64-cell bag holding the
+  pets. A restock and re-mark is a daily chore, not a one-off.
+
+---
+
+## 2026-09-19 (4) — the paid rows are open, and §11's two unknowns are answered
+
+**The player bought the expansion.** The capture shows `該欄位約29日23時58分43秒後到期`, so a 30-day
+purchase, and the `PET BREED` window now carries four rows: one free, three paid.
+
+**§11 listed exactly two unknowns as blocking the multi-pet work, and both are now answered — per row:**
+
+| §11's question | Answer |
+|---|---|
+| Does each row have its OWN start button? | **Yes.** Row 1 reads `結束代養` (running) while rows 2–4 each read `開始代養`. |
+| Are the food slots per row or shared? | **Per row.** Rows 2–4 each render their own boxes under their own expiry line. |
+
+**And the game states two things the tool currently configures or computes**, both on the active row:
+
+```
+每1分 攝取3個。                    the burn rate — 3/min, per row
+到9為止預計所需時間: 約 89分        the ETA to +9, per row
+```
+
+The first retires §11's worry about one configured rate being wrong for a stage-7 row. The second is the
+answer to the question the player asked earlier — *"having to view the pet % and stage and +?, can we
+calculate its actual remaining time?"* — and it needs **none** of what was designed for it: not `wyz`,
+not the 327-pet table, not the name lookup, not two reads a cycle apart. The game already displays it.
+That whole line of work was solved by looking at the window.
+
+**And one thing I got wrong, which is now the third of its kind.** The capture showed the boarded free
+row rendering two food boxes (`198`, `300`) and the three idle PAID rows each rendering five. I read
+five as what a row holds and made it the default. The player: *"1 free row is 2 slots for food / 3 paid
+row are 5 slots for food"*. The screenshot was right; generalising from one instance was not. The value
+is now a per-row field — `StacksPerReload`, default 2 because 2 is the row the calibration points at.
+
+**What that difference is worth, once the paid rows are driven:** ~1.7 reloads per stage-6 pet instead
+of ~4.2. Every reload is a chance to leave the pet unboarded — §7's one permanent failure — so a paid
+row is worth boarding on with one pet, never mind four.
+
+**And a second capture, with all four rows boarding, settled what the EXP% means — and this document's
+own §2 was wrong about it.** §2 said the percentage was of the WHOLE STAGE; it is of the CURRENT LEVEL.
+The window proves it by printing its own ETA and naming the next level:
+
+```
+row 1 (free, +8)  25.99%   到9為止預計所需時間: 約 77分
+row 2 (paid, +0)  17.37%   到1為止預計所需時間: 約 48分
+row 3 (paid, +0)  15.63%   到1為止預計所需時間: 約 49分
+row 4 (paid, +0)  10.44%   到1為止預計所需時間: 約 52分
+```
+
+`到9` on the pet at `+8` and `到1` on the three at `+0` is the giveaway — a stage-wide reading would say
+`到9` on all four. And `(1 − e) × wyz × (1 + g/10) ÷ 90` gives **77.0, 47.7, 48.7, 51.7** minutes against
+the displayed **77, 48, 49, 52**. Four confirmations to the minute, none rounded into agreement.
+
+**§2's argument for the stage reading dissolves rather than being overruled**: it said a per-level
+reading could not explain why the breeder stops at `+9`, but at `+9` there is no next level — that is
+what "top" means. The reading that made the stopping behaviour mysterious was the one that was wrong.
+
+**Useful side effect:** each row prints its own ETA, so the tool can quote the game instead of
+reproducing its arithmetic. And the four rows report ~3.6 h (the `+8` pet) and ~13.96 h each (the three
+at `+0`) to `+9` 100 %.
+
+**Left open:** the four-row work itself. The plan is `return_slot` + a list of `pet_slots` + a list of
+`food_slots`, per the player's own shape, with the swap (find the next pet by icon when one finishes)
+after it because the paid days are what is running. The tool still drives one row.
+
+---
+
+## 2026-09-19 (3) — the reload ran live, and the empty-slot reference finally decided something
+
+**The tool's core action ran end to end on the live game, first time.** One reload, 30 seconds, Start to
+`reload complete`:
+
+```
+目錄 → the feed icon → Enter (clears the out-of-food message)
+→ END boarding
+→ ITEM2 tab → right-click the pet's cell (page 2, cell 2)
+→ ITEM2 tab → right-click FOOD cell 52 → MAX → Enter
+→ ITEM2 tab → right-click FOOD cell 51 → MAX → Enter
+→ start boarding → close the window
+```
+
+**The placement was VERIFIED rather than assumed, and that is a line that is not in the log.** `PlacePet`
+logs nothing on a first-attempt success, `"the pet went in on attempt N"` only when a retry was needed,
+and `"pet slot not checked"` when the reference is missing or unreadable. None of the three appears, so
+the crop comparison ran and answered *occupied* on the first right-click. Captured 2026-09-18, this
+reference had until now only ever been written about.
+
+**Measured in the log rather than on the card:** two food cells consumed (11 → 13 of 16), boarding
+restarted, the window closed, and `boarding_running: true` afterwards — which is only trustworthy on a
+failure path because of `ecbbc5d`.
+
+**And a question the plan had already answered, re-opened and re-closed.** Topping up a starved feeder
+does **not** resume the feed: the game pops the error, the pet hangs unfed, and the only way forward is
+Enter → END → re-place the pet and the food → start (player, 2026-09-19). [§9](../plans/PLAN-PET-AUTOFEED.md)
+recorded "Answered: no" on 2026-09-17 without the mechanism, which is why the simplification was
+proposed, investigated, and killed a second time. **The mechanism is what §9 was missing.**
+
+**Not verified — and it is the one that matters next:** the slot read with the pet *starved and
+boarding running*, which is what the state-read design rests on. The read that ran here was
+post-placement. Nothing has read the slot before a click, and there is no button that would.
+
+---
+
+## 2026-09-19 (2) — the panel parser, and the player correction that deleted a section of the plan
+
+**Goal.** Thread 1 of the handover. The hover read has worked since 2026-09-18 and had no consumers at
+all: `ReadLines` returned strings, two UI buttons printed them, and nothing turned a panel into
+something a tool could act on. This session added the parser and the first consumer.
+
+**`PetPanel` reads the numbers and nothing else** — and that is the design, not a shortcut. The
+measured read is `（6）真蔚蓝凤凰+7[52.18%]` against a screen showing `(6階) 真蔚藍鳳凰 +7 [52.18%]`:
+every digit exact, the Chinese not, and the recogniser's errors are not uniform — some characters
+arrive Simplified and `text_fixes` converts them, others arrive Traditional already, others are
+misread. A parser keyed on any character inherits all of it. Nothing is anchored to a bracket or a
+parenthesis either: the EXP is found by its `%`, the growth by its `+`. Two decisions worth naming:
+the finished test needs **both** numbers (`+9` with a filling bar is not done; a full bar on `+7` is
+not either), and it is **equals, not at-least**, because "at least 9" answers "finished" to a garbage
+growth — the one direction that stops feeding a pet that still needs it. 15 tests, mutation-checked.
+
+**The player correction is the more valuable half, because it removed work.** §13 had the reload read
+*the boarded pet's* panel to decide whether it was finished. The player, 2026-09-19: **a finished pet
+is mailed by the game** and appears in neither the boarding window nor the bag. So the boarded pet
+never needs reading at all, and the finish check belongs where we go looking for a pet to **board** —
+reading one **in the bag**, which is the case the read was verified on. The unverified hover inside
+the boarding window — the thing that made me want to prove the read before wiring it — is simply not
+needed. Also settled: the stop-breeding button returns the pet to the **first available bag slot**,
+not to where it was taken from, which is part of why the icon scan exists.
+
+**What the read still cannot give is `wyz`**, and that is the number the remaining time needs:
+`remaining = 14.5 − done(growth, exp)` in units of `wyz`, then ÷ the stage's rate. The read supplies
+the stage (→ rate, from PET-DATA's confirmed table) and the position; `wyz` is per **species + stage**
+and varies 27× within a single stage, so two stage-6 pets cannot be told apart by the panel. Three
+ways to get it, in the order they would be tried: the panel itself, if it states the current level's
+所需喂养值 (then `wyz = that ÷ (1 + growth/10)`, one read, no table); the pet's name against the
+327-entry table; or two reads a cycle apart, which measure the rate and so `wyz`, with no table at all.
+The open question is now item 4 of [PLAN-HOVER-INFO.md](../archive/PLAN-HOVER-INFO.md).
+
+**The Pet tab's Test read is how that question gets answered.** It hovers the marked PET cell on its
+marked page, reads the panel at the calibrated offset, and reports the raw lines, the parse, and
+**every number it saw with its surrounding characters** — the last being the point, since a report
+that echoed only the parse could not say whether anything else is in the panel. It hovers with a MOVE,
+never a click: a click on a pet in the bag switches the equipped pet, so measuring would change what
+is measured (already why `FocusThenHover` is split).
+
+**And the handover's own pending task turned out to be impossible, which is the find of the session.**
+The instruction was to set the Pet tab's Timing fields and press Save. Checking whether that would
+survive a restart: the boxes write `ActionWaitMs` and `WaitAfterEmptyMinutes` to the in-memory config,
+`ConfigLoader` reads both back from `LocalPet` — and **nothing ever wrote them**, on either pet tab.
+The values would have reverted on the next launch, silently, which is `gem.move_mode` again
+(PROGRESS.md, 2026-09-13). The same audit found the worse half: Calibrate Pet's Save built its own
+`LocalPet` field list and **replaced** the object, and that list omitted `PetIconRect`, `PetIconPng`
+and `MaxButton` — so saving a calibration would have wiped the queue crops and the pet's own MAX.
+
+Both are now one projection, `LocalPet.From(PetConfig)`, called by both save buttons. The fix that
+matters is not the two fields restored but the shape: `EveryLocalPetFieldIsCopiedFromTheConfig` walks
+`LocalPet`'s properties by reflection against a fully-populated `PetConfig`, so adding a field and
+forgetting it there fails the test suite rather than the player's next session. Mutation-checked —
+deleting `ActionWaitMs` from the projection fails both new tests.
+
+**Status when written:** the parser was pure code with tests and nothing had run the Test read. That
+changed the same session — see below. No tool acts on a read yet. The save fix is a compile check
+plus tests only: the launcher is not reachable from the test project, so the buttons themselves have
+not been pressed.
+
+### The Test read ran, and it answered three questions at once
+
+**First hover of the session, three reads** (`logs\reads\petpanel_*.png`). Two were the wrong thing —
+a bag item and a quest letter — and the third was the pet:
+
+```
+(6階) 真蔚藍米魯 [0.06%]
+所有職業皆可使用。
+等級限制 150
+名望限制 51595
+販賣價格 - 500000s
+```
+
+**`所需喂养值` is NOT in the panel**, so `wyz` cannot fall out of one read and the expected shortcut
+is dead. But the same read found the route that does work, and it is the one this project had ruled
+out: **the name reads cleanly and matches the scraped table exactly.** The panel's `真蔚蓝米鲁` is
+character-for-character [PET-DATA.md](../spec/PET-DATA.md)'s `真蔚蓝米鲁`, id 24759, stage 6, `wyz` 5200.
+PLAN-HOVER-INFO's script-mismatch warning was about the game *displaying* Traditional — true, but the
+*recogniser* outputs Simplified and the table is Simplified, so the two agree as long as the name has
+no character that `text_fixes` converts. That caveat is the new open question.
+
+So the remaining-time chain closes end to end for this pet: 14.5 − done(0, 0.06%) = 14.4994 units ×
+5200 = 75,397 喂养值 ÷ 30 per item ÷ 3 per minute = **838 minutes**, against the table's own 838.0.
+
+**And the parser was wrong in two ways the live panel exposed, both fixed with the read as the
+fixture.** A **+0 pet renders no `+N` at all** — the row is a space where a +7 sits on a levelled pet,
+with the image crisp enough that nothing was lost — so requiring one rejected every pet at the start
+of its run, which is the pet this tool feeds most. A missing growth now reads as zero, and the test
+that said otherwise was simply wrong. Separately the 階 is misread as 踏 (`（6踏）`), so the stage
+pattern tolerates a couple of mangled characters. All three anchors — zero-growth, the stage-unit
+tolerance, and the bracket that makes a percentage an EXP bar — are mutation-checked.
+
+---
+
+## 2026-09-19 — the pet checks, the timing model, and what the game actually does
+
+**Long session, mostly on the Pet Feeder's edges.** v2.10 shipped at the start of it; everything after
+is the work that makes the tool trustworthy rather than merely working.
+
+**A 12-hour unattended run, and the failure it exposed.** Five reloads, all reported as successes — and
+the pet was at +5 26%, roughly half the progress twelve hours of feeding should produce. The cause: a
+right-click can fail to register, and **nothing looked at the result**. The placement is verified to
+within 2px, so the cursor was on target when the click went out; the game simply did not act on it.
+An intermittent action cannot be aimed out of existence, so the tool now **checks the pet slot after
+each placement and clicks again** — up to three times — against a captured reference of the empty slot.
+Unknown (no reference) is deliberately NOT failure.
+
+**Three mechanics the player corrected, each of which changes code:**
+
+- **`+10`** — our name for `+9` at 100%, the state that lets a pet evolve. **The string appears nowhere
+  in the game**, which shows `+9` with a percentage. `+9` alone is the wrong guard in both directions.
+- **Boarding auto-stops on `+9` 100% and on logout, and on nothing else.** The food running out does
+  *not* stop it: the game raises `寵物食物不足` in a bubble, writes the same line to the chat log, and
+  leaves the button reading `結束代養` while the pet simply goes unfed. So the toggle covers finished
+  and unboarded, and the chat line is the only "food is out" signal — and the better one, being text in
+  a fixed region.
+- **A stage is `base × 14.5`, not `× 12.6`** — the old figure summed only the nine transitions and so
+  measured the cost to *reach* `+9`, not to finish it. Every published total was 15% low. Corrected in
+  `PET-DATA.md`, the matrix, the `.G` total, the CSV and the plan.
+
+**Timing is now modelled the way it is meant.** The cycle is `load + wait_after_empty`, positive by
+design: reloading *after* the feeder empties guarantees it IS empty when two stacks go in, and what the
+game does with a top-up onto a partial stack is unknown. The earlier "safety margin" model had the sign
+backwards and discarded 45 items a cycle.
+
+**The hover read works and was verified live** — `OcrEngine` moved to Core, a plain `ReadLines` added,
+and a Test read that saves both the image and the text it read. **Every digit came back exact; the
+Chinese did not**, non-uniformly. `attributes.yaml` already carries the fix table for exactly this,
+with the comment saying so — my own two attempts at explaining it are recorded in the doc as wrong in
+opposite directions.
+
+**Left open** — the handover (`HANDOVER.md`) carries the ordered list: the parser and the `+10` guard
+first, then the icon scan and the queue, the feeder-count read, the two-writers race, and filling
+`text_fixes` from the OCR logs.
+
+---
+
+## 2026-09-17 — the Pet Feeder, and the cursor bug it uncovered
+
+**Shipped as `v2.10`.** A new tool that keeps a boarded pet fed while nobody is watching, plus two
+fixes to the shared cursor placement that reach every other tool.
+
+**The design work was in the documentation, not the session.** `PLAN-PET-AUTOFEED.md` was written first
+and corrected repeatedly against what the game actually does — the mechanism is 代養 (boarding), not
+餵養; the load is two stacks of 300; ending the feed returns the pet *and* the food, so a reload is
+end → replace → load → start rather than a top-up. `PET-DATA.md` carries all 327 normal pets with their
+boarding food and the per-level 喂养值 cost, measured off the live site (`base × 12.6` for a full
+stage — the cost rises by a tenth of the base each level).
+
+**The tool's trigger is a schedule, and that is a conclusion rather than a shortcut.** The hunger
+readout at the bottom right belongs to the *carried* pet, not the boarded one, so nothing on the main
+screen says anything about the pet being fed. What is left is arithmetic, and it is enough: reloading
+early is nearly free because the leftover food comes back.
+
+**The cursor placement bug it uncovered is the more valuable find.** `HidPointer.WaitForCursorToSettle`
+treated two polls reading the same position as a finished move — which is equally true of a move that
+has not *started*. On a full-height move the loop fed corrections forward against a stale position,
+three asks landed together, and the cursor clamped at the top of the screen. Two fixes: a move is not
+settled until movement has been *seen*, and the step budget went 6 → 16 because a damped correction
+needs ~10. Every tool that places a cursor inherited this; the shop never exposed it because its
+corrections are small.
+
+**Still unexplained:** something moves the cursor that is not the tool — one trace shows 550 px of
+travel in answer to a 61 px request. A re-aim before each click covers it. If it is the game's own
+auto-farming moving the pointer, it affects every placement.
+
+**Deliberately not built:** reading the boarding state (a tick box stands in), and the pet-slot and
+feeder-slot checks — both slots are calibrated and neither is read, so a reload that half-fails
+currently reports success.
+
+**Left open**
+
+- The boarding state is asserted by the player, not read. A crop comparison of the 開始代養 / 結束代養
+  label replaces the tick box and needs no new machinery.
+- The pet slot and feeder slots are calibrated but unread — the guards that would let the tool stand
+  behind `reload complete`.
+- Most inter-step delays are still inherited from the shop tool's values; only the 2.5s after ending
+  and the 0.9s after a page tab are measured.
+- `OcrEngine` lives in `SealTools.Tuner`, so the pet tool cannot use it for the EXP% read that would
+  stop it feeding a finished pet. Moving it to `Core` is the prerequisite.
+
+---
+
+## 2026-09-15 — the cards can be hidden, so a small screen can still calibrate
+
+**Reported from the second PC.** Its screen is small enough that maximizing the launcher to drag a
+capture canvas left the five tool cards eating height the canvas needed. The cards are ~500 logical px
+— on a maximized window that is a third of the space, and the canvas is the one thing on that tab
+that cannot be scrolled or shrunk.
+
+**`▸ Tools`** now hides them, sitting to the left of `Configuration` because it controls the row above
+it. Verified by measurement: hidden, the tab strip moves from y=986 to y=234, the window keeps its
+height, and the tabs take all of it.
+
+**The two toggles move together, each in one direction**, and that is the whole design:
+
+- hiding the cards **opens** Configuration — hiding them is only meaningful when you are using the
+  tabs, and this is also what keeps the window from ever being empty;
+- collapsing Configuration **restores** the cards.
+
+Either rule alone leaves a reachable state with nothing in the window. Confirmed both ways: hidden →
+1845 px tall with 0 `Start` buttons; collapse Configuration → 995 px with all 5 back.
+
+**Cards-hidden counts as "not mini".** Mini mode shows one card and sizes the window to it, so the two
+cannot both apply — without the guard, collapsing the cards while a tool ran would have shrunk the
+window to the height of a card that is no longer on screen.
+
+**Not persisted**, unlike the placement and pinning. It exists for one task, and a launcher that
+opened with its status cards missing would read as broken rather than as a setting.
+
+**Shipped as `v2.9.1`**, with the `v2.9` release removed rather than left beside it — the v2.9 zip had
+been up for a day and this supersedes it, so two live downloads would only split the audience. The tag
+stays, so `git show v2.9` still works. Replacing the *asset* inside v2.9 was the alternative and was
+rejected: the tag would then name a commit that is not the build in the zip.
+
+**Left open:** the layout sweep. Three defects in this area were found by the user *looking* at a
+narrow window (Save Preset above what it saves, a clipped Delete, the Fast tick box's missing right
+border), and none is reachable from the test project. This change is more of the same surface.
+
+## 2026-09-14 (4) — v2.9 packaged, and the firmware had never shipped at all
+
+**The release.** `v2.9` is tagged on `main` (the branch fast-forwarded, 32 commits, 0 behind), with
+three assets in `dist\`:
+
+| Asset | Size | Contents |
+|---|---|---|
+| `SealTools-v2.9.zip` | 137.8 MiB | exe, 10 native DLLs, 3 models, template config only |
+| `SealTools-v2.9-local.zip` | 149.9 MiB | the same plus the full `config\` (live `local.yaml` + 3 screenshots) |
+| `SealTools-v2.9-firmware.zip` | 3.6 KiB | `seal_mouse\seal_mouse.ino` |
+
+Verified by **diffing the public zip's file list against v2.6**, which is the check that caught the
+incremental-publish trap last time: the lists are **identical**, and the DLL count is 10 in both. All
+10 errors in the first build attempt were `MSB3027`/`MSB3021` copy failures against the running
+launcher, not compile errors.
+
+**The firmware had never been in a release.** `publish.bat` copied `models\` and `config\` and
+mentioned the sketch nowhere, so every zip back to v2.1 shipped an app that drives a board and no way
+to flash one — the `.ino` was reachable only from the repo. It is now a **separate** zip rather than a
+folder inside the app zip, on the reasoning that it is not part of the runtime install (nothing
+extracts it) and a player with an already-flashed board never needs it. `Compress-Archive -Path
+'..\arduino\seal_mouse'` keeps the sketch in a folder of its own name, which is what the Arduino IDE
+requires to open it.
+
+**Two things found while packaging, both by looking rather than reasoning:**
+
+- The local zip was shipping `local.yaml.corrupt-backup` (present since v2.4, nobody had looked) and
+  would have shipped the fresh dated backup taken this session. `xcopy` has no name-pattern exclude,
+  so both are deleted from the publish folder after the copy. A release should not carry backups.
+- The `public` copy has no such problem and is confirmed clean: it carries `attributes.yaml`,
+  `defaults.yaml` and `local.yaml.example`, and no real `local.yaml`. The zipped local zip's
+  `local.yaml` was diffed against the live one and is byte-identical.
+
+**Verified live:** the Buy tab's row picker — a dropdown reading "Row 1" … "Row 10", with `Springs`
+landing on Row 9 and `HighPet` on Row 8. Both halves of the buy/sell tool are now live-verified.
+
+**Left open:** the spammer preset. `v2/config/local.yaml`'s `spammer:` key is empty and no copy of a
+personal preset exists — every `spammer:` block in every zip in `dist\` is the shipped `*0`–`*9`
+template, and `config/local.yaml` is gitignored so git never had it. Almost certainly the
+`519fad6`-to-`a575928` window: that build deleted the block from the template without yet adopting it
+into `local.yaml`, so the first save from any other tab destroyed it. Unrecoverable here; the fix is
+to re-enter the rotations. **The durability hole itself is still untested** — no test asserts that a
+`SaveDefaults` from one tab cannot drop a section belonging to another.
+
+## 2026-09-14 (3) — the Buy row field became a picker, so the off-by-one can't be typed
+
+**Goal.** Close the last open item on the buy/sell tool. A preset's row was a free-text **0-based**
+index with "0 = top row" in the label — a number that is wrong one way round and labelled the other,
+which is the worst possible pairing. Typing `1` bought the *second* item down and nothing on screen
+said so; the label was the only clue and it had to be read every time.
+
+**What changed.** The field is now a dropdown listing the rows as **"Row 1" … "Row N"**, filled from
+the configured `ShopRows`. The stored value is still the 0-based index the geometry uses — only the
+labeling changed, so nothing downstream moves. `SelectedIndex` *is* the row, so there is no number to
+parse and no fencepost to get wrong.
+
+Three details that are the whole change:
+
+- **The save-time check is numbered the same way.** `ShopRowOk` printed `Row {row}` with the raw index,
+  so a rejected "Row 4" pick would have been answered with "Row 3 is past the bottom" — the off-by-one,
+  reintroduced by the error message that exists to explain it. It now reports `row + 1`, and the
+  saved-item confirmation likewise.
+- **The picker is refilled, not built once.** `ShopRows` is a config value; a picker built at startup
+  could offer a row this shop's list does not have. It is rebuilt by `SyncBuyRowPicker` alongside
+  every preset refresh.
+- **A preset saved under a larger row count stays representable.** Its row gets an entry of its own
+  ("Row 11 — past the bottom of the list") rather than being dropped. Dropping it would blank the
+  field, and the next Save would then write the wrong row — trading a clear message for a silent one.
+  Selecting it leaves `SelectedIndex` past the bottom, which is exactly what `ShopRowOk` reports.
+
+**Also fixed, because it was the same bug wearing a different hat:** the picker is filled from
+`RefreshBuyPresets`, not only from the preset picker's `SelectionChanged`. That event does not fire
+when nothing is selected — which is precisely the fresh install that has to pick a row to create its
+first item. Without this the dropdown came up empty and no item could be created at all.
+
+**Verified:** builds clean, 45/45 tests pass. **Not verified:** the tests do not reach `MainWindow`, so
+that is a compile check — nothing has exercised the control. The layout is the one thing that wants a
+live look: the picker is `Width = 160`, matching the Name field beside it, but a WPF-UI `ComboBox`'s
+height and padding are not a `TextBox`'s and the Position rows are independent grids, so nothing forces
+them to agree. A DPI-aware capture of the Buy tab is the check.
+
+**Left open, unchanged:** the count seeding from the preset's usual count, and the sell selection
+never being persisted. Both were reviewed and both stay as they are.
+
+## 2026-09-14 (2) — the buy/sell tool, and four lessons that cost real time
+
+**Selling verified too.** Both halves work on the live game. Selling takes a set of bag slots, picks
+them on an 8×8 grid standing in for the bag, and sells **highest slot first** — chosen so it is correct
+whether or not the bag closes the gap after a sale, without needing to know which. Cap enforced.
+
+Added since: a per-row select button in the sell grid (one click for a row of eight), the Buy card
+carrying its own preset picker and count so a run needs no Configuration at all, and the count moved
+out of the item — a preset is now the item's *identity* (row, scroll) plus a usual amount, and the run
+decides the rest.
+
+### What the layout work taught
+
+Every misalignment traced to **a control inheriting a default meant for a different context**, and each
+had to be found by measuring because the eye cannot tell 6px from 0px in a screenshot:
+
+- A stepper built with `MakeButton` — sized for "Start", `MinWidth 84` — so "−" and "+" were each 84
+  pixels wide.
+- A vertical StackPanel stretches children to the column width, and that column is as wide as its
+  widest row. So the Buy card's Start/Stop were stretched to the width of the preset row above and laid
+  out from *its* left edge, sitting 50px left of every other card.
+- `MakeButton`'s 6px right margin put `Stop` 6px inside the column edge while the marginless steppers
+  ran to it — so the "+" overhung by exactly 6. The *buttons* were already pixel-perfect across all
+  five cards; the row above them was not.
+- `MakeButton`'s 10px top margin drops a button below any text field it sits beside. **The gem
+  calibrator had already patched this by hand with a comment explaining why** — the reason existed and
+  was rediscovered anyway. It is `MakeInlineButton` now.
+
+**Every one of these was fixed by measuring, and every guess I made instead was wrong.** The
+`FontSize` case is the sharpest: I assumed the WPF-UI template overrode it and tried growing the row
+height, which does nothing — the text stays centred and clipped whatever the box height. A deliberately
+absurd size of 9 settled it in one cycle. A change small enough to be indistinguishable from no change
+is not a test.
+
+### And one about my own tooling
+
+Three of my screen captures were taken by a **DPI-unaware process**, which scaled the desktop and
+cropped the launcher's left column out of the image. I reported the card names as missing and the
+Start/Stop buttons as absent. Neither was true. Making the capture DPI-aware — the user's suggestion —
+produced the first trustworthy picture of the session. Before that I had twice reported bugs that were
+artifacts of my own measurement, which is worse than not looking at all.
+
+## 2026-09-14 — the buy path works on the live game; and what first-contact cost
+
+**Verified:** a real buy run lands on the shop row and completes — right-click the row, MAX,
+Enter, Enter, for the count set on the preset. Selling is not yet tested.
+
+Getting there took a run of failures that were all the same *kind* of failure, which is the part
+worth keeping. The whole transaction is fire-and-forget: the board sends a click or a wheel notch,
+nothing reports back, and the run has no way to tell a command that worked from one the game ignored.
+So every distinct cause below presented identically — the cursor moved to the right place and then
+nothing happened:
+
+- **The wheel needs the game FOCUSED.** Not hovered, focused. Starting the tool means clicking the
+  launcher, which takes focus away, so the run's first scroll was ignored. Fixed by clicking the
+  scroll point first — which flipped that mark's requirement from "somewhere in the game" to
+  "somewhere INERT", because the run now left-clicks it.
+- **A left-click on a shop row does nothing.** Buying opens the count dialog with a RIGHT-click, the
+  same gesture as selling. It was left-clicking, so the click landed perfectly and was ignored — and
+  it was chased as a positioning bug (icon versus name) before being found as a button bug.
+- **The firmware's scroll ceiling was load-bearing.** "Scroll to the top" was sent as one command at
+  the maximum, so the cap *was* the reach: a list longer than it left every preset measured from the
+  wrong origin. 30 reached halfway down the real list; 200 looked equally broken. Removed entirely —
+  the list is expected to be at the top already, which is setup rather than a scroll the tool sends.
+- **The run's post-scroll wait was 0.45s** against a board that was still scrolling. The cursor
+  placement that follows is a closed loop reading `GetCursorPos`, so it ran against a stale position
+  and kept correcting. Would have clicked in the wrong place.
+
+Also found by measurement rather than reasoning: `Mouse.move`'s wheel argument is a `signed char`,
+which limits one *call* to ±127 — irrelevant, since each notch is its own call. There is no
+hardware or OS ceiling; the number in the firmware is purely a guard against a malformed value
+wedging a board that cannot read serial while it loops.
+
+**The recurring lesson, stated three times in this file already:** every number picked by reasoning
+was wrong (30, then 200), and every one found by measurement was right. The cap is 400 notches now
+because "ten seconds is an acceptable worst case" is a *decision*; 30 was a guess dressed as one.
+
+## 2026-09-13 (3) — review sweep: 19 fixes, 4 recorded as deliberate
+
+A full review of v2 in three passes (Core, launcher, tools), then the fixes. Every candidate was
+verified by reading the code before anything was written, and that rule earned its place immediately:
+one item handed over as a bug — the composer's empty-check gate — turned out to be a load-bearing
+arming flag, and "fixing" it would have re-enabled auto-advance for a user who had explicitly
+declined it. It was retracted rather than changed.
+
+What mattered most:
+
+- **`gem.move_mode` was deleted by every launcher save.** `SaveDefaults` serialises an explicit field
+  list and the gem projection omitted it, so choosing `tuned` could not be persisted and the next
+  launch fell back to `arduino`. The round-trip test that exists to catch exactly this compared the
+  property default to itself, so it passed either way. It now sets a non-default value and is
+  mutation-tested. Same shape as the `ocr_retries` regression that test was written for.
+- **Two Start clicks could orphan a tool loop** on the shared serial port: unreachable by Stop, still
+  writing, still driving the game. Guarded — plus the matching hole where a Stop during a cold start
+  silently did nothing and the tool started anyway.
+- **The tuner could stop below the target grade** (a stop branch missing `filter.Enabled`) and
+  **treat a failed OCR read as a repeat**, ending a run after two bad reads behind a message claiming
+  "x3". A read that recognises nothing now stops immediately and says so.
+- **`CaptureScreen` threw instead of returning the null its callers were already written against**, so
+  a locked session or a zero-sized region took down the tool rather than being handled.
+
+Four items were deliberately **not** changed, and are recorded in [TODO.md](../backlog/TODO.md) with their
+reasoning because three would be reverted by a well-meaning cleanup: the null attribute value that
+intentionally satisfies a bounded filter rule (`減少傷害` is rare enough that the name match is the
+signal), `Arduino.Find`'s duplicated WMI query — which carries a name-based fallback `Diagnose` does
+not have, the tuner's fail-open mouse guard, and the dispatcher sleeps in the calibrator's test
+buttons, where the real fix is a five-handler refactor rather than `await Task.Delay`.
+
+Also landed: spammer presets moved to `local.yaml` so they stop shipping, with adoption for any
+already stranded in `defaults.yaml`; the test project can finally reach `AttrMatcher` and the other
+tool logic (23 → 30 tests); and a CI workflow.
+
+**Needs a live run** — in-loop behaviour the test project cannot reach: the tuner's failed-read stop,
+the `filter.Enabled` guard, and the spammer's disconnect message. **Needs a flashed board**: the
+firmware's host-gone key release (hold space, kill the launcher, confirm release). **Not yet run**:
+the CI workflow's build step, which needs a push — the running launcher held a file lock locally.
+
+## 2026-09-13 (2) — presets left in defaults.yaml are adopted into local.yaml, not deleted
+
+Follow-up to the entry below, which fixed the leak but opened a data-loss path. On a machine that
+only ever ran the older build the presets lived in `defaults.yaml` alone. The first Save on *any*
+tab rewrites that file without a spammer block (tuner, gem and hotkeys all call `SaveDefaults`), so
+that Save deleted the player's only copy, and the next launch found no presets and quietly created a
+blank `default`. The entry below called these presets "stranded" — they were deleted on first save.
+
+`Load()` now adopts them before anything can rewrite the file. `AdoptSpammerPresetsIntoLocal` fires
+when `local.Spammer` is null and `defaults.yaml` still carries presets, writes them through
+`SaveLocal`, and never fires again because `local.Spammer` is set afterwards. A first run seeded from
+`local.yaml.example` carries no spammer block, so it does not fire there either.
+
+**`MigrateSpammerPresets` had to move above `ApplyOverrides`, and that is a fix in its own right.**
+It converts a pre-presets flat `spammer.keys` list into a preset named `default`. Running after the
+merge, it saw `Presets.Count != 0` whenever `local.yaml` supplied any preset at all, skipped the
+conversion, and the legacy keys were dropped without a word. Before the merge they become a preset,
+are adopted, and survive in `local.yaml`. Both `Presets` reads now use `is { Count: > 0 }`: an
+explicitly empty `presets:` key deserialises to null and `.Count` threw.
+
+Tests: `LoadAdoptsSpammerPresetsLeftInDefaultsIntoLocalYaml` checks the presets reach `local.yaml`
+and survive a `SaveDefaults` + reload — the assertion that actually catches the loss —
+and `LegacyFlatKeysReachLocalYamlThroughAdoption` covers the ordering. Both were verified to fail
+against a deliberately inverted adoption guard, so neither passes vacuously.
+
+**Left open.** `defaults.yaml` keeps its stale block until the next Save, so on an affected machine
+a preset deleted in the UI would resurrect once from it before the block goes. Self-healing after
+one Save; stripping it during `Load()` would mean rewriting `defaults.yaml` (reformatting, losing
+its comments) on every affected machine. Also unguarded: `publish.bat` public mode does not check
+that `defaults.yaml` is free of a `spammer:` block before shipping it.
+
+## 2026-09-13 — spammer presets move to local.yaml; Hold Space releases the key on stop
+
+**Spammer presets were being published.** The "Save Spammer Config" button wrote every preset and
+`active` into `defaults.yaml` via `SaveDefaults` — the one file `publish.bat` copies into the public
+zip. So a player's personal rotations shipped with every release; the `Knight0-9` rename sitting in
+the working tree was the symptom, not the cause. Spammer was the last personal setting with no
+`local.yaml` home: calibration, tuner geometry, spring point, gem moves and UI placement all had one,
+but `LocalOverrides` had no `Spammer` field at all.
+
+Fix: `LocalOverrides` gains `LocalSpammer { Active, Presets }`, merged per preset *name* in
+`ApplyOverrides`. The spammer tab now saves through `SaveLocal` (same shape as the tuner tab) and
+says so in its InfoBar; the button is "Save Preset", not "Save Spammer Config".
+
+**The seed had to go, and that decided the design.** `SaveDefaults` rewrites `defaults.yaml` from an
+explicit field list, so removing spammer from that list would silently delete the block the first
+time any *other* tab saved (tuner, gem and hotkeys all call it) — a seed that vanishes on first use
+is worse than none. So `defaults.yaml` now carries no spammer block at all and `local.yaml` is the
+single source of truth; `BuildSpammerTab` already creates an empty `default` preset when none exist,
+so a fresh install still opens on a usable editor.
+
+Guarded by three tests: presets load from `local.yaml`, `SaveDefaults` leaves no preset names in the
+written `defaults.yaml`, and `SaveLocal` round-trips them. The first version of the no-leak test
+asserted on a *reloaded* config and failed — reloading merges `local.yaml` back on top, so `Active`
+is correctly the personal one again. It now reads the file on disk, which is where the leak would be.
+
+**Hold Space could leave the spacebar down** (`d28a63a`). Stop clicked mid-loop skipped the release,
+so the key stayed held. `LauncherService.ReleaseSpace()` writes `U` directly, independent of the
+tool's loop, and the stop path calls it first. The top-right card also gained an idle/holding dot.
+
+**Left open:** the log has a two-day gap before this entry (`1b85c59`, the Hold Space commits, and
+the composer move set all landed unlogged). The preset migration this entry flagged turned out to be
+a data-loss bug rather than a tidiness one — see the entry above.
+
+## 2026-09-11 — two live-testing bugs fixed: grade parsed as G, and the matcher dropping lines
+
+Both found while the user ran the tuner against a real DG item.
+
+**Grade parsed as "G" when the item was "DG".** The OCR log proved the text was `GRADE：DG` and
+the colour score was `DG=287` (yellow) — so OCR was right and the *parser* was wrong. `DetectGradeFromLine`
+stripped the label, then a "rightmost match wins" scan let the bare `"G"` at index 1 override the longer
+`"DG"` at index 0. It stayed latent for N/G items (no nested grade letter). Now longest-first.
+
+**"One line less" — a matcher drop, not a read failure.** The user saw ~2 of 3 attribute lines.
+The captures (`logs/captures/*.png`) are decisive: every DG frame shows all 3 lines, so the OCR reads
+3 and `AttrMatcher` throws the third away when a misread character breaks the dictionary match. Four
+recurring confusions, all in `text_fixes.substring`:
+`每`→`国/盘/地`, `等級`→`等` (drops `級`), `幸運`→`幸莲`, `必殺技`→`必毅技` (`毅`≠`殺`).
+
+This **closes the open "OCR row-bucket pooling" question** ([TODO.md](../backlog/TODO.md), [IDEAS.md](../backlog/IDEAS.md)):
+the evidence shows no `row_height` pooling — the lines are all read; the drop was in the matcher. The
+fix is `b42247f` (grade) and `3b8023b` (attributes.yaml cleanup rules). Note the launcher caches
+`attributes.yaml` at startup, so the cleanup rules need a restart to take effect.
+
+A **third drop shape** followed: a dropped *trailing* stat character (`幸運` → `幸`). Because the
+truncated form is a prefix of the correct one, a plain substring replace would corrupt correct reads,
+so `71f9672` adds a `regex` fix type (negative lookahead) for all six per-level stats.
+
+A **fourth** (`必殺技` → `必技`, middle char dropped) was the only remaining shape after a 3,189-attempt
+capture run (2 drops, ~0.06%) — fixed in `54ad743`. Merged to `main` and tagged `v2.4` (2026-09-12).
+
+---
+
+## 2026-09-11 — the tuner places the cursor on 發條 and guards it (branch `v2-tuner-spring`)
+
+**Goal.** Give the Magic Tuner the composer's closed-loop cursor: put the mouse on the 發條 button
+automatically, opt-in, and stop (or re-centre) when the mouse moves away mid-run — the
+human-takes-over safety. Full design: [PLAN-TUNER-SPRING.md](../plans/PLAN-TUNER-SPRING.md).
+
+**What was decided, and why**
+
+- **Opt-in, mirroring `gem.move_mode`.** `tuner.spring_mode: manual | hid` (default `manual` — today's
+  behaviour unchanged); `tuner.spring_point: [x,y]` in `local.yaml`, calibrated by a 4th Calibrate Tuner
+  step (click the 發條 button) with a Test Click to verify. In `hid` mode the cursor is placed at the
+  end of the 5-second countdown; a missing point / window / failed placement stops the run and reports
+  on the card — never click blind.
+- **The guard is a three-way toggle** `tuner.mouse_guard: off | stop | recenter` (default `off`), because
+  the user wants all three: "refocus" (recenter), "take over" (stop), "leave home and let it run" (off).
+  `stop` halts on the first drift past `guard_px`; `recenter` re-places the cursor and keeps rolling
+  toward the target grade (which outranks a stray mouse), stopping only after `recenter_max` runaway
+  drifts. Checked once per attempt, before the click.
+- **`GemPointer` → `HidPointer`** (mechanical), so the tuner reusing it reads honestly.
+
+**What's left open (the data questions, still unanswered)**
+
+- **Does the game warp the cursor during a run?** Until measured, `stop` can false-trigger if the game
+  re-centres the pointer on its own — that is why the guard defaults to `off`, and why the plan's extra
+  mitigations (two-consecutive-polls, foreground-only judging) are the first thing to add if a run shows
+  one. **Verified live (2026-09-11):** `hid` + `off` (auto-place, no guard) and `hid` + `stop` (halt on a
+  drifted mouse) both behaved as intended, with no false-trigger seen in `stop` — weak evidence the game
+  does not warp the cursor, not yet a rigorous per-attempt measurement.
+- The guard's "once per attempt" cadence is a first cut; a live run should show whether the poll needs
+  to be more frequent (e.g. on the `SleepCheck` loop).
+
+**Commits** (branch `v2-tuner-spring`, not merged): `63ff486` rename, `d5ff0f3` config, `61bf8b9`
+4th calibrate step + Test Click, `f0de93d` placement, `8b9e2e2` guard + UI.
+
+---
+
+## 2026-09-11 — the v2.3 zip is built; publish.bat gains a public/personal split
+
+**Goal.** Build the v2.3 distributable and close the packaging gap: `publish.bat` produced a
+`publish\` folder but never the zip the README points at, and it copied `config\` wholesale — shipping
+the machine's real `local.yaml` and 14 MB of `calib_*.png` screenshots into a public zip.
+
+**What was decided, and why**
+
+- **Two publish modes.** `publish.bat` (public, the default) ships only the config templates
+  (`attributes.yaml`, `defaults.yaml`, `local.yaml.example`); `publish.bat local` ships the full
+  `config\` for a same-machine reinstall that is already calibrated. The safe one is the default, so
+  an unthinking `publish.bat` cannot leak a calibration.
+- **The publish folder is deleted before `dotnet publish`** — not just the mode's config. A stale
+  folder carries whatever a previous mode left, so the clean delete is what guarantees a public build
+  can never ship a `local.yaml` a local build left behind.
+
+**Three traps found while writing the script**
+
+- **An incremental `dotnet publish` silently drops the native OCR DLLs.** A second publish without a
+  source change produced only `SealTools.Launcher.exe` + models + config — no `onnxruntime.dll`,
+  `OpenCvSharpExtern.dll`, `libSkiaSharp.dll`, … (11 DLLs, ~170 MB). The exe is 182 MB either way, so
+  nothing looked wrong until the zip was listed against the known-good v2.1 release, which ships all 11
+  alongside the exe. The fix is the clean delete above, which forces a full publish every time. This is
+  the measured, don't-assume lesson: the "obvious" build worked, the second one didn't, and only
+  diffing the zip's file list against v2.1 caught it.
+- **NuGet content ships an 89 MB `libSkiaSharp.pdb` and `*.lib` import libraries** that
+  `-p:DebugType=None` does not touch (it only stops *our* symbols). The script strips `*.pdb` / `*.lib`
+  after publish; v2.1's zip never had them.
+- **`set VERSION=v2.3` leaked into `dotnet publish`.** MSBuild reads env vars as properties
+  (case-insensitive), so `VERSION` overrode the `Version` property and `'v2.3'` failed semver. The
+  variable is now `RELTAG`.
+- **LF-only line endings broke cmd's batch parser** (`goto`/`if` blocks → spurious
+  "not recognized" errors). The file is CRLF, and the CRLF fix must be the *last* edit — GNU
+  `sed -i` re-strips `\r`.
+
+**Measured.** `dist\SealTools-v2.3.zip` (public) = 144 MB — 11 native DLLs + exe + 3 models + 3
+templates, no `.pdb`/`.lib`, no `local.yaml`. `SealTools-v2.3-local.zip` = 159 MB — the same plus the
+full `config\` (`local.yaml` + three `calib_*.png`). The public zip built *after* the local one still
+holds only the templates.
+
+**Left open.** The zip is built but **not uploaded**: `gh` is unauthenticated and the GitHub release
+`v2.3` does not exist yet. Nor does the `v2.2` release the README advertised — its features shipped
+inside v2.3, and that row is now folded into v2.3's. The old v2.0/v2.1 folders and zips in `dist\`
+are still there, to delete once the release lands.
+
+---
+
+## 2026-09-11 — the launcher adopts WPF-UI; the window learns where it belongs
+
+**Goal.** Make the launcher readable and keep the tool status visible while playing. The project had
+WPF-UI loaded but only ever used `FluentWindow`, `ui:TitleBar` and `ui:Button` — every tab was plain
+WPF with a second, hard-coded palette beside the theme.
+
+**What was decided, and why**
+
+- **Adopt WPF-UI properly, one tab per commit.** Card-based sections, `ui:` controls, and the
+  theme's semantic brushes instead of our hex ones. The information architecture carried over
+  untouched: grouping, renames, the `Hotkeys` rename. Full checklist in
+  [PLAN-UI-CLEANUP.md](../plans/PLAN-UI-CLEANUP.md).
+- **The shell change was tried and reverted.** A `ui:NavigationView` rail rendered correctly but
+  clicking an item never switched the page, and the tab strip read better anyway — so the tabs
+  stayed and the experiment is recorded so nobody retries it blind.
+- **The window now belongs to the user.** It opens as just the tool cards, the configuration tabs
+  hide behind a chevron, it can be pinned above the game, and while a tool runs it shrinks to that
+  tool's card. Placement, size and expanded height are remembered in `local.yaml` and written
+  ~0.7 s after a move or resize settles — not only on a clean close, which is what used to lose a
+  resize when the process was killed.
+
+**Two real bugs found in review (both fixed, both were live-facing)**
+
+- **The move-set selector disabled itself.** It sat inside the arduino card, which is disabled
+  whenever the other set is active — so choosing `tuned` disabled the only control that could switch
+  back. It has its own card now.
+- **The empty check was comparing the box's border.** The frame shifts by a pixel when the game
+  window moves, which made an *empty* box score 7.7 % against a 0.01 gate and stalled the composer.
+  Comparing the interior only: empty 0.0 %, gem 0.68–0.82 on a live run.
+
+**Verified live.** Pin and placement survive a relaunch (moved to logical `(1927,3)`, reopened there
+at `619×430`, pinned). Mini mode: `920×430` idle → `920×320` running → back on stop. A full composer
+run advanced correctly with the inset fix.
+
+**Left open.** The v2.3 zip is not built or published. The robustness list, the tuner spring plan and
+the spammer key pad are all designed and waiting in [IDEAS.md](../backlog/IDEAS.md).
+
+---
+
+## 2026-09-10 (6) — the empty check was comparing the box's border, and a moved window broke it
+
+**Symptom (reported live).** The composer kept combining and never advanced, with the result box
+visibly empty. The card said "stopped" only because the run had been stopped by hand.
+
+**First check: not the guard.** The foreground guard from entry (5) was the obvious suspect, but the
+log showed it working — `diff=0.077 empty=False` for six cycles, and exactly one
+`refused: not foreground` line, at the moment focus moved to VS Code. So the check was running and
+judging; it was judging wrongly.
+
+**Diagnosis.** `save_empty_captures` was turned back on, the run repeated, and the saved crop showed
+an *empty* box. Comparing that crop against the reference per-row showed the differing pixels were
+not in the middle but in horizontal bands at the very top and bottom — y=0,1,4 and y=55–58: the box's
+drawn frame. A one-pixel shift in where the crop lands moves those rows while the flat interior stays
+identical. That alone was 7.7 % of the box — six times the 0.01 gate.
+
+**Fix.** The comparison now skips a 6 px border on each edge (`EmptyCompareInset`, passed through to
+`GemColorAnalyzer.DiffFraction`). Measured on the real crops:
+
+| inset | empty | gem |
+|---|---|---|
+| 0 (before) | 7.7 % | 35.6 % |
+| 6 (now) | **0.0 %** | **54.6 %** |
+
+The gem is drawn in the interior, so the separation gets *better*, not worse. A new test pins the
+inset, including the fallback when the inset would swallow the whole image.
+
+**Verified live afterwards**, same run, from `empty_check.txt`:
+
+```
+23:38:47  diff=0.818  empty=False     ← gem in the box (0.68–0.82 across the run)
+23:39:13  diff=0.000  empty=True      ← emptied, so the composer cleared and advanced
+```
+
+The gem signal on a real run is even wider than the offline measurement (0.82 vs 0.55), and the empty
+state is exactly 0.000 — the two states are now further apart than at any point before, with the gate
+untouched at 0.01.
+
+**Lesson worth keeping:** a 0.01 gate is only safe when the empty state really is pixel-identical. It
+was — until the window moved. The inset is what makes the tight gate honest.
+
+---
+
+## 2026-09-10 (5) — the empty check refuses to judge a screen grab that isn't the game
+
+**Why.** The check crops the result box from a screen grab (`CopyFromScreen`), so it measures
+whatever is *in front*. During the empty-detection investigation a check ran with the launcher in
+front and returned `RGB(26,26,46)` — the launcher's own dark UI — which produced a verdict about a
+window that had nothing to do with the game. Nothing warned about it; the log line just looked odd.
+
+**Fix.** `IsResultBoxEmpty` now requires the game window to be the foreground window before it
+judges. When it isn't, it answers **"not empty"** — the safe direction (the composer keeps combining
+instead of advancing a grade on a bad read) — and writes `refused: not foreground (fg="…")` to
+`empty_check.txt` so the reason is visible rather than silent. The refusal shares the same log path
+as a normal check, via a small `LogEmptyCheck` helper.
+
+This is item 1 of the "Small robustness wins" list in [IDEAS.md](../backlog/IDEAS.md), which is now ticked off.
+Not yet verified live: the refusal only fires when something steals focus from the game mid-run, so
+the next composer run with a stray click on the launcher is the observation to look for.
+
+---
+
+## 2026-09-10 (4) — a run ends after the last grade
+
+**Symptom.** The first live `arduino`-mode run worked — combines until empty, N → G → DG, empty check
+correct throughout — but after DG's material ran out it went back to N and started over.
+
+**Why.** `AdvanceGrade` advanced with `gidx = (gidx + 1) % grades.Count`, an intentional endless
+loop from v1. A run is meant to be N → G → DG once.
+
+**Fix.** `AdvanceGrade` returns false when there is no next grade; the composer reports "All grades
+done (last was DG) — composer stopped." on the card and breaks out of the loop. The manual F9
+advance still wraps. Commit `6a28ecf`.
+
+**Evidence from the run** (`<bin>\logs\empty_check.txt`) — the new empty check behaved exactly as
+designed: gem frames `diff=0.44–0.54`, empty frames `diff=0.000`, gate `0.01`.
+
+---
+
+## 2026-09-10 (3) — empty-result detection rebuilt on a pixel difference
+
+**Goal.** The composer advanced the grade while the result box plainly held a gem, so `empty_mode:
+advance_grade_clear` ran away. Chased it to the empty check, not the moves.
+
+**What was measured** (62×59 crop, the real empty reference vs a real gem frame)
+
+- The old metric — mean of six absolute colour differences — scored the pair **0.100**, under the
+  0.18 threshold: a box full of gem read as "empty". The one strong signal, the coloured fraction
+  (0.556 → 0.930), was being divided by six.
+- Euclidean norm over the same six: **0.294** (empty vs gem) and **0.001** (empty vs itself).
+- Per-pixel difference vs the saved empty crop: **0.000** for an empty box at every channel
+  threshold 10–60, **0.357** with a gem. The empty slot is static UI and renders pixel-identical.
+- A metric sweep showed *every* pure-colour feature is the wrong family: `dominant hue` is identical
+  (60°) for both, and mean R/G/B invert depending on gem colour. Structure metrics (edges 6×,
+  distinct colours 8×, laplacian variance 10×) all separate and are colour/shape-blind.
+
+**What was decided, and why**
+
+- **Primary test = fraction of pixels differing from the saved empty crop** (>30 on any channel),
+  threshold `gem.empty_distance` lowered 0.18 → **0.01**: ~35× below the gem signal, ~10× above the
+  floor. Colour- and shape-blind, so any gem colour or grade shape reads the same.
+- Euclidean colour signature kept only as a fallback for when the crop is missing.
+- **The empty reference is now taken from the launcher-hidden screenshot**, not a live screen grab:
+  the launcher covering the box at save time is what had poisoned the stored signature (0.17 away
+  from its own reference crop).
+- Diagnosis trap worth remembering: the sampler reads *screen* pixels, so a covering window makes
+  every reading garbage — a check run with the launcher in front returned `RGB(26,26,46)`.
+
+**Commit** — `f4b5f02` (branch `v2-arduino-moves`). 5 new tests, 17/17 pass.
+
+**Left open** — the composer has not yet run a full session in `arduino` mode with the new empty
+check; the next live run should show `diff=0.000` on empty boxes and `diff≈0.36` on gems in
+`<bin>\logs\empty_check.txt`.
+
+---
+
+## 2026-09-10 (2) — Test Full Cycle (Arduino)
+
+**Goal.** Let the new move set be judged on a real run before the composer is switched to it: one
+button in Calibrate Gem that plays a whole cycle with arduino moves only.
+
+**What was decided, and why**
+
+- The sequence mirrors the **composer's own loop body**, not a guess: select → Register → Combine,
+  then the composer's normal-path *deregister + register* (two Register clicks), then Combine again.
+  Without that pair a second combine does nothing. The user asked for the combine loop twice at N and
+  G; DG combines once and the cycle stops (no trailing resource clear — the user's choice).
+- It always uses the **arduino** set regardless of `gem.move_mode`; that is the point of the button.
+- All points are resolved *before* the first click, so a missing calibration can't half-run a cycle.
+
+**Measured (live)** — `test-cycle-arduino done steps=21`, game focused the whole way, gold down ~2.16M
+(the combines really ran), slots and result box empty afterwards.
+
+**Commit** — `ac0f8ec` (branch `v2-arduino-moves`).
+
+**Follow-up, same session:** the composer was switched over — `gem.move_mode: arduino` in
+`defaults.yaml` (this commit). The composer now runs the arduino set on every route; the tuned counts
+stay in `local.yaml` untouched, so switching back is one line.
+
+**Left open** — same as the entry below: no full composer run with `gem.move_mode: arduino` yet, and
+the reason `SetCursorPos` is refused in our process is still unknown.
+
+---
+
+## 2026-09-10 — cursor placement rebuilt on the Arduino; a second move set
+
+**Goal.** Finish the `SetCursorPos` bug: test the last untested hypothesis (the game's anti-cheat
+reacting to the process holding the Arduino port), then stop depending on the refused API at all.
+
+**What was decided, and why**
+
+- **The port hypothesis is refuted.** A throwaway process opened COM5, drove it, and called
+  `SetCursorPos` 30 times while holding it: 30/30 accepted. A second process managed 29/30 while the
+  port stayed held. So the refusal is not about the Arduino at all — it stays specific to the
+  launcher's process, and stays unexplained. Details and every earlier probe:
+  [CURSOR-INVESTIGATION.md](../investigations/CURSOR-INVESTIGATION.md).
+- **The cursor is now positioned with the Arduino** — a closed loop against `GetCursorPos`, which
+  always worked in our process. The HID path cannot be refused, and a placement that fails now stops
+  the tool instead of clicking somewhere arbitrary.
+- **The move set was added, not replaced.** The user asked for the inter-point movement to use the
+  same mechanism as Test Click, explicitly *without* discarding the hand-tuned `gem.movements`
+  counts. So both sets are live, selected by `gem.move_mode` (default `tuned` — nothing changes for
+  an untouched install). [MOVE-SETS.md](../spec/MOVE-SETS.md) explains both and how to test each.
+
+**Measured (live, on the reference PC)**
+
+- `D n 0` moves the cursor exactly `n` px in the process's cursor space at 100 / 250 / 500 / 600 px —
+  gain 1.0, no acceleration. A placement therefore converges in one move; from a far start, three.
+- The firmware walks a `D` move out in 10-px chunks with a 1 ms gap, so a fixed 20 ms settle read a
+  stale position and stacked corrections. Polling until the cursor stops moving fixed it.
+- Test Click lands exactly on the N radio and the radio selects; the `Register → Combine` arduino
+  route places on (829,725) → (785,871) against calibrated targets (830,726) / (786,872).
+
+**Commits** (branch `v2-arduino-moves`, not merged)
+
+| Commit | What |
+|---|---|
+| `624fddd` | `feat(v2)`: the arduino move set — `GemRoutes`, `gem.move_mode`, `MOVE-SETS.md` |
+| `2e0b043` | `fix(v2)`: closed-loop Arduino placement, failure stops the tool, mode wired to the UI |
+
+**Left open**
+
+- Why `SetCursorPos` is refused in the launcher's process — intermittently, while another process
+  under the same user/session/integrity succeeds. Not load-bearing any more; the shortest next step
+  if it ever matters is a minimal WPF app that only calls `SetCursorPos`.
+- The `arduino` move set has been tested per route through the calibrator buttons, not yet through a
+  full composer run with `gem.move_mode: arduino`.
+- The composer's runtime path (both modes) is the same call the tests make, but a live composer run
+  was not started during this session — it clicks in the game.

@@ -52,6 +52,25 @@ public sealed class GemComposer : ToolBase
         return _emptyReference;
     }
 
+    /// <summary>The composer's own log, under the application root beside the other tools' — the same
+    /// shape the pet feeder's has, and for the same reason: the launcher is a WinExe, so every
+    /// Console.WriteLine in this file goes nowhere. Anything a run should be able to tell you afterwards
+    /// has to be written to a file.</summary>
+    private void Log(string line)
+    {
+        try
+        {
+            var dir = Path.Combine(_rootDir, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "gem.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+        }
+        catch
+        {
+            // Logging must never be the reason a tool fails.
+        }
+    }
+
     public int Run(SerialPort ser, ToolState state, CancellationToken ct)
     {
         WatchCancellation(ct);
@@ -68,6 +87,29 @@ public sealed class GemComposer : ToolBase
 
         state.Cycle = 0;
         state.Grade = grades[gidx];
+
+        // Cycles per GRADE, for the card and the log. The Cycle counter above says how much work the run
+        // has done and not where it went, and where it went is the interesting part: 40 cycles on N and
+        // 3 on DG is a different run from 3 on N and 40 on DG.
+        var gradeCycles = new GradeCycles();
+
+        void ShowGradeCycles()
+        {
+            // Replaced wholesale, never mutated in place — the launcher reads ToolState from its own
+            // thread and must never see a list change underneath it (see the ownership note there).
+            state.Rows = gradeCycles.Rows(grades);
+        }
+
+        void BeginRun()
+        {
+            gradeCycles.Reset();
+            ShowGradeCycles();
+            Log($"run started at {grades[gidx]}");
+        }
+
+        // Before the first run too, so the card lists the grades the tool is about to work through
+        // rather than nothing at all.
+        ShowGradeCycles();
 
         // Calibrated points/moves only exist once the user has saved them (Save Gem Composer writes
         // the positions, Save Composer Moves writes the movements). A missing entry used to throw
@@ -161,7 +203,7 @@ public sealed class GemComposer : ToolBase
             // centre-click (a centre-click pins a raw-input game's cursor at centre).
             //
             // A cursor that can't be placed must NOT be clicked through: the click would land
-            // wherever the pointer happens to be (docs/CURSOR-INVESTIGATION.md).
+            // wherever the pointer happens to be (docs/investigations/CURSOR-INVESTIGATION.md).
             var placed = HidPointer.To(ser, WindowFinder.ComputeCursorTarget(display, gx, gy));
             if (!placed.Ok)
             {
@@ -231,7 +273,10 @@ public sealed class GemComposer : ToolBase
             {
                 try
                 {
-                    var dir = Path.Combine(AppContext.BaseDirectory, "logs", "captures");
+                    // Under the ROOT, not the executable's own folder: the launcher's "Delete captures"
+                    // button clears <root>\logs\captures, and a dev run's executable sits in bin\, so
+                    // these were written somewhere the button never looked.
+                    var dir = Path.Combine(_rootDir, "logs", "captures");
                     Directory.CreateDirectory(dir);
                     crop.ImWrite(Path.Combine(dir, $"empty_check_crop_{DateTime.Now:HHmmss_fff}.png"));
                 }
@@ -251,7 +296,7 @@ public sealed class GemComposer : ToolBase
                 var detail = refused != null
                     ? $"refused: {refused}"
                     : $"{(diff is { } f ? $"diff={f:0.000}" : "diff=n/a")} threshold={_cfg.Gem.EmptyDistance} empty={empty}";
-                File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "empty_check.txt"),
+                File.AppendAllText(Path.Combine(_rootDir, "logs", "empty_check.txt"),
                     $"{DateTime.Now:HH:mm:ss} {detail}\n");
             }
             catch { /* diagnostics must never break the loop */ }
@@ -314,6 +359,10 @@ public sealed class GemComposer : ToolBase
                 return false;
             }
 
+            // Logged as FINISHED, because it ran out — the reason the composer moved on. The count is
+            // this grade's whole share of the run, which is the number worth having afterwards.
+            Log($"grade {grades[gidx]} finished — {GradeCycles.Describe(gradeCycles.CountFor(grades[gidx]))}");
+
             gidx++;
             state.Grade = grades[gidx];
             Console.WriteLine($"[EMPTY] advancing -> {grades[gidx]}");
@@ -374,6 +423,7 @@ public sealed class GemComposer : ToolBase
                     running = true;
                     f12Was = true;
                     Console.WriteLine("[Panel] START");
+                    BeginRun();
                     Beep(523, 100);
                     SelectGradeAndRegister();
                 }
@@ -394,6 +444,7 @@ public sealed class GemComposer : ToolBase
                     if (running)
                     {
                         Console.WriteLine($"[GO] Grade: {grades[gidx]}");
+                        BeginRun();
                         Beep(523, 100);
                         SelectGradeAndRegister();
                     }
@@ -402,6 +453,9 @@ public sealed class GemComposer : ToolBase
 
                 if (f9Now && !f9Was)
                 {
+                    // Left BY HAND, and logged as that rather than as "finished": the grade did not run
+                    // out, the player moved on. The count is still the count.
+                    Log($"grade {grades[gidx]} left by hand — {GradeCycles.Describe(gradeCycles.CountFor(grades[gidx]))}");
                     gidx = (gidx + 1) % grades.Count;
                     Console.WriteLine($"[GRADE] -> {grades[gidx]}");
                     state.Grade = grades[gidx];
@@ -415,6 +469,8 @@ public sealed class GemComposer : ToolBase
 
                 cycle++;
                 state.Cycle = cycle;
+                gradeCycles.Add(grades[gidx]);
+                ShowGradeCycles();
 
                 if (QuitPressed || ct.IsCancellationRequested) break;
                 if (Hotkeys.IsDown(_cfg.Hotkeys.Start))
@@ -479,6 +535,10 @@ public sealed class GemComposer : ToolBase
         finally
         {
             state.Running = false;
+            // The run's own tally, however it ended — the last grade finishing, a stop, a pause. A run
+            // nobody was watching is exactly the one whose numbers matter afterwards.
+            if (gradeCycles.Total(grades) > 0)
+                Log($"run ended — {gradeCycles.Summary(grades)}");
         }
 
         Console.WriteLine($"\nDone. {cycle} cycles.");

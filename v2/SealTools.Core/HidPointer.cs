@@ -15,10 +15,10 @@ public sealed record CursorPlacement(bool Ok, int Steps, int? X, int? Y, string?
 // lands in the composer too. Callers keep their own sleeps in between so the composer's quit-aware
 // SleepCheck (and its tuned delays) is preserved unchanged.
 //
-// Coordinates are CLIENT-RELATIVE PHYSICAL pixels (docs/COORDINATES.md); To() converts the target
+// Coordinates are CLIENT-RELATIVE PHYSICAL pixels (docs/spec/COORDINATES.md); To() converts the target
 // with the measured DisplayInfo into the process's cursor space and drives the cursor there.
 //
-// The cursor is positioned with the ARDUINO, not SetCursorPos (docs/CURSOR-INVESTIGATION.md): the
+// The cursor is positioned with the ARDUINO, not SetCursorPos (docs/investigations/CURSOR-INVESTIGATION.md): the
 // launcher's process is intermittently refused by SetCursorPos/SetPhysicalCursorPos while the
 // identical call succeeds from another process, and a refused move is silently ignored — so the old
 // code clicked wherever the mouse happened to be. The HID path cannot be refused, and To() now
@@ -118,7 +118,7 @@ public static class HidPointer
     /// the time anyone looks — the card shows a sentence and the caller moves on. So a failure writes
     /// the whole trace: where the cursor started, what each step asked for, where it actually ended
     /// up, and the damping factor. That is enough to READ the HID gain off, which is the number the
-    /// loop silently assumes is 1:1 (docs/CURSOR-INVESTIGATION.md).
+    /// loop silently assumes is 1:1 (docs/investigations/CURSOR-INVESTIGATION.md).
     ///
     /// Written only on failure, so a working placement pays nothing.</summary>
     private static void Trace(string line)

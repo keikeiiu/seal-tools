@@ -3,7 +3,7 @@ using Xunit;
 
 namespace SealTools.Tests;
 
-// Pins the physical-offset -> screen-coordinate conversion (docs/COORDINATES.md). The numbers are
+// Pins the physical-offset -> screen-coordinate conversion (docs/spec/COORDINATES.md). The numbers are
 // the real ones measured on the reference machine: 150% display, physical client 2865x1789 @ (14,48),
 // logical client 1910x1193 @ (9,32), calibrated N at physical client-relative (1083,998).
 public class CursorTargetTests

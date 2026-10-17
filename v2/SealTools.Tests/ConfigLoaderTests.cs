@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using SealTools.Core;
 using SealTools.Core.Config;
 using Xunit;
+using YamlDotNet.RepresentationModel;
 
 namespace SealTools.Tests;
 
@@ -61,63 +63,774 @@ public class ConfigLoaderTests
         }
     }
 
-    // SaveDefaults rewrites defaults.yaml from an explicit field list, so a field that exists in
-    // defaults.yaml but is missing from that list is silently dropped on every launcher Save.
-    // (ocr_retries was: 3 -> 0, which quietly disabled the OCR re-scan.)
+    /// <summary>A HAND-EDITED EMPTY BODY. `run:` with no value loads as a null dictionary VALUE, and
+    /// TryGetValue then reports the name as PRESENT — so the Quest tab's constructor, Duplicate, the
+    /// card's overrides and the runner each dereferenced it. The loader repairs the shape once, and
+    /// this pins that it does: without the call in Load, every assertion below is a NullReferenceException
+    /// somewhere later, with no message to say which key was value-less.</summary>
     [Fact]
-    public void SaveDefaultsPreservesEveryPortableField()
+    public void ValueLessQuestBodiesLoadAsEmptyInsteadOfNull()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
+            File.AppendAllText(Path.Combine(dir, "local.yaml"),
+                "\nquest:\n  active: default\n  presets:\n    default:\n    a_flow: {}\n" +
+                "  active_sequence: run\n  sequences:\n    run:\n");
+
+            var quest = new ConfigLoader(dir).Load().Quest;
+
+            Assert.NotNull(quest.Presets["default"]);
+            Assert.Empty(quest.Presets["default"].Steps);
+            // The read that crashed MainWindow's constructor before any window appeared.
+            Assert.NotNull(quest.ActivePreset);
+            Assert.NotNull(quest.Sequences["run"]);
+            Assert.Empty(quest.Sequences["run"].Entries);
+            Assert.NotNull(quest.ActiveSequenceOrNull);
+            // A body that was written normally is left exactly as it was.
+            Assert.NotNull(quest.Presets["a_flow"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── The portable settings block (PLAN-DEPLOY.md step 1) ─────────────────────────────────────────
+    //
+    // The settings block is the same portable data in the machine's own file, so that one day the save
+    // target can move there and an update cannot cover it. Nothing calls SaveSettings yet; these exist
+    // first because the failure they guard is a value written to a file and then silently discarded on
+    // the way back — which is how ocr_retries, gem.move_mode, a hand-added pet: block and a whole
+    // spammer block were each lost once.
+
+    /// <summary>Every leaf path in a YAML file, dotted — enough to compare what two writers emit without
+    /// depending on their types, which is the only way to fence an anonymous projection.</summary>
+    private static List<string> YamlPaths(string file, string? onlyUnder = null)
+    {
+        var stream = new YamlStream();
+        using (var reader = new StreamReader(file))
+            stream.Load(reader);
+
+        var paths = new List<string>();
+        Walk(stream.Documents[0].RootNode, "");
+        return onlyUnder == null
+            ? paths
+            : paths.Where(p => p.StartsWith(onlyUnder + ".", StringComparison.Ordinal))
+                   .Select(p => p[(onlyUnder.Length + 1)..]).ToList();
+
+        void Walk(YamlNode node, string prefix)
+        {
+            switch (node)
+            {
+                case YamlMappingNode map when map.Children.Count > 0:
+                    foreach (var (key, value) in map.Children)
+                        Walk(value, prefix.Length == 0 ? key.ToString() : $"{prefix}.{key}");
+                    break;
+                case YamlMappingNode:
+                    paths.Add(prefix + " {}");
+                    break;
+                case YamlSequenceNode seq when seq.Children.Count > 0:
+                    Walk(seq.Children[0], prefix + "[]");
+                    break;
+                case YamlSequenceNode:
+                    paths.Add(prefix + " []");
+                    break;
+                default:
+                    paths.Add(prefix);
+                    break;
+            }
+        }
+    }
+
+    private static YamlNode? Child(YamlNode? node, string key)
+    {
+        if (node is not YamlMappingNode map) return null;
+        foreach (var (k, v) in map.Children)
+            if (k.ToString() == key) return v;
+        return null;
+    }
+
+    /// <summary>True when a section carries no value at all. This writer emits a null as a BARE key, so
+    /// an unset section is present in the file as an empty scalar — the same shape the real local.yaml
+    /// already gives its `spring_point:` and `startup_step:`. "Carries nothing" is therefore the right
+    /// test for "the fold did not bring this section across"; "absent" would be wrong.</summary>
+    private static bool CarriesNothing(YamlNode? node) => node switch
+    {
+        null => true,
+        YamlScalarNode scalar => string.IsNullOrWhiteSpace(scalar.Value),
+        YamlMappingNode map => map.Children.Count == 0,
+        _ => false,
+    };
+
+    /// <summary>The settings subtree of a local.yaml, or null when the file carries none.</summary>
+    private static YamlNode? SettingsNode(string file) => Child(RootNode(file), "settings");
+
+    private static YamlNode RootNode(string file)
+    {
+        var stream = new YamlStream();
+        using (var reader = new StreamReader(file))
+            stream.Load(reader);
+        return stream.Documents[0].RootNode;
+    }
+
+    // ── Step 2: the base rule, the fold, and the root marker (PLAN-DEPLOY.md §4, §6) ─────────────────
+    //
+    // An install that takes an update gets config/defaults.yaml.example — the shipped template — beside
+    // its own config/defaults.yaml, which holds every setting the player ever saved. The first launch
+    // after that moves their own values into local.yaml once and stops reading the old file; the tests
+    // below are the whole of that contract.
+
+    /// <summary>The shipped defaults as this release writes them — the file the zip carries under
+    /// config/defaults.yaml.example. Using the repo's own file rather than a hand-made stub is what makes
+    /// these tests exercise the real key set, comments and all.</summary>
+    private static string ShippedDefaults() => File.ReadAllText(Path.Combine(FindConfigDir(), "defaults.yaml"));
+
+    /// <summary>A temp install AFTER an update has landed: the shipped template beside the player's own
+    /// legacy defaults.yaml, and a seeded local.yaml. `legacy` defaults to the shipped text, so a test
+    /// names only the values it wants the player to have changed.</summary>
+    private static string MakeTempInstall(string shipped, string? legacy = null)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_install_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var src = FindConfigDir();
+        File.Copy(Path.Combine(src, "attributes.yaml"), Path.Combine(dir, "attributes.yaml"));
+        File.WriteAllText(Path.Combine(dir, "defaults.yaml.example"), shipped);
+        File.WriteAllText(Path.Combine(dir, "defaults.yaml"), legacy ?? shipped);
+        File.Copy(Path.Combine(src, "local.yaml.example"), Path.Combine(dir, "local.yaml"));
+        return dir;
+    }
+
+    [Fact]
+    public void TheFoldCarriesOnlyWhatThePlayerChanged()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var legacyBytes = File.ReadAllBytes(Path.Combine(dir, "defaults.yaml"));
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("S", cfg.Tuner.TargetGrade);
+
+            var settings = SettingsNode(Path.Combine(dir, "local.yaml"));
+            Assert.NotNull(settings);
+            // The section holding the change was carried whole — the apply side assigns the object, so a
+            // lone `target_grade` leaf would have dragged the other twelve tuner defaults in with it.
+            Assert.False(CarriesNothing(Child(settings, "tuner")));
+            Assert.Equal("S", Child(Child(settings, "tuner"), "target_grade")?.ToString());
+            Assert.Equal("3", Child(Child(settings, "tuner"), "ocr_retries")?.ToString());
+            // And the sections that do NOT differ were not carried at all, which is the point of the
+            // whole design: they go on tracking the shipped template, so a default a later release
+            // changes still reaches this machine.
+            Assert.True(CarriesNothing(Child(settings, "window")));
+            Assert.True(CarriesNothing(Child(settings, "hotkeys")));
+            Assert.True(CarriesNothing(Child(settings, "gem")));
+            Assert.True(CarriesNothing(Child(settings, "pet")));
+            Assert.True(CarriesNothing(Child(settings, "arduino")));
+
+            // The legacy file is the rollback copy: never written, never moved, never deleted.
+            Assert.Equal(legacyBytes, File.ReadAllBytes(Path.Combine(dir, "defaults.yaml")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldMarksItselfDoneEvenWhenNothingDiffers()
+    {
+        // A player who never changed a value: nothing to carry, and the marker still has to be set — or
+        // the next release's launch would fold this template against that release's example and pin
+        // every default it changed as the player's own.
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped);
+        try
+        {
+            new ConfigLoader(dir).Load();
+
+            var settings = SettingsNode(Path.Combine(dir, "local.yaml"));
+            Assert.Equal("true", Child(settings, "legacy_folded")?.ToString());
+            Assert.True(CarriesNothing(Child(settings, "tuner")));
+            Assert.True(CarriesNothing(Child(settings, "window")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldRunsOnceAndTheLegacyFileIsNeverReadAgain()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var first = new ConfigLoader(dir).Load();
+            Assert.Equal("S", first.Tuner.TargetGrade);
+
+            var afterFirstLoad = File.ReadAllBytes(Path.Combine(dir, "local.yaml"));
+
+            // A second launch writes nothing at all: the marker means the legacy file is not read.
+            var second = new ConfigLoader(dir).Load();
+            Assert.Equal("S", second.Tuner.TargetGrade);
+            Assert.Equal(afterFirstLoad, File.ReadAllBytes(Path.Combine(dir, "local.yaml")));
+
+            // Which is decisive with the legacy file GONE: the value cannot have come from it.
+            File.Delete(Path.Combine(dir, "defaults.yaml"));
+            Assert.Equal("S", new ConfigLoader(dir).Load().Tuner.TargetGrade);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AChangedShippedDefaultIsCarriedAcrossAsThePlayersOwn()
+    {
+        // The fold's approximation, pinned so nobody later mistakes it for a bug: it reads "the player
+        // changed it" as "it differs from the shipped template", so a default a RELEASE changed, under a
+        // key this player never touched, is carried across as if they had chosen it. The direction is the
+        // safe one — a saved value beats a silent behaviour change — and the release note that names the
+        // key is the habit that covers it.
+        var shippedNow = ShippedDefaults().Replace("target_grade: DG", "target_grade: S");
+        var legacyFromTheOldRelease = ShippedDefaults();
+        var dir = MakeTempInstall(shippedNow, legacyFromTheOldRelease);
+        try
+        {
+            Assert.Equal("DG", new ConfigLoader(dir).Load().Tuner.TargetGrade);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheFoldLeavesTheMachineHalfOfLocalYamlAlone()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        try
+        {
+            var before = new ConfigLoader(dir).LoadLocal()!;
+            Assert.NotNull(before.Tuner?.Ocr);
+
+            new ConfigLoader(dir).Load();
+
+            // The fold writes local.yaml, which is also where this machine's calibration lives — the one
+            // thing in the install that cannot be regenerated from the repo.
+            var after = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(before.Tuner!.Ocr!.Region.Left, after.Tuner!.Ocr!.Region.Left);
+            Assert.Equal(before.Gem!.GradePositions!.Count, after.Gem!.GradePositions!.Count);
+            Assert.NotNull(after.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AFoldThatCannotBeWrittenStillLoadsTheLegacyValues()
+    {
+        var shipped = ShippedDefaults();
+        var dir = MakeTempInstall(shipped, shipped.Replace("target_grade: DG", "target_grade: S"));
+        var localPath = Path.Combine(dir, "local.yaml");
+        try
+        {
+            // A read-only local.yaml stands in for the medium the plan names: the atomic writer's Move
+            // cannot replace it, so the fold fails the way it would on a read-only stick or a full disk.
+            File.SetAttributes(localPath, FileAttributes.ReadOnly);
+            var untouched = File.ReadAllBytes(localPath);
+
+            // Nothing throws...
+            var cfg = new ConfigLoader(dir).Load();
+
+            // ...the legacy values are still in force for this session, from the fallback layer...
+            Assert.Equal("S", cfg.Tuner.TargetGrade);
+            // ...the marker was not set, so the fold retries on the next launch...
+            Assert.Equal(untouched, File.ReadAllBytes(localPath));
+            // ...and the failed write left no litter.
+            Assert.Empty(Directory.GetFiles(dir, "local.yaml.*.tmp"));
+        }
+        finally
+        {
+            File.SetAttributes(localPath, FileAttributes.Normal);
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ACheckoutWithNoShippedTemplateReadsExactlyWhatItDidBefore()
+    {
+        // No defaults.yaml.example: a repo checkout, and every install that has not taken an update.
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("TW_LIVE", cfg.Window.Title);
+            Assert.Equal("DG", cfg.Tuner.TargetGrade);
+
+            // And no fold ran: without a shipped template there are not two files to compare.
+            Assert.Null(new ConfigLoader(dir).LoadLocal()!.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AFreshInstallWithOnlyTheShippedTemplateLoads()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_fresh_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var src = FindConfigDir();
+        File.Copy(Path.Combine(src, "attributes.yaml"), Path.Combine(dir, "attributes.yaml"));
+        File.Copy(Path.Combine(src, "defaults.yaml"), Path.Combine(dir, "defaults.yaml.example"));
+        File.Copy(Path.Combine(src, "local.yaml.example"), Path.Combine(dir, "local.yaml.example"));
+        try
+        {
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("TW_LIVE", cfg.Window.Title);
+            // local.yaml was seeded, and no fold ran: there is no legacy file to fold.
+            Assert.True(File.Exists(Path.Combine(dir, "local.yaml")));
+            Assert.Null(new ConfigLoader(dir).LoadLocal()!.Settings);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheRootMarkerAcceptsEitherDefaultsName()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sealtools_root_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "config"));
+        try
+        {
+            Assert.False(RootDir.IsRoot(dir));
+
+            File.WriteAllText(Path.Combine(dir, "config", "defaults.yaml"), "window:\n");
+            Assert.True(RootDir.IsRoot(dir));
+            File.Delete(Path.Combine(dir, "config", "defaults.yaml"));
+
+            // The name an install has after an update, and the reason the probe had to widen: without it
+            // a folder that has taken one is no longer recognisable as an install at all.
+            File.WriteAllText(Path.Combine(dir, "config", "defaults.yaml.example"), "window:\n");
+            Assert.True(RootDir.IsRoot(dir));
+
+            // And the walk finds it from below, which is what a dev run needs.
+            var nested = Path.Combine(dir, "bin", "Debug", "net8.0-windows");
+            Directory.CreateDirectory(nested);
+            Assert.Equal(dir, RootDir.Find(nested));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The packaging rule, checked from the suite as well as from the script: the public
+    /// branch's explicit copy list is the enforcement seam, so a file the app writes must never be named
+    /// there. Precedent for reading a real repo file from a test: FirmwareSketchTests reads the .ino.</summary>
+    [Fact]
+    public void ThePublicZipListCarriesNoFileThePlayerOwns()
+    {
+        var path = "";
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "v2", "publish.bat");
+            if (File.Exists(candidate)) { path = candidate; break; }
+        }
+
+        Assert.False(string.IsNullOrEmpty(path), "v2/publish.bat was not found by walking up from " + AppContext.BaseDirectory);
+        var lines = File.ReadAllLines(path);
+
+        var fromConfig = lines
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("copy /Y config\\", StringComparison.Ordinal))
+            .Select(l => l["copy /Y config\\".Length..].Split(' ')[0])
+            .ToList();
+
+        // Exactly the four a fresh install needs and nothing it writes. A fifth line for a file the app
+        // owns fails here — the same rule the script's own allow-list check enforces against the zip.
+        var expected = new List<string>
+        {
+            "attributes.yaml", "defaults.yaml", "local.yaml.example", "attributes.us.yaml.example",
+        };
+        Assert.Equal(expected, fromConfig);
+
+        // The shipped defaults go out under the TEMPLATE name, so an extract cannot cover the player's
+        // own defaults.yaml — which is where every setting they ever saved lives.
+        Assert.Contains(lines, l => l.Contains(@"config\defaults.yaml      %PUB%\config\defaults.yaml.example", StringComparison.Ordinal));
+
+        // And the feeding table, which was in no zip until this release.
+        Assert.Contains(lines, l => l.TrimStart().StartsWith("copy /Y docs\\pet-data.csv", StringComparison.Ordinal));
+    }
+
+    /// <summary>The fence for the mirror, and it compares what the two WRITERS actually emit rather than
+    /// two lists of names kept in step by hand: the projection into defaults.yaml, the mirror into
+    /// local.yaml's settings block. A field added to one and forgotten in the other fails here — which is
+    /// the whole reason the mirror exists rather than a second hand-written list.
+    ///
+    /// Two differences are deliberate and named:
+    ///   arduino.port — the projection writes it (as "") because a SHIPPED file must clear whatever port
+    ///     the builder's machine had; the mirror must not carry it, because a port is not portable and
+    ///     local.yaml keeps this machine's own in the arduino block beside it.
+    ///   legacy_folded — the fold's marker, which has no counterpart in a shipped file.</summary>
+    /// The reference is the TEMPLATE the repo ships — the file publish.bat packages as
+    /// config/defaults.yaml.example and the app reads as its base — rather than a second writer's output.
+    /// Nothing writes it any more, so it is a stable reference instead of two things to keep in step.</summary>
+    [Fact]
+    public void TheSettingsMirrorCarriesExactlyTheShippedTemplatesFields()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            loader.SaveSettings(loader.Load());
+
+            var shipped = YamlPaths(Path.Combine(FindConfigDir(), "defaults.yaml"));
+            var mirrored = YamlPaths(Path.Combine(dir, "local.yaml"), onlyUnder: "settings");
+
+            var missingFromMirror = shipped.Except(mirrored).Where(p => p != "arduino.port").ToList();
+            var extraInMirror = mirrored.Except(shipped).Where(p => p != "legacy_folded").ToList();
+
+            Assert.Empty(missingFromMirror);
+            Assert.Empty(extraInMirror);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The same list the test above walks, pointed at the new path and READ BACK: every portable
+    /// section, set to a value that differs from its default so a missing link cannot pass. The existing
+    /// trip through defaults.yaml is <see cref="SaveDefaultsPreservesEveryPortableField"/>; this is the
+    /// trip through local.yaml, which is the one the update cannot cover.</summary>
+    [Fact]
+    public void SaveSettingsPreservesEveryPortableField()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
             var loader = new ConfigLoader(dir);
             var before = loader.Load();
-            Assert.Equal(3, before.Tuner.OcrRetries);
 
-            // Set a value that differs from the property default, or the assertions below pass even
-            // when the field is missing from the projection — which is how move_mode was lost.
-            before.Gem.MoveMode = "tuned";
-
-            // A variant that is NOT the shipped one, for the same reason: with the default `tw` this
-            // would pass whether or not `game` is projected at all.
+            before.Window.Title = "MY_WINDOW";
+            before.ReferenceWindow.Width = 111;
+            before.ReferenceWindow.Height = 222;
             before.Game.Variant = "us";
-
-            // Two settings the feeder actually reads (`PetTool` uses both). Non-default on purpose:
-            // against the defaults these pass whether or not the projection carries them.
+            before.Arduino.Vid = 0x1234;
+            before.Arduino.Pid = new List<int> { 5, 6 };
+            before.Arduino.Baud = 57600;
+            before.Hotkeys.Start = 65;
+            before.Hotkeys.Quit = 66;
+            before.Hotkeys.AdvanceGrade = 67;
+            before.Hotkeys.Pause = 68;
+            before.Tuner.GradeOrder = new List<string> { "S", "A" };
+            before.Tuner.TargetGrade = "S";
+            before.Tuner.MaxRetries = 4;
+            before.Tuner.SaveCaptures = true;
+            before.Tuner.OcrRetries = 5;
+            before.Tuner.SpringMode = "hid";
+            before.Tuner.MouseGuard = "stop";
+            before.Tuner.GuardPx = 11;
+            before.Tuner.RecenterMax = 7;
+            before.Tuner.Models.Detector = "det.onnx";
+            before.Tuner.Timing.OcrDelay = 0.75;
+            before.Tuner.GradeColors.Yellow.RMin = 77;
+            before.Tuner.Filter.Enabled = true;
+            before.Gem.Grades = new List<string> { "A", "B" };
+            before.Gem.StartGrade = "A";
+            before.Gem.EmptyMode = "advance_grade";
+            before.Gem.EmptyStreak = 4;
+            before.Gem.ColoredGapMin = 55;
+            before.Gem.SaveEmptyCaptures = true;
+            before.Gem.MoveMode = "tuned";
             before.Pet.ItemsPerMinute = 7;
             before.Pet.PetSlotOccupiedAbove = 0.25;
 
-            loader.SaveDefaults(before);
-
+            loader.SaveSettings(before);
             var after = new ConfigLoader(dir).Load();
-            Assert.Equal(before.Tuner.OcrRetries, after.Tuner.OcrRetries);
-            Assert.Equal(before.Tuner.SaveCaptures, after.Tuner.SaveCaptures);
-            Assert.Equal(before.Tuner.MaxRetries, after.Tuner.MaxRetries);
-            Assert.Equal(before.Tuner.TargetGrade, after.Tuner.TargetGrade);
-            Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
-            Assert.Equal(before.Tuner.SpringMode, after.Tuner.SpringMode);
-            Assert.Equal(before.Tuner.MouseGuard, after.Tuner.MouseGuard);
-            Assert.Equal(before.Tuner.GuardPx, after.Tuner.GuardPx);
-            Assert.Equal(before.Tuner.RecenterMax, after.Tuner.RecenterMax);
 
-            // NOT window.title any more. `window` is still written (the resolved copy), but the VARIANT
-            // is the authority and the load overrides the copy — so the round-trip to compare is the
-            // title the variant resolves to. `WithNoVariantTheWindowTitleStillRoundTrips` below covers
-            // the case where there is no variant and the field stands on its own.
+            Assert.Equal("MY_WINDOW", Child(Child(SettingsNode(Path.Combine(dir, "local.yaml")), "window"), "title")?.ToString());
+            Assert.Equal(111, after.ReferenceWindow.Width);
+            Assert.Equal(222, after.ReferenceWindow.Height);
+            // window.title is the RESOLVED copy when a variant is set — the variant is the authority, as
+            // the defaults.yaml test above records — so the title to compare is the one it resolves to.
             Assert.Equal("US_LIVE", after.Window.Title);
             Assert.Equal("us", after.Game.Variant);
             Assert.Equal("attributes.us.yaml", after.Game.Variants["us"].Attributes);
-            Assert.Equal(before.Arduino.Baud, after.Arduino.Baud);
-            // The pet flow's two portable settings: they live on PetConfig, `PetTool` reads both, and
-            // they had NO `pet:` block in the projection — so a hand-added block in defaults.yaml was
-            // read once and then deleted by the next Save from any tab.
-            Assert.Equal(before.Pet.ItemsPerMinute, after.Pet.ItemsPerMinute);
-            Assert.Equal(before.Pet.PetSlotOccupiedAbove, after.Pet.PetSlotOccupiedAbove);
-            // spammer is deliberately NOT in this list — see SaveDefaultsLeavesSpammerPresetsAlone.
+            Assert.Equal(0x1234, after.Arduino.Vid);
+            Assert.Equal(new List<int> { 5, 6 }, after.Arduino.Pid);
+            Assert.Equal(57600, after.Arduino.Baud);
+            Assert.Equal(65, after.Hotkeys.Start);
+            Assert.Equal(66, after.Hotkeys.Quit);
+            Assert.Equal(67, after.Hotkeys.AdvanceGrade);
+            Assert.Equal(68, after.Hotkeys.Pause);
+            Assert.Equal(new List<string> { "S", "A" }, after.Tuner.GradeOrder);
+            Assert.Equal("S", after.Tuner.TargetGrade);
+            Assert.Equal(4, after.Tuner.MaxRetries);
+            Assert.True(after.Tuner.SaveCaptures);
+            Assert.Equal(5, after.Tuner.OcrRetries);
+            Assert.Equal("hid", after.Tuner.SpringMode);
+            Assert.Equal("stop", after.Tuner.MouseGuard);
+            Assert.Equal(11, after.Tuner.GuardPx);
+            Assert.Equal(7, after.Tuner.RecenterMax);
+            Assert.Equal("det.onnx", after.Tuner.Models.Detector);
+            Assert.Equal(0.75, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(77, after.Tuner.GradeColors.Yellow.RMin);
+            Assert.True(after.Tuner.Filter.Enabled);
+            Assert.Equal(new List<string> { "A", "B" }, after.Gem.Grades);
+            Assert.Equal("A", after.Gem.StartGrade);
+            Assert.Equal("advance_grade", after.Gem.EmptyMode);
+            Assert.Equal(4, after.Gem.EmptyStreak);
+            Assert.Equal(55, after.Gem.ColoredGapMin);
+            Assert.True(after.Gem.SaveEmptyCaptures);
             Assert.Equal("tuned", after.Gem.MoveMode);
-            Assert.Equal(before.Gem.StartGrade, after.Gem.StartGrade);
-            Assert.Equal(before.Gem.EmptyMode, after.Gem.EmptyMode);
-            Assert.Equal(before.Gem.ColoredGapMin, after.Gem.ColoredGapMin);
+            Assert.Equal(7, after.Pet.ItemsPerMinute);
+            Assert.Equal(0.25, after.Pet.PetSlotOccupiedAbove);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>With NO variant the title stands on its own through the new path too — the case the
+    /// variant would otherwise hide.</summary>
+    [Fact]
+    public void WithNoVariantTheSettingsTitleStillRoundTrips()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Game.Variant = "";
+            cfg.Window.Title = "MY_OWN_TITLE";
+
+            loader.SaveSettings(cfg);
+
+            Assert.Equal("MY_OWN_TITLE", new ConfigLoader(dir).Load().Window.Title);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The block goes to the machine's file and nowhere else. defaults.yaml is what publish.bat
+    /// copies into a release zip, so a save that touched it would be publishing one machine's settings —
+    /// and until step 4 of the plan lands it is still the file the launcher reads its values from, so a
+    /// write here would also be a behaviour change in a step that promises none.</summary>
+    [Fact]
+    public void SaveSettingsWritesLocalYamlAndLeavesDefaultsAlone()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            var defaultsPath = Path.Combine(dir, "defaults.yaml");
+            var untouched = File.ReadAllBytes(defaultsPath);
+
+            cfg.Tuner.GuardPx = 13;
+            loader.SaveSettings(cfg);
+
+            Assert.Equal(untouched, File.ReadAllBytes(defaultsPath));
+            Assert.Equal("13", Child(Child(SettingsNode(Path.Combine(dir, "local.yaml")), "tuner"), "guard_px")?.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>2026-10-13: the client switch rewrote defaults.yaml and left a stray key in it. The cause
+    /// is GameConfig.Active — a reference INTO Variants — which the serialiser writes twice, the second
+    /// time as a YAML anchor/alias pair (`us: &amp;o0 … active: *o0`). The mirror names the variant and the
+    /// table and never the resolved object, and this pins that with a variant actually set, because with
+    /// none the alias cannot appear at all.
+    ///
+    /// Scoped to the settings subtree on purpose: `active:` is a legitimate key elsewhere in local.yaml
+    /// (the spammer's active preset), so the whole-file check would fail for the wrong reason.</summary>
+    [Fact]
+    public void TheSettingsBlockNamesTheVariantAndNeverAliasesIt()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Game.Variant = "us";
+
+            loader.SaveSettings(cfg);
+
+            var game = Child(SettingsNode(Path.Combine(dir, "local.yaml")), "game");
+            Assert.NotNull(game);
+            Assert.Null(Child(game, "active"));
+            Assert.Equal("us", Child(game, "variant")?.ToString());
+            var written = File.ReadAllText(Path.Combine(dir, "local.yaml"));
+            Assert.DoesNotContain("&o", written);
+            Assert.DoesNotContain("*o", written);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A PARTIAL block — which is what the fold writes, since it carries only the values the
+    /// player changed — must leave everything it does not mention standing, and must still apply a value
+    /// it DOES state when that value is zero or empty. This is the rule the whole mirror is shaped
+    /// around: with non-nullable fields, "not stated" and "zero" are the same thing, which is how a
+    /// projection has blanked a setting four times in this repo (ocr_retries 3 → 0 among them).</summary>
+    [Fact]
+    public void APartialSettingsBlockLeavesTheRestStanding()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var before = loader.Load();
+
+            File.AppendAllText(Path.Combine(dir, "local.yaml"),
+                "\nsettings:\n  tuner:\n    guard_px: 33\n  gem:\n    colored_gap_min: 0\n");
+
+            var after = new ConfigLoader(dir).Load();
+
+            Assert.Equal(33, after.Tuner.GuardPx);
+            // Stated as ZERO on purpose: 0 is a legal colored_gap_min, so a `> 0` guard would have read
+            // a deliberate value as silence and quietly left the shipped one in place.
+            Assert.Equal(0, after.Gem.ColoredGapMin);
+            // And every value the block does not mention is untouched.
+            Assert.Equal(before.Tuner.MaxRetries, after.Tuner.MaxRetries);
+            Assert.Equal(before.Tuner.SpringMode, after.Tuner.SpringMode);
+            Assert.Equal(before.Tuner.Timing.OcrDelay, after.Tuner.Timing.OcrDelay);
+            Assert.Equal(before.Gem.MoveMode, after.Gem.MoveMode);
+            Assert.Equal(before.Window.Title, after.Window.Title);
+            Assert.Equal(before.Hotkeys.Start, after.Hotkeys.Start);
+            Assert.Equal(before.Pet.ItemsPerMinute, after.Pet.ItemsPerMinute);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A top-level block the app does not own survives a save, verbatim and with its comment.
+    /// A save re-serialises an object graph, so before this it DELETED anything the class does not model
+    /// — the same silent-deletion shape as the four recorded field losses, one level up.</summary>
+    [Fact]
+    public void ATopLevelBlockTheAppDoesNotOwnSurvivesASave()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var localPath = Path.Combine(dir, "local.yaml");
+            File.AppendAllText(localPath,
+                "\n# My own notes about this machine, which nothing should delete.\nmy_notes:\n  monitor: \"left\"\n  notes:\n  - and a list\n");
+
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Tuner.GuardPx = 17;
+            loader.SaveSettings(cfg);
+
+            var written = File.ReadAllText(localPath);
+            Assert.Contains("my_notes:", written);
+            // Quoted in the input and quoted in the output, which is the real assertion: the block is
+            // carried through as TEXT, not parsed and re-emitted — a re-serialisation would drop the
+            // quotes and any other styling the author chose.
+            Assert.Contains("monitor: \"left\"", written);
+            Assert.Contains("- and a list", written);
+            Assert.Contains("# My own notes about this machine", written);      // comment included
+            Assert.Equal("17", Child(Child(SettingsNode(localPath), "tuner"), "guard_px")?.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The other half of that rule: a block the app DOES own is still rewritten, so the safety
+    /// above is not bought by making saves do nothing.</summary>
+    [Fact]
+    public void ABlockTheAppOwnsIsStillRewritten()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var localPath = Path.Combine(dir, "local.yaml");
+            File.AppendAllText(localPath, "\nui:\n  left: 111\n  pinned: false\n");
+
+            var loader = new ConfigLoader(dir);
+            loader.UpdateLocal(l => l.Ui = new ConfigLoader.LocalUi { Left = 222, Pinned = true });
+
+            var local = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(222, local.Ui!.Left);
+            Assert.True(local.Ui.Pinned);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The owned-block list is a fixed list too, and this is its fence: every property of
+    /// LocalOverrides must be named in it, or a block added to the class would be treated as foreign —
+    /// preserved by accident and never updated by any save.</summary>
+    [Fact]
+    public void EveryLocalOverridesBlockIsInTheOwnedList()
+    {
+        foreach (var prop in typeof(ConfigLoader.LocalOverrides).GetProperties())
+        {
+            // The same underscoring the YAML writer applies: BuySell -> buy_sell, Ui -> ui.
+            var name = "";
+            for (var i = 0; i < prop.Name.Length; i++)
+            {
+                var c = prop.Name[i];
+                if (char.IsUpper(c) && i > 0 && char.IsLower(prop.Name[i - 1])) name += "_";
+                name += char.ToLowerInvariant(c);
+            }
+
+            Assert.Contains(name, ConfigLoader.OwnedLocalBlocks);
+        }
+    }
+
+    /// <summary>The reason the writer shape changed, as a test. Two writers that each change a different
+    /// part of local.yaml must both survive; before the gated read-modify-write the second one saved the
+    /// snapshot it had loaded earlier and deleted the first one's block — silently, from two threads that
+    /// both reported success (the WPF thread saving a calibration, and the pet tool's PersistPetState).</summary>
+    [Fact]
+    public void TwoWritersEachKeepTheOthersBlock()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            var cfg = loader.Load();
+            cfg.Tuner.GuardPx = 13;
+            loader.SaveSettings(cfg);
+
+            // The other writer, which loaded nothing and knows only its own block.
+            loader.UpdateLocal(l => l.Ui = new ConfigLoader.LocalUi { Left = 456, Pinned = true });
+
+            var local = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(456, local.Ui!.Left);
+            Assert.Equal(13, local.Settings!.Tuner!.GuardPx);
+            Assert.Equal(13, new ConfigLoader(dir).Load().Tuner.GuardPx);
         }
         finally
         {
@@ -188,22 +901,20 @@ public class ConfigLoaderTests
     }
 
     [Fact]
-    public void SaveLocalPersistsTheCalibrationEnvironmentBlock()
+    public void UpdateLocalPersistsTheCalibrationEnvironmentBlock()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal()!;
-            local.Calibration = new CalibrationInfo
+            loader.UpdateLocal(local => local.Calibration = new CalibrationInfo
             {
                 DpiScale = 1.5,
                 MonitorDpi = 144,
                 Screen = new System.Collections.Generic.List<int> { 3840, 2160 },
                 ClientSize = new System.Collections.Generic.List<int> { 2865, 1789 },
                 MeasuredAt = "2026-09-09 21:00:00",
-            };
-            loader.SaveLocal(local);
+            });
 
             var reloaded = new ConfigLoader(dir).Load();
             Assert.Equal(1.5, reloaded.Calibration.DpiScale);
@@ -410,7 +1121,7 @@ public class ConfigLoaderTests
         }
     }
 
-    // ── the game variant — docs/PLAN-US-CLIENT.md ────────────────────────────────────────────────
+    // ── the game variant — docs/plans/PLAN-US-CLIENT.md ────────────────────────────────────────────────
 
     /// <summary>The active variant RESOLVES the window title at load, and that is the whole reason the
     /// US-client change is small: every tool already reads `window.title`, so none of them — the OCR
@@ -502,42 +1213,68 @@ public class ConfigLoaderTests
     /// gain content, because content here is words the Tuner matches, and words written from anywhere
     /// but that client are the thing the repo's own rule forbids.</summary>
     [Fact]
-    public void TheShippedUsDictionaryExistsAndIsEmptyOnPurpose()
+    public void TheShippedUsTemplateExistsAndIsEmptyOnPurpose()
     {
         var path = "";
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "v2", "config", "attributes.us.yaml");
+            var candidate = Path.Combine(dir.FullName, "v2", "config", "attributes.us.yaml.example");
             if (File.Exists(candidate)) { path = candidate; break; }
         }
 
         Assert.False(string.IsNullOrEmpty(path),
-            "v2/config/attributes.us.yaml was not found by walking up from " + AppContext.BaseDirectory);
+            "v2/config/attributes.us.yaml.example was not found by walking up from " + AppContext.BaseDirectory);
 
-        var attrs = new ConfigLoader(Path.GetDirectoryName(path)!).LoadAttributes("attributes.us.yaml");
+        // Loaded THROUGH the loader, so the assertion covers what it parses to rather than what the file
+        // text looks like — `attributes: []` is an empty LIST, and a bare `attributes:` would be null,
+        // which every consumer enumerates and throws on.
+        var attrs = new ConfigLoader(Path.GetDirectoryName(path)!).LoadAttributes("attributes.us.yaml.example");
         Assert.Empty(attrs.Attributes);
     }
 
-    /// <summary>A variant's dictionary that is MISSING must fail, and say what to do about it. The
-    /// alternative — shipping an empty one — matches nothing, so every attribute reads as "no
-    /// attribute": silent, and indistinguishable from the game having changed.</summary>
+    /// <summary>A variant's dictionary that is MISSING is SEEDED from its template — the instruction the
+    /// old error message gave by hand, and the same shape local.yaml has always had. That is what lets
+    /// the Setup tab's client switch work on a fresh install without the zip shipping a file the player
+    /// grows in place. And an existing one is never overwritten: it is the player's.</summary>
     [Fact]
-    public void AMissingVariantDictionarySaysHowToFixIt()
+    public void AMissingVariantDictionaryIsSeededFromItsTemplate()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
-            // The template, present as a published build ships it, so the message can name it.
-            File.WriteAllText(Path.Combine(dir, "attributes.us.yaml.example"), "# template\n");
+            File.WriteAllText(Path.Combine(dir, "attributes.us.yaml.example"),
+                "attributes: []\nper_level_stats: []\nnegative_attr_markers: []\ntext_fixes:\n  whole: []\n");
 
-            var loader = new ConfigLoader(dir);
-            var cfg = loader.Load();
+            var attrs = new ConfigLoader(dir).LoadAttributes("attributes.us.yaml");
 
+            Assert.Empty(attrs.Attributes);
+            // Seeded, not merely read: the file is there afterwards, and it is the one that gets filled.
+            Assert.True(File.Exists(Path.Combine(dir, "attributes.us.yaml")));
+
+            // Second direction: once it exists it is the player's file, and a seed must never undo it.
+            File.WriteAllText(Path.Combine(dir, "attributes.us.yaml"),
+                "attributes:\n  - name: \"Mine\"\n    category: \"atk\"\n    variants: [\"Mine\"]\n");
+            Assert.Single(new ConfigLoader(dir).LoadAttributes("attributes.us.yaml").Attributes);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>With no template either, the failure stays LOUD — and for the original reason: a
+    /// dictionary that matches nothing reads every attribute as "no attribute", silently, which is
+    /// indistinguishable from the game having changed.</summary>
+    [Fact]
+    public void AMissingVariantDictionaryWithNoTemplateIsStillLoud()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
             var ex = Assert.Throws<ConfigException>(
-                () => loader.LoadAttributes(cfg.Game.Variants["us"].Attributes));
+                () => new ConfigLoader(dir).LoadAttributes("attributes.us.yaml"));
 
-            Assert.Contains("config/attributes.us.yaml", ex.Message);
-            Assert.Contains("attributes.us.yaml.example", ex.Message);
+            Assert.Contains("attributes.us.yaml", ex.Message);
         }
         finally
         {
@@ -545,40 +1282,11 @@ public class ConfigLoaderTests
         }
     }
 
-    /// <summary>With NO variant, `window.title` is the only source and must survive a save — the shape
-    /// every config had before variants existed. SaveDefaults writes `window` for this case: dropping it
-    /// from the field list would lose the title and then fail the required-field check on the next
-    /// load.</summary>
+    // A save writes the `settings:` block and nothing else. The player's spammer presets live in their
+    // own block of the same file, so a save must leave them alone — and the portable half has no
+    // spammer field at all, which is what keeps a personal rotation out of the release template.
     [Fact]
-    public void WithNoVariantTheWindowTitleStillRoundTrips()
-    {
-        var dir = MakeTempConfigDir(includeLocal: true);
-        try
-        {
-            var defaults = Path.Combine(dir, "defaults.yaml");
-            File.WriteAllText(defaults,
-                File.ReadAllText(defaults).Replace("  variant: tw", "  variant: \"\""));
-
-            var loader = new ConfigLoader(dir);
-            var before = loader.Load();
-            Assert.Equal("TW_LIVE", before.Window.Title);
-
-            before.Window.Title = "MyClient_LIVE";
-            loader.SaveDefaults(before);
-
-            Assert.Equal("MyClient_LIVE", new ConfigLoader(dir).Load().Window.Title);
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
-    }
-
-    // SaveDefaults serialises the MERGED in-memory config and is called by the tuner, gem and
-    // hotkeys tabs. If spammer were in its field list, saving any of those would push the player's
-    // personal rotations into the defaults.yaml that ships.
-    [Fact]
-    public void SaveDefaultsLeavesSpammerPresetsAlone()
+    public void SaveSettingsLeavesTheSpammerBlockAlone()
     {
         var dir = MakeTempConfigDirWithLocal(
             ValidOcrLocal +
@@ -589,22 +1297,17 @@ public class ConfigLoaderTests
             var cfg = loader.Load();
             Assert.Equal("Personal", cfg.Spammer.Active);
 
-            loader.SaveDefaults(cfg);
+            loader.SaveSettings(cfg);
 
-            // Assert on the file itself, not a reload: loading merges local.yaml back on top, so a
-            // reloaded Active is "Personal" again by design. The leak this guards against is
-            // "Personal" reaching the shipped defaults.yaml on disk.
-            var written = File.ReadAllText(Path.Combine(dir, "defaults.yaml"));
-            Assert.DoesNotContain("Personal", written);
+            // The preset is still in its own block...
+            var reloaded = new ConfigLoader(dir).LoadLocal()!;
+            Assert.Equal(0.2, reloaded.Spammer!.Presets!["Personal"]["*0"]);
 
-            // No spammer KEY, which is what this actually means. It used to assert the word never
-            // appears at all, and that stopped being the same thing once the generated header began
-            // explaining why there is no spammer section — prose that contains the word while
-            // writing no key. Matching the parsed key is both narrower and truer than matching a
-            // substring, and it cannot be satisfied by adding a comment.
-            Assert.DoesNotContain("\nspammer:", written);
-            Assert.False(written.StartsWith("spammer:", StringComparison.Ordinal),
-                "defaults.yaml must not open with a spammer key");
+            // ...and the settings block carries no spammer key, so a personal rotation can never reach
+            // the portable half and from there a release.
+            var written = File.ReadAllText(Path.Combine(dir, "local.yaml"));
+            Assert.Contains("\nspammer:", written);
+            Assert.Null(Child(SettingsNode(Path.Combine(dir, "local.yaml")), "spammer"));
         }
         finally
         {
@@ -626,16 +1329,13 @@ public class ConfigLoaderTests
             var loader = new ConfigLoader(dir);
             var cfg = loader.Load();
 
-            loader.SaveDefaults(cfg);
-            loader.SaveLocal(loader.LoadLocal()!);
+            // A no-op change: the point is the header the write emits, not what it carries.
+            loader.UpdateLocal(_ => { });
 
-            foreach (var name in new List<string> { "defaults.yaml", "local.yaml" })
-            {
-                var written = File.ReadAllText(Path.Combine(dir, name));
-                Assert.StartsWith("#", written);              // a header, not bare serialised content
-                Assert.Contains("REWRITES this whole file", written);
-                Assert.Contains("DROPPED", written);
-            }
+            var written = File.ReadAllText(Path.Combine(dir, "local.yaml"));
+            Assert.StartsWith("#", written);              // a header, not bare serialised content
+            Assert.Contains("REWRITES this whole file", written);
+            Assert.Contains("DROPPED", written);
         }
         finally
         {
@@ -655,7 +1355,7 @@ public class ConfigLoaderTests
             var cfg = loader.Load();
             cfg.Tuner.TargetGrade = "XG";
 
-            loader.SaveDefaults(cfg);
+            loader.SaveSettings(cfg);
 
             Assert.Equal("XG", new ConfigLoader(dir).Load().Tuner.TargetGrade);
         }
@@ -684,8 +1384,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            loader.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = "red1",
                 GuardPx = 12,
@@ -704,8 +1403,7 @@ public class ConfigLoaderTests
                         },
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -753,8 +1451,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            loader.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = "a",
                 ActiveSequence = "nightly",
@@ -777,8 +1474,7 @@ public class ConfigLoaderTests
                         },
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -806,6 +1502,81 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>A DUPLICATED flow and sequence through a real save and reload. The button itself cannot
+    /// be tested here (the Launcher is out of this project), so what is pinned is everything the button
+    /// hands to the config: the generated name has to survive as a KEY, and the copy's steps have to come
+    /// back as the copy's own steps rather than the original's.
+    ///
+    /// A duplicate that reloads as the preset it was copied from would look right on screen and be wrong
+    /// on the next launch, which is the same class of failure as a dropped step field.</summary>
+    [Fact]
+    public void DuplicatedFlowsAndSequencesSurviveASaveAndReload()
+    {
+        var dir = MakeTempConfigDirWithLocal(ValidOcrLocal);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            loader.UpdateLocal(local =>
+            {
+                var source = new QuestPreset
+                {
+                    InitialWaitSeconds = 3,
+                    Loops = 2,
+                    Steps = new List<QuestStep>
+                    {
+                        new() { Action = SealTools.Core.QuestAction.Click, DelaySeconds = 0.3 },
+                    },
+                };
+                var sourceSequence = new QuestSequence
+                {
+                    Loops = 4,
+                    Entries = new List<QuestSequenceEntry> { new() { Preset = "red", Times = 2 } },
+                };
+
+                var presets = new Dictionary<string, QuestPreset> { ["red"] = source };
+                var sequences = new Dictionary<string, QuestSequence> { ["nightly"] = sourceSequence };
+
+                // What the two Duplicate buttons do, in the order they do it.
+                var copyName = PresetCopy.CopyName("red", presets.Keys);
+                presets[copyName] = PresetCopy.CopyQuestPreset(source);
+                var sequenceCopyName = PresetCopy.CopyName("nightly", sequences.Keys);
+                sequences[sequenceCopyName] = PresetCopy.CopyQuestSequence(sourceSequence);
+
+                local.Quest = new ConfigLoader.LocalQuest
+                {
+                    Active = copyName,
+                    ActiveSequence = sequenceCopyName,
+                    Presets = presets,
+                    Sequences = sequences,
+                };
+            });
+
+            var cfg = new ConfigLoader(dir).Load();
+
+            Assert.Equal("red (copy)", cfg.Quest.Active);
+            Assert.Equal("nightly (copy)", cfg.Quest.ActiveSequence);
+            Assert.Equal(2, cfg.Quest.Presets.Count);
+            Assert.Equal(2, cfg.Quest.Sequences.Count);
+
+            var copy = cfg.Quest.ActivePreset;
+            Assert.Equal(3, copy.InitialWaitSeconds);
+            Assert.Equal(2, copy.Loops);
+            Assert.Single(copy.Steps);
+            Assert.Equal(SealTools.Core.QuestAction.Click, copy.Steps[0].Action);
+
+            // The sequence's copy still names the flow it named before: a duplicate re-points nothing.
+            var sequenceCopy = cfg.Quest.ActiveSequenceOrNull;
+            Assert.NotNull(sequenceCopy);
+            Assert.Equal(4, sequenceCopy!.Loops);
+            Assert.Equal("red", sequenceCopy.Entries[0].Preset);
+            Assert.Equal(2, sequenceCopy.Entries[0].Times);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// <summary>An empty `active_sequence` means "run the single flow" — the shape of every config written
     /// before sequences existed — and an UNKNOWN name must fall back the same way rather than leaving the
     /// tool with nothing to run.</summary>
@@ -816,8 +1587,9 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            // One block, written three times with a different active sequence each time — through the
+            // loader's read-modify-write, the way the Quest tab writes it.
+            var questBlock = new ConfigLoader.LocalQuest
             {
                 Active = "a",
                 Presets = new Dictionary<string, QuestPreset>
@@ -831,17 +1603,17 @@ public class ConfigLoaderTests
             };
 
             // Nothing chosen at all.
-            loader.SaveLocal(local);
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
 
             // A name nobody recognises.
-            local.Quest.ActiveSequence = "typo";
-            loader.SaveLocal(local);
+            questBlock.ActiveSequence = "typo";
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.Null(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
 
             // And the real one resolves.
-            local.Quest.ActiveSequence = "nightly";
-            loader.SaveLocal(local);
+            questBlock.ActiveSequence = "nightly";
+            loader.UpdateLocal(l => l.Quest = questBlock);
             Assert.NotNull(new ConfigLoader(dir).Load().Quest.ActiveSequenceOrNull);
         }
         finally
@@ -857,8 +1629,7 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = new ConfigLoader.LocalPet
+            loader.UpdateLocal(local => local.Pet = new ConfigLoader.LocalPet
             {
                 MenuButton = new List<int> { 815, 1735 },
                 FeedIcon = new List<int> { 900, 1400 },
@@ -882,8 +1653,7 @@ public class ConfigLoaderTests
                         BoardingRunning = true,
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var cfg = new ConfigLoader(dir).Load();
 
@@ -909,7 +1679,7 @@ public class ConfigLoaderTests
             // wrong for the shape.
             //
             // Asserted here rather than only in a unit test of the predicate, because the direction
-            // that matters is the ROUND TRIP: written by SaveLocal, read back by Load.
+            // that matters is the ROUND TRIP: written by UpdateLocal, read back by Load.
             Assert.Equal(5, slot.Stacks);
             Assert.True(slot.BoardingRunning);
 
@@ -930,8 +1700,14 @@ public class ConfigLoaderTests
 
             // A zero-sized rectangle is not a calibration and must not be adopted — the same guard the
             // buy/sell grid gets. Without it all 64 derived centres land on the same pixel.
-            local.Pet.BagGrid = new List<int> { 0, 0, 0, 0 };
-            new ConfigLoader(dir).SaveLocal(local);
+            // Through a SECOND loader instance, so nothing in memory carries the block: the
+            // read-modify-write is the only thing putting it in the file, which is the shape the
+            // launcher's own threads have.
+            new ConfigLoader(dir).UpdateLocal(l =>
+            {
+                l.Pet ??= new ConfigLoader.LocalPet();
+                l.Pet.BagGrid = new List<int> { 0, 0, 0, 0 };
+            });
             Assert.Null(new ConfigLoader(dir).Load().Pet.BagGrid);
         }
         finally
@@ -1408,9 +2184,7 @@ public class ConfigLoaderTests
             var migrated = loader.Load();
 
             // Save it back the way the UI would, then load again.
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(migrated.Pet);
-            loader.SaveLocal(local);
+            loader.UpdateLocal(local => local.Pet = ConfigLoader.LocalPet.From(migrated.Pet));
 
             var again = new ConfigLoader(dir).Load().Pet;
             var slot = Assert.Single(again.Slots);
@@ -1434,13 +2208,11 @@ public class ConfigLoaderTests
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Pet = ConfigLoader.LocalPet.From(new PetConfig
+            loader.UpdateLocal(local => local.Pet = ConfigLoader.LocalPet.From(new PetConfig
             {
                 WaitAfterEmptyMinutes = 2,
                 ActionWaitMs = 1234,
-            });
-            loader.SaveLocal(local);
+            }));
 
             var cfg = new ConfigLoader(dir).Load();
             Assert.Equal(2, cfg.Pet.WaitAfterEmptyMinutes);
@@ -1474,7 +2246,7 @@ public class ConfigLoaderTests
             Assert.Equal("Knight0-9", adopted.Spammer!.Active);
             Assert.Equal(0.2, adopted.Spammer.Presets!["Knight0-9"]["*0"]);
 
-            new ConfigLoader(dir).SaveDefaults(cfg);
+            new ConfigLoader(dir).SaveSettings(cfg);
             var reloaded = new ConfigLoader(dir).Load();
             Assert.Equal("Knight0-9", reloaded.Spammer.Active);
             Assert.Equal(0.2, reloaded.Spammer.ActiveKeys["*0"]);
@@ -1509,14 +2281,13 @@ public class ConfigLoaderTests
     }
 
     [Fact]
-    public void SaveLocalPersistsSpammerPresets()
+    public void UpdateLocalPersistsSpammerPresets()
     {
         var dir = MakeTempConfigDir(includeLocal: true);
         try
         {
             var loader = new ConfigLoader(dir);
-            var local = loader.LoadLocal()!;
-            local.Spammer = new ConfigLoader.LocalSpammer
+            loader.UpdateLocal(local => local.Spammer = new ConfigLoader.LocalSpammer
             {
                 Active = "Knight0-9",
                 Presets = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, double>>
@@ -1527,12 +2298,51 @@ public class ConfigLoaderTests
                         ["F1"] = 1.5,
                     },
                 },
-            };
-            loader.SaveLocal(local);
+            });
 
             var reloaded = new ConfigLoader(dir).Load();
             Assert.Equal("Knight0-9", reloaded.Spammer.Active);
             Assert.Equal(1.5, reloaded.Spammer.ActiveKeys["F1"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DuplicatedSpammerPresetSurvivesASaveAndReload()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            loader.UpdateLocal(local =>
+            {
+                var presets = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, double>>
+                {
+                    ["Knight0-9"] = new System.Collections.Generic.Dictionary<string, double>
+                    {
+                        ["*0"] = 0.2,
+                        ["*F1"] = 1.5,
+                    },
+                };
+
+                // What the picker's Duplicate does, in the order it does it: generate the name, copy the
+                // key map, and make the copy the active preset.
+                var copyName = PresetCopy.CopyName("Knight0-9", presets.Keys);
+                presets[copyName] = PresetCopy.CopySpammerKeys(presets["Knight0-9"]);
+
+                local.Spammer = new ConfigLoader.LocalSpammer { Active = copyName, Presets = presets };
+            });
+
+            var reloaded = new ConfigLoader(dir).Load();
+            Assert.Equal("Knight0-9 (copy)", reloaded.Spammer.Active);
+            Assert.Equal(0.2, reloaded.Spammer.ActiveKeys["*0"]);
+            Assert.Equal(1.5, reloaded.Spammer.ActiveKeys["*F1"]);
+            // Two entries, not one: a copy that replaced its source in the dictionary would still make
+            // every assertion above pass, because the surviving entry has the same keys.
+            Assert.Equal(2, reloaded.Spammer.Presets.Count);
         }
         finally
         {

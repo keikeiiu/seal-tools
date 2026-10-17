@@ -1,12 +1,14 @@
 # Seal Tools v2 — OCR attribute dictionary for the US client. TEMPLATE.
 #
-# COPY THIS to `attributes.us.yaml` beside it, then fill it in. Until that file exists, the launcher
-# REFUSES to start with `game.variant: us` — see LOADING below.
+# This is the ONLY US dictionary that ships. The loader copies it to `attributes.us.yaml` the first
+# time one is wanted, so switching to the US client works out of the box; your own copy is then the
+# one you grow, and an update never touches it.
 #
-# WHY IT IS NOT SHIPPED FILLED. This file is the words the Tuner MATCHES against. An empty or wrong
-# dictionary does not fail loudly; it reads every attribute as "no attribute", silently, which is
-# indistinguishable from the game having changed. So the missing file is the loud failure, and it is
-# on purpose. Only the TW dictionary has content, because only the TW client has been played.
+# WHY IT SHIPS EMPTY. This file is the words the Tuner MATCHES against. An empty or wrong dictionary
+# does not fail loudly; it reads every attribute as "no attribute", silently, which is indistinguishable
+# from the game having changed. Only the TW dictionary has content, because only the TW client has been
+# played — so until you fill this in, the Tuner reads no attributes on the US client, while every other
+# tool is unaffected (they match no text at all: position, colour, keys and digits).
 
 # ── HOW TO FILL IT ────────────────────────────────────────────────────────────────────────────────
 # The TW dictionary next door was not written from a list — it was GROWN. The tuner writes
@@ -24,11 +26,16 @@
 
 # ── STANDARD ATTRIBUTES ───────────────────────────────────────────────────────────────────────────
 # Each: {name, category, variants[]}.
-#   name     — what the filter RULES match on, so these are also the names to write in
-#              `tuner.filter.rules` in defaults.yaml. The rules do NOT transfer from the TW config.
+#   name     — what the filter RULES match on, so these are also the names to write in the tuner's
+#              filter rules (config/local.yaml, the tuner block of the portable settings). The rules
+#              do NOT transfer from the TW config.
 #   category — free-form grouping, shown in the Attributes tab.
 #   variants — the OCR-garbled forms. The FIRST is the exact name; add the rest as you meet them.
-attributes:
+#
+# `attributes: []` rather than a bare key, and that matters: the consumers enumerate this list —
+# the Setup tab's switch status, the Attributes tab, the rules editor — and a null one throws where
+# an empty one simply means "nothing named yet". The loader copies this file as it stands.
+attributes: []
   # - name: "Attack"
   #   category: "atk"
   #   variants: ["Attack"]

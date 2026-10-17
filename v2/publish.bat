@@ -74,17 +74,37 @@ if /i "%MODE%"=="local" (
 ) else (
   mkdir %PUB%\config
   copy /Y config\attributes.yaml    %PUB%\config\ >nul
-  copy /Y config\defaults.yaml      %PUB%\config\ >nul
+  :: The shipped defaults go out under the TEMPLATE name. The app reads config\defaults.yaml.example
+  :: as its BASE when it exists, and that name is what an update replaces - so extracting an update
+  :: cannot cover the player's own config\defaults.yaml, which is where every setting they ever
+  :: saved lives - the old save path wrote the whole portable projection into it.
+  copy /Y config\defaults.yaml      %PUB%\config\defaults.yaml.example >nul
   copy /Y config\local.yaml.example %PUB%\config\ >nul
-  :: The US dictionary TEMPLATE, so a US player can copy it and fill it in. This list is explicit, so
-  :: a config file that is not named here does not ship — and the error a missing dictionary raises
-  :: tells the player to copy this file, which would be an instruction to copy something absent.
+  :: The US dictionary TEMPLATE, and the only US dictionary that ships. The loader SEEDS a missing
+  :: one from this file - the missing-file error's own instruction, automated - so shipping the
+  :: empty dictionary as well would put a file the player grows in place into the zip.
   copy /Y config\attributes.us.yaml.example %PUB%\config\ >nul
-  :: And the EMPTY dictionary itself, so the Setup tab client switch works out of the box:
-  :: the loader refuses a MISSING one (right for the Tuner, wrong for every tool that reads
-  :: no text), and the switch status line says it is empty until it is filled from the client.
-  copy /Y config\attributes.us.yaml %PUB%\config\ >nul
+  mkdir %PUB%\docs
+  :: The pet feeding table, under docs\ beside the data file the repo tracks. It was in no zip
+  :: until now, which is why an installed copy has never had a feeding estimate.
+  copy /Y docs\pet-data.csv        %PUB%\docs\ >nul
   echo       template config only - local.yaml re-seeded on first run
+)
+
+:: The template that ships has to BE the released one. Until the launcher stops writing it (step 4
+:: of PLAN-DEPLOY.md), a Save on any config tab rewrites the tracked config\defaults.yaml, and this
+:: script would then package the developer's own values as every player's template. Compared
+:: through git rather than bytes on purpose: the app's writer emits CRLF, so a byte comparison
+:: against the blob would fail on line endings alone and the guard would be noise.
+if /i "%MODE%"=="public" (
+  git diff --quiet HEAD -- config/defaults.yaml
+  if errorlevel 1 (
+    echo [!] config\defaults.yaml differs from HEAD - your saved values would ship as the
+    echo     template every player starts from. Put it back and run this script again:
+    echo       git checkout -- config/defaults.yaml
+    pause
+    exit /b 1
+  )
 )
 
 echo [5/6] Zipping %ZIPNAME%...
@@ -95,6 +115,21 @@ if errorlevel 1 (
   echo [!] Zip failed.
   pause
   exit /b 1
+)
+
+:: The rule this release rests on: NO archive member is a file the app writes, or a file the player
+:: is told to grow in place. Checked as an ALLOW-list rather than a list of forbidden names, so a
+:: future copy line for a new writer's file fails HERE instead of shipping quietly - and so does a
+:: missing program file.
+if /i "%MODE%"=="public" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$root = (Resolve-Path '%PUB%').Path; $cfg = @('config/attributes.yaml','config/defaults.yaml.example','config/local.yaml.example','config/attributes.us.yaml.example'); $need = @('config/defaults.yaml.example','config/local.yaml.example','config/attributes.us.yaml.example','config/attributes.yaml','docs/pet-data.csv'); $bad = @(); foreach ($f in Get-ChildItem -Recurse -File '%PUB%') { $n = $f.FullName.Substring($root.Length + 1).Replace('\','/'); if ($n -like 'config/*') { if ($cfg -notcontains $n) { $bad += $n } } elseif ($n -eq 'SealTools.Launcher.exe') { } elseif ($n -match '\.dll$') { } elseif ($n -match '^models/.+\.onnx$') { } elseif ($n -eq 'docs/pet-data.csv') { } else { $bad += $n } }; foreach ($m in $need) { if (-not (Test-Path (Join-Path $root $m))) { $bad += 'MISSING: ' + $m } }; if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host ('[!] ' + $_) }; exit 1 }"
+  if errorlevel 1 (
+    echo [!] The public zip carries a file a player owns, or is missing one it needs.
+    echo     Nothing was published. The offending names are listed above.
+    pause
+    exit /b 1
+  )
 )
 
 :: The firmware ships as its OWN zip, not inside the app zip: it is not part of the runtime install

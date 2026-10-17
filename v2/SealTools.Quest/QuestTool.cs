@@ -10,7 +10,7 @@ namespace SealTools.Quest;
 ///
 /// **It reads nothing** — no capture, no OCR, no window lookup — which is why it has no calibration at
 /// all. The player puts the mouse where the clicks have to land during the initial wait, the tool clicks
-/// wherever it is, and the cursor is then watched so a run STOPS if it moves. See docs/PLAN-QUEST.md.
+/// wherever it is, and the cursor is then watched so a run STOPS if it moves. See docs/docs/archive/PLAN-QUEST.md.
 ///
 /// The trade that buys, in the plan's words: **a wrong flow does <c>Loops</c> wrong actions and the game
 /// accepts every one of them.** Nothing in here can notice that — only the player, watching one test
@@ -52,7 +52,10 @@ public sealed class QuestTool : ToolBase
         // and a choice made there must not be quietly overridden by the tab.
         if (!string.IsNullOrWhiteSpace(_sequenceOverride))
         {
-            if (!quest.Sequences.TryGetValue(_sequenceOverride.Trim(), out var fromCard))
+            // `fromCard is null` is the value-less-key shape (`run:` with no body): the name is
+            // PRESENT and its value is null. ConfigLoader repairs that at load, but a tool handed a
+            // hand-built config must still refuse rather than throw a NullReferenceException.
+            if (!quest.Sequences.TryGetValue(_sequenceOverride.Trim(), out var fromCard) || fromCard is null)
                 return Refuse(state, $"There is no sequence called \"{_sequenceOverride.Trim()}\" — " +
                                      "pick another on the card, or reload the config.");
 
@@ -61,7 +64,7 @@ public sealed class QuestTool : ToolBase
 
         if (!string.IsNullOrWhiteSpace(_flowOverride))
         {
-            if (!quest.Presets.TryGetValue(_flowOverride.Trim(), out var fromCard))
+            if (!quest.Presets.TryGetValue(_flowOverride.Trim(), out var fromCard) || fromCard is null)
                 return Refuse(state, $"There is no flow called \"{_flowOverride.Trim()}\" — pick " +
                                      "another on the card, or reload the config.");
 
@@ -125,7 +128,7 @@ public sealed class QuestTool : ToolBase
     }
 
     /// <summary>A sequence: A three times, then B twice, and the whole list repeated by a master loop.
-    /// See docs/PLAN-QUEST.md §11.
+    /// See docs/docs/archive/PLAN-QUEST.md §11.
     ///
     /// **ONE POSITIONING WINDOW, at the start.** A flow's own initial wait means *"when I am run alone"*
     /// and does not apply here: the tool never moves the cursor, so a flow inside a sequence clicks where
@@ -136,16 +139,28 @@ public sealed class QuestTool : ToolBase
     {
         // EVERY entry, and every flow it names, is checked BEFORE anything is clicked — a sequence is
         // longer than a flow, so a mistake in it costs more.
-        if (sequence.Entries.Count == 0)
+        //
+        // Null-tolerant because local.yaml is hand-editable and YamlDotNet stores null for a
+        // value-less key: `entries:` gives a null list and a bare `-` a null element. Those must read
+        // as "this sequence is malformed" on the card, not as a NullReferenceException from the tool.
+        var entries = sequence.Entries;
+        if (entries == null || entries.Count == 0)
             return Refuse(state, $"The sequence \"{name}\" has no entries — add some on the Quest tab.");
 
         var planned = new List<(string Flow, QuestPreset Preset, int Times)>();
-        foreach (var entry in sequence.Entries)
+        foreach (var entry in entries)
         {
-            var flowName = entry.Preset?.Trim() ?? "";
-            if (!quest.Presets.TryGetValue(flowName, out var preset))
+            if (entry == null)
                 return Refuse(state,
-                    $"The sequence \"{name}\" names a flow \"{entry.Preset}\" that does not exist.");
+                    $"The sequence \"{name}\" has an empty entry — fix it on the Quest tab.");
+
+            var flowName = entry.Preset?.Trim() ?? "";
+            // A name whose VALUE is null (`a:` with no body) is present in the dictionary but has no
+            // flow to run; normalising at load makes this unreachable from a file, and refusing here
+            // keeps a hand-built config from throwing at Validate.
+            if (!quest.Presets.TryGetValue(flowName, out var preset) || preset is null)
+                return Refuse(state,
+                    $"The sequence \"{name}\" names a flow \"{flowName}\" that does not exist.");
 
             if (Validate(preset, flowName) is { } problem) return Refuse(state, problem);
 

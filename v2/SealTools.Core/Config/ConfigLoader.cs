@@ -31,46 +31,40 @@ public sealed class ConfigLoader
     // it cannot carry comments through: whatever prose a save destroys is gone for good, and the only
     // comments that survive are the ones the writer emits itself. That is what this is.
     //
-    // It says the two things a reader has to know before editing the file, because both have already
-    // cost real data. Comments vanish on the next save from any tab. And a key the serializer's
-    // anonymous object does not mention is DROPPED - that is not a theory, it is how a machine's
-    // spammer presets were deleted outright (the block lived here, a Save from the Tuner tab rewrote
-    // the file without it, and nothing said so). Presets live in local.yaml now and the adoption path
-    // catches strays, but the underlying behaviour has not changed and will not without a rework.
-    private const string DefaultsHeader =
-        "# ── Portable settings ─────────────────────────────────────────────────────────────\n" +
-        "# The same on every machine. Anything measured on ONE machine belongs in local.yaml, not here.\n" +
-        "#\n" +
-        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you press Save on the\n" +
-        "# Tuner, Gem or Hotkeys tab. It serialises a fixed list of keys, which means:\n" +
-        "#   * every comment in here is lost on the next save, including any you add;\n" +
-        "#   * any key the launcher does not know about is DROPPED, silently — this is how a spammer\n" +
-        "#     block once disappeared, taking a player's key rotations with it. Presets are personal\n" +
-        "#     and live in local.yaml, which is why there is no spammer section below.\n" +
-        "#\n" +
-        "# Documented in docs/CONFIG.md. Keys and their meaning: docs/USER_GUIDE.md.\n" +
-        "\n";
-
-    // The same warning for local.yaml. It loses comments the same way, and its comments are the more
-    // valuable ones - local.yaml.example ships a page of guidance explaining that the seeded values
-    // are v1 starting points and will be wrong until the calibrators run, all of which the first
-    // save deletes.
+    // This is now the ONLY file a save rewrites, which is why it carries both halves: the machine's own
+    // measurements and the portable settings that used to live in defaults.yaml. defaults.yaml is a
+    // shipped template that an update replaces, so a save target inside it was a setting an update
+    // could cover.
     private const string LocalHeader =
-        "# ── Machine-specific settings ─────────────────────────────────────────────────────\n" +
-        "# Everything measured or tuned on THIS machine: coordinates, the display environment, the\n" +
-        "# Arduino port override, and your own spammer presets. Gitignored, and excluded from the\n" +
-        "# public zip by publish.bat — do not commit it or share it.\n" +
+        "# ── This machine's configuration ──────────────────────────────────────────────────\n" +
+        "# Two halves, and they travel differently.\n" +
         "#\n" +
-        "# READ THIS BEFORE EDITING. The launcher REWRITES this whole file when you calibrate or save\n" +
-        "# a preset. It serialises a fixed list of keys, so every comment here is lost on the next\n" +
-        "# save and any key the launcher does not know about is DROPPED. Keep a copy if you hand-edit.\n" +
+        "# The MEASURED half: coordinates, the display environment, the Arduino port override, and the\n" +
+        "# calibration images beside this file. True only on THIS machine.\n" +
         "#\n" +
-        "# Documented in docs/CONFIG.md; calibrating is docs/CALIBRATION.md.\n" +
+        "# The `settings:` block: the PORTABLE half — the same values on every machine. It lives here\n" +
+        "# rather than in defaults.yaml because this file is YOURS. defaults.yaml is the template\n" +
+        "# publish.bat ships, so anything saved there would be replaced by the next update. A hand-added\n" +
+        "# spammer preset is personal too, and that is why presets live here as well.\n" +
+        "#\n" +
+        "# Gitignored, and excluded from the public zip by publish.bat — do not commit it or share it.\n" +
+        "#\n" +
+        "# READ THIS BEFORE EDITING. A save REWRITES this whole file's owned blocks — the ones named in\n" +
+        "# docs/spec/CONFIG.md — and leaves any other TOP-LEVEL block alone, so a block of your own survives.\n" +
+        "# Inside an owned block, a key the launcher does not know about is DROPPED, and comments are\n" +
+        "# lost everywhere: the writer serialises values and cannot carry prose. Keep a copy if you edit.\n" +
+        "#\n" +
+        "# Documented in docs/spec/CONFIG.md; calibrating is docs/spec/CALIBRATION.md.\n" +
         "\n";
 
     public AppConfig Load()
     {
-        var defaults = Deserialize<AppConfig>("defaults.yaml");
+        // THE BASE. An install that has taken an update has the shipped template — the zip carries the
+        // defaults as config/defaults.yaml.example precisely so that extracting an update cannot cover
+        // the player's own defaults.yaml — and reads that. A checkout has only the tracked file, so a
+        // dev run reads exactly what it read before.
+        var baseIsShipped = File.Exists(PathOf("defaults.yaml.example"));
+        var defaults = Deserialize<AppConfig>(baseIsShipped ? "defaults.yaml.example" : "defaults.yaml");
 
         // First run on a new machine: seed the machine-specific config from the
         // example template (v1 coords as a starting point), then calibrate in-app.
@@ -79,7 +73,11 @@ public sealed class ConfigLoader
         {
             var examplePath = PathOf("local.yaml.example");
             if (File.Exists(examplePath))
-                File.Copy(examplePath, localPath);
+                // Through the same writer as every other save, not File.Copy: a copy interrupted
+                // halfway leaves a TRUNCATED local.yaml that loads as a valid empty config, and the
+                // player then runs on v1 starting coordinates without an error anywhere. The atomic
+                // write leaves either the old state or the whole file.
+                WriteAtomically(localPath, File.ReadAllText(examplePath));
         }
 
         if (!File.Exists(localPath))
@@ -90,11 +88,50 @@ public sealed class ConfigLoader
 
         var local = Deserialize<LocalOverrides>("local.yaml");
 
+        // THE LEGACY FILE. On an install that has taken an update, this is the player's own old
+        // defaults.yaml — the only copy of every setting they ever saved, because the old save path wrote
+        // the whole portable projection into it. It is read ONCE: the fold below moves those values into
+        // local.yaml, and from then on the marker stops this file being read at all.
+        var alreadyFolded = local.Settings?.LegacyFolded == true;
+        var legacy = baseIsShipped && !alreadyFolded && File.Exists(PathOf("defaults.yaml"))
+            ? Deserialize<AppConfig>("defaults.yaml")
+            : null;
+
+        // Normalise both files the same way, because the fold compares like with like: a pre-presets
+        // flat `spammer.keys` becomes a preset in memory first, so the comparison never meets two shapes
+        // of the same setting — and a leaf with no destination has nowhere to land.
+        if (legacy != null) MigrateSpammerPresets(legacy);
+        MigrateSpammerPresets(defaults);
+
+        // THE FOLD, once. It compares section by section and writes only what the player changed, so a
+        // default a later release changes still arrives for every key they never touched.
+        var folded = legacy != null && FoldIntoLocal(legacy, defaults);
+
+        // A successful fold has just written local.yaml, so the copy read above is stale. Re-read it, or
+        // the player's own values arrive only on the NEXT launch — which is exactly the launch after the
+        // one that was supposed to bring them across.
+        if (folded) local = Deserialize<LocalOverrides>("local.yaml");
+
+        // The legacy file as a VALUES LAYER — the pre-fold behaviour, kept only as the fallback for a
+        // fold that could not be written (read-only medium, full disk). It sits BELOW local.yaml, which
+        // is why it is applied before ApplyOverrides.
+        if (legacy != null && !folded)
+            ApplySettings(defaults, FromConfig(legacy));
+
         // Order matters: legacy keys become a preset in memory, adoption copies whatever presets are
         // left into local.yaml, and only then does local.yaml override the result.
-        MigrateSpammerPresets(defaults);
-        AdoptSpammerPresetsIntoLocal(defaults, local);
+        //
+        // The adoption reads whichever file actually holds the player's presets — the legacy file on an
+        // install that has taken an update, since the shipped template has none — and its own guard makes
+        // it once-only, so every later launch does nothing.
+        AdoptSpammerPresetsIntoLocal(legacy ?? defaults, local);
         ApplyOverrides(defaults, local);
+
+        // A HAND-EDITED EMPTY BODY. `run:` with no body loads as a null dictionary VALUE, and
+        // TryGetValue then reports the name as present — so the Quest tab, Duplicate, the card's
+        // overrides and the runner each dereferenced it. Repaired here, once, where the files' shapes
+        // are already being normalised, rather than guarded again in every reader.
+        defaults.Quest.NormaliseNullBodies();
 
         // AFTER the merge, because the migration only fills gaps: a file that already carries
         // `slots:` must win over the flat keys it also happens to still hold.
@@ -193,8 +230,8 @@ public sealed class ConfigLoader
     }
 
     // Presets used to be saved into defaults.yaml — the file publish.bat copies into the public zip.
-    // SaveDefaults no longer writes them, so the first Save on ANY other tab (tuner, gem and hotkeys
-    // all call it) rewrites defaults.yaml without a spammer block. On a machine that only ever ran
+    // The save path stopped writing them, so the first Save on ANY other tab (tuner, gem and hotkeys
+    // all called it) rewrote defaults.yaml without a spammer block. On a machine that only ever ran
     // the older build those presets existed nowhere else, so that Save deleted them outright and the
     // next launch quietly created a blank "default". Adopt them into local.yaml before that can
     // happen.
@@ -211,7 +248,7 @@ public sealed class ConfigLoader
             foreach (var (name, step) in defaults.Spammer.StartupStep)
                 StartupFor(defaults.Spammer, name).Step = step;
 
-        local.Spammer = new LocalSpammer
+        var adopted = new LocalSpammer
         {
             Active = defaults.Spammer.Active,
             Presets = defaults.Spammer.Presets,
@@ -222,7 +259,20 @@ public sealed class ConfigLoader
             Combos = defaults.Spammer.Combos,
             Startup = defaults.Spammer.Startup,
         };
-        SaveLocal(local);
+
+        // Written through the gated path like every other writer, and the guard is re-checked against
+        // the file as it stands NOW: another process can have adopted in the gap since this Load()
+        // read local.yaml, and writing ours blind would replace the winner's presets with our copy.
+        LocalSpammer? inFile = null;
+        UpdateLocal(fresh =>
+        {
+            fresh.Spammer ??= adopted;
+            inFile = fresh.Spammer;
+        });
+
+        // The session follows the file, so even the process that lost that race reads the presets
+        // that are actually stored rather than a second set of its own.
+        local.Spammer = inFile;
     }
 
     /// <summary>The startup block for a preset, created if it has none — so folding a LEGACY entry in
@@ -245,15 +295,26 @@ public sealed class ConfigLoader
 
         if (!File.Exists(PathOf(name)))
         {
-            // A variant's dictionary is not shipped — only the TW one has content, because only the TW
-            // client has been played — so the missing file is made to say what to do about it. Shipping
-            // an EMPTY one instead would remove this error and quietly do the worse thing: match
-            // nothing, reading every attribute as "no attribute", which looks like the game changed.
+            // A variant's dictionary ships as its TEMPLATE and nothing else (attributes.us.yaml.example),
+            // because a filled one is something the player grows in place — and an update must not be
+            // able to cover it. So a missing dictionary is SEEDED from the template, which is the
+            // instruction the old error message gave by hand and the same seed shape local.yaml has.
+            //
+            // The template carries `attributes: []` rather than a bare `attributes:` key on purpose: the
+            // consumers enumerate that list (the switch's status line, the attributes tab, the rules
+            // editor) and a null one throws where an empty one means "nothing named yet".
             var example = name + ".example";
-            throw new ConfigException(File.Exists(PathOf(example))
-                ? $"config/{name} does not exist. Copy config/{example} to it and fill in this " +
-                  "client's attribute names, or set game.variant back to tw."
-                : $"Missing config file: {PathOf(name)}");
+            if (File.Exists(PathOf(example)))
+            {
+                WriteAtomically(PathOf(name), File.ReadAllText(PathOf(example)));
+            }
+            else
+            {
+                // No template either. Still loud, and for the original reason: a dictionary that matches
+                // nothing reads every attribute as "no attribute", silently, which looks exactly like
+                // the game having changed.
+                throw new ConfigException($"Missing config file: {PathOf(name)}");
+            }
         }
 
         return Deserialize<AttributesConfig>(name);
@@ -292,8 +353,86 @@ public sealed class ConfigLoader
         }
     }
 
+    /// <summary>Applies a settings block onto the config being loaded: what the fold writes into
+    /// local.yaml, or — while a fold is still pending — the legacy file's own portable values.
+    ///
+    /// Every guard is "is it PRESENT", never "is it non-empty". A block written by the fold is partial by
+    /// design, so a value it does not mention must leave the shipped one standing; and a value it states
+    /// as empty is a choice, not an omission.
+    ///
+    /// Applied FIRST in <see cref="ApplyOverrides"/>, so the machine-specific half below keeps the last
+    /// word wherever the two ever name the same field. Today they never do: LocalTuner, LocalGem and
+    /// LocalArduino carry geometry, points and the port, and this block carries none of those.</summary>
+    private static void ApplySettings(AppConfig defaults, LocalSettings? settings)
+    {
+        if (settings is null) return;
+
+        if (settings.Window != null) defaults.Window = settings.Window;
+        if (settings.ReferenceWindow != null) defaults.ReferenceWindow = settings.ReferenceWindow;
+        if (settings.Game is { } game && defaults.Game != null)
+        {
+            // Per name, like every other dictionary in this file: a client a later release adds to the
+            // shipped defaults must still arrive, and the player's own entry must still win.
+            if (game.Variants is { Count: > 0 } variants)
+                foreach (var (name, variant) in variants)
+                    defaults.Game.Variants[name] = variant;
+            // Unconditional when present: an empty variant is the real choice "use window.title", and
+            // skipping it on emptiness would make going back impossible — the same reasoning as
+            // quest.active_sequence below.
+            if (game.Variant != null) defaults.Game.Variant = game.Variant;
+        }
+        if (settings.Arduino is { } arduino)
+        {
+            if (arduino.Vid is { } vid) defaults.Arduino.Vid = vid;
+            if (arduino.Pid is { } pid) defaults.Arduino.Pid = pid;
+            if (arduino.Baud is { } baud) defaults.Arduino.Baud = baud;
+        }
+        if (settings.Hotkeys != null) defaults.Hotkeys = settings.Hotkeys;
+        // Guarded like the local tuner half below, and for the same recorded reason: a bare `tuner:` key
+        // in the base makes it null, and dereferencing that threw before Validate could report the empty
+        // section.
+        if (settings.Tuner is { } tuner && defaults.Tuner != null)
+        {
+            if (tuner.GradeOrder is { } gradeOrder) defaults.Tuner.GradeOrder = gradeOrder;
+            if (tuner.TargetGrade != null) defaults.Tuner.TargetGrade = tuner.TargetGrade;
+            if (tuner.MaxRetries is { } maxRetries) defaults.Tuner.MaxRetries = maxRetries;
+            if (tuner.SaveCaptures is { } saveCaptures) defaults.Tuner.SaveCaptures = saveCaptures;
+            if (tuner.OcrRetries is { } ocrRetries) defaults.Tuner.OcrRetries = ocrRetries;
+            if (tuner.SpringMode != null) defaults.Tuner.SpringMode = tuner.SpringMode;
+            if (tuner.MouseGuard != null) defaults.Tuner.MouseGuard = tuner.MouseGuard;
+            if (tuner.GuardPx is { } guardPx) defaults.Tuner.GuardPx = guardPx;
+            if (tuner.RecenterMax is { } recenterMax) defaults.Tuner.RecenterMax = recenterMax;
+            if (tuner.Models != null) defaults.Tuner.Models = tuner.Models;
+            if (tuner.Timing != null) defaults.Tuner.Timing = tuner.Timing;
+            if (tuner.GradeColors != null) defaults.Tuner.GradeColors = tuner.GradeColors;
+            if (tuner.Filter != null) defaults.Tuner.Filter = tuner.Filter;
+        }
+        if (settings.Gem is { } gem)
+        {
+            // `is { Count: > 0 }`, unlike the scalars above: an empty grade list is not a state the
+            // composer can run, so writing one must not replace a shipped list with nothing.
+            if (gem.Grades is { Count: > 0 } grades) defaults.Gem.Grades = grades;
+            if (gem.StartGrade != null) defaults.Gem.StartGrade = gem.StartGrade;
+            if (gem.EmptyMode != null) defaults.Gem.EmptyMode = gem.EmptyMode;
+            if (gem.EmptyStreak is { } emptyStreak) defaults.Gem.EmptyStreak = emptyStreak;
+            if (gem.ColoredGapMin is { } coloredGapMin) defaults.Gem.ColoredGapMin = coloredGapMin;
+            if (gem.SaveEmptyCaptures is { } saveEmptyCaptures) defaults.Gem.SaveEmptyCaptures = saveEmptyCaptures;
+            if (gem.MoveMode != null) defaults.Gem.MoveMode = gem.MoveMode;
+        }
+        if (settings.Pet is { } petSettings)
+        {
+            if (petSettings.ItemsPerMinute is { } itemsPerMinute) defaults.Pet.ItemsPerMinute = itemsPerMinute;
+            if (petSettings.PetSlotOccupiedAbove is { } petSlotOccupiedAbove)
+                defaults.Pet.PetSlotOccupiedAbove = petSlotOccupiedAbove;
+        }
+    }
+
     private static void ApplyOverrides(AppConfig defaults, LocalOverrides local)
     {
+        // The portable layer first — the layer defaults.yaml used to be — then this machine's own
+        // measurements on top of it.
+        ApplySettings(defaults, local.Settings);
+
         if (local.Calibration != null) defaults.Calibration = local.Calibration;
         // `defaults.Tuner` can itself be null — a bare `tuner:` key in defaults.yaml makes it so — and
         // dereferencing it here threw before Validate could report the empty section. The local half
@@ -455,67 +594,237 @@ public sealed class ConfigLoader
         }
     }
 
-    // Atomic write so the launcher can save config while tools re-read it — and since 2026-10-03, so
-    // that two WRITERS cannot collide on one temp name. See WriteAtomically.
-    public void SaveLocal(LocalOverrides local)
+    /// <summary>Reads local.yaml, applies <paramref name="mutate"/> to it, and writes it back — all
+    /// under <see cref="SaveGate"/>, which is the entire point of the method.
+    ///
+    /// The gate used to cover only the file publish, so every caller loaded a snapshot and saved it
+    /// later with nothing held in between. The launcher's threads and the pet tool's PersistPetState
+    /// are independent, and whichever of two writers saved second wrote its own older snapshot back:
+    /// the other's block was silently DELETED from the file, and neither caller could tell. Reading
+    /// inside the lock makes that unrepresentable — a writer says WHAT to change, never what the whole
+    /// file should contain.
+    ///
+    /// The callback may therefore run more than once in a process's lifetime but never concurrently,
+    /// and it sees the file as it is now rather than as it was when some earlier Load() ran. A file
+    /// that cannot be PARSED fails the save rather than being overwritten — the read comes first, so
+    /// an unreadable local.yaml says so instead of being replaced by whatever was in memory.</summary>
+    public void UpdateLocal(Action<LocalOverrides> mutate)
     {
-        var path = PathOf("local.yaml");
-        WriteAtomically(path, LocalHeader + Serializer.Serialize(local));
+        lock (SaveGate)
+        {
+            var path = PathOf("local.yaml");
+            // Whatever is in the file that this app does not own is carried through the save verbatim.
+            // A save re-serialises an object graph, so before this it DELETED any top-level block the
+            // class does not model — a hand-added one, or one a future release added that this build
+            // does not know about. That is the same silent-deletion shape this file has paid for four
+            // times, and the reason the header can no longer say "any key is dropped".
+            var foreign = ForeignBlocks(File.Exists(path) ? File.ReadAllText(path) : "");
+            var local = LoadLocal() ?? new LocalOverrides();
+            mutate(local);
+            WriteAtomically(path, LocalHeader + Serializer.Serialize(local) + foreign);
+        }
     }
 
-    // Re-serialize the portable sections to defaults.yaml. Machine-specific parts
-    // (ocr geometry, gem positions/movements, port, dpi) live in local.yaml and are excluded.
-    public void SaveDefaults(AppConfig cfg)
+    /// <summary>The top-level blocks of local.yaml this app owns and rewrites. Every property of
+    /// <see cref="LocalOverrides"/> is one of these, and a test walks the class to keep that true — a
+    /// block added to the class but forgotten here would be preserved by accident and never updated.</summary>
+    public static readonly string[] OwnedLocalBlocks =
     {
-        var portable = new
-        {
-            // window.title is written as the RESOLVED value — a copy, when a variant is set, because the
-            // variant is the authority and `game` below carries it. It is kept because a config with NO
-            // variant uses `window.title` as its only source, and DROPPING it from this list would mean
-            // such a file loses its title on the next save and then fails the required-field check.
-            window = cfg.Window,
-            reference_window = cfg.ReferenceWindow,
-            game = cfg.Game,
-            arduino = new { vid = cfg.Arduino.Vid, pid = cfg.Arduino.Pid, baud = cfg.Arduino.Baud, port = "" },
-            hotkeys = cfg.Hotkeys,
-            tuner = new
-            {
-                grade_order = cfg.Tuner.GradeOrder,
-                target_grade = cfg.Tuner.TargetGrade,
-                max_retries = cfg.Tuner.MaxRetries,
-                save_captures = cfg.Tuner.SaveCaptures,
-                ocr_retries = cfg.Tuner.OcrRetries,
-                spring_mode = cfg.Tuner.SpringMode,
-                mouse_guard = cfg.Tuner.MouseGuard,
-                guard_px = cfg.Tuner.GuardPx,
-                recenter_max = cfg.Tuner.RecenterMax,
-                models = cfg.Tuner.Models,
-                timing = cfg.Tuner.Timing,
-                grade_colors = cfg.Tuner.GradeColors,
-                filter = cfg.Tuner.Filter,
-            },
-            // move_mode belongs here (docs/MOVE-SETS.md says the composer's choice is written to
-            // defaults.yaml) but was missing from this list, so every Save silently reset it to the
-            // property default. Same shape as the ocr_retries regression; the round-trip test now
-            // covers it with a non-default value.
-            gem = new { grades = cfg.Gem.Grades, start_grade = cfg.Gem.StartGrade, empty_mode = cfg.Gem.EmptyMode, empty_streak = cfg.Gem.EmptyStreak, colored_gap_min = cfg.Gem.ColoredGapMin, save_empty_captures = cfg.Gem.SaveEmptyCaptures, move_mode = cfg.Gem.MoveMode },
-            // Two settings the feeder reads (PetTool uses both) that no config file could carry: they
-            // live on PetConfig, and this projection had no `pet` block at all — so a `pet:` block
-            // hand-added to defaults.yaml was read on load and then DELETED by the next Save from any
-            // tab. Only these two are portable: the pet flow's geometry and its run state belong to
-            // local.yaml through LocalPet, and a test walks PetConfig to keep that split honest.
-            pet = new
-            {
-                items_per_minute = cfg.Pet.ItemsPerMinute,
-                pet_slot_occupied_above = cfg.Pet.PetSlotOccupiedAbove,
-            },
-            // spammer is deliberately absent: presets are personal and live in local.yaml. Leaving
-            // it here would write the merged in-memory presets back out on every Save Config
-            // (tuner, gem, hotkeys all call this), pushing a player's rotations into the file
-            // publish.bat ships. The spammer block in defaults.yaml is a static seed, not saved.
-        };
+        "calibration", "tuner", "gem", "arduino", "ui", "spammer", "buy_sell", "pet", "tooltip",
+        "quest", "settings",
+    };
 
-        WriteAtomically(PathOf("defaults.yaml"), DefaultsHeader + Serializer.Serialize(portable));
+    /// <summary>The top-level blocks in <paramref name="text"/> that this app does NOT own, as raw text to
+    /// append after a save — verbatim, comments included, so a hand-added or future block survives
+    /// untouched. Empty when there is nothing foreign, which is the normal case.</summary>
+    private static string ForeignBlocks(string text)
+    {
+        if (text.Length == 0) return "";
+
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var kept = new List<string>();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!TryTopLevelKey(lines[i], out var key) || IsOwned(key)) continue;
+
+            // Walk back over the comment lines that introduce the block, so a hand-written explanation
+            // travels with it. A blank line stops the walk, which keeps the file's own header out.
+            var from = i;
+            while (from > 0 && lines[from - 1].StartsWith('#')) from--;
+
+            var to = i + 1;
+            while (to < lines.Length && !TryTopLevelKey(lines[to], out _)) to++;
+
+            kept.Add(string.Join("\n", lines, from, to - from).TrimEnd('\n'));
+            i = to - 1;
+        }
+
+        return kept.Count == 0 ? "" : "\n" + string.Join("\n", kept) + "\n";
+    }
+
+    private static bool IsOwned(string key)
+    {
+        foreach (var owned in OwnedLocalBlocks)
+        {
+            if (owned == key) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>True when the line opens a top-level block: column zero, not a comment, and a bare
+    /// `name:` — which is how the writer emits every block it owns.</summary>
+    private static bool TryTopLevelKey(string line, out string key)
+    {
+        key = "";
+        if (line.Length == 0 || line[0] == '#' || char.IsWhiteSpace(line[0])) return false;
+
+        var colon = line.IndexOf(':');
+        if (colon <= 0) return false;
+
+        for (var i = 0; i < colon; i++)
+        {
+            if (!char.IsLetterOrDigit(line[i]) && line[i] != '_') return false;
+        }
+
+        key = line[..colon];
+        return true;
+    }
+
+    /// <summary>Writes the portable settings into local.yaml's `settings:` block — the same sections and
+    /// the same fields the shipped template carries, so that moving the save target moved the VALUES
+    /// rather than re-deriving them.
+    ///
+    /// This is what SaveDefaults used to do, into the file publish.bat ships. That file is a template an
+    /// update replaces, so a save target inside it was a setting an update could cover — which is the
+    /// whole reason this block exists. Nothing writes defaults.yaml any more.
+    ///
+    /// The block is MUTATED rather than replaced, and that is the point of it being a block at all: a
+    /// fresh object would drop the fold's marker and anything else this release does not know about —
+    /// the silent-deletion shape this file and its tests have paid for four times.</summary>
+    public void SaveSettings(AppConfig cfg) =>
+        // Merged rather than replaced: a fresh block would drop the fold's marker, and the marker is what
+        // makes "fold once" true.
+        UpdateLocal(local => MergeSettings(FromConfig(cfg), local.Settings ??= new LocalSettings()));
+
+    /// <summary>The portable settings of <paramref name="cfg"/>, as the mirror. This is the ONE place the
+    /// projection's section list is written down for READING — SaveSettings writes it into local.yaml and
+    /// the fold compares two of them — so neither can drift from the other.
+    ///
+    /// `game` is named, never the resolved object: GameConfig.Active is a reference INTO Variants, and
+    /// serialising that graph writes the variant twice, the second time as a YAML alias
+    /// (`us: &amp;o0 … active: *o0`) — the stray key a save left in defaults.yaml on 2026-10-13. And
+    /// arduino carries no port: that one is this machine's and stays in LocalArduino, which is why the
+    /// projection writes it as "".</summary>
+    private static LocalSettings FromConfig(AppConfig cfg) => new()
+    {
+        Window = cfg.Window,
+        ReferenceWindow = cfg.ReferenceWindow,
+        Game = new LocalSettingsGame { Variant = cfg.Game.Variant, Variants = cfg.Game.Variants },
+        Arduino = new LocalSettingsArduino { Vid = cfg.Arduino.Vid, Pid = cfg.Arduino.Pid, Baud = cfg.Arduino.Baud },
+        Hotkeys = cfg.Hotkeys,
+        Tuner = new LocalSettingsTuner
+        {
+            GradeOrder = cfg.Tuner.GradeOrder,
+            TargetGrade = cfg.Tuner.TargetGrade,
+            MaxRetries = cfg.Tuner.MaxRetries,
+            SaveCaptures = cfg.Tuner.SaveCaptures,
+            OcrRetries = cfg.Tuner.OcrRetries,
+            SpringMode = cfg.Tuner.SpringMode,
+            MouseGuard = cfg.Tuner.MouseGuard,
+            GuardPx = cfg.Tuner.GuardPx,
+            RecenterMax = cfg.Tuner.RecenterMax,
+            Models = cfg.Tuner.Models,
+            Timing = cfg.Tuner.Timing,
+            GradeColors = cfg.Tuner.GradeColors,
+            Filter = cfg.Tuner.Filter,
+        },
+        Gem = new LocalSettingsGem
+        {
+            Grades = cfg.Gem.Grades,
+            StartGrade = cfg.Gem.StartGrade,
+            EmptyMode = cfg.Gem.EmptyMode,
+            EmptyStreak = cfg.Gem.EmptyStreak,
+            ColoredGapMin = cfg.Gem.ColoredGapMin,
+            SaveEmptyCaptures = cfg.Gem.SaveEmptyCaptures,
+            MoveMode = cfg.Gem.MoveMode,
+        },
+        Pet = new LocalSettingsPet
+        {
+            ItemsPerMinute = cfg.Pet.ItemsPerMinute,
+            PetSlotOccupiedAbove = cfg.Pet.PetSlotOccupiedAbove,
+        },
+    };
+
+    /// <summary>Carries the sections <paramref name="from"/> holds onto <paramref name="to"/>, leaving
+    /// every section it does not hold alone. With <paramref name="differFrom"/> given, a section is
+    /// carried only when that one's WRITTEN form differs — the fold's rule, and what keeps a value the
+    /// player never touched out of the block so it goes on tracking the shipped template.
+    ///
+    /// Sections are carried WHOLE, never field by field: the apply side assigns the object, so half a
+    /// section would drag the other half's defaults in with it.
+    ///
+    /// <see cref="LocalSettings.LegacyFolded"/> is deliberately not in this list. The marker is not a
+    /// setting, and a merge that carried it would be able to clear it.</summary>
+    private static void MergeSettings(LocalSettings from, LocalSettings to, LocalSettings? differFrom = null)
+    {
+        if (Carry(from.Window, differFrom?.Window)) to.Window = from.Window;
+        if (Carry(from.ReferenceWindow, differFrom?.ReferenceWindow)) to.ReferenceWindow = from.ReferenceWindow;
+        if (Carry(from.Game, differFrom?.Game)) to.Game = from.Game;
+        if (Carry(from.Arduino, differFrom?.Arduino)) to.Arduino = from.Arduino;
+        if (Carry(from.Hotkeys, differFrom?.Hotkeys)) to.Hotkeys = from.Hotkeys;
+        if (Carry(from.Tuner, differFrom?.Tuner)) to.Tuner = from.Tuner;
+        if (Carry(from.Gem, differFrom?.Gem)) to.Gem = from.Gem;
+        if (Carry(from.Pet, differFrom?.Pet)) to.Pet = from.Pet;
+    }
+
+    /// <summary>True when a section should be carried: it must be present, and — when there is something
+    /// to compare against — it must differ from that in the form it would be WRITTEN in. Comparing the
+    /// serialised form rather than the objects makes "differs" mean "the file would say something
+    /// different", which is the only sense the fold cares about.</summary>
+    private static bool Carry<T>(T? from, T? compare) where T : class
+        => from != null && (compare == null || Serializer.Serialize(from) != Serializer.Serialize(compare));
+
+    /// <summary>Moves the player's own portable values out of the legacy defaults file and into
+    /// local.yaml's settings block, ONCE, and reports whether it succeeded.
+    ///
+    /// Reading is per leaf, writing is per SECTION: a section is carried whole as soon as any of its
+    /// leaves differs from the shipped template, because the apply side assigns objects — `hotkeys.start`
+    /// on its own would carry the default 0 for the other three keys.
+    ///
+    /// 'Differs from the shipped template' is how it reads 'the player changed it', and the direction it
+    /// errs in is the safe one: a default a release changed under a key nobody touched is preserved
+    /// rather than silently applied, and the release note naming that key is the habit that covers it.
+    ///
+    /// The source is never written, moved or deleted — it is the rollback copy and the record of what the
+    /// player had. A write that cannot happen returns false rather than throwing: the marker stays unset,
+    /// so the caller keeps reading the legacy file for the session and the fold retries next launch.</summary>
+    private bool FoldIntoLocal(AppConfig legacy, AppConfig shipped)
+    {
+        var differing = new LocalSettings();
+        MergeSettings(FromConfig(legacy), differing, differFrom: FromConfig(shipped));
+
+        try
+        {
+            UpdateLocal(local =>
+            {
+                var s = local.Settings ??= new LocalSettings();
+                MergeSettings(differing, s);
+                // Unconditional, and in the SAME write. A machine that never changed a value must still
+                // stop folding, or the next launch would fold the old template against a newer release's
+                // and pin that release's defaults as the player's own.
+                s.LegacyFolded = true;
+            });
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     // Machine-specific overlay shape (mirrors local.yaml).
@@ -531,6 +840,117 @@ public sealed class ConfigLoader
         public LocalPet? Pet { get; set; }
         public TooltipConfig? Tooltip { get; set; }
         public LocalQuest? Quest { get; set; }
+
+        /// <summary>The PORTABLE settings, in the machine's own file. Mirrors the shipped template's
+        /// sections and fields exactly — that is what the fence compares — so that the values a save
+        /// carries here are the ones defaults.yaml holds a template for.
+        ///
+        /// They live here rather than in defaults.yaml because that file is what publish.bat copies into
+        /// the release zip: a save target that is also a shipped file is a file an update can cover.
+        /// Written by <see cref="SaveSettings"/>; applied on load by <see cref="ApplyOverrides"/>.</summary>
+        public LocalSettings? Settings { get; set; }
+    }
+
+    /// <summary>See <see cref="LocalOverrides.Settings"/>. Every section is nullable and so is every
+    /// VALUE inside them, and that is load-bearing rather than defensive: a block the fold writes is
+    /// partial by design — it carries only the values the player changed — so a field the block does not
+    /// mention has to mean "not stated" and leave the shipped value standing. A non-nullable field would
+    /// make silence indistinguishable from zero, which is how a partial write blanks a setting.
+    ///
+    /// The nested whole objects (window, reference_window, hotkeys, models, timing, grade_colors,
+    /// filter) are the exception: they are copied and applied whole, so they keep the shape of the type
+    /// they mirror and reuse it directly.
+    ///
+    /// Note what an unset section looks like on disk: this writer emits a null as a BARE key, so a folded
+    /// block shows the sections it does not carry as `tuner:` with nothing under them. That is the same
+    /// shape the file already gives its other unset values (`spring_point:`, `startup_step:`), and a
+    /// reader must treat it as absent rather than as an empty object — which is exactly what the nullable
+    /// fields and the presence guards are for.</summary>
+    public sealed class LocalSettings
+    {
+        public WindowConfig? Window { get; set; }
+        public ReferenceWindowConfig? ReferenceWindow { get; set; }
+        public LocalSettingsGame? Game { get; set; }
+        public LocalSettingsArduino? Arduino { get; set; }
+        public HotkeysConfig? Hotkeys { get; set; }
+        public LocalSettingsTuner? Tuner { get; set; }
+        public LocalSettingsGem? Gem { get; set; }
+        public LocalSettingsPet? Pet { get; set; }
+
+        /// <summary>The once-only fold's marker (see PLAN-DEPLOY.md §4). A MODELLED field rather than a
+        /// comment or a bare key, because every writer re-serialises from the object graph and would
+        /// strip anything it does not know about — the marker is what makes "fold once" true, so it has
+        /// to survive every save. Written by the fold in step 2; carried through untouched by
+        /// <see cref="SaveSettings"/>.
+        ///
+        /// Until then it is null, and this writer emits a null as a BARE key — `legacy_folded:` with no
+        /// value — the same shape the file already gives its unset optionals (`startup_step:`,
+        /// `sell_slots:`). So the line shows up from the first settings save, meaning nothing yet.</summary>
+        public bool? LegacyFolded { get; set; }
+    }
+
+    /// <summary>game, without GameConfig's computed <c>Active</c>. That property is a reference INTO
+    /// <c>Variants</c>, and serialising the graph emits it twice — the second time as a YAML alias
+    /// (<c>us: &amp;o0 … active: *o0</c>), which is the stray key a save left in defaults.yaml. The mirror
+    /// names the variant and the table, and never the resolved object.</summary>
+    public sealed class LocalSettingsGame
+    {
+        /// <summary>Nullable so that "not stated" and "deliberately empty" stay different: an empty
+        /// variant is a real choice — it means the plain `window.title` is the target — so a block that
+        /// says nothing must not be able to make it.</summary>
+        public string? Variant { get; set; }
+
+        /// <summary>Merged per name rather than replaced, so a client a later release adds still
+        /// arrives: the same reasoning as the spammer's presets.</summary>
+        public Dictionary<string, GameVariant>? Variants { get; set; }
+    }
+
+    /// <summary>arduino, without the port: that one is this machine's and lives in LocalArduino, which
+    /// is why the projection writes <c>port = ""</c>.</summary>
+    public sealed class LocalSettingsArduino
+    {
+        public int? Vid { get; set; }
+        public List<int>? Pid { get; set; }
+        public int? Baud { get; set; }
+    }
+
+    /// <summary>The 13 portable tuner fields. The calibrated geometry (ocr, spring_point) is machine
+    /// state and stays in LocalTuner, so the two blocks never name the same field.</summary>
+    public sealed class LocalSettingsTuner
+    {
+        public List<string>? GradeOrder { get; set; }
+        public string? TargetGrade { get; set; }
+        public int? MaxRetries { get; set; }
+        public bool? SaveCaptures { get; set; }
+        public int? OcrRetries { get; set; }
+        public string? SpringMode { get; set; }
+        public string? MouseGuard { get; set; }
+        public int? GuardPx { get; set; }
+        public int? RecenterMax { get; set; }
+        public ModelsConfig? Models { get; set; }
+        public TimingConfig? Timing { get; set; }
+        public GradeColorsConfig? GradeColors { get; set; }
+        public FilterConfig? Filter { get; set; }
+    }
+
+    /// <summary>The 7 portable gem fields. The calibrated points, the move counts and the empty-slot
+    /// signature are machine state and stay in LocalGem.</summary>
+    public sealed class LocalSettingsGem
+    {
+        public List<string>? Grades { get; set; }
+        public string? StartGrade { get; set; }
+        public string? EmptyMode { get; set; }
+        public int? EmptyStreak { get; set; }
+        public int? ColoredGapMin { get; set; }
+        public bool? SaveEmptyCaptures { get; set; }
+        public string? MoveMode { get; set; }
+    }
+
+    /// <summary>The two pet settings the feeder reads, which no config file could carry before.</summary>
+    public sealed class LocalSettingsPet
+    {
+        public int? ItemsPerMinute { get; set; }
+        public double? PetSlotOccupiedAbove { get; set; }
     }
 
     /// <summary>The buy/sell tool's geometry and presets. Machine-specific like the gem positions —
@@ -844,8 +1264,8 @@ public sealed class ConfigLoader
         public Dictionary<string, QuestSequence>? Sequences { get; set; }
 
         /// <summary>Carried HERE and not in defaults.yaml, for the reason the tool-level scalars on the
-        /// Pet tab had to be: `SaveDefaults` rewrites defaults.yaml from an explicit field list, so a
-        /// setting with no line in that list is written once and silently dropped by the next Save from
+        /// Pet tab had to be: the old save path rewrote defaults.yaml from an explicit field list, so a
+        /// setting with no line in that list was written once and silently dropped by the next Save from
         /// any tab. The flows are the personal half and this is the behaviour half, but both are the
         /// Quest tab's to keep.</summary>
         public int? GuardPx { get; set; }

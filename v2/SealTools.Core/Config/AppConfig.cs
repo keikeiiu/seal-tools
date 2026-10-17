@@ -52,7 +52,7 @@ public sealed class AppConfig
 }
 
 /// <summary>Where the game's hover panel sits relative to the cursor — see
-/// docs/PLAN-HOVER-INFO.md.
+/// docs/docs/archive/PLAN-HOVER-INFO.md.
 ///
 /// A capability, not a setting of any one tool: the panel is anchored to the pointer, so its position
 /// relative to the pointer is the same everywhere in the game even though its SIZE varies by what is
@@ -62,7 +62,7 @@ public sealed class AppConfig
 /// All four values are client-relative PHYSICAL pixels, like every other calibrated coordinate here,
 /// which is why they belong in local.yaml: a box measured at one machine's scale means nothing at
 /// another's.</summary>
-/// <summary>Which game client this install is pointed at. See docs/PLAN-US-CLIENT.md.
+/// <summary>Which game client this install is pointed at. See docs/plans/PLAN-US-CLIENT.md.
 ///
 /// The TW and US clients are the same game with different text — and the text is not decoration here,
 /// it is what the suite MATCHES: the attribute dictionary, the per-level phrases, the feeder's time
@@ -113,7 +113,7 @@ public sealed class GameVariant
     public string Attributes { get; set; } = "attributes.yaml";
 }
 
-/// <summary>The quest hand-in tool's configured flows — see docs/PLAN-QUEST.md.
+/// <summary>The quest hand-in tool's configured flows — see docs/docs/archive/PLAN-QUEST.md.
 ///
 /// The tool REPLAYS an input sequence and reads nothing: no capture, no OCR, no window. That is why it
 /// has no calibration at all — the player puts the mouse where the clicks have to land, and the tool
@@ -166,7 +166,66 @@ public sealed class QuestConfig
     /// the tool says which case it is on its card instead — the same choice
     /// <see cref="SpammerConfig.ActiveKeys"/> makes, for the same reason.</summary>
     public QuestPreset ActivePreset =>
-        Presets.TryGetValue(Active, out var preset) ? preset : new QuestPreset();
+        // `preset is not null` is not redundant with the TryGetValue: a value-less key (`default:`)
+        // loads as a null VALUE, and TryGetValue then SUCCEEDS — returning that null. Without this
+        // the launcher's constructor threw before any window appeared.
+        Presets.TryGetValue(Active, out var preset) && preset is not null ? preset : new QuestPreset();
+
+    /// <summary>Restores the invariant every reader relies on: a name in <see cref="Presets"/> or
+    /// <see cref="Sequences"/> always has a body. YamlDotNet stores NULL — not a default object — for
+    /// a key written without one (`run:`), and `TryGetValue`/`ContainsKey` then report it as PRESENT.
+    /// That single shape reached five readers as a NullReferenceException: the Quest tab's
+    /// construction, Duplicate, the card's flow/sequence overrides, and the Save gate (which let an
+    /// entry through to a runner that then threw).
+    ///
+    /// The repair is an EMPTY instance, which is what `run: {}` would have meant. The key is kept
+    /// rather than dropped: dropping would silently rename the player's flow and could turn the active
+    /// name into a dangling one. Called once by <c>ConfigLoader.Load</c> after the merge.</summary>
+    public void NormaliseNullBodies()
+    {
+        foreach (var name in Presets.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+            Presets[name] = new QuestPreset();
+        foreach (var name in Sequences.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+            Sequences[name] = new QuestSequence();
+    }
+
+    /// <summary>Every sequence entry that names a flow which is not in <see cref="Presets"/>, as
+    /// (sequence name, 1-based entry position, flow name), ordered by sequence name then position.
+    ///
+    /// The entries editor used to fill such a row with whichever flow sorted first, and the next Save
+    /// then wrote that in — so deleting a flow quietly changed what a sequence runs, with nothing on
+    /// screen saying so. The editor now keeps the missing name visible instead, and Save refuses while
+    /// this list is non-empty, rather than choosing a replacement the player did not choose.
+    ///
+    /// Empty is the normal state: an entry names a flow, and deleting that flow is a reason to stop and
+    /// ask, not a reason to guess.
+    ///
+    /// The name is trimmed and a null is treated as empty, which is exactly what the runner does
+    /// (<c>QuestTool.RunSequence</c>): a hand-edited <c>preset:</c> with no value arrives as null, and
+    /// a padded <c>" name "</c> still runs. Refusing those here would block a Save for a sequence the
+    /// run would accept.</summary>
+    public List<(string Sequence, int Entry, string Flow)> DanglingSequenceEntries()
+    {
+        var dangling = new List<(string, int, string)>();
+        foreach (var (name, sequence) in Sequences.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            // A hand-edited `entries:` with no value is null (the same YamlDotNet behaviour that
+            // makes `preset:` null), and so is a bare `-` list item. Neither can be judged here;
+            // throwing would escape the Save handler's InfoBar and turn Save into a silent no-op.
+            var entries = sequence?.Entries;
+            if (entries == null) continue;
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var flow = entries[i]?.Preset?.Trim() ?? "";
+                // A name whose VALUE is null is the same defect as a missing one: the runner has no
+                // flow to plan. (`NormaliseNullBodies` removes the shape at load; this keeps a
+                // hand-built config from being saved into a run that throws.)
+                if (!Presets.TryGetValue(flow, out var preset) || preset is null)
+                    dangling.Add((name, i + 1, flow));
+            }
+        }
+        return dangling;
+    }
 }
 
 /// <summary>One quest's flow: how long to wait, how many times, and what to send each time.</summary>
@@ -184,7 +243,7 @@ public sealed class QuestPreset
 }
 
 /// <summary>Several flows in one run — A three times, then B twice, and the whole list repeated by a
-/// master loop. For the quests that share an NPC. See docs/PLAN-QUEST.md §11.
+/// master loop. For the quests that share an NPC. See docs/docs/archive/PLAN-QUEST.md §11.
 ///
 /// **EVERY FLOW IN A SEQUENCE CLICKS THE SAME PLACE**, and the initial wait belongs to the sequence,
 /// ONCE. That follows from the design rather than being a shortcut: the tool never moves the cursor, so
@@ -380,7 +439,7 @@ public sealed class PetQueueEntry
 /// here is machine-specific, so all of it lives in local.yaml beside the buy/sell grid; nothing
 /// belongs in the portable defaults.yaml.
 ///
-/// See docs/PLAN-PET-AUTOFEED.md. Two things about this shape are worth knowing before reading it:
+/// See docs/plans/PLAN-PET-AUTOFEED.md. Two things about this shape are worth knowing before reading it:
 /// the bag opened by the boarding window is at a DIFFERENT place from the one the shop opens beside,
 /// so <see cref="BagGrid"/> is its own calibration and must not be shared with
 /// <see cref="BuySellConfig.BagGrid"/>; and the points below are the click path, which is
@@ -743,7 +802,7 @@ public sealed class ReferenceWindowConfig
 
 /// <summary>The display environment a calibration was measured in — written by the calibrators,
 /// read by the Setup tab. All sizes are PHYSICAL pixels. Storing the scale makes the coordinates
-/// portable: another machine can tell it must convert or recalibrate (see docs/COORDINATES.md).</summary>
+/// portable: another machine can tell it must convert or recalibrate (see docs/spec/COORDINATES.md).</summary>
 public sealed class CalibrationInfo
 {
     /// <summary>Physical px per logical px at calibration time (e.g. 1.5).</summary>
@@ -975,7 +1034,7 @@ public sealed class SpammerConfig
     public Dictionary<string, Dictionary<string, double>> Presets { get; set; } = new();
 
     /// <summary>Legacy flat key list (pre-presets). Read on load for migration only — SpammerConfig
-    /// is never serialized (SaveDefaults writes an explicit shape), so this is not written back.</summary>
+    /// is never serialized (a save writes an explicit shape), so this is not written back.</summary>
     public Dictionary<string, double>? Keys { get; set; }
 
     /// <summary>The keys of the active preset, empty when that preset is missing. The empty result

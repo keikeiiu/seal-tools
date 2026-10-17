@@ -4,14 +4,23 @@ Plans that are **built and shipped**. They are kept because the reasoning inside
 code looks the way it does — and a design decision without its reasoning gets reversed by whoever finds
 it inconvenient next.
 
-**Nothing here is pending work.** How it works now is [DESIGN.md](../DESIGN.md). What is still open is
-[TODO.md](../TODO.md). What was done, and when, is [PROGRESS.md](../PROGRESS.md).
+**Nothing here is pending work.** How it works now is [DESIGN.md](../spec/DESIGN.md). What we are
+executing is [TODO.md](../backlog/TODO.md) (and what is known-broken but unscheduled is
+[KNOWN-ISSUES.md](../backlog/KNOWN-ISSUES.md)). What was done, and when, is
+[PROGRESS.md](../records/PROGRESS.md).
 
 | plan | what it built | landed |
 |---|---|---|
 | [PLAN-BUY-SELL.md](PLAN-BUY-SELL.md) | the buy/sell tool — the scroll-and-match flow, presets, the attribute filter | v2.9, verified live 2026-09-14 |
 | [PLAN-HOVER-INFO.md](PLAN-HOVER-INFO.md) | reading the hover tooltip — the calibrated offset, the hover read, `PetPanel` | 2026-09-18, parser 2026-09-19 |
 | [PLAN-RESIDENT-PET.md](PLAN-RESIDENT-PET.md) | running tools alongside the pet feeder — per-tool records, slot-aware `StopTool`, the port gate, the deferral | v2.11, 2026-09-21 |
+| [PLAN-OWNERSHIP.md](PLAN-OWNERSHIP.md) | the tool lifecycle — Hold Space stopping, `arduino.port`, the `_running` lock, and the calibration gate | v2.6, 2026-10-06 (gate as PLAN-ARBITER step 2) |
+| [PLAN-PET-FLOW.md](PLAN-PET-FLOW.md) | the pet feeder's visit flow — close retry and open probe, the veto, the single sweep, the shared look/visit window | v2.15, 2026-10-13 |
+| [PLAN-PET-BOARD-CHECK.md](PLAN-PET-BOARD-CHECK.md) | the feedable scan, the queue it writes, and the finished-pet guard | 2026-09-21 |
+| [PLAN-QUEST.md](PLAN-QUEST.md) | the quest hand-in tool, and its sequences | v2.13 (tool), v2.14 (sequences) |
+| [STATUS.md](STATUS.md) | a superseded status snapshot — kept as the record of a working session, not as truth | stopped at v2.4, superseded 2026-09-22 |
+| [PLAN-PET-CLOSE-GUARD.md](PLAN-PET-CLOSE-GUARD.md) | the design of the boarding window's close — the retry, and the already-open probe | v2.15, 2026-10-13 |
+| [PLAN-PET-SWEEP.md](PLAN-PET-SWEEP.md) | the design of the bag sweep — once per visit, every stored cell re-read before use | v2.15, 2026-10-13 |
 
 **The rule this folder exists to keep:** a plan is a *proposal*. When one completes, its durable
 reasoning belongs in `DESIGN.md` and the plan comes here — so that "how does this work?" is never

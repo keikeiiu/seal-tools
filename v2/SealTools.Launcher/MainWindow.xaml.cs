@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -133,7 +134,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // to persist an accurate row_height instead of the loose attr.Height/3 guess.
     private int? _tunerAttrPitch;
     // Display measurement from the last capture of each tab (scale + physical client rect), saved
-    // with the calibration so another machine can convert (docs/COORDINATES.md).
+    // with the calibration so another machine can convert (docs/spec/COORDINATES.md).
     private DisplayInfo? _tunerDisplay;
     private DisplayInfo? _gemDisplay;
     private Point? _tunerDragStart;
@@ -321,6 +322,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private QuestCardTarget? _activeQuestTarget;
     private ComboBox? _questTargetCard;
     private Wpf.Ui.Controls.TextBox? _questCountCard;
+
+    /// <summary>The value last SEEDED into the card's count box, or null if the player has not been
+    /// given one yet. Saving the item the card is aimed at may replace the box only while it still
+    /// equals this — a count the player dialled in is a per-run override and must survive a Save.</summary>
+    private string? _questCountSeeded;
     /// <summary>True while the two pickers are being synchronised, so their events don't recurse.</summary>
     private bool _syncingBuy;
     private TextBlock? _buyHint;
@@ -611,12 +617,19 @@ public partial class MainWindow : FluentWindow, IDisposable
                 _questTargetCard.SelectionChanged += (_, _) =>
                 {
                     if (_questTargetCard.SelectedItem is not QuestCardTarget picked) return;
+                    // Rebuilding ItemsSource re-raises this with the SAME target (a new record instance,
+                    // same name and kind). Only a real change may re-seed the box: otherwise a flow
+                    // switch on the Configuration tab resets a count the player dialled in here.
+                    var changed = !Equals(picked, _activeQuestTarget);
                     _activeQuestTarget = picked;
 
                     // The box follows the target: 5 loops means one thing for a sequence and another for
                     // a flow, and leaving a stale number there is how a run gets the wrong count.
-                    if (_questCountCard != null)
+                    if (changed && _questCountCard != null)
+                    {
                         _questCountCard.Text = QuestDefaultLoops(picked).ToString(CultureInfo.InvariantCulture);
+                        _questCountSeeded = _questCountCard.Text;
+                    }
                 };
 
                 _questCountCard = UiText("1");
@@ -1003,16 +1016,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (_configExpanded && _miniToolIds.Count == 0 && Height > _collapsedHeight)
                 _configExpandedHeight = Height;
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Ui = new ConfigLoader.LocalUi
+            _service.UpdateLocal(local => local.Ui = new ConfigLoader.LocalUi
             {
                 Left = double.IsNaN(Left) ? null : Left,
                 Top = double.IsNaN(Top) ? null : Top,
                 Width = double.IsNaN(Width) ? null : Width,
                 ExpandedHeight = _configExpandedHeight > 0 ? _configExpandedHeight : null,
                 Pinned = Topmost,
-            };
-            _service.SaveLocal(local);
+            });
         }
         catch { /* never let this break shutdown */ }
     }
@@ -1126,7 +1137,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     // A titled section: a bordered Card with a header, which is how every tab groups its controls.
     // Card rather than CardControl on purpose — CardControl measures its content with unbounded
-    // width, so wrapping text runs past the border (see docs/PLAN-UI-CLEANUP.md).
+    // width, so wrapping text runs past the border (see docs/plans/PLAN-UI-CLEANUP.md).
     private static Card Section(string title, params UIElement[] children)
     {
         var body = new StackPanel();
@@ -1392,7 +1403,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             "Display environment. Coordinates are stored in PHYSICAL pixels relative to the game window's " +
             "client area. Detect reads the current setup; the scale and reference client size stay editable " +
             "if detection is wrong. If another machine's values differ from the stored calibration, " +
-            "recalibrate there (see docs/COORDINATES.md)."));
+            "recalibrate there (see docs/spec/COORDINATES.md)."));
 
         var monitor = Mono();
         var window = Mono();
@@ -1414,6 +1425,57 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         DisplayInfo? detected = null;
 
+        // The stored calibration against THIS machine, checked when the tab is built, when it is
+        // re-entered and when the launcher is activated — not only when Detect is pressed. The line it
+        // replaces appeared after Detect alone, so a machine that had drifted showed nothing until
+        // somebody happened to press the button, and even then it compared the client size only. A
+        // different scale or a different screen invalidates every stored coordinate just as completely.
+        string? lastResult = null;
+
+        void CheckAgainstStored()
+        {
+            var caution = Res("SystemFillColorCautionBrush");
+            var quiet = Res("TextFillColorSecondaryBrush");
+
+            if (_service.Config.Calibration.DpiScale is null && _service.Config.Calibration.ClientSize is null)
+            {
+                warning.Foreground = quiet;
+                warning.Text = "Nothing is stored to compare against yet — calibrate on this machine first.";
+                return;
+            }
+
+            // What Detect just measured, or a fresh reading. Reading needs the game window, so a closed
+            // game is the one case this cannot answer — and then the wording describes the LAST check
+            // rather than the present, because the game may have been opened since. A line that declared
+            // it closed would be wrong the moment it was.
+            var info = detected;
+            if (info is null)
+            {
+                var hwnd = WindowFinder.FindByTitle(_service.Config.Window.Title);
+                if (hwnd != IntPtr.Zero) info = Dpi.Measure(hwnd);
+            }
+
+            if (info is null)
+            {
+                warning.Foreground = quiet;
+                warning.Text = lastResult is null
+                    ? "Not compared with this machine yet — the comparison reads the live game window, so it needs the game open."
+                    : $"Last check: {lastResult}. Not re-checked — the game window is not open.";
+                return;
+            }
+
+            var diffs = CalibrationCheck.Differences(_service.Config.Calibration, info);
+            lastResult = diffs.Count == 0
+                ? "this machine matched the stored calibration"
+                : "this machine differed — " + string.Join("; ", diffs);
+
+            warning.Foreground = diffs.Count == 0 ? quiet : caution;
+            warning.Text = diffs.Count == 0
+                ? "This machine matches the stored calibration."
+                : "⚠ This machine differs from the stored calibration — " + string.Join("; ", diffs) +
+                  ". Recalibrate on this machine (see docs/spec/COORDINATES.md).";
+        }
+
         void ShowStored()
         {
             var c = _service.Config.Calibration;
@@ -1421,11 +1483,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 ? "Stored calibration: none yet — run Calibrate Tuner / Calibrate Gem."
                 : $"Stored calibration: scale {c.DpiScale} · client {string.Join("×", c.ClientSize ?? new List<int>())} · {c.MeasuredAt}";
 
-            warning.Text = detected is { } d && c.ClientSize is { Count: 2 } cs &&
-                           (cs[0] != d.PhysicalClient.Width || cs[1] != d.PhysicalClient.Height)
-                ? $"⚠ The calibration was measured on a {cs[0]}×{cs[1]} client; yours is " +
-                  $"{d.PhysicalClient.Width}×{d.PhysicalClient.Height} — recalibrate."
-                : "";
+            CheckAgainstStored();
         }
 
         var detect = MakeButton("Detect", ControlAppearance.Primary);
@@ -1462,6 +1520,12 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         panel.Children.Add(Section("Stored calibration", stored, warning));
 
+        // Re-check on re-entry and on activation, but only while the tab is actually on screen: each
+        // check reads the live window, and there is nothing to gain from doing that while the player is
+        // looking at another tab. Detect and Save refresh it too, through ShowStored.
+        panel.IsVisibleChanged += (_, e) => { if (e.NewValue is true) CheckAgainstStored(); };
+        Activated += (_, _) => { if (panel.IsVisible) CheckAgainstStored(); };
+
         var result = new InfoBar { IsOpen = false, IsClosable = true, Margin = new Thickness(0, 12, 0, 0) };
         var save = MakeButton("Save Setup", ControlAppearance.Primary);
         save.Margin = new Thickness(0, 0, 0, 0);
@@ -1479,9 +1543,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (detected is { } d) cal.Screen = new List<int> { d.ScreenWidth, d.ScreenHeight };
             cal.MeasuredAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Calibration = cal;
-            SaveReport(() => _service.SaveLocal(local), result,
+            SaveReport(() => _service.UpdateLocal(local => local.Calibration = cal), result,
                 $"Written to local.yaml — scale {cal.DpiScale}, client {w}×{h}.");
             ShowStored();
         };
@@ -1681,7 +1743,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             cfg.Tuner.SpringMode = springMode.SelectedItem?.ToString() ?? "manual";
             cfg.Tuner.MouseGuard = mouseGuard.SelectedItem?.ToString() ?? "off";
             SaveReport(() => _service.SaveConfig(), result,
-                $"Written to defaults.yaml — target {cfg.Tuner.TargetGrade}, " +
+                $"Written to local.yaml — target {cfg.Tuner.TargetGrade}, " +
                 $"{cfg.Tuner.Filter.Rules.Count} rule(s), {cfg.Tuner.Filter.OverrideRules.Count} override(s).");
         };
         panel.Children.Add(save);
@@ -1731,7 +1793,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Gem.EmptyMode = mode.Value;
             _service.Config.Gem.SaveEmptyCaptures = saveEmptyCaptures.IsChecked ?? false;
             SaveReport(() => _service.SaveConfig(), result,
-                $"Written to defaults.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.");
+                $"Written to local.yaml — start at {_service.Config.Gem.StartGrade}, {mode.Value} on empty.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -1857,6 +1919,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         var combosPanel = new StackPanel();
         var availableBox = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
         var addToOrder = MakeInlineButton("Add to order", ControlAppearance.Secondary);
+        // Declared here rather than beside the Advanced card below: LoadRows keeps the raw text in step
+        // with the preset on screen, and every path that reads the editor (Save, Create, Rename,
+        // Duplicate, switching preset) asks whether Advanced is ticked. C# will not let any of those
+        // reference a local declared after it. Only the CARD is built down there, next to its section.
+        var advanced = new CheckBox
+        {
+            Content = "Advanced — edit the raw key:seconds list",
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            Margin = new Thickness(0, 12, 0, 4),
+        };
+        var raw = new TextBox
+        {
+            AcceptsReturn = true,
+            Height = 110,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
         // noise. One header, then bare boxes lined up underneath it. Three columns now — key, delay,
         // and the remove button: the "Fast" column went with the tick box.
@@ -1875,33 +1953,87 @@ public partial class MainWindow : FluentWindow, IDisposable
         Grid.SetColumn(delayHeaderLabel, 1);
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
-        // MinWidth is a floor for a very narrow window, not the width it takes: it sits in a star
-        // column now, so it stretches into whatever the Rename and Delete buttons leave.
-        var presetBox = new ComboBox { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
-        var presetName = UiText("");
-        presetName.Width = 160;
-        presetName.VerticalAlignment = VerticalAlignment.Center;
-
-        // Contextual name prompt — appears only while creating or renaming a preset.
-        var promptLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        var confirmBtn = MakeButton("Create", ControlAppearance.Primary);
-        var cancelBtn = MakeButton("Cancel", ControlAppearance.Secondary);
-        cancelBtn.Margin = new Thickness(8, 0, 0, 0);
-        var namePrompt = new StackPanel { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 8) };
-        namePrompt.Children.Add(promptLabel);
-        namePrompt.Children.Add(presetName);
-        namePrompt.Children.Add(confirmBtn);
-        namePrompt.Children.Add(cancelBtn);
-        string? promptMode = null; // "create" | "rename" | null
-
-        void ShowPrompt(string mode, string label, string button)
+        // Feedback for this tab: the picker's messages, and the run's status. Declared here because the
+        // picker's callbacks are created before the cards that display it are built.
+        var status = new TextBlock
         {
-            promptMode = mode;
-            promptLabel.Text = label;
-            confirmBtn.Content = button;
-            namePrompt.Visibility = Visibility.Visible;
-            presetName.Focus();
-        }
+            Foreground = Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        // MinWidth is a floor for a very narrow window, not the width it takes: the picker has its own
+        // row, so it stretches to the full content column.
+        var spammerPicker = new PresetPicker(new PresetPickerOptions
+        {
+            Noun = "preset",
+            Items = presets,
+            Active = () => current,
+            SetActive = name => current = name,
+            NewItem = () => new Dictionary<string, double>(),
+            // The keys and nothing else: the three sibling maps are keyed BY THE PRESET NAME, so a new
+            // name starts with none of them — the same state Create leaves a preset in. The copy note
+            // says so, because the copy otherwise looks complete.
+            CopyOf = from => PresetCopy.CopySpammerKeys(presets[from]),
+            BeforeChange = () =>
+            {
+                // Rows, or the raw text while Advanced is ticked — one source for every path, so an
+                // edit made in the visible view is never the one that gets dropped.
+                var live = LiveKeys();
+                presets[current] = live;
+                Commit(live);   // and the order with them — the two are one rotation
+            },
+            AfterChange = () =>
+            {
+                LoadRows(current);
+                UpdateSummary();
+                RefreshSpammerCard();   // a name made, renamed or deleted here must reach the card
+            },
+            Report = (_, message) => status.Text = message,
+            // Every name-keyed map, not just Presets: an orphaned Priority/Combos/Startup entry under
+            // a free name would make this "fresh" copy inherit an order, combos or an opening — and
+            // the copy note says it has none.
+            TakenNames = () => presets.Keys.Concat(priority.Keys).Concat(combosMap.Keys).Concat(startupMap.Keys),
+            CopyNote = ". It has the same keys, but no key order, no combos and no opening until you add them.",
+            AfterRename = (old, name) =>
+            {
+                // The order is keyed by preset name too, so it has to move with it. Carrying the
+                // keys and leaving the order behind would drop the rotation to "no rule" — silently,
+                // and looking exactly like the feature not existing.
+                if (priority.Remove(old, out var movedOrder)) priority[name] = movedOrder;
+                if (combosMap.Remove(old, out var movedCombos)) combosMap[name] = movedCombos;
+                if (startupMap.Remove(old, out var movedOpening)) startupMap[name] = movedOpening;
+            },
+            ConfirmAndDelete = gone =>
+            {
+                if (presets.Count <= 1) { status.Text = "The last preset cannot be deleted."; return false; }
+                if (MessageBox.Show($"Delete preset '{gone}' and its keys?", "Delete preset",
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
+
+                presets.Remove(gone);
+                // Its order goes with it. Left behind it would be an entry for a preset that no longer
+                // exists — invisible in the tab, still in the file, and restored to life by a later
+                // preset that happened to reuse the name.
+                priority.Remove(gone);
+                combosMap.Remove(gone);
+                startupMap.Remove(gone);
+                current = presets.Keys.First();
+                status.Text = $"Deleted preset '{gone}'.";
+                return true;
+            },
+            // The prompt is a temporary mode over the editor: reveal the editor and hide Edit/Done
+            // while a name is being typed, and put the button back when the prompt closes. Without the
+            // restore, one rename left the editor impossible to reopen or collapse again.
+            PromptOpened = () =>
+            {
+                editor.Visibility = Visibility.Visible;
+                editButton.Content = "Done";
+                editButton.Visibility = Visibility.Collapsed;
+            },
+            PromptClosed = () => editButton.Visibility = Visibility.Visible,
+            MinWidth = 110,
+            PromptWidth = 160,
+        });
 
         void AddRow(string key, string delay)
         {
@@ -1961,143 +2093,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             startupStepValue = opening.Step;
             startupLeadBox.Text = startupLeadValue.ToString(CultureInfo.InvariantCulture);
             startupStepBox.Text = startupStepValue.ToString(CultureInfo.InvariantCulture);
-            if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); UpdateCombosPanel(); return; }
+            if (!presets.TryGetValue(name, out var keys))
+            {
+                raw.Text = "";
+                UpdateOrderPanel();
+                UpdateCombosPanel();
+                return;
+            }
+            // The raw box follows the preset too. It has no change handler, so it cannot update itself;
+            // without this it keeps the PREVIOUS preset's text after a switch, and Advanced (or
+            // Duplicate, which reads the same source) would then act on text belonging to another key set.
+            raw.Text = SerializeKeys(keys);
             foreach (var kv in keys)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
             UpdateOrderPanel();
             UpdateCombosPanel();
         }
 
-        const string AddNewMarker = "＋ Add new…";
-
-        void RefreshPresetList(string select)
-        {
-            var names = presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
-            names.Add(AddNewMarker);
-            presetBox.ItemsSource = names;
-            presetBox.SelectedItem = select;
-        }
-
-        var status = new TextBlock
-        {
-            Foreground = Res("TextFillColorSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-
-        bool loading = false;
-        presetBox.SelectionChanged += (_, _) =>
-        {
-            if (loading || presetBox.SelectedItem is not string name) return;
-            if (name == AddNewMarker)
-            {
-                // Snap the picker back to the real preset, then open the editor for the new name.
-                loading = true; presetBox.SelectedItem = current; loading = false;
-                editor.Visibility = Visibility.Visible;
-                editButton.Content = "Done";
-                presetName.Text = "";
-                ShowPrompt("create", "Create preset:", "Create");
-                return;
-            }
-            if (name == current) return;
-            var live = RowsToKeys(); // keep unsaved edits when switching
-            presets[current] = live;
-            Commit(live);       // and the order with them — the two are one rotation
-            current = name;
-            LoadRows(name);
-            UpdateSummary();
-        };
-
-        // Closing the prompt also restores the Edit/Done button. Rename hides it while the prompt is
-        // open, and nothing put it back — so after a single rename the editor could never be
-        // collapsed again, and if it was already collapsed it could not be reopened at all.
-        void ClosePrompt()
-        {
-            namePrompt.Visibility = Visibility.Collapsed;
-            promptMode = null;
-            editButton.Visibility = Visibility.Visible;
-        }
-
-        cancelBtn.Click += (_, _) => ClosePrompt();
-
-        confirmBtn.Click += (_, _) =>
-        {
-            var name = presetName.Text.Trim();
-            if (name.Length == 0) { status.Text = "Type a name first."; return; }
-            if (promptMode == "create")
-            {
-                if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                var live = RowsToKeys();
-                presets[current] = live;
-                Commit(live);
-                presets[name] = new Dictionary<string, double>();
-                current = name;
-                loading = true; RefreshPresetList(name); loading = false;
-                LoadRows(name);
-                status.Text = $"Added preset '{name}'.";
-            }
-            else if (promptMode == "rename")
-            {
-                if (name == current) { status.Text = "That is already the name."; return; }
-                if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                var live = RowsToKeys();
-                presets[current] = live;
-                Commit(live);
-                presets.Remove(current);
-                presets[name] = live;
-                var old = current;
-                current = name;
-                // The order is keyed by preset name too, so it has to move with it. Carrying the
-                // keys and leaving the order behind would drop the rotation to "no rule" — silently,
-                // and looking exactly like the feature not existing.
-                if (priority.Remove(old, out var movedOrder)) priority[name] = movedOrder;
-                if (combosMap.Remove(old, out var movedCombos)) combosMap[name] = movedCombos;
-                if (startupMap.Remove(old, out var movedOpening)) startupMap[name] = movedOpening;
-                loading = true; RefreshPresetList(name); loading = false;
-                status.Text = $"Renamed '{old}' to '{name}'.";
-            }
-            presetName.Text = "";
-            ClosePrompt();
-            UpdateSummary();
-            RefreshSpammerCard();   // a preset made or renamed here must appear on the card at once
-        };
-
-        var renamePreset = MakeButton("Rename", ControlAppearance.Secondary);
-        renamePreset.Click += (_, _) =>
-        {
-            editor.Visibility = Visibility.Visible;
-            // The editor is open, so the button reads Done — matching the "＋ Add new…" path. It is
-            // hidden only while the name prompt is up, and ClosePrompt brings it back.
-            editButton.Content = "Done";
-            editButton.Visibility = Visibility.Collapsed;
-            presetName.Text = current;
-            ShowPrompt("rename", "Rename to:", "Rename");
-        };
-        var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
-        delPreset.Click += (_, _) =>
-        {
-            if (presets.Count <= 1) { status.Text = "The last preset cannot be deleted."; return; }
-            var confirm = MessageBox.Show(
-                $"Delete preset '{current}' and its keys?",
-                "Delete preset",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-            if (confirm != MessageBoxResult.Yes) return;
-            var gone = current;
-            presets.Remove(current);
-            // Its order goes with it. Left behind it would be an entry for a preset that no longer
-            // exists — invisible in the tab, still in the file, and restored to life by a later
-            // preset that happened to reuse the name.
-            priority.Remove(gone);
-            combosMap.Remove(gone);
-            startupMap.Remove(gone);
-            current = presets.Keys.First();
-            loading = true; RefreshPresetList(current); loading = false;
-            LoadRows(current);
-            UpdateSummary();
-            RefreshSpammerCard();   // the deleted name must leave the card's list with it
-            status.Text = $"Deleted preset '{gone}'.";
-        };
         // The initial keys AND order are loaded by LoadRows at the end of this method rather than
         // here: LoadRows also fills the Order panel, and that panel does not exist yet at this point
         // in the build. Splitting the two would be the way for the rows and the order to disagree
@@ -2106,36 +2118,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         var addButton = MakeButton("+ Add Key", ControlAppearance.Secondary);
         addButton.Click += (_, _) => { AddRow("", "0.2"); UpdateOrderPanel(); };
 
-        // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
-        // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
-        // the name field. LabeledField gives both rows the same label column.
-        foreach (var b in new[] { renamePreset, delPreset })
-            b.Margin = new Thickness(8, 0, 0, 0);
-
-        // A Grid, not a horizontal StackPanel. A StackPanel measures its children with unbounded width,
-        // so the picker took its whole MinWidth and the two buttons their natural size, and the total
-        // ran past the card — at a 619-logical-px window the Delete button was clipped mid-word
-        // ("Delet"). With the picker in a star column it takes what is left rather than demanding it,
-        // so the row fits at any width instead of only at the width it was built at.
-        var pickRow = new Grid();
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(presetBox, 0);
-        Grid.SetColumn(renamePreset, 1);
-        Grid.SetColumn(delPreset, 2);
-        pickRow.Children.Add(presetBox);
-        pickRow.Children.Add(renamePreset);
-        pickRow.Children.Add(delPreset);
-
         panel.Children.Add(Section("Active",
             Hint("Which key set the spammer presses. The keys below are a read-only summary; click Edit " +
                  "to change them. Switching the preset is not saved until Save Preset."),
-            LabeledField("Preset", pickRow),
+            LabeledField("Preset", spammerPicker.Layout),
             keysSummary,
             editButton,
             status));
-        editor.Children.Add(namePrompt);
+        editor.Children.Add(spammerPicker.Prompt);
         editor.Children.Add(Section("Keys",
             // Said here as well as in the tab intro: every key is stored as "*0, *1, …", and the one
             // thing a reader needs to know about them is what that star means.
@@ -2164,6 +2154,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             return result;
         }
+
+        // The keys as the editor holds them RIGHT NOW. Advanced is authoritative while it is ticked:
+        // the raw box has no change handler, so the rows are deliberately stale then, and Save has
+        // always read the raw text. Every path that reads the editor uses this one function — Save,
+        // Create, Rename, Duplicate and the preset switch — because a path that picks the other source
+        // silently drops an edit made in the view it did not read.
+        Dictionary<string, double> LiveKeys() =>
+            advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
 
         // Written back into `priority` and `combosMap` on every path that leaves the current preset,
         // and on Save — exactly as `rows` are written back through RowsToKeys(). Both are pruned
@@ -2219,18 +2217,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         // Advanced: the same data as raw "key:seconds" lines, for setups the rows can't express.
-        var advanced = new CheckBox
-        {
-            Content = "Advanced — edit the raw key:seconds list",
-            Foreground = Res("TextFillColorPrimaryBrush"),
-            Margin = new Thickness(0, 12, 0, 4),
-        };
-        var raw = new TextBox
-        {
-            AcceptsReturn = true,
-            Height = 110,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
+        // `advanced` and `raw` are declared further up — see the note there.
         var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
         rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
         editor.Children.Add(Section("Advanced",
@@ -2252,7 +2239,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         void UpdateOrderPanel()
         {
             orderPanel.Children.Clear();
-            var live = RowsToKeys();
+            var live = LiveKeys();
 
             if (order.Count == 0)
             {
@@ -2336,7 +2323,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         void UpdateCombosPanel()
         {
             combosPanel.Children.Clear();
-            var live = RowsToKeys();
+            var live = LiveKeys();
 
             if (comboList.Count == 0)
             {
@@ -2498,7 +2485,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Preset", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
-            var live = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            var live = LiveKeys();
             presets[current] = live;
             // Committed against the keys actually being saved — in Advanced mode those are the raw
             // ones, not the rows — so the order is pruned against the same set. Pruning against the
@@ -2509,8 +2496,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             // defaults.yaml is the template publish.bat ships, so a preset saved there would be
             // published with the next release. The in-memory config is already correct: `presets`
             // is the same dictionary the spammer tool reads.
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Spammer = new ConfigLoader.LocalSpammer
+            SaveReport(() => _service.UpdateLocal(local => local.Spammer = new ConfigLoader.LocalSpammer
             {
                 Active = current,
                 Presets = presets.ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -2526,8 +2512,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // save drops it from the file — the loader folds it into this on the way in, and
                 // writing both would leave two sources for the same setting.
                 Startup = _service.Config.Spammer.Startup,
-            };
-            SaveReport(() => _service.SaveLocal(local), result,
+            }), result,
                 $"Preset '{current}' written to local.yaml ({presets[current].Count} key(s), " +
                 $"{order.Count} in the order, {comboList.Count} combo(s)).");
             UpdateSummary();
@@ -2549,18 +2534,16 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var want = _service.Config.Spammer.Active;
             if (want == current || !presets.ContainsKey(want)) return;
-            var live = RowsToKeys();
+            var live = LiveKeys();
             presets[current] = live;
             Commit(live);
             current = want;
-            loading = true; RefreshPresetList(current); loading = false;
+            spammerPicker.Refresh(current);
             LoadRows(current);
             UpdateSummary();
         };
 
-        loading = true;
-        RefreshPresetList(current);
-        loading = false;
+        spammerPicker.Refresh(current);
         LoadRows(current);
         UpdateSummary();
         RefreshSpammerCard();
@@ -3176,7 +3159,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // v1 does a single cursor-place + C — no focus-click, no double click. Mirror that: put the
         // cursor on the point with the Arduino and click once. A cursor that can't be placed is
-        // reported, never clicked through (docs/CURSOR-INVESTIGATION.md).
+        // reported, never clicked through (docs/investigations/CURSOR-INVESTIGATION.md).
         try
         {
             var target = WindowFinder.ComputeCursorTarget(display, (int)pt.Value.X, (int)pt.Value.Y);
@@ -3666,7 +3649,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         return items;
     }
 
-    // Environment block recorded with a calibration (physical pixels). See docs/COORDINATES.md.
+    // Environment block recorded with a calibration (physical pixels). See docs/spec/COORDINATES.md.
     private static CalibrationInfo ToCalibration(DisplayInfo d) => new()
     {
         DpiScale = Math.Round(d.Scale, 4),
@@ -3884,16 +3867,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
-        if (_tunerSpringPoint is { } sp)
-            local.Tuner.SpringPoint = new List<int> { (int)Math.Round(sp.X), (int)Math.Round(sp.Y) };
-        if (_tunerDisplay is { } d)
-        {
-            local.Calibration = ToCalibration(d);
-            _service.Config.Calibration = local.Calibration;
-        }
-        if (!TrySaveCalibration(() => _service.SaveLocal(local), _tunerHint!,
+        // Built outside the save so the in-memory config can be refreshed from the same values, and
+        // so the early return below still leaves nothing half-applied.
+        var springPoint = _tunerSpringPoint is { } sp
+            ? new List<int> { (int)Math.Round(sp.X), (int)Math.Round(sp.Y) }
+            : null;
+        var calibration = _tunerDisplay is { } d ? ToCalibration(d) : null;
+        if (calibration != null) _service.Config.Calibration = calibration;
+
+        if (!TrySaveCalibration(() => _service.UpdateLocal(local =>
+            {
+                local.Tuner = new ConfigLoader.LocalTuner { Ocr = ocr };
+                if (springPoint != null) local.Tuner.SpringPoint = springPoint;
+                if (calibration != null) local.Calibration = calibration;
+            }), _tunerHint!,
                 "Tuner saved to config\\local.yaml."))
             return;
         // Refresh the in-memory config too, or the next tuner run still uses the
@@ -4193,26 +4180,26 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // Positions only — movements are saved separately by "Save Composer Moves", so don't
         // touch gem.Movements here.
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
-        // them by rebuilding LocalGem from scratch.
-        var gem = local.Gem ?? new ConfigLoader.LocalGem();
-        gem.GradePositions = positions;
-        gem.ResourceGems = resources;
-        gem.ResultGemArea = resultArea;
-        gem.EmptySignature = emptySig;
-        gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
-        local.Gem = gem;
-        if (_gemDisplay is { } d)
-        {
-            local.Calibration = ToCalibration(d);
-            _service.Config.Calibration = local.Calibration;
-        }
         // Which move set the composer uses is a preference, not a coordinate — it lives in the
         // portable config (defaults.yaml) like gem.start_grade/empty_mode. Both files are written
         // here, so a failure in either must stop before the "saved" dialog below claims success.
         _service.Config.Gem.MoveMode = _gemMoveMode?.SelectedItem as string ?? "tuned";
-        if (!TrySaveCalibration(() => { _service.SaveLocal(local); _service.SaveConfig(); }, _gemHint!,
+        var gemCalibration = _gemDisplay is { } d ? ToCalibration(d) : null;
+        if (gemCalibration != null) _service.Config.Calibration = gemCalibration;
+
+        if (!TrySaveCalibration(() => { _service.UpdateLocal(local =>
+            {
+                // Carry over existing machine-specific gem settings (Movements etc.) — don't clobber
+                // them by rebuilding LocalGem from scratch.
+                var gem = local.Gem ?? new ConfigLoader.LocalGem();
+                gem.GradePositions = positions;
+                gem.ResourceGems = resources;
+                gem.ResultGemArea = resultArea;
+                gem.EmptySignature = emptySig;
+                gem.EmptyDistance = _service.Config.Gem.EmptyDistance;
+                local.Gem = gem;
+                if (gemCalibration != null) local.Calibration = gemCalibration;
+            }); _service.SaveConfig(); }, _gemHint!,
                 "Gem Composer saved to config\\local.yaml."))
             return;
         // Refresh in-memory config so the next gem run uses the just-calibrated
@@ -4290,13 +4277,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        var lg = local.Gem ?? new ConfigLoader.LocalGem();
-        lg.GradePositions = gem.GradePositions;
-        lg.ResourceGems = gem.ResourceGems;
-        lg.ResultGemArea = gem.ResultGemArea;
-        local.Gem = lg;
-        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            var lg = local.Gem ?? new ConfigLoader.LocalGem();
+            lg.GradePositions = gem.GradePositions;
+            lg.ResourceGems = gem.ResourceGems;
+            lg.ResultGemArea = gem.ResultGemArea;
+            local.Gem = lg;
+        }), _gemHint!,
             "Coordinates saved to config\\local.yaml.");
     }
 
@@ -4307,11 +4295,12 @@ public partial class MainWindow : FluentWindow, IDisposable
         foreach (var row in _gemMoveRows)
             SetGemMovement(row.Key, ParseMove(row.Dx), ParseMove(row.Dy));
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        var gem = local.Gem ?? new ConfigLoader.LocalGem();
-        gem.Movements = _service.Config.Gem.Movements;
-        local.Gem = gem;
-        TrySaveCalibration(() => _service.SaveLocal(local), _gemHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            var gem = local.Gem ?? new ConfigLoader.LocalGem();
+            gem.Movements = _service.Config.Gem.Movements;
+            local.Gem = gem;
+        }), _gemHint!,
             "Composer moves saved to config\\local.yaml.");
     }
 
@@ -4616,7 +4605,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             _service.Config.Hotkeys.Quit = q;
             _service.Config.Hotkeys.AdvanceGrade = g;
             _service.Config.Hotkeys.Pause = p;
-            SaveReport(() => _service.SaveConfig(), result, "Hotkeys written to defaults.yaml.");
+            SaveReport(() => _service.SaveConfig(), result, "Hotkeys written to local.yaml.");
         };
         panel.Children.Add(save);
         panel.Children.Add(result);
@@ -4719,12 +4708,15 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
-    /// <summary>Runs a config save and reports the outcome on a tab's InfoBar. SaveLocal/SaveDefaults
+    /// <summary>Runs a config save and reports the outcome on a tab's InfoBar. UpdateLocal/SaveDefaults
     /// write files and throw on I/O failure, and the success bar used to be raised after the call —
     /// so a read-only config directory or a full disk made Save look like it did nothing at all,
     /// with the exception absorbed by the app-level handler and only a log line to show for it.</summary>
-    private static void SaveReport(Action save, InfoBar bar, string successMessage)
+    /// <remarks>Returns success so a caller with work to do AFTER the write — the Quest tab's card
+    /// count and success line — can skip it on failure instead of contradicting the red bar.</remarks>
+    private static bool SaveReport(Action save, InfoBar bar, string successMessage)
     {
+        var ok = true;
         try
         {
             save();
@@ -4734,11 +4726,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         catch (Exception ex)
         {
+            ok = false;
             bar.Severity = InfoBarSeverity.Error;
             bar.Title = "Save failed";
             bar.Message = $"{ex.Message} — nothing was written.";
         }
         bar.IsOpen = true;
+        return ok;
     }
 
     /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
@@ -5037,8 +5031,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var quest = _service.Config.Quest;
         var loops = target switch
         {
-            { IsSequence: true } t when quest.Sequences.TryGetValue(t.Name, out var s) => s.Loops,
-            { IsSequence: false } t when quest.Presets.TryGetValue(t.Name, out var p) => p.Loops,
+            // A value-less YAML key (`run:` / `flow1:`) stores NULL in the dictionary, and this runs
+            // from the constructor when the card is first built — a throw here means no window.
+            { IsSequence: true } t when quest.Sequences.TryGetValue(t.Name, out var s) => s?.Loops ?? 1,
+            { IsSequence: false } t when quest.Presets.TryGetValue(t.Name, out var p) => p?.Loops ?? 1,
             _ => 1,
         };
 
@@ -5066,8 +5062,15 @@ public partial class MainWindow : FluentWindow, IDisposable
             ?? targets.FirstOrDefault();
         _questTargetCard.SelectedItem = _activeQuestTarget;
 
-        if (_questCountCard != null)
+        // Only re-seed the count when the card is pointing somewhere NEW. The box is a per-run
+        // override, and this method also runs on every flow-picker switch and rename; rewriting it
+        // then would silently undo a count the player had dialled in on the card, even though the
+        // card's target had not changed.
+        if (_questCountCard != null && !Equals(_activeQuestTarget, keep))
+        {
             _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
+            _questCountSeeded = _questCountCard.Text;
+        }
     }
 
     private void BumpQuestCount(int delta)
@@ -5143,8 +5146,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void SaveBuySell(TextBlock hint, string success)
     {
         var bs = _service.Config.BuySell;
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.BuySell = new ConfigLoader.LocalBuySell
+        TrySaveCalibration(() => _service.UpdateLocal(local => local.BuySell = new ConfigLoader.LocalBuySell
         {
             BagGrid = bs.BagGrid,
             BagSlot = bs.BagSlot,
@@ -5154,8 +5156,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             MaxButton = bs.MaxButton,
             Presets = bs.Presets,
             SellCap = bs.SellCap,
-        };
-        TrySaveCalibration(() => _service.SaveLocal(local), hint, success);
+        }), hint, success);
     }
 
     /// <summary>Where a run would put the cursor, without clicking. The buy dry run's whole point:
@@ -5479,7 +5480,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     // Universal by design, which is why it is its own tab rather than a section of a tool's: the panel
     // is anchored to the POINTER, so its offset from the pointer is the same everywhere in the game
     // even though its SIZE varies by what is under it. One calibration therefore serves every
-    // hover-read this suite ever does. See docs/PLAN-HOVER-INFO.md.
+    // hover-read this suite ever does. See docs/docs/archive/PLAN-HOVER-INFO.md.
     //
     // The tool PLACES the cursor rather than reading where it happens to be. That is what makes the
     // offset exact: the pointer is at a coordinate the tool chose, so nothing has to be inferred from
@@ -5865,16 +5866,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             return;
         }
 
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Tooltip = cfg;
-        TrySaveCalibration(() => _service.SaveLocal(local), _tooltipHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local => local.Tooltip = cfg), _tooltipHint!,
             $"Saved to config\\local.yaml — offset ({cfg.OffsetX}, {cfg.OffsetY}) at " +
             $"{cfg.Width}x{cfg.Height}. Measured in this machine's pixels, so it does not travel.");
     }
 
     // ── Pet food auto-replacement — calibrator ──────────────────────────────
     //
-    // Marks the boarding (代養) flow; see docs/PLAN-PET-AUTOFEED.md. Two things make this tab unlike
+    // Marks the boarding (代養) flow; see docs/plans/PLAN-PET-AUTOFEED.md. Two things make this tab unlike
     // the others:
     //
     //   * The marks live on TWO screens that cannot both be up. 目錄 and the pet feed icon are on the
@@ -6249,7 +6248,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
-    /// <summary>The Quest Hand-in tab: the flow the tool replays. See docs/PLAN-QUEST.md.
+    /// <summary>The Quest Hand-in tab: the flow the tool replays. See docs/docs/archive/PLAN-QUEST.md.
     ///
     /// A flow is a NAMED preset, like a spammer key rotation, because the dialogue differs per quest.
     ///
@@ -6268,40 +6267,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         if (!quest.Presets.ContainsKey(quest.Active)) quest.Active = quest.Presets.Keys.First();
 
         QuestPreset Active() => quest.ActivePreset;
-
-        // ── the flow picker, and the three things you can do to a flow ──────
-        const string AddNewMarker = "＋ Add new…";
-        var presetBox = new ComboBox { MinWidth = 200, VerticalAlignment = VerticalAlignment.Center };
-
-        var presetName = UiText("", "flow name");
-        presetName.Width = 150;
-        var promptLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
-        var confirmBtn = MakeInlineButton("Create", ControlAppearance.Primary);
-        var cancelBtn = MakeInlineButton("Cancel", ControlAppearance.Secondary);
-        var namePrompt = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 4, 0, 8),
-        };
-        namePrompt.Children.Add(promptLabel);
-        namePrompt.Children.Add(presetName);
-        namePrompt.Children.Add(confirmBtn);
-        namePrompt.Children.Add(cancelBtn);
-
-        bool syncing = false;
-
-        void ClosePrompt() => namePrompt.Visibility = Visibility.Collapsed;
-
-        void RefreshPresetList(string select)
-        {
-            syncing = true;
-            var names = quest.Presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
-            names.Add(AddNewMarker);
-            presetBox.ItemsSource = names;
-            presetBox.SelectedItem = select;
-            syncing = false;
-        }
 
         // ── the timing fields ───────────────────────────────────────────────
         var initialBox = UiText("", null);
@@ -6345,107 +6310,119 @@ public partial class MainWindow : FluentWindow, IDisposable
         // flow's numbers — which is how someone saves the wrong thing.
         void ShowActive()
         {
-            syncing = true;
             var p = Active();
             initialBox.Text = p.InitialWaitSeconds.ToString("0.#", CultureInfo.InvariantCulture);
             loopsBox.Text = p.Loops.ToString(CultureInfo.InvariantCulture);
-            syncing = false;
             RefreshSteps();
         }
 
-        var renameBtn = MakeInlineButton("Rename", ControlAppearance.Secondary);
-        var deleteBtn = MakeInlineButton("Delete", ControlAppearance.Secondary);
-
-        presetBox.SelectionChanged += (_, _) =>
+        // The rows are the truth until Save: the step and entry editors write nothing back as you
+        // type, so every path that copies, switches away from, or saves the current flow has to flush
+        // them first. Without it the copy is taken from the last save and the screen's edit is lost.
+        void CommitQuestRows()
         {
-            if (syncing || presetBox.SelectedItem is not string picked) return;
+            Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+            if (quest.ActiveSequenceOrNull is { } activeSequence)
+                activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
+        }
 
-            if (picked == AddNewMarker)
-            {
-                promptLabel.Text = "Create flow:";
-                confirmBtn.Content = "Create";
-                presetName.Text = "";
-                namePrompt.Visibility = Visibility.Visible;
-                presetName.Focus();
-                return;
-            }
+        // ── the flow picker, and the three things you can do to a flow ──────
+        //
+        // A rename or a copy puts its outcome here, in the Flow card, where the button was pressed.
+        // The old line went to the Result card at the very bottom of the tab — off-screen from here,
+        // which is why a rename looked like it had done nothing until you scrolled down.
+        var flowResult = new InfoBar { IsOpen = false, IsClosable = true };
 
-            quest.Active = picked;
-            ShowActive();
-            hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
-        };
-
-        renameBtn.Click += (_, _) =>
+        void ReportFlow(bool error, string message)
         {
-            promptLabel.Text = "Rename to:";
-            confirmBtn.Content = "Rename";
-            presetName.Text = quest.Active;
-            namePrompt.Visibility = Visibility.Visible;
-            presetName.Focus();
-        };
+            flowResult.Severity = error ? InfoBarSeverity.Error : InfoBarSeverity.Success;
+            flowResult.Title = error ? "Not changed" : "Flow updated";
+            flowResult.Message = message;
+            flowResult.IsOpen = true;
+            // Kept in step: the Result card is still where Test one loop and a run report.
+            hint.Text = message;
+        }
 
-        deleteBtn.Click += (_, _) =>
+        // Set once ShowSequence exists further down. The flow picker is built before the sequence
+        // editor's controls are declared, so it cannot call that local function directly without the
+        // compiler losing definite assignment on everything the function captures.
+        Action? afterFlowChange = null;
+
+        var flowPicker = new PresetPicker(new PresetPickerOptions
         {
-            if (quest.Presets.Count <= 1)
+            Noun = "flow",
+            Items = quest.Presets,
+            MinWidth = 200,
+            Active = () => quest.Active,
+            SetActive = name => quest.Active = name,
+            NewItem = () => new QuestPreset(),
+            // Element by element (PresetCopy): a shared step list would make an edit to the copy land
+            // on the original too, with nothing on screen to say it had.
+            CopyOf = from => PresetCopy.CopyQuestPreset(quest.Presets[from]),
+            BeforeChange = CommitQuestRows,
+            // ShowActive rebuilds the step rows for whichever flow is now active, and ShowSequence
+            // rebuilds the sequence editors. That second half matters after a rename or a create: the
+            // entry rows each snapshot the flow list when they are built, so without the rebuild a
+            // just-created flow could not be picked for an entry, and a renamed one would still be
+            // offered under its old name. The card's target list is rebuilt too, so a flow made here
+            // reaches it without a restart.
+            AfterChange = () => { ShowActive(); afterFlowChange?.Invoke(); RefreshQuestCardTargets(); },
+            // A rename keeps the same flow under a new name, so the entries that named it follow the
+            // name. Without this they would be left pointing at a flow that no longer exists, and
+            // Save would refuse the sequence the rename was meant to leave working.
+            AfterRename = (from, to) =>
             {
-                hint.Text = "This is the only flow — create another before deleting it.";
-                return;
-            }
-            if (MessageBox.Show($"Delete the flow \"{quest.Active}\"?", "Delete flow",
-                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+                // Null-tolerant: hand-edited YAML can make a sequence (or its entry list) null, and
+                // the key has ALREADY moved by the time this runs — a throw here would leave the
+                // rename half-applied with no message.
+                foreach (var sequence in quest.Sequences?.Values ?? Enumerable.Empty<QuestSequence>())
+                    foreach (var entry in sequence?.Entries ?? Enumerable.Empty<QuestSequenceEntry>())
+                        if (entry != null && string.Equals(entry.Preset?.Trim(), from, StringComparison.Ordinal))
+                            entry.Preset = to;
 
-            quest.Presets.Remove(quest.Active);
-            quest.Active = quest.Presets.Keys.First();
-            RefreshPresetList(quest.Active);
-            ShowActive();
-            hint.Text = $"Deleted. Now on \"{quest.Active}\".";
-        };
-
-        confirmBtn.Click += (_, _) =>
-        {
-            var name = presetName.Text.Trim();
-            if (name.Length == 0) { hint.Text = "A flow needs a name."; return; }
-
-            var renaming = (string?)confirmBtn.Content == "Rename";
-
-            if (renaming && name == quest.Active) { ClosePrompt(); return; }
-            if (quest.Presets.ContainsKey(name))
+                // The card may be aimed at the flow being renamed. Its target is a name, so without
+                // this it would fall back to the first target and Start would run something else.
+                if (_activeQuestTarget is { IsSequence: false } target && target.Name == from)
+                    _activeQuestTarget = new QuestCardTarget(to, IsSequence: false);
+            },
+            Report = ReportFlow,
+            // The helper's default says "press Save", but this tab's button is labelled "Save quest".
+            // Naming it here is what makes the note point at the button the player can actually see.
+            CreateNote = " — press Save quest to keep it.",
+            RenameNote = " — press Save quest to keep it.",
+            CopyNote = " — press Save quest to keep it.",
+            SelectionReport = picked =>
             {
-                hint.Text = $"There is already a flow called \"{name}\" — pick another name.";
-                return;
-            }
-
-            if (renaming)
+                // A refusal from the previous action is about the flow that was active then; once the
+                // player picks one, a red bar telling them to pick a flow is stale and misleading. A
+                // SUCCESS bar stays: "press Save quest to keep it" is still true — the change is only
+                // in memory until Save, and switching flows must not hide the reminder.
+                if (flowResult.Severity == InfoBarSeverity.Error) flowResult.IsOpen = false;
+                hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
+            },
+            ConfirmAndDelete = gone =>
             {
-                // The flow itself moves; the old name is dropped rather than left as a copy, because two
-                // flows with the same steps is how the wrong one gets run.
-                var moved = quest.Presets[quest.Active];
-                quest.Presets.Remove(quest.Active);
-                quest.Presets[name] = moved;
-            }
-            else
-            {
-                quest.Presets[name] = new QuestPreset();
-            }
+                if (quest.Presets.Count <= 1)
+                {
+                    ReportFlow(true, "This is the only flow — create another before deleting it.");
+                    return false;
+                }
+                if (MessageBox.Show($"Delete the flow \"{gone}\"?", "Delete flow",
+                        MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return false;
 
-            quest.Active = name;
-            RefreshPresetList(name);
-            ShowActive();
-            ClosePrompt();
-            hint.Text = renaming ? $"Renamed to \"{name}\" — press Save to keep it." : $"Created \"{name}\" — press Save to keep it.";
-        };
+                quest.Presets.Remove(gone);
+                quest.Active = quest.Presets.Keys.First();
+                // The bar states only the past event, because it now survives a later selection;
+                // "Now on X" would be a lie the moment the player switches to Y. Which flow is
+                // active goes on the Result line, where a switch overwrites it anyway.
+                ReportFlow(false, $"Deleted \"{gone}\".");
+                hint.Text = $"Deleted \"{gone}\".";
+                return true;
+            },
+        });
 
-        cancelBtn.Click += (_, _) => { ClosePrompt(); RefreshPresetList(quest.Active); };
-
-        RefreshPresetList(quest.Active);
+        flowPicker.Refresh(quest.Active);
         ShowActive();
-
-        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
-        renameBtn.Margin = new Thickness(6, 0, 0, 0);
-        deleteBtn.Margin = new Thickness(6, 0, 0, 0);
-        pickRow.Children.Add(presetBox);
-        pickRow.Children.Add(renameBtn);
-        pickRow.Children.Add(deleteBtn);
 
         panel.Children.Add(Section("Flow",
             Hint("One flow per quest, because the dialogue differs per quest. A flow is replayed at the " +
@@ -6453,8 +6430,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "is slightly wrong. That is what Test one loop is for.\n" +
                  "There is no calibration and no point to place: put the mouse where the clicks have to " +
                  "land during the initial wait, and the run stops if it moves after that."),
-            LabeledField("Flow", pickRow),
-            namePrompt));
+            LabeledField("Flow", flowPicker.Layout),
+            flowPicker.Prompt,
+            flowResult));
 
         // ── the sequence: several flows in one run ──────────────────────────
         //
@@ -6466,28 +6444,6 @@ public partial class MainWindow : FluentWindow, IDisposable
         // moves the cursor, so a flow inside a sequence cannot have a position of its own. That is also
         // why the feature makes sense — one NPC, several quests, one place to stand.
         const string NoSequenceMarker = "(none — run the single flow above)";
-        const string AddSequenceMarker = "＋ Add new sequence…";
-
-        var sequenceBox = new ComboBox { MinWidth = 220, VerticalAlignment = VerticalAlignment.Center };
-        var sequenceName = UiText("", "sequence name");
-        sequenceName.Width = 150;
-        var seqPromptLabel = new TextBlock
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0),
-        };
-        var seqConfirm = MakeInlineButton("Create", ControlAppearance.Primary);
-        var seqCancel = MakeInlineButton("Cancel", ControlAppearance.Secondary);
-        var seqPrompt = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 4, 0, 8),
-        };
-        seqPrompt.Children.Add(seqPromptLabel);
-        seqPrompt.Children.Add(sequenceName);
-        seqPrompt.Children.Add(seqConfirm);
-        seqPrompt.Children.Add(seqCancel);
 
         var seqLoops = UiText("", null);
         seqLoops.Width = NumberFieldWidth;
@@ -6521,130 +6477,90 @@ public partial class MainWindow : FluentWindow, IDisposable
             entriesHost.Children.Add(BuildQuestEntriesEditor(quest.ActiveSequenceOrNull, _questEntryRows));
         }
 
-        bool syncingSequence = false;
-
         void ShowSequence()
         {
-            syncingSequence = true;
             var s = quest.ActiveSequenceOrNull;
             seqLoops.Text = (s?.Loops ?? 1).ToString(CultureInfo.InvariantCulture);
             seqWait.Text = (s?.InitialWaitSeconds ?? 10).ToString("0.#", CultureInfo.InvariantCulture);
-            syncingSequence = false;
             RefreshEntries();
         }
 
-        void RefreshSequenceList(string select)
+        afterFlowChange = ShowSequence;
+
+        // The same success/error bar the flow picker has: a create, a rename, a duplicate and a delete
+        // all change something the player cannot see afterwards, so each one says so here rather than
+        // leaving the picker's new row to speak for itself.
+        var seqResult = new InfoBar { IsOpen = false, IsClosable = true };
+
+        void ReportSequence(bool error, string message)
         {
-            syncingSequence = true;
-            var names = new List<string> { NoSequenceMarker };
-            names.AddRange(quest.Sequences.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
-            names.Add(AddSequenceMarker);
-            sequenceBox.ItemsSource = names;
-            sequenceBox.SelectedItem = select;
-            syncingSequence = false;
+            seqResult.Severity = error ? InfoBarSeverity.Error : InfoBarSeverity.Success;
+            seqResult.Title = error ? "Not changed" : "Sequence updated";
+            seqResult.Message = message;
+            seqResult.IsOpen = true;
+            hint.Text = message;
         }
 
-        var seqRename = MakeInlineButton("Rename", ControlAppearance.Secondary);
-        var seqDelete = MakeInlineButton("Delete", ControlAppearance.Secondary);
-
-        sequenceBox.SelectionChanged += (_, _) =>
+        var seqPicker = new PresetPicker(new PresetPickerOptions
         {
-            if (syncingSequence || sequenceBox.SelectedItem is not string picked) return;
-
-            if (picked == AddSequenceMarker)
-            {
-                seqPromptLabel.Text = "Create sequence:";
-                seqConfirm.Content = "Create";
-                sequenceName.Text = "";
-                seqPrompt.Visibility = Visibility.Visible;
-                sequenceName.Focus();
-                return;
-            }
-
+            Noun = "sequence",
+            Items = quest.Sequences,
+            // Trimmed here because ActiveSequenceOrNull trims too: a hand-edited active_sequence with
+            // spaces runs fine, so Duplicate and Rename must not claim no sequence is selected.
+            Active = () => (quest.ActiveSequence ?? "").Trim(),
             // "(none)" writes EMPTY, and empty is what makes the single flow run. It is a real choice
             // rather than an absence, which is why the merge applies it unconditionally.
-            quest.ActiveSequence = picked == NoSequenceMarker ? "" : picked;
-            ShowSequence();
-            RefreshQuestCardTargets();
-            hint.Text = quest.ActiveSequence.Length == 0
-                ? "Start runs the single flow above."
-                : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
-                  $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).";
-        };
-
-        seqRename.Click += (_, _) =>
-        {
-            if (quest.ActiveSequenceOrNull == null) { hint.Text = "Pick a sequence to rename."; return; }
-            seqPromptLabel.Text = "Rename to:";
-            seqConfirm.Content = "Rename";
-            sequenceName.Text = quest.ActiveSequence;
-            seqPrompt.Visibility = Visibility.Visible;
-            sequenceName.Focus();
-        };
-
-        seqDelete.Click += (_, _) =>
-        {
-            if (quest.ActiveSequenceOrNull == null) { hint.Text = "Nothing to delete — the single flow runs."; return; }
-            if (MessageBox.Show($"Delete the sequence \"{quest.ActiveSequence}\"?", "Delete sequence",
-                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
-
-            quest.Sequences.Remove(quest.ActiveSequence);
-            quest.ActiveSequence = "";
-            RefreshSequenceList(NoSequenceMarker);
-            ShowSequence();
-            RefreshQuestCardTargets();
-            hint.Text = "Deleted. Start runs the single flow above again.";
-        };
-
-        seqConfirm.Click += (_, _) =>
-        {
-            var name = sequenceName.Text.Trim();
-            if (name.Length == 0) { hint.Text = "A sequence needs a name."; return; }
-
-            var renaming = (string?)seqConfirm.Content == "Rename";
-            if (renaming && name == quest.ActiveSequence) { seqPrompt.Visibility = Visibility.Collapsed; return; }
-            if (quest.Sequences.ContainsKey(name))
+            SetActive = name => quest.ActiveSequence = name,
+            NoneLabel = NoSequenceMarker,
+            NewItem = () => new QuestSequence(),
+            CopyOf = from => PresetCopy.CopyQuestSequence(quest.Sequences[from]),
+            BeforeChange = CommitQuestRows,
+            // The card may be aimed at the sequence being renamed; its target is a name, so without
+            // this it would fall back to the first target and Start would run something else.
+            AfterRename = (from, to) =>
             {
-                hint.Text = $"There is already a sequence called \"{name}\" — pick another name.";
-                return;
-            }
-
-            if (renaming)
+                if (_activeQuestTarget is { IsSequence: true } target && target.Name == from)
+                    _activeQuestTarget = new QuestCardTarget(to, IsSequence: true);
+            },
+            AfterChange = () => { ShowSequence(); RefreshQuestCardTargets(); },
+            Report = ReportSequence,
+            CreateNote = " — add its entries, then press Save quest.",
+            RenameNote = " — press Save quest to keep it.",
+            CopyNote = " — press Save quest to keep it.",
+            SelectionReport = picked =>
             {
-                var moved = quest.Sequences[quest.ActiveSequence];
-                quest.Sequences.Remove(quest.ActiveSequence);
-                quest.Sequences[name] = moved;
-            }
-            else
+                // Same staleness rule as the Flow card: the refusal ("pick a sequence") was about the
+                // "(none)" row, and the player has just left it. A success note stays — it may be the
+                // only reminder that the sequence is unsaved.
+                if (seqResult.Severity == InfoBarSeverity.Error) seqResult.IsOpen = false;
+                // No "Start runs the single flow above" here: the CARD's target is what Start hands
+                // over, and it may still be aimed at a sequence. Saying otherwise sends a player to
+                // Start expecting one quest and running another.
+                hint.Text = picked.Length == 0
+                    ? "No sequence chosen on this tab — the card decides what Start runs."
+                    : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries?.Count ?? 0} entr(ies), " +
+                      $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).";
+            },
+            ConfirmAndDelete = gone =>
             {
-                quest.Sequences[name] = new QuestSequence();
-            }
+                if (MessageBox.Show($"Delete the sequence \"{gone}\"?", "Delete sequence",
+                        MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return false;
 
-            quest.ActiveSequence = name;
-            RefreshSequenceList(name);
-            ShowSequence();
-            RefreshQuestCardTargets();
-            seqPrompt.Visibility = Visibility.Collapsed;
-            hint.Text = renaming
-                ? $"Renamed to \"{name}\" — press Save to keep it."
-                : $"Created \"{name}\" — add its entries, then press Save.";
-        };
+                quest.Sequences.Remove(gone);
+                quest.ActiveSequence = "";
+                // Past event only: this bar survives a later selection, so "Start runs the single
+                // flow above again" would be false as soon as another sequence is picked.
+                ReportSequence(false, $"Deleted \"{gone}\".");
+                hint.Text = $"Deleted \"{gone}\".";
+                return true;
+            },
+            MinWidth = 220,
+        });
 
-        seqCancel.Click += (_, _) =>
-        {
-            seqPrompt.Visibility = Visibility.Collapsed;
-            RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
-        };
-
-        RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
+        // The initial state: the list, then the editor for whatever is active. Refresh maps an empty
+        // active name onto the "(none)" row, which is what makes the single flow run.
+        seqPicker.Refresh((quest.ActiveSequence ?? "").Trim());
         ShowSequence();
-
-        var seqPickRow = new StackPanel { Orientation = Orientation.Horizontal };
-        seqRename.Margin = new Thickness(6, 0, 0, 0);
-        seqDelete.Margin = new Thickness(6, 0, 0, 0);
-        seqPickRow.Children.Add(sequenceBox);
-        seqPickRow.Children.Add(seqRename);
-        seqPickRow.Children.Add(seqDelete);
 
         panel.Children.Add(Section("Sequence — several flows in one run",
             Hint("Runs a LIST of flows in one go: A three times, then B twice, and the whole list repeated " +
@@ -6657,8 +6573,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "There is NO failure detection. A flow that does not hand its quest in cannot be told " +
                  "from one that did, so the run simply carries on — Test one loop on a flow, then a short " +
                  "sequence, before trusting a long one."),
-            LabeledField("Sequence", seqPickRow),
-            seqPrompt,
+            LabeledField("Sequence", seqPicker.Layout),
+            seqPicker.Prompt,
+            seqResult,
             LabeledField("Master loops", seqLoops),
             LabeledField("Initial wait (s)", seqWait),
             entriesHost));
@@ -6684,27 +6601,40 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the run starts rather than quietly sending nothing 500 times."),
             stepsHost));
 
-        // MakeInlineButton for BOTH, not MakeButton: that one carries a 10px top margin meant for a
-        // button standing under a card's heading, so leaving it on one button of a row and overriding it
-        // on the other drops the first one 10px and they sit at different heights. The pet tab's icon
-        // row has the same comment — this repo has learned it more than once.
+        // MakeInlineButton, not MakeButton: that one carries a 10px top margin meant for a button
+        // standing under a card's heading, so a lone button would sit 10px low. The pet tab's icon row
+        // has the same comment — this repo has learned it more than once.
         var test = MakeInlineButton("Test one loop", ControlAppearance.Secondary);
         test.Click += async (_, _) => await QuestTestOneLoop(Active());
+        test.Margin = new Thickness(0);   // first control in its card, so no leading gap
         var result = new InfoBar { IsOpen = false, IsClosable = true };
-        var save = MakeInlineButton("Save", ControlAppearance.Primary);
+        var save = MakeInlineButton("Save quest", ControlAppearance.Primary);
+        save.Margin = new Thickness(0);
         save.Click += (_, _) =>
         {
             // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
-            // back here is what makes an edit stick.
-            Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+            // back here is what makes an edit stick. Shared with Duplicate and the two picker switches,
+            // which need the same flush for the same reason.
+            CommitQuestRows();
 
-            // And the same for the ACTIVE sequence's entries. Its loops and initial wait need no such
-            // line — those fields write into the sequence as they are typed.
-            if (quest.ActiveSequenceOrNull is { } activeSequence)
-                activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
+            // A sequence entry whose flow is gone has no honest value to write. The editor keeps the
+            // missing name visible rather than re-pointing the entry, so this is where it is caught —
+            // for EVERY sequence, because this Save writes all of them. Writing the file with a known
+            // bad reference would make the run skip that entry silently.
+            var dangling = quest.DanglingSequenceEntries();
+            if (dangling.Count > 0)
+            {
+                result.Severity = InfoBarSeverity.Error;
+                result.Title = "Not saved — a sequence points at a missing flow";
+                result.Message = string.Join("\n", dangling.Select(d => d.Flow.Length == 0
+                        ? $"\"{d.Sequence}\" entry {d.Entry} has no flow chosen"
+                        : $"\"{d.Sequence}\" entry {d.Entry} names the flow \"{d.Flow}\", which does not exist")) +
+                    "\nPick an existing flow for each entry, or remove it, then Save again.";
+                result.IsOpen = true;
+                return;
+            }
 
-            var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-            local.Quest = new ConfigLoader.LocalQuest
+            var saved = SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = quest.Active,
                 Presets = quest.Presets.ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -6716,28 +6646,62 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // next launch — a setting that looks like it saves because the box keeps its new value
                 // for the rest of the session.
                 GuardPx = quest.GuardPx,
-            };
-            SaveReport(() => _service.SaveLocal(local), result,
-                $"Flow \"{quest.Active}\" written to local.yaml — {Active().Steps.Count} step(s), " +
-                $"{Active().Loops} loop(s).");
+            }), result,
+                // Says everything this Save wrote, because the button is the only Save on the tab and
+                // the flow named here is not the whole of it: a player who read "Flow X written" could
+                // reasonably believe the sequences beside it had not been.
+                $"The whole tab was written — flow \"{quest.Active}\" ({Active().Steps.Count} step(s), " +
+                $"{Active().Loops} loop(s)), {quest.Sequences.Count} sequence(s), " +
+                $"mouse guard {quest.GuardPx} px.");
+
+            // A FAILED write must not run the success tail below: SaveReport has already opened the
+            // red "Save failed" bar, and closing the pickers' unsaved-change notes or claiming
+            // "Saved" beside it would contradict it.
+            if (!saved) return;
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
             // able to reach it without a restart.
+            // Trimmed, and null-tolerant, because the name is hand-editable YAML and `ActiveSequence`
+            // shares the card picker's rule (line ~6505 does the same).
+            var savedTarget = quest.ActiveSequenceOrNull != null
+                ? new QuestCardTarget((quest.ActiveSequence ?? "").Trim(), IsSequence: true)
+                : new QuestCardTarget(quest.Active, IsSequence: false);
+            var countUntouched = _questCountCard != null && _questCountCard.Text == _questCountSeeded;
+
             RefreshQuestCardTargets();
+
+            // If the card is aimed at the item just saved AND its box still holds the seeded value,
+            // the saved loop count is the one to run. A count the player dialled in is a per-run
+            // override and stays — which is also why a Save of some OTHER flow leaves the box alone.
+            if (countUntouched && Equals(_activeQuestTarget, savedTarget) && _questCountCard != null)
+            {
+                _questCountCard.Text = QuestDefaultLoops(savedTarget).ToString(CultureInfo.InvariantCulture);
+                _questCountSeeded = _questCountCard.Text;
+            }
+
+            // Any "press Save quest to keep it" note is now false: everything on the tab is written.
+            flowResult.IsOpen = false;
+            seqResult.IsOpen = false;
+            hint.Text = "Saved — nothing on this tab is waiting to be written.";
         };
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        // First in the row: no leading gap. The second keeps MakeInlineButton's own 6px left margin,
-        // which is what separates them.
-        test.Margin = new Thickness(0, 0, 6, 0);
-        buttons.Children.Add(test);
-        buttons.Children.Add(save);
-
-        panel.Children.Add(Section("Try it, then keep it",
+        panel.Children.Add(Section("Try it",
             Hint("Test one loop runs the flow ONCE — the same code a real run uses, so a flow the test " +
                  "refuses is a flow the run would refuse too. Watch the game: the run is blind, so what " +
                  "happens on screen is the only verdict there is."),
-            buttons,
+            test));
+
+        // ONE Save for the tab, in its own card so it reads as covering the tab rather than the flow
+        // section above it. It always did write the sequences and the guard; the old placement inside
+        // "Try it, then keep it" and the old success line ("Flow X written") made it look like it did
+        // not.
+        panel.Children.Add(Section("Save — the whole tab",
+            Hint("This one button writes EVERYTHING on this tab: the active flow's steps and timing, " +
+                 "every sequence and its entries, which flow each entry runs, and the mouse guard. " +
+                 "Nothing here is kept until you press it.\n" +
+                 "A sequence entry whose flow no longer exists stops the save and is listed below " +
+                 "instead of being quietly pointed at another flow."),
+            save,
             result));
 
         panel.Children.Add(Section("Result", hint));
@@ -6816,7 +6780,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         var add = MakeButton("+ Add entry", ControlAppearance.Secondary);
         panel.Children.Add(add);
 
-        void AddRow(QuestSequenceEntry? entry)
+        // isNew is what "+ Add entry" passes: only a row the player just asked for starts on the first
+        // flow. A row rebuilt from config with a null entry (`-` or `- ~` in local.yaml) must stay
+        // blank — treating it as "new" would select flowNames[0], CommitQuestRows would write that in,
+        // and the dangling check would find nothing to refuse.
+        void AddRow(QuestSequenceEntry? entry, bool isNew = false)
         {
             if (flowNames.Count == 0)
             {
@@ -6828,9 +6796,25 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var row = new QuestEntryRow();
             foreach (var name in flowNames) row.Flow.Items.Add(name);
-            row.Flow.SelectedItem = entry != null && flowNames.Contains(entry.Preset)
-                ? entry.Preset
-                : flowNames[0];
+            if (isNew)
+            {
+                row.Flow.SelectedItem = flowNames[0];
+            }
+            else
+            {
+                // Trimmed and null-tolerant, matching what the run does with the same value: a
+                // hand-edited `preset:` arrives as null, and `" name "` runs as `name`.
+                var wanted = entry?.Preset?.Trim() ?? "";
+                // The flow this entry names is gone (or the name is empty). It is added as itself and
+                // selected, so the row keeps saying what the entry actually says. Falling back to
+                // flowNames[0] — which this used to do — meant the next CommitQuestRows wrote a
+                // different flow into the entry, and Save then made that the truth: a sequence
+                // silently started running another quest. Save now refuses while the name is missing
+                // (QuestConfig.DanglingSequenceEntries) and lists it, so the player picks the
+                // replacement rather than the first item in the sort order.
+                if (!flowNames.Contains(wanted)) row.Flow.Items.Add(wanted);
+                row.Flow.SelectedItem = wanted;
+            }
             row.Times.Text = (entry?.Times ?? 1).ToString(CultureInfo.InvariantCulture);
 
             var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
@@ -6852,8 +6836,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             rows.Add(row);
         }
 
-        foreach (var e in sequence.Entries) AddRow(e);
-        add.Click += (_, _) => AddRow(null);
+        // Null-tolerant for the same reason the dangling check is: a hand-edited `entries:` with no
+        // value arrives as null, and opening that sequence must not throw.
+        foreach (var e in sequence.Entries ?? Enumerable.Empty<QuestSequenceEntry>()) AddRow(e);
+        add.Click += (_, _) => AddRow(null, isNew: true);
 
         return panel;
     }
@@ -7300,7 +7286,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // The consumer the hover read has been waiting for since 2026-09-18: not "what is this one
         // pet", but "which of these can still be fed". The bag mixes +9/100% pets, which cannot take
         // food and raise an error dialog if boarded, with +0 pets that need it — see
-        // docs/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
+        // docs/docs/archive/PLAN-PET-BOARD-CHECK.md. Read-only: it moves the cursor and reads.
         var scanFeedable = MakeButton("Scan bag for feedable pets", ControlAppearance.Secondary);
         // The destructive twin, and deliberately a SEPARATE button rather than a checkbox on the one
         // beside it: a scan you press to look at must not quietly rewrite the queue.
@@ -8614,7 +8600,7 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// The bag holds a mix: pets at +9/100% that cannot take food any more, and pets at +0 that need
     /// it. Telling the two apart is not bookkeeping — boarding a FINISHED pet raises an error dialog,
     /// and a blocking modal wedges everything after it, so a finished pet is a stuck run rather than a
-    /// wasted reload. See docs/PLAN-PET-BOARD-CHECK.md.
+    /// wasted reload. See docs/docs/archive/PLAN-PET-BOARD-CHECK.md.
     ///
     /// The parser is the FILTER, and that is forced rather than chosen: the icon matcher only knows
     /// pets that are already queued, and the pets this exists to find are precisely the ones nobody
@@ -8975,9 +8961,6 @@ public partial class MainWindow : FluentWindow, IDisposable
     private void PetSessionSave(TextBlock hint)
     {
         var pet = _service.Config.Pet;
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet ??= new ConfigLoader.LocalPet();
-        ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
 
         // The queue is reported by NAME, not by count. "2 pet icons" does not tell you whether the
         // name you typed went in with the crop — and the name is only read at capture time, so the
@@ -8986,7 +8969,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             ? "no queued pets"
             : $"{pet.Queue.Count} queued pet(s): " + string.Join(", ", pet.Queue.Select(q => q.Label ?? "(no name)"));
 
-        TrySaveCalibration(() => _service.SaveLocal(local), hint,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplySession(local.Pet, pet);
+        }), hint,
             $"Saved {pet.FoodSlots.Count} food cell(s), the return slot, {queued}, and the boarding " +
             "flags. The geometry on Calibrate Pet was left alone.");
     }
@@ -9627,11 +9614,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         // exactly as the file had them, because they are the Pet tab's business and this screen has no
         // opinion about them. It writes ONTO the loaded block rather than replacing it; assigning a
         // fresh object is what blanked the other half twice before.
-        var local = _service.LoadLocal() ?? new ConfigLoader.LocalOverrides();
-        local.Pet ??= new ConfigLoader.LocalPet();
-        ConfigLoader.LocalPet.ApplyCalibration(local.Pet, pet);
-
-        TrySaveCalibration(() => _service.SaveLocal(local), _petHint!,
+        TrySaveCalibration(() => _service.UpdateLocal(local =>
+        {
+            local.Pet ??= new ConfigLoader.LocalPet();
+            ConfigLoader.LocalPet.ApplyCalibration(local.Pet, pet);
+        }), _petHint!,
             "Saved the calibration to config\\local.yaml. The bag marks, the queue and the boarding " +
             "flags are the Pet tab's and were left alone.");
 
@@ -10028,6 +10015,351 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
     }
 
+    /// <summary>The picker every named-preset editor in the launcher uses: a combo, an inline
+    /// create/rename prompt, and Rename / Duplicate / Delete on their own row underneath.
+    ///
+    /// Written once because the Quest flow, Quest sequence and Skill Spammer pickers were three
+    /// hand-rolled copies of the same shape. Each copy had its own bugs — the two-row fit and the
+    /// prompt-closing-before-Duplicate rule were fixed in one and left missing in the others — so the
+    /// shape lives here and the OWNER supplies what "active" means and what a change must rebuild.
+    ///
+    /// It owns the rules that are the same everywhere: names sorted ignore-case, a generated copy name
+    /// checked against every name in play, a refused empty or duplicate name, and one open prompt that
+    /// is closed before anything can move the active preset out from under it.</summary>
+    private sealed class PresetPicker
+    {
+        private const string AddNewMarker = "＋ Add new…";
+
+        private readonly PresetPickerOptions _options;
+        private readonly TextBlock _promptLabel;
+        private readonly TextBox _name;
+        private readonly UiButton _confirm;
+        private bool _syncing;
+        private bool _renaming;
+
+        public PresetPicker(PresetPickerOptions options)
+        {
+            _options = options;
+
+            Box = new ComboBox
+            {
+                MinWidth = options.MinWidth,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            _promptLabel = new TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+            };
+            _name = UiText("", $"{options.Noun} name");
+            _name.Width = options.PromptWidth;
+            _confirm = MakeInlineButton("Create", ControlAppearance.Primary);
+            _confirm.Margin = new Thickness(0);   // first in the prompt row, so no leading gap
+            var cancel = MakeInlineButton("Cancel", ControlAppearance.Secondary);
+            Prompt = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Visibility = Visibility.Collapsed,
+                Margin = new Thickness(0, 4, 0, 8),
+            };
+            Prompt.Children.Add(_promptLabel);
+            Prompt.Children.Add(_name);
+            Prompt.Children.Add(_confirm);
+            Prompt.Children.Add(cancel);
+
+            Rename = MakeInlineButton("Rename", ControlAppearance.Secondary);
+            Duplicate = MakeInlineButton("Duplicate", ControlAppearance.Secondary);
+            Delete = MakeInlineButton("Delete", ControlAppearance.Secondary);
+            Rename.Margin = new Thickness(0);
+            Duplicate.Margin = new Thickness(6, 0, 0, 0);
+            Delete.Margin = new Thickness(6, 0, 0, 0);
+
+            // Two rows: the picker, then its actions. A single row of picker + three buttons needs
+            // about 389–499 px of content column and a 619-px window gives it 319 — measured. A star
+            // column cannot shrink below the picker's MinWidth, so on one row the Auto columns paint
+            // over the picker; stacking fits at every width the app allows.
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 6, 0, 0),
+            };
+            actions.Children.Add(Rename);
+            actions.Children.Add(Duplicate);
+            actions.Children.Add(Delete);
+
+            Layout = new Grid();
+            Layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(Box, 0);
+            Grid.SetColumn(Box, 0);
+            Grid.SetRow(actions, 1);
+            Layout.Children.Add(Box);
+            Layout.Children.Add(actions);
+
+            Box.SelectionChanged += (_, _) =>
+            {
+                if (_syncing || Box.SelectedItem is not string picked) return;
+
+                if (picked == AddNewMarker)
+                {
+                    // Snap back to the active name: the prompt is a temporary mode, and a picker left
+                    // showing "Add new…" claims you are on something you are not. Cancel and Confirm
+                    // both refresh it too, but the row should be right while the prompt is open.
+                    _syncing = true;
+                    Box.SelectedItem = DisplayName();
+                    _syncing = false;
+                    OpenPrompt(renaming: false);
+                    return;
+                }
+
+                if (options.NoneLabel != null && picked == options.NoneLabel) picked = "";
+                if (picked == options.Active()) return;
+
+                // A prompt opened for the preset being left must not survive the switch: its Confirm
+                // reads the ACTIVE name, so a Rename started on A and confirmed after switching to B
+                // would rename B to the text typed for A.
+                ClosePrompt();
+
+                // The editor's rows belong to the preset being LEFT, so they are written back before
+                // the switch rebuilds the editor from the next one. Without this an unsaved edit
+                // vanishes on a switch — the same reason Save and Duplicate call it.
+                options.BeforeChange();
+                options.SetActive(picked);
+                options.AfterChange();
+                options.SelectionReport?.Invoke(picked);
+            };
+
+            Rename.Click += (_, _) =>
+            {
+                if (!options.Items.Contains(options.Active()))
+                {
+                    options.Report(true, $"Pick a {options.Noun} to rename.");
+                    return;
+                }
+                OpenPrompt(renaming: true);
+            };
+
+            Duplicate.Click += (_, _) =>
+            {
+                var from = options.Active();
+                if (!options.Items.Contains(from))
+                {
+                    options.Report(true, $"Pick a {options.Noun} to copy.");
+                    return;
+                }
+
+                // A prompt left open would keep its old text and mode while the active name moves to
+                // the copy, so the next Confirm would act on the copy instead of the preset it named.
+                ClosePrompt();
+                options.BeforeChange();
+
+                var taken = options.TakenNames?.Invoke() ?? options.Items.Keys.Cast<string>();
+                var name = PresetCopy.CopyName(from, taken);
+                options.Items[name] = options.CopyOf(from);
+                options.SetActive(name);
+                Refresh(name);
+                options.AfterChange();
+                options.Report(false, $"Copied \"{from}\" to \"{name}\"{options.CopyNote}");
+            };
+
+            Delete.Click += (_, _) =>
+            {
+                var gone = options.Active();
+                if (!options.Items.Contains(gone))
+                {
+                    options.Report(true, $"Pick a {options.Noun} to delete.");
+                    return;
+                }
+
+                // The prompt's name may be the one just deleted. Closing it BEFORE the mutation is what
+                // stops the next Confirm from renaming whatever became active.
+                ClosePrompt();
+                // AfterChange rebuilds the owner's editor from the dictionary, so the rows on screen
+                // have to be written back first or a delete silently drops an unsaved edit. The flow
+                // and sequence pickers rebuild their editors in AfterChange; the Spammer does too.
+                options.BeforeChange();
+                if (options.ConfirmAndDelete?.Invoke(gone) != true) return;
+
+                Refresh(options.Active());
+                options.AfterChange();
+            };
+
+            _confirm.Click += (_, _) =>
+            {
+                var name = _name.Text.Trim();
+                if (name.Length == 0)
+                {
+                    options.Report(true, $"A {options.Noun} needs a name.");
+                    return;
+                }
+
+                var active = options.Active();
+                if (_renaming && name == active) { ClosePrompt(); return; }
+                if (options.Items.Contains(name))
+                {
+                    options.Report(true,
+                        $"There is already a {options.Noun} called \"{name}\" — pick another name.");
+                    return;
+                }
+
+                // An unsaved edit on the preset being left has to be written back first: the owner's
+                // editor is rebuilt from the dictionary right after this, and that rebuild would
+                // otherwise read the last save and drop what is on screen.
+                options.BeforeChange();
+
+                if (_renaming)
+                {
+                    // The preset itself MOVES. Rename renames; it does not leave a copy behind under
+                    // the old name, because a rename that quietly doubles the list is not a rename.
+                    var moved = options.Items[active];
+                    options.Items.Remove(active);
+                    options.Items[name] = moved;
+                    options.AfterRename?.Invoke(active, name);
+                }
+                else
+                {
+                    options.Items[name] = options.NewItem();
+                }
+
+                options.SetActive(name);
+                Refresh(name);
+                options.AfterChange();
+                ClosePrompt();
+                options.Report(false, _renaming
+                    ? $"Renamed to \"{name}\"{options.RenameNote}"
+                    : $"Created \"{name}\"{options.CreateNote}");
+            };
+
+            cancel.Click += (_, _) => { ClosePrompt(); Refresh(options.Active()); };
+        }
+
+        public ComboBox Box { get; }
+
+        /// <summary>The picker and its three buttons, ready to hand to <c>LabeledField</c>.</summary>
+        public Grid Layout { get; }
+
+        /// <summary>The name prompt, to be added to the owning section under the picker.</summary>
+        public StackPanel Prompt { get; }
+
+        public UiButton Rename { get; }
+
+        public UiButton Duplicate { get; }
+
+        public UiButton Delete { get; }
+
+        public void ClosePrompt()
+        {
+            Prompt.Visibility = Visibility.Collapsed;
+            _options.PromptClosed?.Invoke();
+        }
+
+        /// <summary>Rebuilds the list and selects <paramref name="select"/>. An empty name selects the
+        /// "(none)" row when the owner has one — empty is a real choice there, not an absence.</summary>
+        public void Refresh(string select)
+        {
+            _syncing = true;
+            var names = new List<string>();
+            if (_options.NoneLabel is { } none) names.Add(none);
+            names.AddRange(_options.Items.Keys.Cast<string>().OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
+            names.Add(AddNewMarker);
+            Box.ItemsSource = names;
+            Box.SelectedItem = DisplayName(select);
+            _syncing = false;
+        }
+
+        private string DisplayName(string name) =>
+            _options.NoneLabel is { } none && name.Length == 0 ? none : name;
+
+        private string DisplayName() => DisplayName(_options.Active());
+
+        private void OpenPrompt(bool renaming)
+        {
+            _renaming = renaming;
+            _promptLabel.Text = renaming ? "Rename to:" : $"Create {_options.Noun}:";
+            _confirm.Content = renaming ? "Rename" : "Create";
+            _name.Text = renaming ? _options.Active() : "";
+            Prompt.Visibility = Visibility.Visible;
+            // Owner first: the Spammer prompt lives inside an editor that starts collapsed and is
+            // revealed by PromptOpened, and Focus() on an element under a Collapsed ancestor fails.
+            // Focusing before it ran left the name box unfocused until the player clicked it.
+            _options.PromptOpened?.Invoke();
+            _name.Focus();
+        }
+    }
+
+    /// <summary>What <see cref="PresetPicker"/> needs from its owner. The dictionaries differ in value
+    /// type and each tab rebuilds its own editor, so those are callbacks; everything the pickers shared
+    /// — layout, sorting, copy naming, prompt rules — is not.</summary>
+    private sealed record PresetPickerOptions
+    {
+        /// <summary>"flow", "sequence" or "preset" — used in the prompt and every message.</summary>
+        public required string Noun { get; init; }
+
+        /// <summary>The name → value dictionary the picker edits.</summary>
+        public required IDictionary Items { get; init; }
+
+        public required Func<string> Active { get; init; }
+
+        /// <summary>Sets the owner's active name. Called for a picker switch, a create, a rename, a
+        /// copy and (by the owner's delete callback) a delete.</summary>
+        public required Action<string> SetActive { get; init; }
+
+        /// <summary>A fresh, empty value for a new name.</summary>
+        public required Func<object> NewItem { get; init; }
+
+        /// <summary>A copy of the value under the given name, sharing nothing with it.</summary>
+        public required Func<string, object> CopyOf { get; init; }
+
+        /// <summary>Writes an unsaved edit back into the preset being left, before anything moves.</summary>
+        public required Action BeforeChange { get; init; }
+
+        /// <summary>Rebuilds the owner's editor (and anything else) after the active preset changed.</summary>
+        public required Action AfterChange { get; init; }
+
+        /// <summary>One line of feedback: <c>true</c> for a refusal, <c>false</c> for a success.</summary>
+        public required Action<bool, string> Report { get; init; }
+
+        /// <summary>Suffixes for the three success lines, so each tab can say what was actually kept
+        /// (the sequence editor says its entries are still empty; the Spammer says its maps are).</summary>
+        public string CreateNote { get; init; } = " — press Save to keep it.";
+
+        public string RenameNote { get; init; } = " — press Save to keep it.";
+
+        public string CopyNote { get; init; } = " — press Save to keep it.";
+
+        /// <summary>An extra move a rename needs — the Spammer's three other name-keyed maps.</summary>
+        public Action<string, string>? AfterRename { get; init; }
+
+        /// <summary>Every name a generated copy must avoid. Defaults to the dictionary's own keys; the
+        /// Spammer also has orphaned entries in three sibling maps.</summary>
+        public Func<IEnumerable<string>>? TakenNames { get; init; }
+
+        /// <summary>Asks, mutates and sets a new active name; <c>false</c> cancels. The owner reports
+        /// the outcome, because only it knows what went with the entry.</summary>
+        public Func<string, bool>? ConfirmAndDelete { get; init; }
+
+        /// <summary>A row at the top that means "none of these" — an empty active name. It is a real
+        /// choice for a sequence, and the only one for "run the single flow instead".</summary>
+        public string? NoneLabel { get; init; }
+
+        /// <summary>Called after a picker SWITCH (not after create/rename/copy), for tabs that print a
+        /// line about the thing now on screen.</summary>
+        public Action<string>? SelectionReport { get; init; }
+
+        /// <summary>Extra work when the inline prompt opens/closes — the Spammer reveals its editor
+        /// and hides the Edit/Done button while the name is being typed.</summary>
+        public Action? PromptOpened { get; init; }
+
+        public Action? PromptClosed { get; init; }
+
+        public double MinWidth { get; init; } = 150;
+
+        public double PromptWidth { get; init; } = 150;
+    }
+
     private static TabItem MakeTab(string header, Panel panel) =>
         new()
         {
@@ -10181,19 +10513,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         FontSize = 12,
     };
 
-    private static string FindRootDir()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "config", "defaults.yaml")))
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate the v2 root (config/defaults.yaml).");
-    }
+    // The walk itself lives in Core (RootDir) so that the marker rule — a defaults file under either of
+    // its two names — is testable: the launcher is net8.0-windows and stays out of the test project.
+    private static string FindRootDir() => RootDir.Find();
 }

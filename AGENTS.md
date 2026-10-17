@@ -41,13 +41,26 @@ with `#pragma` or by adding to `NoWarn`.
   values out of it into `defaults.yaml` or an `.example` file. The `*.backup-*` and
   `*.corrupt-backup` files beside it are runtime artifacts — leave them alone.
 - **Version history lives in exactly one place.** The per-release table is in the root
-  `README.md`; the dated reasoning is in `v2/docs/PROGRESS.md`. `v2/README.md` deliberately
+  `README.md`; the dated reasoning is in `v2/docs/records/PROGRESS.md`. `v2/README.md` deliberately
   does not repeat it — it went eight releases stale when it did. A new release updates those
   two, and does not start a third copy.
-- **`v2/docs/` is the specification.** `TOOL-FLOWS.md`, `DESIGN.md`, `CONFIG.md`,
-  `COORDINATES.md` and `USER_GUIDE.md` describe how the tools are meant to behave. Read the
-  relevant one before changing behaviour, and update it in the same commit. `PLAN-*.md` are
-  design records: don't rewrite them to match a change, add a new one.
+- **`v2/docs/` holds one folder per KIND of document**, and the folder says what to expect:
+  `spec/` is how the tools work NOW (`TOOL-FLOWS.md`, `DESIGN.md`, `CONFIG.md`, `COORDINATES.md`,
+  `USER_GUIDE.md` and the rest) — read the relevant one before changing behaviour and update it in
+  the same commit; `plans/` is **proposals**, work not yet done or partly done, so don't rewrite one
+  to match a change, add a new one; `investigations/` holds measurements whose findings are the
+  value; `records/` is dated history (PROGRESS, RELEASE-*); `backlog/` is TODO and IDEAS; and
+  `archive/` holds finished plans, kept for their reasoning. When a plan's work ships its durable
+  reasoning belongs in `spec/` and the plan moves to `archive/` (its README states the rule;
+  `spec/DESIGN.md` §7 is the map).
+- **A change has a lifecycle, and every stage has a home.** An idea is captured in `backlog/IDEAS.md`;
+  when it earns a design it becomes `plans/PLAN-<name>.md`, whose ⚑ questions the player answers
+  **before** anything is built; the build lands as commits, each with a `records/PROGRESS.md` entry and
+  the `spec/` document updated in the same commit; a release adds a row to the root README's table and a
+  `records/RELEASE-vX.Y.md`; and when the work ships, the reasoning graduates into `spec/` and the plan
+  moves to `archive/`. **A live plan's STATUS lives only on the board in `plans/README.md`** — never in
+  the plan's own text, where it drifts (a pet-feeder section read "design, not built" long after the
+  queue it described had shipped).
 - **Firmware and app are versioned together.** If a change needs a firmware change,
   `FirmwareSketchTests` and `FirmwareVersionTests` are the guard — run them and say so in the
   release notes, because a user has to reflash for it to take effect.

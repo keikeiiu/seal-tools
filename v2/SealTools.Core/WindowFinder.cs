@@ -153,7 +153,7 @@ public static class WindowFinder
 
     /// <summary>Position the cursor with the PHYSICAL API (ignores DPI virtualisation) at a
     /// precomputed target. Returns whether the call was accepted. Debug/diagnostic use only — the
-    /// tools position the cursor with the Arduino (HidPointer.To, docs/CURSOR-INVESTIGATION.md).</summary>
+    /// tools position the cursor with the Arduino (HidPointer.To, docs/investigations/CURSOR-INVESTIGATION.md).</summary>
     public static bool SetPhysicalCursorPosition(CursorTarget target)
         => SetPhysicalCursorPos(target.PhysicalX, target.PhysicalY);
 
@@ -168,7 +168,7 @@ public static class WindowFinder
     public static (int X, int Y)? LogicalCursorPosition() => GetCursorPos(out var p) ? (p.X, p.Y) : null;
 
     // Note: the Set*CursorPosition helpers exist for the calibrator's debug buttons only. The tools
-    // position the cursor with the Arduino — see HidPointer.To and docs/CURSOR-INVESTIGATION.md.
+    // position the cursor with the Arduino — see HidPointer.To and docs/investigations/CURSOR-INVESTIGATION.md.
 
     /// <summary>Diagnostic: move the OS cursor to an absolute screen point and log target vs actual.</summary>
     public static void DebugCursor(int x, int y)
