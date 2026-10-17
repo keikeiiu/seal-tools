@@ -23,13 +23,13 @@ for "how does this work" should never have to reconstruct it from a hundred date
 - **The copy is made from the rows on screen**, the same source Create and Rename use, so a key typed but not yet saved is carried instead of silently dropped. The source is committed first, then the copy switches in — the same sequence Create follows.
 - **The Quest flow and sequence picker rows are now Grids**, matching the Spammer picker: a star picker column plus one Auto column per button. The old horizontal `StackPanel`s measured with unbounded width, so a 200 px (flow) or 220 px (sequence) picker plus three buttons could run past the card — the exact defect the Spammer picker hit at 619 logical px, where Delete was clipped to "Delet". The picker now takes what is left rather than demanding its MinWidth.
 
-**What the tests caught.** `ACopiedSpammerPresetSharesNothingWithItsSource` pins the one thing a `Dictionary` copy can get wrong: if the helper ever hands back the same map, editing one preset's cooldowns edits the other's, invisibly. The test edits and removes from the copy and re-reads the source.
+**What the tests caught.** `ACopiedSpammerPresetSharesNothingWithItsSource` pins the one thing a `Dictionary` copy can get wrong: if the helper ever hands back the same map, editing one preset's cooldowns edits the other's, invisibly. The test edits and removes from the copy and re-reads the source. `DuplicatedSpammerPresetSurvivesASaveAndReload` closes the last gap PLAN-PRESET-DUPLICATE.md §8 named — the Quest pair had a round-trip test, the Spammer half did not — and it asserts two surviving entries, because a copy that REPLACED its source would pass every key assertion.
 
 **Still open.** ⚑2 (the pre-existing dangling-entry re-point) and ⚑3 (three hand-rolled pickers, or one shared) on the plan. Buy and Game Variants stay out of scope.
 
-**Commit.** This commit — the Spammer Duplicate, the two Grid conversions, its test, and both user guides.
+**Commits.** `673c59a` — the Spammer Duplicate, the two Grid conversions, its test and both user guides; then the Spammer save/reload test with this entry.
 
-`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 334 passed, 0 failed.
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 335 passed, 0 failed.
 
 ## 2026-10-17 (93) — a flow can be copied instead of retyped
 

@@ -2277,6 +2277,46 @@ public class ConfigLoaderTests
         }
     }
 
+    [Fact]
+    public void DuplicatedSpammerPresetSurvivesASaveAndReload()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            var loader = new ConfigLoader(dir);
+            loader.UpdateLocal(local =>
+            {
+                var presets = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, double>>
+                {
+                    ["Knight0-9"] = new System.Collections.Generic.Dictionary<string, double>
+                    {
+                        ["*0"] = 0.2,
+                        ["*F1"] = 1.5,
+                    },
+                };
+
+                // What the picker's Duplicate does, in the order it does it: generate the name, copy the
+                // key map, and make the copy the active preset.
+                var copyName = PresetCopy.CopyName("Knight0-9", presets.Keys);
+                presets[copyName] = PresetCopy.CopySpammerKeys(presets["Knight0-9"]);
+
+                local.Spammer = new ConfigLoader.LocalSpammer { Active = copyName, Presets = presets };
+            });
+
+            var reloaded = new ConfigLoader(dir).Load();
+            Assert.Equal("Knight0-9 (copy)", reloaded.Spammer.Active);
+            Assert.Equal(0.2, reloaded.Spammer.ActiveKeys["*0"]);
+            Assert.Equal(1.5, reloaded.Spammer.ActiveKeys["*F1"]);
+            // Two entries, not one: a copy that replaced its source in the dictionary would still make
+            // every assertion above pass, because the surviving entry has the same keys.
+            Assert.Equal(2, reloaded.Spammer.Presets.Count);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // ActiveKeys used to fall back to another preset when the active name was missing, so the
     // spammer would press a different rotation with nothing indicating which. Empty is the safe
     // answer, and SkillSpammer reports it on the card.
