@@ -1,11 +1,11 @@
 # Seal Tools v2 (C# / .NET WPF)
 
-**Version 2.15** (2026-10-13) — the current release; see the tag `v2.15` and
-[docs/docs/records/RELEASE-v2.15.md](docs/records/RELEASE-v2.15.md).
+**Version 2.16** (2026-10-17) — the current release; see the tag `v2.16` and
+[docs/records/RELEASE-v2.16.md](docs/records/RELEASE-v2.16.md).
 
 The **version history is not repeated here.** It lives in one place —
 [../README.md](../README.md#version-history) has the one-line-per-release table, and
-[docs/docs/records/PROGRESS.md](docs/records/PROGRESS.md) has the dated reasoning behind each. This file kept its own copy
+[docs/records/PROGRESS.md](docs/records/PROGRESS.md) has the dated reasoning behind each. This file kept its own copy
 until v2.11 and the copy had gone eight releases stale, which is the argument for not having two.
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools, replacing the Python build with a

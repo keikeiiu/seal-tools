@@ -13,6 +13,41 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (100) — release: v2.16
+
+**What shipped.** Two lines that met on `main` through PR #7. **The config/deploy line** (entry 92 and
+the docs reorganisation that followed it): the zip carries program files only and ships
+`defaults.yaml.example` as the app's base; the player's portable settings move to `local.yaml`'s
+`settings:` block and an old `defaults.yaml` is folded into it once; `local.yaml` is written through one
+gated read-modify-write; `publish.bat` opens the finished zip and fails on any file outside its
+allow-list; the Setup tab reports what differs from the stored calibration. **The duplication line**
+(entries 93–99): Duplicate for a quest flow, a sequence and a spammer preset, built from the rows on
+screen; one **Save quest** for the whole tab with an InfoBar answer to every picker action; one shared
+`PresetPicker`; a Save that refuses a sequence entry naming a missing flow instead of silently
+re-pointing it; and the null-YAML repairs five review rounds turned up. **Also shipped:** the Gem
+Composer's per-grade cycle counts on the card and in `logs/gem.log`, and the capture/log path fix that
+makes **Delete captures** clear the folder it names.
+
+**FILES.** `publish.bat` RELTAG → v2.16; the root README's title, latest-download, fallback row for
+v2.15, firmware link, history row and unzip line; `v2/README.md`'s version line; notes in
+`docs/records/RELEASE-v2.16.md`. Two stale links inside those files were fixed while editing them: the
+root README's PROGRESS link still said `v2/docs/docs/…`, and `v2/README.md`'s link label said
+`docs/docs/…` while its target was already correct.
+
+**The links were changed ONE AT A TIME and each checked** — each URL's tag and filename are extracted
+and compared, and the version claims (title, links, unzip line, RELTAG, `v2/README`) are checked for
+agreement.
+
+**Nothing needs a reflash, and that is a finding rather than an assumption:** `git diff v2.15...HEAD --
+arduino/` is empty, so the sketch is byte-identical and the protocol level is still 2.
+`FirmwareSketchTests` and `FirmwareVersionTests` pass.
+
+**Verified, and owed.** `dotnet build` 0 warnings / 0 errors and **351 tests pass**. The duplication
+range had five adversarial review rounds; the deploy plan had three, and its own entry records what the
+reviews changed. Owed: the duplication feature has **not been exercised in the game** (the player's
+test list is in PR #7), and a **real updated install's first launch** — where the fold runs for the
+first time — has not been watched. The release notes carry both in their table rather than in prose.
+
 ## 2026-10-17 (99) — the review of the three commits, and what it caught
 
 **Goal.** Adversarial review of the whole preset-duplicate range (`cc19282..8be0dbe`): three independent

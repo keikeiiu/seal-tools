@@ -1,4 +1,4 @@
-# Seal Tools v2.15 (C# / .NET 8 WPF)
+# Seal Tools v2.16 (C# / .NET 8 WPF)
 
 A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
 (WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
@@ -8,14 +8,15 @@ A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Wind
 
 ## Download
 
-**Take the latest — [SealTools-v2.15.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15.zip).**
+**Take the latest — [SealTools-v2.16.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16.zip).**
 Self-contained (exe + OCR models + config templates + the pet feeding table) — unzip and run.
-Installation, including flashing the board, is in **[v2/docs/INSTALL.md](v2/docs/spec/INSTALL.md)**.
+Installation, including flashing the board, is in **[v2/docs/spec/INSTALL.md](v2/docs/spec/INSTALL.md)**.
 
 Older releases are kept only when they are a useful fallback:
 
 | Version | File | |
 |---|---|---|
+| **v2.15** | [SealTools-v2.15.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15.zip) | The pet feeder's visit flow, rebuilt from its own log |
 | **v2.14** | [SealTools-v2.14.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.14/SealTools-v2.14.zip) | The spammer's rotation model, and the pet feeder yielding to it |
 | **v2.13** | [SealTools-v2.13.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.13/SealTools-v2.13.zip) | Quest Hand-in — a new tool that reads nothing from the screen |
 | **v2.12** | [SealTools-v2.12.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.12/SealTools-v2.12.zip) | The pet feeder finished, and the food scan |
@@ -25,7 +26,7 @@ Older releases are kept only when they are a useful fallback:
 | v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | The last build before buy/sell |
 
 **Firmware.** The Arduino sketch ships alongside the app, not inside it:
-[SealTools-v2.15-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15-firmware.zip).
+[SealTools-v2.16-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16-firmware.zip).
 Unzip it and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. From v2.9 on this is published with
 every release — before that it was only in the repo, so a downloaded zip had no way to flash a board.
 
@@ -37,10 +38,11 @@ every release — before that it was only in the repo, so a downloaded zip had n
 What went into each build. **Not every version has a download** — older release assets are removed
 once they stop being useful, and v2.4 and v2.6 were never published as releases at all. Every version
 is a git tag, so `git show v2.6` still works, and the full reasoning behind each is in
-[v2/docs/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md).
+[v2/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md).
 
 | Version | Date | What it added |
 |---|---|---|
+| **v2.16** | 2026-10-17 | **An update can no longer cover your config, and a flow can be copied.** The zip now carries **program files only**: the shipped template goes out as `config\defaults.yaml.example` (the base the app reads), your portable settings live in `local.yaml`'s `settings:` block, and an existing `defaults.yaml` is **folded into it once** on the first launch — carrying only the values you changed, so untouched defaults keep tracking the template. Every config write goes through **one gated read-modify-write**, and `publish.bat` now **actually checks the zip against an allow-list** (the old check silently passed everything). Plus **Duplicate** for a quest flow, a quest sequence and a spammer preset — named `(copy)`, built from the rows **on screen**, and made active — and **one Save quest** for the whole tab: Flow/Sequence pickers that answer every Create/Rename/Duplicate/Delete in a bar, a rename that re-points sequence entries, a Save that **refuses an entry naming a missing flow** and lists it instead of silently re-pointing, repaired null YAML bodies, and the Quest card's loop count following a Save only when the card targets that item. The Gem Composer now counts **cycles per grade** on the card and in `logs\gem.log`. |
 | **v2.15** | 2026-10-13 | **The pet feeder's visit flow, rebuilt from its own log.** The four steps of [PLAN-PET-FLOW.md](v2/docs/archive/PLAN-PET-FLOW.md): the close **retries** and a window left open is **probed** before the next open clicks blind; a due row's reload can be **cancelled by the visit's own reading** when it shows food still in the tray (the margin is measured — 30 min sits inside an empty gap in the log's readings); the bag is swept **once per visit** and every stored cell is **re-read before it is clicked**; and the look and the first visit **share one window**. Most of what changed was not in the plan: mining three weeks of `pet.log` found that the feeder's biggest row-killer — 57 of the 90 strikes that dropped a row — was the **slot read answering from a covered window**, the one screen read without the foreground gate its siblings had, and that 77 of 131 in-visit failures were **silent**. So: every screen read is gated, a run waits for the game rather than clicking into whatever is in front, a visit that finds the window covered **defers instead of pressing buttons at the world**, a read that finds a second row due now **joins the visit**, and **every failure writes its reason**. The feeder's card now **lists every breeding row** — pet, stage, the `→ +N` the game's line counts to, the row's own rate read from the game's sentence, and its own countdown. The count read walks a **3×/9×/24× ladder** when a slot comes back empty, because the reader is knife-edge on those digits. And the **US client** gets its switch: **Setup → Game client**, one button per client, with the English dictionary shipping empty and saying why. |
 | **v2.14** | 2026-10-02 | **The spammer grows up, and the pet feeder stops waiting.** A spammer preset gains an **order** (named keys outrank the rest, so fillers run only in the gaps), **combos** — keys cast in sequence with a pause between them, ready only when *all* of them are off cooldown so the second half can never go out alone — a **lead-in** and an opening **step**, and a **rotation picker on its card**. **Start now casts**, instead of waiting out each key's first cooldown, which is what makes a 20-minute buff possible at all. The **pet feeder stops being blocked by a spammer that never ends**: the spammer hands the game over when a reload is due and takes it back when the feeder is done, pausing for the length of the *action* rather than a timer. The **food cells re-mark themselves** during the pet scan the tool already runs, so a moving food supply needs no hand-marking. **Hold Space's toggle** no longer swallows a press during its cold start — the bug that made it "freeze and not switch off" — and says **"Starting…"** while it waits. Plus the **US client frame** (`game.variant`; the English dictionary is still to come) and **quest sequences**. |
 | **v2.13** | 2026-09-28 | **Quest Hand-in — a new tool.** It replays a flow you author at the quest NPC, as many times as you ask: clicks, digits, Enter and waits, each with its own delay. **It reads nothing from the screen**, so it has no calibration at all — you put the mouse where the clicks must land during the initial wait, and the run **stops if it moves** (a guard that needs no game window, so unlike the tuner's it can fail *closed*). Flows are named presets in `local.yaml`, one per quest, and **Test one loop** runs the tool itself so a flow the test refuses is one the run would refuse. It also exposed and fixed a launcher bug: **a tool that ends by itself was left "running" forever** — it is the first tool in the suite that finishes without being stopped. Runs now leave a record in `logs/quest.log`, and two UI fixes came with it, one of which also corrects the Tuner tab's rule and override grids. |
@@ -58,7 +60,7 @@ is a git tag, so `git show v2.6` still works, and the full reasoning behind each
 
 ## Quick start
 
-1. Unzip `SealTools-v2.15.zip`.
+1. Unzip `SealTools-v2.16.zip`.
 2. Run `SealTools.Launcher.exe` — **as Administrator** is recommended (serial access; on some setups the in-game hotkeys need it too). On first run it auto-creates `config\local.yaml` from the example.
 3. Use the in-app calibration tabs — **Calibrate Tuner**, **Calibrate Gem**, **Buy / Sell**, **Calibrate
    Pet**, **Calibrate Tooltip** — to set your machine's coordinates once. You only calibrate the tools
@@ -88,7 +90,7 @@ Seven tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM 
 - **[v2/docs/DESIGN.md](v2/docs/spec/DESIGN.md)** — how it works and why, in one place.
 - **[v2/docs/CALIBRATION.md](v2/docs/spec/CALIBRATION.md)** — per-machine calibration walkthrough.
 - **[v2/docs/MOVE-SETS.md](v2/docs/spec/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
-- **[v2/docs/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md)** — dated log of what was done and why.
+- **[v2/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md)** — dated log of what was done and why.
 - **[v2/README.md](v2/README.md)** — architecture, config files, logging and build instructions.
 
 ## Disclaimer
