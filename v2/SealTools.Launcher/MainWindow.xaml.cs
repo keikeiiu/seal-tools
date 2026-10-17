@@ -612,11 +612,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                 _questTargetCard.SelectionChanged += (_, _) =>
                 {
                     if (_questTargetCard.SelectedItem is not QuestCardTarget picked) return;
+                    // Rebuilding ItemsSource re-raises this with the SAME target (a new record instance,
+                    // same name and kind). Only a real change may re-seed the box: otherwise a flow
+                    // switch on the Configuration tab resets a count the player dialled in here.
+                    var changed = !Equals(picked, _activeQuestTarget);
                     _activeQuestTarget = picked;
 
                     // The box follows the target: 5 loops means one thing for a sequence and another for
                     // a flow, and leaving a stale number there is how a run gets the wrong count.
-                    if (_questCountCard != null)
+                    if (changed && _questCountCard != null)
                         _questCountCard.Text = QuestDefaultLoops(picked).ToString(CultureInfo.InvariantCulture);
                 };
 
@@ -5043,7 +5047,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             ?? targets.FirstOrDefault();
         _questTargetCard.SelectedItem = _activeQuestTarget;
 
-        if (_questCountCard != null)
+        // Only re-seed the count when the card is pointing somewhere NEW. The box is a per-run
+        // override, and this method also runs on every flow-picker switch and rename; rewriting it
+        // then would silently undo a count the player had dialled in on the card, even though the
+        // card's target had not changed.
+        if (_questCountCard != null && !Equals(_activeQuestTarget, keep))
             _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
     }
 
@@ -6317,6 +6325,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             hint.Text = message;
         }
 
+        // Set once ShowSequence exists further down. The flow picker is built before the sequence
+        // editor's controls are declared, so it cannot call that local function directly without the
+        // compiler losing definite assignment on everything the function captures.
+        Action? afterFlowChange = null;
+
         var flowPicker = new PresetPicker(new PresetPickerOptions
         {
             Noun = "flow",
@@ -6329,9 +6342,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             // on the original too, with nothing on screen to say it had.
             CopyOf = from => PresetCopy.CopyQuestPreset(quest.Presets[from]),
             BeforeChange = CommitQuestRows,
-            // ShowActive rebuilds the step rows for whichever flow is now active; the card's target
-            // list is rebuilt too, so a flow made here reaches it without a restart.
-            AfterChange = () => { ShowActive(); RefreshQuestCardTargets(); },
+            // ShowActive rebuilds the step rows for whichever flow is now active, and ShowSequence
+            // rebuilds the sequence editors. That second half matters after a rename or a create: the
+            // entry rows each snapshot the flow list when they are built, so without the rebuild a
+            // just-created flow could not be picked for an entry, and a renamed one would still be
+            // offered under its old name. The card's target list is rebuilt too, so a flow made here
+            // reaches it without a restart.
+            AfterChange = () => { ShowActive(); afterFlowChange?.Invoke(); RefreshQuestCardTargets(); },
+            // A rename keeps the same flow under a new name, so the entries that named it follow the
+            // name. Without this they would be left pointing at a flow that no longer exists, and
+            // Save would refuse the sequence the rename was meant to leave working.
+            AfterRename = (from, to) =>
+            {
+                foreach (var sequence in quest.Sequences.Values)
+                    foreach (var entry in sequence.Entries)
+                        if (string.Equals(entry.Preset?.Trim(), from, StringComparison.Ordinal))
+                            entry.Preset = to;
+            },
             Report = ReportFlow,
             // The helper's default says "press Save", but this tab's button is labelled "Save quest".
             // Naming it here is what makes the note point at the button the player can actually see.
@@ -6339,7 +6366,12 @@ public partial class MainWindow : FluentWindow, IDisposable
             RenameNote = " — press Save quest to keep it.",
             CopyNote = " — press Save quest to keep it.",
             SelectionReport = picked =>
-                hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).",
+            {
+                // A refusal from the previous action is about the flow that was active then; once the
+                // player picks one, a red bar telling them to pick a flow is stale and misleading.
+                flowResult.IsOpen = false;
+                hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
+            },
             ConfirmAndDelete = gone =>
             {
                 if (quest.Presets.Count <= 1)
@@ -6421,6 +6453,8 @@ public partial class MainWindow : FluentWindow, IDisposable
             RefreshEntries();
         }
 
+        afterFlowChange = ShowSequence;
+
         // The same success/error bar the flow picker has: a create, a rename, a duplicate and a delete
         // all change something the player cannot see afterwards, so each one says so here rather than
         // leaving the picker's new row to speak for itself.
@@ -6439,7 +6473,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             Noun = "sequence",
             Items = quest.Sequences,
-            Active = () => quest.ActiveSequence,
+            // Trimmed here because ActiveSequenceOrNull trims too: a hand-edited active_sequence with
+            // spaces runs fine, so Duplicate and Rename must not claim no sequence is selected.
+            Active = () => (quest.ActiveSequence ?? "").Trim(),
             // "(none)" writes EMPTY, and empty is what makes the single flow run. It is a real choice
             // rather than an absence, which is why the merge applies it unconditionally.
             SetActive = name => quest.ActiveSequence = name,
@@ -6452,10 +6488,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             CreateNote = " — add its entries, then press Save quest.",
             RenameNote = " — press Save quest to keep it.",
             CopyNote = " — press Save quest to keep it.",
-            SelectionReport = picked => hint.Text = picked.Length == 0
-                ? "Start runs the single flow above."
-                : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
-                  $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).",
+            SelectionReport = picked =>
+            {
+                // Same staleness rule as the Flow card: the refusal ("pick a sequence") was about the
+                // "(none)" row, and the player has just left it.
+                seqResult.IsOpen = false;
+                hint.Text = picked.Length == 0
+                    ? "Start runs the single flow above."
+                    : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
+                      $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).";
+            },
             ConfirmAndDelete = gone =>
             {
                 if (MessageBox.Show($"Delete the sequence \"{gone}\"?", "Delete sequence",
@@ -6471,7 +6513,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
         // The initial state: the list, then the editor for whatever is active. Refresh maps an empty
         // active name onto the "(none)" row, which is what makes the single flow run.
-        seqPicker.Refresh(quest.ActiveSequence);
+        seqPicker.Refresh((quest.ActiveSequence ?? "").Trim());
         ShowSequence();
 
         panel.Children.Add(Section("Sequence — several flows in one run",
@@ -6563,7 +6605,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // the flow named here is not the whole of it: a player who read "Flow X written" could
                 // reasonably believe the sequences beside it had not been.
                 $"The whole tab was written — flow \"{quest.Active}\" ({Active().Steps.Count} step(s), " +
-                $"{Active().Loops} loop(s)), {quest.Sequences.Count} sequence(s), and the mouse guard.");
+                $"{Active().Loops} loop(s)), {quest.Sequences.Count} sequence(s), " +
+                $"mouse guard {quest.GuardPx} px.");
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
             // able to reach it without a restart.
@@ -6677,8 +6720,15 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var row = new QuestEntryRow();
             foreach (var name in flowNames) row.Flow.Items.Add(name);
-            if (entry != null && !flowNames.Contains(entry.Preset))
+            if (entry == null)
             {
+                row.Flow.SelectedItem = flowNames[0];
+            }
+            else
+            {
+                // Trimmed and null-tolerant, matching what the run does with the same value: a
+                // hand-edited `preset:` arrives as null, and `" name "` runs as `name`.
+                var wanted = entry.Preset?.Trim() ?? "";
                 // The flow this entry names is gone (or the name is empty). It is added as itself and
                 // selected, so the row keeps saying what the entry actually says. Falling back to
                 // flowNames[0] — which this used to do — meant the next CommitQuestRows wrote a
@@ -6686,9 +6736,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // silently started running another quest. Save now refuses while the name is missing
                 // (QuestConfig.DanglingSequenceEntries) and lists it, so the player picks the
                 // replacement rather than the first item in the sort order.
-                row.Flow.Items.Add(entry.Preset);
+                if (!flowNames.Contains(wanted)) row.Flow.Items.Add(wanted);
+                row.Flow.SelectedItem = wanted;
             }
-            row.Flow.SelectedItem = entry?.Preset ?? flowNames[0];
             row.Times.Text = (entry?.Times ?? 1).ToString(CultureInfo.InvariantCulture);
 
             var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
@@ -10150,8 +10200,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             _confirm.Content = renaming ? "Rename" : "Create";
             _name.Text = renaming ? _options.Active() : "";
             Prompt.Visibility = Visibility.Visible;
-            _name.Focus();
+            // Owner first: the Spammer prompt lives inside an editor that starts collapsed and is
+            // revealed by PromptOpened, and Focus() on an element under a Collapsed ancestor fails.
+            // Focusing before it ran left the name box unfocused until the player clicked it.
             _options.PromptOpened?.Invoke();
+            _name.Focus();
         }
     }
 

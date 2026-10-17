@@ -492,7 +492,7 @@ Read [PLAN-QUEST.md](../archive/PLAN-QUEST.md) for why it is built this way.
 | Control | What it does |
 |---|---|
 | **Flow** picker | Which flow to run. One per quest, because the dialogue differs per quest; the list ends with **＋ Add new…**, which opens the naming row. |
-| **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it: the name changes and nothing is left behind under the old one. For a second flow that starts out like this one, use **Duplicate**. |
+| **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it: the name changes and nothing is left behind under the old one. Sequence entries that named the flow follow the new name, so a rename does not break a sequence. For a second flow that starts out like this one, use **Duplicate**. |
 | **Duplicate** | Copies the flow you are on, steps and all, under a generated name — `name (copy)`, then `name (copy 2)` if that is taken — and switches to the copy ready to edit. The copy shares nothing with the original, so changing it leaves the original alone. Press **Save quest** to keep it. |
 | **Delete** | Asks first, and refuses to delete the last one. |
 | The naming row | **Create flow:** or **Rename to:**, a name box, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message rather than overwriting. |
@@ -508,7 +508,7 @@ master loops. For the quests that share an NPC.
 
 | Control | What it does |
 |---|---|
-| **Sequence** | Which sequence runs when you press **Start**. The first item is **`(none — run the single flow above)`**, so this one control decides between a sequence and a single flow — there is no second switch. **＋ Add new sequence…** opens the naming row. |
+| **Sequence** | Which sequence runs when you press **Start**. The first item is **`(none — run the single flow above)`**, so this one control decides between a sequence and a single flow — there is no second switch. **＋ Add new…** opens the naming row. |
 | **Master loops** | How many times the whole entry list is repeated. |
 | **Initial wait (s)** | The **one** positioning window for the entire sequence — see the warning below. |
 | **Rename** | Renames the sequence. Its entries still name the same flows. |
@@ -572,7 +572,7 @@ nothing" and "the game behaved differently today" look identical.
 
 | Control | What it does |
 |---|---|
-| **Save quest** | The **only** Save on this tab, and it writes **everything** on it: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The confirmation names all of it, because "Flow X written" alone would read as if the sequences beside it had not been. Nothing on the tab is kept until you press it. |
+| **Save quest** | The **only** Save on this tab, and it writes **everything** on it: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The confirmation gives the flow (with its step and loop counts), the number of sequences and the guard value, because "Flow X written" alone would read as if the sequences beside it had not been. Nothing on the tab is kept until you press it. |
 
 Flows and sequences are **personal**, so they live in `config/local.yaml` and not in the shipped
 defaults template (`config/defaults.yaml.example`) — that is the file a public build ships.

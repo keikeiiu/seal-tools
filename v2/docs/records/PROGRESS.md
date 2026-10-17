@@ -13,13 +13,60 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (99) — the review of the three commits, and what it caught
+
+**Goal.** Adversarial review of the whole preset-duplicate range (`cc19282..8be0dbe`): three independent
+lenses (picker lifecycle, Quest Save path, tests/docs), one skeptic per finding told to refute it. 13
+findings, all 13 survived refutation. They cluster into six defects, all fixed here.
+
+**The two that changed behaviour**
+
+- **A flow rename left sequences dangling, and Save then gave advice the screen could not follow.** A
+  rename moves the dictionary key but nothing updated `Sequences[*].Entries[*].Preset`, and the Flow
+  picker's `AfterChange` rebuilt neither the entry rows nor their flow list. So the row kept the old
+  name, the next Save refused ("pick an existing flow"), and the new name was not in the dropdown.
+  Fixed twice over: `AfterRename` re-points every entry that named the old name (a rename is the same
+  flow), and `AfterChange` now also rebuilds the sequence editors so the new name is selectable
+  everywhere. `RefreshQuestCardTargets` is unchanged in intent, but see the count fix below.
+- **A null `Preset` was still silently re-pointed.** YamlDotNet writes `null`, not `""`, for a bare
+  `preset:` key, and the editor's `entry?.Preset ?? flowNames[0]` conflated "no entry" with "no name" —
+  so Save wrote the first flow in. `DanglingSequenceEntries` was worse: `ContainsKey(null)` throws,
+  and the call sits outside `SaveReport`, so the dispatcher swallowed it and Save looked like it did
+  nothing. Both now normalise with `?.Trim() ?? ""`, the same expression `QuestTool.RunSequence` uses;
+  two tests pin the null and the padded-name cases (the padded name runs, so it must not block Save).
+
+**The rest**
+
+- **The card's per-run count was reset by unrelated picker actions.** `RefreshQuestCardTargets` runs on
+  every flow switch/create/rename and unconditionally rewrote the count box. It — and the card's
+  `SelectionChanged` handler, which re-fires on every `ItemsSource` rebuild — now re-seed only when the
+  card's target actually changed. The count is a per-run override; nothing may quietly restore it.
+- **The Spammer name box never received focus.** `OpenPrompt` focused it before `PromptOpened` revealed
+  the editor the prompt lives in, and `Focus()` under a `Collapsed` ancestor fails. The owner now runs
+  first, then the focus.
+- **A refusal bar outlived the selection it complained about.** Picking a flow/sequence now closes that
+  card's InfoBar, so a red "pick a flow" does not sit under a flow the player has just picked.
+- **Duplicate/Rename on a hand-edited `active_sequence: " run "` reported "pick a sequence".** The
+  shared helper sees the raw active name; the picker is now handed the trimmed one, matching
+  `ActiveSequenceOrNull` and the deleted handler's deliberate `.Trim()`.
+- **Docs:** the Sequence guide still quoted `＋ Add new sequence…` (the shared picker says
+  `＋ Add new…`), the Rename row now says entries follow the new name, and the Save confirmation's
+  description matches the message (flow, sequence count, guard value — not "names every sequence").
+
+**Why the range is now reviewed.** The previous review pass covered the duplicate feature itself; this
+one covered the three follow-up commits, where a refactor plus a new Save gate could interact. Every
+one of the 13 findings required the intersection of two changes — which is why the earlier per-commit
+gate did not catch them.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 345 passed, 0 failed. Launcher started and every tab constructed.
+
 ## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
 
 **Goal.** Three things the player asked for together: the Quest tab already wrote its sequences and its mouse guard on the same Save as the flow, but the button sat inside "Try it, then keep it" under a **Save** label and reported only the flow it wrote, so there was no way to tell it covered the rest; and Rename (and Create, Duplicate, Delete) changed the list with no confirmation on screen.
 
 **What changed**
 
-- **`Save` is `Save quest` and has its own card.** The Test button keeps "Try it". The Save moved to **"Save — the whole tab"**, whose hint lists what it writes: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The success line went from `Flow "X" written — n step(s)` to naming the sequences and the guard too, so the message matches the button's claim.
+- **`Save` is `Save quest` and has its own card.** The Test button keeps "Try it". The Save moved to **"Save — the whole tab"**, whose hint lists what it writes: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The success line went from `Flow "X" written — n step(s)` to giving the flow, the number of sequences and the guard value, so the message matches the button's claim.
 - **A create, rename, duplicate or delete in the Flow card reports in the Flow card.** A local `flowResult` InfoBar (the same `Wpf.Ui` control the Result card uses) sits directly under the picker: green "Flow updated" or red "Not changed". Before this the only output was the Result line at the bottom of the tab — off-screen from the button, which is why a rename looked like it had done nothing.
 - **The same for the Sequence card** (`seqResult`), including the refusal messages. Deleting still says `(none)` is selected again and Start runs the single flow.
 - **The Spammer tab already had this**, in its existing status line; no InfoBar was added there, because a second channel for the same message would be noise.

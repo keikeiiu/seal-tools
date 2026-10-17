@@ -177,7 +177,12 @@ public sealed class QuestConfig
     /// this list is non-empty, rather than choosing a replacement the player did not choose.
     ///
     /// Empty is the normal state: an entry names a flow, and deleting that flow is a reason to stop and
-    /// ask, not a reason to guess.</summary>
+    /// ask, not a reason to guess.
+    ///
+    /// The name is trimmed and a null is treated as empty, which is exactly what the runner does
+    /// (<c>QuestTool.RunSequence</c>): a hand-edited <c>preset:</c> with no value arrives as null, and
+    /// a padded <c>" name "</c> still runs. Refusing those here would block a Save for a sequence the
+    /// run would accept.</summary>
     public List<(string Sequence, int Entry, string Flow)> DanglingSequenceEntries()
     {
         var dangling = new List<(string, int, string)>();
@@ -185,7 +190,7 @@ public sealed class QuestConfig
         {
             for (var i = 0; i < sequence.Entries.Count; i++)
             {
-                var flow = sequence.Entries[i].Preset;
+                var flow = sequence.Entries[i].Preset?.Trim() ?? "";
                 if (!Presets.ContainsKey(flow)) dangling.Add((name, i + 1, flow));
             }
         }

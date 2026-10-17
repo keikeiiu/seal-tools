@@ -73,6 +73,33 @@ public class QuestConfigTests
         Assert.Single(quest.DanglingSequenceEntries());
     }
 
+    /// <summary>YamlDotNet writes null — not "" — into a <c>string</c> property whose key is present with
+    /// no value, and local.yaml is hand-editable by contract. A null must be reported like a blank name,
+    /// not thrown on: <c>Dictionary.ContainsKey(null)</c> throws, and that exception would escape the
+    /// Save handler's InfoBar and turn the button into a silent no-op.</summary>
+    [Fact]
+    public void ANullFlowNameIsReportedAsEmptyInsteadOfThrowing()
+    {
+        var quest = WithFlows("a");
+        var sequence = new QuestSequence();
+        sequence.Entries.Add(new QuestSequenceEntry { Preset = null! });
+        quest.Sequences["run"] = sequence;
+
+        var only = Assert.Single(quest.DanglingSequenceEntries());
+        Assert.Equal("", only.Flow);
+    }
+
+    /// <summary>The check must agree with the runner. `QuestTool.RunSequence` trims the name before
+    /// looking it up, so a padded name that runs must not stop every Save on the tab.</summary>
+    [Fact]
+    public void APaddedNameTheRunnerWouldTrimIsNotDangling()
+    {
+        var quest = WithFlows("a");
+        quest.Sequences["run"] = SequenceWith(" a ");
+
+        Assert.Empty(quest.DanglingSequenceEntries());
+    }
+
     /// <summary>The order is fixed so the same defect reads the same way twice — the message lists every
     /// hit, and a message whose lines move between saves is one the player cannot compare.</summary>
     [Fact]
