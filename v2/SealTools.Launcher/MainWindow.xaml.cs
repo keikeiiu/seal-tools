@@ -5028,12 +5028,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Fills the card's picker from the config — SEQUENCES first, because a sequence is the
     /// bigger thing to run and half the reason the picker exists. Keeps the current choice while it
-    /// still exists, so saving on the tab does not silently re-aim the card.
-    ///
-    /// <paramref name="reseedCount"/> is for the Save path: the player just edited the target's own
-    /// loop count, and the card's box should show it. A flow or sequence picker action passes false —
-    /// it is not about the card, and must not undo a per-run count the player dialled in there.</summary>
-    private void RefreshQuestCardTargets(bool reseedCount = false)
+    /// still exists, so saving on the tab does not silently re-aim the card.</summary>
+    private void RefreshQuestCardTargets()
     {
         if (_questTargetCard == null) return;
 
@@ -5055,7 +5051,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // override, and this method also runs on every flow-picker switch and rename; rewriting it
         // then would silently undo a count the player had dialled in on the card, even though the
         // card's target had not changed.
-        if (_questCountCard != null && (reseedCount || !Equals(_activeQuestTarget, keep)))
+        if (_questCountCard != null && !Equals(_activeQuestTarget, keep))
             _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
     }
 
@@ -6363,8 +6359,13 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // rename half-applied with no message.
                 foreach (var sequence in quest.Sequences?.Values ?? Enumerable.Empty<QuestSequence>())
                     foreach (var entry in sequence?.Entries ?? Enumerable.Empty<QuestSequenceEntry>())
-                        if (string.Equals(entry.Preset?.Trim(), from, StringComparison.Ordinal))
+                        if (entry != null && string.Equals(entry.Preset?.Trim(), from, StringComparison.Ordinal))
                             entry.Preset = to;
+
+                // The card may be aimed at the flow being renamed. Its target is a name, so without
+                // this it would fall back to the first target and Start would run something else.
+                if (_activeQuestTarget is { IsSequence: false } target && target.Name == from)
+                    _activeQuestTarget = new QuestCardTarget(to, IsSequence: false);
             },
             Report = ReportFlow,
             // The helper's default says "press Save", but this tab's button is labelled "Save quest".
@@ -6393,7 +6394,11 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                 quest.Presets.Remove(gone);
                 quest.Active = quest.Presets.Keys.First();
-                ReportFlow(false, $"Deleted. Now on \"{quest.Active}\".");
+                // The bar states only the past event, because it now survives a later selection;
+                // "Now on X" would be a lie the moment the player switches to Y. Which flow is
+                // active goes on the Result line, where a switch overwrites it anyway.
+                ReportFlow(false, $"Deleted \"{gone}\".");
+                hint.Text = $"Deleted. Now on \"{quest.Active}\".";
                 return true;
             },
         });
@@ -6492,6 +6497,13 @@ public partial class MainWindow : FluentWindow, IDisposable
             NewItem = () => new QuestSequence(),
             CopyOf = from => PresetCopy.CopyQuestSequence(quest.Sequences[from]),
             BeforeChange = CommitQuestRows,
+            // The card may be aimed at the sequence being renamed; its target is a name, so without
+            // this it would fall back to the first target and Start would run something else.
+            AfterRename = (from, to) =>
+            {
+                if (_activeQuestTarget is { IsSequence: true } target && target.Name == from)
+                    _activeQuestTarget = new QuestCardTarget(to, IsSequence: true);
+            },
             AfterChange = () => { ShowSequence(); RefreshQuestCardTargets(); },
             Report = ReportSequence,
             CreateNote = " — add its entries, then press Save quest.",
@@ -6515,7 +6527,10 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                 quest.Sequences.Remove(gone);
                 quest.ActiveSequence = "";
-                ReportSequence(false, "Deleted. Start runs the single flow above again.");
+                // Past event only: this bar survives a later selection, so "Start runs the single
+                // flow above again" would be false as soon as another sequence is picked.
+                ReportSequence(false, $"Deleted \"{gone}\".");
+                hint.Text = "Deleted. Start runs the single flow above again.";
                 return true;
             },
             MinWidth = 220,
@@ -6619,10 +6634,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"mouse guard {quest.GuardPx} px.");
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
-            // able to reach it without a restart. reseedCount: this Save may have changed the active
-            // target's loop count, so the card's box follows it — that is the one path where the box
-            // is meant to be overwritten.
-            RefreshQuestCardTargets(reseedCount: true);
+            // able to reach it without a restart. The count is deliberately NOT touched when the
+            // target did not change: it is a per-run override, and Save covers the whole tab — the
+            // player may be editing a flow the card is not aimed at.
+            RefreshQuestCardTargets();
+            flowResult.IsOpen = false;
+            seqResult.IsOpen = false;
         };
 
         panel.Children.Add(Section("Try it",
@@ -6772,7 +6789,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             rows.Add(row);
         }
 
-        foreach (var e in sequence.Entries) AddRow(e);
+        // Null-tolerant for the same reason the dangling check is: a hand-edited `entries:` with no
+        // value arrives as null, and opening that sequence must not throw.
+        foreach (var e in sequence.Entries ?? Enumerable.Empty<QuestSequenceEntry>()) AddRow(e);
         add.Click += (_, _) => AddRow(null);
 
         return panel;

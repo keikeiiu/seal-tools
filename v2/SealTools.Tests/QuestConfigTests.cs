@@ -89,6 +89,31 @@ public class QuestConfigTests
         Assert.Equal("", only.Flow);
     }
 
+    /// <summary>A bare `entries:` key loads as a NULL list, not an empty one. There is nothing to
+    /// judge, and throwing here would escape the Save handler's InfoBar and make the button a silent
+    /// no-op for the rest of the session.</summary>
+    [Fact]
+    public void ANullEntryListIsNotDanglingAndDoesNotThrow()
+    {
+        var quest = WithFlows("a");
+        quest.Sequences["run"] = new QuestSequence { Entries = null! };
+
+        Assert.Empty(quest.DanglingSequenceEntries());
+    }
+
+    /// <summary>A bare `-` list item loads as a null ENTRY. It is reported like a blank name, which is
+    /// what the runner treats it as, rather than throwing on the way to the lookup.</summary>
+    [Fact]
+    public void ANullEntryElementIsReportedAsEmpty()
+    {
+        var quest = WithFlows("a");
+        var sequence = new QuestSequence();
+        sequence.Entries.Add(null!);
+        quest.Sequences["run"] = sequence;
+
+        Assert.Equal("", Assert.Single(quest.DanglingSequenceEntries()).Flow);
+    }
+
     /// <summary>The check must agree with the runner. `QuestTool.RunSequence` trims the name before
     /// looking it up, so a padded name that runs must not stop every Save on the tab.</summary>
     [Fact]

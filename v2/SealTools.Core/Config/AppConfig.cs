@@ -188,9 +188,14 @@ public sealed class QuestConfig
         var dangling = new List<(string, int, string)>();
         foreach (var (name, sequence) in Sequences.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
         {
-            for (var i = 0; i < sequence.Entries.Count; i++)
+            // A hand-edited `entries:` with no value is null (the same YamlDotNet behaviour that
+            // makes `preset:` null), and so is a bare `-` list item. Neither can be judged here;
+            // throwing would escape the Save handler's InfoBar and turn Save into a silent no-op.
+            var entries = sequence?.Entries;
+            if (entries == null) continue;
+            for (var i = 0; i < entries.Count; i++)
             {
-                var flow = sequence.Entries[i].Preset?.Trim() ?? "";
+                var flow = entries[i]?.Preset?.Trim() ?? "";
                 if (!Presets.ContainsKey(flow)) dangling.Add((name, i + 1, flow));
             }
         }

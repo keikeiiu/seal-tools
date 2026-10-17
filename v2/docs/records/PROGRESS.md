@@ -58,14 +58,27 @@ one covered the three follow-up commits, where a refactor plus a new Save gate c
 one of the 13 findings required the intersection of two changes — which is why the earlier per-commit
 gate did not catch them.
 
-**A second pass over the fixes found three more, all LOW.** The rename loop now tolerates a null
-sequence or entry list — hand-edited YAML can deliver one, and the key has already moved when the
-callback runs, so a throw there left the rename half-applied. The card-count gate gained a
-`reseedCount` argument: Save still pushes an edited loop count to the card, while picker actions do
-not. And a selection now closes only an ERROR bar; a success note's "press Save quest to keep it" is
-still true after switching, and hiding it removed the only reminder that the change is unsaved.
+**A second pass over the fixes found three more**, and a third pass over those settled the rules:
 
-`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 345 passed, 0 failed. Launcher started and every tab constructed.
+- **The rename loop is null-tolerant.** Hand-edited YAML can make `sequences:` a null dictionary, a
+  value null, `entries:` a null list, or a list item a null entry. The callback runs AFTER the key has
+  already moved, so a throw left the rename half-applied with no message. The same guards are in
+  `DanglingSequenceEntries` (which used to throw on those values, outside `SaveReport` — Save then did
+  nothing and said nothing) and in the entries editor. Four Core tests pin the four shapes.
+- **The card's loop count follows only a TARGET change — never a Save.** The first fix stopped the
+  flow picker from resetting a dialled-in count; a second attempt let Save reseed it, which the third
+  pass rejected because Save covers the whole tab and the card may be aimed at a different flow. The
+  count is a per-run override, so only the "the card is pointing somewhere new" path may write it.
+- **Renaming the flow or sequence the card is aimed at follows the name.** The card's target is a
+  name; without this, a rename made `RefreshQuestCardTargets` fall back to the first target and Start
+  silently ran something else.
+- **Bars state only what is still true.** A selection closes an ERROR bar (its advice is about the
+  previous target) but keeps a success note, whose "press Save quest to keep it" is still true; a
+  successful Save closes both. Delete messages are past-tense ("Deleted "X".") because they now
+  survive a later selection, while "Now on X" / "Start runs the single flow again" moved to the
+  Result line, which the next selection overwrites.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 347 passed, 0 failed. Launcher started and every tab constructed.
 
 ## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
 
