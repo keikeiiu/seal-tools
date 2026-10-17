@@ -10099,6 +10099,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // The prompt's name may be the one just deleted. Closing it BEFORE the mutation is what
                 // stops the next Confirm from renaming whatever became active.
                 ClosePrompt();
+                // AfterChange rebuilds the owner's editor from the dictionary, so the rows on screen
+                // have to be written back first or a delete silently drops an unsaved edit. The flow
+                // and sequence pickers rebuild their editors in AfterChange; the Spammer does too.
+                options.BeforeChange();
                 if (options.ConfirmAndDelete?.Invoke(gone) != true) return;
 
                 Refresh(options.Active());
