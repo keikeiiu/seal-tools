@@ -5028,8 +5028,12 @@ public partial class MainWindow : FluentWindow, IDisposable
 
     /// <summary>Fills the card's picker from the config — SEQUENCES first, because a sequence is the
     /// bigger thing to run and half the reason the picker exists. Keeps the current choice while it
-    /// still exists, so saving on the tab does not silently re-aim the card.</summary>
-    private void RefreshQuestCardTargets()
+    /// still exists, so saving on the tab does not silently re-aim the card.
+    ///
+    /// <paramref name="reseedCount"/> is for the Save path: the player just edited the target's own
+    /// loop count, and the card's box should show it. A flow or sequence picker action passes false —
+    /// it is not about the card, and must not undo a per-run count the player dialled in there.</summary>
+    private void RefreshQuestCardTargets(bool reseedCount = false)
     {
         if (_questTargetCard == null) return;
 
@@ -5051,7 +5055,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // override, and this method also runs on every flow-picker switch and rename; rewriting it
         // then would silently undo a count the player had dialled in on the card, even though the
         // card's target had not changed.
-        if (_questCountCard != null && !Equals(_activeQuestTarget, keep))
+        if (_questCountCard != null && (reseedCount || !Equals(_activeQuestTarget, keep)))
             _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
     }
 
@@ -6354,8 +6358,11 @@ public partial class MainWindow : FluentWindow, IDisposable
             // Save would refuse the sequence the rename was meant to leave working.
             AfterRename = (from, to) =>
             {
-                foreach (var sequence in quest.Sequences.Values)
-                    foreach (var entry in sequence.Entries)
+                // Null-tolerant: hand-edited YAML can make a sequence (or its entry list) null, and
+                // the key has ALREADY moved by the time this runs — a throw here would leave the
+                // rename half-applied with no message.
+                foreach (var sequence in quest.Sequences?.Values ?? Enumerable.Empty<QuestSequence>())
+                    foreach (var entry in sequence?.Entries ?? Enumerable.Empty<QuestSequenceEntry>())
                         if (string.Equals(entry.Preset?.Trim(), from, StringComparison.Ordinal))
                             entry.Preset = to;
             },
@@ -6368,8 +6375,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             SelectionReport = picked =>
             {
                 // A refusal from the previous action is about the flow that was active then; once the
-                // player picks one, a red bar telling them to pick a flow is stale and misleading.
-                flowResult.IsOpen = false;
+                // player picks one, a red bar telling them to pick a flow is stale and misleading. A
+                // SUCCESS bar stays: "press Save quest to keep it" is still true — the change is only
+                // in memory until Save, and switching flows must not hide the reminder.
+                if (flowResult.Severity == InfoBarSeverity.Error) flowResult.IsOpen = false;
                 hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
             },
             ConfirmAndDelete = gone =>
@@ -6491,8 +6500,9 @@ public partial class MainWindow : FluentWindow, IDisposable
             SelectionReport = picked =>
             {
                 // Same staleness rule as the Flow card: the refusal ("pick a sequence") was about the
-                // "(none)" row, and the player has just left it.
-                seqResult.IsOpen = false;
+                // "(none)" row, and the player has just left it. A success note stays — it may be the
+                // only reminder that the sequence is unsaved.
+                if (seqResult.Severity == InfoBarSeverity.Error) seqResult.IsOpen = false;
                 hint.Text = picked.Length == 0
                     ? "Start runs the single flow above."
                     : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
@@ -6609,8 +6619,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"mouse guard {quest.GuardPx} px.");
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
-            // able to reach it without a restart.
-            RefreshQuestCardTargets();
+            // able to reach it without a restart. reseedCount: this Save may have changed the active
+            // target's loop count, so the card's box follows it — that is the one path where the box
+            // is meant to be overwritten.
+            RefreshQuestCardTargets(reseedCount: true);
         };
 
         panel.Children.Add(Section("Try it",

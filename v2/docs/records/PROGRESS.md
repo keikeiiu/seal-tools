@@ -58,6 +58,13 @@ one covered the three follow-up commits, where a refactor plus a new Save gate c
 one of the 13 findings required the intersection of two changes — which is why the earlier per-commit
 gate did not catch them.
 
+**A second pass over the fixes found three more, all LOW.** The rename loop now tolerates a null
+sequence or entry list — hand-edited YAML can deliver one, and the key has already moved when the
+callback runs, so a throw there left the rename half-applied. The card-count gate gained a
+`reseedCount` argument: Save still pushes an edited loop count to the card, while picker actions do
+not. And a selection now closes only an ERROR bar; a success note's "press Save quest to keep it" is
+still true after switching, and hiding it removed the only reminder that the change is unsaved.
+
 `dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 345 passed, 0 failed. Launcher started and every tab constructed.
 
 ## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
