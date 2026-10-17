@@ -91,7 +91,21 @@ pass settled the remaining ones:
   and "(none)" no longer claim what Start will run — the card's target wins at Start and the tab does
   not know it.
 
-`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 347 passed, 0 failed. Launcher started and every tab constructed.
+**A fifth pass, over those fixes, found one root cause behind seven findings.** A value-less YAML key
+(`run:`) is a dictionary entry whose VALUE is null, and `TryGetValue` reports it as PRESENT. The
+fourth pass guarded `QuestDefaultLoops` for that shape and left every other reader: `ActivePreset`
+returned the null (the launcher threw in its constructor and showed no window), Duplicate passed it
+to `PresetCopy`, the card's flow and sequence overrides handed it to the runner, and the Save gate
+(`ContainsKey`) accepted a sequence entry naming such a flow — which then threw at `Validate`. Fixed
+once, at the root: `QuestConfig.NormaliseNullBodies()` replaces each null body with an empty one after
+the merge in `ConfigLoader.Load` (keeping the key — dropping it would rename the player's flow),
+`ActivePreset` keeps its documented "never null" promise, `DanglingSequenceEntries` and `RunSequence`
+treat a null body as missing, and the card's override refuses one in a config built without the
+loader. Separately, `SaveReport` swallowed a write failure and returned void, so the Quest tab's
+success tail ran anyway and said "Saved" beside the red failure bar; it now returns success and the
+tab stops on failure. Four tests pin the repair (three at the model, one through `ConfigLoader.Load`).
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 351 passed, 0 failed. Launcher started and every tab constructed.
 
 ## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
 

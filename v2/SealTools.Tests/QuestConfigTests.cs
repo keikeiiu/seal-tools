@@ -127,6 +127,56 @@ public class QuestConfigTests
         Assert.Empty(quest.DanglingSequenceEntries());
     }
 
+    /// <summary>An entry naming a flow that EXISTS but has no body is as unrunnable as one naming a
+    /// flow that is gone, and the runner refuses it the same way. The Save gate has to agree, or it
+    /// lets the file through to a run that cannot start.</summary>
+    [Fact]
+    public void AnEntryNamingAFlowWithNoBodyIsDangling()
+    {
+        var quest = WithFlows();
+        quest.Presets["a"] = null!;
+        quest.Sequences["run"] = SequenceWith("a");
+
+        Assert.Equal("a", Assert.Single(quest.DanglingSequenceEntries()).Flow);
+    }
+
+    // ── value-less keys ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>YamlDotNet loads `run:` (no body) as a null dictionary VALUE, and TryGetValue then
+    /// reports the name as PRESENT. The repair is an empty body — what `run: {}` would have meant —
+    /// and it must keep the key: dropping it would rename the player's flow.</summary>
+    [Fact]
+    public void NullFlowAndSequenceBodiesAreReplacedWithEmptyOnes()
+    {
+        var quest = WithFlows("real");
+        var real = quest.Presets["real"];
+        quest.Presets["a"] = null!;
+        quest.Sequences["run"] = null!;
+
+        quest.NormaliseNullBodies();
+
+        Assert.NotNull(quest.Presets["a"]);
+        Assert.Empty(quest.Presets["a"].Steps);
+        Assert.NotNull(quest.Sequences["run"]);
+        Assert.Empty(quest.Sequences["run"].Entries);
+        // A body that was already there is the same instance, not a replacement.
+        Assert.Same(real, quest.Presets["real"]);
+    }
+
+    /// <summary>The read that crashed the launcher BEFORE any window appeared: the active flow's
+    /// value was null, and `ActivePreset` returned it because the key was present. The property
+    /// promises an empty flow for "missing", and a null body is missing.</summary>
+    [Fact]
+    public void ActivePresetIsEmptyRatherThanNullWhenTheActiveBodyIsValueLess()
+    {
+        var quest = WithFlows();
+        quest.Active = "a";
+        quest.Presets["a"] = null!;
+
+        Assert.NotNull(quest.ActivePreset);
+        Assert.Empty(quest.ActivePreset.Steps);
+    }
+
     /// <summary>The order is fixed so the same defect reads the same way twice — the message lists every
     /// hit, and a message whose lines move between saves is one the player cannot compare.</summary>
     [Fact]

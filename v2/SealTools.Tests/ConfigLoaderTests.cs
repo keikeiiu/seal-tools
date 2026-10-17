@@ -63,6 +63,39 @@ public class ConfigLoaderTests
         }
     }
 
+    /// <summary>A HAND-EDITED EMPTY BODY. `run:` with no value loads as a null dictionary VALUE, and
+    /// TryGetValue then reports the name as PRESENT — so the Quest tab's constructor, Duplicate, the
+    /// card's overrides and the runner each dereferenced it. The loader repairs the shape once, and
+    /// this pins that it does: without the call in Load, every assertion below is a NullReferenceException
+    /// somewhere later, with no message to say which key was value-less.</summary>
+    [Fact]
+    public void ValueLessQuestBodiesLoadAsEmptyInsteadOfNull()
+    {
+        var dir = MakeTempConfigDir(includeLocal: true);
+        try
+        {
+            File.AppendAllText(Path.Combine(dir, "local.yaml"),
+                "\nquest:\n  active: default\n  presets:\n    default:\n    a_flow: {}\n" +
+                "  active_sequence: run\n  sequences:\n    run:\n");
+
+            var quest = new ConfigLoader(dir).Load().Quest;
+
+            Assert.NotNull(quest.Presets["default"]);
+            Assert.Empty(quest.Presets["default"].Steps);
+            // The read that crashed MainWindow's constructor before any window appeared.
+            Assert.NotNull(quest.ActivePreset);
+            Assert.NotNull(quest.Sequences["run"]);
+            Assert.Empty(quest.Sequences["run"].Entries);
+            Assert.NotNull(quest.ActiveSequenceOrNull);
+            // A body that was written normally is left exactly as it was.
+            Assert.NotNull(quest.Presets["a_flow"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // ── The portable settings block (PLAN-DEPLOY.md step 1) ─────────────────────────────────────────
     //
     // The settings block is the same portable data in the machine's own file, so that one day the save

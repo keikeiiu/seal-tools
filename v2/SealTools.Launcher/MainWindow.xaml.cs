@@ -4712,8 +4712,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     /// write files and throw on I/O failure, and the success bar used to be raised after the call —
     /// so a read-only config directory or a full disk made Save look like it did nothing at all,
     /// with the exception absorbed by the app-level handler and only a log line to show for it.</summary>
-    private static void SaveReport(Action save, InfoBar bar, string successMessage)
+    /// <remarks>Returns success so a caller with work to do AFTER the write — the Quest tab's card
+    /// count and success line — can skip it on failure instead of contradicting the red bar.</remarks>
+    private static bool SaveReport(Action save, InfoBar bar, string successMessage)
     {
+        var ok = true;
         try
         {
             save();
@@ -4723,11 +4726,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
         catch (Exception ex)
         {
+            ok = false;
             bar.Severity = InfoBarSeverity.Error;
             bar.Title = "Save failed";
             bar.Message = $"{ex.Message} — nothing was written.";
         }
         bar.IsOpen = true;
+        return ok;
     }
 
     /// <summary>Every config tab is the same shell — a header and a vertically-scrolling panel. It was
@@ -6629,7 +6634,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
 
-            SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
+            var saved = SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = quest.Active,
                 Presets = quest.Presets.ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -6648,6 +6653,11 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"The whole tab was written — flow \"{quest.Active}\" ({Active().Steps.Count} step(s), " +
                 $"{Active().Loops} loop(s)), {quest.Sequences.Count} sequence(s), " +
                 $"mouse guard {quest.GuardPx} px.");
+
+            // A FAILED write must not run the success tail below: SaveReport has already opened the
+            // red "Save failed" bar, and closing the pickers' unsaved-change notes or claiming
+            // "Saved" beside it would contradict it.
+            if (!saved) return;
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
             // able to reach it without a restart.

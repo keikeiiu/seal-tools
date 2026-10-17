@@ -52,7 +52,10 @@ public sealed class QuestTool : ToolBase
         // and a choice made there must not be quietly overridden by the tab.
         if (!string.IsNullOrWhiteSpace(_sequenceOverride))
         {
-            if (!quest.Sequences.TryGetValue(_sequenceOverride.Trim(), out var fromCard))
+            // `fromCard is null` is the value-less-key shape (`run:` with no body): the name is
+            // PRESENT and its value is null. ConfigLoader repairs that at load, but a tool handed a
+            // hand-built config must still refuse rather than throw a NullReferenceException.
+            if (!quest.Sequences.TryGetValue(_sequenceOverride.Trim(), out var fromCard) || fromCard is null)
                 return Refuse(state, $"There is no sequence called \"{_sequenceOverride.Trim()}\" — " +
                                      "pick another on the card, or reload the config.");
 
@@ -61,7 +64,7 @@ public sealed class QuestTool : ToolBase
 
         if (!string.IsNullOrWhiteSpace(_flowOverride))
         {
-            if (!quest.Presets.TryGetValue(_flowOverride.Trim(), out var fromCard))
+            if (!quest.Presets.TryGetValue(_flowOverride.Trim(), out var fromCard) || fromCard is null)
                 return Refuse(state, $"There is no flow called \"{_flowOverride.Trim()}\" — pick " +
                                      "another on the card, or reload the config.");
 
@@ -152,7 +155,10 @@ public sealed class QuestTool : ToolBase
                     $"The sequence \"{name}\" has an empty entry — fix it on the Quest tab.");
 
             var flowName = entry.Preset?.Trim() ?? "";
-            if (!quest.Presets.TryGetValue(flowName, out var preset))
+            // A name whose VALUE is null (`a:` with no body) is present in the dictionary but has no
+            // flow to run; normalising at load makes this unreachable from a file, and refusing here
+            // keeps a hand-built config from throwing at Validate.
+            if (!quest.Presets.TryGetValue(flowName, out var preset) || preset is null)
                 return Refuse(state,
                     $"The sequence \"{name}\" names a flow \"{flowName}\" that does not exist.");
 

@@ -127,6 +127,12 @@ public sealed class ConfigLoader
         AdoptSpammerPresetsIntoLocal(legacy ?? defaults, local);
         ApplyOverrides(defaults, local);
 
+        // A HAND-EDITED EMPTY BODY. `run:` with no body loads as a null dictionary VALUE, and
+        // TryGetValue then reports the name as present — so the Quest tab, Duplicate, the card's
+        // overrides and the runner each dereferenced it. Repaired here, once, where the files' shapes
+        // are already being normalised, rather than guarded again in every reader.
+        defaults.Quest.NormaliseNullBodies();
+
         // AFTER the merge, because the migration only fills gaps: a file that already carries
         // `slots:` must win over the flat keys it also happens to still hold.
         MigratePetSlots(defaults.Pet, Deserialize<LocalOverridesLegacy>("local.yaml").Pet);

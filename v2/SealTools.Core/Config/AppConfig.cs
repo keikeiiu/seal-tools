@@ -166,7 +166,28 @@ public sealed class QuestConfig
     /// the tool says which case it is on its card instead — the same choice
     /// <see cref="SpammerConfig.ActiveKeys"/> makes, for the same reason.</summary>
     public QuestPreset ActivePreset =>
-        Presets.TryGetValue(Active, out var preset) ? preset : new QuestPreset();
+        // `preset is not null` is not redundant with the TryGetValue: a value-less key (`default:`)
+        // loads as a null VALUE, and TryGetValue then SUCCEEDS — returning that null. Without this
+        // the launcher's constructor threw before any window appeared.
+        Presets.TryGetValue(Active, out var preset) && preset is not null ? preset : new QuestPreset();
+
+    /// <summary>Restores the invariant every reader relies on: a name in <see cref="Presets"/> or
+    /// <see cref="Sequences"/> always has a body. YamlDotNet stores NULL — not a default object — for
+    /// a key written without one (`run:`), and `TryGetValue`/`ContainsKey` then report it as PRESENT.
+    /// That single shape reached five readers as a NullReferenceException: the Quest tab's
+    /// construction, Duplicate, the card's flow/sequence overrides, and the Save gate (which let an
+    /// entry through to a runner that then threw).
+    ///
+    /// The repair is an EMPTY instance, which is what `run: {}` would have meant. The key is kept
+    /// rather than dropped: dropping would silently rename the player's flow and could turn the active
+    /// name into a dangling one. Called once by <c>ConfigLoader.Load</c> after the merge.</summary>
+    public void NormaliseNullBodies()
+    {
+        foreach (var name in Presets.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+            Presets[name] = new QuestPreset();
+        foreach (var name in Sequences.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+            Sequences[name] = new QuestSequence();
+    }
 
     /// <summary>Every sequence entry that names a flow which is not in <see cref="Presets"/>, as
     /// (sequence name, 1-based entry position, flow name), ordered by sequence name then position.
@@ -196,7 +217,11 @@ public sealed class QuestConfig
             for (var i = 0; i < entries.Count; i++)
             {
                 var flow = entries[i]?.Preset?.Trim() ?? "";
-                if (!Presets.ContainsKey(flow)) dangling.Add((name, i + 1, flow));
+                // A name whose VALUE is null is the same defect as a missing one: the runner has no
+                // flow to plan. (`NormaliseNullBodies` removes the shape at load; this keeps a
+                // hand-built config from being saved into a run that throws.)
+                if (!Presets.TryGetValue(flow, out var preset) || preset is null)
+                    dangling.Add((name, i + 1, flow));
             }
         }
         return dangling;
