@@ -58,25 +58,38 @@ one covered the three follow-up commits, where a refactor plus a new Save gate c
 one of the 13 findings required the intersection of two changes — which is why the earlier per-commit
 gate did not catch them.
 
-**A second pass over the fixes found three more**, and a third pass over those settled the rules:
+**A second pass over the fixes found three more**, a third pass over those found eight, and a fourth
+pass settled the remaining ones:
 
 - **The rename loop is null-tolerant.** Hand-edited YAML can make `sequences:` a null dictionary, a
   value null, `entries:` a null list, or a list item a null entry. The callback runs AFTER the key has
   already moved, so a throw left the rename half-applied with no message. The same guards are in
   `DanglingSequenceEntries` (which used to throw on those values, outside `SaveReport` — Save then did
   nothing and said nothing) and in the entries editor. Four Core tests pin the four shapes.
-- **The card's loop count follows only a TARGET change — never a Save.** The first fix stopped the
-  flow picker from resetting a dialled-in count; a second attempt let Save reseed it, which the third
-  pass rejected because Save covers the whole tab and the card may be aimed at a different flow. The
-  count is a per-run override, so only the "the card is pointing somewhere new" path may write it.
+- **Tolerance now reaches every reader, not just the editor and the Save gate.** The fourth pass found
+  the guard stopped at the editor: `QuestDefaultLoops` dereferenced a null sequence value during
+  `MainWindow`'s constructor (no window at all), the sequence picker's Result line read `.Entries.Count`
+  on a null list, `QuestTool.RunSequence` threw a raw NullReferenceException at Start, and a null entry
+  element took `AddRow`'s "new row" path and was silently replaced with the first flow before the
+  dangling check saw it. All four now use the same shape as the rest (`?.` / `isNew` separation /
+  an explicit refusal), and the two test comments that claimed "what the runner treats it as" were
+  corrected — the runner refuses, it does not guess.
+- **The card's loop count: a per-run override, re-seeded only under two conditions at once.** The
+  first fix stopped picker actions from resetting a dialled-in count. A second attempt reseeded on
+  every Save, which the third pass rejected (Save covers the whole tab; the card may aim elsewhere).
+  The final rule keeps the case the third pass missed: on Save the box is re-seeded only when the card
+  is aimed at the item just saved **and** the box still holds the value it was last seeded with
+  (`_questCountSeeded`). Editing the loops of the flow the card runs therefore takes effect, while a
+  count the player dialled in for this run survives.
 - **Renaming the flow or sequence the card is aimed at follows the name.** The card's target is a
   name; without this, a rename made `RefreshQuestCardTargets` fall back to the first target and Start
   silently ran something else.
 - **Bars state only what is still true.** A selection closes an ERROR bar (its advice is about the
   previous target) but keeps a success note, whose "press Save quest to keep it" is still true; a
-  successful Save closes both. Delete messages are past-tense ("Deleted "X".") because they now
-  survive a later selection, while "Now on X" / "Start runs the single flow again" moved to the
-  Result line, which the next selection overwrites.
+  successful Save closes both bars AND rewrites the Result line ("Saved — nothing on this tab is
+  waiting to be written"), so the old "press Save quest to keep it" cannot outlive its truth. Delete
+  and "(none)" no longer claim what Start will run — the card's target wins at Start and the tab does
+  not know it.
 
 `dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 347 passed, 0 failed. Launcher started and every tab constructed.
 

@@ -136,16 +136,25 @@ public sealed class QuestTool : ToolBase
     {
         // EVERY entry, and every flow it names, is checked BEFORE anything is clicked — a sequence is
         // longer than a flow, so a mistake in it costs more.
-        if (sequence.Entries.Count == 0)
+        //
+        // Null-tolerant because local.yaml is hand-editable and YamlDotNet stores null for a
+        // value-less key: `entries:` gives a null list and a bare `-` a null element. Those must read
+        // as "this sequence is malformed" on the card, not as a NullReferenceException from the tool.
+        var entries = sequence.Entries;
+        if (entries == null || entries.Count == 0)
             return Refuse(state, $"The sequence \"{name}\" has no entries — add some on the Quest tab.");
 
         var planned = new List<(string Flow, QuestPreset Preset, int Times)>();
-        foreach (var entry in sequence.Entries)
+        foreach (var entry in entries)
         {
+            if (entry == null)
+                return Refuse(state,
+                    $"The sequence \"{name}\" has an empty entry — fix it on the Quest tab.");
+
             var flowName = entry.Preset?.Trim() ?? "";
             if (!quest.Presets.TryGetValue(flowName, out var preset))
                 return Refuse(state,
-                    $"The sequence \"{name}\" names a flow \"{entry.Preset}\" that does not exist.");
+                    $"The sequence \"{name}\" names a flow \"{flowName}\" that does not exist.");
 
             if (Validate(preset, flowName) is { } problem) return Refuse(state, problem);
 

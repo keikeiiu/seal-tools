@@ -322,6 +322,11 @@ public partial class MainWindow : FluentWindow, IDisposable
     private QuestCardTarget? _activeQuestTarget;
     private ComboBox? _questTargetCard;
     private Wpf.Ui.Controls.TextBox? _questCountCard;
+
+    /// <summary>The value last SEEDED into the card's count box, or null if the player has not been
+    /// given one yet. Saving the item the card is aimed at may replace the box only while it still
+    /// equals this — a count the player dialled in is a per-run override and must survive a Save.</summary>
+    private string? _questCountSeeded;
     /// <summary>True while the two pickers are being synchronised, so their events don't recurse.</summary>
     private bool _syncingBuy;
     private TextBlock? _buyHint;
@@ -621,7 +626,10 @@ public partial class MainWindow : FluentWindow, IDisposable
                     // The box follows the target: 5 loops means one thing for a sequence and another for
                     // a flow, and leaving a stale number there is how a run gets the wrong count.
                     if (changed && _questCountCard != null)
+                    {
                         _questCountCard.Text = QuestDefaultLoops(picked).ToString(CultureInfo.InvariantCulture);
+                        _questCountSeeded = _questCountCard.Text;
+                    }
                 };
 
                 _questCountCard = UiText("1");
@@ -5018,8 +5026,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         var quest = _service.Config.Quest;
         var loops = target switch
         {
-            { IsSequence: true } t when quest.Sequences.TryGetValue(t.Name, out var s) => s.Loops,
-            { IsSequence: false } t when quest.Presets.TryGetValue(t.Name, out var p) => p.Loops,
+            // A value-less YAML key (`run:` / `flow1:`) stores NULL in the dictionary, and this runs
+            // from the constructor when the card is first built — a throw here means no window.
+            { IsSequence: true } t when quest.Sequences.TryGetValue(t.Name, out var s) => s?.Loops ?? 1,
+            { IsSequence: false } t when quest.Presets.TryGetValue(t.Name, out var p) => p?.Loops ?? 1,
             _ => 1,
         };
 
@@ -5052,7 +5062,10 @@ public partial class MainWindow : FluentWindow, IDisposable
         // then would silently undo a count the player had dialled in on the card, even though the
         // card's target had not changed.
         if (_questCountCard != null && !Equals(_activeQuestTarget, keep))
+        {
             _questCountCard.Text = QuestDefaultLoops(_activeQuestTarget).ToString(CultureInfo.InvariantCulture);
+            _questCountSeeded = _questCountCard.Text;
+        }
     }
 
     private void BumpQuestCount(int delta)
@@ -6398,7 +6411,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // "Now on X" would be a lie the moment the player switches to Y. Which flow is
                 // active goes on the Result line, where a switch overwrites it anyway.
                 ReportFlow(false, $"Deleted \"{gone}\".");
-                hint.Text = $"Deleted. Now on \"{quest.Active}\".";
+                hint.Text = $"Deleted \"{gone}\".";
                 return true;
             },
         });
@@ -6515,9 +6528,12 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // "(none)" row, and the player has just left it. A success note stays — it may be the
                 // only reminder that the sequence is unsaved.
                 if (seqResult.Severity == InfoBarSeverity.Error) seqResult.IsOpen = false;
+                // No "Start runs the single flow above" here: the CARD's target is what Start hands
+                // over, and it may still be aimed at a sequence. Saying otherwise sends a player to
+                // Start expecting one quest and running another.
                 hint.Text = picked.Length == 0
-                    ? "Start runs the single flow above."
-                    : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
+                    ? "No sequence chosen on this tab — the card decides what Start runs."
+                    : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries?.Count ?? 0} entr(ies), " +
                       $"{quest.ActiveSequenceOrNull?.Loops ?? 1} master loop(s).";
             },
             ConfirmAndDelete = gone =>
@@ -6530,7 +6546,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // Past event only: this bar survives a later selection, so "Start runs the single
                 // flow above again" would be false as soon as another sequence is picked.
                 ReportSequence(false, $"Deleted \"{gone}\".");
-                hint.Text = "Deleted. Start runs the single flow above again.";
+                hint.Text = $"Deleted \"{gone}\".";
                 return true;
             },
             MinWidth = 220,
@@ -6634,12 +6650,29 @@ public partial class MainWindow : FluentWindow, IDisposable
                 $"mouse guard {quest.GuardPx} px.");
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
-            // able to reach it without a restart. The count is deliberately NOT touched when the
-            // target did not change: it is a per-run override, and Save covers the whole tab — the
-            // player may be editing a flow the card is not aimed at.
+            // able to reach it without a restart.
+            // Trimmed, and null-tolerant, because the name is hand-editable YAML and `ActiveSequence`
+            // shares the card picker's rule (line ~6505 does the same).
+            var savedTarget = quest.ActiveSequenceOrNull != null
+                ? new QuestCardTarget((quest.ActiveSequence ?? "").Trim(), IsSequence: true)
+                : new QuestCardTarget(quest.Active, IsSequence: false);
+            var countUntouched = _questCountCard != null && _questCountCard.Text == _questCountSeeded;
+
             RefreshQuestCardTargets();
+
+            // If the card is aimed at the item just saved AND its box still holds the seeded value,
+            // the saved loop count is the one to run. A count the player dialled in is a per-run
+            // override and stays — which is also why a Save of some OTHER flow leaves the box alone.
+            if (countUntouched && Equals(_activeQuestTarget, savedTarget) && _questCountCard != null)
+            {
+                _questCountCard.Text = QuestDefaultLoops(savedTarget).ToString(CultureInfo.InvariantCulture);
+                _questCountSeeded = _questCountCard.Text;
+            }
+
+            // Any "press Save quest to keep it" note is now false: everything on the tab is written.
             flowResult.IsOpen = false;
             seqResult.IsOpen = false;
+            hint.Text = "Saved — nothing on this tab is waiting to be written.";
         };
 
         panel.Children.Add(Section("Try it",
@@ -6737,7 +6770,11 @@ public partial class MainWindow : FluentWindow, IDisposable
         var add = MakeButton("+ Add entry", ControlAppearance.Secondary);
         panel.Children.Add(add);
 
-        void AddRow(QuestSequenceEntry? entry)
+        // isNew is what "+ Add entry" passes: only a row the player just asked for starts on the first
+        // flow. A row rebuilt from config with a null entry (`-` or `- ~` in local.yaml) must stay
+        // blank — treating it as "new" would select flowNames[0], CommitQuestRows would write that in,
+        // and the dangling check would find nothing to refuse.
+        void AddRow(QuestSequenceEntry? entry, bool isNew = false)
         {
             if (flowNames.Count == 0)
             {
@@ -6749,7 +6786,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var row = new QuestEntryRow();
             foreach (var name in flowNames) row.Flow.Items.Add(name);
-            if (entry == null)
+            if (isNew)
             {
                 row.Flow.SelectedItem = flowNames[0];
             }
@@ -6757,7 +6794,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 // Trimmed and null-tolerant, matching what the run does with the same value: a
                 // hand-edited `preset:` arrives as null, and `" name "` runs as `name`.
-                var wanted = entry.Preset?.Trim() ?? "";
+                var wanted = entry?.Preset?.Trim() ?? "";
                 // The flow this entry names is gone (or the name is empty). It is added as itself and
                 // selected, so the row keeps saying what the entry actually says. Falling back to
                 // flowNames[0] — which this used to do — meant the next CommitQuestRows wrote a
@@ -6792,7 +6829,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Null-tolerant for the same reason the dangling check is: a hand-edited `entries:` with no
         // value arrives as null, and opening that sequence must not throw.
         foreach (var e in sequence.Entries ?? Enumerable.Empty<QuestSequenceEntry>()) AddRow(e);
-        add.Click += (_, _) => AddRow(null);
+        add.Click += (_, _) => AddRow(null, isNew: true);
 
         return panel;
     }

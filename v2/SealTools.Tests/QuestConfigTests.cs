@@ -91,7 +91,8 @@ public class QuestConfigTests
 
     /// <summary>A bare `entries:` key loads as a NULL list, not an empty one. There is nothing to
     /// judge, and throwing here would escape the Save handler's InfoBar and make the button a silent
-    /// no-op for the rest of the session.</summary>
+    /// no-op for the rest of the session. The sequence is refused at Start instead, where
+    /// <c>QuestTool.RunSequence</c> treats a null list as "no entries".</summary>
     [Fact]
     public void ANullEntryListIsNotDanglingAndDoesNotThrow()
     {
@@ -101,8 +102,9 @@ public class QuestConfigTests
         Assert.Empty(quest.DanglingSequenceEntries());
     }
 
-    /// <summary>A bare `-` list item loads as a null ENTRY. It is reported like a blank name, which is
-    /// what the runner treats it as, rather than throwing on the way to the lookup.</summary>
+    /// <summary>A bare `-` list item loads as a null ENTRY. It is reported like a blank name rather
+    /// than throwing on the way to the lookup, so the Save gate can name the row. (The runner refuses
+    /// it too — <c>RunSequence</c> reports an "empty entry" — but this Save no longer lets it get there.)</summary>
     [Fact]
     public void ANullEntryElementIsReportedAsEmpty()
     {
