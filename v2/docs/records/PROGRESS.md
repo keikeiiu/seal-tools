@@ -13,6 +13,25 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (98) — one Save for the Quest tab, and a visible answer to every picker action
+
+**Goal.** Three things the player asked for together: the Quest tab already wrote its sequences and its mouse guard on the same Save as the flow, but the button sat inside "Try it, then keep it" under a **Save** label and reported only the flow it wrote, so there was no way to tell it covered the rest; and Rename (and Create, Duplicate, Delete) changed the list with no confirmation on screen.
+
+**What changed**
+
+- **`Save` is `Save quest` and has its own card.** The Test button keeps "Try it". The Save moved to **"Save — the whole tab"**, whose hint lists what it writes: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The success line went from `Flow "X" written — n step(s)` to naming the sequences and the guard too, so the message matches the button's claim.
+- **A create, rename, duplicate or delete in the Flow card reports in the Flow card.** A local `flowResult` InfoBar (the same `Wpf.Ui` control the Result card uses) sits directly under the picker: green "Flow updated" or red "Not changed". Before this the only output was the Result line at the bottom of the tab — off-screen from the button, which is why a rename looked like it had done nothing.
+- **The same for the Sequence card** (`seqResult`), including the refusal messages. Deleting still says `(none)` is selected again and Start runs the single flow.
+- **The Spammer tab already had this**, in its existing status line; no InfoBar was added there, because a second channel for the same message would be noise.
+
+**Why the pickers did not need their own change.** `PresetPicker` already routed every outcome through its `Report` callback; the Quest call sites were passing a lambda that wrote the old Result line. Pointing them at the new local functions was the whole wiring.
+
+**Docs.** Both `USER_GUIDE.md` and `USER_GUIDE.zh-TW.md`: "Try it, then keep it" split into "Try it" and "Save — the whole tab", the `Save quest` row rewritten, a paragraph in each picker section describing the in-card confirmation bars, and the dangling-entry refusal documented under Sequence.
+
+**Still open.** Nothing on the preset-duplicate plan. Buy and Game Variants remain out of scope.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed. Launcher started and every tab constructed.
+
 ## 2026-10-17 (97) — the three preset pickers become one
 
 **Goal.** Answer ⚑3 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md): the Quest flow, Quest sequence and Skill Spammer pickers were three hand-rolled copies of the same Add / Rename / Duplicate / Delete shape, and the last three review passes had fixed the same defects in one copy while leaving the others.

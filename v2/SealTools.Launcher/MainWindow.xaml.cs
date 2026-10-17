@@ -6301,6 +6301,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         // ── the flow picker, and the three things you can do to a flow ──────
+        //
+        // A rename or a copy puts its outcome here, in the Flow card, where the button was pressed.
+        // The old line went to the Result card at the very bottom of the tab — off-screen from here,
+        // which is why a rename looked like it had done nothing until you scrolled down.
+        var flowResult = new InfoBar { IsOpen = false, IsClosable = true };
+
+        void ReportFlow(bool error, string message)
+        {
+            flowResult.Severity = error ? InfoBarSeverity.Error : InfoBarSeverity.Success;
+            flowResult.Title = error ? "Not changed" : "Flow updated";
+            flowResult.Message = message;
+            flowResult.IsOpen = true;
+            // Kept in step: the Result card is still where Test one loop and a run report.
+            hint.Text = message;
+        }
+
         var flowPicker = new PresetPicker(new PresetPickerOptions
         {
             Noun = "flow",
@@ -6316,14 +6332,19 @@ public partial class MainWindow : FluentWindow, IDisposable
             // ShowActive rebuilds the step rows for whichever flow is now active; the card's target
             // list is rebuilt too, so a flow made here reaches it without a restart.
             AfterChange = () => { ShowActive(); RefreshQuestCardTargets(); },
-            Report = (_, message) => hint.Text = message,
+            Report = ReportFlow,
+            // The helper's default says "press Save", but this tab's button is labelled "Save quest".
+            // Naming it here is what makes the note point at the button the player can actually see.
+            CreateNote = " — press Save quest to keep it.",
+            RenameNote = " — press Save quest to keep it.",
+            CopyNote = " — press Save quest to keep it.",
             SelectionReport = picked =>
                 hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).",
             ConfirmAndDelete = gone =>
             {
                 if (quest.Presets.Count <= 1)
                 {
-                    hint.Text = "This is the only flow — create another before deleting it.";
+                    ReportFlow(true, "This is the only flow — create another before deleting it.");
                     return false;
                 }
                 if (MessageBox.Show($"Delete the flow \"{gone}\"?", "Delete flow",
@@ -6331,7 +6352,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                 quest.Presets.Remove(gone);
                 quest.Active = quest.Presets.Keys.First();
-                hint.Text = $"Deleted. Now on \"{quest.Active}\".";
+                ReportFlow(false, $"Deleted. Now on \"{quest.Active}\".");
                 return true;
             },
         });
@@ -6346,7 +6367,8 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "There is no calibration and no point to place: put the mouse where the clicks have to " +
                  "land during the initial wait, and the run stops if it moves after that."),
             LabeledField("Flow", flowPicker.Layout),
-            flowPicker.Prompt));
+            flowPicker.Prompt,
+            flowResult));
 
         // ── the sequence: several flows in one run ──────────────────────────
         //
@@ -6399,6 +6421,20 @@ public partial class MainWindow : FluentWindow, IDisposable
             RefreshEntries();
         }
 
+        // The same success/error bar the flow picker has: a create, a rename, a duplicate and a delete
+        // all change something the player cannot see afterwards, so each one says so here rather than
+        // leaving the picker's new row to speak for itself.
+        var seqResult = new InfoBar { IsOpen = false, IsClosable = true };
+
+        void ReportSequence(bool error, string message)
+        {
+            seqResult.Severity = error ? InfoBarSeverity.Error : InfoBarSeverity.Success;
+            seqResult.Title = error ? "Not changed" : "Sequence updated";
+            seqResult.Message = message;
+            seqResult.IsOpen = true;
+            hint.Text = message;
+        }
+
         var seqPicker = new PresetPicker(new PresetPickerOptions
         {
             Noun = "sequence",
@@ -6412,8 +6448,10 @@ public partial class MainWindow : FluentWindow, IDisposable
             CopyOf = from => PresetCopy.CopyQuestSequence(quest.Sequences[from]),
             BeforeChange = CommitQuestRows,
             AfterChange = () => { ShowSequence(); RefreshQuestCardTargets(); },
-            Report = (_, message) => hint.Text = message,
-            CreateNote = " — add its entries, then press Save.",
+            Report = ReportSequence,
+            CreateNote = " — add its entries, then press Save quest.",
+            RenameNote = " — press Save quest to keep it.",
+            CopyNote = " — press Save quest to keep it.",
             SelectionReport = picked => hint.Text = picked.Length == 0
                 ? "Start runs the single flow above."
                 : $"Sequence \"{picked}\" — {quest.ActiveSequenceOrNull?.Entries.Count ?? 0} entr(ies), " +
@@ -6425,7 +6463,7 @@ public partial class MainWindow : FluentWindow, IDisposable
 
                 quest.Sequences.Remove(gone);
                 quest.ActiveSequence = "";
-                hint.Text = "Deleted. Start runs the single flow above again.";
+                ReportSequence(false, "Deleted. Start runs the single flow above again.");
                 return true;
             },
             MinWidth = 220,
@@ -6449,6 +6487,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "sequence, before trusting a long one."),
             LabeledField("Sequence", seqPicker.Layout),
             seqPicker.Prompt,
+            seqResult,
             LabeledField("Master loops", seqLoops),
             LabeledField("Initial wait (s)", seqWait),
             entriesHost));
@@ -6474,14 +6513,15 @@ public partial class MainWindow : FluentWindow, IDisposable
                  "the run starts rather than quietly sending nothing 500 times."),
             stepsHost));
 
-        // MakeInlineButton for BOTH, not MakeButton: that one carries a 10px top margin meant for a
-        // button standing under a card's heading, so leaving it on one button of a row and overriding it
-        // on the other drops the first one 10px and they sit at different heights. The pet tab's icon
-        // row has the same comment — this repo has learned it more than once.
+        // MakeInlineButton, not MakeButton: that one carries a 10px top margin meant for a button
+        // standing under a card's heading, so a lone button would sit 10px low. The pet tab's icon row
+        // has the same comment — this repo has learned it more than once.
         var test = MakeInlineButton("Test one loop", ControlAppearance.Secondary);
         test.Click += async (_, _) => await QuestTestOneLoop(Active());
+        test.Margin = new Thickness(0);   // first control in its card, so no leading gap
         var result = new InfoBar { IsOpen = false, IsClosable = true };
-        var save = MakeInlineButton("Save", ControlAppearance.Primary);
+        var save = MakeInlineButton("Save quest", ControlAppearance.Primary);
+        save.Margin = new Thickness(0);
         save.Click += (_, _) =>
         {
             // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
@@ -6519,26 +6559,34 @@ public partial class MainWindow : FluentWindow, IDisposable
                 // for the rest of the session.
                 GuardPx = quest.GuardPx,
             }), result,
-                $"Flow \"{quest.Active}\" written to local.yaml — {Active().Steps.Count} step(s), " +
-                $"{Active().Loops} loop(s).");
+                // Says everything this Save wrote, because the button is the only Save on the tab and
+                // the flow named here is not the whole of it: a player who read "Flow X written" could
+                // reasonably believe the sequences beside it had not been.
+                $"The whole tab was written — flow \"{quest.Active}\" ({Active().Steps.Count} step(s), " +
+                $"{Active().Loops} loop(s)), {quest.Sequences.Count} sequence(s), and the mouse guard.");
 
             // The card's picker is built from the config, so a flow or sequence made here has to be
             // able to reach it without a restart.
             RefreshQuestCardTargets();
         };
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        // First in the row: no leading gap. The second keeps MakeInlineButton's own 6px left margin,
-        // which is what separates them.
-        test.Margin = new Thickness(0, 0, 6, 0);
-        buttons.Children.Add(test);
-        buttons.Children.Add(save);
-
-        panel.Children.Add(Section("Try it, then keep it",
+        panel.Children.Add(Section("Try it",
             Hint("Test one loop runs the flow ONCE — the same code a real run uses, so a flow the test " +
                  "refuses is a flow the run would refuse too. Watch the game: the run is blind, so what " +
                  "happens on screen is the only verdict there is."),
-            buttons,
+            test));
+
+        // ONE Save for the tab, in its own card so it reads as covering the tab rather than the flow
+        // section above it. It always did write the sequences and the guard; the old placement inside
+        // "Try it, then keep it" and the old success line ("Flow X written") made it look like it did
+        // not.
+        panel.Children.Add(Section("Save — the whole tab",
+            Hint("This one button writes EVERYTHING on this tab: the active flow's steps and timing, " +
+                 "every sequence and its entries, which flow each entry runs, and the mouse guard. " +
+                 "Nothing here is kept until you press it.\n" +
+                 "A sequence entry whose flow no longer exists stops the save and is listed below " +
+                 "instead of being quietly pointed at another flow."),
+            save,
             result));
 
         panel.Children.Add(Section("Result", hint));

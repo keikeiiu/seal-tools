@@ -493,9 +493,13 @@ Read [PLAN-QUEST.md](../archive/PLAN-QUEST.md) for why it is built this way.
 |---|---|
 | **Flow** picker | Which flow to run. One per quest, because the dialogue differs per quest; the list ends with **＋ Add new…**, which opens the naming row. |
 | **Rename** | Opens the same row. Renaming **moves** the flow rather than copying it: the name changes and nothing is left behind under the old one. For a second flow that starts out like this one, use **Duplicate**. |
-| **Duplicate** | Copies the flow you are on, steps and all, under a generated name — `name (copy)`, then `name (copy 2)` if that is taken — and switches to the copy ready to edit. The copy shares nothing with the original, so changing it leaves the original alone. Press **Save** to keep it. |
+| **Duplicate** | Copies the flow you are on, steps and all, under a generated name — `name (copy)`, then `name (copy 2)` if that is taken — and switches to the copy ready to edit. The copy shares nothing with the original, so changing it leaves the original alone. Press **Save quest** to keep it. |
 | **Delete** | Asks first, and refuses to delete the last one. |
 | The naming row | **Create flow:** or **Rename to:**, a name box, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message rather than overwriting. |
+
+Every one of these says what it did in a green bar **inside the Flow card**, where the button was
+pressed — renamed, copied, created or deleted. A refusal is a red bar in the same place. Nothing is
+written to disk by any of them; only **Save quest** does that.
 
 ### Sequence — several flows in one run
 
@@ -508,9 +512,17 @@ master loops. For the quests that share an NPC.
 | **Master loops** | How many times the whole entry list is repeated. |
 | **Initial wait (s)** | The **one** positioning window for the entire sequence — see the warning below. |
 | **Rename** | Renames the sequence. Its entries still name the same flows. |
-| **Duplicate** | Copies the sequence and its entries under `name (copy)`, and switches to the copy. Its entries name the **same** flows — duplicating a sequence does not duplicate the flows inside it. Press **Save** to keep it. |
+| **Duplicate** | Copies the sequence and its entries under `name (copy)`, and switches to the copy. Its entries name the **same** flows — duplicating a sequence does not duplicate the flows inside it. Press **Save quest** to keep it. |
 | **Delete** | Asks first. Afterwards **`(none)`** is selected again, so **Start** runs the single flow above. |
 | The entry rows | One per flow: pick the **flow**, set **× times**, `✕` to remove. **+ Add entry** appends one. |
+
+Rename, Duplicate, Delete and Create each report their outcome in a bar **inside the Sequence card**,
+green for done and red for refused — the same behaviour as the Flow picker above.
+
+> ⚠ **A sequence entry must name a flow that exists.** If a flow is deleted (or an entry is left
+> blank), **Save quest** refuses and lists every such entry by sequence and position instead of
+> quietly re-pointing it at another flow. Pick a real flow for it, or remove the entry, then Save
+> again.
 
 > ⚠ **Every flow in a sequence clicks the SAME place, and the initial wait happens ONCE.** The tool never
 > moves the cursor, so a flow inside a sequence cannot have a position of its own — which is also what
@@ -550,12 +562,20 @@ A step that **cannot be sent** — a `key` step with no character, or with two �
 run starts**, rather than quietly sending nothing five hundred times. In a flow this long, "sends
 nothing" and "the game behaved differently today" look identical.
 
-### Try it, then keep it
+### Try it
 
 | Control | What it does |
 |---|---|
 | **Test one loop** | Runs the flow **once**. It is the same code a real run uses, so a flow the test refuses is a flow the run would refuse too. It runs off the UI thread, so the window stays responsive while it works. |
-| **Save** | Writes the flow to `config/local.yaml`. Flows are **personal**, so they live there and not in the shipped defaults template (`config/defaults.yaml.example`) — that is the file a public build ships. |
+
+### Save — the whole tab
+
+| Control | What it does |
+|---|---|
+| **Save quest** | The **only** Save on this tab, and it writes **everything** on it: the active flow's steps and timing, every sequence and its entries, which flow each entry runs, and the mouse guard. The confirmation names all of it, because "Flow X written" alone would read as if the sequences beside it had not been. Nothing on the tab is kept until you press it. |
+
+Flows and sequences are **personal**, so they live in `config/local.yaml` and not in the shipped
+defaults template (`config/defaults.yaml.example`) — that is the file a public build ships.
 
 **Watch the game when you test.** A blind run's only verdict is what happens on screen.
 
