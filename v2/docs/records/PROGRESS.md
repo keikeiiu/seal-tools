@@ -13,6 +13,22 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (96) — a sequence entry that points at a deleted flow stops the Save
+
+**Goal.** Answer ⚑2 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) with the player's choice, (b): refuse and list. The entry editor had always filled a row whose flow name was gone with `flowNames[0]`, and `CommitQuestRows` then wrote that in — so deleting a flow silently changed what a sequence ran, and a Save made the guess permanent.
+
+**What changed**
+
+- **The missing name is kept, not replaced.** `BuildQuestEntriesEditor` adds the entry's own name to the picker when it is not a current flow, so the row still says what the entry says. It is visibly a name the picker further down does not offer, and **Save** is the point that refuses.
+- **The check is in Core and covers every sequence.** `QuestConfig.DanglingSequenceEntries()` returns (sequence, 1-based entry, flow) ordered by sequence then position. It is in Core because the Launcher is not in the test project, and it is over `Sequences`, not the active one, because this Save writes the whole quest block.
+- **Save refuses with a list.** The tab's InfoBar turns to Error, names each dangling entry, and says to pick a flow or remove the entry. Nothing is written; the in-memory edit stays on screen to be fixed.
+
+**Why refuse rather than guess.** A replacement flow is a different quest's dialogue at the same NPC. There is no signal on screen that the entry changed, and the run is blind, so the wrong guess is discovered only when a quest does not advance.
+
+**Tests.** Six cases in `QuestConfigTests`: a clean sequence, a deleted flow with its position, every hit rather than the first, an empty name, the stable order, and an inactive sequence. 343 passed.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed.
+
 ## 2026-10-17 (95) — the duplicate feature reviewed against its own claims
 
 **Goal.** The feature was built and its gate was green, so the next pass was adversarial: six reviewers over the diff (logic, Spammer, Quest, docs, tests, repo rules), 30 findings, and a skeptic per finding to try to refute it. All 18 verified claims survived; the unverified twelve were either duplicates or "the launcher is not in the test project" notes, which the plan already states.

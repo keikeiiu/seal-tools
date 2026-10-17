@@ -6910,6 +6910,23 @@ public partial class MainWindow : FluentWindow, IDisposable
             // which need the same flush for the same reason.
             CommitQuestRows();
 
+            // A sequence entry whose flow is gone has no honest value to write. The editor keeps the
+            // missing name visible rather than re-pointing the entry, so this is where it is caught —
+            // for EVERY sequence, because this Save writes all of them. Writing the file with a known
+            // bad reference would make the run skip that entry silently.
+            var dangling = quest.DanglingSequenceEntries();
+            if (dangling.Count > 0)
+            {
+                result.Severity = InfoBarSeverity.Error;
+                result.Title = "Not saved — a sequence points at a missing flow";
+                result.Message = string.Join("\n", dangling.Select(d => d.Flow.Length == 0
+                        ? $"\"{d.Sequence}\" entry {d.Entry} has no flow chosen"
+                        : $"\"{d.Sequence}\" entry {d.Entry} names the flow \"{d.Flow}\", which does not exist")) +
+                    "\nPick an existing flow for each entry, or remove it, then Save again.";
+                result.IsOpen = true;
+                return;
+            }
+
             SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {
                 Active = quest.Active,
@@ -7033,9 +7050,18 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             var row = new QuestEntryRow();
             foreach (var name in flowNames) row.Flow.Items.Add(name);
-            row.Flow.SelectedItem = entry != null && flowNames.Contains(entry.Preset)
-                ? entry.Preset
-                : flowNames[0];
+            if (entry != null && !flowNames.Contains(entry.Preset))
+            {
+                // The flow this entry names is gone (or the name is empty). It is added as itself and
+                // selected, so the row keeps saying what the entry actually says. Falling back to
+                // flowNames[0] — which this used to do — meant the next CommitQuestRows wrote a
+                // different flow into the entry, and Save then made that the truth: a sequence
+                // silently started running another quest. Save now refuses while the name is missing
+                // (QuestConfig.DanglingSequenceEntries) and lists it, so the player picks the
+                // replacement rather than the first item in the sort order.
+                row.Flow.Items.Add(entry.Preset);
+            }
+            row.Flow.SelectedItem = entry?.Preset ?? flowNames[0];
             row.Times.Text = (entry?.Times ?? 1).ToString(CultureInfo.InvariantCulture);
 
             var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };

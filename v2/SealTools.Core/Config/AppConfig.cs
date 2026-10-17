@@ -167,6 +167,30 @@ public sealed class QuestConfig
     /// <see cref="SpammerConfig.ActiveKeys"/> makes, for the same reason.</summary>
     public QuestPreset ActivePreset =>
         Presets.TryGetValue(Active, out var preset) ? preset : new QuestPreset();
+
+    /// <summary>Every sequence entry that names a flow which is not in <see cref="Presets"/>, as
+    /// (sequence name, 1-based entry position, flow name), ordered by sequence name then position.
+    ///
+    /// The entries editor used to fill such a row with whichever flow sorted first, and the next Save
+    /// then wrote that in — so deleting a flow quietly changed what a sequence runs, with nothing on
+    /// screen saying so. The editor now keeps the missing name visible instead, and Save refuses while
+    /// this list is non-empty, rather than choosing a replacement the player did not choose.
+    ///
+    /// Empty is the normal state: an entry names a flow, and deleting that flow is a reason to stop and
+    /// ask, not a reason to guess.</summary>
+    public List<(string Sequence, int Entry, string Flow)> DanglingSequenceEntries()
+    {
+        var dangling = new List<(string, int, string)>();
+        foreach (var (name, sequence) in Sequences.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            for (var i = 0; i < sequence.Entries.Count; i++)
+            {
+                var flow = sequence.Entries[i].Preset;
+                if (!Presets.ContainsKey(flow)) dangling.Add((name, i + 1, flow));
+            }
+        }
+        return dangling;
+    }
 }
 
 /// <summary>One quest's flow: how long to wait, how many times, and what to send each time.</summary>
