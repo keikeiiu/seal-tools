@@ -244,11 +244,11 @@ and reported as a `⚠` on the tool card.
 | Control | Meaning |
 |---|---|
 | **Preset** dropdown | Which named key set the spammer presses. The list ends with **＋ Add new…**, which opens the name prompt. |
-| **Rename** | Opens the name prompt to rename the current preset. **Delete** removes it after a confirmation — the last preset cannot be deleted. |
+| **Rename** | Opens the name prompt to rename the current preset. **Duplicate** copies the current preset's keys into a new preset named `<name> (copy)` and makes it active — the copy keeps the keys, but starts with no key order, no combos and no opening. **Delete** removes it after a confirmation — the last preset cannot be deleted. |
 | Name prompt | A row that appears only while creating or renaming: **Create preset:** or **Rename to:**, a name field, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message instead of overwriting. |
 | Keys summary | Read-only tiles of the current preset: each key in a keycap, its cooldown below, and `⚡` marking a fast tap. |
 | **Edit** / **Done** | Reveals the editor below, or puts it away. |
-| Status line | Confirms a create, rename or delete, or says why one was refused. |
+| Status line | Confirms a create, rename, copy or delete, or says why one was refused. |
 
 ### Keys
 

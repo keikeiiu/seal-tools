@@ -13,6 +13,24 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (94) — the Spammer picker gets Duplicate, and the picker rows become Grids
+
+**Goal.** Finish what [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) scoped: the Skill Spammer half of the copy feature, and the clipping the Quest rows acquired when their fourth control arrived.
+
+**What was decided, and why**
+
+- **The Spammer copy carries `Presets` only.** The other three per-preset maps — order, combos, opening — are keyed BY the preset name, so a new name starts with none of them. That is the state Create already leaves a preset in, and the tool reads an absent order or combo list as "no rule" rather than as an error. Copying them would mean renaming every reference inside them for no gain. The status line says all three are empty, because the copy otherwise looks complete.
+- **The copy is made from the rows on screen**, the same source Create and Rename use, so a key typed but not yet saved is carried instead of silently dropped. The source is committed first, then the copy switches in — the same sequence Create follows.
+- **The Quest flow and sequence picker rows are now Grids**, matching the Spammer picker: a star picker column plus one Auto column per button. The old horizontal `StackPanel`s measured with unbounded width, so a 200 px (flow) or 220 px (sequence) picker plus three buttons could run past the card — the exact defect the Spammer picker hit at 619 logical px, where Delete was clipped to "Delet". The picker now takes what is left rather than demanding its MinWidth.
+
+**What the tests caught.** `ACopiedSpammerPresetSharesNothingWithItsSource` pins the one thing a `Dictionary` copy can get wrong: if the helper ever hands back the same map, editing one preset's cooldowns edits the other's, invisibly. The test edits and removes from the copy and re-reads the source.
+
+**Still open.** ⚑2 (the pre-existing dangling-entry re-point) and ⚑3 (three hand-rolled pickers, or one shared) on the plan. Buy and Game Variants stay out of scope.
+
+**Commit.** This commit — the Spammer Duplicate, the two Grid conversions, its test, and both user guides.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 334 passed, 0 failed.
+
 ## 2026-10-17 (93) — a flow can be copied instead of retyped
 
 **Goal.** The player asked whether an existing quest flow could be copied into a new one, then asked for the Quest half so it could be used. Designed first: [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md), whose first finding was that the request is THREE pickers — the Quest flow picker, the Quest sequence picker and the Skill Spammer preset picker all already carry the same Add / Rename / Delete shape.

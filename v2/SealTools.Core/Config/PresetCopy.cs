@@ -91,4 +91,13 @@ public static class PresetCopy
             Times = e.Times,
         }).ToList(),
     };
+
+    /// <summary>A copy of one spammer preset's keys — the <c>Presets</c> map and nothing else.
+    ///
+    /// The other three per-preset maps (order, combos, opening) are keyed BY THE PRESET NAME, so a new
+    /// name starts with none of them. That is the same state Create leaves a preset in, and the tool
+    /// reads an absent order or combo list as "no ordering given" rather than as an error. Copying them
+    /// would need a new name for every reference inside them for no gain: a copy that presses the same
+    /// keys in the same order is what the player can already get by renaming one.</summary>
+    public static Dictionary<string, double> CopySpammerKeys(Dictionary<string, double> source) => new(source);
 }

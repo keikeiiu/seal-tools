@@ -140,4 +140,24 @@ public class PresetCopyTests
         Assert.Equal(3, source.Entries[0].Times);
         Assert.Equal(2, source.Entries.Count);
     }
+
+    [Fact]
+    public void ACopiedSpammerPresetSharesNothingWithItsSource()
+    {
+        var source = new Dictionary<string, double> { ["*1"] = 0.2, ["*F1"] = 3.5 };
+
+        var copy = PresetCopy.CopySpammerKeys(source);
+
+        Assert.Equal(0.2, copy["*1"]);
+        Assert.Equal(3.5, copy["*F1"]);
+
+        // A Dictionary constructor copies the ENTRIES, so this holds; it is asserted because the day
+        // someone "optimises" the copy into handing the same map to the caller, this is the only line
+        // that notices — and the two presets would then edit each other's cooldowns invisibly.
+        copy["*1"] = 9.5;
+        copy.Remove("*F1");
+
+        Assert.Equal(0.2, source["*1"]);
+        Assert.True(source.ContainsKey("*F1"));
+    }
 }

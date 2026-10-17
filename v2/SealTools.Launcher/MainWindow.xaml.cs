@@ -1925,7 +1925,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
         // MinWidth is a floor for a very narrow window, not the width it takes: it sits in a star
-        // column now, so it stretches into whatever the Rename and Delete buttons leave.
+        // column now, so it stretches into whatever the Rename, Duplicate and Delete buttons leave.
         var presetBox = new ComboBox { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
         var presetName = UiText("");
         presetName.Width = 160;
@@ -2122,6 +2122,29 @@ public partial class MainWindow : FluentWindow, IDisposable
             presetName.Text = current;
             ShowPrompt("rename", "Rename to:", "Rename");
         };
+        var duplicatePreset = MakeButton("Duplicate", ControlAppearance.Secondary);
+        duplicatePreset.Click += (_, _) =>
+        {
+            // The copy is made from the rows ON SCREEN, not from the saved map — the same source Create
+            // and Rename use, so a key typed but not yet saved is carried rather than silently dropped.
+            var live = RowsToKeys();
+            presets[current] = live;
+            Commit(live);
+            var from = current;
+            var name = PresetCopy.CopyName(from, presets.Keys);
+            presets[name] = PresetCopy.CopySpammerKeys(presets[from]);
+            current = name;
+            loading = true; RefreshPresetList(name); loading = false;
+            LoadRows(name);
+            UpdateSummary();
+            RefreshSpammerCard();   // the new name must appear on the card's list at once
+            // Said plainly, because the copy looks complete: the three per-preset maps are keyed by name
+            // and a new name has none of them, so it presses un-ordered, without combos and without an
+            // opening. That is exactly what Create leaves behind, and the tool reads it as "no rule".
+            status.Text = $"Copied '{from}' to '{name}'. It has the same keys, but no key order, " +
+                          "no combos and no opening until you add them.";
+        };
+
         var delPreset = MakeButton("Delete", ControlAppearance.Secondary);
         delPreset.Click += (_, _) =>
         {
@@ -2158,23 +2181,27 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
         // the name field. LabeledField gives both rows the same label column.
-        foreach (var b in new[] { renamePreset, delPreset })
+        foreach (var b in new[] { renamePreset, duplicatePreset, delPreset })
             b.Margin = new Thickness(8, 0, 0, 0);
 
         // A Grid, not a horizontal StackPanel. A StackPanel measures its children with unbounded width,
-        // so the picker took its whole MinWidth and the two buttons their natural size, and the total
-        // ran past the card — at a 619-logical-px window the Delete button was clipped mid-word
-        // ("Delet"). With the picker in a star column it takes what is left rather than demanding it,
-        // so the row fits at any width instead of only at the width it was built at.
+        // so the picker took its whole MinWidth and the buttons their natural size, and the total ran
+        // past the card — at a 619-logical-px window the Delete button was clipped mid-word ("Delet").
+        // With the picker in a star column it takes what is left rather than demanding it, so the row
+        // fits at any width instead of only at the width it was built at. That is also why Duplicate is
+        // a column here and not another item in a StackPanel.
         var pickRow = new Grid();
         pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(presetBox, 0);
         Grid.SetColumn(renamePreset, 1);
-        Grid.SetColumn(delPreset, 2);
+        Grid.SetColumn(duplicatePreset, 2);
+        Grid.SetColumn(delPreset, 3);
         pickRow.Children.Add(presetBox);
         pickRow.Children.Add(renamePreset);
+        pickRow.Children.Add(duplicatePreset);
         pickRow.Children.Add(delPreset);
 
         panel.Children.Add(Section("Active",
@@ -6507,10 +6534,23 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPresetList(quest.Active);
         ShowActive();
 
-        var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        // A Grid, not a horizontal StackPanel — the same layout and the same reason as the Spammer
+        // picker. A StackPanel measures its children with unbounded width, so the picker took its whole
+        // MinWidth, the three buttons their natural size, and the run overflowed the card: Delete got
+        // clipped mid-word. In a star column the picker takes what is left, so the row fits at any
+        // window width, not only at the width it was built at.
+        var pickRow = new Grid();
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         renameBtn.Margin = new Thickness(6, 0, 0, 0);
         duplicateBtn.Margin = new Thickness(6, 0, 0, 0);
         deleteBtn.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetColumn(presetBox, 0);
+        Grid.SetColumn(renameBtn, 1);
+        Grid.SetColumn(duplicateBtn, 2);
+        Grid.SetColumn(deleteBtn, 3);
         pickRow.Children.Add(presetBox);
         pickRow.Children.Add(renameBtn);
         pickRow.Children.Add(duplicateBtn);
@@ -6724,10 +6764,19 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
         ShowSequence();
 
-        var seqPickRow = new StackPanel { Orientation = Orientation.Horizontal };
+        // Same Grid as the Flow picker above, for the same clipping reason.
+        var seqPickRow = new Grid();
+        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         seqRename.Margin = new Thickness(6, 0, 0, 0);
         seqDuplicate.Margin = new Thickness(6, 0, 0, 0);
         seqDelete.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetColumn(sequenceBox, 0);
+        Grid.SetColumn(seqRename, 1);
+        Grid.SetColumn(seqDuplicate, 2);
+        Grid.SetColumn(seqDelete, 3);
         seqPickRow.Children.Add(sequenceBox);
         seqPickRow.Children.Add(seqRename);
         seqPickRow.Children.Add(seqDuplicate);
