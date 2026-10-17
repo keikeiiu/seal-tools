@@ -51,7 +51,10 @@ public static class PresetCopy
             }
         }
 
-        for (var k = start + 1; ; k++)
+        // long, not int: start came from a parsed int, and a name ending in " (copy 2147483647)" is
+        // something a player can type. start + 1 as an int wraps to int.MinValue, which would hand back
+        // a copy literally named "(copy -2147483648)". A long step cannot wrap in any reachable run.
+        for (var k = (long)start + 1; ; k++)
         {
             var candidate = k == 1 ? $"{stem} (copy)" : $"{stem} (copy {k})";
             if (!taken.Any(t => string.Equals(t, candidate, StringComparison.OrdinalIgnoreCase)))

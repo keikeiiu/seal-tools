@@ -66,6 +66,27 @@ public class PresetCopyTests
             PresetCopy.CopyName("chapter (copy x)", Taken("chapter (copy x)")));
     }
 
+    /// <summary>"(copy 0)" is not a suffix we wrote — the count starts at 1 — so it is a literal name
+    /// and the copy is appended after it. Pins the <c>n &gt;= 1</c> half of the guard.</summary>
+    [Fact]
+    public void ACopyZeroSuffixIsLeftAlone()
+    {
+        Assert.Equal("mine (copy 0) (copy)",
+            PresetCopy.CopyName("mine (copy 0)", Taken("mine (copy 0)")));
+    }
+
+    /// <summary>The parsed index is an int, and int.MaxValue is valid input. The counter used to be an
+    /// int too, so start + 1 wrapped to int.MinValue and the copy was named "(copy -2147483648)". The
+    /// counter is a long now; this pins it so a later "simplification" back to int fails here.</summary>
+    [Fact]
+    public void TheCopyCountDoesNotOverflowAtTheIntegerBoundary()
+    {
+        var name = PresetCopy.CopyName("mine (copy 2147483647)", Taken("mine (copy 2147483647)"));
+
+        Assert.Equal("mine (copy 2147483648)", name);
+        Assert.DoesNotContain('-', name);
+    }
+
     // ── the copy itself ─────────────────────────────────────────────────────
 
     [Fact]
@@ -88,6 +109,9 @@ public class PresetCopyTests
         Assert.Equal(500, copy.Loops);
         Assert.Equal(2, copy.Steps.Count);
         Assert.Equal("1", copy.Steps[1].Value);
+        // Key is not QuestAction's default (Click), so a copy that dropped Action is caught here;
+        // without this the rest of the assertions pass on a step that silently became a click.
+        Assert.Equal(SealTools.Core.QuestAction.Key, copy.Steps[1].Action);
         // Every field, and none of these numbers is the type's default (10 / 1 / 0.25): an assertion
         // whose expected value IS the default passes against a copy that dropped the field entirely.
         // This one is not decoration — deleting the DelaySeconds line from CopyQuestPreset was tried,

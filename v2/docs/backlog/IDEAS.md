@@ -42,10 +42,6 @@ because it changes how something else should be done.
 
 ## 3. Calibration and setup UX
 
-- **Duplicate a preset instead of retyping it** (S) ⚑. The Quest flow and sequence pickers and the Spammer
-  preset picker each get a **Duplicate** beside Rename, so a second similar flow is a copy you edit rather
-  than a step list you type again. Designed in [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md),
-  which also retires the "renaming MOVES, never copies" rule in the user guide.
 - **"Validate calibration" report** (M). Script every point and region, print a table of what landed.
 - **Export / import calibration** (S). `local.yaml` + a version + a machine fingerprint, so a second
   PC is a copy rather than a re-calibration.

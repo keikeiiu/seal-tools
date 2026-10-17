@@ -244,7 +244,7 @@ and reported as a `⚠` on the tool card.
 | Control | Meaning |
 |---|---|
 | **Preset** dropdown | Which named key set the spammer presses. The list ends with **＋ Add new…**, which opens the name prompt. |
-| **Rename** | Opens the name prompt to rename the current preset. **Duplicate** copies the current preset's keys into a new preset named `<name> (copy)` and makes it active — the copy keeps the keys, but starts with no key order, no combos and no opening. **Delete** removes it after a confirmation — the last preset cannot be deleted. |
+| **Rename** | Opens the name prompt to rename the current preset. **Duplicate** copies the current preset's keys into a new preset named `<name> (copy)` and switches to it — the copy keeps the keys, but starts with no key order, no combos and no opening. It becomes the preset the spammer **presses** only after **Save Preset**; until then the run card keeps the source selected. **Delete** removes it after a confirmation — the last preset cannot be deleted. |
 | Name prompt | A row that appears only while creating or renaming: **Create preset:** or **Rename to:**, a name field, then **Create** / **Rename** and **Cancel**. A duplicate or empty name is refused with a message instead of overwriting. |
 | Keys summary | Read-only tiles of the current preset: each key in a keycap, its cooldown below, and `⚡` marking a fast tap. |
 | **Edit** / **Done** | Reveals the editor below, or puts it away. |
@@ -508,7 +508,7 @@ master loops. For the quests that share an NPC.
 | **Master loops** | How many times the whole entry list is repeated. |
 | **Initial wait (s)** | The **one** positioning window for the entire sequence — see the warning below. |
 | **Rename** | Renames the sequence. Its entries still name the same flows. |
-| **Duplicate** | Copies the sequence and its entries under `name (copy)`, and switches to the copy. Its entries name the **same** flows — duplicating a sequence does not duplicate the flows inside it. |
+| **Duplicate** | Copies the sequence and its entries under `name (copy)`, and switches to the copy. Its entries name the **same** flows — duplicating a sequence does not duplicate the flows inside it. Press **Save** to keep it. |
 | **Delete** | Asks first. Afterwards **`(none)`** is selected again, so **Start** runs the single flow above. |
 | The entry rows | One per flow: pick the **flow**, set **× times**, `✕` to remove. **+ Add entry** appends one. |
 

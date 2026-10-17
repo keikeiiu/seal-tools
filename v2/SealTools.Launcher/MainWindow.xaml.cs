@@ -1906,6 +1906,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         var combosPanel = new StackPanel();
         var availableBox = new ComboBox { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center };
         var addToOrder = MakeInlineButton("Add to order", ControlAppearance.Secondary);
+        // Declared here rather than beside the Advanced card below: LoadRows keeps the raw text in step
+        // with the preset on screen, and every path that reads the editor (Save, Create, Rename,
+        // Duplicate, switching preset) asks whether Advanced is ticked. C# will not let any of those
+        // reference a local declared after it. Only the CARD is built down there, next to its section.
+        var advanced = new CheckBox
+        {
+            Content = "Advanced — edit the raw key:seconds list",
+            Foreground = Res("TextFillColorPrimaryBrush"),
+            Margin = new Thickness(0, 12, 0, 4),
+        };
+        var raw = new TextBox
+        {
+            AcceptsReturn = true,
+            Height = 110,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
         // A grid, not a stack of labelled rows: ten rows each repeating "Key" / "Delay (s)" was
         // noise. One header, then bare boxes lined up underneath it. Three columns now — key, delay,
         // and the remove button: the "Fast" column went with the tick box.
@@ -1924,8 +1940,8 @@ public partial class MainWindow : FluentWindow, IDisposable
         Grid.SetColumn(delayHeaderLabel, 1);
         keyHeader.Children.Add(keyHeaderLabel);
         keyHeader.Children.Add(delayHeaderLabel);
-        // MinWidth is a floor for a very narrow window, not the width it takes: it sits in a star
-        // column now, so it stretches into whatever the Rename, Duplicate and Delete buttons leave.
+        // MinWidth is a floor for a very narrow window, not the width it takes: the picker has its own
+        // row now, so it stretches to the full content column.
         var presetBox = new ComboBox { MinWidth = 110, VerticalAlignment = VerticalAlignment.Center };
         var presetName = UiText("");
         presetName.Width = 160;
@@ -2010,7 +2026,17 @@ public partial class MainWindow : FluentWindow, IDisposable
             startupStepValue = opening.Step;
             startupLeadBox.Text = startupLeadValue.ToString(CultureInfo.InvariantCulture);
             startupStepBox.Text = startupStepValue.ToString(CultureInfo.InvariantCulture);
-            if (!presets.TryGetValue(name, out var keys)) { UpdateOrderPanel(); UpdateCombosPanel(); return; }
+            if (!presets.TryGetValue(name, out var keys))
+            {
+                raw.Text = "";
+                UpdateOrderPanel();
+                UpdateCombosPanel();
+                return;
+            }
+            // The raw box follows the preset too. It has no change handler, so it cannot update itself;
+            // without this it keeps the PREVIOUS preset's text after a switch, and Advanced (or
+            // Duplicate, which reads the same source) would then act on text belonging to another key set.
+            raw.Text = SerializeKeys(keys);
             foreach (var kv in keys)
                 AddRow(kv.Key, kv.Value.ToString(CultureInfo.InvariantCulture));
             UpdateOrderPanel();
@@ -2049,7 +2075,7 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
             if (name == current) return;
-            var live = RowsToKeys(); // keep unsaved edits when switching
+            var live = LiveKeys(); // keep unsaved edits when switching
             presets[current] = live;
             Commit(live);       // and the order with them — the two are one rotation
             current = name;
@@ -2076,7 +2102,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             if (promptMode == "create")
             {
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                var live = RowsToKeys();
+                var live = LiveKeys();
                 presets[current] = live;
                 Commit(live);
                 presets[name] = new Dictionary<string, double>();
@@ -2089,7 +2115,7 @@ public partial class MainWindow : FluentWindow, IDisposable
             {
                 if (name == current) { status.Text = "That is already the name."; return; }
                 if (presets.ContainsKey(name)) { status.Text = $"A preset named '{name}' already exists."; return; }
-                var live = RowsToKeys();
+                var live = LiveKeys();
                 presets[current] = live;
                 Commit(live);
                 presets.Remove(current);
@@ -2125,13 +2151,22 @@ public partial class MainWindow : FluentWindow, IDisposable
         var duplicatePreset = MakeButton("Duplicate", ControlAppearance.Secondary);
         duplicatePreset.Click += (_, _) =>
         {
-            // The copy is made from the rows ON SCREEN, not from the saved map — the same source Create
-            // and Rename use, so a key typed but not yet saved is carried rather than silently dropped.
-            var live = RowsToKeys();
+            // A Rename prompt left open would keep its old text and mode while `current` moves to the
+            // copy, so the next Confirm would rename the copy instead of the preset it was opened on.
+            ClosePrompt();
+            // The copy is made from the editor as it stands — rows, or the raw text while Advanced is
+            // ticked — the same source Create and Rename use, so an edit not yet saved is carried
+            // rather than silently dropped.
+            var live = LiveKeys();
             presets[current] = live;
             Commit(live);
             var from = current;
-            var name = PresetCopy.CopyName(from, presets.Keys);
+            // Every name-keyed map, not just Presets: an orphaned Priority/Combos/Startup entry under
+            // a free name would make this "fresh" copy inherit an order, combos or an opening — and
+            // the status line below says it has none. The loader does not prune orphans, so they are
+            // a real loadable state.
+            var name = PresetCopy.CopyName(from,
+                presets.Keys.Concat(priority.Keys).Concat(combosMap.Keys).Concat(startupMap.Keys));
             presets[name] = PresetCopy.CopySpammerKeys(presets[from]);
             current = name;
             loading = true; RefreshPresetList(name); loading = false;
@@ -2181,28 +2216,34 @@ public partial class MainWindow : FluentWindow, IDisposable
         // Two aligned rows rather than one long run of labels and buttons: Delete acts on the picked
         // preset, so it sits with the picker; + New and Rename act on the typed name, so they sit with
         // the name field. LabeledField gives both rows the same label column.
-        foreach (var b in new[] { renamePreset, duplicatePreset, delPreset })
-            b.Margin = new Thickness(8, 0, 0, 0);
+        renamePreset.Margin = new Thickness(0);
+        duplicatePreset.Margin = new Thickness(8, 0, 0, 0);
+        delPreset.Margin = new Thickness(8, 0, 0, 0);
 
-        // A Grid, not a horizontal StackPanel. A StackPanel measures its children with unbounded width,
-        // so the picker took its whole MinWidth and the buttons their natural size, and the total ran
-        // past the card — at a 619-logical-px window the Delete button was clipped mid-word ("Delet").
-        // With the picker in a star column it takes what is left rather than demanding it, so the row
-        // fits at any width instead of only at the width it was built at. That is also why Duplicate is
-        // a column here and not another item in a StackPanel.
+        // Two rows: the picker, then its actions. A single row of picker + three buttons needs about
+        // 389 px of content column and a 619-px window gives it 319 — measured, not guessed. An earlier
+        // horizontal StackPanel clipped Delete to "Delet"; a four-column Grid only moved the failure,
+        // because the star column cannot shrink below the picker's own MinWidth, so the Auto columns
+        // painted over the picker instead. Stacking the buttons under it fits at every window width
+        // the app allows, and keeps the picker wide enough to read the preset name.
         var pickRow = new Grid();
         pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        pickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(presetBox, 0);
         Grid.SetColumn(presetBox, 0);
-        Grid.SetColumn(renamePreset, 1);
-        Grid.SetColumn(duplicatePreset, 2);
-        Grid.SetColumn(delPreset, 3);
+        var presetActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        presetActions.Children.Add(renamePreset);
+        presetActions.Children.Add(duplicatePreset);
+        presetActions.Children.Add(delPreset);
+        Grid.SetRow(presetActions, 1);
         pickRow.Children.Add(presetBox);
-        pickRow.Children.Add(renamePreset);
-        pickRow.Children.Add(duplicatePreset);
-        pickRow.Children.Add(delPreset);
+        pickRow.Children.Add(presetActions);
 
         panel.Children.Add(Section("Active",
             Hint("Which key set the spammer presses. The keys below are a read-only summary; click Edit " +
@@ -2240,6 +2281,14 @@ public partial class MainWindow : FluentWindow, IDisposable
             }
             return result;
         }
+
+        // The keys as the editor holds them RIGHT NOW. Advanced is authoritative while it is ticked:
+        // the raw box has no change handler, so the rows are deliberately stale then, and Save has
+        // always read the raw text. Every path that reads the editor uses this one function — Save,
+        // Create, Rename, Duplicate and the preset switch — because a path that picks the other source
+        // silently drops an edit made in the view it did not read.
+        Dictionary<string, double> LiveKeys() =>
+            advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
 
         // Written back into `priority` and `combosMap` on every path that leaves the current preset,
         // and on Save — exactly as `rows` are written back through RowsToKeys(). Both are pruned
@@ -2295,18 +2344,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         }
 
         // Advanced: the same data as raw "key:seconds" lines, for setups the rows can't express.
-        var advanced = new CheckBox
-        {
-            Content = "Advanced — edit the raw key:seconds list",
-            Foreground = Res("TextFillColorPrimaryBrush"),
-            Margin = new Thickness(0, 12, 0, 4),
-        };
-        var raw = new TextBox
-        {
-            AcceptsReturn = true,
-            Height = 110,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
+        // `advanced` and `raw` are declared further up — see the note there.
         var rawPanel = new StackPanel { Visibility = Visibility.Collapsed };
         rawPanel.Children.Add(LabeledField("Keys (key:seconds)", raw));
         editor.Children.Add(Section("Advanced",
@@ -2328,7 +2366,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         void UpdateOrderPanel()
         {
             orderPanel.Children.Clear();
-            var live = RowsToKeys();
+            var live = LiveKeys();
 
             if (order.Count == 0)
             {
@@ -2412,7 +2450,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         void UpdateCombosPanel()
         {
             combosPanel.Children.Clear();
-            var live = RowsToKeys();
+            var live = LiveKeys();
 
             if (comboList.Count == 0)
             {
@@ -2574,7 +2612,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         var save = MakeButton("Save Preset", ControlAppearance.Primary);
         save.Click += (_, _) =>
         {
-            var live = advanced.IsChecked == true ? ParseKeys(raw.Text) : RowsToKeys();
+            var live = LiveKeys();
             presets[current] = live;
             // Committed against the keys actually being saved — in Advanced mode those are the raw
             // ones, not the rows — so the order is pruned against the same set. Pruning against the
@@ -2623,7 +2661,7 @@ public partial class MainWindow : FluentWindow, IDisposable
         {
             var want = _service.Config.Spammer.Active;
             if (want == current || !presets.ContainsKey(want)) return;
-            var live = RowsToKeys();
+            var live = LiveKeys();
             presets[current] = live;
             Commit(live);
             current = want;
@@ -6429,6 +6467,16 @@ public partial class MainWindow : FluentWindow, IDisposable
             RefreshSteps();
         }
 
+        // The rows are the truth until Save: the step and entry editors write nothing back as you
+        // type, so every path that copies, switches away from, or saves the current flow has to flush
+        // them first. Without it the copy is taken from the last save and the screen's edit is lost.
+        void CommitQuestRows()
+        {
+            Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
+            if (quest.ActiveSequenceOrNull is { } activeSequence)
+                activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
+        }
+
         var renameBtn = MakeInlineButton("Rename", ControlAppearance.Secondary);
         var duplicateBtn = MakeInlineButton("Duplicate", ControlAppearance.Secondary);
         var deleteBtn = MakeInlineButton("Delete", ControlAppearance.Secondary);
@@ -6447,6 +6495,9 @@ public partial class MainWindow : FluentWindow, IDisposable
                 return;
             }
 
+            // The rows on screen belong to the flow being left, so they are written back before the
+            // switch rebuilds the editor from the next one — otherwise an unsaved edit vanishes.
+            CommitQuestRows();
             quest.Active = picked;
             ShowActive();
             hint.Text = $"Flow \"{picked}\" — {Active().Steps.Count} step(s), {Active().Loops} loop(s).";
@@ -6484,6 +6535,13 @@ public partial class MainWindow : FluentWindow, IDisposable
         // the original too, with nothing on screen to say it had.
         duplicateBtn.Click += (_, _) =>
         {
+            // A Create/Rename prompt left open would keep its text and mode while `quest.Active` moves
+            // to the copy, so the next Confirm would act on the copy rather than the flow it named.
+            ClosePrompt();
+            // The step editor holds the only copy of an unsaved edit, so the rows are written back
+            // before the copy is taken — otherwise the copy (and the editor, after ShowActive) reverts
+            // to the last save.
+            CommitQuestRows();
             var from = quest.Active;
             var name = PresetCopy.CopyName(from, quest.Presets.Keys);
             quest.Presets[name] = PresetCopy.CopyQuestPreset(quest.Presets[from]);
@@ -6534,27 +6592,30 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshPresetList(quest.Active);
         ShowActive();
 
-        // A Grid, not a horizontal StackPanel — the same layout and the same reason as the Spammer
-        // picker. A StackPanel measures its children with unbounded width, so the picker took its whole
-        // MinWidth, the three buttons their natural size, and the run overflowed the card: Delete got
-        // clipped mid-word. In a star column the picker takes what is left, so the row fits at any
-        // window width, not only at the width it was built at.
+        // Same two-row Grid as the Spammer picker, for the same measured reason: picker and three
+        // buttons on one line need about 473 px and a 619-px window leaves 319 for the content column.
+        // One line either clips Delete or lets the buttons paint over the picker; stacking them fits.
         var pickRow = new Grid();
         pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        renameBtn.Margin = new Thickness(6, 0, 0, 0);
+        pickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        pickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        renameBtn.Margin = new Thickness(0);
         duplicateBtn.Margin = new Thickness(6, 0, 0, 0);
         deleteBtn.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetRow(presetBox, 0);
         Grid.SetColumn(presetBox, 0);
-        Grid.SetColumn(renameBtn, 1);
-        Grid.SetColumn(duplicateBtn, 2);
-        Grid.SetColumn(deleteBtn, 3);
+        var flowActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        flowActions.Children.Add(renameBtn);
+        flowActions.Children.Add(duplicateBtn);
+        flowActions.Children.Add(deleteBtn);
+        Grid.SetRow(flowActions, 1);
         pickRow.Children.Add(presetBox);
-        pickRow.Children.Add(renameBtn);
-        pickRow.Children.Add(duplicateBtn);
-        pickRow.Children.Add(deleteBtn);
+        pickRow.Children.Add(flowActions);
 
         panel.Children.Add(Section("Flow",
             Hint("One flow per quest, because the dialogue differs per quest. A flow is replayed at the " +
@@ -6673,6 +6734,8 @@ public partial class MainWindow : FluentWindow, IDisposable
 
             // "(none)" writes EMPTY, and empty is what makes the single flow run. It is a real choice
             // rather than an absence, which is why the merge applies it unconditionally.
+            // Flushed first: these rows belong to the sequence being left.
+            CommitQuestRows();
             quest.ActiveSequence = picked == NoSequenceMarker ? "" : picked;
             ShowSequence();
             RefreshQuestCardTargets();
@@ -6711,7 +6774,14 @@ public partial class MainWindow : FluentWindow, IDisposable
         seqDuplicate.Click += (_, _) =>
         {
             if (quest.ActiveSequenceOrNull == null) { hint.Text = "Pick a sequence to copy."; return; }
-            var from = quest.ActiveSequence;
+            // Same two reasons as the flow's: a pending Rename prompt would otherwise act on the copy,
+            // and the entry rows hold unsaved edits that the copy (and ShowSequence) would drop.
+            seqPrompt.Visibility = Visibility.Collapsed;
+            CommitQuestRows();
+            // Trimmed because the guard above resolved the name through ActiveSequenceOrNull, which
+            // trims: a hand-edited active_sequence with surrounding spaces passes the guard and would
+            // otherwise throw on the dictionary index below.
+            var from = quest.ActiveSequence.Trim();
             var name = PresetCopy.CopyName(from, quest.Sequences.Keys);
             quest.Sequences[name] = PresetCopy.CopyQuestSequence(quest.Sequences[from]);
             quest.ActiveSequence = name;
@@ -6764,23 +6834,28 @@ public partial class MainWindow : FluentWindow, IDisposable
         RefreshSequenceList(quest.ActiveSequence.Length == 0 ? NoSequenceMarker : quest.ActiveSequence);
         ShowSequence();
 
-        // Same Grid as the Flow picker above, for the same clipping reason.
+        // Same two-row Grid as the Flow picker above, for the same measured reason.
         var seqPickRow = new Grid();
         seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        seqPickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        seqRename.Margin = new Thickness(6, 0, 0, 0);
+        seqPickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        seqPickRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        seqRename.Margin = new Thickness(0);
         seqDuplicate.Margin = new Thickness(6, 0, 0, 0);
         seqDelete.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetRow(sequenceBox, 0);
         Grid.SetColumn(sequenceBox, 0);
-        Grid.SetColumn(seqRename, 1);
-        Grid.SetColumn(seqDuplicate, 2);
-        Grid.SetColumn(seqDelete, 3);
+        var sequenceActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        sequenceActions.Children.Add(seqRename);
+        sequenceActions.Children.Add(seqDuplicate);
+        sequenceActions.Children.Add(seqDelete);
+        Grid.SetRow(sequenceActions, 1);
         seqPickRow.Children.Add(sequenceBox);
-        seqPickRow.Children.Add(seqRename);
-        seqPickRow.Children.Add(seqDuplicate);
-        seqPickRow.Children.Add(seqDelete);
+        seqPickRow.Children.Add(sequenceActions);
 
         panel.Children.Add(Section("Sequence — several flows in one run",
             Hint("Runs a LIST of flows in one go: A three times, then B twice, and the whole list repeated " +
@@ -6831,13 +6906,9 @@ public partial class MainWindow : FluentWindow, IDisposable
         save.Click += (_, _) =>
         {
             // The rows are the truth: they are rebuilt from the flow on every switch, so writing them
-            // back here is what makes an edit stick.
-            Active().Steps = _questStepRows.Select(r => r.ToStep()).ToList();
-
-            // And the same for the ACTIVE sequence's entries. Its loops and initial wait need no such
-            // line — those fields write into the sequence as they are typed.
-            if (quest.ActiveSequenceOrNull is { } activeSequence)
-                activeSequence.Entries = _questEntryRows.Select(r => r.ToEntry()).ToList();
+            // back here is what makes an edit stick. Shared with Duplicate and the two picker switches,
+            // which need the same flush for the same reason.
+            CommitQuestRows();
 
             SaveReport(() => _service.UpdateLocal(local => local.Quest = new ConfigLoader.LocalQuest
             {

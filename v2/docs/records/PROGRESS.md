@@ -13,6 +13,27 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (95) — the duplicate feature reviewed against its own claims
+
+**Goal.** The feature was built and its gate was green, so the next pass was adversarial: six reviewers over the diff (logic, Spammer, Quest, docs, tests, repo rules), 30 findings, and a skeptic per finding to try to refute it. All 18 verified claims survived; the unverified twelve were either duplicates or "the launcher is not in the test project" notes, which the plan already states.
+
+**The real bug: unsaved edits were not copied.** Both Quest Duplicate buttons read the preset from config, but the step and entry editors write nothing back as you type — the only flush was Save (and Test one loop). So "Duplicate" copied the LAST SAVE and then `ShowActive`/`ShowSequence` rebuilt the editor from that stale copy, erasing the on-screen edit from both. The Spammer handler had flushed first; the plan's §4 only required it there, which is where the assumption went wrong. One `CommitQuestRows()` now serves Save, both Duplicate buttons and both picker switches, so the rows cannot be lost by leaving a flow either.
+
+**The rest, each confirmed by a second reader**
+
+- **Advanced mode was invisible to the Spammer Duplicate.** While Advanced is ticked the raw box is the truth and Save already read it; Duplicate read the stale rows instead, so it copied the pre-edit keys and the next Save applied the pending raw edit to the copy. One `LiveKeys()` now answers for Save, Create, Rename, Duplicate, both switches and the order/combos panels. The raw box also follows the preset in `LoadRows`, so it can no longer show another preset's text after a switch.
+- **A pending Rename/Create prompt outlived Duplicate** and its next Confirm acted on the copy, because both read `current`/`quest.Active` at Confirm time. Each Duplicate button now closes its prompt first.
+- **`CopyName` overflowed at the int boundary.** A source named `x (copy 2147483647)` produced `x (copy -2147483648)`, because the counter was an int. The counter is a long now, and two tests pin the boundary and the `(copy 0)` literal case.
+- **The picker rows did not fit at the width their own comment cited.** Measured: a 619-px window leaves 319 px of content column; one line needs ~473 (flow), ~499 (sequence) and ~389 (Spammer). A star column cannot shrink below the picker's MinWidth, so the Auto columns painted over the picker — the previous one-row fix only moved the failure. All three pickers now put the buttons on a second row under the picker, which fits at every allowed width.
+- **The Spammer copy name was checked only against `Presets.Keys`.** An orphaned Priority/Combos/Startup entry under a free name would have made the "fresh" copy inherit it, contradicting the status line. The scan now covers all four name-keyed maps.
+- **Two guide inaccuracies.** The Spammer row said Duplicate "makes it active", but only Save Preset writes `Spammer.Active`; the sequence row omitted "press Save to keep it". Both fixed in both languages. The IDEAS bullet was also removed — the idea is now a built plan, and the board is its status.
+
+**Still open.** ⚑2 (the dangling sequence entry re-point) and ⚑3 (three hand-rolled pickers versus one shared) on the plan — both are the player's decisions, not defects this pass could settle.
+
+**Commit.** This commit — the review fixes above, their tests, and the guide corrections.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 337 passed, 0 failed.
+
 ## 2026-10-17 (94) — the Spammer picker gets Duplicate, and the picker rows become Grids
 
 **Goal.** Finish what [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) scoped: the Skill Spammer half of the copy feature, and the clipping the Quest rows acquired when their fourth control arrived.
