@@ -13,6 +13,24 @@ for "how does this work" should never have to reconstruct it from a hundred date
 
 ---
 
+## 2026-10-17 (97) — the three preset pickers become one
+
+**Goal.** Answer ⚑3 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md): the Quest flow, Quest sequence and Skill Spammer pickers were three hand-rolled copies of the same Add / Rename / Duplicate / Delete shape, and the last three review passes had fixed the same defects in one copy while leaving the others.
+
+**What the helper owns.** `PresetPicker` (a nested class in `MainWindow`) builds the combo, the inline create/rename prompt, the two-row layout that fits the 319-px content column, and the three buttons. It also owns the rules that were identical in all three: names sorted ignore-case, `PresetCopy.CopyName` against every name in play, empty/duplicate-name refusal, one open prompt, and the generated copy note. A `PresetPickerOptions` record supplies what genuinely differs — the dictionary, what "active" means, the editor rebuild, the side maps a rename moves, the extra names a copy must avoid, the "(none)" row for sequences, and where feedback is printed.
+
+**Three defects fixed by writing it once**
+
+- **Create and Rename discarded unsaved edits.** Both rebuilt the step/entry editor from the dictionary, but the rows on screen had never been written back. This is the same class of bug the review fixed for Duplicate; `BeforeChange` now runs on every create, rename, copy, switch and Save.
+- **A prompt outlived a picker switch.** Rename reads the ACTIVE name at Confirm, so a Rename started on flow A and confirmed after switching to B renamed B to the text typed for A. The prompt is closed on a real switch now, and before a delete.
+- **A prompt outlived Delete**, with the same wrong-target Confirm. It is now closed before the mutation.
+
+**Why it is not unit-tested.** The helper is WPF and the Launcher stays out of the test project, so the gate is the build plus a launch that constructs every tab — the project's established rule for Launcher-only code. The pure half it calls, `PresetCopy`, is already covered.
+
+**Still open.** Nothing on the plan: ⚑1/⚑2/⚑3 are all answered and built. Buy and Game Variants remain out of scope.
+
+`dotnet build v2/SealTools.sln`: 0 warnings, 0 errors. `dotnet test`: 343 passed, 0 failed. Launcher started and every tab constructed.
+
 ## 2026-10-17 (96) — a sequence entry that points at a deleted flow stops the Save
 
 **Goal.** Answer ⚑2 on [PLAN-PRESET-DUPLICATE.md](../plans/PLAN-PRESET-DUPLICATE.md) with the player's choice, (b): refuse and list. The entry editor had always filled a row whose flow name was gone with `flowNames[0]`, and `CommitQuestRows` then wrote that in — so deleting a flow silently changed what a sequence ran, and a Save made the guess permanent.
