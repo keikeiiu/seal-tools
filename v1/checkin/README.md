@@ -24,8 +24,10 @@ python -m playwright install chromium
 ```
 checkin/
 ├── checkin.py               ← Main script (run this)
+├── run_checkin.ps1          ← Unattended entry point for the 00:05 scheduled task
 ├── checkin_config.yaml      ← Accounts + URLs (edit this)
 ├── README.md
+├── logs/                    ← One stdout/stderr pair per scheduled run (gitignored)
 └── sessions/                ← Saved login sessions (gitignored — 勿提交)
     ├── account1.json
     ├── account2.json
@@ -82,6 +84,34 @@ python checkin.py
   ...
 
 成功 7/7。session 已存，下次免重新登入（直到過期）。
+```
+
+## Scheduled daily run (00:05, all accounts)
+
+A Windows Task Scheduler task named **SealTools CheckIn** starts `run_checkin.ps1`
+hidden every day at 00:05. It runs `checkin.py` once, so it walks every account in
+`checkin_config.yaml`, and writes the run's stdout + stderr to
+`logs/checkin-<yyyyMMdd-HHmm>.log` and `.err.log` beside it.
+
+```powershell
+Get-ScheduledTaskInfo -TaskName 'SealTools CheckIn'                      # last result + next run
+Start-ScheduledTask    -TaskName 'SealTools CheckIn'                      # run now, out of schedule
+Unregister-ScheduledTask -TaskName 'SealTools CheckIn' -Confirm:$false    # stop the schedule
+```
+
+- The task only runs while you are logged on; if the PC is asleep or off at 00:05 it
+  starts as soon as Windows can (`StartWhenAvailable`).
+- An expired session still triggers the manual-captcha flow: the unattended run opens a
+  visible browser and waits up to 2 minutes per account. Run `python checkin.py` once
+  while you are at the PC, and the saved session makes the scheduled runs headless again.
+- The schedule is machine state, not repo state. If it goes missing, recreate it with:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+    -Argument '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Git_repo\seal-tools\v1\checkin\run_checkin.ps1"'
+$trigger = New-ScheduledTaskTrigger -Daily -At '00:05'
+Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $trigger `
+    -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew)
 ```
 
 ## How It Works (technical)
