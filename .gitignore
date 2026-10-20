@@ -39,4 +39,9 @@ dist/
 # ── Reference material (local screenshots/notes — not tracked) ──
 reference/
 
+# ── Archify working area ───────────────────────────────
+# Diagram candidates, debug captures and delivery receipts are local working
+# state. The published diagrams are committed in v2/docs/diagrams/flows/.
+.archify/
+
 # ── Misc cruft ─────────────────────────────────────────
