@@ -635,6 +635,7 @@ dependencies = [
  "seal-board",
  "seal-config",
  "seal-domain",
+ "seal-ocr",
  "seal-proto",
  "seal-tools",
  "seal-win",
