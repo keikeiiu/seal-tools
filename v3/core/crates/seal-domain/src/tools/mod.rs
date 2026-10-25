@@ -19,6 +19,7 @@
 mod grade_cycles;
 
 pub mod gem;
+pub mod pet;
 pub mod quest;
 pub mod shop;
 pub mod spammer;
