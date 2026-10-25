@@ -19,6 +19,22 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-25 (16) — the pipeline reads real captures, and the shell gets its client
+
+The OCR pipeline was assembled (`seal-ocr/src/pipeline.rs`, `modes.rs`) and wired into the core's
+`ocr.scan`: det resize 736/32 -> threshold/dilate/contours/min-rect/box-score/unclip -> cubic warp ->
+rec -> CTC decode -> the domain's TextCleaner, lines bucketed by v2's configured `row_height`
+(floored at 8), and the `lines`/`count`/`attributes`/`grade` modes on the protocol's one result
+shape. Two things were learned by running it rather than reading it: ORT allows exactly one
+environment per process (the model-gated test failed with "only one environment is allowed" until
+det and rec shared a process-wide `OnceLock`), and **the pipeline read all ten of v2's raw
+`full_*.png` captures — 10/10 produced text, 508 items in 265 s** — the first end-to-end evidence on
+real pixels. Follow-ups named in OPEN: grade colour fallback, `remaining`, capture_path/logging, and
+the ~26 s/full-screen cost that says tools must scan crops. The same milestone committed the Dart
+protocol client (`263d73d`): 51 fixtures decoded with a coverage guard and recursive shape-drift
+check, a client state machine with out-of-order ids/timeouts/events, and a real stdio transport —
+the seam now has both halves.
+
 ## 2026-10-25 (15) — the hardware surface complete, and OCR proven real
 
 `2528705` wired `board.probe`/`board.test` to the serial adapter: the port choice is seal-board's (a

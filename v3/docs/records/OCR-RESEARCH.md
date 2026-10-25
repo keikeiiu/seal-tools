@@ -364,3 +364,8 @@ The runtime choice was proven on the real models before any pipeline work:
   `InflatePaths` (1.5) -> `WarpPerspective` (cubic, replicate) -> Y-sort with the 10 px row
   threshold. Threshold/dilate/masked-mean/crop are easy pure Rust; contours, min-area-rect and
   polygon offset are the parts no maintained pure-Rust crate covers directly (task-29).
+- **The pipeline ran on the real captures.** The `ocr.scan` integration was smoke-tested over v2's
+  ten `full_*.png` raw captures: 10 of 10 produced text, 508 items in total, 265 s on CPU
+  (~26 s per full-screen capture). That is the first end-to-end evidence that the ported det/rec
+  chain accepts real v2 pixels; it is not text parity (the captures are not the per-read crops), which
+  still needs the recording pass.

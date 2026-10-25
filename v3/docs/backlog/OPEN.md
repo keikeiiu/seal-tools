@@ -84,10 +84,16 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 
 - **`seal-win` LANDED (`f4e3e9b`)** — `window.find`/`window.measure`/`capture` are implemented and
   wired into the core (`7d1942e`, including the four-frame cache); `board.probe`/`board.test` are
-  wired too (they use `seal-board`'s adapter). What still waits: the calibrator flow
-  (`calibration.save`/`fetch`, the binary artifact writer) and `ocr.scan` (the OCR runtime spike is
-  in flight). The two live behaviours — a real window measures/captures, a covered game is refused —
-  are the `#[ignore]`d tests in `seal-win`.
+  wired too (they use `seal-board`'s adapter), and `ocr.scan` is implemented (`ocr_unavailable` when
+  the models are absent). What still waits: the calibrator flow (`calibration.save`/`fetch`, the
+  binary artifact writer). The two live behaviours — a real window measures/captures, a covered game
+  is refused — are the `#[ignore]`d tests in `seal-win`.
+- **OCR pipeline follow-ups, named not hidden:** the grade colour fallback and the `remaining`-band
+  read are not ported (the result carries `remaining: null` and grade-from-line only); `capture_path`
+  stays null until the core's logging writer exists; full-screen scans cost ~26 s per capture on CPU
+  (the ten real captures were 265 s in total), so a tool's OCR read should scan its crop, not the
+  screen; and end-to-end text parity still needs the raw-crop recording pass
+  (OCR-RESEARCH §"Runtime spike results" and §4).
 - **OCR shipping/build facts to settle** (measured by the runtime spike, `e106c2b`): the release zip
   must carry **`DirectML.dll`** (~18.5 MB — the `download-binaries` static distribution links
   `onnxruntime.lib` in and ships no `onnxruntime.dll`), and its **redistribution terms must be

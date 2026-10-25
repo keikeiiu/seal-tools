@@ -12,7 +12,8 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
 - The shell (`SealTools.exe`) spawns the core (`seal-core.exe`) from its own directory, no
   arguments.
 - Messages are **UTF-8 newline-delimited JSON**, one object per line, on the core's stdin and
-  stdout. stderr carries logs and panics only, never protocol messages.
+  stdout. stderr carries logs and panics only, never protocol messages. A decoder may tolerate one
+  trailing carriage return on a line (Windows pipes); the core never writes one.
 - The core discovers its root the way v2 does: walk up from the executable for
   `config/defaults.yaml`, else `config/defaults.yaml.example`.
 - **Single instance (designed, not built yet — [OPEN.md](../backlog/OPEN.md) §3):** the core will
@@ -143,9 +144,9 @@ Notes:
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
-`board.test`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
-([OPEN.md](../backlog/OPEN.md) §4): `calibration.save`, `calibration.fetch`, `ocr.scan`. A command
-in this table is the contract; the implemented list is the current fact.
+`board.test`, `ocr.scan`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
+([OPEN.md](../backlog/OPEN.md) §4): `calibration.save`, `calibration.fetch`. A command in this table
+is the contract; the implemented list is the current fact.
 
 ## 5. Events
 
@@ -205,7 +206,7 @@ tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not
 | code | meaning |
 |---|---|
 | `bad_request` | malformed envelope, unknown cmd, bad args |
-| `bad_version` | protocol version mismatch at `hello` |
+| `bad_version` | protocol version mismatch at `hello`; `detail.expected` is the CORE's version the shell must speak, i.e. what the shell sent was wrong, not the core |
 | `not_ready` | request before a successful handshake |
 | `conflict` | `config.apply` with a stale `rev`; `detail` carries the current `rev` and the conflicting sections |
 | `window_not_found` | the game window is not present |
