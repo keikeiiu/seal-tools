@@ -30,7 +30,11 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
 - **Core crash:** the shell keeps its last rendered state, shows the failure and the captured
   stderr tail, and offers "restart core" — a new process and a new handshake. The tools' real
   state is the game and the board, so a restart loses nothing that was not already lost.
-
+- **Boot refusal:** a fatal config problem found before `hello` — files that cannot be read, a
+  merged config the validator refuses, a dictionary that cannot load — exits non-zero with the
+  reason on stderr and nothing on stdout. The shell shows that text on the crash channel above; it
+  is not a protocol message and must not be parsed as one. A reload that meets an invalid file is
+  different: it is a response with `config_invalid` (§6).
 ## 2. Envelope
 
 Every message is one JSON object. `v` is always present and is the protocol version (`1`).
@@ -92,7 +96,7 @@ edits; it never re-serialises the whole file (§7).
 |---|---|---|
 | `hello` | `{"protocol":1,"client":"0.1.0"}` | `{"protocol":1,"core_version":"0.1.0","root":"C:\\...","rev":7,"config":{...}}` |
 | `config.validate` | `{"sections":{"quest":{...}}}` | `{"errors":[],"warnings":[]}` |
-| `config.apply` | `{"rev":7,"sections":{"quest":{...}}}` | `{"rev":8,"sections":{"quest":{...}}}` |
+| `config.apply` | `{"rev":7,"sections":{"quest":{...},"settings":{...}}}` | `{"rev":8,"sections":{"quest":{...},"settings":{...}}}` |
 | `config.reload` | `{}` | `{"rev":9,"config":{...}}` |
 | `window.find` | `{}` | `{"found":true,"title":"Seal Online ..."}` |
 | `window.measure` | `{}` | `{"display":{...}}` |
@@ -122,7 +126,18 @@ Notes:
   so `local.yaml` keeps its v2 key names and no `height:` key is written.
 - `tool.start` on a second tool while one runs fails with `tool_busy`; `tool.stop` with no `tool`
   stops whatever is running. `holdspace` is a valid tool id (§9).
-
+- **`config.apply` may carry the portable half** as a `"settings": {...}` section alongside owned
+  top-level blocks. The core computes the effective merged config (owned blocks replace, `settings`
+  overlays field-wise — §7), runs the authoring rules on it, then resolves the variant, loads the
+  attribute dictionary that variant names, and only **then** writes: owned sections through the
+  block writer, the portable overlay through the settings projection. One rev bump covers both; the
+  result echoes the effective sections for the names in the request, in the request's structure. A
+  failed dictionary load is `io` with the loader's line — nothing written, no rev consumed. That
+  order is v2's `SwitchVariant` (resolve → validate → load → write), the only one that cannot
+  half-switch a variant.
+- `config.reload` re-reads and re-merges; an invalid on-disk config is answered with
+  `config_invalid` (§6) carrying the validator's lines in `detail.errors`, and the session keeps
+  the config it had.
 ## 5. Events
 
 | event | data | when |
@@ -155,6 +170,7 @@ that can disagree with the first.
 | `tool_busy` | `tool.start` while another tool runs |
 | `not_running` | `tool.stop` when nothing runs (not an error the UI shows as a failure) |
 | `io` | a file write failed; `detail.path` says which |
+| `config_invalid` | the on-disk config is invalid; `detail.errors` carries the ported validator's player-facing lines (a boot-time failure uses the stderr channel in §1, not this code) |
 | `internal` | a bug; `message` is safe to show, `detail` goes to the log |
 
 ## 7. Config merge semantics
@@ -169,7 +185,9 @@ persists `ui:` on every move. The core is the only writer and the only merger.
   current block — so a session half it wrote a second ago survives the tab's static half — writes
   atomically with the existing header/foreign-block rules, bumps `rev`, and returns the merged
   sections.
-- A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
+- `config.apply` may carry `"settings"` — the portable half (§4). Owned blocks replace; `settings`
+  overlays field-wise into the file's `settings:` block, and one `rev` covers both halves. The
+  result echoes the effective sections for the requested names, not the whole file (§12.2).- A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
   underneath before saving again.
 - Core-initiated writes emit `config.changed {rev, block, values}`. A shell that is not editing
   that block applies it silently; one that is editing shows the conflict.
@@ -234,3 +252,7 @@ The two halves must not drift, so the protocol is tested from both sides:
    few blocks; returning the file would invite it to keep a whole-file copy, which §7 forbids.
 3. **A frame cache with `frame_id`** — added so calibration does not ship megabytes twice; not in
    the plan, small surface.
+4. **`config.apply` carries the portable half as a `settings` section, and the dictionary loads
+   before the write** — the authoring-rule seam already treated a payload's `settings` as an
+   overlay, so this makes the implicit shape explicit rather than adding one; v2's switch order
+   (resolve → validate → load → write) is the only one that cannot half-switch a variant.

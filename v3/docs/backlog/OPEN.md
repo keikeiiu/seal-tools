@@ -49,7 +49,10 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **The `ui:` block's coordinate space.** CALIBRATION.md §1 calls it the shell's own space (machine
   state, never read by a tool) and `ui.window` accepts numbers. If the shell needs exact semantics
   (physical vs logical units for its own window), pin it in PROTOCOL §4 rather than letting it be
-  implied by a caller.
+  implied by a caller.- **The config-invalid path is ruled, not built.** PROTOCOL §1 now states the boot-refusal channel
+  (non-zero exit, reason on stderr, nothing on stdout before `hello`) and §6 gains
+  `config_invalid` for `config.reload`; WHAT REMAINS is the shell rendering both, and the
+  `config.apply` portable routing itself (ruled in PROTOCOL §4/§7/§12.4; implementation queued).
 
 
 
