@@ -205,11 +205,11 @@ safe*, not *whether a value is allowed*.
   mappings) and returns empty `errors`/`warnings`; the rules exist as pure functions in
   `seal-domain`'s [authoring module](../../core/crates/seal-domain/src/authoring/mod.rs) and are the
   plug-in point. Until that call is added, a save is rule-checked only by the shell.
-- **The typed attributes model is mid-port.** The loader side is done and returns opaque JSON; the
-  typed dictionary/matchers are being built in
-  [`seal-domain/src/config/attributes.rs`](../../core/crates/seal-domain/src/config/attributes.rs).
-  No command consumes a dictionary yet, and the variant-dictionary switch (load-by-name + seeding)
-  is not wired into the dispatcher.
+- **The typed attributes model has landed, but nothing consumes it yet.** The loader returns opaque
+  JSON and `seal-domain` now owns the typed dictionary plus its OCR matchers
+  ([attributes.rs](../../core/crates/seal-domain/src/config/attributes.rs),
+  [ocr/](../../core/crates/seal-domain/src/ocr/mod.rs)); no command consumes a dictionary yet, and
+  the variant-dictionary switch (load-by-name + seeding) is not wired into the dispatcher.
 - **The `settings:` path has one caller left to gain.** The fold writes the block and `save_settings`
   projects into it, but the current dispatcher's `config.apply` writes owned blocks at the top level;
   a future portable-save command is the natural place for `save_settings`. Both locations are inside

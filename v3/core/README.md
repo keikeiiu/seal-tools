@@ -58,6 +58,14 @@ reason.
   v2 picked its insertion-ordered dictionary's first key; the v3 model uses a `BTreeMap`, so the
   new selection is deterministic-sorted instead. It is a UI selection, not stored calibration, and
   nothing is persisted until the player saves — so no run or coordinate depends on it.
+- **A `text_fixes.regex` entry beyond the committed shape is refused at load, by name**
+  (`ocr::text_cleaner`, `TextFixError::UnsupportedRegex`). v2 fed those entries to .NET's regex
+  engine; v3 has no regex engine (adding one is a network dependency), so it implements exactly
+  the committed dictionary's shape — literal text plus `(?!literal)` negative lookaheads — and
+  refuses anything else loudly rather than mis-cleaning a reading. Cost if wrong: a hand-written
+  dictionary using other regex constructs fails loudly in v3 instead of being applied. This is the
+  one place a full-engine dependency (`fancy-regex`) would buy something, and the refusals are
+  pinned as tests so swapping one in is a deliberate change.
 
 ## Toolchain
 
