@@ -17,3 +17,4 @@
 //! what failed. Returning one effect per call would move the ordering rules back into the loop.
 
 pub mod spammer;
+pub mod tuner;
