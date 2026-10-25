@@ -46,6 +46,10 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **The production registry's placeholder line.** Until the tool loops exist, `ProductionRegistry`
   refuses every tool with a defined "not available in this build yet" line; the shell must show it,
   and it must disappear when the loops land rather than become the new normal.
+- **The `ui:` block's coordinate space.** CALIBRATION.md §1 calls it the shell's own space (machine
+  state, never read by a tool) and `ui.window` accepts numbers. If the shell needs exact semantics
+  (physical vs logical units for its own window), pin it in PROTOCOL §4 rather than letting it be
+  implied by a caller.
 
 
 
