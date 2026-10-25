@@ -229,9 +229,9 @@ fn a_non_owned_section_is_refused_by_apply_and_validate() {
 }
 
 #[test]
-fn validate_accepts_an_owned_section_and_reports_no_domain_rules_yet() {
-    // The authoring rules move in with seal-domain later; until then the door is open and says so
-    // in an empty result rather than pretending to have validated anything.
+fn validate_accepts_a_clean_owned_section() {
+    // A quest block with no sequence entries has nothing for the Save gate to refuse; the empty
+    // arrays are the protocol's "clean" answer, not a claim that no rules ran.
     let root = config_root();
     let mut session = Session::start(root.path());
     session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
@@ -343,4 +343,114 @@ fn a_failed_apply_leaves_the_revision_alone() {
         json!({"rev": hello["rev"], "sections": {"quest": {"active": "after-refusal"}}}),
     );
     assert_eq!(result["rev"], 1);
+}
+
+/// The Quest tab's Save gate, end to end: `validate` answers with the domain's exact lines; `apply`
+/// refuses with the same lines, writes nothing, and does not consume the revision it was sent.
+#[test]
+fn a_sequence_entry_naming_a_missing_flow_is_refused_without_writing() {
+    let root = config_root();
+    let before = root.read_bytes("config/local.yaml");
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].clone();
+
+    let dangling = json!({
+        "active": "run1",
+        "presets": {"run1": {"steps": []}},
+        "active_sequence": "seq1",
+        "sequences": {"seq1": {"entries": [{"preset": "ghost", "times": 1}]}},
+    });
+    let expected_lines = json!([
+        "\"seq1\" entry 1 names the flow \"ghost\", which does not exist",
+        "Pick an existing flow for each entry, or remove it, then Save again.",
+    ]);
+
+    let validated = session.result(
+        "config.validate",
+        json!({"sections": {"quest": dangling.clone()}}),
+    );
+    assert_eq!(validated["errors"], expected_lines);
+    assert_eq!(validated["warnings"], json!([]));
+
+    let refused = session.call(
+        "config.apply",
+        json!({"rev": rev, "sections": {"quest": dangling}}),
+    );
+    assert!(!refused.ok);
+    let error = refused.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["errors"], expected_lines);
+    // Nothing was written and nothing was consumed — the same rev still saves.
+    assert_eq!(root.read_bytes("config/local.yaml"), before);
+    let accepted = session.result(
+        "config.apply",
+        json!({"rev": rev, "sections": {"quest": {
+            "active": "run1",
+            "presets": {"run1": {"steps": []}},
+            "sequences": {},
+        }}}),
+    );
+    assert_eq!(accepted["rev"], 1);
+}
+
+/// The Hotkeys tab's rule, end to end: a code with no key name is one line per bad box, quoting the
+/// name the tab would show; apply refuses and writes nothing.
+#[test]
+fn invalid_hotkey_codes_are_refused_one_line_per_field_without_writing() {
+    let root = config_root();
+    let before = root.read_bytes("config/local.yaml");
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let settings = json!({"hotkeys": {
+        "start": 5,
+        "quit": 7,
+        "advance_grade": 71,
+        "pause": 20,
+    }});
+    let expected_lines = json!([
+        "\"0x5\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+        "\"0x7\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+    ]);
+
+    let validated = session.result(
+        "config.validate",
+        json!({"sections": {"settings": settings.clone()}}),
+    );
+    assert_eq!(validated["errors"], expected_lines);
+
+    let refused = session.call(
+        "config.apply",
+        json!({"rev": hello["rev"], "sections": {"settings": settings}}),
+    );
+    assert!(!refused.ok);
+    let error = refused.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["errors"], expected_lines);
+    assert_eq!(root.read_bytes("config/local.yaml"), before);
+}
+
+/// The clean direction end to end: a `settings` save that passes the rules — valid hotkey codes and
+/// a known variant — is written and consumes a revision, so the gate refuses only what is wrong.
+#[test]
+fn a_valid_settings_save_succeeds_and_bumps_the_revision() {
+    let root = config_root();
+    let defaults_before = root.read_bytes("config/defaults.yaml");
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let result = session.result(
+        "config.apply",
+        json!({"rev": hello["rev"], "sections": {"settings": {
+            "hotkeys": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20},
+            "game": {"variant": "us"},
+        }}}),
+    );
+
+    assert_eq!(result["rev"], 1);
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(local["settings"]["hotkeys"]["start"], 123);
+    assert_eq!(local["settings"]["game"]["variant"], "us");
+    assert_eq!(root.read_bytes("config/defaults.yaml"), defaults_before);
 }

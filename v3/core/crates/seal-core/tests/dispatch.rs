@@ -82,10 +82,10 @@ fn handshaken_state() -> CoreState {
     state
 }
 
-/// The dispatcher-level checks: argument shape and the revision contract, without a config folder
-/// (the successful write paths are exercised end-to-end in `tests/config.rs`).
+/// The dispatcher-level checks: argument shape, the authoring rules, and the revision contract,
+/// without a config folder (the write paths are exercised end-to-end in `tests/config.rs`).
 #[test]
-fn config_validate_answers_with_no_errors_while_domain_rules_are_pending() {
+fn config_validate_answers_with_empty_arrays_for_a_clean_section() {
     let mut state = handshaken_state();
 
     let response = handle(
@@ -102,6 +102,156 @@ fn config_validate_answers_with_no_errors_while_domain_rules_are_pending() {
         response.result.expect("a result"),
         json!({"errors": [], "warnings": []})
     );
+}
+
+/// The Quest tab's Save gate: every sequence entry must name an existing flow. The lines are the
+/// domain's, exactly as the v2 tab showed them — one player-facing line per array entry.
+#[test]
+fn config_validate_reports_a_sequence_entry_naming_a_missing_flow() {
+    let mut state = handshaken_state();
+    let quest = json!({
+        "active": "run1",
+        "presets": {"run1": {"steps": []}},
+        "active_sequence": "seq1",
+        "sequences": {
+            "seq1": {
+                "initial_wait_seconds": 10,
+                "loops": 1,
+                "entries": [{"preset": "ghost", "times": 2}],
+            }
+        },
+    });
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "13",
+            "config.validate",
+            json!({"sections": {"quest": quest}}),
+        ),
+    );
+
+    assert!(response.ok, "{:?}", response.error);
+    let result = response.result.expect("a result");
+    assert_eq!(
+        result["errors"],
+        json!([
+            "\"seq1\" entry 1 names the flow \"ghost\", which does not exist",
+            "Pick an existing flow for each entry, or remove it, then Save again.",
+        ])
+    );
+    assert_eq!(result["warnings"], json!([]));
+}
+
+/// The Hotkeys tab's rule. A hotkey is stored as a virtual-key code, and the tab shows it as the
+/// name `VkName` produces; the rule parses every name back, so a code with no key name at all is
+/// refused with one line per bad box — and the line quotes the name the tab would show.
+#[test]
+fn config_validate_reports_every_bad_hotkey_field_not_just_the_first() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "14",
+            "config.validate",
+            json!({"sections": {"settings": {"hotkeys": {
+                "start": 5,
+                "quit": 7,
+                "advance_grade": 71,
+                "pause": 20,
+            }}}}),
+        ),
+    );
+
+    assert!(response.ok, "{:?}", response.error);
+    let result = response.result.expect("a result");
+    assert_eq!(
+        result["errors"],
+        json!([
+            "\"0x5\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+            "\"0x7\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+        ])
+    );
+}
+
+/// The Setup tab's client switch is a save of `settings.game.variant`, and the rule resolves the
+/// name before anything is committed: an unknown client is refused with the known ones listed.
+#[test]
+fn config_validate_refuses_an_unknown_game_variant() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "15",
+            "config.validate",
+            json!({"sections": {"settings": {"game": {"variant": "nope"}}}}),
+        ),
+    );
+
+    assert!(response.ok, "{:?}", response.error);
+    assert_eq!(
+        response.result.expect("a result")["errors"],
+        json!(["\u{22}nope\u{22} is not a known game variant. Known: tw, us."])
+    );
+}
+
+/// A clean `settings` save (valid hotkeys, a known variant) still reports nothing.
+#[test]
+fn config_validate_accepts_a_clean_settings_save() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "16",
+            "config.validate",
+            json!({"sections": {"settings": {
+                "hotkeys": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20},
+                "game": {"variant": "us"},
+            }}}),
+        ),
+    );
+
+    assert!(response.ok, "{:?}", response.error);
+    assert_eq!(
+        response.result.expect("a result"),
+        json!({"errors": [], "warnings": []})
+    );
+}
+
+/// Apply runs the same checks BEFORE writing: it refuses with the rule lines in `detail.errors`,
+/// and a refusal must not consume the revision it was sent.
+#[test]
+fn config_apply_refuses_a_section_the_rules_reject_without_consuming_a_revision() {
+    let mut state = handshaken_state();
+    let quest = json!({
+        "active": "run1",
+        "presets": {"run1": {"steps": []}},
+        "sequences": {"seq1": {"entries": [{"preset": "", "times": 1}]}},
+    });
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "17",
+            "config.apply",
+            json!({"rev": 0, "sections": {"quest": quest}}),
+        ),
+    );
+
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(
+        error.detail["errors"],
+        json!([
+            "\"seq1\" entry 1 has no flow chosen",
+            "Pick an existing flow for each entry, or remove it, then Save again.",
+        ])
+    );
+    assert_eq!(state.rev, 0, "a refused apply must not consume a revision");
 }
 
 #[test]

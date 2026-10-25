@@ -6,8 +6,9 @@
 //! The config commands are the shell's only writer-side surface, and their contract is
 //! `PROTOCOL.md` §§4 and 7 plus `PLAN-V3-CORE.md` §4.1: the core is the only merger, a save sends
 //! **only the blocks the tab owns**, a stale revision is refused rather than replayed, and the rev
-//! is a session counter the shell echoes back. The file semantics themselves live in
-//! [`seal_config::ConfigStore`] ??this module only speaks protocol to them.
+//! is a session counter the shell echoes back. Every save also runs the domain authoring rules
+//! ([`crate::validate`]) before it writes — no widget keeps a rule. The file semantics themselves
+//! live in [`seal_config::ConfigStore`] — this module only speaks protocol to them.
 
 use std::path::Path;
 
@@ -17,8 +18,8 @@ use serde_json::{Map, Value, json};
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
 ///
-/// `height` is the window height to restore when the config region is expanded ??`expanded_height`
-/// in v2's `LocalUi` and in the domain model ??so it is stored under that name rather than putting a
+/// `height` is the window height to restore when the config region is expanded — `expanded_height`
+/// in v2's `LocalUi` and in the domain model — so it is stored under that name rather than putting a
 /// second key into the player's file. The whole block is the five v2 fields, and it is core-owned:
 /// the UI only ever reaches it through `ui.window`.
 const WINDOW_FIELDS: &[(&str, &str)] = &[
@@ -62,7 +63,7 @@ impl CoreState {
 
     /// The binary's startup: bind to `root` and read the merged config through the store.
     ///
-    /// Failing here is fatal rather than a degraded start ??v2 fails loudly for the same reason: a
+    /// Failing here is fatal rather than a degraded start — v2 fails loudly for the same reason: a
     /// core with no config cannot run a tool, and a silent empty config would look exactly like a
     /// game that changed.
     pub fn load(root: std::path::PathBuf) -> Result<Self, ConfigError> {
@@ -97,7 +98,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             state.stopping = true;
             Response::ok(&request.id, json!({}))
         }
-        "config.validate" => config_validate(&request),
+        "config.validate" => config_validate(state, &request),
         "config.apply" => config_apply(state, &request),
         "config.reload" => config_reload(state, &request),
         "ui.window" => ui_window(state, &request),
@@ -140,22 +141,33 @@ fn hello(state: &mut CoreState, request: Request) -> Response {
     )
 }
 
-/// `config.validate {sections}`: the shape gate before a save.
+/// `config.validate {sections}`: the pre-Save gate.
 ///
-/// The domain authoring rules ??Quest flow/sequence references, duplicate and rename names, hotkey
-/// validity, the client switch, a blank client size ??move into `seal-domain` with the domain port
-/// and are called from here. Until then this deliberately validates the SHAPE only (owned blocks,
-/// mappings) and reports an empty rule result rather than pretending to have checked anything; the
-/// `errors`/`warnings` arrays are the shape those rules plug into.
-fn config_validate(request: &Request) -> Response {
-    match sections_argument(request) {
-        Ok(_) => Response::ok(&request.id, json!({"errors": [], "warnings": []})),
-        Err(response) => *response,
-    }
+/// The shape is checked first (owned block names, mappings), then the domain's authoring rules run
+/// on a COPY of the merged config with the given sections laid on it ([`crate::validate`]). The
+/// answer is one player-facing line per array entry — the same lines the v2 tab showed — and
+/// `warnings` is the fixed protocol slot, empty until a rule has an advisory result.
+fn config_validate(state: &CoreState, request: &Request) -> Response {
+    let sections = match sections_argument(request) {
+        Ok(sections) => sections,
+        Err(response) => return *response,
+    };
+
+    let outcome = crate::validate::validate_sections(state, &sections);
+    Response::ok(
+        &request.id,
+        json!({"errors": outcome.errors, "warnings": outcome.warnings}),
+    )
 }
 
 /// `config.apply {rev, sections}`: merge the blocks the shell owns into `local.yaml`, bump the
 /// revision, answer with the merged sections (`PROTOCOL.md` §4 and §7).
+///
+/// The SAME authoring checks `config.validate` runs go first, so a Save cannot bypass the gate the
+/// shell showed: on any error the write is refused as `bad_request` with the lines in
+/// `detail.errors`, and nothing is written or consumed. (Warnings have no channel in this response —
+/// the protocol fixes its shape at `{rev, sections}` — so they are reported by `config.validate`
+/// only; no current rule produces one.)
 fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     let rev = match revision_argument(request) {
         Ok(rev) => rev,
@@ -166,8 +178,19 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
         Err(response) => return *response,
     };
 
+    // A stale client is told to reconcile first: its rules may already be moot against the current
+    // config, and replaying an old view is the loss this revision exists to prevent.
     if rev != state.rev {
         return conflict(state, &request.id, &sections);
+    }
+
+    let outcome = crate::validate::validate_sections(state, &sections);
+    if !outcome.errors.is_empty() {
+        return bad_request(
+            &request.id,
+            "the config change was refused by the authoring rules",
+            json!({"errors": outcome.errors}),
+        );
     }
 
     let merged = match state.store.apply_sections(&sections) {
@@ -197,7 +220,7 @@ fn config_reload(state: &mut CoreState, request: &Request) -> Response {
 }
 
 /// `ui.window {left, top, width, height, pinned}`: the one path window geometry and pin state take
-/// into `local.yaml`. The `ui:` block is core-owned ??nobody edits it in a tab ??so the shell sends
+/// into `local.yaml`. The `ui:` block is core-owned — nobody edits it in a tab — so the shell sends
 /// it and the core is the writer.
 fn ui_window(state: &mut CoreState, request: &Request) -> Response {
     let Some(arguments) = request.args.as_object() else {
@@ -266,7 +289,7 @@ fn revision_argument(request: &Request) -> Result<u64, Box<Response>> {
 }
 
 /// The `sections` argument shared by `config.apply` and `config.validate`: a mapping of owned block
-/// names to block mappings. A foreign block is refused rather than silently dropped ??the shell can
+/// names to block mappings. A foreign block is refused rather than silently dropped — the shell can
 /// only ever own the blocks `CONFIG.md` names, and a save must never rewrite the player's own.
 fn sections_argument(request: &Request) -> Result<Map<String, Value>, Box<Response>> {
     let Some(sections) = request.args.get("sections") else {
