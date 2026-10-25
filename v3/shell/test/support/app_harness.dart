@@ -58,21 +58,106 @@ class AppHarness {
     return fake;
   }
 
-  /// Connects, answering `hello` with [hello] (or the standard test payload). Any other command is
-  /// routed to [onWrite] as it was when this was called.
-  Future<void> connect({Map<String, dynamic>? hello}) async {
+  /// Connects, answering `hello` with [hello] (or the standard test payload; [config] supplies a
+  /// config block set for tab tests). Any other command is routed to [onWrite] as it was when this
+  /// was called.
+  Future<void> connect({
+    Map<String, dynamic>? hello,
+    Map<String, dynamic>? config,
+    int rev = 7,
+  }) async {
     final extra = onWrite;
     onWrite = (line, fake) {
       final message = fake.sentJson(fake.sent.length - 1);
       if (message['cmd'] == 'hello') {
         fake.emitJson(
-          okResponse(message['id'] as String, hello ?? helloResult()),
+          okResponse(
+            message['id'] as String,
+            hello ?? helloResult(config: config, rev: rev),
+          ),
         );
         return;
       }
       extra?.call(line, fake);
     };
     await model.connect();
+  }
+
+  /// Every line the model has sent so far, parsed.
+  List<Map<String, dynamic>> get sentMessages => [
+    for (var index = 0; index < transport.sent.length; index++)
+      transport.sentJson(index),
+  ];
+
+  /// The last request sent with [cmd], or null.
+  Map<String, dynamic>? lastSentWithCmd(String cmd) {
+    for (var index = transport.sent.length - 1; index >= 0; index--) {
+      final message = transport.sentJson(index);
+      if (message['cmd'] == cmd) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  /// Answers a tab's Save: `config.validate` with [errors] (clean by default), then
+  /// `config.apply` with `rev`/the requested sections echoed — or a `conflict` when asked.
+  ///
+  /// This makes the fake core behave like the real one for the Save order without re-implementing
+  /// its rules: the accepted/refused decision is set by the test.
+  void answerConfigCommands({
+    List<String> errors = const [],
+    int rev = 8,
+    bool conflict = false,
+    int conflictRev = 12,
+    Map<String, dynamic>? conflictSections,
+    Map<String, dynamic>? reloadedConfig,
+    int reloadRev = 9,
+  }) {
+    onWrite = (line, fake) {
+      final message = fake.sentJson(fake.sent.length - 1);
+      final id = message['id'] as String;
+      switch (message['cmd']) {
+        case 'config.validate':
+          fake.emitJson(
+            okResponse(id, {'errors': errors, 'warnings': <String>[]}),
+          );
+        case 'config.apply':
+          if (conflict) {
+            fake.emitJson(
+              errorResponse(
+                id,
+                'conflict',
+                message: 'config changed while you were editing',
+                detail: {
+                  'rev': conflictRev,
+                  'sections': conflictSections ?? <String, dynamic>{},
+                },
+              ),
+            );
+            return;
+          }
+          final args = message['args'];
+          final sections = args is Map<String, dynamic>
+              ? args['sections']
+              : null;
+          fake.emitJson(
+            okResponse(id, {
+              'rev': rev,
+              'sections': sections ?? <String, dynamic>{},
+            }),
+          );
+        case 'config.reload':
+          fake.emitJson(
+            okResponse(id, {
+              'rev': reloadRev,
+              'config': reloadedConfig ?? <String, dynamic>{},
+            }),
+          );
+        default:
+          break;
+      }
+    };
   }
 
   /// Emits a protocol event through the transport.

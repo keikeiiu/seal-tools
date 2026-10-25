@@ -18,6 +18,7 @@ import 'crash_view.dart';
 import 'hold_space_toggle.dart';
 import 'log_panel.dart';
 import 'status_strip.dart';
+import 'tabs/spammer_tab.dart';
 import 'theme.dart';
 
 class ShellPage extends StatefulWidget {
@@ -43,55 +44,77 @@ class _ShellPageState extends State<ShellPage> {
         final holdSpaceEngaged =
             (holdSpace?.phase ?? ToolPhase.idle) != ToolPhase.idle;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Seal Tools v3'),
-            toolbarHeight: 48,
-            elevation: 0,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-            actions: [
-              HoldSpaceToggle(
-                snapshot: holdSpace,
-                pending: model.tools.isPending(ToolId.holdspace),
-                ready: model.isReady,
-                onToggle: () => unawaited(
-                  holdSpaceEngaged
-                      ? model.stopTool(ToolId.holdspace)
-                      : model.startTool(ToolId.holdspace),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
-                child: Center(
-                  child: Text(
-                    'v${model.shellVersion}',
-                    style: Theme.of(context).textTheme.labelSmall,
+        final ready = connection.status == ConnectionStatus.ready;
+        return DefaultTabController(
+          length: 2,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Seal Tools v3'),
+              toolbarHeight: 48,
+              elevation: 0,
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+              actions: [
+                HoldSpaceToggle(
+                  snapshot: holdSpace,
+                  pending: model.tools.isPending(ToolId.holdspace),
+                  ready: model.isReady,
+                  onToggle: () => unawaited(
+                    holdSpaceEngaged
+                        ? model.stopTool(ToolId.holdspace)
+                        : model.startTool(ToolId.holdspace),
                   ),
                 ),
-              ),
-            ],
-          ),
-          body: switch (connection.status) {
-            ConnectionStatus.failed => CrashView(model: model),
-            ConnectionStatus.ready => Column(
-              children: [
-                Expanded(child: CardGrid(model: model)),
-                if (_logsVisible) LogPanel(entries: model.logs.entries),
-                StatusStrip(
-                  model: model,
-                  logsVisible: _logsVisible,
-                  onToggleLogs: () =>
-                      setState(() => _logsVisible = !_logsVisible),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.md,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'v${model.shellVersion}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
                 ),
               ],
+              bottom: ready
+                  ? const TabBar(
+                      isScrollable: true,
+                      tabs: [
+                        Tab(text: 'Cards'),
+                        Tab(text: 'Spammer'),
+                      ],
+                    )
+                  : null,
             ),
-            ConnectionStatus.idle ||
-            ConnectionStatus.starting ||
-            ConnectionStatus.handshaking => _ConnectingView(
-              status: connection.status,
-              stderrTail: model.logs.stderrTail,
-            ),
-          },
+            body: switch (connection.status) {
+              ConnectionStatus.failed => CrashView(model: model),
+              ConnectionStatus.ready => Column(
+                children: [
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        CardGrid(model: model),
+                        SpammerTab(model: model),
+                      ],
+                    ),
+                  ),
+                  if (_logsVisible) LogPanel(entries: model.logs.entries),
+                  StatusStrip(
+                    model: model,
+                    logsVisible: _logsVisible,
+                    onToggleLogs: () =>
+                        setState(() => _logsVisible = !_logsVisible),
+                  ),
+                ],
+              ),
+              ConnectionStatus.idle ||
+              ConnectionStatus.starting ||
+              ConnectionStatus.handshaking => _ConnectingView(
+                status: connection.status,
+                stderrTail: model.logs.stderrTail,
+              ),
+            },
+          ),
         );
       },
     );

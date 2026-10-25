@@ -100,13 +100,19 @@ Map<String, dynamic> errorResponse(
   'error': {'code': code, 'message': message, 'detail': detail},
 };
 
-/// The minimal `hello` result the client accepts.
-Map<String, dynamic> helloResult({int protocol = 1}) => {
+/// The minimal `hello` result the client accepts. [config] lets a tab test supply a block.
+Map<String, dynamic> helloResult({
+  int protocol = 1,
+  int rev = 7,
+  Map<String, dynamic>? config,
+}) => {
   'protocol': protocol,
   'core_version': '0.1.0',
   'root': r'C:\SealTools',
-  'rev': 7,
-  'config': {
-    'window': {'title': 'TW_LIVE'},
-  },
+  'rev': rev,
+  'config':
+      config ??
+      {
+        'window': {'title': 'TW_LIVE'},
+      },
 };

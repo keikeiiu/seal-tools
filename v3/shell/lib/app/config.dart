@@ -11,6 +11,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../protocol/protocol.dart';
+import 'config_json.dart';
 
 class ConfigModel extends ChangeNotifier {
   JsonMap _config = const {};
@@ -85,7 +86,7 @@ class ConfigModel extends ChangeNotifier {
     _apply = result;
     _rev = result.rev;
     // UI convenience: the response carries the effective values of the sections just written.
-    _config = {..._config, ...result.sections};
+    _config = mergeAppliedSections(_config, result.sections);
     _lastError = null;
     _conflict = null;
     notifyListeners();
@@ -117,4 +118,71 @@ class ConfigModel extends ChangeNotifier {
     _conflict = null;
     notifyListeners();
   }
+}
+
+/// Overlays an apply echo onto the mirror.
+///
+/// Owned blocks replace (the echo is the EFFECTIVE block, so it is the truth for those names); the
+/// `settings:` overlay merges one level so a save of `settings.tuner` does not erase
+/// `settings.gem` from the mirror. This is a UI convenience only — `config.reload` is the whole
+/// truth and the core is the writer.
+JsonMap mergeAppliedSections(JsonMap base, JsonMap sections) {
+  final merged = JsonMap.of(base);
+  for (final entry in sections.entries) {
+    final incoming = entry.value;
+    if (entry.key == 'settings' &&
+        incoming is Map<String, dynamic> &&
+        merged['settings'] is Map<String, dynamic>) {
+      final current = merged['settings']! as Map<String, dynamic>;
+      merged['settings'] = <String, dynamic>{
+        ...current,
+        for (final section in incoming.entries)
+          section.key: cloneJson(section.value),
+      };
+    } else {
+      merged[entry.key] = cloneJson(incoming);
+    }
+  }
+  return merged;
+}
+
+/// One Save's outcome. The LINES are the core's own strings, rendered verbatim by the tab; the shell
+/// only adds a line when it could not send the save at all (then there is no core text to show).
+class ConfigSaveOutcome {
+  const ConfigSaveOutcome({
+    this.validation,
+    this.result,
+    this.error,
+    this.note,
+  });
+
+  /// The validate answer, when validate ran.
+  final ConfigValidateResult? validation;
+
+  /// The apply answer, when the write happened.
+  final ConfigApplyResult? result;
+
+  /// The typed protocol error from validate/apply, when one came back.
+  final ErrorObject? error;
+
+  /// A shell-side reason the save was not sent (not ready, connection gone).
+  final String? note;
+
+  bool get saved => result != null;
+
+  bool get hasErrors => errorLines.isNotEmpty;
+
+  /// Validation errors first, then the refusal/error message — the exact strings, in order.
+  List<String> get errorLines => [
+    ...?validation?.errors,
+    ?error?.message,
+    ?note,
+  ];
+
+  /// Advisory lines from validate, shown but never blocking.
+  List<String> get warningLines => validation?.warnings ?? const [];
+
+  /// The reconcile signal, when the core refused the save as stale ([PROTOCOL.md] §7).
+  ErrorObject? get conflict =>
+      error != null && error!.code == ErrorCode.conflict ? error : null;
 }

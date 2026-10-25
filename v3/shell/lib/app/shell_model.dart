@@ -299,6 +299,38 @@ class ShellModel extends ChangeNotifier {
     }
   }
 
+  /// A tab's Save: the protocol order is `config.validate` FIRST, then `config.apply`
+  /// ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7). The tab never sends apply directly, and the core's
+  /// validation lines are returned verbatim for the tab to render.
+  ///
+  /// The outcome is data, not an exception: a refused save is a rendered state on the tab.
+  Future<ConfigSaveOutcome> saveConfig(ConfigSections sections) async {
+    if (!isReady || _client == null) {
+      const note = 'the core is not ready';
+      logs.addShellNote('cannot save config: $note');
+      return const ConfigSaveOutcome(note: note);
+    }
+    final validation = await validateConfig(sections);
+    if (validation == null) {
+      return ConfigSaveOutcome(
+        error: config.lastError,
+        note: config.lastError == null ? 'validation failed' : null,
+      );
+    }
+    if (validation.errors.isNotEmpty) {
+      return ConfigSaveOutcome(validation: validation);
+    }
+    final applied = await applyConfig(sections);
+    if (applied == null) {
+      return ConfigSaveOutcome(
+        validation: validation,
+        error: config.lastError,
+        note: config.lastError == null ? 'the save failed' : null,
+      );
+    }
+    return ConfigSaveOutcome(validation: validation, result: applied);
+  }
+
   // ── plumbing ─────────────────────────────────────────────────────────────────────────────
 
   void _onEvent(ProtocolEvent event) {
