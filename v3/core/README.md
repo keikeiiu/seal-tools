@@ -37,6 +37,18 @@ therefore a full-access run); after the fetch the whole team can build offline.
 All three must be clean. A warning is a failure: this core replaces a codebase whose build gate
 was already warnings-as-errors, and `cargo clippy -- -D warnings` keeps that property.
 
+## Deliberate divergences from v2
+
+The port copies behaviour, not accidents. Every divergence gets an entry here, a test, and the
+reason.
+
+- **`foreign_blocks` no longer doubles an inter-block comment** (`seal-config/src/foreign.rs`).
+  v2's forward walk runs to the next top-level key and its walk-back then starts at that key, so a
+  comment sitting between two foreign blocks is emitted by both — and because foreign blocks are
+  appended at the end of every save, the extra copy is re-extracted on the next save and doubles
+  again. v3 carries each comment once, with the block it introduces. This is a v2 writer bug, not a
+  measured behaviour any tool depends on.
+
 ## Toolchain
 
 `rust-toolchain.toml` pins `stable-x86_64-pc-windows-gnu` because this machine has no MSVC linker
@@ -44,3 +56,4 @@ yet. Crates that generate import libraries with GNU `dlltool` (anything pulling 
 not build under that pin; the Win32, serial and OCR crates are blocked until VS Build Tools is
 installed and the pin flips back to `stable` (MSVC). Pure crates — protocol, config, domain,
 tools' decision halves — are unaffected.
+
