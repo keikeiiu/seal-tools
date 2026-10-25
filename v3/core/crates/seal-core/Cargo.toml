@@ -7,4 +7,5 @@ publish.workspace = true
 [dependencies]
 seal-proto = { path = "../seal-proto" }
 seal-config = { path = "../seal-config" }
+seal-domain = { path = "../seal-domain" }
 serde_json.workspace = true
