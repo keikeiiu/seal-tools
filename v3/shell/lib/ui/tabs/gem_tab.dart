@@ -42,9 +42,15 @@ class GemTab extends StatefulWidget {
   State<GemTab> createState() => _GemTabState();
 }
 
-class _GemTabState extends State<GemTab> with ConfigTabState<GemTab> {
+class _GemTabState extends State<GemTab>
+    with ConfigTabState<GemTab>, AutomaticKeepAliveClientMixin<GemTab> {
   @override
   ShellModel get model => widget.model;
+
+  /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
+  /// banner) must survive the switch.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   final ConfigDraft draft = ConfigDraft(
@@ -88,6 +94,7 @@ class _GemTabState extends State<GemTab> with ConfigTabState<GemTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final grades = _grades();
     final calibrated = _calibrated();
     final positions = asJsonMap(calibrated['grade_positions']);

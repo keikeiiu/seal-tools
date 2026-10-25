@@ -26,9 +26,14 @@ class SpammerTab extends StatefulWidget {
 }
 
 class _SpammerTabState extends State<SpammerTab>
-    with ConfigTabState<SpammerTab> {
+    with ConfigTabState<SpammerTab>, AutomaticKeepAliveClientMixin<SpammerTab> {
   @override
   ShellModel get model => widget.model;
+
+  /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
+  /// banner) must survive the switch.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   final ConfigDraft draft = ConfigDraft(
@@ -249,6 +254,7 @@ class _SpammerTabState extends State<SpammerTab>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final preset = _currentPreset();
     final names = _presetNames();
     final keys = preset == null ? const <String>[] : _keysFor(preset);

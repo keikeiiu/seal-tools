@@ -23,12 +23,36 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
   ConfigSaveOutcome? outcome;
   bool saving = false;
 
-  /// Seeds the draft once from the current mirror. Tabs are built only when the core is ready
-  /// (ShellPage's connection switch), so the mirror is available here.
+  int? _seenConfigRev;
+
+  /// Seeds the draft once from the current mirror, then watches the mirror for changes made while
+  /// this tab is off-screen (tabs are kept alive): a dirty draft is MARKED and waits for an explicit
+  /// reconcile, a clean draft re-seeds silently.
   @override
   void initState() {
     super.initState();
     draft.seedFromMirror(model.config.config);
+    _seenConfigRev = model.config.rev;
+    model.config.addListener(_onConfigChanged);
+  }
+
+  @override
+  void dispose() {
+    model.config.removeListener(_onConfigChanged);
+    super.dispose();
+  }
+
+  void _onConfigChanged() {
+    final rev = model.config.rev;
+    if (_seenConfigRev == rev) {
+      return;
+    }
+    _seenConfigRev = rev;
+    if (draft.isDirty) {
+      draft.markExternalChange();
+    } else {
+      draft.seedFromMirror(model.config.config, force: true);
+    }
   }
 
   Future<void> save() async {
@@ -56,7 +80,12 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
   void cancel() {
     setState(() {
       outcome = null;
-      draft.reset();
+      // Discarding edits after an external change shows the CORE's latest value, not the stale one.
+      if (draft.hasExternalChange) {
+        draft.seedFromMirror(model.config.config, force: true);
+      } else {
+        draft.reset();
+      }
     });
   }
 
@@ -91,6 +120,8 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
       onCancel: cancel,
       onReconcile: reconcile,
       readOnly: readOnly,
+      externalChange: draft.hasExternalChange,
+      externalChangeRev: model.config.rev,
       child: child,
     ),
   );
@@ -109,6 +140,8 @@ class ConfigTabScaffold extends StatelessWidget {
     required this.onReconcile,
     required this.child,
     this.readOnly = const [],
+    this.externalChange = false,
+    this.externalChangeRev,
   });
 
   final String title;
@@ -123,6 +156,13 @@ class ConfigTabScaffold extends StatelessWidget {
 
   /// Extra lines under the editor header (e.g. a warning that a card field is read-only this wave).
   final List<Widget> readOnly;
+
+  /// The core changed this block while the draft was dirty (marked while the tab may have been
+  /// off-screen). The banner waits for the explicit reconcile.
+  final bool externalChange;
+
+  /// The mirror revision the external-change banner shows.
+  final int? externalChangeRev;
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +224,8 @@ class ConfigTabScaffold extends StatelessWidget {
           onSave: onSave,
           onCancel: onCancel,
           onReconcile: onReconcile,
+          externalChange: externalChange,
+          externalChangeRev: externalChangeRev,
         ),
       ],
     );
@@ -198,6 +240,8 @@ class _SaveBar extends StatelessWidget {
     required this.onSave,
     required this.onCancel,
     required this.onReconcile,
+    required this.externalChange,
+    required this.externalChangeRev,
   });
 
   final ConfigDraft draft;
@@ -206,6 +250,8 @@ class _SaveBar extends StatelessWidget {
   final Future<void> Function() onSave;
   final VoidCallback onCancel;
   final Future<void> Function() onReconcile;
+  final bool externalChange;
+  final int? externalChangeRev;
 
   @override
   Widget build(BuildContext context) {
@@ -219,6 +265,20 @@ class _SaveBar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (externalChange && conflict == null) ...[
+              Text(
+                'The core changed this block while you were editing it (now at rev ${externalChangeRev ?? '?'}).',
+                key: ValueKey('external-change-${draft.blockName}'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+              TextButton(
+                key: ValueKey('external-change-reconcile-${draft.blockName}'),
+                onPressed: saving ? null : onReconcile,
+                child: const Text('Discard my edits and use the core version'),
+              ),
+            ],
             if (conflict != null) ...[
               Text(
                 'The core changed the config underneath this tab '

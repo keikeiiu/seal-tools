@@ -40,9 +40,15 @@ class QuestTab extends StatefulWidget {
   State<QuestTab> createState() => _QuestTabState();
 }
 
-class _QuestTabState extends State<QuestTab> with ConfigTabState<QuestTab> {
+class _QuestTabState extends State<QuestTab>
+    with ConfigTabState<QuestTab>, AutomaticKeepAliveClientMixin<QuestTab> {
   @override
   ShellModel get model => widget.model;
+
+  /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
+  /// banner) must survive the switch.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   final ConfigDraft draft = ConfigDraft(
@@ -342,6 +348,7 @@ class _QuestTabState extends State<QuestTab> with ConfigTabState<QuestTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final flows = _flowNames();
     final flow = _currentFlow();
     final sequences = _sequenceNames();

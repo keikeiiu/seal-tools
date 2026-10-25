@@ -49,11 +49,25 @@ class ConfigDraft extends ChangeNotifier {
   Map<String, dynamic> _baseline = const {};
   bool _seeded = false;
   int _seedRevision = 0;
+  bool _externalChange = false;
 
   /// Bumped whenever the draft is re-seeded from the core (seed/reset/save). Widgets that hold a
   /// `TextEditingController` key their state on it, so an external re-baseline can never leave a
   /// stale text field showing the player's previous edit.
   int get seedRevision => _seedRevision;
+
+  /// True when the core changed this block while the draft had unsaved edits. The tab shows the
+  /// conflict banner and re-seeds only on the explicit reconcile — never behind the player's back.
+  bool get hasExternalChange => _externalChange;
+
+  /// Marks that the core changed this block underneath a dirty draft.
+  void markExternalChange() {
+    if (_externalChange) {
+      return;
+    }
+    _externalChange = true;
+    notifyListeners();
+  }
 
   /// Whether the draft has been seeded from the core mirror at least once.
   bool get isSeeded => _seeded;
@@ -79,6 +93,7 @@ class ConfigDraft extends ChangeNotifier {
     _value = cloneJsonMap(seeded);
     _seeded = true;
     _seedRevision++;
+    _externalChange = false;
     notifyListeners();
   }
 
@@ -99,6 +114,7 @@ class ConfigDraft extends ChangeNotifier {
   void reset() {
     _value = cloneJsonMap(_baseline);
     _seedRevision++;
+    _externalChange = false;
     notifyListeners();
   }
 
@@ -110,6 +126,7 @@ class ConfigDraft extends ChangeNotifier {
     _baseline = effective;
     _value = cloneJsonMap(effective);
     _seedRevision++;
+    _externalChange = false;
     notifyListeners();
   }
 

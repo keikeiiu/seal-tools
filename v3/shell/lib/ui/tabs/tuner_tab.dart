@@ -46,9 +46,15 @@ class TunerTab extends StatefulWidget {
   State<TunerTab> createState() => _TunerTabState();
 }
 
-class _TunerTabState extends State<TunerTab> with ConfigTabState<TunerTab> {
+class _TunerTabState extends State<TunerTab>
+    with ConfigTabState<TunerTab>, AutomaticKeepAliveClientMixin<TunerTab> {
   @override
   ShellModel get model => widget.model;
+
+  /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
+  /// banner) must survive the switch.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   final ConfigDraft draft = ConfigDraft(
@@ -200,6 +206,7 @@ class _TunerTabState extends State<TunerTab> with ConfigTabState<TunerTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final order = _gradeOrder();
     final calibrated = _calibrated();
     final ocr = asJsonMap(calibrated['ocr']);
