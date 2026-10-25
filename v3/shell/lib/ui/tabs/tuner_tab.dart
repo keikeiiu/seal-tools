@@ -17,6 +17,11 @@ import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
 
+/// Sentinel for the target-grade dropdown: a config Option is cleared by OMITTING the field — a
+/// JSON null is 'not stated' to the core's merge (validate's merge_overlay skips nulls) — so the
+/// shipped default then applies.
+const String _noTargetGrade = '(none)';
+
 const List<String> _springModes = ['manual', 'hid'];
 const List<String> _mouseGuards = ['off', 'stop', 'recenter'];
 const List<String> _matchModes = ['any', 'all', 'per_attr'];
@@ -246,10 +251,16 @@ class _TunerTabState extends State<TunerTab>
               DraftDropdownField(
                 key: const ValueKey('target-grade'),
                 label: 'Target grade',
-                value: _targetGrade(),
-                options: order,
+                value: _targetGrade() ?? _noTargetGrade,
+                options: [_noTargetGrade, ...order],
                 width: 220,
-                onChanged: _setTargetGrade,
+                onChanged: (value) {
+                  if (value == null || value == _noTargetGrade) {
+                    _setTargetGrade(null);
+                  } else {
+                    _setTargetGrade(value);
+                  }
+                },
               ),
               const SizedBox(height: ShellSpace.sm),
               for (var index = 0; index < order.length; index++)

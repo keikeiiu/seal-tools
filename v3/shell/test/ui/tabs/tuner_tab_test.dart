@@ -173,4 +173,35 @@ void main() {
       '5',
     );
   });
+
+  testWidgets('(none) clears the target grade from the override', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+
+    await tester.tap(find.byKey(const ValueKey('target-grade')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('(none)').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('dirty-tuner')), findsOneWidget);
+    expect(find.text('(none)'), findsOneWidget);
+
+    harness.answerConfigCommands();
+    await tester.tap(find.byKey(const ValueKey('save-tuner')));
+    await _flush(tester);
+
+    final apply = harness.lastSentWithCmd('config.apply')!;
+    final sections =
+        (apply['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final tuner =
+        (sections['settings'] as Map<String, dynamic>)['tuner']
+            as Map<String, dynamic>;
+    expect(
+      tuner.containsKey('target_grade'),
+      isFalse,
+      reason: 'a cleared Option is OMITTED from the override, not sent as null',
+    );
+  });
 }

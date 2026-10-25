@@ -513,23 +513,25 @@ class _QuestTabState extends State<QuestTab>
                           onChanged: (value) =>
                               _setStepField(flow, index, 'action', value),
                         ),
-                        const SizedBox(width: ShellSpace.sm),
-                        DraftFieldSlot(
-                          slotKey: 'quest-step-value-$index',
-                          syncToken: draft.seedRevision,
-                          child: DraftTextField(
-                            label: 'Key value',
-                            helper: 'used by action=key',
-                            value: asString(steps[index]['value']) ?? '',
-                            width: 150,
-                            onChanged: (value) => _setStepField(
-                              flow,
-                              index,
-                              'value',
-                              value.isEmpty ? null : value,
+                        if (asString(steps[index]['action']) == 'key') ...[
+                          const SizedBox(width: ShellSpace.sm),
+                          DraftFieldSlot(
+                            slotKey: 'quest-step-value-$index',
+                            syncToken: draft.seedRevision,
+                            child: DraftTextField(
+                              label: 'Key value',
+                              helper: 'used by action=key',
+                              value: asString(steps[index]['value']) ?? '',
+                              width: 150,
+                              onChanged: (value) => _setStepField(
+                                flow,
+                                index,
+                                'value',
+                                value.isEmpty ? null : value,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                         const SizedBox(width: ShellSpace.sm),
                         DraftFieldSlot(
                           slotKey: 'quest-step-delay-$index',

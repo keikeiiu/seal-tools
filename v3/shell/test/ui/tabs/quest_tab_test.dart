@@ -43,7 +43,10 @@ Finder _field(String key) => find.descendant(
   matching: find.byType(TextField),
 );
 
-Future<AppHarness> _pumpQuest(WidgetTester tester) async {
+Future<AppHarness> _pumpQuest(
+  WidgetTester tester, {
+  Map<String, dynamic>? quest,
+}) async {
   tester.view.physicalSize = const ui.Size(1800, 2600);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -57,7 +60,7 @@ Future<AppHarness> _pumpQuest(WidgetTester tester) async {
   final connecting = harness.connect(
     config: {
       'window': {'title': 'TW_LIVE'},
-      'quest': _questBlock(),
+      'quest': quest ?? _questBlock(),
     },
   );
   for (var i = 0; i < 3; i++) {
@@ -169,6 +172,56 @@ void main() {
     expect(
       tester.widget<TextField>(_field('quest-guard')).controller?.text,
       '8',
+    );
+  });
+
+  testWidgets('a non-key step hides its stored value (and the save keeps it)', (
+    tester,
+  ) async {
+    final harness = await _pumpQuest(
+      tester,
+      quest: {
+        'active': 'run1',
+        'presets': {
+          'run1': {
+            'initial_wait_seconds': 2.5,
+            'loops': 2,
+            'steps': [
+              {'action': 'click', 'value': 'stale', 'delay_seconds': 0.3},
+              {'action': 'key', 'value': '1', 'delay_seconds': 0.2},
+            ],
+          },
+        },
+        'active_sequence': '',
+        'sequences': <String, dynamic>{},
+        'guard_px': 8,
+      },
+    );
+
+    expect(find.byKey(const ValueKey('quest-step-value-0')), findsNothing);
+    expect(find.byKey(const ValueKey('quest-step-value-1')), findsOneWidget);
+    expect(
+      tester.widget<TextField>(_field('quest-step-value-1')).controller?.text,
+      '1',
+    );
+
+    await tester.enterText(_field('quest-guard'), '12');
+    await tester.pump();
+    harness.answerConfigCommands();
+    await tester.tap(find.byKey(const ValueKey('save-quest')));
+    await _flush(tester);
+    final apply = harness.lastSentWithCmd('config.apply')!;
+    final sections =
+        (apply['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final step =
+        ((sections['quest'] as Map<String, dynamic>)['presets']
+                as Map<String, dynamic>)['run1']['steps'][0]
+            as Map<String, dynamic>;
+    expect(
+      step['value'],
+      'stale',
+      reason: 'hiding the field must not drop the stored value',
     );
   });
 }
