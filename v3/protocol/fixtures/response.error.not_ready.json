@@ -2,13 +2,13 @@
   "case": "response.error.not_ready",
   "kind": "response",
   "message": {
-    "error": {
-      "code": "not_ready",
-      "detail": {},
-      "message": "hello must be the first request"
-    },
+    "v": 1,
     "id": "23",
     "ok": false,
-    "v": 1
+    "error": {
+      "code": "not_ready",
+      "message": "hello must be the first request",
+      "detail": {}
+    }
   }
 }

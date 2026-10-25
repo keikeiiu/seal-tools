@@ -2,13 +2,13 @@
   "case": "response.error.bad_request",
   "kind": "response",
   "message": {
-    "error": {
-      "code": "bad_request",
-      "detail": {},
-      "message": "malformed envelope, unknown cmd, bad args"
-    },
+    "v": 1,
     "id": "21",
     "ok": false,
-    "v": 1
+    "error": {
+      "code": "bad_request",
+      "message": "malformed envelope, unknown cmd, bad args",
+      "detail": {}
+    }
   }
 }

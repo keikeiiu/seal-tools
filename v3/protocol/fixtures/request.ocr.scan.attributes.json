@@ -2,12 +2,12 @@
   "case": "request.ocr.scan.attributes",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "18",
+    "cmd": "ocr.scan",
     "args": {
       "frame_id": "f1",
       "mode": "attributes"
-    },
-    "cmd": "ocr.scan",
-    "id": "18",
-    "v": 1
+    }
   }
 }

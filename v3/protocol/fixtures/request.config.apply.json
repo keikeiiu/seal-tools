@@ -2,6 +2,9 @@
   "case": "request.config.apply",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "3",
+    "cmd": "config.apply",
     "args": {
       "rev": 7,
       "sections": {
@@ -9,9 +12,6 @@
           "active": "run1"
         }
       }
-    },
-    "cmd": "config.apply",
-    "id": "3",
-    "v": 1
+    }
   }
 }

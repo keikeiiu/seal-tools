@@ -2,22 +2,22 @@
   "case": "response.ok.ocr_scan",
   "kind": "response",
   "message": {
+    "v": 1,
     "id": "18",
     "ok": true,
     "result": {
+      "lines": [
+        "攻擊力 +12"
+      ],
       "attributes": [
         [
           "攻擊力",
           "atk"
         ]
       ],
-      "capture_path": "logs/captures/read_0001.png",
       "grade": "G",
-      "lines": [
-        "攻擊力 +12"
-      ],
-      "remaining": null
-    },
-    "v": 1
+      "remaining": null,
+      "capture_path": "logs/captures/read_0001.png"
+    }
   }
 }

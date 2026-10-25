@@ -2,15 +2,15 @@
   "case": "response.error.tool_busy",
   "kind": "response",
   "message": {
-    "error": {
-      "code": "tool_busy",
-      "detail": {
-        "tool": "pet"
-      },
-      "message": "another tool is running"
-    },
+    "v": 1,
     "id": "28",
     "ok": false,
-    "v": 1
+    "error": {
+      "code": "tool_busy",
+      "message": "another tool is running",
+      "detail": {
+        "tool": "pet"
+      }
+    }
   }
 }

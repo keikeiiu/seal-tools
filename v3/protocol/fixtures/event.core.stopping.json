@@ -2,10 +2,10 @@
   "case": "event.core.stopping",
   "kind": "event",
   "message": {
+    "v": 1,
+    "event": "core.stopping",
     "data": {
       "reason": "eof"
-    },
-    "event": "core.stopping",
-    "v": 1
+    }
   }
 }

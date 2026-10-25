@@ -2,8 +2,12 @@
   "case": "response.error.conflict",
   "kind": "response",
   "message": {
+    "v": 1,
+    "id": "24",
+    "ok": false,
     "error": {
       "code": "conflict",
+      "message": "config changed while you were editing",
       "detail": {
         "rev": 12,
         "sections": {
@@ -11,11 +15,7 @@
             "active": "run1"
           }
         }
-      },
-      "message": "config changed while you were editing"
-    },
-    "id": "24",
-    "ok": false,
-    "v": 1
+      }
+    }
   }
 }

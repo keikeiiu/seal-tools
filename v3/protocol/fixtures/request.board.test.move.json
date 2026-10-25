@@ -2,13 +2,13 @@
   "case": "request.board.test.move",
   "kind": "request",
   "message": {
-    "args": {
-      "dx": 100,
-      "dy": 0,
-      "kind": "move"
-    },
-    "cmd": "board.test",
+    "v": 1,
     "id": "12",
-    "v": 1
+    "cmd": "board.test",
+    "args": {
+      "kind": "move",
+      "dx": 100,
+      "dy": 0
+    }
   }
 }

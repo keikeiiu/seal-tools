@@ -2,9 +2,9 @@
   "case": "response.ok.empty",
   "kind": "response",
   "message": {
+    "v": 1,
     "id": "20",
     "ok": true,
-    "result": {},
-    "v": 1
+    "result": {}
   }
 }

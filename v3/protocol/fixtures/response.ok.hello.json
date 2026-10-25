@@ -2,25 +2,25 @@
   "case": "response.ok.hello",
   "kind": "response",
   "message": {
+    "v": 1,
     "id": "1",
     "ok": true,
     "result": {
+      "protocol": 1,
+      "core_version": "0.1.0",
+      "root": "C:\\SealTools",
+      "rev": 7,
       "config": {
+        "window": {
+          "title": "TW_LIVE"
+        },
         "game": {
           "variant": "tw"
         },
         "tuner": {
           "target_grade": "DG"
-        },
-        "window": {
-          "title": "TW_LIVE"
         }
-      },
-      "core_version": "0.1.0",
-      "protocol": 1,
-      "rev": 7,
-      "root": "C:\\SealTools"
-    },
-    "v": 1
+      }
+    }
   }
 }

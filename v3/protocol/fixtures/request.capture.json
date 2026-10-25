@@ -2,16 +2,16 @@
   "case": "request.capture",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "7",
+    "cmd": "capture",
     "args": {
       "region": {
-        "h": 200,
-        "w": 300,
         "x": 12,
-        "y": 47
+        "y": 47,
+        "w": 300,
+        "h": 200
       }
-    },
-    "cmd": "capture",
-    "id": "7",
-    "v": 1
+    }
   }
 }

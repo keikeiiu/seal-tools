@@ -2,9 +2,9 @@
   "case": "request.shutdown",
   "kind": "request",
   "message": {
-    "args": {},
-    "cmd": "shutdown",
+    "v": 1,
     "id": "20",
-    "v": 1
+    "cmd": "shutdown",
+    "args": {}
   }
 }

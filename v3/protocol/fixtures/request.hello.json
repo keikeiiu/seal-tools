@@ -2,12 +2,12 @@
   "case": "request.hello",
   "kind": "request",
   "message": {
-    "args": {
-      "client": "0.1.0",
-      "protocol": 1
-    },
-    "cmd": "hello",
+    "v": 1,
     "id": "1",
-    "v": 1
+    "cmd": "hello",
+    "args": {
+      "protocol": 1,
+      "client": "0.1.0"
+    }
   }
 }

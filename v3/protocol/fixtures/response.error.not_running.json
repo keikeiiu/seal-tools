@@ -2,13 +2,13 @@
   "case": "response.error.not_running",
   "kind": "response",
   "message": {
-    "error": {
-      "code": "not_running",
-      "detail": {},
-      "message": "nothing is running"
-    },
+    "v": 1,
     "id": "29",
     "ok": false,
-    "v": 1
+    "error": {
+      "code": "not_running",
+      "message": "nothing is running",
+      "detail": {}
+    }
   }
 }

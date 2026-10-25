@@ -130,8 +130,12 @@ this document. It is v2's text with **one sentence reworded** (see "Deliberate d
 
 **What a save does to each part of the file:**
 
-- *Owned blocks* are serialised from the object. Keys are emitted in alphabetical order (the
-  in-memory map is ordered) and line endings are LF; both are cosmetic, not a contract.
+- *Owned blocks* are serialised from the object. Keys are emitted in the order the in-memory map
+  holds them, which is the order the file had: `serde_json` is built with `preserve_order`, so a
+  hand-edited block keeps its key order across a save and line endings are LF. This is not
+  cosmetic for `spammer.presets.<active>`: the rotation walks its keys in **file order**, the same
+  order v2's dictionary held, so the config layer and the protocol must preserve key order
+  end-to-end (the shell must not re-sort a section it sends back).
 - *Keys inside an owned block that nothing reads* are **kept**: the config is opaque JSON and a save
   merges the values it was given, so there is no typed projection to drop them.
 - *Comments inside owned blocks are lost* on every save. That is unchanged from v2 and is why the

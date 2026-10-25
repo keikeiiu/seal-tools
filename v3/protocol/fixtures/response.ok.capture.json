@@ -2,47 +2,47 @@
   "case": "response.ok.capture",
   "kind": "response",
   "message": {
+    "v": 1,
     "id": "7",
     "ok": true,
     "result": {
-      "display": {
-        "frame": {
-          "h": 1789,
-          "w": 2865,
-          "x": 0,
-          "y": 0
-        },
-        "logical_client": {
-          "h": 1193,
-          "w": 1910,
-          "x": 8,
-          "y": 31
-        },
-        "monitor_dpi": 144,
-        "physical_client": {
-          "h": 1789,
-          "w": 2865,
-          "x": 12,
-          "y": 47
-        },
-        "scale": 1.5,
-        "screen": {
-          "h": 2160,
-          "w": 3840
-        }
-      },
       "frame": {
-        "data": "iVBORw0KGgo=",
         "format": "png",
-        "frame_id": "f1",
+        "width": 2865,
         "height": 1789,
         "origin": {
           "x": 12,
           "y": 47
         },
-        "width": 2865
+        "data": "iVBORw0KGgo=",
+        "frame_id": "f1"
+      },
+      "display": {
+        "scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": {
+          "w": 3840,
+          "h": 2160
+        },
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "w": 2865,
+          "h": 1789
+        },
+        "physical_client": {
+          "x": 12,
+          "y": 47,
+          "w": 2865,
+          "h": 1789
+        },
+        "logical_client": {
+          "x": 8,
+          "y": 31,
+          "w": 1910,
+          "h": 1193
+        }
       }
-    },
-    "v": 1
+    }
   }
 }

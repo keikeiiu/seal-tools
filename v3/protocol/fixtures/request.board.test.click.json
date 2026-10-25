@@ -2,11 +2,11 @@
   "case": "request.board.test.click",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "11",
+    "cmd": "board.test",
     "args": {
       "kind": "click"
-    },
-    "cmd": "board.test",
-    "id": "11",
-    "v": 1
+    }
   }
 }

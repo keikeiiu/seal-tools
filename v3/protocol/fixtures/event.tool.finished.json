@@ -2,12 +2,12 @@
   "case": "event.tool.finished",
   "kind": "event",
   "message": {
-    "data": {
-      "message": "DONE — 4 row(s)",
-      "reason": "done",
-      "tool": "pet"
-    },
+    "v": 1,
     "event": "tool.finished",
-    "v": 1
+    "data": {
+      "tool": "pet",
+      "reason": "done",
+      "message": "DONE — 4 row(s)"
+    }
   }
 }

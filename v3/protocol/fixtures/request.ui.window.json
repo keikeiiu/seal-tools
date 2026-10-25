@@ -2,15 +2,15 @@
   "case": "request.ui.window",
   "kind": "request",
   "message": {
-    "args": {
-      "height": 700,
-      "left": 100,
-      "pinned": false,
-      "top": 100,
-      "width": 900
-    },
-    "cmd": "ui.window",
+    "v": 1,
     "id": "14",
-    "v": 1
+    "cmd": "ui.window",
+    "args": {
+      "left": 100,
+      "top": 100,
+      "width": 900,
+      "height": 700,
+      "pinned": false
+    }
   }
 }

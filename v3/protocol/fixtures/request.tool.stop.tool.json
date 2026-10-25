@@ -2,11 +2,11 @@
   "case": "request.tool.stop.tool",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "16",
+    "cmd": "tool.stop",
     "args": {
       "tool": "spammer"
-    },
-    "cmd": "tool.stop",
-    "id": "16",
-    "v": 1
+    }
   }
 }

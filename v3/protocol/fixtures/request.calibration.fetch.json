@@ -2,11 +2,11 @@
   "case": "request.calibration.fetch",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "9",
+    "cmd": "calibration.fetch",
     "args": {
       "kind": "bag"
-    },
-    "cmd": "calibration.fetch",
-    "id": "9",
-    "v": 1
+    }
   }
 }

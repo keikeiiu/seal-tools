@@ -2,18 +2,18 @@
   "case": "request.calibration.save",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "8",
+    "cmd": "calibration.save",
     "args": {
       "frame_id": "f1",
-      "kind": "bag",
       "region": {
-        "h": 200,
-        "w": 300,
         "x": 12,
-        "y": 47
-      }
-    },
-    "cmd": "calibration.save",
-    "id": "8",
-    "v": 1
+        "y": 47,
+        "w": 300,
+        "h": 200
+      },
+      "kind": "bag"
+    }
   }
 }

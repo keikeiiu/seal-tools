@@ -2,15 +2,15 @@
   "case": "request.config.validate",
   "kind": "request",
   "message": {
+    "v": 1,
+    "id": "2",
+    "cmd": "config.validate",
     "args": {
       "sections": {
         "quest": {
           "active": "run1"
         }
       }
-    },
-    "cmd": "config.validate",
-    "id": "2",
-    "v": 1
+    }
   }
 }

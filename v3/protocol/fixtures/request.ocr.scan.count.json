@@ -2,17 +2,17 @@
   "case": "request.ocr.scan.count",
   "kind": "request",
   "message": {
-    "args": {
-      "mode": "count",
-      "region": {
-        "h": 200,
-        "w": 300,
-        "x": 12,
-        "y": 47
-      }
-    },
-    "cmd": "ocr.scan",
+    "v": 1,
     "id": "19",
-    "v": 1
+    "cmd": "ocr.scan",
+    "args": {
+      "region": {
+        "x": 12,
+        "y": 47,
+        "w": 300,
+        "h": 200
+      },
+      "mode": "count"
+    }
   }
 }

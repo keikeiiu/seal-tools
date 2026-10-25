@@ -2,13 +2,13 @@
   "case": "response.error.internal",
   "kind": "response",
   "message": {
-    "error": {
-      "code": "internal",
-      "detail": {},
-      "message": "internal error"
-    },
+    "v": 1,
     "id": "31",
     "ok": false,
-    "v": 1
+    "error": {
+      "code": "internal",
+      "message": "internal error",
+      "detail": {}
+    }
   }
 }
