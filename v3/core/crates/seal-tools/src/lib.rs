@@ -11,6 +11,7 @@
 //! carrying its own message is what a tool's decision half returns, and every piece of published
 //! state is an immutable snapshot, so a reader can never see a half-updated tool.
 
+pub mod arbiter;
 pub mod cancel;
 pub mod clock;
 pub mod held;
