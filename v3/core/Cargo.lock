@@ -33,6 +33,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "seal-core"
+version = "0.1.0"
+dependencies = [
+ "seal-proto",
+ "serde_json",
+]
+
+[[package]]
 name = "seal-proto"
 version = "0.1.0"
 dependencies = [

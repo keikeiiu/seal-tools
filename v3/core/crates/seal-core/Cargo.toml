@@ -1,0 +1,9 @@
+[package]
+name = "seal-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+seal-proto = { path = "../seal-proto" }
+serde_json.workspace = true

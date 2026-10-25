@@ -3,5 +3,10 @@
 # (no link.exe), so the GNU host is pinned for now: rustup's windows-gnu toolchain links with its
 # own self-contained runtime and needs no external MinGW. Switch this to "stable" once VS Build
 # Tools is installed for the Flutter shell; see v2/docs/plans/PLAN-V3-CORE.md §10 step 1.
+#
+# Known limit of this pin: crates that generate import libraries with GNU `dlltool` do not build
+# (anything pulling `windows-sys`, for example tempfile/getrandom); the tests avoid them with std
+# helpers and Cargo's `target/tmp` scratch dir. The Win32 and serial crates will hit this limit,
+# and the fix is the same VS Build Tools install plus a switch back to the MSVC host.
 channel = "stable-x86_64-pc-windows-gnu"
 profile = "minimal"
