@@ -169,7 +169,8 @@ fn cases() -> Vec<Case> {
             "3",
             "config.apply",
             json!({"rev": 7, "sections": {"quest": {"active": "run1"}}}),
-        ),        request_case(
+        ),
+        request_case(
             "request.config.apply.settings",
             "32",
             "config.apply",
@@ -283,7 +284,8 @@ fn cases() -> Vec<Case> {
             "response.ok.config_apply",
             "3",
             json!({"rev": 8, "sections": {"quest": {"active": "run1"}}}),
-        ),        ok_case(
+        ),
+        ok_case(
             "response.ok.config_apply.settings",
             "32",
             json!({"rev": 8, "sections": {"settings": {"hotkeys": {"start": 66}}}}),
