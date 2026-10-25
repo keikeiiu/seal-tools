@@ -219,6 +219,12 @@ The two halves must not drift, so the protocol is tested from both sides:
 3. **Frame size** — measure a real capture's size and transfer time before deciding PNG stays.
 4. **IME** — not a protocol item, but it decides whether name fields are free text (§13.2); if
    they are not, no protocol change is needed.
+5. **Hotkey typed-name validation** — the Hotkeys tab parses typed names (`F12`, `q`) into VK
+   codes, and that rule has no protocol path: the config carries codes, and validating a stored
+   code would refuse configs v2 ran (v2's `ConfigValidator` had no hotkey rule; the rule belonged
+   to the tab's text). A `hotkey.parse`-style command — names in, codes or player-facing error
+   lines out — is the natural shape. Not defined yet; until it is, "no widget keeps a rule" has one
+   documented exception in the shell's hotkey editor.
 
 ## 12. Rulings against the plan (recorded, not silent)
 

@@ -205,10 +205,16 @@ safe*, not *whether a value is allowed*.
 
 ## 5. Still open in v3
 
-- **Authoring rules are not wired yet.** `config.validate` checks the shape (owned block names,
-  mappings) and returns empty `errors`/`warnings`; the rules exist as pure functions in
-  `seal-domain`'s [authoring module](../../core/crates/seal-domain/src/authoring/mod.rs) and are the
-  plug-in point. Until that call is added, a save is rule-checked only by the shell.
+- **Authoring rules are wired for the sections that can carry them.** `config.validate` and
+  `config.apply` run `seal-domain`'s rules on a copy of the merged config — Quest reference
+  integrity (one player-facing line per dangling entry) and the game-variant switch — and both
+  refuse with `bad_request` + `detail.errors`, writing nothing and consuming no revision.
+  Deliberately left out: picker name/duplicate/rename/delete (selection actions, not section
+  saves), Setup's blank-client-size rule (the measured text boxes are not a config section), the
+  quest step rule (a `tool.start` check, not a Save), and hotkey names — the config stores VK
+  codes, v2's `ConfigValidator` had no hotkey rule and any code is legal to the input API, so
+  validating a stored code would refuse configs v2 ran. The tab's typed names need their own
+  protocol command, which does not exist yet ([PROTOCOL.md](PROTOCOL.md) §11.5).
 - **The typed attributes model has landed, but nothing consumes it yet.** The loader returns opaque
   JSON and `seal-domain` now owns the typed dictionary plus its OCR matchers
   ([attributes.rs](../../core/crates/seal-domain/src/config/attributes.rs),
