@@ -93,10 +93,8 @@ reason.
 
 ## Toolchain
 
-`rust-toolchain.toml` pins `stable-x86_64-pc-windows-gnu` because this machine has no MSVC linker
-yet. Crates that generate import libraries with GNU `dlltool` (anything pulling `windows-sys`) do
-not build under that pin; the Win32 and OCR crates, and `seal-board`'s OS serial adapter (the crate
-itself is pure and builds), are blocked until VS Build Tools is installed and the pin flips back to
-`stable` (MSVC). Pure crates — protocol, config, domain,
-tools' decision halves — are unaffected.
+`rust-toolchain.toml` pins `stable`, which is the MSVC host: VS Build Tools 2022 (VCTools workload
++ Windows SDK) is installed, so crates that need a real Windows linker — `windows-sys`-class Win32
+bindings, the OCR runtime, the serial adapter — build here. The earlier GNU-host pin existed only
+because this machine had no `link.exe`; nothing in the workspace is pinned to GNU now.
 

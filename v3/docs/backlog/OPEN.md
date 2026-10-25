@@ -82,10 +82,12 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 
 ## 4. The shell and the Windows/IO crates
 
-- **VS Build Tools (`Desktop development with C++`) is the blocker** for `seal-win` and `seal-ocr`
-  (they need a linker and `windows-sys`-class crates), for `seal-board`'s OS serial adapter (the
-  crate itself is pure and builds), and for Flutter Windows builds. The Rust core is pinned to the
-  GNU host until it is installed; see `v3/core/rust-toolchain.toml`.
+- **VS Build Tools is INSTALLED (2026-10-25)** — VS Build Tools 2022 17.14 with the VCTools
+  workload, MSVC 14.44 and the Windows 10 SDK; the Rust workspace is now on the MSVC host
+  (`rust-toolchain.toml` pins `stable`). What remains for `seal-win`, `seal-ocr` and the board's OS
+  adapter is the port work itself, not the toolchain. **The Flutter SDK is installed** at
+  `C:\src\flutter` (stable 3.47.8, Dart 3.13.7); `flutter doctor` is clean apart from the
+  Android/Chrome sections this Windows-only project ignores.
 - **Flutter SDK** — not installed; the shell half of step 1 cannot start until both are present.
 - **OCR port and parity corpus** — `ort` + the PP-OCRv4 pipeline; the corpus covers the tuner path
   only, and the missing feeder/pet/attribute read paths need a live recording session (PLAN §13.10).

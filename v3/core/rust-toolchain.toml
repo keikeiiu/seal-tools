@@ -1,12 +1,7 @@
 [toolchain]
-# MSVC is the canonical Windows target, but this machine has no Visual Studio C++ toolchain yet
-# (no link.exe), so the GNU host is pinned for now: rustup's windows-gnu toolchain links with its
-# own self-contained runtime and needs no external MinGW. Switch this to "stable" once VS Build
-# Tools is installed for the Flutter shell; see v2/docs/plans/PLAN-V3-CORE.md §10 step 1.
-#
-# Known limit of this pin: crates that generate import libraries with GNU `dlltool` do not build
-# (anything pulling `windows-sys`, for example tempfile/getrandom); the tests avoid them with std
-# helpers and Cargo's `target/tmp` scratch dir. The Win32 and serial crates will hit this limit,
-# and the fix is the same VS Build Tools install plus a switch back to the MSVC host.
-channel = "stable-x86_64-pc-windows-gnu"
+# MSVC is the canonical Windows target. It links against the Visual Studio C++ toolchain, which is
+# installed on this machine (VS Build Tools 2022 with the VCTools workload and the Windows SDK), so
+# the workspace builds for the same ABI the Win32, OCR and serial-adapter crates need — and the GNU
+# `dlltool` limit that forced the earlier `stable-x86_64-pc-windows-gnu` pin is gone.
+channel = "stable"
 profile = "minimal"
