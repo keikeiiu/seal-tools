@@ -49,10 +49,11 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **The `ui:` block's coordinate space.** CALIBRATION.md §1 calls it the shell's own space (machine
   state, never read by a tool) and `ui.window` accepts numbers. If the shell needs exact semantics
   (physical vs logical units for its own window), pin it in PROTOCOL §4 rather than letting it be
-  implied by a caller.- **The config-invalid path is ruled, not built.** PROTOCOL §1 now states the boot-refusal channel
-  (non-zero exit, reason on stderr, nothing on stdout before `hello`) and §6 gains
-  `config_invalid` for `config.reload`; WHAT REMAINS is the shell rendering both, and the
-  `config.apply` portable routing itself (ruled in PROTOCOL §4/§7/§12.4; implementation queued).
+  implied by a caller.
+- **The config-invalid path is half built.** PROTOCOL §1 states the boot-refusal channel (non-zero
+  exit, reason on stderr, nothing on stdout before `hello`) and `config.reload` now answers
+  `config_invalid` (`af4d9a3`); WHAT REMAINS is the shell rendering both, plus the atomic apply in
+  §3.
 
 
 
@@ -62,10 +63,18 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   instance lock is not implemented yet. Two cores on one root can interleave.
 - **Binary artifact writer** — the atomic writer carries text only; the calibration PNGs need a
   temp-and-move sibling when `calibration.save` lands.
-- **Variant-dictionary switch** — `load_attributes_named` exists and is tested; the dispatcher does
-  not call it yet.
-- **`settings:` portable-save caller** — the fold and `save_settings` exist; `config.apply` writes
-  owned top-level blocks. A portable-save command is the open integration choice.
+- **Variant-dictionary switch** — LANDED (`b6a49a7`): boot and `config.reload` load the dictionary the
+  active variant names, all-or-nothing in v2's switch order.
+- **`settings:` portable-save caller** — LANDED (`af4d9a3`): `config.apply` carries the portable half
+  and projects it through `save_settings`.
+- **`config.apply` is two atomic file writes under one rev.** The owned blocks and the portable
+  projection are separate `update_local` calls; a projection failure after the owned write leaves
+  the owned block saved with no rev bump (the answer is `io`). PROTOCOL §4's nothing-written promise
+  is therefore not yet true across both halves — combine them into one read-modify-write so a
+  failure cannot half-save; until then the shell's reconcile path must tolerate it.
+- **`validate.rs`'s effective copy replaces owned blocks; PROTOCOL §7 says the merge is field-wise.**
+  Identical for a whole-block save, different for a partial one — a rule can judge a config the
+  write would not produce. Make the copy merge field-wise so validate and apply cannot disagree.
 - **`Clock` trait is duplicated** — `seal-tools::clock::Clock` and `seal-board::clock::Clock` are
   the same one-method, seconds-only trait (seal-board does not depend on seal-tools). Move it to
   `seal-domain` and delete both copies when convenient; the seconds-only unit is deliberate (the
