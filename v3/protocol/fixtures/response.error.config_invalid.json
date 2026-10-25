@@ -1,0 +1,19 @@
+{
+  "case": "response.error.config_invalid",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "35",
+    "ok": false,
+    "error": {
+      "code": "config_invalid",
+      "message": "the config on disk is invalid",
+      "detail": {
+        "errors": [
+          "Window: The Title field is required.",
+          "Check defaults.yaml and local.yaml."
+        ]
+      }
+    }
+  }
+}

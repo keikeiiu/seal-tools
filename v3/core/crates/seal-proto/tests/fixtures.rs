@@ -59,6 +59,7 @@ const ERROR_CODES: &[&str] = &[
     "tool_busy",
     "not_running",
     "io",
+    "config_invalid",
     "internal",
 ];
 
@@ -168,6 +169,23 @@ fn cases() -> Vec<Case> {
             "3",
             "config.apply",
             json!({"rev": 7, "sections": {"quest": {"active": "run1"}}}),
+        ),        request_case(
+            "request.config.apply.settings",
+            "32",
+            "config.apply",
+            json!({"rev": 7, "sections": {"settings": {"hotkeys": {"start": 66}}}}),
+        ),
+        request_case(
+            "request.config.apply.mixed",
+            "33",
+            "config.apply",
+            json!({"rev": 7, "sections": {"tuner": {"guard_px": 9}, "settings": {"hotkeys": {"start": 66}}}}),
+        ),
+        request_case(
+            "request.config.apply.variant",
+            "34",
+            "config.apply",
+            json!({"rev": 7, "sections": {"settings": {"game": {"variant": "us"}}}}),
         ),
         request_case("request.config.reload", "4", "config.reload", json!({})),
         request_case("request.window.find", "5", "window.find", json!({})),
@@ -265,6 +283,20 @@ fn cases() -> Vec<Case> {
             "response.ok.config_apply",
             "3",
             json!({"rev": 8, "sections": {"quest": {"active": "run1"}}}),
+        ),        ok_case(
+            "response.ok.config_apply.settings",
+            "32",
+            json!({"rev": 8, "sections": {"settings": {"hotkeys": {"start": 66}}}}),
+        ),
+        ok_case(
+            "response.ok.config_apply.mixed",
+            "33",
+            json!({"rev": 8, "sections": {"tuner": {"guard_px": 9}, "settings": {"hotkeys": {"start": 66}}}}),
+        ),
+        ok_case(
+            "response.ok.config_apply.variant",
+            "34",
+            json!({"rev": 8, "sections": {"settings": {"game": {"variant": "us", "variants": [{"name": "tw", "attributes": "attributes.tw.yaml"}, {"name": "us", "attributes": "attributes.us.yaml"}]}}}}),
         ),
         ok_case(
             "response.ok.config_reload",
@@ -375,6 +407,13 @@ fn cases() -> Vec<Case> {
             "io",
             "cannot write config/local.yaml: access denied",
             json!({"path": "config/local.yaml"}),
+        ),
+        error_case(
+            "response.error.config_invalid",
+            "35",
+            "config_invalid",
+            "the config on disk is invalid",
+            json!({"errors": ["Window: The Title field is required.", "Check defaults.yaml and local.yaml."]}),
         ),
         error_case(
             "response.error.internal",

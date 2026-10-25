@@ -1,0 +1,22 @@
+{
+  "case": "request.config.apply.mixed",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "33",
+    "cmd": "config.apply",
+    "args": {
+      "rev": 7,
+      "sections": {
+        "tuner": {
+          "guard_px": 9
+        },
+        "settings": {
+          "hotkeys": {
+            "start": 66
+          }
+        }
+      }
+    }
+  }
+}

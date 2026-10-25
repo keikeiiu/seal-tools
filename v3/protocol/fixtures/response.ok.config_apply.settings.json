@@ -1,0 +1,19 @@
+{
+  "case": "response.ok.config_apply.settings",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "32",
+    "ok": true,
+    "result": {
+      "rev": 8,
+      "sections": {
+        "settings": {
+          "hotkeys": {
+            "start": 66
+          }
+        }
+      }
+    }
+  }
+}
