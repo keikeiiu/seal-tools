@@ -4,3 +4,7 @@
 //! lives: the domain never knows the screen exists. Its port source is v2's `SealTools.Core`
 //! (config model, geometry, matchers, arbitration) plus the rules the launcher currently keeps
 //! inline (Quest reference integrity, preset naming, variant switching, and the rest).
+
+#![forbid(unsafe_code)]
+
+pub mod geometry;
