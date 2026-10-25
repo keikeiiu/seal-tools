@@ -73,6 +73,7 @@ dependencies = [
 name = "seal-core"
 version = "0.1.0"
 dependencies = [
+ "seal-config",
  "seal-proto",
  "serde_json",
 ]
