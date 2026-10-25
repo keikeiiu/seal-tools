@@ -5,6 +5,7 @@ members = [
     "crates/seal-core",
     "crates/seal-domain",
     "crates/seal-config",
+    "crates/seal-tools",
 ]
 
 [workspace.package]
