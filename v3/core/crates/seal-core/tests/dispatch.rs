@@ -413,3 +413,49 @@ fn capture_refuses_a_malformed_region_before_touching_windows() {
     assert!(!response.ok);
     assert_eq!(response.error.unwrap().code, "bad_request");
 }
+
+fn board_state(port: &str) -> CoreState {
+    let mut state = state();
+    handle(&mut state, hello());
+    state.config = json!({"arduino": {"port": port}});
+    state
+}
+
+#[test]
+fn board_probe_with_a_named_missing_port_is_board_unavailable() {
+    let mut state = board_state("COM_DOES_NOT_EXIST_999");
+
+    let response = handle(&mut state, Request::new("bd1", "board.probe", json!({})));
+
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "board_unavailable");
+    assert!(
+        error.message.contains("does not have"),
+        "the port_choice refusal names the absent port: {}",
+        error.message
+    );
+}
+
+#[test]
+fn board_test_without_a_kind_is_a_bad_request() {
+    let mut state = board_state("COM_DOES_NOT_EXIST_999");
+
+    let response = handle(&mut state, Request::new("bd2", "board.test", json!({})));
+
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn board_test_move_without_dy_refuses_before_opening_the_port() {
+    let mut state = board_state("COM_DOES_NOT_EXIST_999");
+
+    let response = handle(
+        &mut state,
+        Request::new("bd3", "board.test", json!({"kind": "move", "dx": 10})),
+    );
+
+    assert!(!response.ok, "a malformed move must not reach a board");
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}

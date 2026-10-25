@@ -632,6 +632,7 @@ name = "seal-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "seal-board",
  "seal-config",
  "seal-domain",
  "seal-proto",

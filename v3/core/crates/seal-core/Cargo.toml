@@ -9,6 +9,7 @@ seal-proto = { path = "../seal-proto" }
 seal-config = { path = "../seal-config" }
 seal-domain = { path = "../seal-domain" }
 seal-tools = { path = "../seal-tools" }
+seal-board = { path = "../seal-board" }
 seal-win = { path = "../seal-win" }
 base64 = "0.22"
 serde.workspace = true

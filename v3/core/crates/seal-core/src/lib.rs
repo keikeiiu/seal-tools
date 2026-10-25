@@ -3,6 +3,7 @@
 //! board, OCR and tool subsystems. The shell never links this crate; it talks to the binary over the
 //! protocol in `v3/docs/spec/PROTOCOL.md`.
 
+pub mod board;
 pub mod dispatch;
 pub mod events;
 pub mod registry;

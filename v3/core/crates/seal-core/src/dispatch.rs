@@ -22,6 +22,7 @@ use seal_proto::{Error, PROTOCOL_VERSION, Request, Response};
 use seal_tools::tool::ToolId;
 use serde_json::{Map, Value, json};
 
+use crate::board;
 use crate::startup::{self, StartupError};
 use crate::supervisor::{self, StartReply, StopReply};
 use crate::win;
@@ -188,6 +189,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "window.find" => window_find(state, &request),
         "window.measure" => window_measure(state, &request),
         "capture" => capture_command(state, &request),
+        "board.probe" => board_probe(state, &request),
+        "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -535,6 +538,35 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
         ),
+    }
+}
+
+/// `board.probe`: which port, which baud, which IDs, and the firmware level from `V` (silence = level
+/// 1). The board crate owns the choice and the open; this only maps its failure to the protocol.
+fn board_probe(state: &CoreState, request: &Request) -> Response {
+    match board::probe(&state.config) {
+        Ok(result) => Response::ok(&request.id, result),
+        Err(error) => board_error_response(&request.id, error),
+    }
+}
+
+/// `board.test`: send the calibrator's test command. A command is sent only after the port opens, so
+/// a failure means nothing reached a board.
+fn board_test(state: &CoreState, request: &Request) -> Response {
+    match board::test(&state.config, &request.args) {
+        Ok(result) => Response::ok(&request.id, result),
+        Err(error) => board_error_response(&request.id, error),
+    }
+}
+
+/// A board failure: no usable port is `board_unavailable` (the shell shows the line), a malformed
+/// request is `bad_request` before any port is touched.
+fn board_error_response(id: &str, error: board::BoardFailure) -> Response {
+    match error {
+        board::BoardFailure::Unavailable(line) => {
+            Response::err(id, Error::new("board_unavailable", &line, json!({})))
+        }
+        board::BoardFailure::BadRequest(message) => bad_request(id, &message, json!({})),
     }
 }
 

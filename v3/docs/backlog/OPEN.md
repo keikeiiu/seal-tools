@@ -83,10 +83,11 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 ## 4. The shell and the Windows/IO crates
 
 - **`seal-win` LANDED (`f4e3e9b`)** — `window.find`/`window.measure`/`capture` are implemented and
-  wired into the core (`7d1942e`, including the four-frame cache). What still waits: the calibrator
-  flow (`calibration.save`/`fetch`, the binary artifact writer), `board.probe`/`board.test` wiring,
-  and `ocr.scan` (research in flight). The two live behaviours — a real window measures/captures, a
-  covered game is refused — are the `#[ignore]`d tests in `seal-win`.
+  wired into the core (`7d1942e`, including the four-frame cache); `board.probe`/`board.test` are
+  wired too (they use `seal-board`'s adapter). What still waits: the calibrator flow
+  (`calibration.save`/`fetch`, the binary artifact writer) and `ocr.scan` (the OCR runtime spike is
+  in flight). The two live behaviours — a real window measures/captures, a covered game is refused —
+  are the `#[ignore]`d tests in `seal-win`.
 - **VS Build Tools is INSTALLED (2026-10-25)** — VS Build Tools 2022 17.14 with the VCTools
   workload, MSVC 14.44 and the Windows 10 SDK; the Rust workspace is now on the MSVC host
   (`rust-toolchain.toml` pins `stable`). What remains for `seal-win`, `seal-ocr` and the board's OS

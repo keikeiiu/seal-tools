@@ -116,8 +116,12 @@ Notes:
   (`game_not_foreground`), which is what makes the v2 guards work without a shared process.
 - `window.find`/`window.measure` are separate because the calibrator shows "found/not found" long
   before it measures, and the game may be started later.
-- `board.probe` reports the firmware level from `V` (absent = level 1); `board.test` is the
-  calibrator's Test Click / movement button, and its result carries the detail string v2 logs.
+- `board.probe` reports the firmware level from `V` (absent = level 1) and the VID/PID the adapter
+  read as hex strings (or `null` when the driver did not report USB IDs); `board.test` is the
+  calibrator's Test Click / movement button, its `key` argument takes `"enter"`/`"E"` (the grammar's
+  `E` **is** Enter), `"F1"`-`"F12"`, or one printable character, and its result carries the detail
+  string v2 logs. A named `arduino.port` that is not present is `board_unavailable` with the
+  port-choice refusal, never a fall-through to a different board.
 - `ui.window` is the only way window geometry and pin state reach `local.yaml`; the core is the
   single writer (§7). `height` is the height to restore when the config region is expanded — v2's
   `ui.expanded_height`; the collapsed and mini heights are computed by the window and never stored,
@@ -138,10 +142,10 @@ Notes:
   the config it had.
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
-`config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `tool.start`,
-`tool.stop`, `shutdown`. Spec-only until their crates land ([OPEN.md](../backlog/OPEN.md) §4):
-`calibration.save`, `calibration.fetch`, `board.probe`, `board.test`, `ocr.scan`. A command in this
-table is the contract; the implemented list is the current fact.
+`config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
+`board.test`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
+([OPEN.md](../backlog/OPEN.md) §4): `calibration.save`, `calibration.fetch`, `ocr.scan`. A command
+in this table is the contract; the implemented list is the current fact.
 
 ## 5. Events
 
