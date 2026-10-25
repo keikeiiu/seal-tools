@@ -117,7 +117,9 @@ Notes:
 - `board.probe` reports the firmware level from `V` (absent = level 1); `board.test` is the
   calibrator's Test Click / movement button, and its result carries the detail string v2 logs.
 - `ui.window` is the only way window geometry and pin state reach `local.yaml`; the core is the
-  single writer (§7).
+  single writer (§7). `height` is the height to restore when the config region is expanded — v2's
+  `ui.expanded_height`; the collapsed and mini heights are computed by the window and never stored,
+  so `local.yaml` keeps its v2 key names and no `height:` key is written.
 - `tool.start` on a second tool while one runs fails with `tool_busy`; `tool.stop` with no `tool`
   stops whatever is running. `holdspace` is a valid tool id (§9).
 
