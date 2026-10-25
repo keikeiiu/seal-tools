@@ -2,10 +2,10 @@
 //!
 //! v2 passed `I/O` IN rather than doing it in the decision code (`PortChoice.cs:15-17` gives the
 //! reason for the port half: "the decision is the part that has to be right and the part that can be
-//! checked without a board"). The same split applies here: this crate owns the grammar, the firmware
-//! handshake and the closed loop; the ADAPTER owns the serial port.
+//! checked without a board"). The same split applies here: this module is the seam, and the Windows
+//! ADAPTER is [`crate::serial`] (and [`crate::enumerate`] for the port list).
 //!
-//! What stays the adapter's (named, not faked — `tests` prove the fake only):
+//! What stays the adapter's live-only list (named, not faked — `tests` prove the fake only):
 //!
 //! - **Port enumeration**: WMI `Win32_SerialPort` VID/PID match plus the "name mentions Arduino"
 //!   fallback (`Arduino.cs:25-76`). Proving it needs the real driver stack of a machine with and

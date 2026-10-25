@@ -1,10 +1,11 @@
 //! The Arduino board side: the level-2 command grammar, the write/read transport seam, firmware-level
 //! detection, the closed-loop cursor placement and the pure port choice.
 //!
-//! Pure over a [`transport::Transport`]: the OS serial port is NOT opened here — that adapter
-//! (enumeration, `DtrEnable`/`RtsEnable`, the boot wait, driver timeouts, unplug handling) is named
-//! in [`transport`] and stays the Windows adapter's job. Every test in this crate is single-threaded
-//! over [`transport::FakeTransport`], a fake cursor and a fake clock.
+//! The grammar, the firmware level and the closed-loop placement are all over the
+//! [`transport::Transport`] seam. The Windows OS adapter now EXISTS: [`serial`] opens the port with
+//! v2's DTR/RTS sequence and boot wait, and [`enumerate`] reduces the OS port list to the decision
+//! [`port_choice`] makes. Everything testable without a board is tested (fake device, fake cursor,
+//! fake clock); the live-only facts are named in [`serial`] and exercised by `tests/live_only.rs`.
 //!
 //! The measured rules that must survive, each pinned by a test:
 //!
@@ -26,7 +27,9 @@
 
 pub mod clock;
 pub mod command;
+pub mod enumerate;
 pub mod firmware;
 pub mod placement;
 pub mod port_choice;
+pub mod serial;
 pub mod transport;
