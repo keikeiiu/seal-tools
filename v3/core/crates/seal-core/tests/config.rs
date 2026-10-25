@@ -394,12 +394,15 @@ fn a_sequence_entry_naming_a_missing_flow_is_refused_without_writing() {
     assert_eq!(accepted["rev"], 1);
 }
 
-/// The Hotkeys tab's rule, end to end: a code with no key name is one line per bad box, quoting the
-/// name the tab would show; apply refuses and writes nothing.
+/// v2 parity for hotkeys, end to end: the config stores virtual-key codes, and any VK code is a
+/// legal setting (`GetAsyncKeyState` accepts every one; v2's `ConfigValidator` had no hotkey rule).
+/// A code with no display name must therefore pass validation and be written — refusing it would be
+/// a behaviour regression, and the name in such a line is not something the player typed. The
+/// typed-text rule belongs to a future command that validates the tab's input, not the stored block.
 #[test]
-fn invalid_hotkey_codes_are_refused_one_line_per_field_without_writing() {
+fn an_unnameable_but_valid_hotkey_code_validates_clean_and_applies() {
     let root = config_root();
-    let before = root.read_bytes("config/local.yaml");
+    let defaults_before = root.read_bytes("config/defaults.yaml");
     let mut session = Session::start(root.path());
     let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
 
@@ -409,26 +412,25 @@ fn invalid_hotkey_codes_are_refused_one_line_per_field_without_writing() {
         "advance_grade": 71,
         "pause": 20,
     }});
-    let expected_lines = json!([
-        "\"0x5\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-        "\"0x7\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-    ]);
 
     let validated = session.result(
         "config.validate",
         json!({"sections": {"settings": settings.clone()}}),
     );
-    assert_eq!(validated["errors"], expected_lines);
+    assert_eq!(validated["errors"], json!([]));
+    assert_eq!(validated["warnings"], json!([]));
 
-    let refused = session.call(
+    let applied = session.result(
         "config.apply",
         json!({"rev": hello["rev"], "sections": {"settings": settings}}),
     );
-    assert!(!refused.ok);
-    let error = refused.error.expect("a refusal");
-    assert_eq!(error.code, "bad_request");
-    assert_eq!(error.detail["errors"], expected_lines);
-    assert_eq!(root.read_bytes("config/local.yaml"), before);
+    assert_eq!(applied["rev"], 1);
+
+    // The codes are written as given, and the shipped template is untouched.
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(local["settings"]["hotkeys"]["start"], 5);
+    assert_eq!(local["settings"]["hotkeys"]["quit"], 7);
+    assert_eq!(root.read_bytes("config/defaults.yaml"), defaults_before);
 }
 
 /// The clean direction end to end: a `settings` save that passes the rules — valid hotkey codes and

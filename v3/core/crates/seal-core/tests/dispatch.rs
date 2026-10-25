@@ -143,11 +143,12 @@ fn config_validate_reports_a_sequence_entry_naming_a_missing_flow() {
     assert_eq!(result["warnings"], json!([]));
 }
 
-/// The Hotkeys tab's rule. A hotkey is stored as a virtual-key code, and the tab shows it as the
-/// name `VkName` produces; the rule parses every name back, so a code with no key name at all is
-/// refused with one line per bad box — and the line quotes the name the tab would show.
+/// A hotkey is stored as a virtual-key code and any VK code is a legal setting: v2's
+/// `ConfigValidator` had no hotkey rule and `GetAsyncKeyState` accepts every code, so a hand-edited
+/// config with a code that has no display name (`0x05`) ran fine. Validation must not refuse it —
+/// the typed-text rule belongs to the tab's own input, not to the stored config.
 #[test]
-fn config_validate_reports_every_bad_hotkey_field_not_just_the_first() {
+fn config_validate_accepts_an_unnameable_but_valid_hotkey_code() {
     let mut state = handshaken_state();
 
     let response = handle(
@@ -167,11 +168,9 @@ fn config_validate_reports_every_bad_hotkey_field_not_just_the_first() {
     assert!(response.ok, "{:?}", response.error);
     let result = response.result.expect("a result");
     assert_eq!(
-        result["errors"],
-        json!([
-            "\"0x5\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-            "\"0x7\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
-        ])
+        result,
+        json!({"errors": [], "warnings": []}),
+        "a stored VK code is not a typed name and has no rule to break"
     );
 }
 

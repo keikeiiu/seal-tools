@@ -10,16 +10,18 @@
 //!
 //! - `quest` — the Quest tab's Save gate ([`check_saveable`]): every sequence entry must name a flow
 //!   that exists. A dangling entry is silent on screen and the run would silently skip it.
-//! - `settings.hotkeys` — the Hotkeys tab's Save parses the four names it shows back to key codes
-//!   ([`parse_hotkeys`]). The config stores codes, so the names are reconstructed with
-//!   [`virtual_key_name`] — the same text the tab displays — and every box that cannot be parsed
-//!   back is refused. This is the only way that rule fits a config section: the section carries VK
-//!   codes, not the player's typed text.
 //! - `settings.game.variant` — the Setup tab's client switch resolves the name before committing
 //!   ([`plan_variant_switch`]): an unknown client is refused with the known ones listed.
 //!
 //! Deliberately NOT wired here, and why:
 //!
+//! - **Hotkeys.** The config stores virtual-key CODES, and v2 had no rule for them: `GetAsyncKeyState`
+//!   accepts any VK code, and `ConfigValidator.cs` has no hotkey check, so a hand-edited config with
+//!   a code that has no display name (`0x05`) ran fine. The Hotkeys tab's name rule
+//!   (`parse_hotkeys`) validated the TEXT the player typed into the four boxes, before it became a
+//!   code — that is an input-editing rule, and no protocol section carries the typed text. A
+//!   typed-name validation command is the open item; refusing a stored code here would be a
+//!   behaviour regression dressed as validation.
 //! - The picker's name rules ([`seal_domain::authoring::validate_name`] and the duplicate / rename /
 //!   delete operations) act on a picker SELECTION, not on a saved section — a config block cannot
 //!   carry a stale selection or a duplicate map key.
@@ -31,10 +33,8 @@
 //! Warnings: no rule in `seal-domain` currently has an advisory result — every one refuses — so the
 //! `warnings` array is the fixed protocol shape with nothing to put in it yet.
 
-use seal_domain::authoring::{
-    HotkeyNames, check_saveable, parse_hotkeys, plan_variant_switch, virtual_key_name,
-};
-use seal_domain::config::{GameConfig, HotkeysConfig, QuestConfig};
+use seal_domain::authoring::{check_saveable, plan_variant_switch};
+use seal_domain::config::{GameConfig, QuestConfig};
 use serde_json::{Map, Value};
 
 use crate::dispatch::CoreState;
@@ -62,17 +62,13 @@ pub fn validate_sections(state: &CoreState, sections: &Map<String, Value>) -> Ou
     if sections.contains_key("quest") {
         outcome.errors.extend(quest_errors(&effective));
     }
-    if let Some(settings) = settings {
-        if settings.contains_key("hotkeys") {
-            outcome.errors.extend(hotkey_errors(&effective));
-        }
-        if settings
+    if let Some(settings) = settings
+        && settings
             .get("game")
             .and_then(Value::as_object)
             .is_some_and(|game| game.contains_key("variant"))
-        {
-            outcome.errors.extend(variant_errors(&effective, settings));
-        }
+    {
+        outcome.errors.extend(variant_errors(&effective, settings));
     }
 
     outcome
@@ -155,43 +151,6 @@ fn quest_errors(config: &Value) -> Vec<String> {
     match check_saveable(&quest) {
         Ok(()) => Vec::new(),
         Err(error) => error.message().lines().map(str::to_owned).collect(),
-    }
-}
-
-/// The Hotkeys tab's Save rule, applied to the names the tab would show for the stored codes.
-fn hotkey_errors(config: &Value) -> Vec<String> {
-    let Some(hotkeys) = config.get("hotkeys") else {
-        return Vec::new();
-    };
-    let hotkeys: HotkeysConfig = match serde_json::from_value(hotkeys.clone()) {
-        Ok(hotkeys) => hotkeys,
-        Err(error) => return vec![malformed("hotkeys", &error)],
-    };
-
-    let start = shown_hotkey(hotkeys.start);
-    let quit = shown_hotkey(hotkeys.quit);
-    let advance_grade = shown_hotkey(hotkeys.advance_grade);
-    let pause = shown_hotkey(hotkeys.pause);
-    let names = HotkeyNames {
-        start: &start,
-        quit: &quit,
-        advance_grade: &advance_grade,
-        pause: &pause,
-    };
-
-    match parse_hotkeys(names) {
-        Ok(_) => Vec::new(),
-        Err(errors) => errors.iter().map(|error| error.message()).collect(),
-    }
-}
-
-/// The name the Hotkeys tab shows for one stored code (`VkName`): the value the player edits, and
-/// therefore the text the rule quotes when it refuses. A code outside the VK name table reads as
-/// `0x…`, which cannot be parsed back — exactly what makes such a code unsaveable.
-fn shown_hotkey(code: i32) -> String {
-    match u32::try_from(code) {
-        Ok(vk) => virtual_key_name(vk),
-        Err(_) => code.to_string(),
     }
 }
 
