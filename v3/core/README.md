@@ -48,6 +48,12 @@ reason.
   appended at the end of every save, the extra copy is re-extracted on the next save and doubles
   again. v3 carries each comment once, with the block it introduces. This is a v2 writer bug, not a
   measured behaviour any tool depends on.
+- **An unmodelled key inside an owned block is KEPT, not dropped** (`seal-config/src/lib.rs`,
+  the `LOCAL_HEADER` sentence). v2 re-serialised from a typed projection, so a key it did not model
+  inside an owned block was silently dropped — the failure class `CONFIG.md` documents. v3's config
+  is opaque JSON and the writer merges the block it was given, so there is no projection to drop it;
+  the header now says KEPT rather than DROPPED. The other half of that warning is still true:
+  comments inside the file are lost on every save.
 
 ## Toolchain
 
