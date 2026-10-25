@@ -19,6 +19,21 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-25 (15) — the hardware surface complete, and OCR proven real
+
+`2528705` wired `board.probe`/`board.test` to the serial adapter: the port choice is seal-board's (a
+named port that is absent refuses rather than falling through), the open pays v2's DTR/RTS and 2 s
+boot, silence is level 1, and `board.test`'s key argument maps `E`/`enter` to the grammar's Enter
+command rather than a letter (the wire letters are the grammar's). `e106c2b` then proved the OCR
+runtime on the real models: the character dictionary is the rec model's metadata (6,623 entries; the
+output class axis 6,625 confirms it), shapes are recorded, two threads=1 runs are bit-identical,
+loads are 173/154 ms and one inference 17 ms, and the shipping payload turned out to be
+`DirectML.dll` (static DirectML distribution) with its redistribution terms the one open licence
+question. Two findings corrected the plan: the 48-px recogniser height is a preprocessing contract
+the model does not enforce, and the det post-processing is the next port (task-29). **Taught:** a
+runtime spike that measures beats any amount of spec reading — two assumptions in the research's own
+recommendation changed the moment the models ran.
+
 ## 2026-10-25 (14) — the toolchain unblocked, the shell scaffolded, the Windows layer built
 
 The player approved the installs, so the machine lost its last excuse: VS Build Tools 2022 17.14 with

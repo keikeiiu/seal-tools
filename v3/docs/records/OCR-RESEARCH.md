@@ -337,3 +337,30 @@ From `C:\Git_repo\seal-tools`:
   for pairing (3,356 = all captures).
 - Release payload: `System.IO.Compression.ZipFile` over `v2/dist/SealTools-v2.10.zip` entries
   `models\*.onnx` and `onnxruntime.dll` (sizes in §1.1/§3).
+
+---
+
+## Runtime spike results (task-28, measured 2026-10-25, commit `e106c2b`)
+
+The runtime choice was proven on the real models before any pipeline work:
+
+- **The dictionary finding is now a runtime fact.** The rec model's only custom metadata key is
+  `character` (6,623 entries; `blank` + dict + space = 6,625 slots; SHA-256 `28b2362a…d7f7`), and the
+  model's own output is `softmax_11.tmp_0 [-1, -1, 6625]` — the class axis equals the decorated
+  dictionary, so no file-based dictionary can be involved.
+- **Shapes:** rec input `x` f32 `[-1,3,-1,-1]`; det input `x` f32 `[-1,3,-1,-1]`, det output
+  `sigmoid_0.tmp_0 [-1,1,-1,-1]`. **Correction:** the documented 48-px rec height is a preprocessing
+  contract the model does NOT enforce (its height axis is dynamic) — the port must impose it.
+- **Determinism:** one synthetic `[1,3,48,320]` inference, two runs with intra/inter threads = 1,
+  produced bit-identical logits and identical CTC decode; pure decode tests pin blank-skip, repeat
+  collapse, the confidence mean and the blank+repeat+space case. Measured on this machine: rec load
+  **173 ms**, inference **17 ms**, det load **154 ms**.
+- **Shipping reality changed twice:** `download-binaries` on `x86_64-pc-windows-msvc` resolves to the
+  **DirectML static distribution** — the runtime is linked in and the payload is **`DirectML.dll`
+  (18,527,776 B)**, so a release zip must carry it and its redistribution terms need confirming; a
+  clean build also needs network for the ORT download or a seeded `ORT_CACHE_DIR`.
+- **Det post-processing** remains the spike it was: threshold -> 2x2 dilate -> `FindContours` ->
+  `MinAreaRect`/`BoxPoints` -> `FillPoly`+`Mean` >= 0.6 -> `ContourArea`/`ArcLength` + Clipper
+  `InflatePaths` (1.5) -> `WarpPerspective` (cubic, replicate) -> Y-sort with the 10 px row
+  threshold. Threshold/dilate/masked-mean/crop are easy pure Rust; contours, min-area-rect and
+  polygon offset are the parts no maintained pure-Rust crate covers directly (task-29).

@@ -91,6 +91,21 @@ reason.
   empty message was nothing). Cost if wrong: a sentence where a developer saw a stack frame — the
   safe direction for a player facing a card.
 
+## Building the OCR crate
+
+`seal-ocr` needs two things a clean checkout does not have:
+
+- **The models.** They are not committed (large binaries). Tests read a directory from
+  `SEAL_OCR_MODELS` (e.g. `C:\Git_repo\seal-tools\v2\models`) and skip with a message when it is
+  unset, so the normal suite is green without them.
+- **The ONNX Runtime binaries.** `ort = "=2.0.0-rc.15"` uses its `download-binaries` feature, which
+  fetches a static, DirectML-flavoured distribution on `x86_64-pc-windows-msvc`. A clean build needs
+  network for that step; where the sandbox blocks it, seed ort-sys's cache and point it with
+  `ORT_CACHE_DIR` (the cache layout is ort-sys's; an earlier successful extraction can be copied in).
+  The shipped payload is `DirectML.dll` (~18.5 MB) beside the exe, **not** `onnxruntime.dll` — the
+  runtime is linked statically; see `v3/docs/records/OCR-RESEARCH.md` §6 for the measured facts and
+  the one unsettled licence question (DirectML redistribution).
+
 ## Toolchain
 
 `rust-toolchain.toml` pins `stable`, which is the MSVC host: VS Build Tools 2022 (VCTools workload

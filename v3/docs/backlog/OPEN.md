@@ -88,6 +88,13 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   (`calibration.save`/`fetch`, the binary artifact writer) and `ocr.scan` (the OCR runtime spike is
   in flight). The two live behaviours — a real window measures/captures, a covered game is refused —
   are the `#[ignore]`d tests in `seal-win`.
+- **OCR shipping/build facts to settle** (measured by the runtime spike, `e106c2b`): the release zip
+  must carry **`DirectML.dll`** (~18.5 MB — the `download-binaries` static distribution links
+  `onnxruntime.lib` in and ships no `onnxruntime.dll`), and its **redistribution terms must be
+  confirmed with Microsoft before release** — the one licence item still open. A clean build needs
+  network for the ORT download or a seeded `ORT_CACHE_DIR`; the decision for now is to keep
+  `ort = "=2.0.0-rc.15"` and document the seeding rather than switch to `load-dynamic` (+ a shipped
+  `onnxruntime.dll`), which would need a Cargo feature change.
 - **VS Build Tools is INSTALLED (2026-10-25)** — VS Build Tools 2022 17.14 with the VCTools
   workload, MSVC 14.44 and the Windows 10 SDK; the Rust workspace is now on the MSVC host
   (`rust-toolchain.toml` pins `stable`). What remains for `seal-win`, `seal-ocr` and the board's OS
