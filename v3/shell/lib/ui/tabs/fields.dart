@@ -294,6 +294,7 @@ class DraftDropdownField extends StatelessWidget {
     final current = options.contains(value) ? value : null;
     final dropdown = DropdownButtonFormField<String>(
       initialValue: current,
+      isExpanded: true,
       isDense: true,
       decoration: InputDecoration(
         labelText: label,

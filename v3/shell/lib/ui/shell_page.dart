@@ -19,6 +19,7 @@ import 'hold_space_toggle.dart';
 import 'log_panel.dart';
 import 'status_strip.dart';
 import 'tabs/spammer_tab.dart';
+import 'tabs/tuner_tab.dart';
 import 'theme.dart';
 
 class ShellPage extends StatefulWidget {
@@ -46,7 +47,7 @@ class _ShellPageState extends State<ShellPage> {
 
         final ready = connection.status == ConnectionStatus.ready;
         return DefaultTabController(
-          length: 2,
+          length: 3,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Seal Tools v3'),
@@ -82,6 +83,7 @@ class _ShellPageState extends State<ShellPage> {
                       tabs: [
                         Tab(text: 'Cards'),
                         Tab(text: 'Spammer'),
+                        Tab(text: 'Tuner'),
                       ],
                     )
                   : null,
@@ -95,6 +97,7 @@ class _ShellPageState extends State<ShellPage> {
                       children: [
                         CardGrid(model: model),
                         SpammerTab(model: model),
+                        TunerTab(model: model),
                       ],
                     ),
                   ),
