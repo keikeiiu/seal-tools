@@ -38,3 +38,5 @@ pub mod detgeom;
 pub mod detmask;
 pub mod imageops;
 pub mod model;
+pub mod modes;
+pub mod pipeline;

@@ -16,6 +16,7 @@
 
 use std::path::Path;
 
+use base64::Engine as _;
 use seal_config::{ConfigError, ConfigStore};
 use seal_domain::config::AttributesConfig;
 use seal_proto::{Error, PROTOCOL_VERSION, Request, Response};
@@ -68,6 +69,9 @@ pub struct CoreState {
     /// The last four captured frames by id (`PROTOCOL.md` §8), so `calibration.save` can reference a
     /// frame the calibrator just took instead of re-sending megabytes.
     pub frames: win::FrameCache,
+    /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
+    /// builds it and later scans reuse it. `None` until then, and in dispatcher tests.
+    pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
 }
 
 impl CoreState {
@@ -87,6 +91,7 @@ impl CoreState {
             dictionary: startup::DEFAULT_DICTIONARY.to_owned(),
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
+            ocr: None,
         }
     }
 
@@ -110,6 +115,7 @@ impl CoreState {
             dictionary: active.dictionary,
             attributes,
             frames: win::FrameCache::default(),
+            ocr: None,
         })
     }
 
@@ -164,6 +170,121 @@ fn load_parts(
     Ok((config, active, attributes))
 }
 
+fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
+    let Some(mode) = request
+        .args
+        .get("mode")
+        .and_then(Value::as_str)
+        .and_then(seal_ocr::modes::Mode::parse)
+    else {
+        return bad_request(
+            &request.id,
+            "ocr.scan needs mode: lines|count|attributes|grade",
+            json!({"modes": ["lines", "count", "attributes", "grade"]}),
+        );
+    };
+    let region = match win::parse_region(&request.args) {
+        Ok(region) => region,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let frame = if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
+        match state.frames.get(frame_id) {
+            Some(frame) => frame.clone(),
+            None => {
+                return bad_request(
+                    &request.id,
+                    &format!("unknown frame_id {frame_id:?}"),
+                    json!({}),
+                );
+            }
+        }
+    } else if request.args.get("region").is_some() {
+        let title = match win::configured_title(&state.config) {
+            Ok(title) => title,
+            Err(error) => return win_error_response(&request.id, error),
+        };
+        match win::capture(&title, region) {
+            Ok((frame, _display)) => frame,
+            Err(error) => return win_error_response(&request.id, error),
+        }
+    } else {
+        return bad_request(
+            &request.id,
+            "ocr.scan needs a frame_id or a region",
+            json!({}),
+        );
+    };
+    let (width, height, rgba) = match frame_rgba(&frame) {
+        Ok(image) => image,
+        Err(message) => return internal(&request.id, &message),
+    };
+    let geometry = ocr_geometry(&state.config);
+    if state.ocr.is_none() {
+        match seal_ocr::pipeline::OcrPipeline::load_from_env(&state.attributes, geometry.row_height)
+        {
+            Ok(pipeline) => state.ocr = Some(pipeline),
+            Err(error) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "ocr_unavailable",
+                        "the OCR models are not available",
+                        json!({"reason": error.reason}),
+                    ),
+                );
+            }
+        }
+    }
+    let pipeline = state.ocr.as_mut().expect("the pipeline is loaded");
+    let scan = match pipeline.scan_rgba(width, height, &rgba) {
+        Ok(scan) => scan,
+        Err(error) => return internal(&request.id, &error.message),
+    };
+    let outcome = seal_ocr::modes::apply(mode, &scan, &state.attributes, &geometry);
+    Response::ok(
+        &request.id,
+        json!({
+            "lines": outcome.lines,
+            "attributes": outcome.attributes,
+            "grade": outcome.grade,
+            "remaining": outcome.remaining,
+            "capture_path": Value::Null,
+        }),
+    )
+}
+
+fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
+    let band = |name: &str| -> Option<(i32, i32)> {
+        let array = config.pointer(&format!("/tuner/ocr/{name}"))?.as_array()?;
+        Some((
+            i32::try_from(array.first()?.as_i64()?).ok()?,
+            i32::try_from(array.get(1)?.as_i64()?).ok()?,
+        ))
+    };
+    let row_height = config
+        .pointer("/tuner/ocr/row_height")
+        .and_then(Value::as_u64)
+        .map(|value| u32::try_from(value).unwrap_or(10))
+        .unwrap_or(10);
+    seal_ocr::modes::OcrGeometry {
+        attr_x: band("attr_x"),
+        attr_y: band("attr_y"),
+        grade_y: band("grade_y"),
+        row_height,
+    }
+}
+fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), String> {
+    let data = frame
+        .get("data")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "the frame has no base64 data".to_owned())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|error| format!("the frame data is not base64: {error}"))?;
+    let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
+        .map_err(|error| format!("the frame PNG could not be decoded: {error}"))?;
+    Ok((width as usize, height as usize, rgba))
+}
 /// Answers one request. Never panics: a bad request is a refusal the client can show.
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
     if request.cmd == "hello" {
@@ -189,6 +310,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "window.find" => window_find(state, &request),
         "window.measure" => window_measure(state, &request),
         "capture" => capture_command(state, &request),
+        "ocr.scan" => ocr_scan(state, &request),
         "board.probe" => board_probe(state, &request),
         "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),

@@ -459,3 +459,88 @@ fn board_test_move_without_dy_refuses_before_opening_the_port() {
     assert!(!response.ok, "a malformed move must not reach a board");
     assert_eq!(response.error.unwrap().code, "bad_request");
 }
+
+fn ocr_state_with_frame() -> CoreState {
+    use base64::Engine as _;
+    let mut state = state();
+    handle(&mut state, hello());
+    let bgra = [10u8, 20, 30, 255];
+    let png = seal_win::pure::encode_png(1, 1, &bgra).expect("a synthetic frame encodes");
+    let data = base64::engine::general_purpose::STANDARD.encode(&png);
+    state.frames.insert(
+        json!({"format": "png", "width": 1, "height": 1, "origin": {"x": 0, "y": 0}, "data": data}),
+    );
+    state
+}
+
+#[test]
+fn ocr_scan_without_a_mode_is_a_bad_request() {
+    let mut state = ocr_state_with_frame();
+    let response = handle(
+        &mut state,
+        Request::new("ocr1", "ocr.scan", json!({"frame_id": "f1"})),
+    );
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn ocr_scan_with_an_unknown_mode_is_a_bad_request() {
+    let mut state = ocr_state_with_frame();
+    let response = handle(
+        &mut state,
+        Request::new(
+            "ocr2",
+            "ocr.scan",
+            json!({"frame_id": "f1", "mode": "tooltip"}),
+        ),
+    );
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn ocr_scan_without_a_frame_or_region_is_a_bad_request() {
+    let mut state = ocr_state_with_frame();
+    let response = handle(
+        &mut state,
+        Request::new("ocr3", "ocr.scan", json!({"mode": "lines"})),
+    );
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn ocr_scan_with_an_unknown_frame_id_is_a_bad_request() {
+    let mut state = ocr_state_with_frame();
+    let response = handle(
+        &mut state,
+        Request::new(
+            "ocr4",
+            "ocr.scan",
+            json!({"frame_id": "nope", "mode": "lines"}),
+        ),
+    );
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn ocr_scan_without_models_is_ocr_unavailable() {
+    if std::env::var_os("SEAL_OCR_MODELS").is_some() {
+        return; // this machine has the models configured; the absent path is not testable here
+    }
+    let mut state = ocr_state_with_frame();
+    let response = handle(
+        &mut state,
+        Request::new(
+            "ocr5",
+            "ocr.scan",
+            json!({"frame_id": "f1", "mode": "lines"}),
+        ),
+    );
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "ocr_unavailable");
+    assert_eq!(error.detail["reason"], "models_env_unset");
+}

@@ -19,6 +19,8 @@ use std::fmt;
 use std::path::Path;
 use std::time::Instant;
 
+use std::sync::OnceLock;
+
 use ort::environment::Environment;
 use ort::session::Session;
 use ort::value::{Tensor, ValueType};
@@ -94,25 +96,32 @@ fn describe(session: &Session) -> ModelIo {
     }
 }
 
-pub(crate) fn open_session(
-    path: &Path,
-    threads: usize,
-    label: &'static str,
-) -> Result<(Environment, Session, ModelIo), OcrError> {
+/// The process-wide ONNX Runtime environment: ORT allows exactly one per process and the det and rec
+/// sessions share it, so it is built once and never dropped.
+fn environment() -> &'static Environment {
+    static ENVIRONMENT: OnceLock<Environment> = OnceLock::new();
+    ENVIRONMENT.get_or_init(|| {
+        ort::init()
+            .with_name("seal-ocr")
+            .build()
+            .expect("the ONNX Runtime environment must initialise")
+    })
+}
+
+pub(crate) fn open_session(path: &Path, threads: usize) -> Result<(Session, ModelIo), OcrError> {
     if !path.is_file() {
         return Err(OcrError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("model not found: {}", path.display()),
         )));
     }
-    let environment = ort::init().with_name(label).build().map_err(ort_error)?;
-    let builder = Session::builder(&environment).map_err(ort_error)?;
+    let builder = Session::builder(environment()).map_err(ort_error)?;
     let builder = builder.with_intra_threads(threads).map_err(ort_error)?;
     let builder = builder.with_inter_threads(threads).map_err(ort_error)?;
     let mut builder = builder;
     let session = builder.commit_from_file(path).map_err(ort_error)?;
     let io = describe(&session);
-    Ok((environment, session, io))
+    Ok((session, io))
 }
 
 /// The recogniser: one session, its dictionary, and the CTC decode.
@@ -121,8 +130,6 @@ pub(crate) fn open_session(
 /// the single most important fact the spike pins, because a file-based dictionary was the plan's
 /// wrong assumption.
 pub struct RecModel {
-    // Kept alive with the session; ORT's environment must outlive its sessions.
-    _environment: Environment,
     session: Session,
     input_name: String,
     io: ModelIo,
@@ -151,7 +158,7 @@ impl RecModel {
     /// Opens the recogniser and reads its dictionary. `threads` is pinned (the parity corpus needs a
     /// deterministic run; 1 is the value the spike uses).
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
-        let (environment, session, io) = open_session(path, threads, "seal-ocr-rec")?;
+        let (session, io) = open_session(path, threads)?;
         let dictionary: Vec<String> = {
             let metadata = session.metadata().map_err(ort_error)?;
             let characters = metadata
@@ -169,7 +176,6 @@ impl RecModel {
             .map(|input| input.name.clone())
             .ok_or_else(|| OcrError::Ort("the rec model declares no inputs".to_owned()))?;
         Ok(Self {
-            _environment: environment,
             session,
             input_name,
             io,

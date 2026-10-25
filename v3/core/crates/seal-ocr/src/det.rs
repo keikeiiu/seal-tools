@@ -30,27 +30,20 @@
 
 use std::path::Path;
 
-use ort::environment::Environment;
 use ort::session::Session;
 
 use crate::model::{ModelIo, OcrError};
 
 /// The detector session: enough to load the model and record its shapes.
 pub struct DetModel {
-    // Kept alive with the session; ORT's environment must outlive its sessions.
-    _environment: Environment,
     session: Session,
     io: ModelIo,
 }
 
 impl DetModel {
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
-        let (environment, session, io) = crate::model::open_session(path, threads, "seal-ocr-det")?;
-        Ok(Self {
-            _environment: environment,
-            session,
-            io,
-        })
+        let (session, io) = crate::model::open_session(path, threads)?;
+        Ok(Self { session, io })
     }
 
     pub fn io(&self) -> &ModelIo {
@@ -60,5 +53,36 @@ impl DetModel {
     /// The session is exposed for the post-processing spike; it is not run here.
     pub fn session(&mut self) -> &mut Session {
         &mut self.session
+    }
+
+    /// One detector inference: row-major f32 `[N, C, H, W]` in, output shape + row-major f32 out.
+    pub fn infer(
+        &mut self,
+        data: &[f32],
+        shape: [i64; 4],
+    ) -> Result<(Vec<i64>, Vec<f32>), OcrError> {
+        let expected: usize = shape.iter().map(|dim| *dim as usize).product();
+        if data.len() != expected {
+            return Err(OcrError::Ort(format!(
+                "det input has {} values but shape {shape:?} needs {expected}",
+                data.len()
+            )));
+        }
+        let tensor = ort::value::Tensor::from_array((shape.to_vec(), data.to_vec()))
+            .map_err(|error| OcrError::Ort(error.to_string()))?;
+        let input_name = self
+            .io
+            .inputs
+            .first()
+            .map(|input| input.name.clone())
+            .ok_or_else(|| OcrError::Ort("the det model declares no inputs".to_owned()))?;
+        let outputs = self
+            .session
+            .run(ort::inputs![input_name => tensor])
+            .map_err(|error| OcrError::Ort(error.to_string()))?;
+        let (output_shape, values) = outputs[0]
+            .try_extract_tensor::<f32>()
+            .map_err(|error| OcrError::Ort(error.to_string()))?;
+        Ok((output_shape.to_vec(), values.to_vec()))
     }
 }

@@ -82,18 +82,26 @@ pub fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), WinError> {
     let source = &buf[..info.buffer_size()];
     let rgba = match info.color_type {
         png::ColorType::Rgba => source.to_vec(),
-        png::ColorType::Rgb => source
-            .chunks_exact(3)
-            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
-            .collect(),
+        png::ColorType::Rgb => {
+            let (pixels, _) = source.as_chunks::<3>();
+            let mut rgba = Vec::with_capacity(pixels.len() * 4);
+            for pixel in pixels {
+                rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            }
+            rgba
+        }
         png::ColorType::Grayscale => source
             .iter()
             .flat_map(|value| [*value, *value, *value, 255])
             .collect(),
-        png::ColorType::GrayscaleAlpha => source
-            .chunks_exact(2)
-            .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
-            .collect(),
+        png::ColorType::GrayscaleAlpha => {
+            let (pixels, _) = source.as_chunks::<2>();
+            let mut rgba = Vec::with_capacity(pixels.len() * 4);
+            for pixel in pixels {
+                rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+            }
+            rgba
+        }
         png::ColorType::Indexed => return Err(WinError::EmptyCapture),
     };
     if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
