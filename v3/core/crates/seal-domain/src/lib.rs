@@ -12,3 +12,4 @@ pub mod config;
 pub mod decision;
 pub mod geometry;
 pub mod ocr;
+pub mod tools;
