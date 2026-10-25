@@ -82,6 +82,7 @@ dependencies = [
  "seal-config",
  "seal-domain",
  "seal-proto",
+ "seal-tools",
  "serde_json",
 ]
 
