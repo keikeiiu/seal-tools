@@ -91,6 +91,13 @@ reason.
   empty message was nothing). Cost if wrong: a sentence where a developer saw a stack frame — the
   safe direction for a player facing a card.
 
+- **An unsendable spammer key fails the START, not every tick** (`seal-core/src/spammer.rs`).
+  v2's `SkillSpammer.Run` warned and skipped a key the firmware cannot send (`ab`, `F13`), so the
+  rotation ran with a hole and only the log said so. v3 checks the whole active rotation in the
+  opening phase and refuses the start, naming every unsendable key with v2's own sentence. Rationale:
+  the v3 card surface has no per-tick log line to warn into, so warn-and-continue would be a silent
+  hole (the class PROGRESS entry 59 records), and a preset is fixed before Start rather than mid-run.
+  Cost if wrong: a preset v2 would have run with a warning is refused here until it is fixed.
 ## Building the OCR crate
 
 `seal-ocr` needs two things a clean checkout does not have:

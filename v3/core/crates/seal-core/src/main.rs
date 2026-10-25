@@ -49,7 +49,11 @@ fn main() {
     };
 
     let (writer, bus) = EventWriter::spawn(Box::new(std::io::stdout()));
-    let registry: Arc<dyn ToolRegistry> = Arc::new(ProductionRegistry);
+    // The registry reads the merged config through this cell; publishing before the supervisor
+    // starts means the first Start already sees the config `hello` reported.
+    state.publish_config();
+    let registry: Arc<dyn ToolRegistry> =
+        Arc::new(ProductionRegistry::new(state.shared_config.clone()));
     state.attach_supervisor(Supervisor::start(registry, bus));
 
     let stdin = std::io::stdin();

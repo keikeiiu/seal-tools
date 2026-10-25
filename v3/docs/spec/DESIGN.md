@@ -105,7 +105,9 @@ a `Response`; the response is queued on the SAME writer channel as events, so no
 ([PROTOCOL.md](PROTOCOL.md) §1). The `hello` gate, protocol-version check, the config command surface,
 `ui.window`, `window.find`/`window.measure`/`capture`, `board.probe`/`board.test`, `attributes.get`,
 `calibration.save`/`calibration.fetch`, `ocr.scan`,
-`tool.start`/`tool.stop` and `shutdown` are the implemented commands today; the rest of PROTOCOL §4
+`tool.start`/`tool.stop` and `shutdown` are the implemented commands today; `tool.start` is live for
+the **spammer** and refuses the other seven ids by name until their loops land (the registry is the
+seam, and its tests pin the refusal). The rest of PROTOCOL §4
 is spec-only and is reported in OPEN §3/§4. Every config save runs the domain rules first
 (`validate.rs`, "no widget keeps a rule").
 

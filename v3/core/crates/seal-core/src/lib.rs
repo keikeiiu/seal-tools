@@ -10,6 +10,7 @@ pub mod effects;
 pub mod events;
 pub mod registry;
 pub mod root;
+pub mod spammer;
 pub mod startup;
 pub mod supervisor;
 pub mod validate;

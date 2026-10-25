@@ -21,6 +21,11 @@ pub enum Decision {
     Click(Point),
     /// Press one key. See [`Key`] for what "one key" means here.
     Key(Key),
+
+    /// Press one key as the FAST tap — the firmware's lowercase `k`/`f`, which the spammer's `*key`
+    /// spelling asks for. A separate decision rather than a flag on [`Self::Key`] because the two
+    /// are different wires and a tool that does not model fast taps cannot accidentally ask for one.
+    KeyFast(Key),
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

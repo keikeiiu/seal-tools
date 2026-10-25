@@ -51,6 +51,9 @@ const WINDOW_FIELDS: &[(&str, &str)] = &[
 /// the core wrote in the meantime (`PROTOCOL.md` §7, `PLAN-V3-CORE.md` §4.1).
 pub struct CoreState {
     pub root: std::path::PathBuf,
+    /// The merged config as the PRODUCTION REGISTRY reads it. The dispatcher publishes after every
+    /// command, so a Start sees the same config the shell does.
+    pub shared_config: crate::registry::SharedConfig,
     pub store: ConfigStore,
     pub rev: u64,
     pub config: Value,
@@ -82,6 +85,7 @@ impl CoreState {
         Self {
             root,
             store,
+            shared_config: Default::default(),
             rev: 0,
             config: json!({}),
             handshaken: false,
@@ -106,6 +110,7 @@ impl CoreState {
         Ok(Self {
             root,
             store,
+            shared_config: Default::default(),
             rev: 0,
             config,
             handshaken: false,
@@ -298,7 +303,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         );
     }
 
-    match request.cmd.as_str() {
+    let response = match request.cmd.as_str() {
         "shutdown" => {
             state.stopping = true;
             Response::ok(&request.id, json!({}))
@@ -323,6 +328,18 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             &format!("unknown command {other:?}"),
             json!({}),
         ),
+    };
+    state.publish_config();
+    response
+}
+
+impl CoreState {
+    /// Publish the merged config for the production registry. Cheap (a clone of one JSON tree) and
+    /// called once per command, so registry and shell can never disagree about which preset is active.
+    pub fn publish_config(&self) {
+        if let Ok(mut shared) = self.shared_config.write() {
+            *shared = self.config.clone();
+        }
     }
 }
 

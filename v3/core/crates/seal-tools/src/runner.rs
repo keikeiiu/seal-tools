@@ -45,6 +45,13 @@ pub trait Tool {
 pub trait Effects {
     fn click(&mut self, at: Point) -> Result<(), EffectError>;
     fn key(&mut self, key: Key) -> Result<(), EffectError>;
+
+    /// Press one key as the fast tap. The default is the ordinary press, so an effects
+    /// implementation that does not model the distinction still sends the key rather than dropping
+    /// it — the slower tap is a visible-but-working outcome, a dropped key is an invisible bug.
+    fn key_fast(&mut self, key: Key) -> Result<(), EffectError> {
+        self.key(key)
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -118,6 +125,11 @@ pub fn run(
             }
             Decision::Key(key) => {
                 if let Err(error) = effects.key(key) {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::KeyFast(key) => {
+                if let Err(error) = effects.key_fast(key) {
                     return StopReason::error(effect_message(&error));
                 }
             }

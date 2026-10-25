@@ -87,7 +87,7 @@ pub enum BoardFailure {
 /// Find and open the board, or the line that says why not. The choice is `seal-board`'s: a NAMED
 /// port that is absent is a refusal rather than a fall-through, and discovery is VID/PID first with
 /// v2's name fallback.
-fn open_board(settings: &Settings) -> Result<(String, SerialTransport), BoardFailure> {
+pub(crate) fn open_board(settings: &Settings) -> Result<(String, SerialTransport), BoardFailure> {
     let ports = enumerate::available_ports();
     let (chosen, refusal) = enumerate::choose_port(
         settings.port.as_deref(),

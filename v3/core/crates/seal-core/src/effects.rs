@@ -84,17 +84,18 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     }
 
     fn key(&mut self, key: Key) -> Result<(), EffectError> {
-        let command = match key {
-            Key::Char(character) => BoardCommand::Key {
-                character,
-                fast: false,
-            },
-            Key::Function(number) => BoardCommand::FunctionKey {
-                number,
-                fast: false,
-            },
-        };
-        self.write(command)
+        self.write(key_command(key, false))
+    }
+
+    fn key_fast(&mut self, key: Key) -> Result<(), EffectError> {
+        self.write(key_command(key, true))
+    }
+}
+
+fn key_command(key: Key, fast: bool) -> BoardCommand {
+    match key {
+        Key::Char(character) => BoardCommand::Key { character, fast },
+        Key::Function(number) => BoardCommand::FunctionKey { number, fast },
     }
 }
 
