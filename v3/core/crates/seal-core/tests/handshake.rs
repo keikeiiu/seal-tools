@@ -1,17 +1,19 @@
 //! The walking skeleton's first milestone: spawn the core binary, speak the handshake over its
 //! stdio, and get a protocol-shaped answer back — the same transport the Flutter shell will use.
+//!
+//! The binary now loads the config at startup, so the fixture is a real (minimal) install root: a
+//! core that cannot read its config cannot run a tool, and it refuses to start loudly.
 
 mod common;
 
-use common::{TestDir, marker};
+use common::{TestDir, config_root};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 #[test]
 fn the_binary_answers_hello_over_stdio_and_exits_on_eof() {
-    let root = TestDir::new();
-    marker(root.path(), "defaults.yaml");
+    let root = config_root();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_seal-core"))
         .arg("--root")
@@ -45,5 +47,29 @@ fn the_binary_answers_hello_over_stdio_and_exits_on_eof() {
         output.status.success(),
         "EOF must exit cleanly, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn the_binary_refuses_to_start_when_the_config_cannot_be_loaded() {
+    // An empty directory: `--root` is accepted (it exists), but there is no config to read. A core
+    // that started anyway would run every tool against an empty config, silently — v2 fails loudly
+    // here too, and `PROTOCOL.md` §1's "core crash" is how the shell learns about it.
+    let root = TestDir::new();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_seal-core"))
+        .arg("--root")
+        .arg(root.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("the core binary runs");
+
+    assert!(!output.status.success(), "the core must not start");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot load config"),
+        "stderr names the failure: {stderr}"
     );
 }

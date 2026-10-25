@@ -20,7 +20,16 @@ fn main() {
         std::process::exit(1);
     };
 
-    let mut state = CoreState::new(root);
+    // The config is read before the loop starts: a core that cannot read it must not answer `hello`
+    // and then fail every tool command, so the failure is reported the way `PROTOCOL.md` §1 names —
+    // the process exits and the shell shows the captured stderr (`core crash`).
+    let mut state = match CoreState::load(root) {
+        Ok(state) => state,
+        Err(error) => {
+            eprintln!("seal-core: cannot load config: {error}");
+            std::process::exit(1);
+        }
+    };
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
 
