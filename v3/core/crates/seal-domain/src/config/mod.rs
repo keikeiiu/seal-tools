@@ -18,6 +18,7 @@ mod de;
 mod local;
 mod quest;
 mod shared;
+mod validate;
 
 pub use attributes::{AttributeDef, AttributesConfig, TextFix, TextFixesConfig};
 pub use local::{
@@ -35,3 +36,4 @@ pub use shared::{
     ReferenceWindowConfig, RegionConfig, SpammerCombo, SpammerStartup, TimingConfig, TooltipConfig,
     WhiteMaskConfig, WindowConfig, YellowMaskConfig,
 };
+pub use validate::{ArduinoInput, ConfigErrors, GemInput, TunerInput, ValidationInput, validate};
