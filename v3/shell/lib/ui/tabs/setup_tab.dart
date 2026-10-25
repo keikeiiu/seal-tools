@@ -331,11 +331,6 @@ class _SetupTabState extends State<SetupTab>
       return result.errorLine ?? 'measure failed';
     }
     final display = result.value!;
-    return 'scale ${display.scale} · monitor DPI ${display.monitorDpi} · '
-        'screen ${display.screen.w}x${display.screen.h} · '
-        'client ${display.physicalClient.w}x${display.physicalClient.h} physical / '
-        '${display.logicalClient.w}x${display.logicalClient.h} logical · '
-        'frame ${display.frame.w}x${display.frame.h} at '
-        '(${display.frame.x}, ${display.frame.y})';
+    return displaySummary(display);
   }
 }

@@ -6,6 +6,7 @@
 library;
 
 export 'attributes_result.dart';
+export 'calibration_result.dart';
 export 'config.dart';
 export 'config_draft.dart';
 export 'config_json.dart';

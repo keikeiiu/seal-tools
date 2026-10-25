@@ -21,6 +21,7 @@ import 'status_strip.dart';
 import 'tabs/arduino_tab.dart';
 import 'tabs/attributes_tab.dart';
 import 'tabs/buy_sell_tab.dart';
+import 'tabs/calibrate_tab.dart';
 import 'tabs/gem_tab.dart';
 import 'tabs/pet_tab.dart';
 import 'tabs/setup_tab.dart';
@@ -54,7 +55,7 @@ class _ShellPageState extends State<ShellPage> {
 
         final ready = connection.status == ConnectionStatus.ready;
         return DefaultTabController(
-          length: 10,
+          length: 11,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Seal Tools v3'),
@@ -98,6 +99,7 @@ class _ShellPageState extends State<ShellPage> {
                         Tab(text: 'Attributes'),
                         Tab(text: 'Arduino'),
                         Tab(text: 'Setup'),
+                        Tab(text: 'Calibrate'),
                       ],
                     )
                   : null,
@@ -119,6 +121,7 @@ class _ShellPageState extends State<ShellPage> {
                         AttributesTab(model: model),
                         ArduinoTab(model: model),
                         SetupTab(model: model),
+                        CalibrateTab(model: model),
                       ],
                     ),
                   ),

@@ -23,6 +23,7 @@ import 'package:flutter/foundation.dart';
 
 import '../protocol/protocol.dart';
 import 'attributes_result.dart';
+import 'calibration_result.dart';
 import 'config.dart';
 import 'connection.dart';
 import 'core_actions.dart';
@@ -257,6 +258,46 @@ class ShellModel extends ChangeNotifier {
     'board.test',
     (result) => result,
     args: {'kind': 'key', 'key': key},
+  );
+
+  /// `capture`: the game client as PNG plus the `DisplayInfo` measurement. The full client is the
+  /// calibration frame; a region is only for the capture command's general use.
+  Future<CoreActionResult<CaptureResult>> captureFrame({Rect? region}) =>
+      _coreAction(
+        'capture',
+        CaptureResult.fromJson,
+        args: region == null ? const {} : {'region': region.toJson()},
+      );
+
+  /// `calibration.save`: the mark drawn on the captured frame, plus the capture's measured display so
+  /// the core records the environment. Refusals (bag-slot pitch disagreement, unknown frame_id, …)
+  /// come back as the core's typed error line.
+  Future<CoreActionResult<CalibrationSaveResult>> calibrationSave({
+    required String frameId,
+    required String kind,
+    Rect? region,
+    Point? point,
+    DisplayInfo? display,
+  }) => _coreAction(
+    'calibration.save',
+    CalibrationSaveResult.fromJson,
+    args: {
+      'frame_id': frameId,
+      'kind': kind,
+      if (region != null) 'region': region.toJson(),
+      if (point != null) 'point': point.toJson(),
+      if (display != null) 'display': calibrationDisplayJson(display),
+    },
+  );
+
+  /// `calibration.fetch`: the stored mark (null = not calibrated yet) and, for artifact kinds, the
+  /// stored crop as base64 PNG.
+  Future<CoreActionResult<CalibrationFetchResult>> calibrationFetch(
+    String kind,
+  ) => _coreAction(
+    'calibration.fetch',
+    CalibrationFetchResult.fromJson,
+    args: {'kind': kind},
   );
 
   // ── config commands: validate, then apply ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7) ───────────

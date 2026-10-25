@@ -19,6 +19,53 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-26 (17) — the last spec-only commands, the first live tool, and the shell's ten tabs
+
+Two milestones that change what v3 IS rather than what it contains.
+
+**`calibration.save`/`fetch` (`ab22a0a`)** closed PROTOCOL §4: there is no spec-only command left.
+The shape was forced by the invariants `CALIBRATION.md` had already earned — a refused save writes
+nothing and consumes no rev (arguments, frame bounds, the bag slot-vs-grid pitch agreement and the
+artifact crop all run before the first byte), the artifact is written before the marks so a mark never
+references a missing crop, and the seven-kind table lives in one place in
+`seal-core/src/calibration.rs`. The binary artifact writer that OPEN had been carrying since the
+config crate landed is `ConfigStore::write_artifact` (temp+rename, bare names only), and the crop is a
+pure `crop_rgba` in `seal-win`, so the first artifacts are testable without a screen.
+
+**The spammer is the first live tool (`de016c1`).** `tool.start spammer` resolves the active preset
+out of the merged config (published by the dispatcher into a shared cell after every command), opens
+the board in the opening phase, and the runner drives the domain's rotation through the board's key
+effects. Nothing about the decision half moved: `SpammerPlan`/`SpammerRun` still decide, the runner
+still performs, and `seal-core/src/spammer.rs` is only the join (rotation in file order, the domain's
+refusal lines, v2's 20 ms tick). The first tool also earned the seam's last missing piece:
+`Decision::KeyFast` + `Effects::key_fast`, because a `*key` is a different wire (`k`) and the
+spammer must be able to ask for it; the default `key_fast` is the ordinary press, so an effects
+implementation that does not model the distinction still sends the key. An unsendable key fails the
+START naming every bad key — a recorded divergence from v2's warn-and-skip (core README divergence
+10), because the v3 card surface has no per-tick log line to warn into. The other seven ids still
+refuse by name, pinned by registry tests.
+
+**The shell reached ten tabs and then eleven.** Waves 1–3 landed as committed checkpoints: the five
+config tabs on one draft contract (`11317d1`, `1911ceb`, `6f6ec41`, `112374c`, `8fb84ac`), keep-alive
+plus the cross-tab external-change guard (`b974995`), Pet and Setup with multi-block `ConfigDraftGroup`
+(`ff4dd99`, `7c007ce`), the Attributes tab over the new `attributes.get` command (`ccf038a`,
+`66ef600`), the Arduino tab that moves the real cursor without starting a tool (`8a8f003`), and the
+Calibrate tab on `calibration.save`/`fetch` (this session's last commit before this entry).
+
+**What the checkpoints cost, worth remembering:** every shell defect the gate caught was one class —
+an import/visibility error that Dart only reports at a consumer (`errorResponse`, `core_actions`,
+`DisplayInfo`, `attributes_result` — four times), so the three-namespaces rule is now written in
+`v3/shell/README.md` with the new-app-type checklist in `lib/app/README.md`. The other classes were
+the fake-async handshake trap, lazy-grid viewports, a stale `TextEditingController` that needed
+structural re-seeding (`DraftFieldSlot` + `seedRevision`), and two layout overflows. None were
+papered over; each got a test.
+
+**Current counts at this milestone:** Rust workspace `cargo test --workspace --offline` green (73
+result lines, ~880 tests), clippy `-D warnings` and `fmt --check` clean; Flutter `flutter analyze`
+No issues, `flutter test` 105/105, `dart format` clean. Calibrate is typed-fields-only — the
+click-to-set-point / drag-to-set-rect overlay is the next shell increment, deliberately not shipped
+unverified because it needs the `BoxFit.contain`/`frame.origin` mapping tested.
+
 ## 2026-10-25 (16) — the pipeline reads real captures, and the shell gets its client
 
 The OCR pipeline was assembled (`seal-ocr/src/pipeline.rs`, `modes.rs`) and wired into the core's

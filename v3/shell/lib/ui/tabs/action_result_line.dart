@@ -6,6 +6,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../protocol/protocol.dart';
 import '../theme.dart';
 
 /// One labelled action outcome. Renders nothing until [line] exists.
@@ -45,3 +46,13 @@ String probeSummary(BoardProbeResult result) =>
     'port ${result.port} · ${result.baud} baud · '
     'VID ${result.vid ?? '?'} · PID ${result.pid ?? '?'} · '
     'protocol level ${result.level}';
+
+/// `window.measure`/capture's one-line `DisplayInfo` summary. Kept here so Setup's Measure and the
+/// Calibrate surface describe the same measurement in exactly the same words.
+String displaySummary(DisplayInfo display) =>
+    'scale ${display.scale} · monitor DPI ${display.monitorDpi} · '
+    'screen ${display.screen.w}x${display.screen.h} · '
+    'client ${display.physicalClient.w}x${display.physicalClient.h} physical / '
+    '${display.logicalClient.w}x${display.logicalClient.h} logical · '
+    'frame ${display.frame.w}x${display.frame.h} at '
+    '(${display.frame.x}, ${display.frame.y})';
