@@ -29,6 +29,38 @@ fn hello_answers_with_the_handshake_data() {
 }
 
 #[test]
+fn attributes_get_serves_the_loaded_dictionary_with_its_variant() {
+    let mut state = state();
+    handle(&mut state, hello());
+    state.variant = Some("us".to_owned());
+    state.dictionary = "attributes.us.yaml".to_owned();
+    state.attributes = seal_domain::config::AttributesConfig {
+        attributes: vec![seal_domain::config::AttributeDef {
+            name: "減少傷害".to_owned(),
+            category: "plv1".to_owned(),
+            variants: vec!["減少傷害".to_owned(), "减少伤害".to_owned()],
+        }],
+        ..Default::default()
+    };
+
+    let response = handle(&mut state, Request::new("5", "attributes.get", json!({})));
+
+    assert!(
+        response.ok,
+        "attributes.get must succeed: {:?}",
+        response.error
+    );
+    let result = response.result.expect("attributes.get carries a result");
+    assert_eq!(result["variant"], "us");
+    assert_eq!(result["dictionary"], "attributes.us.yaml");
+    assert_eq!(result["attributes"]["attributes"][0]["name"], "減少傷害");
+    assert_eq!(
+        result["attributes"]["attributes"][0]["variants"][1],
+        "减少伤害"
+    );
+}
+
+#[test]
 fn a_request_before_hello_is_refused() {
     let mut state = state();
 

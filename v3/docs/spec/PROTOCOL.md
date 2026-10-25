@@ -102,6 +102,7 @@ edits; it never re-serialises the whole file (§7).
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
 | `calibration.save` | `{"frame_id":"f1","region":{...},"kind":"bag"}` | `{"rev":10,"derived":{...}}` |
 | `calibration.fetch` | `{"kind":"bag"}` | `{"frame":{...}}` |
+| `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
@@ -144,7 +145,7 @@ Notes:
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
-`board.test`, `ocr.scan`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
+`board.test`, `attributes.get`, `ocr.scan`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
 ([OPEN.md](../backlog/OPEN.md) §4): `calibration.save`, `calibration.fetch`. A command in this table
 is the contract; the implemented list is the current fact.
 

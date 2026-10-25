@@ -311,6 +311,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "window.measure" => window_measure(state, &request),
         "capture" => capture_command(state, &request),
         "ocr.scan" => ocr_scan(state, &request),
+        "attributes.get" => attributes_get(state, &request),
         "board.probe" => board_probe(state, &request),
         "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),
@@ -665,6 +666,22 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
 
 /// `board.probe`: which port, which baud, which IDs, and the firmware level from `V` (silence = level
 /// 1). The board crate owns the choice and the open; this only maps its failure to the protocol.
+/// `attributes.get`: the loaded dictionary for the active client, for the Attributes surface.
+///
+/// The whole dictionary is served because the tab shows it verbatim, it is small (a few KB), and
+/// the core already holds it — boot and every variant switch load it, so this reads no disk. `variant`
+/// is null when no client resolved: the shell shows that rather than inventing one.
+fn attributes_get(state: &CoreState, request: &Request) -> Response {
+    Response::ok(
+        &request.id,
+        json!({
+            "variant": state.variant,
+            "dictionary": state.dictionary,
+            "attributes": state.attributes,
+        }),
+    )
+}
+
 fn board_probe(state: &CoreState, request: &Request) -> Response {
     match board::probe(&state.config) {
         Ok(result) => Response::ok(&request.id, result),
