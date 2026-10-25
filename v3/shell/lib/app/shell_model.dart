@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../protocol/protocol.dart';
+import 'attributes_result.dart';
 import 'config.dart';
 import 'connection.dart';
 import 'core_actions.dart';
@@ -229,6 +230,11 @@ class ShellModel extends ChangeNotifier {
   /// no-hardware path ([PROTOCOL.md] §4/§6).
   Future<CoreActionResult<BoardProbeResult>> probeBoard() =>
       _coreAction('board.probe', BoardProbeResult.fromJson);
+
+  /// `attributes.get`: the dictionary the core already loaded for the active client. The payload is
+  /// decoded app-locally (the Attributes surface consumes an untyped result; no protocol type exists).
+  Future<CoreActionResult<AttributesResult>> attributesGet() =>
+      _coreAction('attributes.get', AttributesResult.fromJson);
 
   // ── config commands: validate, then apply ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7) ───────────
 

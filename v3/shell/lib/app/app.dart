@@ -5,6 +5,7 @@
 /// rather than protocol bookkeeping, the code says so at the point of judgement.
 library;
 
+export 'attributes_result.dart';
 export 'config.dart';
 export 'config_draft.dart';
 export 'config_json.dart';
