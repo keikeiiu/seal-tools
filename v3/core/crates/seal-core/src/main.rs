@@ -1,8 +1,12 @@
 //! The core binary: one JSON request per line in, one response per line out.
 //!
 //! The transport contract is `v3/docs/spec/PROTOCOL.md` §1 — a spawn from the shell, UTF-8 NDJSON
-//! on stdin/stdout, EOF meaning "stop safely". The walking skeleton answers `hello` and
-//! `shutdown`; every other command arrives in later increments.
+//! on stdin/stdout, EOF meaning "stop safely". The skeleton answers `hello`, `shutdown` and the
+//! config surface (`config.validate`, `config.apply`, `config.reload`, `ui.window`); the board, OCR
+//! and tool commands arrive in later increments.
+//!
+//! Startup reads the merged config before the loop begins: a core that cannot read its config exits
+//! with a stderr line rather than answering `hello` and then failing every command.
 
 use seal_core::dispatch::{CoreState, handle};
 use seal_core::root::find_root;

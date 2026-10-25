@@ -75,3 +75,133 @@ fn shutdown_is_acknowledged_and_stops_the_loop() {
         "the loop must stop after the acknowledgement"
     );
 }
+
+fn handshaken_state() -> CoreState {
+    let mut state = state();
+    handle(&mut state, hello());
+    state
+}
+
+/// The dispatcher-level checks: argument shape and the revision contract, without a config folder
+/// (the successful write paths are exercised end-to-end in `tests/config.rs`).
+#[test]
+fn config_validate_answers_with_no_errors_while_domain_rules_are_pending() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "6",
+            "config.validate",
+            json!({"sections": {"quest": {"active": "run1"}}}),
+        ),
+    );
+
+    assert!(response.ok, "shape validation passes: {:?}", response.error);
+    assert_eq!(
+        response.result.expect("a result"),
+        json!({"errors": [], "warnings": []})
+    );
+}
+
+#[test]
+fn config_validate_refuses_a_block_the_app_does_not_own() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "7",
+            "config.validate",
+            json!({"sections": {"my_notes": {}}}),
+        ),
+    );
+
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["section"], "my_notes");
+}
+
+#[test]
+fn config_apply_refuses_a_missing_or_non_numeric_rev() {
+    let mut state = handshaken_state();
+
+    for args in [
+        json!({"sections": {"quest": {}}}),
+        json!({"rev": "1", "sections": {"quest": {}}}),
+        json!({"rev": -1, "sections": {"quest": {}}}),
+    ] {
+        let response = handle(&mut state, Request::new("8", "config.apply", args.clone()));
+        assert!(!response.ok, "args {args} must be refused");
+        assert_eq!(response.error.expect("a refusal").code, "bad_request");
+    }
+}
+
+#[test]
+fn config_apply_refuses_a_stale_rev_and_carries_the_current_one() {
+    let mut state = handshaken_state();
+    assert_eq!(state.rev, 0);
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "9",
+            "config.apply",
+            json!({"rev": 7, "sections": {"quest": {"active": "x"}}}),
+        ),
+    );
+
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "conflict");
+    assert_eq!(error.detail["rev"], 0);
+    assert_eq!(state.rev, 0, "a refused call must not consume a revision");
+}
+
+#[test]
+fn config_apply_refuses_a_section_that_is_not_a_mapping() {
+    let mut state = handshaken_state();
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "10",
+            "config.apply",
+            json!({"rev": 0, "sections": {"quest": "not a block"}}),
+        ),
+    );
+
+    assert!(!response.ok);
+    assert_eq!(response.error.expect("a refusal").code, "bad_request");
+}
+
+#[test]
+fn ui_window_refuses_malformed_arguments() {
+    let mut state = handshaken_state();
+
+    for args in [
+        json!([]),
+        json!({"left": 100, "top": 50}),
+        json!({"left": "100", "top": 50, "width": 900, "height": 700, "pinned": true}),
+    ] {
+        let response = handle(&mut state, Request::new("11", "ui.window", args.clone()));
+        assert!(!response.ok, "args {args} must be refused");
+        assert_eq!(response.error.expect("a refusal").code, "bad_request");
+    }
+}
+
+#[test]
+fn the_config_commands_before_hello_are_not_ready() {
+    for cmd in [
+        "config.apply",
+        "config.validate",
+        "config.reload",
+        "ui.window",
+    ] {
+        let mut state = state();
+        let response = handle(&mut state, Request::new("12", cmd, json!({})));
+        assert!(!response.ok, "{cmd} before hello");
+        assert_eq!(response.error.expect("a refusal").code, "not_ready");
+    }
+}
