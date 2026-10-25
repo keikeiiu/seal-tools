@@ -117,6 +117,30 @@ impl Default for QuestConfig {
     }
 }
 
+impl QuestConfig {
+    /// The active flow, or `None` when that name is not in play.
+    ///
+    /// v2's `ActivePreset` returned an EMPTY preset there (deliberately not another flow's); the
+    /// plan builder reproduces that by falling back to a default preset, which validation then
+    /// refuses with "has no steps".
+    pub fn active_preset(&self) -> Option<&QuestPreset> {
+        self.presets.get(self.active.as_str())
+    }
+
+    /// The sequence to run, or `None` when none is chosen OR the name is unknown.
+    ///
+    /// An empty `active_sequence` means "run the single flow" — the shape of every config written
+    /// before sequences existed — and a typo falls back the same way rather than leaving the tool
+    /// with nothing to do. Both are trimmed for the comparison, as the runner does.
+    pub fn active_sequence_or_null(&self) -> Option<&QuestSequence> {
+        let name = self.active_sequence.trim();
+        if name.is_empty() {
+            return None;
+        }
+        self.sequences.get(name)
+    }
+}
+
 /// One quest's flow: how long to wait, how many times, and what to send each time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuestPreset {
