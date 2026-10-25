@@ -7,4 +7,5 @@
 
 #![forbid(unsafe_code)]
 
+pub mod decision;
 pub mod geometry;
