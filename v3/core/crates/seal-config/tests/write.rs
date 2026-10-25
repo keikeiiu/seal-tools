@@ -571,3 +571,78 @@ fn adoption_folds_a_legacy_startup_step_into_the_object_shape() {
     // The legacy bare shape is never written again.
     assert!(local.pointer("/spammer/startup_step").is_none());
 }
+
+// ——— the single-update composition: `config.apply`'s owned write AND settings projection ———
+
+#[test]
+fn apply_sections_with_settings_writes_both_halves_in_one_update() {
+    let dir = TestDir::new();
+    let store = seeded(&dir);
+    let mut config = store.load().unwrap();
+    // The caller's effective config: the owned overlay AND the portable change, as seal-core computes
+    // them before the write.
+    config["window"]["title"] = json!("PORTABLE_TITLE");
+    if let Some(tuner) = config.get_mut("tuner").and_then(Value::as_object_mut) {
+        tuner.insert("guard_px".to_owned(), json!(9));
+    }
+    let merged_config = config.clone();
+
+    let returned = store
+        .apply_sections_with_settings(
+            &sections(&[("tuner", json!({"guard_px": 9}))]),
+            &merged_config,
+        )
+        .expect("the composed write succeeds");
+
+    assert_eq!(returned["tuner"]["guard_px"], 9);
+    let local = parse_yaml(&dir.read("local.yaml"));
+    // Both halves landed in the SAME file, in one read-modify-write.
+    assert_eq!(local["tuner"]["guard_px"], 9);
+    assert_eq!(local["settings"]["window"]["title"], "PORTABLE_TITLE");
+    // The shipped template is untouched and no temp file was left behind.
+    assert_eq!(dir.read("defaults.yaml"), repo_config_text("defaults.yaml"));
+    assert!(temp_files(&dir).is_empty(), "{:?}", temp_files(&dir));
+}
+
+#[test]
+fn a_composed_update_with_a_foreign_name_writes_nothing() {
+    let dir = TestDir::new();
+    let store = seeded(&dir);
+    let before = dir.read("local.yaml");
+
+    let error = store
+        .apply_sections_with_settings(&sections(&[("not_owned", json!({"x": 1}))]), &json!({}))
+        .expect_err("a foreign block is refused");
+
+    assert!(
+        matches!(error, ConfigError::SectionNotOwned(_)),
+        "{error:?}"
+    );
+    assert_eq!(dir.read("local.yaml"), before, "nothing was written");
+}
+
+#[test]
+fn a_composed_update_whose_projection_cannot_be_built_writes_nothing() {
+    let dir = TestDir::new();
+    let store = seeded(&dir);
+    // The projection is built from the shipped template, BEFORE the update: a missing template is a
+    // failure with the file byte-identical, which is what makes PROTOCOL §4's promise true.
+    std::fs::remove_file(dir.path().join("defaults.yaml")).unwrap();
+    let before = dir.read("local.yaml");
+
+    let error = store
+        .apply_sections_with_settings(
+            &sections(&[("tuner", json!({"guard_px": 9}))]),
+            &json!({"window": {"title": "X"}}),
+        )
+        .expect_err("the template is gone");
+
+    assert!(
+        matches!(
+            error,
+            ConfigError::MissingFile(_) | ConfigError::Read { .. }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(dir.read("local.yaml"), before, "nothing was written");
+}

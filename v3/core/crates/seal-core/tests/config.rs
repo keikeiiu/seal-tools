@@ -456,3 +456,51 @@ fn a_valid_settings_save_succeeds_and_bumps_the_revision() {
     assert_eq!(local["settings"]["game"]["variant"], "us");
     assert_eq!(root.read_bytes("config/defaults.yaml"), defaults_before);
 }
+
+/// The replace-copy bug, as a RULE OUTCOME: the fixture's local config carries a dangling sequence
+/// entry (a flow name that is not in `presets`). A partial `quest` save states only `guard_px`; the
+/// writer merges it into the current block, so the dangling entry survives the write and the rule
+/// must see it. A replace-copy would judge `{"quest": {"guard_px": 12}}`, find no sequence entries,
+/// and pass — then the write would produce exactly the config it just approved.
+#[test]
+fn a_partial_owned_block_is_validated_against_the_config_the_write_produces() {
+    let root = config_root();
+    root.append(
+        "config/local.yaml",
+        "quest:
+  active: default
+  presets:
+    default:
+      steps: []
+  sequences:
+    shared:
+      entries:
+        - preset: missing_flow
+          times: 1
+",
+    );
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let validated = session.result(
+        "config.validate",
+        json!({"sections": {"quest": {"guard_px": 12}}}),
+    );
+    let errors = validated["errors"].as_array().expect("errors is an array");
+    assert!(
+        !errors.is_empty(),
+        "the dangling sequence entry survives the write, so the rules must see it: {validated}"
+    );
+
+    // And the same partial save must be refused, not written.
+    let applied = session.call(
+        "config.apply",
+        json!({"rev": hello["rev"], "sections": {"quest": {"guard_px": 12}}}),
+    );
+    assert!(!applied.ok, "the save must be refused by the same rule");
+    assert_eq!(applied.error.expect("a refusal").code, "bad_request");
+    assert!(
+        !root.read("config/local.yaml").contains("guard_px: 12"),
+        "nothing was written"
+    );
+}

@@ -52,8 +52,9 @@ pub struct Outcome {
 /// Runs the rules a save of `sections` would run, against a copy of the current merged config.
 ///
 /// The copy is what makes this side-effect free: the given sections are laid onto it exactly the way
-/// the merge will lay them onto the file (an owned top-level block replaces that block, `settings`
-/// overlays the portable sections field-wise), and only the copy is inspected. Nothing is written.
+/// the merge will lay them onto the file (an owned top-level block merges FIELD-WISE into the current
+/// block, `settings` overlays the portable sections field-wise — PROTOCOL §7), and only the copy is
+/// inspected. Nothing is written.
 pub fn validate_sections(state: &CoreState, sections: &Map<String, Value>) -> Outcome {
     let effective = effective_config(&state.config, sections);
     let settings = sections.get(SETTINGS).and_then(Value::as_object);
@@ -100,8 +101,16 @@ pub(crate) fn effective_config(current: &Value, sections: &Map<String, Value>) -
                 }
             }
         } else {
-            // A tab saves its whole working copy of the block it owns; the merge replaces the block.
-            config_object.insert(name.clone(), value.clone());
+            // PROTOCOL §7's rule: the write merges an owned block FIELD-WISE into the current block,
+            // so the copy a rule judges must be the config the write actually produces. Replacing the
+            // block here would judge a partial save against a block it never creates — the bug this
+            // exists to close (OPEN.md §3).
+            match config_object.get_mut(name) {
+                Some(target) => merge_overlay(target, value),
+                None => {
+                    config_object.insert(name.clone(), value.clone());
+                }
+            }
         }
     }
 
@@ -186,4 +195,48 @@ fn variant_errors(config: &Value, settings: &Map<String, Value>) -> Vec<String> 
 
 fn malformed(section: &str, error: &serde_json::Error) -> String {
     format!("the {section} block is malformed: {error}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// PROTOCOL §7's merge rule is FIELD-WISE for owned blocks too: the writer merges into the
+    /// current block, so the copy a rule judges must keep the fields the request did not state. A
+    /// replace-copy would judge `{"pet": {"food_load_mode": "drag"}}` and lose the feeder's run
+    /// state — a config the write will never produce.
+    #[test]
+    fn an_owned_block_merges_field_wise_like_the_writer() {
+        let current = json!({
+            "pet": {"food_load_mode": "right_click", "boarding_window_may_be_open": true},
+        });
+        let mut sections = Map::new();
+        sections.insert("pet".to_owned(), json!({"food_load_mode": "drag"}));
+
+        let effective = effective_config(&current, &sections);
+
+        assert_eq!(effective["pet"]["food_load_mode"], "drag");
+        assert_eq!(
+            effective["pet"]["boarding_window_may_be_open"], true,
+            "the fields the request did not state are still there"
+        );
+    }
+
+    /// A stated value (including 0 and "") replaces; `null` means "not stated", exactly the loader's
+    /// rule — the copy must not invent a different one.
+    #[test]
+    fn a_null_leaf_is_not_a_statement() {
+        let current = json!({"quest": {"active": "run1", "guard_px": 12}});
+        let mut sections = Map::new();
+        sections.insert("quest".to_owned(), json!({"guard_px": null, "active": ""}));
+
+        let effective = effective_config(&current, &sections);
+
+        assert_eq!(effective["quest"]["guard_px"], 12, "null is not stated");
+        assert_eq!(
+            effective["quest"]["active"], "",
+            "an empty string IS stated"
+        );
+    }
 }

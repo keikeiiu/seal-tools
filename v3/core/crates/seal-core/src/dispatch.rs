@@ -298,23 +298,17 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return startup_error_response(&request.id, error),
     };
 
-    // Owned blocks through the block writer — `settings` is deliberately filtered out and written
-    // through the projection below.
+    // ONE read-modify-write: the owned blocks and the portable projection land together, so a failure
+    // at any point writes NOTHING and consumes no rev (`PROTOCOL.md` §4's promise). Two separate
+    // writes could and did leave the file half-saved. `settings` is filtered out of the owned map and
+    // written only through the projection.
     let owned: Map<String, Value> = sections
         .iter()
         .filter(|(name, _)| name.as_str() != "settings")
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    if !owned.is_empty()
-        && let Err(error) = state.store.apply_sections(&owned)
-    {
-        return config_error_response(&request.id, error);
-    }
-
-    // The portable overlay through v2's SaveSettings: each section is written WHOLE, projected onto
-    // the template's shape, never as the raw overlay the shell sent.
-    if sections.contains_key("settings")
-        && let Err(error) = state.store.save_settings(&effective)
+    if (!owned.is_empty() || sections.contains_key("settings"))
+        && let Err(error) = state.store.apply_sections_with_settings(&owned, &effective)
     {
         return config_error_response(&request.id, error);
     }

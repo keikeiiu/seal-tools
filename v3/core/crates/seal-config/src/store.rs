@@ -308,6 +308,81 @@ impl ConfigStore {
         Ok(merged)
     }
 
+    /// Applies the owned blocks AND the portable `settings:` projection in ONE `local.yaml`
+    /// read-modify-write.
+    ///
+    /// `config.apply` used to call [`Self::apply_sections`] and [`Self::save_settings`] one after the
+    /// other: the owned write could succeed and the projection then fail, leaving the file HALF-SAVED
+    /// — which is exactly what `PROTOCOL.md` §4's "nothing written, no rev consumed" promise forbids.
+    /// Here both changes happen inside the same update, so a failure at any point writes nothing. The
+    /// projection is built BEFORE the update (its template read can fail), and the owned merge is the
+    /// same rule [`Self::apply_sections`] uses; both halves reuse the code rather than duplicating it.
+    ///
+    /// `config` is the effective merged config the caller validated and wants projected — the same
+    /// value [`Self::save_settings`] takes. Returns the merged value of each owned block, like
+    /// [`Self::apply_sections`], so a caller can answer with it.
+    pub fn apply_sections_with_settings(
+        &self,
+        sections: &Map<String, Value>,
+        config: &Value,
+    ) -> Result<Map<String, Value>, ConfigError> {
+        for name in sections.keys() {
+            if !crate::foreign::is_owned_block(name) {
+                return Err(ConfigError::SectionNotOwned(name.clone()));
+            }
+        }
+
+        // Built before the update so a template that cannot be read leaves the file untouched.
+        let projection = self.projection_for(config)?;
+
+        let mut merged = Map::new();
+        self.update_local(|local| {
+            let Some(local_object) = local.as_object_mut() else {
+                return;
+            };
+
+            for (name, value) in sections {
+                match local_object.get_mut(name) {
+                    Some(slot) => merge_overlay(slot, value),
+                    None => {
+                        local_object.insert(name.clone(), value.clone());
+                    }
+                }
+                merged.insert(
+                    name.clone(),
+                    local_object.get(name).cloned().unwrap_or(Value::Null),
+                );
+            }
+
+            let settings = local_object
+                .entry(SETTINGS.to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !settings.is_object() {
+                *settings = Value::Object(Map::new());
+            }
+            if let Value::Object(settings) = settings {
+                for (name, value) in &projection {
+                    settings.insert(name.clone(), value.clone());
+                }
+            }
+        })?;
+        Ok(merged)
+    }
+
+    /// The settings projection for `config`: the portable sections of the shipped template, taken
+    /// from `config` and reduced to the template's shape. Factored out so
+    /// [`Self::save_settings`] and [`Self::apply_sections_with_settings`] cannot project differently.
+    fn projection_for(&self, config: &Value) -> Result<Map<String, Value>, ConfigError> {
+        let base_is_shipped = self.path_of(DEFAULTS_TEMPLATE).is_file();
+        let base_name = if base_is_shipped {
+            DEFAULTS_TEMPLATE
+        } else {
+            DEFAULTS
+        };
+        let base = self.read_yaml(base_name)?;
+        Ok(portable_projection(config, &base))
+    }
+
     /// Writes the portable half of `config` into `local.yaml`'s `settings:` block — v2's
     /// `SaveSettings`, the save path that replaced writing the shipped file.
     ///
@@ -317,14 +392,7 @@ impl ConfigStore {
     /// `tuner.ocr`) can never leak into the portable half — and the spammer block is deliberately
     /// not projected at all: a personal rotation must never reach a released template.
     pub fn save_settings(&self, config: &Value) -> Result<(), ConfigError> {
-        let base_is_shipped = self.path_of(DEFAULTS_TEMPLATE).is_file();
-        let base_name = if base_is_shipped {
-            DEFAULTS_TEMPLATE
-        } else {
-            DEFAULTS
-        };
-        let base = self.read_yaml(base_name)?;
-        let projection = portable_projection(config, &base);
+        let projection = self.projection_for(config)?;
 
         self.update_local(|local| {
             let Some(local_object) = local.as_object_mut() else {

@@ -272,3 +272,36 @@ fn reload_with_an_invalid_on_disk_config_answers_config_invalid_and_keeps_the_se
     assert_eq!(after["config"], before["config"]);
     assert_eq!(after["rev"], before["rev"]);
 }
+
+#[test]
+fn apply_writes_nothing_when_the_projection_cannot_be_built() {
+    // The two writes of apply used to be independent: the owned block landed, then the projection
+    // could fail and answer `io` with the file HALF-SAVED. Remove the template the projection is
+    // built from, after boot, and pin PROTOCOL §4's nothing-written promise.
+    let root = config_root();
+    let mut session = common::Session::start(root.path());
+    hello(&mut session);
+    let local_before = root.read_bytes("config/local.yaml");
+    let rev_before = rev(&mut session);
+
+    std::fs::remove_file(root.path_of("config/defaults.yaml")).expect("remove the template");
+
+    let response = session.call(
+        "config.apply",
+        json!({
+            "rev": rev_before,
+            "sections": {
+                "tuner": {"guard_px": 9},
+                "settings": {"window": {"title": "X"}},
+            },
+        }),
+    );
+
+    assert!(!response.ok, "a write that cannot complete must refuse");
+    assert_eq!(
+        root.read_bytes("config/local.yaml"),
+        local_before,
+        "nothing may be half-written"
+    );
+    assert_eq!(rev(&mut session), rev_before, "no rev consumed");
+}
