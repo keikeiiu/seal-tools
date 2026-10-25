@@ -11,3 +11,4 @@ pub mod authoring;
 pub mod config;
 pub mod decision;
 pub mod geometry;
+pub mod ocr;

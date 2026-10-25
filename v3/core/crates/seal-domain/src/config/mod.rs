@@ -13,11 +13,13 @@
 //! underscore convention exactly (`UnderscoredNamingConvention`), so a v2 `local.yaml` decodes into
 //! these types unchanged.
 
+mod attributes;
 mod de;
 mod local;
 mod quest;
 mod shared;
 
+pub use attributes::{AttributeDef, AttributesConfig, TextFix, TextFixesConfig};
 pub use local::{
     LocalArduino, LocalBuySell, LocalGem, LocalOverrides, LocalPet, LocalPetQueueEntry,
     LocalPetSlot, LocalQuest, LocalSettings, LocalSettingsArduino, LocalSettingsGame,
