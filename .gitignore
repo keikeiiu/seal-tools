@@ -8,6 +8,11 @@ sessions/
 state.json
 gem_state.json
 spammer_state.json
+# v3's dev/install config tree: the core writes v3/config/local.yaml (machine state). The seed files
+# beside it are committed; the player's local curve is not.
+v3/config/local.yaml
+v3/config/local.yaml.backup-*
+v3/config/local.yaml.corrupt-backup
 
 # ── Control files ──────────────────────────────────────
 control.txt
