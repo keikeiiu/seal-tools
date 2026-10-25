@@ -212,3 +212,21 @@ the header.
   models (gaps G1-G3): these have no v3 tests by definition yet. The shipped-CSV assertion in
   `PetFeedingTests` is kept for the loader side rather than translated, and the fixture-based cases
   were. No personal data (`v2/config/local.yaml`) was read or copied.
+
+---
+
+## 6. Update — four gaps closed the same day (task-13)
+
+This file is the audit as written at `3bd5610`; §2 and §3 are kept as the record. Since then the
+four pure gaps have been ported into `seal-domain`, each reported and reviewed before commit:
+
+- **G4 `ConfigValidator`** → `src/config/validate.rs` (19 tests; oracle AUTHORED, every rule citing
+  its `ConfigValidator.cs` line).
+- **G5 `FoodLoadMode`** → `src/tools/pet/food_load.rs` (11 tests carrying all 17 v2 cases).
+- **G6 `CalibrationCheck`** → `src/calibration.rs` (11 tests: 7 translated, 4 authored rules).
+- **G7 the HoldSpace decision half** → `src/tools/hold_space.rs` (13 tests; oracle authored).
+
+The remaining gaps are the reader crates (G1 `seal-win`, G2 `seal-board`, G3 `seal-ocr`) and the
+service/logging glue (G8) — blocked on the Windows toolchain or the core loop, and each named with
+its landing place in §3. `seal-domain` is now 415 tests (was 361 when this file was written); the
+other crate totals in §5 are unchanged except `seal-core`, which grew on the day too.
