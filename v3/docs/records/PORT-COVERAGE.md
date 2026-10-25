@@ -230,3 +230,17 @@ The remaining gaps are the reader crates (G1 `seal-win`, G2 `seal-board`, G3 `se
 service/logging glue (G8) — blocked on the Windows toolchain or the core loop, and each named with
 its landing place in §3. `seal-domain` is now 415 tests (was 361 when this file was written); the
 other crate totals in §5 are unchanged except `seal-core`, which grew on the day too.
+
+---
+
+## 7. Update 2 — after the audit, the same day
+
+- **Golden fixtures: 49** (was 42). The portable `config.apply` and `config_invalid` shapes landed
+  (`390411f`), so the cross-language contract grew; the compare-only generator is the reader.
+- **The workspace is six crates.** `seal-board` landed (`27f1d25`, 53 tests): G2's grammar, transport
+  seam and closed-loop placement are done and only the OS serial adapter remains. `seal-core` grew
+  the supervisor and single event writer (`b95efc9`), boot validation and the variant dictionary
+  (`b6a49a7`), the portable apply (`af4d9a3`), and the atomic-apply/field-wise-validate fix
+  (`46df1ee`).
+- **The remaining gaps are unchanged in kind:** G1 (`seal-win`), G2's OS adapter, G3 (`seal-ocr`),
+  G8 (service/logging glue). No gap was closed by the audit itself — it was read-only by design.

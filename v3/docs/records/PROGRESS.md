@@ -3,7 +3,8 @@
 A dated, append-only record of the v3 core build and the reasoning that is not visible in the code or
 the commit titles. Newest first, like v2's
 [PROGRESS.md](../../../v2/docs/records/PROGRESS.md); the entries are grouped by MILESTONE rather than
-one per commit (the whole build happened on one day, `v3-core` commits `352c4da..7c8bfc0`).
+one per commit (the whole build happened on one day; the entries below continue past the header's
+first-session range).
 
 **This is the HISTORY, not the current truth.** How the system works now is
 [DESIGN.md](../spec/DESIGN.md); what was ported and what is missing is
@@ -17,6 +18,30 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 (`.\cargo.cmd test --workspace --offline` from `v3/core`) is the only current source.
 
 ---
+
+## 2026-10-25 (13) — the config ruling implemented, the apply made whole, and a docs audit
+
+The ruling from entry (12) became code and then raised two gaps of its own. `af4d9a3` implemented the
+portable `config.apply` (settings overlay, dictionary loaded before any write, effective-section
+echo), `config_invalid` on reload and the variant-change hook — with a genuine red-first run where
+four of eight new tests failed for exactly the ruled reasons. `390411f` extended the golden fixtures
+to the new shapes (49 now); `a52c6aa` recorded two defects the work exposed: apply was two atomic
+writes under one rev (a projection failure could half-save, against PROTOCOL §4's promise), and
+`validate.rs`'s effective copy replaced owned blocks while the writer merges field-wise, so a rule
+could judge a config the write would not produce. `46df1ee` closed both — a composed
+`apply_sections_with_settings` in `seal-config::store` that builds the projection before one
+`update_local`, and a field-wise effective copy — each with red evidence (a half-written `local.yaml`
+in the first, a partial `quest` save that validated clean and would have produced a dangling
+sequence in the second).
+
+Also this milestone: a read-only docs consistency audit of the whole v3 shelf against the code. It
+found fifteen drift points — PROTOCOL still calling itself unimplemented while eight commands
+served, `config.changed` and the `phase` examples (`visiting`/`visit`) contradicting the emitter,
+CONFIG's §5 bullets describing work that had landed, the divergence log missing four defined lines,
+and frame-cache sentences describing unbuilt machinery as current. The fixes (all in this build) are
+a warning worth recording: **documentation written while the code is still landing goes stale in
+hours**; PROTOCOL §4's "implemented vs spec-only" status paragraph exists so the shell can tell the
+difference.
 
 ## 2026-10-25 (12) — the rulings: portable `config.apply`, `config_invalid`, the boot channel
 

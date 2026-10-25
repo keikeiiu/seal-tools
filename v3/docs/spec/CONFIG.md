@@ -215,21 +215,21 @@ safe*, not *whether a value is allowed*.
   codes, v2's `ConfigValidator` had no hotkey rule and any code is legal to the input API, so
   validating a stored code would refuse configs v2 ran. The tab's typed names need their own
   protocol command, which does not exist yet ([PROTOCOL.md](PROTOCOL.md) §11.5).
-- **The typed attributes model has landed, but nothing consumes it yet.** The loader returns opaque
-  JSON and `seal-domain` now owns the typed dictionary plus its OCR matchers
+- **The typed attributes model has landed and is loaded by name.** The loader returns opaque JSON and
+  `seal-domain` owns the typed dictionary plus its OCR matchers
   ([attributes.rs](../../core/crates/seal-domain/src/config/attributes.rs),
-  [ocr/](../../core/crates/seal-domain/src/ocr/mod.rs)); no command consumes a dictionary yet, and
-  the variant-dictionary switch (load-by-name + seeding) is not wired into the dispatcher.
-- **The `settings:` path has one caller left to gain.** The fold writes the block and `save_settings`
-  projects into it, but the current dispatcher's `config.apply` writes owned blocks at the top level;
-  a future portable-save command is the natural place for `save_settings`. Both locations are inside
-  `local.yaml`, which no update overwrites, so this is an open integration choice rather than a
-  safety gap.
+  [ocr/](../../core/crates/seal-domain/src/ocr/mod.rs)); the core loads the dictionary the active
+  variant names at boot and on `config.reload`, all-or-nothing in v2's switch order (`b6a49a7`). No
+  OCR reader consumes it yet — that is `seal-ocr`'s side ([OPEN.md](../backlog/OPEN.md) §4).
+- **The `settings:` path is wired.** `config.apply` may carry the portable half; the core merges the
+  owned blocks and writes the `settings:` projection in ONE `update_local` (`46df1ee`), so a failed
+  apply half-saves nothing (PROTOCOL §4/§7). `save_settings` and the composed writer share their
+  projection code so they cannot drift.
 - **No cross-process lock.** The save gate is in-process, and the protocol's single-instance lock
   ([PROTOCOL.md](PROTOCOL.md) §1) is not implemented yet. Two cores on one root can interleave.
 - **Binary artifacts need their own writer.** The atomic writer carries text only. The calibration
   PNGs that v2 wrote beside `local.yaml` need a temp-and-move sibling for binary data (a
   `File.Copy`-to-temp-and-move shape, not this one) when `calibration.save` lands.
-- **The header links a document v3 has not ported yet.** `LOCAL_HEADER` points at
-  `docs/spec/CALIBRATION.md` (and this file); the v3 spec tree does not have CALIBRATION.md yet, so
-  that inherited pointer resolves only after the docs port.
+- **The header's inherited pointer resolves.** `LOCAL_HEADER` points at `docs/spec/CALIBRATION.md`
+  (and this file); both now exist in the v3 spec tree. Whether `docs/` ships beside `config/` inside
+  the install is a packaging question ([OPEN.md](../backlog/OPEN.md) §2).

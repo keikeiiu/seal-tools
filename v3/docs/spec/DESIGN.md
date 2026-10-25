@@ -233,7 +233,7 @@ already warnings-as-errors). The current test count is whatever `cargo test --wo
 audited baseline with its date and per-crate split is [PORT-COVERAGE.md](../records/PORT-COVERAGE.md) §1.
 
 **How a claim is verified:** the audit maps every v2 test file and ported source file to its v3 home
-and every gap; the per-tool catalogue lives with the tool's tests; the protocol has 42 golden fixtures
+and every gap; the per-tool catalogue lives with the tool's tests; the protocol's golden fixture set
 written by the Rust side, decoded by the Dart side when it exists ([PROTOCOL.md](PROTOCOL.md) §10).
 Three test families exist that v2 had none of, and they are the port's added value: the protocol
 boundary, the arbiter/lifecycle (torn snapshots, RAII release, Cleanup signatures, the runner with fake

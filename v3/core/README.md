@@ -75,12 +75,28 @@ reason.
   once in game (…)" by analogy with the spacebar's existing texts. Cost if wrong: a failed drag
   button now says something to the player where v2 said nothing — a worse outcome only if players
   preferred the silence.
+- **A second `tool.start` is refused, not auto-stopped** (`seal-tools/src/arbiter.rs`). v2 stopped
+  the running tool when another was started; v3 answers `tool_busy` with the holder's line, and a
+  distinct "is still stopping" line when a start arrives as the last run leaves. Cost if wrong: the
+  player needs one extra click where v2 did it in one.
+- **The placement's unreadable-cursor line is defined, not v2's interpolation**
+  (`seal-board/src/placement.rs`). v2 interpolated `(,)` when the final cursor read failed; v3 says
+  the cursor position could not be read, so a failed placement is diagnosable from the card alone.
+- **A transport write failure surfaces as a typed line, not an escaped exception**
+  (`seal-board/src/transport.rs`). v2 let the exception escape to the caller's message; v3 answers
+  "the board would not take the move — <line>", which the tool loop can put on the card.
+- **The runner defines two lines v2 never had** (`seal-tools/src/runner.rs`): `Stopped.` for a
+  cancelled `tool.finished` (v2's "stopped" was UI text) and `A board or capture action failed.` for
+  an effect failure that carries no better sentence (v2 showed `Exception.Message`, which on an
+  empty message was nothing). Cost if wrong: a sentence where a developer saw a stack frame — the
+  safe direction for a player facing a card.
 
 ## Toolchain
 
 `rust-toolchain.toml` pins `stable-x86_64-pc-windows-gnu` because this machine has no MSVC linker
 yet. Crates that generate import libraries with GNU `dlltool` (anything pulling `windows-sys`) do
-not build under that pin; the Win32, serial and OCR crates are blocked until VS Build Tools is
-installed and the pin flips back to `stable` (MSVC). Pure crates — protocol, config, domain,
+not build under that pin; the Win32 and OCR crates, and `seal-board`'s OS serial adapter (the crate
+itself is pure and builds), are blocked until VS Build Tools is installed and the pin flips back to
+`stable` (MSVC). Pure crates — protocol, config, domain,
 tools' decision halves — are unaffected.
 

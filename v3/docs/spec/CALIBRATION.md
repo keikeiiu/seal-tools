@@ -104,6 +104,10 @@ a refused `SetCursorPos` cannot stop an action: `GemPointer.To` reads `GetCursor
 worked), computes the error in the process's logical space, sends `D`, and repeats until within 2 px.
 Measured gain is exactly 1:1 and a normal placement converges in one move.
 
+**Not wired yet:** this closed loop is `seal-board::placement` — pure, over a `Cursor` and
+`Transport` seam with a fake in every test. The OS adapters (serial open, `GetCursorPos`) are the
+remaining piece (gap G2); until they land, no tool can move the cursor.
+
 **A long move is walked out by the firmware in 10-px `Mouse.move` chunks with `delay(1)` between
 them**, so a 600-px write keeps arriving after `Write` returns. The placement loop therefore polls
 until two consecutive `GetCursorPos` reads agree (15 ms apart, bounded) instead of sleeping: the
@@ -136,7 +140,7 @@ a cursor to a pixel v2 never clicked. Pinned by
   calibrator's capture is the game only.
 - **Frames carry their origin**: the frame is a rectangle of the physical screen, and
   [`Frame`](PROTOCOL.md#3-types) carries `origin` so the shell never has to guess where it came from.
-  Frames are PNG+base64 for now; the core retains the last four by `frame_id` so
+  Frames are PNG+base64 for now; the core will retain the last four by `frame_id` (not built yet) so
   `calibration.save` references the frame the calibrator just took instead of shipping megabytes
   twice.
 
