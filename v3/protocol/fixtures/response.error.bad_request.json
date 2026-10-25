@@ -1,0 +1,14 @@
+{
+  "case": "response.error.bad_request",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "bad_request",
+      "detail": {},
+      "message": "malformed envelope, unknown cmd, bad args"
+    },
+    "id": "21",
+    "ok": false,
+    "v": 1
+  }
+}

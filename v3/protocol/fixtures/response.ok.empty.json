@@ -1,0 +1,10 @@
+{
+  "case": "response.ok.empty",
+  "kind": "response",
+  "message": {
+    "id": "20",
+    "ok": true,
+    "result": {},
+    "v": 1
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "case": "event.core.stopping",
+  "kind": "event",
+  "message": {
+    "data": {
+      "reason": "eof"
+    },
+    "event": "core.stopping",
+    "v": 1
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "response.error.board_unavailable",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "board_unavailable",
+      "detail": {
+        "port": "COM5"
+      },
+      "message": "no board on the configured port"
+    },
+    "id": "27",
+    "ok": false,
+    "v": 1
+  }
+}

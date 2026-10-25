@@ -1,0 +1,4 @@
+# These fixtures are compared byte-for-byte by the Rust test, so their line endings are part of the
+# contract. The repository is used on Windows with core.autocrlf=true, which would otherwise check
+# them out as CRLF; force LF for every file in this directory (JSON fixtures and this README).
+* text eol=lf

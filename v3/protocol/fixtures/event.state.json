@@ -1,0 +1,22 @@
+{
+  "case": "event.state",
+  "kind": "event",
+  "message": {
+    "data": {
+      "countdown_s": null,
+      "error": null,
+      "message": "row 2: looking",
+      "phase": "visit",
+      "rows": [
+        {
+          "checked": true,
+          "row": 1
+        }
+      ],
+      "running": true,
+      "tool": "pet"
+    },
+    "event": "state",
+    "v": 1
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "case": "response.ok.hello",
+  "kind": "response",
+  "message": {
+    "id": "1",
+    "ok": true,
+    "result": {
+      "config": {
+        "game": {
+          "variant": "tw"
+        },
+        "tuner": {
+          "target_grade": "DG"
+        },
+        "window": {
+          "title": "TW_LIVE"
+        }
+      },
+      "core_version": "0.1.0",
+      "protocol": 1,
+      "rev": 7,
+      "root": "C:\\SealTools"
+    },
+    "v": 1
+  }
+}

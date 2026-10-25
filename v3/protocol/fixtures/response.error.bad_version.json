@@ -1,0 +1,16 @@
+{
+  "case": "response.error.bad_version",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "bad_version",
+      "detail": {
+        "expected": 1
+      },
+      "message": "protocol 2 is not 1"
+    },
+    "id": "22",
+    "ok": false,
+    "v": 1
+  }
+}

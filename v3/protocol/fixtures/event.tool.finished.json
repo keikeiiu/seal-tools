@@ -1,0 +1,13 @@
+{
+  "case": "event.tool.finished",
+  "kind": "event",
+  "message": {
+    "data": {
+      "message": "DONE — 4 row(s)",
+      "reason": "done",
+      "tool": "pet"
+    },
+    "event": "tool.finished",
+    "v": 1
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "case": "request.ocr.scan.attributes",
+  "kind": "request",
+  "message": {
+    "args": {
+      "frame_id": "f1",
+      "mode": "attributes"
+    },
+    "cmd": "ocr.scan",
+    "id": "18",
+    "v": 1
+  }
+}

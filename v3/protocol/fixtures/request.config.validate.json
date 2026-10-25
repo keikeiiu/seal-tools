@@ -1,0 +1,16 @@
+{
+  "case": "request.config.validate",
+  "kind": "request",
+  "message": {
+    "args": {
+      "sections": {
+        "quest": {
+          "active": "run1"
+        }
+      }
+    },
+    "cmd": "config.validate",
+    "id": "2",
+    "v": 1
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case": "response.error.io",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "io",
+      "detail": {
+        "path": "config/local.yaml"
+      },
+      "message": "cannot write config/local.yaml: access denied"
+    },
+    "id": "30",
+    "ok": false,
+    "v": 1
+  }
+}

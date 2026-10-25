@@ -1,0 +1,12 @@
+{
+  "case": "request.board.test.click",
+  "kind": "request",
+  "message": {
+    "args": {
+      "kind": "click"
+    },
+    "cmd": "board.test",
+    "id": "11",
+    "v": 1
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "case": "response.error.internal",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "internal",
+      "detail": {},
+      "message": "internal error"
+    },
+    "id": "31",
+    "ok": false,
+    "v": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "case": "request.calibration.fetch",
+  "kind": "request",
+  "message": {
+    "args": {
+      "kind": "bag"
+    },
+    "cmd": "calibration.fetch",
+    "id": "9",
+    "v": 1
+  }
+}

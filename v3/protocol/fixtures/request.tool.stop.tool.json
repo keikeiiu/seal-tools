@@ -1,0 +1,12 @@
+{
+  "case": "request.tool.stop.tool",
+  "kind": "request",
+  "message": {
+    "args": {
+      "tool": "spammer"
+    },
+    "cmd": "tool.stop",
+    "id": "16",
+    "v": 1
+  }
+}

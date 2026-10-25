@@ -1,0 +1,14 @@
+{
+  "case": "response.error.not_ready",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "not_ready",
+      "detail": {},
+      "message": "hello must be the first request"
+    },
+    "id": "23",
+    "ok": false,
+    "v": 1
+  }
+}

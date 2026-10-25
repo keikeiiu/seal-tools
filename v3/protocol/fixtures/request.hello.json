@@ -1,0 +1,13 @@
+{
+  "case": "request.hello",
+  "kind": "request",
+  "message": {
+    "args": {
+      "client": "0.1.0",
+      "protocol": 1
+    },
+    "cmd": "hello",
+    "id": "1",
+    "v": 1
+  }
+}

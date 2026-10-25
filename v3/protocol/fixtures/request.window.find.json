@@ -1,0 +1,10 @@
+{
+  "case": "request.window.find",
+  "kind": "request",
+  "message": {
+    "args": {},
+    "cmd": "window.find",
+    "id": "5",
+    "v": 1
+  }
+}

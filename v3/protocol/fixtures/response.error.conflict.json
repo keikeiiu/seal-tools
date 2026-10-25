@@ -1,0 +1,21 @@
+{
+  "case": "response.error.conflict",
+  "kind": "response",
+  "message": {
+    "error": {
+      "code": "conflict",
+      "detail": {
+        "rev": 12,
+        "sections": {
+          "quest": {
+            "active": "run1"
+          }
+        }
+      },
+      "message": "config changed while you were editing"
+    },
+    "id": "24",
+    "ok": false,
+    "v": 1
+  }
+}

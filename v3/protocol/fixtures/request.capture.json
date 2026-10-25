@@ -1,0 +1,17 @@
+{
+  "case": "request.capture",
+  "kind": "request",
+  "message": {
+    "args": {
+      "region": {
+        "h": 200,
+        "w": 300,
+        "x": 12,
+        "y": 47
+      }
+    },
+    "cmd": "capture",
+    "id": "7",
+    "v": 1
+  }
+}

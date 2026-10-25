@@ -1,0 +1,14 @@
+{
+  "case": "request.board.test.move",
+  "kind": "request",
+  "message": {
+    "args": {
+      "dx": 100,
+      "dy": 0,
+      "kind": "move"
+    },
+    "cmd": "board.test",
+    "id": "12",
+    "v": 1
+  }
+}

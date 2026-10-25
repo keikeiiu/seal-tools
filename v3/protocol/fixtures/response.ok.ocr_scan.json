@@ -1,0 +1,23 @@
+{
+  "case": "response.ok.ocr_scan",
+  "kind": "response",
+  "message": {
+    "id": "18",
+    "ok": true,
+    "result": {
+      "attributes": [
+        [
+          "攻擊力",
+          "atk"
+        ]
+      ],
+      "capture_path": "logs/captures/read_0001.png",
+      "grade": "G",
+      "lines": [
+        "攻擊力 +12"
+      ],
+      "remaining": null
+    },
+    "v": 1
+  }
+}

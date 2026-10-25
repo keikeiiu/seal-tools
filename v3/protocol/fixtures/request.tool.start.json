@@ -1,0 +1,12 @@
+{
+  "case": "request.tool.start",
+  "kind": "request",
+  "message": {
+    "args": {
+      "tool": "spammer"
+    },
+    "cmd": "tool.start",
+    "id": "15",
+    "v": 1
+  }
+}

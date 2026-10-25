@@ -1,0 +1,17 @@
+{
+  "case": "response.ok.config_reload",
+  "kind": "response",
+  "message": {
+    "id": "4",
+    "ok": true,
+    "result": {
+      "config": {
+        "window": {
+          "title": "TW_LIVE"
+        }
+      },
+      "rev": 9
+    },
+    "v": 1
+  }
+}
