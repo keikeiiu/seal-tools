@@ -8,6 +8,7 @@ members = [
     "crates/seal-tools",
     "crates/seal-board",
     "crates/seal-win",
+    "crates/seal-ocr",
 ]
 
 [workspace.package]
