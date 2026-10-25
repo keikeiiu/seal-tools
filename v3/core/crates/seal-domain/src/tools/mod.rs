@@ -16,5 +16,6 @@
 //! the module defines a small plan type instead; the caller executes it in order and reports back
 //! what failed. Returning one effect per call would move the ordering rules back into the loop.
 
+pub mod shop;
 pub mod spammer;
 pub mod tuner;

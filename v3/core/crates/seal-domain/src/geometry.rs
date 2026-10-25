@@ -170,7 +170,7 @@ pub struct CursorTarget {
 }
 
 /// `(int)Math.Round(x)`: nearest integer, ties to even, saturating at the i32 bounds.
-fn round_ties_even(value: f64) -> i32 {
+pub(crate) fn round_ties_even(value: f64) -> i32 {
     // A non-finite value cannot arise from real rects; treating it as 0 keeps the function total
     // rather than panicking on an unrepresentable input.
     if !value.is_finite() {
