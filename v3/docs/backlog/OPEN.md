@@ -63,8 +63,13 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   not call it yet.
 - **`settings:` portable-save caller** — the fold and `save_settings` exist; `config.apply` writes
   owned top-level blocks. A portable-save command is the open integration choice.
-- **CALIBRATION.md** — `LOCAL_HEADER` points at `docs/spec/CALIBRATION.md`; the v3 spec tree has no
-  such document yet.
+- **`Clock` trait is duplicated** — `seal-tools::clock::Clock` and `seal-board::clock::Clock` are
+  the same one-method, seconds-only trait (seal-board does not depend on seal-tools). Move it to
+  `seal-domain` and delete both copies when convenient; the seconds-only unit is deliberate (the
+  eleven-minute-sleep incident).
+- **CALIBRATION.md landed** (`c5baa65`) — the header's inherited `docs/spec/CALIBRATION.md` pointer
+  now resolves; the live measurement side remains `seal-win`'s (gap G1), as the document states.
+
 
 ## 4. The shell and the Windows/IO crates
 
