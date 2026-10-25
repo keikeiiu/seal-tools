@@ -293,6 +293,9 @@ class DraftDropdownField extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = options.contains(value) ? value : null;
     final dropdown = DropdownButtonFormField<String>(
+      // A change of selected value must recreate the form-field state; `initialValue` is only an
+      // initial value, so an external re-seed or a reorder would otherwise leave a stale display.
+      key: ValueKey<String>('dropdown-${current ?? ''}'),
       initialValue: current,
       isExpanded: true,
       isDense: true,
