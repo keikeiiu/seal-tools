@@ -27,6 +27,9 @@ window:
   title: TEST_TITLE
 hotkeys:
   start: 123
+  quit: 122
+  advance_grade: 71
+  pause: 20
 quest:
   active: base
 arduino:
@@ -53,6 +56,15 @@ gem:
   move_mode: arduino
   empty_mode: stop
   colored_gap_min: 40
+game:
+  variant: \"\"
+  variants:
+    tw:
+      title: \"Seal Online TW\"
+      attributes: attributes.tw.yaml
+    us:
+      title: \"Seal Online US\"
+      attributes: attributes.us.yaml
 ";
 
 /// The TW dictionary the fixture's config/ needs: `load_attributes` refuses a missing one (an empty
@@ -131,6 +143,10 @@ pub fn config_root() -> TestDir {
     root.write("config/defaults.yaml", BASE_CONFIG);
     root.write("config/local.yaml", LOCAL_CONFIG);
     root.write("config/attributes.yaml", BASE_ATTRIBUTES);
+    // The template names two clients (`game.variants`), so the fixture ships both dictionaries: a
+    // variant-switching save resolves and LOADS its dictionary before writing.
+    root.write("config/attributes.tw.yaml", "per_level_stats:\n  - tw\n");
+    root.write("config/attributes.us.yaml", "per_level_stats:\n  - us\n");
     root
 }
 

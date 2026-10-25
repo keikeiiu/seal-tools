@@ -76,7 +76,7 @@ pub fn validate_sections(state: &CoreState, sections: &Map<String, Value>) -> Ou
 
 /// The merged config as it would read after this save — on a copy, so a rule can never touch the
 /// session view or the file.
-fn effective_config(current: &Value, sections: &Map<String, Value>) -> Value {
+pub(crate) fn effective_config(current: &Value, sections: &Map<String, Value>) -> Value {
     let mut config = current.clone();
     let Some(config_object) = config.as_object_mut() else {
         return config;

@@ -25,24 +25,8 @@ use serde_json::json;
 /// that differs in a field the test can see (`per_level_stats`).
 fn variant_root() -> TestDir {
     let root = TestDir::new();
-    root.write(
-        "config/defaults.yaml",
-        &format!(
-            "{}
-game:
-  variant: tw
-  variants:
-    tw:
-      title: \"Seal Online TW\"
-      attributes: attributes.tw.yaml
-    us:
-      title: \"Seal Online US\"
-      attributes: attributes.us.yaml
-",
-            common::BASE_CONFIG
-        ),
-    );
-    root.write("config/local.yaml", "{}");
+    root.write("config/defaults.yaml", common::BASE_CONFIG);
+    root.write("config/local.yaml", "settings:\n  game:\n    variant: tw\n");
     root.write(
         "config/attributes.tw.yaml",
         "per_level_stats:\n  - tw_only\n",

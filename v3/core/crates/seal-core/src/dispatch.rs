@@ -153,18 +153,7 @@ fn load_parts(
     let config = store.load()?;
     startup::validate_config(&config)?;
     let active = startup::active(&config);
-    let dictionary = store
-        .load_attributes_named(&active.dictionary)
-        .map_err(|error| StartupError::Dictionary {
-            line: error.to_string(),
-        })?;
-    let attributes = serde_json::from_value::<seal_domain::config::AttributesConfig>(dictionary)
-        .map_err(|error| StartupError::Dictionary {
-            line: format!(
-                "the attribute dictionary {} could not be read: {error}",
-                active.dictionary
-            ),
-        })?;
+    let attributes = startup::load_dictionary(store, &active.dictionary)?;
     Ok((config, active, attributes))
 }
 
@@ -283,14 +272,101 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
         );
     }
 
-    let merged = match state.store.apply_sections(&sections) {
-        Ok(merged) => merged,
+    // The portable half is the one section that is not written as a block: it goes through the
+    // settings projection below. Anything else malformed there would reach the projection unfiltered.
+    if let Some(settings) = sections.get("settings")
+        && !settings.is_object()
+    {
+        return bad_request(
+            &request.id,
+            "the settings section must be an object of config blocks",
+            json!({"section": "settings"}),
+        );
+    }
+
+    // The effective config is the merge the shell will see AND the merge the rules just ran on: the
+    // echo and the settings projection both come from it, so apply, validate and the answer cannot
+    // describe different configs (`PROTOCOL.md` §7).
+    let effective = crate::validate::effective_config(&state.config, &sections);
+
+    // v2's SwitchVariant order, the only one that cannot half-switch a variant: resolve → validate →
+    // LOAD the dictionary the effective config names → write. A missing dictionary refuses here,
+    // before the first byte is written and before a rev is consumed.
+    let active = startup::active(&effective);
+    let attributes = match startup::load_dictionary(&state.store, &active.dictionary) {
+        Ok(attributes) => attributes,
+        Err(error) => return startup_error_response(&request.id, error),
+    };
+
+    // Owned blocks through the block writer — `settings` is deliberately filtered out and written
+    // through the projection below.
+    let owned: Map<String, Value> = sections
+        .iter()
+        .filter(|(name, _)| name.as_str() != "settings")
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    if !owned.is_empty()
+        && let Err(error) = state.store.apply_sections(&owned)
+    {
+        return config_error_response(&request.id, error);
+    }
+
+    // The portable overlay through v2's SaveSettings: each section is written WHOLE, projected onto
+    // the template's shape, never as the raw overlay the shell sent.
+    if sections.contains_key("settings")
+        && let Err(error) = state.store.save_settings(&effective)
+    {
+        return config_error_response(&request.id, error);
+    }
+
+    // Commit: the files are now the truth, so re-read the merged view; the dictionary was loaded
+    // BEFORE the write and lands with the variant, one rev covering both halves.
+    let config = match state.store.load() {
+        Ok(config) => config,
         Err(error) => return config_error_response(&request.id, error),
     };
+    state.config = config;
+    state.variant = active.variant;
+    state.dictionary = active.dictionary;
+    state.attributes = attributes;
     state.rev += 1;
-    refresh_config(state);
 
-    Response::ok(&request.id, json!({"rev": state.rev, "sections": merged}))
+    Response::ok(
+        &request.id,
+        json!({"rev": state.rev, "sections": echo_sections(&state.config.clone(), &sections)}),
+    )
+}
+
+/// The apply result echoes the EFFECTIVE sections for the names in the request, in the request's
+/// structure: owned blocks at top level, the portable half nested under `settings` (`PROTOCOL.md`
+/// §4). "Effective" means what the merge resolves the name to, not the overlay the shell sent — a
+/// shell cannot map a merged projection it does not own, and it should not have to guess which fields
+/// the core's rules added.
+fn echo_sections(effective: &Value, sections: &Map<String, Value>) -> Map<String, Value> {
+    let mut echo = Map::new();
+    for (name, requested) in sections {
+        if name == "settings" {
+            let mut portable = Map::new();
+            if let Some(requested) = requested.as_object() {
+                for inner in requested.keys() {
+                    portable.insert(
+                        inner.clone(),
+                        effective.get(inner).cloned().unwrap_or(Value::Null),
+                    );
+                }
+            }
+            echo.insert(name.clone(), Value::Object(portable));
+        } else {
+            echo.insert(
+                name.clone(),
+                effective
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| requested.clone()),
+            );
+        }
+    }
+    echo
 }
 
 /// `config.reload`: re-read the three layers through the store and answer the whole config. A reload
@@ -304,8 +380,25 @@ fn config_reload(state: &mut CoreState, request: &Request) -> Response {
                 json!({"rev": state.rev, "config": state.config}),
             )
         }
-        Err(error) => startup_error_response(&request.id, error),
+        Err(error) => reload_error_response(&request.id, error),
     }
+}
+
+/// A reload failure: an INVALID on-disk config is its own protocol answer (`config_invalid`,
+/// `PROTOCOL.md` §6/§4) carrying the ported validator's lines, while file-level failures keep the
+/// `io`/config mapping. Boot-time invalidity stays on stderr (§1); this is the reload case only.
+fn reload_error_response(id: &str, error: StartupError) -> Response {
+    if let Some(errors) = error.invalid_errors() {
+        return Response::err(
+            id,
+            Error::new(
+                "config_invalid",
+                "the config on disk is invalid",
+                json!({"errors": errors}),
+            ),
+        );
+    }
+    startup_error_response(id, error)
 }
 
 /// `ui.window {left, top, width, height, pinned}`: the one path window geometry and pin state take

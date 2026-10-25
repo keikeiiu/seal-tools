@@ -30,8 +30,8 @@
 
 use seal_config::ConfigError;
 use seal_domain::config::{
-    ArduinoInput, BoxConfig, FilterConfig, GemInput, OcrGeometry, RegionConfig, TunerInput,
-    ValidationInput, WindowConfig, validate,
+    ArduinoInput, AttributesConfig, BoxConfig, FilterConfig, GemInput, OcrGeometry, RegionConfig,
+    TunerInput, ValidationInput, WindowConfig, validate,
 };
 use serde_json::{Map, Value};
 
@@ -71,6 +71,18 @@ impl StartupError {
                     all.join("\n  - ")
                 )
             }
+        }
+    }
+
+    /// The validator's player-facing lines for `detail.errors` (`PROTOCOL.md` §6 `config_invalid`).
+    pub fn invalid_errors(&self) -> Option<Vec<String>> {
+        match self {
+            Self::Invalid { lines, malformed } => {
+                let mut all = malformed.clone();
+                all.extend(lines.iter().cloned());
+                Some(all)
+            }
+            Self::Config(_) | Self::Dictionary { .. } => None,
         }
     }
 }
@@ -136,6 +148,24 @@ pub fn active(config: &Value) -> Active {
         variant: Some(name.clone()),
         dictionary: dictionary.to_owned(),
     }
+}
+
+/// Loads one attribute dictionary (`config/<name>`, seeded from `<name>.example` when present) and
+/// decodes it. The one place boot, reload and the apply's pre-write check get the dictionary from, so
+/// the three cannot drift.
+pub fn load_dictionary(
+    store: &seal_config::ConfigStore,
+    dictionary: &str,
+) -> Result<AttributesConfig, StartupError> {
+    let raw =
+        store
+            .load_attributes_named(dictionary)
+            .map_err(|error| StartupError::Dictionary {
+                line: error.to_string(),
+            })?;
+    serde_json::from_value(raw).map_err(|error| StartupError::Dictionary {
+        line: format!("the attribute dictionary {dictionary} could not be read: {error}"),
+    })
 }
 
 /// Runs the ported `ConfigValidator` rules over the merged config.
