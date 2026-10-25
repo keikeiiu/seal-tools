@@ -1,8 +1,6 @@
 # Protocol — v3 core ⇄ shell
 
-**Status: DRAFT v1, written 2026-10-25 before the walking skeleton exists.** This is the step-1
-deliverable named in [PLAN-V3-CORE.md](../../../v2/docs/plans/PLAN-V3-CORE.md) §10; the step-1
-spikes (DPI mapping, IME, hotkey location) may change it. Nothing here is implemented yet.
+**Status: DRAFT v2, written 2026-10-25.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
 
 The design rationale is PLAN-V3-CORE §4. This file is the contract; both halves are written
 against it, and the golden fixtures in §10 are how they are kept in agreement.
@@ -17,10 +15,10 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
   stdout. stderr carries logs and panics only, never protocol messages.
 - The core discovers its root the way v2 does: walk up from the executable for
   `config/defaults.yaml`, else `config/defaults.yaml.example`.
-- **Single instance:** the core holds an exclusive OS file lock on
-  `<root>/config/.seal-core.lock`. A second core exits with code `2` and one stderr line; the
-  shell shows it. The lock is released by the OS when the process dies, so a crash leaves no
-  stale lock to clear by hand.
+- **Single instance (designed, not built yet — [OPEN.md](../backlog/OPEN.md) §3):** the core will
+  hold an exclusive OS file lock on `<root>/config/.seal-core.lock`. A second core exits with
+  code `2` and one stderr line; the shell shows it. The lock is released by the OS when the
+  process dies, so a crash leaves no stale lock to clear by hand.
 - **Handshake:** the shell's first message is `hello`. Any request before a successful handshake
   fails with `not_ready`. A protocol-version mismatch fails `hello` with `bad_version`; the
   shell shows both versions rather than guessing.
@@ -55,7 +53,7 @@ Response — success carries `result`, failure carries `error`; `id` always echo
 Event — unsolicited, no `id`:
 
 ```json
-{"v":1,"event":"state","data":{"tool":"pet","running":true,"phase":"visiting","message":"..."}}
+{"v":1,"event":"state","data":{"tool":"pet","running":true,"phase":"running","message":"..."}}
 ```
 
 `id` values are chosen by the shell, unique for the life of the connection, opaque to the core.
@@ -138,15 +136,22 @@ Notes:
 - `config.reload` re-reads and re-merges; an invalid on-disk config is answered with
   `config_invalid` (§6) carrying the validator's lines in `detail.errors`, and the session keeps
   the config it had.
+
+**Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
+`config.reload`, `ui.window`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their
+crates land ([OPEN.md](../backlog/OPEN.md) §4): `window.find`, `window.measure`, `capture`,
+`calibration.save`, `calibration.fetch`, `board.probe`, `board.test`, `ocr.scan`. A command
+in this table is the contract; the implemented list is the current fact.
+
 ## 5. Events
 
 | event | data | when |
 |---|---|---|
-| `state` | `{"tool":"pet","running":true,"phase":"visit","message":"row 2: looking","countdown_s":null,"rows":[{...}],"error":null}` | whenever the published state changes — the whole 750 ms-poll surface, pushed |
+| `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[{...}],"error":null}` | whenever the published state changes — the whole 750 ms-poll surface, pushed |
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
-| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays (pet session state, calibration, `ui:`) |
+| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | specified, no emitter yet (DESIGN §3): the core wrote a block the UI displays (pet session state, calibration, `ui:`) |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
-| `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit |
+| `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` has no producer yet |
 
 The plan's `core.ready` event is folded into the `hello` result (ruling 1, §12): the handshake
 already returns everything it carried, and a second message with the same content is a thing
@@ -187,12 +192,17 @@ persists `ui:` on every move. The core is the only writer and the only merger.
   sections.
 - `config.apply` may carry `"settings"` — the portable half (§4). Owned blocks replace; `settings`
   overlays field-wise into the file's `settings:` block, and one `rev` covers both halves. The
-  result echoes the effective sections for the requested names, not the whole file (§12.2).- A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
+  result echoes the effective sections for the requested names, not the whole file (§12.2).
+- A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
   underneath before saving again.
-- Core-initiated writes emit `config.changed {rev, block, values}`. A shell that is not editing
-  that block applies it silently; one that is editing shows the conflict.
+- Core-initiated writes will emit `config.changed {rev, block, values}` (specified, no emitter yet —
+  DESIGN §3). A shell that is not editing that block applies it silently; one that is editing shows
+  the conflict.
 - `ui:` is fully core-owned; it is written only through `ui.window`.
 - Hand edits to the file are picked up at startup or by `config.reload`.
+- `config.apply` commits both halves — the owned blocks and the portable projection — in ONE file
+  update, so a failed apply writes nothing and consumes no `rev` (seal-config's composed writer,
+  `46df1ee`).
 
 ## 8. Images and the frame cache
 
@@ -200,7 +210,7 @@ Frames are PNG, base64 in JSON, for v1. At a 2865×1789 client a frame is ~1–3
 base64; calibration is human-paced, so this is fine. Raw BGRA framing is a later optimisation,
 measured before adopted.
 
-The core keeps the last **four** frames by `frame_id` (FIFO). `calibration.save` references the
+Specified, not built: the core will keep the last **four** frames by `frame_id` (FIFO). `calibration.save` references the
 frame the calibrator just captured instead of re-sending megabytes; a `frame_id` older than the
 cache fails with `bad_request: unknown frame_id` and the shell re-captures.
 
@@ -223,8 +233,8 @@ The two halves must not drift, so the protocol is tested from both sides:
   from what is committed.
 - A Dart test decodes every fixture into the shell's types and fails if a field is missing or a
   type is wrong.
-- A Rust test replays a recorded command fixture list against the dispatcher with a fake core
-  state, asserting the sequence is accepted.
+- Planned (not built): a Rust test that replays a recorded command fixture list against the
+  dispatcher with a fake core state, asserting the sequence is accepted.
 
 ## 11. Open items for the step-1 spikes
 
@@ -235,7 +245,7 @@ The two halves must not drift, so the protocol is tested from both sides:
    is not exact, `DisplayInfo` grows the field the conversion needs rather than the shell deriving
    it from Win32.
 3. **Frame size** — measure a real capture's size and transfer time before deciding PNG stays.
-4. **IME** — not a protocol item, but it decides whether name fields are free text (§13.2); if
+4. **IME** — not a protocol item, but it decides whether name fields are free text (PLAN-V3-CORE §13.2); if
    they are not, no protocol change is needed.
 5. **Hotkey typed-name validation** — the Hotkeys tab parses typed names (`F12`, `q`) into VK
    codes, and that rule has no protocol path: the config carries codes, and validating a stored
