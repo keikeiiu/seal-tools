@@ -7,7 +7,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/protocol/protocol.dart';
 import 'package:seal_shell/ui/tabs/calibrate_tab.dart';
+import 'package:seal_shell/ui/tabs/calibration_widgets.dart';
 import 'package:seal_shell/ui/theme.dart';
 
 import '../../support/app_harness.dart';
@@ -25,11 +27,15 @@ Map<String, dynamic> _displayJson() => {
   'logical_client': {'x': 6, 'y': 13, 'w': 1910, 'h': 1193},
 };
 
-Map<String, dynamic> _captureAnswer({String frameId = 'f1'}) => {
+Map<String, dynamic> _captureAnswer({
+  String frameId = 'f1',
+  int width = 4,
+  int height = 3,
+}) => {
   'frame': {
     'format': 'png',
-    'width': 4,
-    'height': 3,
+    'width': width,
+    'height': height,
     'origin': {'x': 10, 'y': 20},
     'data': _tinyPng,
     'frame_id': frameId,
@@ -383,6 +389,222 @@ void main() {
     expect(find.text('Not calibrated yet'), findsOneWidget);
   });
 
+  testWidgets('a click sets the point fields; a letterbox click is ignored', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    // Point kinds are the click surface.
+    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('focus_point').last);
+    await tester.pumpAndSettle();
+
+    final frame = Frame.fromJson(
+      _captureAnswer(width: 100, height: 75)['frame'] as Map<String, dynamic>,
+      'frame',
+    );
+    final area = tester.getRect(
+      find.byKey(const ValueKey('calibrate-picture-area')),
+    );
+    final layout = frameContainLayout(
+      box: area.size,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+    );
+    // Letterbox is left of the picture for a 4:3 frame in a wider box.
+    await tester.tapAt(area.topLeft + const Offset(5, 20));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(_field('calibrate-x')).controller?.text,
+      '0',
+    );
+    expect(
+      tester.widget<TextField>(_field('calibrate-y')).controller?.text,
+      '0',
+    );
+
+    await tester.tapAt(area.topLeft + layout.picture.center);
+    await tester.pump();
+    final expected = framePointToMark(
+      local: layout.picture.size.center(Offset.zero),
+      box: layout.picture.size,
+      frame: frame,
+      clientOrigin: const Offset(10, 20),
+    )!;
+    expect(
+      tester.widget<TextField>(_field('calibrate-x')).controller?.text,
+      '${expected.x}',
+    );
+    expect(
+      tester.widget<TextField>(_field('calibrate-y')).controller?.text,
+      '${expected.y}',
+    );
+    // The mark is drawn back on the picture (the painter is present).
+    expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  testWidgets('a drag sets the rect fields and the save carries it', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.save' => {
+          'result': {
+            'rev': 9,
+            'kind': 'bag_grid',
+            'mark': [0, 0, 2, 2],
+            'derived': {
+              'pitch': {'w': 0.25, 'h': 0.25},
+            },
+            'artifact': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    final frame = Frame.fromJson(
+      _captureAnswer(width: 100, height: 75)['frame'] as Map<String, dynamic>,
+      'frame',
+    );
+    final area = tester.getRect(
+      find.byKey(const ValueKey('calibrate-picture-area')),
+    );
+    final layout = frameContainLayout(
+      box: area.size,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+    );
+    const delta = Offset(120, 80);
+    final start = area.topLeft + layout.picture.center;
+    await tester.dragFrom(start, delta);
+    await _flush(tester);
+
+    final expected = frameDragToMark(
+      startLocal: layout.picture.size.center(Offset.zero),
+      endLocal: layout.picture.size.center(Offset.zero) + delta,
+      box: layout.picture.size,
+      frame: frame,
+      clientOrigin: const Offset(10, 20),
+    )!;
+    expect(
+      tester.widget<TextField>(_field('calibrate-x')).controller?.text,
+      '${expected.x}',
+    );
+    expect(
+      tester.widget<TextField>(_field('calibrate-w')).controller?.text,
+      '${expected.w}',
+    );
+
+    // The typed fields are authoritative: Save sends what they contain.
+    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _flush(tester);
+    expect(_saveArgs(harness)['region'], {
+      'x': expected.x,
+      'y': expected.y,
+      'w': expected.w,
+      'h': expected.h,
+    });
+  });
+
+  testWidgets('a tiny drag is ignored (no accidental 1x1 mark)', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    final area = tester.getRect(
+      find.byKey(const ValueKey('calibrate-picture-area')),
+    );
+    await tester.dragFrom(area.center, const Offset(1, 1));
+    await _flush(tester);
+
+    expect(
+      tester.widget<TextField>(_field('calibrate-x')).controller?.text,
+      '0',
+    );
+    expect(
+      tester.widget<TextField>(_field('calibrate-w')).controller?.text,
+      '0',
+    );
+    expect(harness.lastSentWithCmd('calibration.save'), isNull);
+  });
+
+  testWidgets('typing overrides a gesture value before Save reads it', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.save' => {
+          'result': {
+            'rev': 10,
+            'kind': 'bag_grid',
+            'mark': [0, 0, 2, 2],
+            'derived': {
+              'pitch': {'w': 0.25, 'h': 0.25},
+            },
+            'artifact': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    final area = tester.getRect(
+      find.byKey(const ValueKey('calibrate-picture-area')),
+    );
+    await tester.dragFrom(area.center, const Offset(120, 80));
+    await _flush(tester);
+    await tester.enterText(_field('calibrate-w'), '55');
+    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _flush(tester);
+
+    expect((_saveArgs(harness)['region'] as Map<String, dynamic>)['w'], 55);
+  });
   testWidgets('a stored artifact renders as the crop picture', (tester) async {
     await _pumpCalibrate(
       tester,

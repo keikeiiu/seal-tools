@@ -219,6 +219,42 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
   }
 
+  /// The mark currently in the typed fields — drawn on the picture and the ONLY source Save reads.
+  CalibrationMark? _editorMark() {
+    final x = int.tryParse(_x.text.trim());
+    final y = int.tryParse(_y.text.trim());
+    if (x == null || y == null) {
+      return null;
+    }
+    if (!_selected.isRect) {
+      return CalibrationMark.point(x, y);
+    }
+    final w = int.tryParse(_w.text.trim());
+    final h = int.tryParse(_h.text.trim());
+    if (w == null || h == null || w < 1 || h < 1) {
+      return null;
+    }
+    return CalibrationMark.rect(x, y, w, h);
+  }
+
+  /// A click on the picture: write the point into the fields (the fields stay authoritative).
+  void _applyPointMark(CalibrationMark mark) {
+    setState(() {
+      _x.text = '${mark.x}';
+      _y.text = '${mark.y}';
+    });
+  }
+
+  /// A drag on the picture: write the rect into the fields.
+  void _applyRectMark(CalibrationMark mark) {
+    setState(() {
+      _x.text = '${mark.x}';
+      _y.text = '${mark.y}';
+      _w.text = '${mark.w}';
+      _h.text = '${mark.h}';
+    });
+  }
+
   void _selectKind(String? name) {
     if (name == null || name == _kindName) {
       return;
@@ -318,10 +354,25 @@ class _CalibrateTabState extends State<CalibrateTab>
                         : capture.errorLine,
                     isError: !capture.ok,
                   ),
+                if (capture == null)
+                  Text(
+                    'Capture the window to see the frame and draw marks.',
+                    key: const ValueKey('calibrate-capture-first'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 if (capture != null && capture.ok) ...[
                   CalibrationFramePicture(
                     key: const ValueKey('calibrate-frame'),
                     frame: capture.value!.frame,
+                    mark: _editorMark(),
+                    clientOrigin: Offset(
+                      capture.value!.display.physicalClient.x.toDouble(),
+                      capture.value!.display.physicalClient.y.toDouble(),
+                    ),
+                    onPointMark: _selected.isRect ? null : _applyPointMark,
+                    onRectMark: _selected.isRect ? _applyRectMark : null,
                   ),
                   const SizedBox(height: ShellSpace.sm),
                   ActionResultLine(

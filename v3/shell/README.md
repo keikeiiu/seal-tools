@@ -71,6 +71,12 @@ Rules of thumb, earned by three real failures:
 - Flutter's `Size`/`Point`/`Rect` collide with the protocol's §3 types. In UI/test code write
   `import 'dart:ui' as ui;` and qualify (`ui.Size`), or `hide Size` on the protocol import; keep the
   protocol names inside protocol code and the app layer.
+- **The named example:** `lib/ui/tabs/calibration_widgets.dart` decodes the wire `Frame` to plain
+  ints and `ui.Rect` at the boundary and does all painting/gesture geometry in `ui.*`. When that file
+  once imported the protocol for `Frame`, its `Rect`/`Size` shadowed Flutter's and the analyzer
+  reported nine errors at once, the fifth checkpoint lost to this class. A mechanical `ui.` sweep
+  also over-reaches: it once turned `SizedBox` into `ui.SizedBox`, which is not a type. After such a
+  sweep, list every `ui.<Name>` identifier used and check each exists in `dart:ui`.
 
 When a new type is added, ask which namespace owns it before writing the import: **wire shape →
 protocol; shell state/decision → app; rendering/geometry → Flutter**.
