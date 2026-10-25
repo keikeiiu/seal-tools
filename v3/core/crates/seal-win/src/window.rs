@@ -99,6 +99,12 @@ fn window_title(hwnd: HWND) -> Option<String> {
     }
 }
 
+/// The title bar text of a window, for the protocol's `window.find` result. `None` for a window
+/// with no text (or one that closed between the find and the read).
+pub fn title_text(hwnd: Hwnd) -> Option<String> {
+    window_title(hwnd.ptr())
+}
+
 /// Is a window the foreground window right now? Capture is refused otherwise: a capture of a covered
 /// game photographs the covering window (`CALIBRATION.md` §3).
 pub fn is_foreground(hwnd: Hwnd) -> bool {

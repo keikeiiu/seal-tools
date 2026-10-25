@@ -24,6 +24,7 @@ use serde_json::{Map, Value, json};
 
 use crate::startup::{self, StartupError};
 use crate::supervisor::{self, StartReply, StopReply};
+use crate::win;
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
 ///
@@ -63,6 +64,9 @@ pub struct CoreState {
     /// The loaded dictionary. Boot-time and every `config.reload` reload it, so a variant switch is
     /// never half-applied.
     pub attributes: AttributesConfig,
+    /// The last four captured frames by id (`PROTOCOL.md` §8), so `calibration.save` can reference a
+    /// frame the calibrator just took instead of re-sending megabytes.
+    pub frames: win::FrameCache,
 }
 
 impl CoreState {
@@ -81,6 +85,7 @@ impl CoreState {
             variant: None,
             dictionary: startup::DEFAULT_DICTIONARY.to_owned(),
             attributes: AttributesConfig::default(),
+            frames: win::FrameCache::default(),
         }
     }
 
@@ -103,6 +108,7 @@ impl CoreState {
             variant: active.variant,
             dictionary: active.dictionary,
             attributes,
+            frames: win::FrameCache::default(),
         })
     }
 
@@ -179,6 +185,9 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "config.apply" => config_apply(state, &request),
         "config.reload" => config_reload(state, &request),
         "ui.window" => ui_window(state, &request),
+        "window.find" => window_find(state, &request),
+        "window.measure" => window_measure(state, &request),
+        "capture" => capture_command(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -526,6 +535,91 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
         ),
+    }
+}
+
+/// `window.find`: a not-found window is a RESULT (`found: false`), not an error — the calibrator
+/// shows found/not-found long before it measures (`PROTOCOL.md` §4).
+fn window_find(state: &CoreState, request: &Request) -> Response {
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    match win::find(&title) {
+        Ok(result) => Response::ok(&request.id, result),
+        Err(error) => win_error_response(&request.id, error),
+    }
+}
+
+/// `window.measure`: the `DisplayInfo` the shell maps frames with. A missing window is
+/// `window_not_found`; the game does not have to be in front to measure it.
+fn window_measure(state: &CoreState, request: &Request) -> Response {
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    match win::measure(&title) {
+        Ok(result) => Response::ok(&request.id, result),
+        Err(error) => win_error_response(&request.id, error),
+    }
+}
+
+/// `capture`: a PNG frame plus the fresh `DisplayInfo`. The frame is cached by id (§8) before the
+/// response is built so the shell can reference it immediately.
+fn capture_command(state: &mut CoreState, request: &Request) -> Response {
+    let region = match win::parse_region(&request.args) {
+        Ok(region) => region,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let (frame, display) = match win::capture(&title, region) {
+        Ok(result) => result,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let frame_id = state.frames.insert(frame);
+    let frame = state
+        .frames
+        .get(&frame_id)
+        .cloned()
+        .expect("the frame was just inserted");
+    Response::ok(&request.id, json!({"frame": frame, "display": display}))
+}
+
+/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` §6). The Win32 detail
+/// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
+fn win_error_response(id: &str, error: win::CommandError) -> Response {
+    match error {
+        win::CommandError::MissingTitle => bad_request(
+            id,
+            "window.title is not configured",
+            json!({"section": "window"}),
+        ),
+        win::CommandError::NotFound { title } => Response::err(
+            id,
+            Error::new(
+                "window_not_found",
+                "the game window was not found",
+                json!({"title": title}),
+            ),
+        ),
+        win::CommandError::NotForeground => Response::err(
+            id,
+            Error::new(
+                "game_not_foreground",
+                "capture refused because another window is in front",
+                json!({}),
+            ),
+        ),
+        win::CommandError::RegionOutside => bad_request(
+            id,
+            "the capture region does not fit inside the game client area",
+            json!({}),
+        ),
+        win::CommandError::BadRequest(message) => bad_request(id, &message, json!({})),
+        win::CommandError::Internal(message) => internal(id, &message),
     }
 }
 

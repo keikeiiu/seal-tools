@@ -354,3 +354,62 @@ fn the_config_commands_before_hello_are_not_ready() {
         assert_eq!(response.error.expect("a refusal").code, "not_ready");
     }
 }
+
+fn window_state(title: &str) -> CoreState {
+    let mut state = state();
+    handle(&mut state, hello());
+    state.config = json!({"window": {"title": title}});
+    state
+}
+
+#[test]
+fn window_find_reports_not_found_as_a_result_not_an_error() {
+    let mut state = window_state("SEAL-TEST-NO-SUCH-WINDOW-7F3A");
+
+    let response = handle(&mut state, Request::new("win1", "window.find", json!({})));
+
+    assert!(response.ok, "not-found is a result: {:?}", response.error);
+    assert_eq!(response.result.unwrap()["found"], false);
+}
+
+#[test]
+fn window_commands_without_a_configured_title_are_bad_requests() {
+    let mut state = state();
+    handle(&mut state, hello());
+
+    let response = handle(
+        &mut state,
+        Request::new("win2", "window.measure", json!({})),
+    );
+
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+#[test]
+fn measure_and_capture_for_a_missing_window_are_window_not_found() {
+    let mut state = window_state("SEAL-TEST-NO-SUCH-WINDOW-7F3A");
+
+    for command in ["window.measure", "capture"] {
+        let response = handle(&mut state, Request::new("win3", command, json!({})));
+        assert!(!response.ok, "{command} should fail");
+        assert_eq!(
+            response.error.unwrap().code,
+            "window_not_found",
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn capture_refuses_a_malformed_region_before_touching_windows() {
+    let mut state = window_state("SEAL-TEST-NO-SUCH-WINDOW-7F3A");
+
+    let response = handle(
+        &mut state,
+        Request::new("win4", "capture", json!({"region": {"x": "nope"}})),
+    );
+
+    assert!(!response.ok);
+    assert_eq!(response.error.unwrap().code, "bad_request");
+}
