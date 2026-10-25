@@ -36,6 +36,17 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **Hotkey typed-name validation.** The Hotkeys tab parses typed names to VK codes and that rule
   has no protocol path (the config carries codes; validating them would refuse configs v2 ran). A
   `hotkey.parse`-style command is the natural shape. See PROTOCOL §11.5.
+- **`tool.start` reply shapes.** A deferred start answers `{}` and publishes the waiting line as a
+  `log` (there is no run yet to attach a `state` to — a state event would report a registration
+  that has not happened); a `tool_busy` refusal's detail is `{line, tool}`. Neither shape is in the
+  spec; pin both in PROTOCOL §4 once the shell exists to consume them.
+- **No game-hand-over event.** The supervisor emits an interim `log` line `"<tool>" has the game.`
+  when the game passes to a waiting run, "until the tool-side waiting strings land" (§1 item 5). A
+  proper event or those strings should replace it.
+- **The production registry's placeholder line.** Until the tool loops exist, `ProductionRegistry`
+  refuses every tool with a defined "not available in this build yet" line; the shell must show it,
+  and it must disappear when the loops land rather than become the new normal.
+
 
 
 ## 3. Deferred integration (named, not scheduled)
