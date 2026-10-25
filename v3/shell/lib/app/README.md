@@ -53,6 +53,20 @@ decode) return `CoreActionResult<T>`: either the decoded `value` or the core's t
 (plus a shell-side `note` when the command could not be sent). Widgets render `errorLine` verbatim;
 nothing invents a refusal.
 
+## Adding a new app-local type (checklist)
+
+A type the shell alone owns (e.g. `AttributesResult`, `BoardProbeResult`, `ConfigSaveOutcome`) lives
+in its own file here and is wired in **three places** — miss one and nothing fails until a consumer
+compiles, which is how four checkpoints were spent:
+
+1. **the file** itself (`lib/app/<name>.dart`);
+2. **an import in `shell_model.dart`** if the model constructs/returns it (same-directory import
+   block);
+3. **an export in `app.dart`** so tabs/tests can use it through the barrel.
+
+Flutter/`lib/protocol` types do not need this: wire types come from the protocol library, widgets from
+Flutter (see the three-namespaces section in the shell README).
+
 ## Related
 
 - `core_path.dart` — release-beside-the-shell vs development `v3/core/target/debug` executable and the

@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import '../../app/app.dart';
 import '../../protocol/protocol.dart';
 import '../theme.dart';
+import 'action_result_line.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
 
@@ -157,8 +158,6 @@ class _SetupTabState extends State<SetupTab>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
-    final theme = Theme.of(context);
-
     return buildConfigTab(
       title: 'Setup',
       description:
@@ -292,8 +291,7 @@ class _SetupTabState extends State<SetupTab>
                 ],
               ),
               const SizedBox(height: ShellSpace.sm),
-              _actionLine(
-                theme,
+              ActionResultLine(
                 key: const ValueKey('setup-find-result'),
                 label: 'Find',
                 line: _find == null
@@ -305,24 +303,20 @@ class _SetupTabState extends State<SetupTab>
                     : _find!.errorLine,
                 isError: _find != null && !_find!.ok,
               ),
-              _actionLine(
-                theme,
+              ActionResultLine(
                 key: const ValueKey('setup-measure-result'),
                 label: 'Measure',
                 line: _measure == null ? null : _measureLine(_measure!),
                 isError: _measure != null && !_measure!.ok,
               ),
-              _actionLine(
-                theme,
+              ActionResultLine(
                 key: const ValueKey('setup-probe-result'),
                 label: 'Board',
                 line: _probe == null
                     ? null
-                    : _probe!.ok
-                    ? 'port ${_probe!.value!.port} · ${_probe!.value!.baud} baud · '
-                          'VID ${_probe!.value!.vid ?? '?'} · PID ${_probe!.value!.pid ?? '?'} · '
-                          'protocol level ${_probe!.value!.level}'
-                    : _probe!.errorLine,
+                    : (_probe!.ok
+                          ? probeSummary(_probe!.value!)
+                          : _probe!.errorLine),
                 isError: _probe != null && !_probe!.ok,
               ),
             ],
@@ -343,27 +337,5 @@ class _SetupTabState extends State<SetupTab>
         '${display.logicalClient.w}x${display.logicalClient.h} logical · '
         'frame ${display.frame.w}x${display.frame.h} at '
         '(${display.frame.x}, ${display.frame.y})';
-  }
-
-  Widget _actionLine(
-    ThemeData theme, {
-    required Key key,
-    required String label,
-    required String? line,
-    required bool isError,
-  }) {
-    if (line == null) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-      child: Text(
-        '$label: $line',
-        key: key,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: isError ? theme.colorScheme.error : null,
-        ),
-      ),
-    );
   }
 }

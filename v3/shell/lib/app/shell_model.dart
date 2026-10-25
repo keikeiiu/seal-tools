@@ -236,6 +236,29 @@ class ShellModel extends ChangeNotifier {
   Future<CoreActionResult<AttributesResult>> attributesGet() =>
       _coreAction('attributes.get', AttributesResult.fromJson);
 
+  /// `board.test` — the calibrator's input tests. A command reaches the board only after the port
+  /// opens; every refusal line is the core's ([PROTOCOL.md] §4/§6).
+  Future<CoreActionResult<JsonMap>> boardTestClick() => _coreAction(
+    'board.test',
+    (result) => result,
+    args: const {'kind': 'click'},
+  );
+
+  Future<CoreActionResult<JsonMap>> boardTestMove({
+    required int dx,
+    required int dy,
+  }) => _coreAction(
+    'board.test',
+    (result) => result,
+    args: {'kind': 'move', 'dx': dx, 'dy': dy},
+  );
+
+  Future<CoreActionResult<JsonMap>> boardTestKey(String key) => _coreAction(
+    'board.test',
+    (result) => result,
+    args: {'kind': 'key', 'key': key},
+  );
+
   // ── config commands: validate, then apply ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7) ───────────
 
   /// `config.validate`: the player-facing lines a save would refuse.
@@ -441,8 +464,9 @@ class ShellModel extends ChangeNotifier {
   /// Setup surface; nothing is thrown at the widget.
   Future<CoreActionResult<T>> _coreAction<T>(
     String cmd,
-    T Function(JsonMap result) decode,
-  ) async {
+    T Function(JsonMap result) decode, {
+    JsonMap args = const {},
+  }) async {
     final client = _client;
     if (!isReady || client == null) {
       const note = 'the core is not ready';
@@ -450,7 +474,7 @@ class ShellModel extends ChangeNotifier {
       return CoreActionResult<T>.failure(shellNote: note);
     }
     try {
-      final response = await client.request(cmd);
+      final response = await client.request(cmd, args);
       return switch (response) {
         OkResponse(:final result) => CoreActionResult<T>.success(
           decode(result),

@@ -69,6 +69,15 @@ Future<AppHarness> _pumpSetup(WidgetTester tester) async {
   return harness;
 }
 
+String _resultText(WidgetTester tester, String key) => tester
+    .widget<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(Text),
+      ),
+    )
+    .data!;
+
 Future<void> _flush(WidgetTester tester) async {
   await tester.pump();
   await tester.pump();
@@ -169,21 +178,15 @@ void main() {
       await _flush(tester);
 
       expect(
-        tester
-            .widget<Text>(find.byKey(const ValueKey('setup-find-result')))
-            .data,
+        _resultText(tester, 'setup-find-result'),
         contains('Window found: TW_LIVE'),
       );
-      final measure = tester
-          .widget<Text>(find.byKey(const ValueKey('setup-measure-result')))
-          .data!;
+      final measure = _resultText(tester, 'setup-measure-result');
       expect(measure, contains('scale 1.5'));
       expect(measure, contains('monitor DPI 144'));
       expect(measure, contains('client 1920x1080 physical'));
       expect(measure, contains('1280x720 logical'));
-      final probe = tester
-          .widget<Text>(find.byKey(const ValueKey('setup-probe-result')))
-          .data!;
+      final probe = _resultText(tester, 'setup-probe-result');
       expect(probe, contains('port COM3'));
       expect(probe, contains('VID 2341'));
       expect(probe, contains('protocol level 2'));
@@ -193,9 +196,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('setup-probe-board')));
       await _flush(tester);
       expect(
-        tester
-            .widget<Text>(find.byKey(const ValueKey('setup-probe-result')))
-            .data,
+        _resultText(tester, 'setup-probe-result'),
         contains('no board found: the serial port list is empty'),
       );
     },
