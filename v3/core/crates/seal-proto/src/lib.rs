@@ -4,6 +4,8 @@
 //! mirrors these types, and the golden fixtures under `v3/protocol/fixtures/` are what keeps the
 //! two halves from drifting (`PROTOCOL.md` §10).
 
+pub mod framing;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
