@@ -32,19 +32,51 @@ All three must be clean, matching the Rust side's fmt/clippy/test rule.
 
 ```
 lib/
-  main.dart          the app entry (generated; replaced by the shell model)
+  main.dart          the entry point: resolves the core/root, spawns, runs ShellApp
+  app/               the one ChangeNotifier, its sub-models, drafts, core actions, path rules
+    README.md        the model/draft/action contracts (read this before adding a tab)
   protocol/          the hand-written typed protocol client + the wire types
-  model/             the one app-wide ChangeNotifier and its sub-models
-  ui/                the card grid and the tab surfaces
-test/                fixture-decode tests, state tests, a few widget tests
+  ui/                the card grid, the eight tabs, the shared tab frame and fields
+test/                fixture-decode tests, model tests, widget tests
 windows/             the generated runner (built by `flutter build windows`)
 ```
 
 The protocol client is **hand-written and fixture-tested**, not generated — decision and reasoning in
-PLAN-V3-SHELL §4. Its tests decode the 50 golden fixtures in `v3/protocol/fixtures/`.
+PLAN-V3-SHELL §4. Its tests decode every golden fixture in `v3/protocol/fixtures/` (the set grows with
+the protocol; decoder coverage is the guard).
+
+## Import rules — the three type namespaces
+
+The shell sits between three different type vocabularies, and mixing them up costs a checkpoint each
+time. Import only what a file means:
+
+| namespace | imported from | what it holds | who imports it |
+|---|---|---|---|
+| **Flutter** | `package:flutter/material.dart`, `dart:ui as ui` | widgets, `ThemeData`, Flutter's `Size`/`Point`/`Rect`/`Offset` | `lib/ui/**` always; `lib/main.dart` |
+| **app barrel** | `lib/app/app.dart` | `ShellModel`, `ConfigDraft`/`ConfigDraftGroup`/`ConfigScope`, `ConfigSaveOutcome`, `CoreActionResult` + action result types, sub-models | `lib/ui/**`, `lib/main.dart` |
+| **protocol library** | `lib/protocol/protocol.dart` | wire types: `DisplayInfo`, `Rect`, `Frame`, `ToolSnapshot`/`ToolRow`, `ToolId`, `Response`/`Event`, `Transport` | `lib/app/**` (it speaks the protocol); tabs only when they touch wire types (e.g. Setup's `DisplayInfo`) |
+
+Rules of thumb, earned by three real failures:
+
+- A tab imports Flutter + the app barrel; it adds the protocol library **only for wire types**. Setup
+  needed `DisplayInfo` from `lib/protocol/protocol.dart`, not from the barrel.
+- `lib/app` imports the protocol library; it never imports `lib/ui`.
+- `lib/protocol` imports neither Flutter nor the app layer — no exceptions.
+- Widget tests import the app barrel (or a specific tab), Flutter/`flutter_test`, and support files;
+  they may import the protocol library for payload shapes.
+- Helper builders that live in test support (`test/support/fake_transport.dart`) are **not** re-exported
+  by accident: `test/support/app_harness.dart` re-exports only the raw response builders it promises
+  (`okResponse`, `errorResponse`, `helloResult`). A missing name there is an import error, not a
+  protocol problem — the fix is the import, never a copy of the helper.
+- Flutter's `Size`/`Point`/`Rect` collide with the protocol's §3 types. In UI/test code write
+  `import 'dart:ui' as ui;` and qualify (`ui.Size`), or `hide Size` on the protocol import; keep the
+  protocol names inside protocol code and the app layer.
+
+When a new type is added, ask which namespace owns it before writing the import: **wire shape →
+protocol; shell state/decision → app; rendering/geometry → Flutter**.
 
 ## Running during development
 
-`flutter run -d windows` starts the app; the app spawns `seal-core.exe` from its own directory. For UI
-work without a core, PLAN-V3-SHELL §8 describes the FakeCore replay loop (`--root` points the core at
-a scratch config tree).
+`flutter run -d windows` starts the app; `main.dart` spawns `seal-core.exe` (release: beside the shell;
+development: `v3/core/target/debug`, root `<repo>/v3`) with `--root`. `SEAL_CORE` / `SEAL_CORE_ROOT`
+dart-defines override the path and root (PLAN-V3-SHELL §8).
