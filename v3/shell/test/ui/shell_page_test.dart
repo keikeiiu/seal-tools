@@ -1,0 +1,229 @@
+/// The window as the model renders it: seven cards, the Hold Space chrome toggle, the status strip,
+/// event-driven card updates, Start/Stop through the model (no optimistic phase) and the crash view's
+/// Restart rule.
+///
+/// `testWidgets` runs in a FakeAsync zone: timers do not fire and futures that await them do not
+/// complete outside a pump. The handshake is therefore started WITHOUT awaiting it and completed by
+/// pumping (see [_pumpShell]); later stream/command delivery is flushed with pumps — never with an
+/// awaited `Future.delayed` in the fake zone.
+library;
+
+import 'dart:async';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:seal_shell/protocol/protocol.dart';
+import 'package:seal_shell/ui/shell_app.dart';
+import 'package:seal_shell/ui/tool_card.dart';
+
+import '../support/app_harness.dart';
+
+/// Pumps the shell ready to interact.
+///
+/// testWidgets runs in a FakeAsync zone, so the spawn→hello chain is started WITHOUT awaiting it
+/// and completed by pumping the frame loop — awaiting it before the first pump is the classic way to
+/// park forever. The first frame is the connection surface (PLAN §2), the later pumps land hello,
+/// then connecting is already complete.
+Future<AppHarness> _pumpShell(WidgetTester tester) async {
+  // The grid is lazy: the default 800x600 surface would only lay out the first few cards, so a
+  // "seven cards" assertion has to mean all seven were really built.
+  tester.view.physicalSize = const ui.Size(1600, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  final harness = AppHarness();
+  addTearDown(harness.model.dispose);
+  final connecting = harness.connect();
+  await tester.pumpWidget(ShellApp(model: harness.model));
+  for (var i = 0; i < 3; i++) {
+    await tester.pump();
+  }
+  await connecting;
+  await tester.pump();
+  return harness;
+}
+
+/// Flushes microtask-delivered stream events and command completions into a rendered frame.
+Future<void> _flush(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump();
+}
+
+void main() {
+  testWidgets(
+    'seven cards, Hold Space in the chrome only, status strip filled',
+    (tester) async {
+      final harness = await _pumpShell(tester);
+
+      expect(find.byType(ToolCard), findsNWidgets(7));
+      expect(find.byKey(const ValueKey('card-holdspace')), findsNothing);
+      expect(find.byKey(const ValueKey('holdspace-toggle')), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('status-core'))).data,
+        'core 0.1.0 · rev 7',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('status-root'))).data,
+        contains(r'root C:\SealTools'),
+      );
+
+      // The chrome toggle sends the command and reflects the CORE's phase, not a local flip.
+      await tester.tap(find.byKey(const ValueKey('holdspace-toggle')));
+      await tester.pump();
+      expect(harness.lastRequest['cmd'], 'tool.start');
+      expect(harness.lastRequest['args'], {'tool': 'holdspace'});
+      harness.respondOk();
+      await _flush(tester);
+      expect(find.text('Hold Space'), findsOneWidget);
+      expect(find.text('Release Space'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'state events update cards, including rows:[] and a two-row card',
+    (tester) async {
+      final harness = await _pumpShell(tester);
+
+      harness.emitState(
+        tool: ToolId.pet,
+        message: 'row 2: looking',
+        rows: [
+          AppHarness.row(
+            name: 'row 1',
+            status: 'boarding',
+            detail: '藍天 · 3/min',
+            nextActionInSeconds: 1800,
+          ),
+          AppHarness.row(name: 'row 2', status: 'waiting for a reload'),
+        ],
+      );
+      harness.emitState(
+        tool: ToolId.tuner,
+        running: false,
+        phase: ToolPhase.idle,
+        message: 'idle',
+        rows: const [],
+      );
+      await _flush(tester);
+
+      expect(find.text('row 2: looking'), findsOneWidget);
+      expect(find.text('row 1'), findsOneWidget);
+      expect(find.text('boarding'), findsOneWidget);
+      expect(find.text('in 30m'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('card-tuner')),
+          matching: find.byKey(const ValueKey('rows-empty-tuner')),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'Start sends tool.start and the phase stays as the core published it',
+    (tester) async {
+      final harness = await _pumpShell(tester);
+
+      await tester.tap(find.byKey(const ValueKey('start-tuner')));
+      await tester.pump();
+
+      expect(harness.lastRequest['cmd'], 'tool.start');
+      expect(harness.lastRequest['args'], {'tool': 'tuner'});
+      // No state event yet: no optimistic phase move, and the button is disabled while in flight.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('card-tuner')),
+          matching: find.text('idle'),
+        ),
+        findsOneWidget,
+      );
+
+      harness.respondOk();
+      await _flush(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('card-tuner')),
+          matching: find.text('idle'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('start-tuner')))
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets('a refusal line shows on the card in the core\'s own words', (
+    tester,
+  ) async {
+    final harness = await _pumpShell(tester);
+
+    await tester.tap(find.byKey(const ValueKey('start-spammer')));
+    await tester.pump();
+    harness.respondError(
+      'tool_busy',
+      message: 'another tool is running',
+      detail: {'tool': 'pet'},
+    );
+    await _flush(tester);
+
+    expect(find.byKey(const ValueKey('refusal-spammer')), findsOneWidget);
+    expect(find.text('another tool is running'), findsOneWidget);
+  });
+
+  testWidgets('a dead core shows the crash view with Restart', (tester) async {
+    final harness = await _pumpShell(tester);
+    harness.emitStderr('seal-core: cannot load config: boom');
+    await _flush(tester);
+
+    harness.crash();
+    await _flush(tester);
+
+    expect(find.text('The core is not running'), findsOneWidget);
+    expect(find.byKey(const ValueKey('crash-restart')), findsOneWidget);
+    expect(find.text('seal-core: cannot load config: boom'), findsOneWidget);
+  });
+
+  testWidgets('a bad_version crash hides Restart (replace the binaries)', (
+    tester,
+  ) async {
+    final harness = AppHarness();
+    addTearDown(harness.model.dispose);
+    harness.onWrite = (line, fake) {
+      final message = fake.sentJson(fake.sent.length - 1);
+      if (message['cmd'] == 'hello') {
+        fake.emitJson(
+          errorResponse(
+            message['id'] as String,
+            'bad_version',
+            message: 'protocol 2 is not 1',
+            // PROTOCOL §6 pins `detail.expected` as the CORE's protocol version.
+            detail: {'expected': 1},
+          ),
+        );
+      }
+    };
+    // Start the failed handshake without awaiting it: under FakeAsync only pumps complete it.
+    unawaited(harness.model.connect());
+    await tester.pumpWidget(ShellApp(model: harness.model));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+
+    expect(find.text('The core is not running'), findsOneWidget);
+    expect(find.byKey(const ValueKey('crash-restart')), findsNothing);
+    // Assert the crash message itself (its own widget), not a text finder that may legitimately match
+    // the same sentence in more than one place in the crash view.
+    final crashMessage = tester
+        .widget<Text>(find.byKey(const ValueKey('crash-message')))
+        .data;
+    expect(crashMessage, contains('protocol mismatch'));
+    expect(crashMessage, contains('the core expects 1'));
+  });
+}

@@ -48,6 +48,24 @@ the golden fixtures in `v3/protocol/fixtures/` are the contract, and
 5. **Command helpers.** If the shell sends it, add typed args in `args.dart` and a typed method on
    `ProtocolClient`; if not, the fixture still decodes through `Request`.
 
+## Name collisions with Flutter
+
+The §3 geometry types are deliberately named like Flutter's: `Size` (fields `w`/`h`), `Point`, `Rect`.
+A file that imports both `package:flutter/material.dart` and `package:seal_shell/protocol/protocol.dart`
+therefore has an ambiguous `Size`. In UI/tests write one of:
+
+```dart
+import 'dart:ui' as ui;
+// ... const ui.Size(1600, 2400) for Flutter geometry
+
+import 'package:seal_shell/protocol/protocol.dart' hide Size;
+// ... or hide the protocol names you do not mean
+```
+
+Keep the protocol names in protocol code (the fixture decoder map needs them); qualify at the Flutter
+boundary instead. This hit `test/ui/shell_page_test.dart` first — the test viewport is Flutter `ui.Size`,
+not the protocol's `Size`.
+
 Run the three gates from `v3/shell`:
 
 ```powershell
