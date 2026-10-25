@@ -18,6 +18,7 @@ import 'crash_view.dart';
 import 'hold_space_toggle.dart';
 import 'log_panel.dart';
 import 'status_strip.dart';
+import 'tabs/gem_tab.dart';
 import 'tabs/spammer_tab.dart';
 import 'tabs/tuner_tab.dart';
 import 'theme.dart';
@@ -47,7 +48,7 @@ class _ShellPageState extends State<ShellPage> {
 
         final ready = connection.status == ConnectionStatus.ready;
         return DefaultTabController(
-          length: 3,
+          length: 4,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Seal Tools v3'),
@@ -84,6 +85,7 @@ class _ShellPageState extends State<ShellPage> {
                         Tab(text: 'Cards'),
                         Tab(text: 'Spammer'),
                         Tab(text: 'Tuner'),
+                        Tab(text: 'Gem'),
                       ],
                     )
                   : null,
@@ -98,6 +100,7 @@ class _ShellPageState extends State<ShellPage> {
                         CardGrid(model: model),
                         SpammerTab(model: model),
                         TunerTab(model: model),
+                        GemTab(model: model),
                       ],
                     ),
                   ),
