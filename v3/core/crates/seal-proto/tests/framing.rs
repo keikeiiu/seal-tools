@@ -1,14 +1,17 @@
 //! Line framing, as `v3/docs/spec/PROTOCOL.md` §1 defines it: one JSON object per line.
 
-use seal_proto::framing::{decode_line, encode_line};
 use seal_proto::Request;
+use seal_proto::framing::{decode_line, encode_line};
 use serde_json::json;
 
 #[test]
 fn a_message_encodes_to_exactly_one_line() {
     let line = encode_line(&Request::new("1", "hello", json!({"protocol": 1}))).unwrap();
 
-    assert!(line.ends_with('\n'), "a framed message ends with one newline");
+    assert!(
+        line.ends_with('\n'),
+        "a framed message ends with one newline"
+    );
     assert_eq!(
         line.matches('\n').count(),
         1,

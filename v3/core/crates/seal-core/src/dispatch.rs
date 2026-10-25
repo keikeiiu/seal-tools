@@ -49,7 +49,11 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         }
         other => Response::err(
             &request.id,
-            Error::new("bad_request", &format!("unknown command {other:?}"), json!({})),
+            Error::new(
+                "bad_request",
+                &format!("unknown command {other:?}"),
+                json!({}),
+            ),
         ),
     }
 }

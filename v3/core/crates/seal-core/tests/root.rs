@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{marker, TestDir};
+use common::{TestDir, marker};
 use seal_core::root::find_root;
 use std::fs;
 

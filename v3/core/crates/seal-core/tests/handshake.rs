@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{marker, TestDir};
+use common::{TestDir, marker};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};

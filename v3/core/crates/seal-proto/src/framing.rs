@@ -19,6 +19,6 @@ pub fn encode_line<M: Serialize>(message: &M) -> Result<String, serde_json::Erro
 
 /// Decodes one line, tolerating whatever line ending the platform's `lines()` left on it.
 pub fn decode_line<M: DeserializeOwned>(line: &str) -> Result<M, serde_json::Error> {
-    let end = line.trim_end_matches(|c| c == '\r' || c == '\n');
+    let end = line.trim_end_matches(['\r', '\n']);
     serde_json::from_str(end)
 }

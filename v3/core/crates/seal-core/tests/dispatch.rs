@@ -70,5 +70,8 @@ fn shutdown_is_acknowledged_and_stops_the_loop() {
     let response = handle(&mut state, Request::new("5", "shutdown", json!({})));
 
     assert!(response.ok, "shutdown is answered before the process exits");
-    assert!(state.stopping, "the loop must stop after the acknowledgement");
+    assert!(
+        state.stopping,
+        "the loop must stop after the acknowledgement"
+    );
 }

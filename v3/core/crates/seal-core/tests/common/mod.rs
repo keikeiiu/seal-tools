@@ -21,8 +21,7 @@ impl TestDir {
     pub fn new() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("seal-core-test-{id}"));
+        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("seal-core-test-{id}"));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }

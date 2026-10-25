@@ -35,6 +35,8 @@ __pycache__/
 build/
 dist/
 *.spec
+# Local scratch: cargo homes and throwaway build areas. Never committed.
+.scratch/
 
 # ── Reference material (local screenshots/notes — not tracked) ──
 reference/

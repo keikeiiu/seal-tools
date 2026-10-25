@@ -12,7 +12,11 @@ pub const DEFAULTS_TEMPLATE: &str = "config/defaults.yaml.example";
 /// either marker. The executable's neighbouring directory is the usual starting point; a test or
 /// a future CLI may pass its own.
 pub fn find_root(start: &Path) -> Option<PathBuf> {
-    let start = if start.is_dir() { start } else { start.parent()? };
+    let start = if start.is_dir() {
+        start
+    } else {
+        start.parent()?
+    };
 
     for dir in start.ancestors() {
         if dir.join(DEFAULTS).is_file() || dir.join(DEFAULTS_TEMPLATE).is_file() {
