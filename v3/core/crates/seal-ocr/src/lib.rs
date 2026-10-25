@@ -34,4 +34,7 @@
 //!   report), so gate builds need either network or vendored ORT artifacts.
 
 pub mod det;
+pub mod detgeom;
+pub mod detmask;
+pub mod imageops;
 pub mod model;
