@@ -312,6 +312,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "capture" => capture_command(state, &request),
         "ocr.scan" => ocr_scan(state, &request),
         "attributes.get" => attributes_get(state, &request),
+        "calibration.save" => crate::calibration::save(state, &request),
+        "calibration.fetch" => crate::calibration::fetch(state, &request),
         "board.probe" => board_probe(state, &request),
         "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),

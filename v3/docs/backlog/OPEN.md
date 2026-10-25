@@ -61,8 +61,8 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 
 - **Single-instance cross-process lock** — the save gate is in-process; the protocol's single-
   instance lock is not implemented yet. Two cores on one root can interleave.
-- **Binary artifact writer** — the atomic writer carries text only; the calibration PNGs need a
-  temp-and-move sibling when `calibration.save` lands.
+- **Binary artifact writer** — LANDED (`calibration.save`): `ConfigStore::write_artifact` writes a
+  crop PNG with the same temp-and-rename shape as the text writer, refusing a name that is a path.
 - **Variant-dictionary switch** — LANDED (`b6a49a7`): boot and `config.reload` load the dictionary the
   active variant names, all-or-nothing in v2's switch order.
 - **`settings:` portable-save caller** — LANDED (`af4d9a3`): `config.apply` carries the portable half
@@ -85,9 +85,14 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **`seal-win` LANDED (`f4e3e9b`)** — `window.find`/`window.measure`/`capture` are implemented and
   wired into the core (`7d1942e`, including the four-frame cache); `board.probe`/`board.test` are
   wired too (they use `seal-board`'s adapter), and `ocr.scan` is implemented (`ocr_unavailable` when
-  the models are absent). What still waits: the calibrator flow (`calibration.save`/`fetch`, the
-  binary artifact writer). The two live behaviours — a real window measures/captures, a covered game
-  is refused — are the `#[ignore]`d tests in `seal-win`.
+  the models are absent). The calibrator flow is now served too: `calibration.save`/`fetch` with a
+  seven-kind table, the one `local.yaml` write gate, derived values (bag-grid pitch), the bag
+  slot-vs-grid agreement rule, the environment block and the result-gem crop as the first binary
+  artifact. What still waits there: the remaining mark kinds (pet marks/crops, tooltip, quest step
+  maps, gem points/MAX/sell slots), the drawn-over reference screenshots, and a `config.changed`
+  emitter so a shell with a mirror can see another writer's mark without refetching. The two live
+  behaviours — a real window measures/captures, a covered game is refused — are the `#[ignore]`d
+  tests in `seal-win`.
 - **OCR pipeline follow-ups, named not hidden:** the grade colour fallback and the `remaining`-band
   read are not ported (the result carries `remaining: null` and grade-from-line only); `capture_path`
   stays null until the core's logging writer exists; full-screen scans cost ~26 s per capture on CPU

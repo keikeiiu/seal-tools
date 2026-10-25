@@ -100,8 +100,8 @@ edits; it never re-serialises the whole file (§7).
 | `window.find` | `{}` | `{"found":true,"title":"Seal Online ..."}` |
 | `window.measure` | `{}` | `{"display":{...}}` |
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
-| `calibration.save` | `{"frame_id":"f1","region":{...},"kind":"bag"}` | `{"rev":10,"derived":{...}}` |
-| `calibration.fetch` | `{"kind":"bag"}` | `{"frame":{...}}` |
+| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"focus_point","point":{...}}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` |
+| `calibration.fetch` | `{"kind":"bag_grid"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
@@ -145,9 +145,9 @@ Notes:
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
-`board.test`, `attributes.get`, `ocr.scan`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their crates land
-([OPEN.md](../backlog/OPEN.md) §4): `calibration.save`, `calibration.fetch`. A command in this table
-is the contract; the implemented list is the current fact.
+`board.test`, `attributes.get`, `calibration.save`/`calibration.fetch`, `ocr.scan`, `tool.start`,
+`tool.stop`, `shutdown`. A command in this table is the contract; the implemented list is the current
+fact, and nothing in §4 is spec-only today.
 
 ## 5. Events
 

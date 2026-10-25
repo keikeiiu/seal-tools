@@ -232,11 +232,16 @@ and the open item is named here rather than restated. The living list is
 [OPEN.md](../backlog/OPEN.md) §3/§4, with the protocol's own open items in
 [PROTOCOL.md](PROTOCOL.md) §11.
 
+`calibration.save` and `calibration.fetch` are implemented: the kind table lives in
+`seal-core/src/calibration.rs` (`bag_grid`, `bag_slot`, `shop_list`, `focus_point`,
+`result_gem_area`, `tuner_region`, `spring_point`), marks go through the one `local.yaml` write gate,
+and the result-gem crop is the first binary artifact. Still open:
+
 | Not built yet | What it needs | Pointer |
 |---|---|---|
-| Live measurement (`window.measure`, the double read) | `seal-win`: `windows-sys`-class crate and a linker — blocked on VS Build Tools "Desktop development with C++" | OPEN.md §4 |
-| Capture (`capture`, `calibration.save`/`fetch`) | `seal-win` (blit) + the binary artifact writer: the atomic writer carries text only, so the calibration PNGs need a temp-and-move sibling | OPEN.md §3; CONFIG.md §5 |
-| Foreground gating in the core | the implemented dispatcher has `hello`, `config.*`, `ui.window`, `tool.start/stop`; `window.find/measure`, `capture`, `calibration.*`, `board.*`, `ocr.scan` are spec-only today | PROTOCOL.md §4; CONFIG.md §5 |
-| Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL.md §11.2 |
-| Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result | OPEN.md §4 (shell not started) |
-| The boundary that a measurement must match | `CalibrationCheck` is ported and tested in the domain; the `DisplayInfo` it compares against cannot be produced until `seal-win` exists | this file §6 |
+| The remaining mark kinds | the pet marks (points, rects and the per-row crops as base64 IN `local.yaml`), the tooltip offset + shape, the quest step maps, the gem points, the MAX button and the sell slots each need a kind-table row and their own derivation rules; today they are hand-editable and preserved, not calibrated from the UI | PROTOCOL §4; this file §1 |
+| The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
+| A `config.changed` emitter for calibration writes | a save answers `rev`, but DESIGN §3's event has no producer yet, so a shell that keeps a mirror must refetch to see another writer's mark | PROTOCOL §5; DESIGN.md §3 |
+| Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
+| Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result | OPEN §4 |
+| The boundary a measurement must match | `CalibrationCheck` is ported and tested in the domain; `calibration.save`'s optional `display` argument now records the environment it compares, but no Detect command consumes the comparison yet | this file §6 |

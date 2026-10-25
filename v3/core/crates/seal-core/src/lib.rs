@@ -4,6 +4,7 @@
 //! protocol in `v3/docs/spec/PROTOCOL.md`.
 
 pub mod board;
+pub mod calibration;
 pub mod dispatch;
 pub mod effects;
 pub mod events;

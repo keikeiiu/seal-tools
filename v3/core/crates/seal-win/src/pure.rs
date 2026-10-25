@@ -110,6 +110,37 @@ pub fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), WinError> {
     Ok((width, height, rgba))
 }
 
+/// Crop an RGBA image to `region`, which must fit inside it. Pure: the calibrator's crop is
+/// arithmetic on pixels the capture already produced, so it is testable with a hand-built buffer.
+pub fn crop_rgba(
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    region: Rect,
+) -> Result<(u32, u32, Vec<u8>), WinError> {
+    let width = width as usize;
+    let height = height as usize;
+    if width == 0 || height == 0 || rgba.len() < width * height * 4 {
+        return Err(WinError::EmptyCapture);
+    }
+    if region.w <= 0
+        || region.h <= 0
+        || region.x < 0
+        || region.y < 0
+        || region.x as usize + region.w as usize > width
+        || region.y as usize + region.h as usize > height
+    {
+        return Err(WinError::RegionOutsideClient);
+    }
+    let (crop_w, crop_h) = (region.w as usize, region.h as usize);
+    let mut out = Vec::with_capacity(crop_w * crop_h * 4);
+    for row in 0..crop_h {
+        let start = ((region.y as usize + row) * width + region.x as usize) * 4;
+        out.extend_from_slice(&rgba[start..start + crop_w * 4]);
+    }
+    Ok((crop_w as u32, crop_h as u32, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +235,46 @@ mod tests {
     fn decode_refuses_bytes_that_are_not_a_png() {
         assert_eq!(decode_png(b"not a png"), Err(WinError::EmptyCapture));
         assert_eq!(decode_png(&[]), Err(WinError::EmptyCapture));
+    }
+}
+
+#[cfg(test)]
+mod crop_tests {
+    use super::*;
+
+    fn two_by_two() -> Vec<u8> {
+        // Four RGBA pixels: red, green, blue, white.
+        vec![
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ]
+    }
+
+    #[test]
+    fn a_crop_copies_exactly_the_requested_pixels() {
+        let rgba = two_by_two();
+        let (w, h, crop) = crop_rgba(2, 2, &rgba, Rect::new(1, 0, 1, 2)).expect("crops");
+        assert_eq!((w, h), (1, 2));
+        assert_eq!(crop, vec![0, 255, 0, 255, 255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn a_region_outside_the_image_is_refused() {
+        let rgba = two_by_two();
+        assert_eq!(
+            crop_rgba(2, 2, &rgba, Rect::new(1, 1, 2, 2)),
+            Err(WinError::RegionOutsideClient)
+        );
+        assert_eq!(
+            crop_rgba(2, 2, &rgba, Rect::new(0, 0, 0, 1)),
+            Err(WinError::RegionOutsideClient)
+        );
+    }
+
+    #[test]
+    fn a_short_buffer_is_refused_rather_than_read_past() {
+        assert_eq!(
+            crop_rgba(2, 2, &[0, 0, 0, 255], Rect::new(0, 0, 1, 1)),
+            Err(WinError::EmptyCapture)
+        );
     }
 }

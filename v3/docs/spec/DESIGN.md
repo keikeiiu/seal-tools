@@ -103,7 +103,8 @@ EOF or a read error means `"eof"`.
 **Requests.** Each line is decoded (`seal_proto::framing`) and handed to `dispatch::handle`, which returns
 a `Response`; the response is queued on the SAME writer channel as events, so no line can interleave
 ([PROTOCOL.md](PROTOCOL.md) §1). The `hello` gate, protocol-version check, the config command surface,
-`ui.window`, `window.find`/`window.measure`/`capture`, `board.probe`/`board.test`, `attributes.get`, `ocr.scan`,
+`ui.window`, `window.find`/`window.measure`/`capture`, `board.probe`/`board.test`, `attributes.get`,
+`calibration.save`/`calibration.fetch`, `ocr.scan`,
 `tool.start`/`tool.stop` and `shutdown` are the implemented commands today; the rest of PROTOCOL §4
 is spec-only and is reported in OPEN §3/§4. Every config save runs the domain rules first
 (`validate.rs`, "no widget keeps a rule").

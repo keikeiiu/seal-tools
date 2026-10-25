@@ -272,6 +272,38 @@ impl ConfigStore {
         self.write_atomically(&path, &text)
     }
 
+    /// Writes a binary artifact (a calibration crop) beside the config files, atomically.
+    ///
+    /// The text writer carries text only; a screenshot must never be half-written, so this is the
+    /// same temp-and-rename shape on the same directory (the rename cannot cross a volume). A name
+    /// is a bare file name: the caller says which artifact, never a path.
+    pub fn write_artifact(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, ConfigError> {
+        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+            return Err(ConfigError::Write {
+                path: self.dir.join(name),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an artifact name is a bare file name",
+                ),
+            });
+        }
+        fs::create_dir_all(&self.dir).map_err(|source| ConfigError::Write {
+            path: self.dir.clone(),
+            source,
+        })?;
+        let path = self.dir.join(name);
+        let temp = temp_path(&path);
+        fs::write(&temp, bytes).map_err(|source| ConfigError::Write {
+            path: temp.clone(),
+            source,
+        })?;
+        if let Err(source) = fs::rename(&temp, &path) {
+            let _ = fs::remove_file(&temp);
+            return Err(ConfigError::Write { path, source });
+        }
+        Ok(path)
+    }
+
     /// Merges the given top-level blocks field-wise into `local.yaml` and returns the merged value
     /// of each block, which is what the protocol's `config.apply` answers with.
     ///
