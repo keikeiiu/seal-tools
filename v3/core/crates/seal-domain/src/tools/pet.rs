@@ -33,8 +33,10 @@ use crate::ocr::PetPanel;
 use crate::tools::shop::BagGrid;
 
 mod decision;
+pub mod food_load;
 
 pub use decision::*;
+pub use food_load::*;
 
 /// What a boarding row's time line says: how many minutes, and whether it is the COMPLETION form.
 #[derive(Debug, Clone, PartialEq, Eq)]
