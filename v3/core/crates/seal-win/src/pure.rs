@@ -64,6 +64,44 @@ pub fn encode_png(width: u32, height: u32, bgra: &[u8]) -> Result<Vec<u8>, WinEr
     Ok(out)
 }
 
+/// PNG bytes → (width, height, RGBA8 pixels). The counterpart of [`encode_png`], used by the OCR
+/// pipeline to turn a cached frame or an inline capture back into pixels.
+///
+/// The `png` crate already decodes all the colour types a Windows capture can produce; this only
+/// normalises them to the one the pipeline accepts (RGBA8), so there is no second image dependency
+/// in the core.
+pub fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), WinError> {
+    let mut decoder = png::Decoder::new(bytes);
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().map_err(|_| WinError::EmptyCapture)?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|_| WinError::EmptyCapture)?;
+    let (width, height) = (info.width, info.height);
+    let source = &buf[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => source.to_vec(),
+        png::ColorType::Rgb => source
+            .chunks_exact(3)
+            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
+            .collect(),
+        png::ColorType::Grayscale => source
+            .iter()
+            .flat_map(|value| [*value, *value, *value, 255])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => source
+            .chunks_exact(2)
+            .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
+            .collect(),
+        png::ColorType::Indexed => return Err(WinError::EmptyCapture),
+    };
+    if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
+        return Err(WinError::EmptyCapture);
+    }
+    Ok((width, height, rgba))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +174,27 @@ mod tests {
             Err(WinError::EmptyCapture)
         );
         assert_eq!(encode_png(0, 2, &[]), Err(WinError::EmptyCapture));
+    }
+
+    #[test]
+    fn encode_then_decode_returns_the_same_pixels() {
+        let bgra = [
+            0u8, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+        ];
+        let png = encode_png(2, 2, &bgra).expect("encodes");
+        let (width, height, rgba) = decode_png(&png).expect("decodes");
+        assert_eq!((width, height), (2, 2));
+        assert_eq!(
+            rgba,
+            vec![
+                255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255
+            ]
+        );
+    }
+
+    #[test]
+    fn decode_refuses_bytes_that_are_not_a_png() {
+        assert_eq!(decode_png(b"not a png"), Err(WinError::EmptyCapture));
+        assert_eq!(decode_png(&[]), Err(WinError::EmptyCapture));
     }
 }
