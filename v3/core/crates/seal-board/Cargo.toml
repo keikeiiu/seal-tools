@@ -6,3 +6,6 @@ publish.workspace = true
 
 [dependencies]
 seal-domain = { path = "../seal-domain" }
+
+[target.'cfg(windows)'.dependencies]
+serialport = "4"
