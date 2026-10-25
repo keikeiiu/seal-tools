@@ -133,15 +133,23 @@ impl Default for GameConfig {
 }
 
 impl GameConfig {
-    /// The active variant, or `None` when it is unset or names something unknown — in which case the
-    /// configured `window.title` stands, which is the safe direction: an unrecognised name must not
-    /// blank the target.
+    /// The client the active name points at, or `None` when it is unset or names something unknown —
+    /// in which case the configured `window.title` stands, which is the safe direction: an
+    /// unrecognised name must not blank the target.
+    pub fn active(&self) -> Option<&GameVariant> {
+        self.variant_named(&self.variant)
+    }
+
+    /// Looks a client up by NAME, trimmed, ignoring case.
     ///
     /// The lookup ignores case even though the map is keyed case-sensitively, because v2's dictionary
-    /// is `StringComparer.OrdinalIgnoreCase` and a hand-typed `TW` has to work. Variant names are
-    /// ASCII today (`tw`, `us`), which is why the ASCII fold is enough here.
-    pub fn active(&self) -> Option<&GameVariant> {
-        let wanted = self.variant.trim();
+    /// is `StringComparer.OrdinalIgnoreCase` and a hand-typed `TW` has to work. (A *loaded* v2 config
+    /// loses that comparer — YamlDotNet builds a case-sensitive dictionary — but the v2 test that
+    /// pins the rule builds the initialiser and expects `TW` to resolve, so case-insensitivity is the
+    /// intended behaviour and the port keeps it.) Variant names are ASCII today (`tw`, `us`), which is
+    /// why the ASCII fold is enough here.
+    pub fn variant_named(&self, name: &str) -> Option<&GameVariant> {
+        let wanted = name.trim();
         if wanted.is_empty() {
             return None;
         }
@@ -149,7 +157,7 @@ impl GameConfig {
         self.variants.get(wanted).or_else(|| {
             self.variants
                 .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(wanted))
+                .find(|(variant, _)| variant.eq_ignore_ascii_case(wanted))
                 .map(|(_, variant)| variant)
         })
     }

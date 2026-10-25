@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod authoring;
 pub mod config;
 pub mod decision;
 pub mod geometry;
