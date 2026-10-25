@@ -32,6 +32,10 @@ use crate::geometry::round_ties_even;
 use crate::ocr::PetPanel;
 use crate::tools::shop::BagGrid;
 
+mod decision;
+
+pub use decision::*;
+
 /// What a boarding row's time line says: how many minutes, and whether it is the COMPLETION form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reading {
