@@ -26,9 +26,17 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 - **`state`'s `phase`.** PROTOCOL §5's example prints `phase: "visit"` (a tool sub-phase) while
   `ToolPhase` is the lifecycle (`idle`/`starting`/`running`/`stopping`). Decide how a tool-specific
   sub-phase travels — the proposal is `message`/`rows` only — and correct the spec example.
+- **`state`'s `rows` inner shape.** §5 prints `rows: [{...}]` without fixing the inner object; v3
+  currently serialises v2's `ToolRowState` with `next_action_in_seconds`, and the shell cannot be
+  built against "something". Pin the field list in the spec from `ToolRow` once the supervisor's
+  publishing path lands.
+- **Event-writer shutdown.** The single writer stops when the last event-bus sender is dropped, so
+  the binary must join the tool supervisor — the other bus holder — before finishing the writer;
+  otherwise the process can hang on a sender that outlives the loop. The supervisor task owns this.
 - **Hotkey typed-name validation.** The Hotkeys tab parses typed names to VK codes and that rule
   has no protocol path (the config carries codes; validating them would refuse configs v2 ran). A
   `hotkey.parse`-style command is the natural shape. See PROTOCOL §11.5.
+
 
 ## 3. Deferred integration (named, not scheduled)
 
