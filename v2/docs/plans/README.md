@@ -27,6 +27,6 @@ and moves to [../archive/](../archive/README.md), and this row goes away.
 | [PLAN-UI-CLEANUP.md](PLAN-UI-CLEANUP.md) | steps 0–9 shipped, the navigation rail tried and reverted; the button convention is left |
 | [PLAN-US-CLIENT.md](PLAN-US-CLIENT.md) | the switch shipped; the English dictionary is the player's to fill |
 | [PLAN-PRESET-DUPLICATE.md](PLAN-PRESET-DUPLICATE.md) | **built on `plan/preset-duplicate`** — Quest flow, Quest sequence and Spammer presets all have Duplicate; Buy and Game Variants stay out; all three ⚑ questions answered and built (ignore-case name scan, Save refuses a missing flow, one shared picker) |
-| [PLAN-V3-CORE.md](PLAN-V3-CORE.md) | **design only** — a headless Rust core and a Flutter client, two processes and one protocol; supersedes PLAN-V3-RUST in shape; ⚑ §13 unanswered, nothing built |
+| [PLAN-V3-CORE.md](PLAN-V3-CORE.md) | **building on `v3-core`** — step 1; protocol spec written ([v3/docs/spec/PROTOCOL.md](../../v3/docs/spec/PROTOCOL.md)), no code yet, toolchains not installed; ⚑ §13 answered by the plan's defaults except §13.10 (OCR corpus recordings) |
 | [PLAN-AGENT.md](PLAN-AGENT.md) · [PLAN-INPUT-BACKEND.md](PLAN-INPUT-BACKEND.md) · [PLAN-V3-RUST.md](PLAN-V3-RUST.md) | not started — **all three want the same seam**, which PLAN-V3-CORE now cuts; PLAN-V3-RUST is superseded in shape and kept for its diagnosis and its invariant table |
 | [PLAN-SEAL-KB-BOT.md](PLAN-SEAL-KB-BOT.md) · [PLAN-WATCHER.md](PLAN-WATCHER.md) | not started |

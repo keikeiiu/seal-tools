@@ -1,7 +1,7 @@
 # Plan — v3: a headless Rust core, and a Flutter client
 
-Written 2026-10-25. **DESIGN ONLY — nothing built, nothing ported, no project created, no
-branch cut.** Supersedes [PLAN-V3-RUST.md](PLAN-V3-RUST.md): that document's diagnosis is still
+Written 2026-10-25. **Its build state lives on the board in [README.md](README.md) — never in
+this file.** Supersedes [PLAN-V3-RUST.md](PLAN-V3-RUST.md): that document's diagnosis is still
 the reason for this one, but its shape — an in-process C ABI behind WPF, or Tauri — is replaced
 by a **process boundary and a typed protocol**. Its open question §8.1 (Rust core, or Rust app)
 is answered: neither; **a Rust core and a Flutter client**, as two processes.
