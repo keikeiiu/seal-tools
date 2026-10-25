@@ -38,10 +38,19 @@ fn the_nearest_marker_wins() {
 }
 
 #[test]
-fn no_marker_means_no_root() {
+fn a_directory_under_the_checkout_finds_the_committed_v3_root() {
+    // `v3/config/defaults.yaml` is a real, committed root marker (the dev/install tree), so ANY
+    // directory under this checkout now legitimately walks up to `<repo>/v3`; the old "no marker
+    // anywhere" fixture cannot be built inside the repository any more. The pure walk-past-an-inner-
+    // marker case is covered by `the_nearest_marker_wins`.
     let lonely = TestDir::new();
     let leaf = lonely.path().join("nothing/here");
     fs::create_dir_all(&leaf).unwrap();
 
-    assert!(find_root(&leaf).is_none());
+    let root = find_root(&leaf).expect("the checkout has a committed root marker");
+    assert!(
+        root.ends_with("v3"),
+        "the committed dev root is <repo>/v3, got {}",
+        root.display()
+    );
 }

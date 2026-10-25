@@ -5,6 +5,7 @@
 
 pub mod board;
 pub mod dispatch;
+pub mod effects;
 pub mod events;
 pub mod registry;
 pub mod root;

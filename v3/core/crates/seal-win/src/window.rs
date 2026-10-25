@@ -14,7 +14,7 @@ use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
+    EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN,
 };
 
@@ -103,6 +103,14 @@ fn window_title(hwnd: HWND) -> Option<String> {
 /// with no text (or one that closed between the find and the read).
 pub fn title_text(hwnd: Hwnd) -> Option<String> {
     window_title(hwnd.ptr())
+}
+
+/// The OS cursor position, in the space a DPI-UNAWARE process sees (logical screen pixels) — the
+/// same space the board's placement loop compares against.
+pub fn cursor_position() -> Option<Point> {
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: a read-only query in this process's coordinate space.
+    (unsafe { GetCursorPos(&mut point) } != 0).then(|| Point::new(point.x, point.y))
 }
 
 /// Is a window the foreground window right now? Capture is refused otherwise: a capture of a covered
