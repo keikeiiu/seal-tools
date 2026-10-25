@@ -180,6 +180,26 @@ impl Session {
             .result
             .expect("a successful response carries a result")
     }
+
+    /// Closes the request side (the documented EOF shutdown) without dropping the session, so the
+    /// `core.stopping` event that follows can still be read.
+    pub fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
+
+    /// Reads one unsolicited event line from the core — used after a response whose answer arrives
+    /// before the events it causes (`tool.start`, `shutdown`).
+    pub fn event(&mut self) -> Value {
+        let mut line = String::new();
+        self.stdout
+            .read_line(&mut line)
+            .expect("the core answers with an event line");
+        assert!(
+            !line.is_empty(),
+            "the core closed stdout without the expected event"
+        );
+        decode_line::<Value>(&line).expect("the event is protocol-shaped JSON")
+    }
 }
 
 impl Drop for Session {

@@ -9,12 +9,19 @@
 //! is a session counter the shell echoes back. Every save also runs the domain authoring rules
 //! ([`crate::validate`]) before it writes — no widget keeps a rule. The file semantics themselves
 //! live in [`seal_config::ConfigStore`] — this module only speaks protocol to them.
+//!
+//! The tool commands ([`tool_start`], [`tool_stop`]) are thin: they validate the id against
+//! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` §1 item 7) and translate the
+//! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
 use std::path::Path;
 
 use seal_config::{ConfigError, ConfigStore};
 use seal_proto::{Error, PROTOCOL_VERSION, Request, Response};
+use seal_tools::tool::ToolId;
 use serde_json::{Map, Value, json};
+
+use crate::supervisor::{self, StartReply, StopReply};
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
 ///
@@ -44,6 +51,9 @@ pub struct CoreState {
     pub config: Value,
     pub handshaken: bool,
     pub stopping: bool,
+    /// The tool layer, attached by the binary. `None` in the config-only dispatcher tests, and in a
+    /// future core that has no tools yet — a tool command then says so rather than pretending.
+    pub supervisor: Option<supervisor::Supervisor>,
 }
 
 impl CoreState {
@@ -58,6 +68,7 @@ impl CoreState {
             config: json!({}),
             handshaken: false,
             stopping: false,
+            supervisor: None,
         }
     }
 
@@ -76,7 +87,24 @@ impl CoreState {
             config,
             handshaken: false,
             stopping: false,
+            supervisor: None,
         })
+    }
+
+    /// Gives the dispatcher its tool layer. Only the binary calls this; the supervisor needs the
+    /// writer's [`crate::events::EventBus`], so it cannot be built inside a config-only state.
+    pub fn attach_supervisor(&mut self, supervisor: supervisor::Supervisor) {
+        self.supervisor = Some(supervisor);
+    }
+
+    /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
+    /// thread. Called by the binary after the final response is queued and before the writer is
+    /// finished — the supervisor is the other `EventBus` holder, and the writer only stops when the
+    /// last one is gone.
+    pub fn shutdown_tools(&mut self, reason: &str) {
+        if let Some(mut supervisor) = self.supervisor.take() {
+            supervisor.shutdown(reason);
+        }
     }
 }
 
@@ -102,6 +130,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "config.apply" => config_apply(state, &request),
         "config.reload" => config_reload(state, &request),
         "ui.window" => ui_window(state, &request),
+        "tool.start" => tool_start(state, &request),
+        "tool.stop" => tool_stop(state, &request),
         other => bad_request(
             &request.id,
             &format!("unknown command {other:?}"),
@@ -267,6 +297,92 @@ fn ui_window(state: &mut CoreState, request: &Request) -> Response {
     }
 }
 
+/// `tool.start {tool}`: ask the supervisor to start one of `ToolId::ALL`.
+///
+/// `bad_request` for an unknown id (this is the ONE list — `OPEN.md` §1 item 7: v2's second whitelist
+/// looked wired and did nothing); `tool_busy` for a refusal, with the arbiter's player-facing line in
+/// both `message` and `detail.line`; `bad_request` with the named line when this build has no loop
+/// for the tool. A deferred start answers `{}` and its waiting line was already emitted as a `log`
+/// event — there is no run to attach a `state` to yet, so a state event would misreport registration.
+fn tool_start(state: &mut CoreState, request: &Request) -> Response {
+    let Some(name) = request.args.get("tool").and_then(Value::as_str) else {
+        return bad_request(&request.id, "tool.start needs a \"tool\" id", json!({}));
+    };
+    let Some(tool) = ToolId::parse(name) else {
+        return bad_request(
+            &request.id,
+            &format!("unknown tool id {name:?}"),
+            json!({"tool": name}),
+        );
+    };
+    let Some(supervisor) = state.supervisor.as_ref() else {
+        return internal(&request.id, "the tool supervisor is not running");
+    };
+
+    match supervisor.start_tool(tool) {
+        StartReply::Started => Response::ok(&request.id, json!({})),
+        StartReply::Deferred { .. } => Response::ok(&request.id, json!({})),
+        StartReply::Refused(refusal) => {
+            let line = refusal.line;
+            Response::err(
+                &request.id,
+                Error::new(
+                    "tool_busy",
+                    &line,
+                    json!({"line": line.clone(), "tool": name}),
+                ),
+            )
+        }
+        StartReply::Unavailable { line } => Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                &line,
+                json!({"tool": name, "line": line.clone()}),
+            ),
+        ),
+        StartReply::Internal { line } => internal(&request.id, &line),
+    }
+}
+
+/// `tool.stop {tool?}`: stop the named tool, or — with no name — whichever run the player means
+/// (`PROTOCOL.md` §4: "stops whatever is running"). The response arrives while the loop is still
+/// leaving; the `state`(stopping) and `tool.finished` events follow it.
+fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
+    let tool = match request.args.get("tool") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let Some(name) = value.as_str() else {
+                return bad_request(
+                    &request.id,
+                    "tool.stop's \"tool\" must be a string id",
+                    json!({}),
+                );
+            };
+            let Some(tool) = ToolId::parse(name) else {
+                return bad_request(
+                    &request.id,
+                    &format!("unknown tool id {name:?}"),
+                    json!({"tool": name}),
+                );
+            };
+            Some(tool)
+        }
+    };
+    let Some(supervisor) = state.supervisor.as_ref() else {
+        return internal(&request.id, "the tool supervisor is not running");
+    };
+
+    match supervisor.stop_tool(tool) {
+        StopReply::Stopping { .. } => Response::ok(&request.id, json!({})),
+        // `not_running` is the protocol's non-failure for "nothing to stop" (`PROTOCOL.md` §6).
+        StopReply::NotRunning => Response::err(
+            &request.id,
+            Error::new("not_running", "nothing is running", json!({})),
+        ),
+    }
+}
+
 /// The `rev` argument of `config.apply`: present, and a non-negative integer.
 ///
 /// The refusal is boxed because a [`Response`] is a large value and this is the cold path; returning
@@ -389,4 +505,9 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
 
 fn bad_request(id: &str, message: &str, detail: Value) -> Response {
     Response::err(id, Error::new("bad_request", message, detail))
+}
+
+/// A bug in the core, not a bad request: the shell shows it and logs the detail (`PROTOCOL.md` §6).
+fn internal(id: &str, message: &str) -> Response {
+    Response::err(id, Error::new("internal", message, json!({})))
 }
