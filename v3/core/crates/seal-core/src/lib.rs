@@ -7,5 +7,6 @@ pub mod dispatch;
 pub mod events;
 pub mod registry;
 pub mod root;
+pub mod startup;
 pub mod supervisor;
 pub mod validate;

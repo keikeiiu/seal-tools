@@ -29,6 +29,37 @@ hotkeys:
   start: 123
 quest:
   active: base
+arduino:
+  vid: 9025
+tuner:
+  spring_mode: manual
+  mouse_guard: off
+  ocr:
+    region:
+      left: 0
+      top: 0
+      width: 400
+      height: 300
+    grade_area:
+      x1: 0
+      y1: 0
+      x2: 100
+      y2: 40
+    grade_y: [0, 40]
+    attr_y: [40, 80]
+    remaining_y: [80, 100]
+    row_height: 20
+gem:
+  move_mode: arduino
+  empty_mode: stop
+  colored_gap_min: 40
+";
+
+/// The TW dictionary the fixture's config/ needs: `load_attributes` refuses a missing one (an empty
+/// dictionary would read every attribute as "no attribute", silently), and the shape of an empty
+/// dictionary is the one the US client ships.
+pub const BASE_ATTRIBUTES: &str = "\
+attributes: []
 ";
 
 /// The machine-specific fixture beside it — the overlay whose values must show up in `hello`.
@@ -99,6 +130,7 @@ pub fn config_root() -> TestDir {
     let root = TestDir::new();
     root.write("config/defaults.yaml", BASE_CONFIG);
     root.write("config/local.yaml", LOCAL_CONFIG);
+    root.write("config/attributes.yaml", BASE_ATTRIBUTES);
     root
 }
 

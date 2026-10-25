@@ -17,10 +17,12 @@
 use std::path::Path;
 
 use seal_config::{ConfigError, ConfigStore};
+use seal_domain::config::AttributesConfig;
 use seal_proto::{Error, PROTOCOL_VERSION, Request, Response};
 use seal_tools::tool::ToolId;
 use serde_json::{Map, Value, json};
 
+use crate::startup::{self, StartupError};
 use crate::supervisor::{self, StartReply, StopReply};
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
@@ -54,6 +56,13 @@ pub struct CoreState {
     /// The tool layer, attached by the binary. `None` in the config-only dispatcher tests, and in a
     /// future core that has no tools yet — a tool command then says so rather than pretending.
     pub supervisor: Option<supervisor::Supervisor>,
+    /// The active game client, when one resolved (`game.variant`), else `None`.
+    pub variant: Option<String>,
+    /// The attribute dictionary file the active client uses, e.g. `attributes.us.yaml`.
+    pub dictionary: String,
+    /// The loaded dictionary. Boot-time and every `config.reload` reload it, so a variant switch is
+    /// never half-applied.
+    pub attributes: AttributesConfig,
 }
 
 impl CoreState {
@@ -69,6 +78,9 @@ impl CoreState {
             handshaken: false,
             stopping: false,
             supervisor: None,
+            variant: None,
+            dictionary: startup::DEFAULT_DICTIONARY.to_owned(),
+            attributes: AttributesConfig::default(),
         }
     }
 
@@ -77,9 +89,9 @@ impl CoreState {
     /// Failing here is fatal rather than a degraded start — v2 fails loudly for the same reason: a
     /// core with no config cannot run a tool, and a silent empty config would look exactly like a
     /// game that changed.
-    pub fn load(root: std::path::PathBuf) -> Result<Self, ConfigError> {
+    pub fn load(root: std::path::PathBuf) -> Result<Self, StartupError> {
         let store = ConfigStore::new(root.join("config"));
-        let config = store.load()?;
+        let (config, active, attributes) = load_parts(&store)?;
         Ok(Self {
             root,
             store,
@@ -88,7 +100,25 @@ impl CoreState {
             handshaken: false,
             stopping: false,
             supervisor: None,
+            variant: active.variant,
+            dictionary: active.dictionary,
+            attributes,
         })
+    }
+
+    /// Re-reads everything a `config.reload` replaces: the merged config, the validator rules, and the
+    /// active variant's dictionary. Nothing is committed unless ALL of it succeeds — the v2 rule
+    /// behind `SwitchVariant` ("the variant is resolved first, its dictionary is LOADED second, and
+    /// the config is only left switched once that load succeeded"; `LauncherService.cs:723-747`):
+    /// a config pointing at a missing dictionary is one that will not start at all, so a failed reload
+    /// must leave the previous, working state in place rather than half-switch it.
+    pub fn reload(&mut self) -> Result<(), StartupError> {
+        let (config, active, attributes) = load_parts(&self.store)?;
+        self.config = config;
+        self.variant = active.variant;
+        self.dictionary = active.dictionary;
+        self.attributes = attributes;
+        Ok(())
     }
 
     /// Gives the dispatcher its tool layer. Only the binary calls this; the supervisor needs the
@@ -106,6 +136,36 @@ impl CoreState {
             supervisor.shutdown(reason);
         }
     }
+}
+
+/// Loads and fully validates the config half of a boot/reload: the merged config, the ported
+/// `ConfigValidator` rules, and the active variant's attribute dictionary. All-or-nothing.
+fn load_parts(
+    store: &ConfigStore,
+) -> Result<
+    (
+        Value,
+        startup::Active,
+        seal_domain::config::AttributesConfig,
+    ),
+    StartupError,
+> {
+    let config = store.load()?;
+    startup::validate_config(&config)?;
+    let active = startup::active(&config);
+    let dictionary = store
+        .load_attributes_named(&active.dictionary)
+        .map_err(|error| StartupError::Dictionary {
+            line: error.to_string(),
+        })?;
+    let attributes = serde_json::from_value::<seal_domain::config::AttributesConfig>(dictionary)
+        .map_err(|error| StartupError::Dictionary {
+            line: format!(
+                "the attribute dictionary {} could not be read: {error}",
+                active.dictionary
+            ),
+        })?;
+    Ok((config, active, attributes))
 }
 
 /// Answers one request. Never panics: a bad request is a refusal the client can show.
@@ -236,16 +296,15 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
 /// `config.reload`: re-read the three layers through the store and answer the whole config. A reload
 /// is a change the shell must see, so it bumps the revision even though no file was written.
 fn config_reload(state: &mut CoreState, request: &Request) -> Response {
-    match state.store.load() {
-        Ok(config) => {
-            state.config = config;
+    match state.reload() {
+        Ok(()) => {
             state.rev += 1;
             Response::ok(
                 &request.id,
                 json!({"rev": state.rev, "config": state.config}),
             )
         }
-        Err(error) => config_error_response(&request.id, error),
+        Err(error) => startup_error_response(&request.id, error),
     }
 }
 
@@ -503,6 +562,16 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
     }
 }
 
+/// A boot/reload failure as a protocol answer. A file-level failure keeps the existing `io`/config
+/// mapping; an INVALID config has no protocol code of its own yet (`PROTOCOL.md` §6 has no
+/// `config_invalid`), so the v2 `ConfigException` text is carried under `io` — reported to the Lead
+/// as a protocol proposal rather than silently inventing a code.
+fn startup_error_response(id: &str, error: StartupError) -> Response {
+    match error {
+        StartupError::Config(error) => config_error_response(id, error),
+        other => Response::err(id, Error::new("io", &other.message(), json!({}))),
+    }
+}
 fn bad_request(id: &str, message: &str, detail: Value) -> Response {
     Response::err(id, Error::new("bad_request", message, detail))
 }
