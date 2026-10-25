@@ -66,6 +66,15 @@ reason.
   dictionary using other regex constructs fails loudly in v3 instead of being applied. This is the
   one place a full-engine dependency (`fancy-regex`) would buy something, and the refusals are
   pinned as tests so swapping one in is a deliberate change.
+- **Held inputs are released LIFO, and two new player-facing lines exist for the left button**
+  (`seal-tools/src/held.rs`). v2's service-level `ReleaseHeld` always wrote `U` then `l` because it
+  did not know what the tool had pressed; the guard knows, so it releases in the reverse of the
+  order it pressed — the deliberate divergence is pinned by a test. v2 had no player-facing line at
+  all for a failed left-button press or release (the pet only logged); v3 defines
+  "Could not hold the left mouse button: …" and "Could not release the left mouse button — click
+  once in game (…)" by analogy with the spacebar's existing texts. Cost if wrong: a failed drag
+  button now says something to the player where v2 said nothing — a worse outcome only if players
+  preferred the silence.
 
 ## Toolchain
 
