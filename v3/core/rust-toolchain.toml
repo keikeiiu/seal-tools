@@ -1,0 +1,7 @@
+[toolchain]
+# MSVC is the canonical Windows target, but this machine has no Visual Studio C++ toolchain yet
+# (no link.exe), so the GNU host is pinned for now: rustup's windows-gnu toolchain links with its
+# own self-contained runtime and needs no external MinGW. Switch this to "stable" once VS Build
+# Tools is installed for the Flutter shell; see v2/docs/plans/PLAN-V3-CORE.md §10 step 1.
+channel = "stable-x86_64-pc-windows-gnu"
+profile = "minimal"
