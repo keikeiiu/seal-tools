@@ -431,10 +431,39 @@ fn cases() -> Vec<Case> {
             json!({
                 "tool": "pet",
                 "running": true,
-                "phase": "visit",
+                "phase": "running",
                 "message": "row 2: looking",
                 "countdown_s": null,
-                "rows": [{"row": 1, "checked": true}],
+                "rows": [
+                    {
+                        "name": "row 1",
+                        "status": "boarding",
+                        "detail": "藍天 · 3/min",
+                        "next_action_in_seconds": 1800.0
+                    },
+                    {
+                        "name": "row 2",
+                        "status": "waiting for a reload",
+                        "detail": null,
+                        "next_action_in_seconds": null
+                    }
+                ],
+                "error": null
+            }),
+        ),
+        // The row list is empty before the first row exists (the opening snapshot) and for tools
+        // with no rows at all: [] means "no rows to show", never "unknown" — the shell must render
+        // an empty card rather than guess.
+        event_case(
+            "event.state.empty",
+            "state",
+            json!({
+                "tool": "tuner",
+                "running": true,
+                "phase": "starting",
+                "message": "",
+                "countdown_s": null,
+                "rows": [],
                 "error": null
             }),
         ),
@@ -576,11 +605,17 @@ fn every_fixture_decodes_into_its_type() {
                 let event: Event = serde_json::from_value(file.message.clone())
                     .unwrap_or_else(|error| panic!("{} is not an event: {error}", path.display()));
                 assert_eq!(event.v, PROTOCOL_VERSION, "{}", path.display());
-                assert_eq!(
+                // The case name is `event.<name>` or `event.<name>.<shape>`: one documented event
+                // can have several pinned shapes (`state` with rows and empty), and a shaped name
+                // must still carry its own event.
+                let exact = format!("event.{}", event.event);
+                let shaped = format!("{exact}.");
+                assert!(
+                    case.name == exact || case.name.starts_with(&shaped),
+                    "{} is named for {:?} but carries event {:?}",
+                    path.display(),
                     case.name,
-                    format!("event.{}", event.event),
-                    "{}",
-                    path.display()
+                    event.event
                 );
                 assert!(
                     event.data.is_object(),

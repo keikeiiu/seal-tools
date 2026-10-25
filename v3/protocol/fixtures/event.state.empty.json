@@ -1,0 +1,17 @@
+{
+  "case": "event.state.empty",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "state",
+    "data": {
+      "tool": "tuner",
+      "running": true,
+      "phase": "starting",
+      "message": "",
+      "countdown_s": null,
+      "rows": [],
+      "error": null
+    }
+  }
+}

@@ -23,13 +23,13 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
 
 ## 2. Protocol shape to settle
 
-- **`state`'s `phase`.** PROTOCOL §5's example prints `phase: "visit"` (a tool sub-phase) while
-  `ToolPhase` is the lifecycle (`idle`/`starting`/`running`/`stopping`). Decide how a tool-specific
-  sub-phase travels — the proposal is `message`/`rows` only — and correct the spec example.
-- **`state`'s `rows` inner shape.** §5 prints `rows: [{...}]` without fixing the inner object; v3
-  currently serialises v2's `ToolRowState` with `next_action_in_seconds`, and the shell cannot be
-  built against "something". Pin the field list in the spec from `ToolRow` once the supervisor's
-  publishing path lands.
+- **`state`'s `phase`** — CLOSED: PROTOCOL §5 states that `phase` is the lifecycle
+  (`idle`/`starting`/`running`/`stopping`) and that a tool sub-phase, if one is ever needed, travels
+  in `message`/`rows`; the examples use `running`.
+- **`state`'s `rows` inner shape** — CLOSED: PROTOCOL §5 now pins the four fields
+  (`name`/`status`/`detail`/`next_action_in_seconds`) from `seal-tools::ToolRow`, maps them 1:1 to
+  v2's `ToolRowState`, states that seconds are relative to the publish, and pins the empty-list rule;
+  `event.state` and `event.state.empty` are the fixtures (50 in total).
 - **Event-writer shutdown.** The single writer stops when the last event-bus sender is dropped, so
   the binary must join the tool supervisor — the other bus holder — before finishing the writer;
   otherwise the process can hang on a sender that outlives the loop. Implemented: `main.rs` joins the

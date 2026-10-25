@@ -147,7 +147,7 @@ in this table is the contract; the implemented list is the current fact.
 
 | event | data | when |
 |---|---|---|
-| `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[{...}],"error":null}` | whenever the published state changes — the whole 750 ms-poll surface, pushed |
+| `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"error":null}` — the row object is specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed |
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
 | `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | specified, no emitter yet (DESIGN §3): the core wrote a block the UI displays (pet session state, calibration, `ui:`) |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
@@ -156,6 +156,41 @@ in this table is the contract; the implemented list is the current fact.
 The plan's `core.ready` event is folded into the `hello` result (ruling 1, §12): the handshake
 already returns everything it carried, and a second message with the same content is a thing
 that can disagree with the first.
+
+### `state`'s `rows`
+
+`rows` is the per-row card surface (the pet feeder's four rows today). Each entry is v2's
+`ToolRowState` — `name`, `status`, `detail`, `nextAt` — with the absolute `nextAt` made relative to
+the publish:
+
+```json
+{
+  "tool": "pet",
+  "running": true,
+  "phase": "running",
+  "message": "row 2: looking",
+  "countdown_s": null,
+  "rows": [
+    {"name": "row 1", "status": "boarding", "detail": "藍天 · 3/min", "next_action_in_seconds": 1800.0},
+    {"name": "row 2", "status": "waiting for a reload", "detail": null, "next_action_in_seconds": null}
+  ],
+  "error": null
+}
+```
+
+| field | type | nullable | meaning |
+|---|---|---|---|
+| `name` | string | no | The row's label on the card (v2 `ToolRowState.Name`) |
+| `status` | string | no | The short state word the card shows — `boarding`, `waiting for a reload`, `given up` (v2 `Status`) |
+| `detail` | string | yes | What the row is doing when there is more to say — the pet boarded, its rate — absent when the card needs only the status word (v2 `Detail`) |
+| `next_action_in_seconds` | number | yes | Seconds from THIS publish until the row next needs attention; `null` when never again (v2 `NextAt`, an absolute `DateTime?`, made relative so the shell counts down without sharing the core's clock) |
+
+Before the first publish — and for any tool with no rows — `rows` is `[]`. An empty list means
+"no rows to show", never "not known yet": the shell draws the card without row entries. The
+pinned fixtures are `event.state` (two rows) and `event.state.empty` (`rows: []`).
+
+`phase` in this payload is the **lifecycle** phase (`idle`/`starting`/`running`/`stopping`); a
+tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not in `phase`.
 
 ## 6. Errors
 

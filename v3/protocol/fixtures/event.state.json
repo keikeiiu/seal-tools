@@ -7,13 +7,21 @@
     "data": {
       "tool": "pet",
       "running": true,
-      "phase": "visit",
+      "phase": "running",
       "message": "row 2: looking",
       "countdown_s": null,
       "rows": [
         {
-          "row": 1,
-          "checked": true
+          "name": "row 1",
+          "status": "boarding",
+          "detail": "藍天 · 3/min",
+          "next_action_in_seconds": 1800.0
+        },
+        {
+          "name": "row 2",
+          "status": "waiting for a reload",
+          "detail": null,
+          "next_action_in_seconds": null
         }
       ],
       "error": null
