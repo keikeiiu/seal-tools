@@ -56,6 +56,7 @@ const ERROR_CODES: &[&str] = &[
     "window_not_found",
     "game_not_foreground",
     "board_unavailable",
+    "ocr_unavailable",
     "tool_busy",
     "not_running",
     "io",
@@ -416,6 +417,13 @@ fn cases() -> Vec<Case> {
             "config_invalid",
             "the config on disk is invalid",
             json!({"errors": ["Window: The Title field is required.", "Check defaults.yaml and local.yaml."]}),
+        ),
+        error_case(
+            "response.error.ocr_unavailable",
+            "36",
+            "ocr_unavailable",
+            "the OCR models are not available",
+            json!({"reason": "models_env_unset"}),
         ),
         error_case(
             "response.error.internal",

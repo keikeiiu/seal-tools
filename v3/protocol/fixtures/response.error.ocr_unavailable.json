@@ -1,0 +1,16 @@
+{
+  "case": "response.error.ocr_unavailable",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "36",
+    "ok": false,
+    "error": {
+      "code": "ocr_unavailable",
+      "message": "the OCR models are not available",
+      "detail": {
+        "reason": "models_env_unset"
+      }
+    }
+  }
+}
