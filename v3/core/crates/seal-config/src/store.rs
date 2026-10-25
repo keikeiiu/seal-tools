@@ -245,8 +245,17 @@ impl ConfigStore {
                 message,
             })?
         };
-        if !local.is_object() {
-            local = Value::Object(Map::new());
+        // Only the blocks this app owns travel through the object; a foreign block travels as raw
+        // text, appended after the body. Retaining only the owned keys is the v2-equivalent of
+        // `Deserialize<LocalOverrides>` dropping what the class does not model — and it is
+        // load-bearing here rather than cosmetic: without it the parsed foreign blocks are ALSO
+        // re-serialised into the body and then appended again as text, so every save duplicates
+        // them (and the next save duplicates the duplicates).
+        match &mut local {
+            Value::Object(local_object) => {
+                local_object.retain(|key, _| crate::foreign::is_owned_block(key));
+            }
+            _ => local = Value::Object(Map::new()),
         }
 
         mutate(&mut local);
@@ -340,23 +349,135 @@ impl ConfigStore {
     /// Moves the player's own portable values out of the legacy defaults file and into
     /// `local.yaml`'s `settings:` block, ONCE, and reports whether the write succeeded.
     ///
-    /// The legacy file is never written, moved or deleted: it is the rollback copy and the record
-    /// of what the player had. A write that cannot happen returns `false` rather than throwing: the
+    /// Reading is per leaf, writing is per SECTION: a section is carried whole as soon as any of its
+    /// leaves differs, because the apply side assigns the section — `hotkeys.start` on its own would
+    /// carry the default 0 for the other three keys.
+    ///
+    /// 'Differs from the shipped template' is how it reads 'the player changed it', and the direction
+    /// it errs in is the safe one: a default a release changed under a key nobody touched is
+    /// preserved rather than silently applied.
+    ///
+    /// The legacy file is never written, moved or deleted: it is the rollback copy and the record of
+    /// what the player had. A write that cannot happen returns `false` rather than throwing: the
     /// marker stays unset, so the caller keeps reading the legacy file for the session and the fold
-    /// retries on the next launch.
-    fn fold_into_local(&self, _legacy: &Value, _base: &Value) -> Result<bool, ConfigError> {
-        // Implemented with the fold itself; the front-loaded part of this port only needed the
-        // three-layer read.
-        Ok(false)
+    /// retries on the next launch. Any other failure — a local.yaml that cannot be parsed — is a real
+    /// error and is reported, never overwritten.
+    fn fold_into_local(&self, legacy: &Value, base: &Value) -> Result<bool, ConfigError> {
+        let carried = fold_projection(legacy, base);
+
+        let result = self.update_local(|local| {
+            let Some(local_object) = local.as_object_mut() else {
+                return;
+            };
+            let settings = local_object
+                .entry(SETTINGS.to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !settings.is_object() {
+                *settings = Value::Object(Map::new());
+            }
+            if let Value::Object(settings) = settings {
+                for (name, value) in carried {
+                    // Replaced, not field-merged: v2's MergeSettings assigns the section.
+                    settings.insert(name, value);
+                }
+                // Unconditional, and in the SAME write. A machine that never changed a value must
+                // still stop folding, or the next launch would fold the old template against a
+                // newer release's defaults and pin that release's defaults as the player's own.
+                settings.insert(LEGACY_FOLDED.to_owned(), Value::Bool(true));
+            }
+        });
+
+        match result {
+            Ok(()) => Ok(true),
+            // The one stated exception to "a write that cannot happen throws" (PLAN-DEPLOY §6.5).
+            Err(ConfigError::Write { .. }) => Ok(false),
+            Err(other) => Err(other),
+        }
     }
 
     /// Adopts spammer presets left in the old shipped file into `local.yaml`, at most once.
-    fn adopt_spammer_presets(
-        &self,
-        _source: &Value,
-        _local: &mut Value,
-    ) -> Result<(), ConfigError> {
-        // Implemented with the writer; until then a checkout cannot run the adoption.
+    ///
+    /// Presets used to be saved into the shipped `defaults.yaml`. The save path stopped writing them,
+    /// so the first save on any other tab rewrote that file without a spammer block — and on a
+    /// machine that only ever ran the older build those presets existed nowhere else, so the save
+    /// deleted them outright. The guard is the block's presence in `local.yaml`: after the first
+    /// adoption, including on a first run seeded from an example with no spammer block, the block is
+    /// non-null and this does nothing. The write re-checks the guard against the file as it stands
+    /// NOW, because another process can have adopted in the gap since this load read it, and writing
+    /// ours blind would replace the winner's presets with our copy.
+    ///
+    /// A hand-written legacy `startup_step` folds into the object shape first, so the copy that is
+    /// adopted carries one representation rather than two; the old key is then never written again.
+    fn adopt_spammer_presets(&self, source: &Value, local: &mut Value) -> Result<(), ConfigError> {
+        if local
+            .get("spammer")
+            .is_some_and(|spammer| !spammer.is_null())
+        {
+            return Ok(());
+        }
+        let Some(source_spammer) = source.get("spammer").and_then(Value::as_object) else {
+            return Ok(());
+        };
+        let has_presets = source_spammer
+            .get("presets")
+            .and_then(Value::as_object)
+            .is_some_and(|presets| !presets.is_empty());
+        if !has_presets {
+            return Ok(());
+        }
+
+        let mut adopted = Map::new();
+        for key in ["active", "presets", "priority", "combos", "startup"] {
+            if let Some(value) = source_spammer.get(key) {
+                adopted.insert(key.to_owned(), value.clone());
+            }
+        }
+        if let Some(steps) = source_spammer
+            .get("startup_step")
+            .and_then(Value::as_object)
+        {
+            let startup = adopted
+                .entry("startup".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !startup.is_object() {
+                *startup = Value::Object(Map::new());
+            }
+            if let Some(startup) = startup.as_object_mut() {
+                for (name, step) in steps {
+                    let entry = startup
+                        .entry(name.clone())
+                        .or_insert_with(|| Value::Object(Map::new()));
+                    if !entry.is_object() {
+                        *entry = Value::Object(Map::new());
+                    }
+                    if let Some(entry) = entry.as_object_mut() {
+                        entry.insert("step".to_owned(), step.clone());
+                    }
+                }
+            }
+        }
+
+        let mut in_file: Option<Value> = None;
+        self.update_local(|fresh| {
+            let Some(fresh_object) = fresh.as_object_mut() else {
+                return;
+            };
+            if !fresh_object
+                .get("spammer")
+                .is_some_and(|spammer| !spammer.is_null())
+            {
+                fresh_object.insert("spammer".to_owned(), Value::Object(adopted.clone()));
+            }
+            in_file = fresh_object.get("spammer").cloned();
+        })?;
+
+        // The session follows the file, so even the process that lost that race reads the presets
+        // that are actually stored rather than a second set of its own.
+        if let Some(spammer) = in_file
+            && let Some(local_object) = local.as_object_mut()
+        {
+            local_object.insert("spammer".to_owned(), spammer);
+        }
         Ok(())
     }
 
@@ -623,8 +744,6 @@ fn project_onto_shape(shape: &Value, source: &Value) -> Value {
 }
 
 /// True when the projected section differs from the shipped shape at any leaf both of them name.
-// Used by the fold, which is the next increment; removed when the fold lands.
-#[allow(dead_code)]
 fn project_has_difference(shape: &Value, projected: &Value) -> bool {
     match (shape, projected) {
         (Value::Object(shape_object), Value::Object(projected_object)) => {
@@ -638,6 +757,34 @@ fn project_has_difference(shape: &Value, projected: &Value) -> bool {
         }
         _ => shape != projected,
     }
+}
+
+/// The sections the fold carries: a portable section is carried WHOLE as soon as any leaf the legacy
+/// file states differs from the shipped template's value for it. A section where nothing differs is
+/// not carried at all, so an untouched key goes on tracking the released template.
+fn fold_projection(legacy: &Value, base: &Value) -> Map<String, Value> {
+    let mut carried = Map::new();
+    let (Some(legacy_object), Some(base_object)) = (legacy.as_object(), base.as_object()) else {
+        return carried;
+    };
+    for (name, shape) in base_object {
+        // Only the portable projection is folded: the spammer's rotations are personal and reach
+        // local.yaml through the adoption instead, and `settings` is where this write lands.
+        if !is_portable_section(name) {
+            continue;
+        }
+        let Some(source) = legacy_object.get(name) else {
+            continue;
+        };
+        if source.is_null() {
+            continue;
+        }
+        let projected = project_onto_shape(shape, source);
+        if project_has_difference(shape, &projected) {
+            carried.insert(name.clone(), projected);
+        }
+    }
+    carried
 }
 
 /// Recursive field-wise overlay: objects merge, everything else replaces, and `null` means "not

@@ -143,17 +143,30 @@ fn a_file_that_is_only_a_header_keeps_nothing() {
 
 #[test]
 fn the_header_is_the_ported_text() {
-    // Starts a comment, not content; says the two things that have already cost data; names the
+    // Starts a comment, not content; says the things that have already cost data; names the
     // documents that explain the rest; and ends with a blank line before the serialised body.
     assert!(LOCAL_HEADER.starts_with('#'));
     assert!(LOCAL_HEADER.ends_with("\n\n"));
     assert!(LOCAL_HEADER.contains("REWRITES this whole file"));
-    assert!(LOCAL_HEADER.contains("DROPPED"));
     assert!(LOCAL_HEADER.contains("docs/spec/CONFIG.md"));
     assert!(LOCAL_HEADER.contains("docs/spec/CALIBRATION.md"));
     assert!(LOCAL_HEADER.contains("The `settings:` block: the PORTABLE half"));
     assert!(LOCAL_HEADER.contains("defaults.yaml is the template"));
     assert!(LOCAL_HEADER.contains("do not commit it or share it"));
+}
+
+#[test]
+fn the_header_says_an_unmodelled_owned_key_is_kept_not_dropped() {
+    // Deliberate divergence from v2's LocalHeader, and the only rewording it has. v2 rebuilt every
+    // owned block from a typed projection, so a key it did not model was silently DROPPED — four
+    // recorded losses. The v3 config is opaque JSON and the writer merges the values it was given,
+    // so no key disappears inside an owned block; a header that still promised the drop would be a
+    // false warning in the player's own file.
+    assert!(LOCAL_HEADER.contains("KEPT"));
+    assert!(!LOCAL_HEADER.contains("DROPPED"));
+    // The half that IS still true is kept and must stay said: comments cannot survive a save.
+    assert!(LOCAL_HEADER.contains("Comments are still lost everywhere"));
+    assert!(LOCAL_HEADER.contains("Keep a copy if you edit"));
 }
 
 /// The extracted text without the leading/trailing newlines the writer adds.

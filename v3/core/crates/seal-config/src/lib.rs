@@ -49,13 +49,16 @@ pub const OWNED_LOCAL_BLOCKS: &[&str] = &[
     "settings",
 ];
 
-/// The header every save writes above the serialised content, ported verbatim from
+/// The header every save writes above the serialised content, ported from
 /// `ConfigLoader.LocalHeader` (the string literals are kept one per line so the constant is
 /// independent of the checkout's line endings).
 ///
-/// A save re-serialises an object graph, so it cannot carry comments: this header is the only prose
-/// that survives. It says both things that have already cost data — comments are not preserved, and
-/// keys inside owned blocks are rewritten — and names the documents that explain the rest.
+/// One sentence is deliberately reworded, and the reason is worth keeping: v2 rebuilt every owned
+/// block from a typed projection, so a key it did not model was silently DROPPED — four recorded
+/// losses. In v3 the config is opaque JSON and the writer merges the values it was given, so no key
+/// disappears inside an owned block. The header therefore says such a key is KEPT. Leaving v2's
+/// sentence would put a false warning in the player's own file. The rest is byte-identical, and its
+/// other half — comments cannot survive a save — is still true and still said.
 pub const LOCAL_HEADER: &str = concat!(
     "# ── This machine's configuration ──────────────────────────────────────────────────\n",
     "# Two halves, and they travel differently.\n",
@@ -72,8 +75,9 @@ pub const LOCAL_HEADER: &str = concat!(
     "#\n",
     "# READ THIS BEFORE EDITING. A save REWRITES this whole file's owned blocks — the ones named in\n",
     "# docs/spec/CONFIG.md — and leaves any other TOP-LEVEL block alone, so a block of your own survives.\n",
-    "# Inside an owned block, a key the launcher does not know about is DROPPED, and comments are\n",
-    "# lost everywhere: the writer serialises values and cannot carry prose. Keep a copy if you edit.\n",
+    "# Inside an owned block a key this build does not read is KEPT: a save merges the values it was\n",
+    "# given rather than rebuilding the block from a fixed list. Comments are still lost everywhere,\n",
+    "# though: the writer serialises values and cannot carry prose. Keep a copy if you edit.\n",
     "#\n",
     "# Documented in docs/spec/CONFIG.md; calibrating is docs/spec/CALIBRATION.md.\n",
     "\n",
