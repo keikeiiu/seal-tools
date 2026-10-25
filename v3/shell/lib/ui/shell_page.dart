@@ -21,6 +21,7 @@ import 'status_strip.dart';
 import 'tabs/buy_sell_tab.dart';
 import 'tabs/gem_tab.dart';
 import 'tabs/pet_tab.dart';
+import 'tabs/setup_tab.dart';
 import 'tabs/quest_tab.dart';
 import 'tabs/spammer_tab.dart';
 import 'tabs/tuner_tab.dart';
@@ -51,7 +52,7 @@ class _ShellPageState extends State<ShellPage> {
 
         final ready = connection.status == ConnectionStatus.ready;
         return DefaultTabController(
-          length: 7,
+          length: 8,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Seal Tools v3'),
@@ -92,6 +93,7 @@ class _ShellPageState extends State<ShellPage> {
                         Tab(text: 'Buy/Sell'),
                         Tab(text: 'Quest'),
                         Tab(text: 'Pet'),
+                        Tab(text: 'Setup'),
                       ],
                     )
                   : null,
@@ -110,6 +112,7 @@ class _ShellPageState extends State<ShellPage> {
                         BuySellTab(model: model),
                         QuestTab(model: model),
                         PetTab(model: model),
+                        SetupTab(model: model),
                       ],
                     ),
                   ),

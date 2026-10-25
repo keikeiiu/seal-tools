@@ -20,6 +20,14 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
   ShellModel get model;
   ConfigDraft get draft;
 
+  ConfigDraftGroup? _defaultDraftGroup;
+
+  /// The drafts this tab saves. A single-section tab uses the one [draft]; Setup returns a group.
+  ConfigDraftGroup get draftGroup => _defaultDraftGroup ??= ConfigDraftGroup(
+    label: draft.blockName,
+    parts: [draft],
+  );
+
   ConfigSaveOutcome? outcome;
   bool saving = false;
 
@@ -31,7 +39,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
   @override
   void initState() {
     super.initState();
-    draft.seedFromMirror(model.config.config);
+    draftGroup.seedFromMirror(model.config.config);
     _seenConfigRev = model.config.rev;
     model.config.addListener(_onConfigChanged);
   }
@@ -39,6 +47,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
   @override
   void dispose() {
     model.config.removeListener(_onConfigChanged);
+    _defaultDraftGroup?.dispose();
     super.dispose();
   }
 
@@ -48,22 +57,18 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
       return;
     }
     _seenConfigRev = rev;
-    if (draft.isDirty) {
-      draft.markExternalChange();
-    } else {
-      draft.seedFromMirror(model.config.config, force: true);
-    }
+    draftGroup.observeMirrorChange(model.config.config);
   }
 
   Future<void> save() async {
-    if (saving || !draft.isDirty) {
+    if (saving || !draftGroup.isDirty) {
       return;
     }
     setState(() {
       saving = true;
       outcome = null;
     });
-    final result = await model.saveConfig(draft.payload());
+    final result = await model.saveConfig(draftGroup.payload());
     if (!mounted) {
       return;
     }
@@ -72,7 +77,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
       outcome = result;
       final applied = result.result;
       if (result.saved && applied != null) {
-        draft.saved(draft.echoOf(applied.sections));
+        draftGroup.savedFrom(applied.sections);
       }
     });
   }
@@ -81,10 +86,10 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
     setState(() {
       outcome = null;
       // Discarding edits after an external change shows the CORE's latest value, not the stale one.
-      if (draft.hasExternalChange) {
-        draft.seedFromMirror(model.config.config, force: true);
+      if (draftGroup.hasExternalChange) {
+        draftGroup.seedFromMirror(model.config.config, force: true);
       } else {
-        draft.reset();
+        draftGroup.reset();
       }
     });
   }
@@ -98,7 +103,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
     }
     setState(() {
       outcome = null;
-      draft.seedFromMirror(model.config.config, force: reloaded != null);
+      draftGroup.seedFromMirror(model.config.config, force: reloaded != null);
     });
   }
 
@@ -109,18 +114,18 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
     required Widget child,
     List<Widget> readOnly = const [],
   }) => ListenableBuilder(
-    listenable: draft,
+    listenable: draftGroup,
     builder: (context, _) => ConfigTabScaffold(
       title: title,
       description: description,
-      draft: draft,
+      group: draftGroup,
       saving: saving,
       outcome: outcome,
       onSave: save,
       onCancel: cancel,
       onReconcile: reconcile,
       readOnly: readOnly,
-      externalChange: draft.hasExternalChange,
+      externalChange: draftGroup.hasExternalChange,
       externalChangeRev: model.config.rev,
       child: child,
     ),
@@ -132,7 +137,7 @@ class ConfigTabScaffold extends StatelessWidget {
     super.key,
     required this.title,
     required this.description,
-    required this.draft,
+    required this.group,
     required this.saving,
     required this.outcome,
     required this.onSave,
@@ -146,7 +151,7 @@ class ConfigTabScaffold extends StatelessWidget {
 
   final String title;
   final String description;
-  final ConfigDraft draft;
+  final ConfigDraftGroup group;
   final bool saving;
   final ConfigSaveOutcome? outcome;
   final Future<void> Function() onSave;
@@ -194,12 +199,12 @@ class ConfigTabScaffold extends StatelessWidget {
                   ],
                 ),
               ),
-              if (draft.isDirty)
+              if (group.isDirty)
                 Padding(
                   padding: const EdgeInsets.only(left: ShellSpace.md),
                   child: Text(
                     'Unsaved changes',
-                    key: ValueKey('dirty-${draft.blockName}'),
+                    key: ValueKey('dirty-${group.label}'),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.tertiary,
                     ),
@@ -218,7 +223,7 @@ class ConfigTabScaffold extends StatelessWidget {
           ),
         ),
         _SaveBar(
-          draft: draft,
+          group: group,
           saving: saving,
           outcome: outcome,
           onSave: onSave,
@@ -234,7 +239,7 @@ class ConfigTabScaffold extends StatelessWidget {
 
 class _SaveBar extends StatelessWidget {
   const _SaveBar({
-    required this.draft,
+    required this.group,
     required this.saving,
     required this.outcome,
     required this.onSave,
@@ -244,7 +249,7 @@ class _SaveBar extends StatelessWidget {
     required this.externalChangeRev,
   });
 
-  final ConfigDraft draft;
+  final ConfigDraftGroup group;
   final bool saving;
   final ConfigSaveOutcome? outcome;
   final Future<void> Function() onSave;
@@ -268,13 +273,13 @@ class _SaveBar extends StatelessWidget {
             if (externalChange && conflict == null) ...[
               Text(
                 'The core changed this block while you were editing it (now at rev ${externalChangeRev ?? '?'}).',
-                key: ValueKey('external-change-${draft.blockName}'),
+                key: ValueKey('external-change-${group.label}'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
               ),
               TextButton(
-                key: ValueKey('external-change-reconcile-${draft.blockName}'),
+                key: ValueKey('external-change-reconcile-${group.label}'),
                 onPressed: saving ? null : onReconcile,
                 child: const Text('Discard my edits and use the core version'),
               ),
@@ -284,13 +289,13 @@ class _SaveBar extends StatelessWidget {
                 'The core changed the config underneath this tab '
                 '(now at rev ${conflict.conflictRev ?? '?'}: '
                 '${_changedNames(conflict)}).',
-                key: ValueKey('conflict-${draft.blockName}'),
+                key: ValueKey('conflict-${group.label}'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
               ),
               TextButton(
-                key: ValueKey('reconcile-${draft.blockName}'),
+                key: ValueKey('reconcile-${group.label}'),
                 onPressed: saving ? null : onReconcile,
                 child: const Text(
                   'Discard my changes and use the core version',
@@ -303,7 +308,7 @@ class _SaveBar extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
                     line,
-                    key: ValueKey('save-error-${draft.blockName}'),
+                    key: ValueKey('save-error-${group.label}'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.error,
                     ),
@@ -312,7 +317,7 @@ class _SaveBar extends StatelessWidget {
             if (result != null && result.saved)
               Text(
                 'Saved — rev ${result.result?.rev ?? '?'}',
-                key: ValueKey('save-ok-${draft.blockName}'),
+                key: ValueKey('save-ok-${group.label}'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -324,21 +329,21 @@ class _SaveBar extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  draft.isDirty ? 'Editing' : 'No changes',
+                  group.isDirty ? 'Editing' : 'No changes',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const Spacer(),
                 TextButton(
-                  key: ValueKey('cancel-${draft.blockName}'),
-                  onPressed: draft.isDirty && !saving ? onCancel : null,
+                  key: ValueKey('cancel-${group.label}'),
+                  onPressed: group.isDirty && !saving ? onCancel : null,
                   child: const Text('Cancel'),
                 ),
                 const SizedBox(width: ShellSpace.sm),
                 FilledButton(
-                  key: ValueKey('save-${draft.blockName}'),
-                  onPressed: draft.isDirty && !saving ? onSave : null,
+                  key: ValueKey('save-${group.label}'),
+                  onPressed: group.isDirty && !saving ? onSave : null,
                   child: saving
                       ? const SizedBox(
                           width: 16,

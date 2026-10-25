@@ -9,6 +9,7 @@ export 'config.dart';
 export 'config_draft.dart';
 export 'config_json.dart';
 export 'connection.dart';
+export 'core_actions.dart';
 export 'core_path.dart';
 export 'logs.dart';
 export 'shell_model.dart';

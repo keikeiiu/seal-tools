@@ -158,3 +158,89 @@ class ConfigDraft extends ChangeNotifier {
   Map<String, dynamic> _editableOnly(Map<String, dynamic> source) =>
       pickKeys(source, editableKeys);
 }
+
+/// One tab's draft when it spans several config sections (Setup owns portable `window`/`game`/
+/// `arduino` plus the machine `arduino.port`).
+///
+/// It is a fan-out over [ConfigDraft]s: dirty/external are "any part", Save sends one merged
+/// `sections` payload (`settings:` sections merged together, owned blocks at the top level), and a
+/// successful apply re-baselines every part from that part's echo.
+class ConfigDraftGroup extends ChangeNotifier {
+  ConfigDraftGroup({required this.label, required this.parts}) {
+    for (final part in parts) {
+      part.addListener(notifyListeners);
+    }
+  }
+
+  /// The key/label the shared Save frame uses (`dirty-<label>`, `save-<label>`, …).
+  final String label;
+
+  final List<ConfigDraft> parts;
+
+  bool get isDirty => parts.any((part) => part.isDirty);
+
+  bool get hasExternalChange => parts.any((part) => part.hasExternalChange);
+
+  int get seedRevision => parts.fold(
+    0,
+    (revision, part) =>
+        part.seedRevision > revision ? part.seedRevision : revision,
+  );
+
+  void seedFromMirror(Map<String, dynamic> mergedConfig, {bool force = false}) {
+    for (final part in parts) {
+      part.seedFromMirror(mergedConfig, force: force);
+    }
+  }
+
+  /// A core-side change while this tab is alive: dirty parts are marked (explicit reconcile),
+  /// clean parts re-seed silently.
+  void observeMirrorChange(Map<String, dynamic> mergedConfig) {
+    for (final part in parts) {
+      if (part.isDirty) {
+        part.markExternalChange();
+      } else {
+        part.seedFromMirror(mergedConfig, force: true);
+      }
+    }
+  }
+
+  void reset() {
+    for (final part in parts) {
+      part.reset();
+    }
+  }
+
+  void savedFrom(Map<String, dynamic> echoedSections) {
+    for (final part in parts) {
+      part.saved(part.echoOf(echoedSections));
+    }
+  }
+
+  /// ONE `config.apply` payload for every section this tab owns.
+  Map<String, dynamic> payload() {
+    final sections = <String, dynamic>{};
+    final settings = <String, dynamic>{};
+    for (final part in parts) {
+      for (final entry in part.payload().entries) {
+        if (entry.key == 'settings' && entry.value is Map<String, dynamic>) {
+          settings.addAll(entry.value as Map<String, dynamic>);
+        } else {
+          sections[entry.key] = entry.value;
+        }
+      }
+    }
+    if (settings.isNotEmpty) {
+      sections['settings'] = settings;
+    }
+    return sections;
+  }
+
+  @override
+  void dispose() {
+    for (final part in parts) {
+      part.removeListener(notifyListeners);
+    }
+    super.dispose();
+  }
+}

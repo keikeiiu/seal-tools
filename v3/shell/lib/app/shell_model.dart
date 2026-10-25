@@ -24,6 +24,7 @@ import 'package:flutter/foundation.dart';
 import '../protocol/protocol.dart';
 import 'config.dart';
 import 'connection.dart';
+import 'core_actions.dart';
 import 'logs.dart';
 import 'tools.dart';
 
@@ -212,6 +213,22 @@ class ShellModel extends ChangeNotifier {
   /// `ui.window` — the shell's own window geometry, written by the core ([PROTOCOL.md] §4).
   Future<bool> saveWindow(UiWindowArgs args) =>
       _voidCommand('ui.window', (client) => client.uiWindow(args));
+
+  /// `window.find`: locate the configured game window. "Not found" is a RESULT, not an error; a
+  /// config/Win32 refusal comes back typed and is rendered verbatim ([PROTOCOL.md] §4).
+  Future<CoreActionResult<WindowFindResult>> findWindow() =>
+      _coreAction('window.find', WindowFindResult.fromJson);
+
+  /// `window.measure`: the `DisplayInfo` the shell maps frames with ([PROTOCOL.md] §3/§4).
+  Future<CoreActionResult<DisplayInfo>> measureWindow() => _coreAction(
+    'window.measure',
+    (result) => DisplayInfo.fromJson(result['display'], 'display'),
+  );
+
+  /// `board.probe`: port and firmware facts. No board is `board_unavailable`, shown verbatim — the
+  /// no-hardware path ([PROTOCOL.md] §4/§6).
+  Future<CoreActionResult<BoardProbeResult>> probeBoard() =>
+      _coreAction('board.probe', BoardProbeResult.fromJson);
 
   // ── config commands: validate, then apply ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7) ───────────
 
@@ -411,6 +428,50 @@ class ShellModel extends ChangeNotifier {
       if (tool != null) {
         tools.endCommand(tool);
       }
+    }
+  }
+
+  /// One read-only command with a typed result: the core's answer (or its refusal) is data for the
+  /// Setup surface; nothing is thrown at the widget.
+  Future<CoreActionResult<T>> _coreAction<T>(
+    String cmd,
+    T Function(JsonMap result) decode,
+  ) async {
+    final client = _client;
+    if (!isReady || client == null) {
+      const note = 'the core is not ready';
+      logs.addShellNote('cannot send $cmd: $note');
+      return CoreActionResult<T>.failure(shellNote: note);
+    }
+    try {
+      final response = await client.request(cmd);
+      return switch (response) {
+        OkResponse(:final result) => CoreActionResult<T>.success(
+          decode(result),
+        ),
+        ErrorResponse(:final error) => CoreActionResult<T>.failure(
+          coreError: error,
+        ),
+      };
+    } on ProtocolTimeoutException catch (error) {
+      _noteTimeout(error);
+      return CoreActionResult<T>.failure(
+        shellNote:
+            'the core did not answer $cmd within ${error.timeout.inSeconds}s',
+      );
+    } on ProtocolClosedException catch (error) {
+      logs.addShellNote('cannot send $cmd: ${error.message}');
+      return CoreActionResult<T>.failure(
+        shellNote: 'the core is gone: ${error.message}',
+      );
+    } on ProtocolStateException catch (error) {
+      logs.addShellNote(error.message);
+      return CoreActionResult<T>.failure(shellNote: error.message);
+    } on ProtocolDecodeException catch (error) {
+      logs.addShellNote('cannot read the $cmd result: ${error.message}');
+      return CoreActionResult<T>.failure(
+        shellNote: 'unexpected $cmd result: ${error.message}',
+      );
     }
   }
 
