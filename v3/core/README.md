@@ -54,6 +54,10 @@ reason.
   is opaque JSON and the writer merges the block it was given, so there is no projection to drop it;
   the header now says KEPT rather than DROPPED. The other half of that warning is still true:
   comments inside the file are lost on every save.
+- **Deleting the active Quest flow selects the alphabetically first flow** (`authoring::quest`).
+  v2 picked its insertion-ordered dictionary's first key; the v3 model uses a `BTreeMap`, so the
+  new selection is deterministic-sorted instead. It is a UI selection, not stored calibration, and
+  nothing is persisted until the player saves — so no run or coordinate depends on it.
 
 ## Toolchain
 
