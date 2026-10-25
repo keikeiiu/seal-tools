@@ -244,3 +244,20 @@ other crate totals in §5 are unchanged except `seal-core`, which grew on the da
   (`46df1ee`).
 - **The remaining gaps are unchanged in kind:** G1 (`seal-win`), G2's OS adapter, G3 (`seal-ocr`),
   G8 (service/logging glue). No gap was closed by the audit itself — it was read-only by design.
+
+---
+
+## 8. Update 3 — the Windows layer landed (after the installs)
+
+- **G1 `seal-win` is partly closed** (`f4e3e9b`): window find, the two-space measurement (thread-scoped
+  aware context, width-ratio scale) and the PNG client capture exist, with the pure halves tested and
+  the two live behaviours `#[ignore]`d; the core serves `window.find`, `window.measure` and `capture`
+  (`7d1942e`) with the four-frame cache. Still G1: the calibrator flow (`calibration.save`/`fetch`,
+  the binary artifact writer) and live verification against the game.
+- **G2's adapter landed** (`6788c0e`): serial transport with the seconds `Deadline`, enumeration with
+  the Arduino fallback, the boot sequence through the `Clock`; four behaviours stay live-only
+  (cold-plug, unplug, anti-cheat sharing, driver timings).
+- **G3 `seal-ocr` is unchanged** — the research task is in flight; the models' provenance and the
+  runtime choice are the next gate.
+- **The shell exists** (`15ee238`) and its protocol client is in progress; `PLAN-V3-SHELL.md` is the
+  map and `v3/docs/plans/README.md` is its status.

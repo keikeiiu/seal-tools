@@ -19,6 +19,24 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-25 (14) — the toolchain unblocked, the shell scaffolded, the Windows layer built
+
+The player approved the installs, so the machine lost its last excuse: VS Build Tools 2022 17.14 with
+the VCTools workload, MSVC 14.44 and the Windows SDK; Flutter stable 3.47.8 at `C:\src\flutter`;
+`flutter doctor` clean for Windows. `2ba108c` moved `rust-toolchain.toml` to `stable` (MSVC) and
+re-ran every gate on it — the GNU pin existed only because there was no `link.exe`. `207074d` wrote
+PLAN-V3-SHELL (hand-written fixture-tested Dart client, built-in state, the wave order, packaging and
+the eight-point cut-over gate, five ⚑ player questions), and `15ee238` generated the app at
+`v3/shell` with its three Dart gates passing and `serialport` added as seal-board's Windows
+dependency. `631ddd3` pinned `state`'s rows in the spec and the fixtures (50 now: `event.state` with
+two real rows, `event.state.empty` for the opening snapshot). `6788c0e` gave seal-board its OS
+adapter — seconds `Deadline` mapped to driver timeouts, no flush after a failed write, the 2 s boot
+wait through the `Clock`, enumeration with the Arduino fallback, four named live-only tests.
+`f4e3e9b` built seal-win (window find, the two-space measurement with a thread-scoped aware
+context, the foreground refusal, PNG capture), and `7d1942e` wired `window.find`/`window.measure`/
+`capture` into the core with the four-frame cache. **Taught:** the two-space contract now exists in
+code on both sides, and the covered-game refusal is a guard rather than an error branch to forget.
+
 ## 2026-10-25 (13) — the config ruling implemented, the apply made whole, and a docs audit
 
 The ruling from entry (12) became code and then raised two gaps of its own. `af4d9a3` implemented the

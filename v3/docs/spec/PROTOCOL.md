@@ -138,10 +138,10 @@ Notes:
   the config it had.
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
-`config.reload`, `ui.window`, `tool.start`, `tool.stop`, `shutdown`. Spec-only until their
-crates land ([OPEN.md](../backlog/OPEN.md) §4): `window.find`, `window.measure`, `capture`,
-`calibration.save`, `calibration.fetch`, `board.probe`, `board.test`, `ocr.scan`. A command
-in this table is the contract; the implemented list is the current fact.
+`config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `tool.start`,
+`tool.stop`, `shutdown`. Spec-only until their crates land ([OPEN.md](../backlog/OPEN.md) §4):
+`calibration.save`, `calibration.fetch`, `board.probe`, `board.test`, `ocr.scan`. A command in this
+table is the contract; the implemented list is the current fact.
 
 ## 5. Events
 
