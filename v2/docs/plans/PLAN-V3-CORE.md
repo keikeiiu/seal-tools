@@ -384,7 +384,10 @@ Every step leaves v2 shippable, and every step except 0 is a working artifact, n
 ([TODO.md](../backlog/TODO.md) §1) — the TFM bump to .NET 10 is forced regardless of v3, and it
 carries an IME regression check: a cancelled composition on **.NET 10.0.12** is retained and
 routes later input to the stale element ([dotnet/wpf#12013](https://github.com/dotnet/wpf/issues/12013),
-open 2026-10-10). Test it in the bump; pin a serviced patch. From here v2 is **maintenance only** —
+open 2026-10-10). Test it in the bump; pin a serviced patch. **Player decision 2026-10-25: the
+bump is skipped** — v2 keeps shipping on .NET 8 past its 2026-11-10 end of support until v3 cuts
+over, accepting that the release is self-contained so a servicing fix would mean republishing
+anyway, and that the IME check above is deferred with it. From here v2 is **maintenance only** —
 no refactors, no new features — because every hour spent extracting C# interfaces that v3 deletes
 is wasted (that is why PLAN-V3-RUST step 1 is dropped). Two things happen in this window: the
 commit that freezes v2 is **tagged as the parity baseline** (later v2 fixes are ported
