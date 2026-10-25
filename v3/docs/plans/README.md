@@ -11,7 +11,7 @@ ships, its durable reasoning graduates into `../spec/` and its row here goes awa
 
 | plan | state |
 |---|---|
-| [PLAN-V3-SHELL.md](PLAN-V3-SHELL.md) | **design complete, code not started** — waiting on a clean `flutter doctor`: both installs were still running at write time on 2026-10-25 (the SDK was appearing at `C:\src\flutter`, not yet on `PATH`) |
+| [PLAN-V3-SHELL.md](PLAN-V3-SHELL.md) | **scaffold landed** (`15ee238`): both installs done (Flutter stable 3.47.8 at `C:\src\flutter`; VS Build Tools 2022 + SDK 10.0.26100), `flutter doctor` clean for Windows, generated app + the three Dart gates passing. Next: the hand-written protocol client (`task-25`), the board OS adapter (`task-26`), then the UI surfaces; the five ⚑ player questions are still open. |
 
 The v3 **core** plan is not here: it is [v2's PLAN-V3-CORE.md](../../../v2/docs/plans/PLAN-V3-CORE.md),
 and its status stays on [v2's board](../../../v2/docs/plans/README.md). One plan, one status row.
