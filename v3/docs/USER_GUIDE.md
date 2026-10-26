@@ -63,9 +63,9 @@ measured first, because the anti-cheat may block it.
 The window opens showing **Cards** at the top and a row of tabs. Along the bottom is the **status
 strip**. When the core stops or cannot start, the whole page becomes the **crash view**.
 
-- **Title bar / app bar:** `Seal Tools v3`, the **Hold Space** toggle on the right, and a small
-  `v0.1.0` — that small version is the shell's protocol client version, **not** the product version;
-  the product version is 3.0.
+- **Title bar / app bar:** `Seal Tools v3`, the **Hold Space** toggle on the right, and the small
+  product version `v3.0.0`. (The shell↔core protocol client identity is a separate engineering value
+  documented in `PROTOCOL.md`; it does not follow the product version.)
 - **The tab strip:** `Cards`, `Spammer`, `Tuner`, `Gem`, `Buy/Sell`, `Quest`, `Pet`, `Attributes`,
   `Arduino`, `Hotkeys`, `Setup`, `Calibrate` — the Cards page plus eleven tabs.
 - **The status strip:** `core <version> · rev <n>`, the **root** folder the core is using, and the

@@ -81,6 +81,24 @@ void main() {
   );
 
   testWidgets(
+    'the app bar shows the product version while hello keeps the client identity',
+    (tester) async {
+      final harness = await _pumpShell(tester);
+
+      expect(find.text('v3.0.0'), findsOneWidget);
+      final hello = harness.lastSentWithCmd('hello')!;
+      final args = hello['args'] as Map<String, dynamic>;
+      expect(
+        args['client'],
+        '0.1.0',
+        reason:
+            'the app bar shows the product version; the handshake carries '
+            'the protocol client identity, which stays 0.1.0',
+      );
+    },
+  );
+
+  testWidgets(
     'state events update cards, including rows:[] and a two-row card',
     (tester) async {
       final harness = await _pumpShell(tester);

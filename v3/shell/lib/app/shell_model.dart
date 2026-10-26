@@ -30,6 +30,7 @@ import 'core_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
 import 'tools.dart';
+import 'version.dart';
 
 /// Creates the transport for a connection attempt. The real one spawns a core process; tests return
 /// a fake. One call per spawn, so a restart gets a fresh transport from the same factory.
@@ -38,7 +39,7 @@ typedef CoreTransportFactory = Future<Transport> Function();
 class ShellModel extends ChangeNotifier {
   ShellModel({
     required this.transportFactory,
-    this.shellVersion = '0.1.0',
+    this.shellVersion = protocolClientVersion,
     this.requestTimeout = const Duration(seconds: 10),
     this.handshakeTimeout = const Duration(seconds: 5),
   }) {
@@ -52,8 +53,9 @@ class ShellModel extends ChangeNotifier {
   /// fake. One call per spawn, so a restart gets a fresh transport from the same factory.
   final CoreTransportFactory transportFactory;
 
-  /// The shell's own version, sent in `hello`; supplied by `main.dart` (the protocol library's
-  /// default deliberately stays `0.0.0` — the version choice belongs to the shell).
+  /// The shell's PROTOCOL CLIENT identity, sent in `hello`; supplied by `main.dart` from
+  /// `version.dart`. It is not the product version (the app bar shows [productVersion]) and the
+  /// protocol library's default deliberately stays `0.0.0` — the version choice belongs to the shell.
   final String shellVersion;
 
   /// Per-request deadline for commands ([PLAN-V3-SHELL.md] §4: a shell constant, not protocol).

@@ -1,9 +1,9 @@
 /// The v3 shell's entry point: one model, one app, and the core started after the first frame.
 ///
 /// It resolves what only `main` can know — the release-vs-development core and root paths
-/// ([PLAN-V3-SHELL.md] §8/§9) — then hands the [ShellModel] a spawn function and the shell version.
-/// The window paints its connection surface first and `connect()` runs post-frame, so a slow spawn
-/// can never delay the first frame ([PLAN-V3-SHELL.md] §2).
+/// ([PLAN-V3-SHELL.md] §8/§9) — then hands the [ShellModel] a spawn function and the protocol client
+/// version (`app/version.dart`). The window paints its connection surface first and `connect()` runs
+/// post-frame, so a slow spawn can never delay the first frame ([PLAN-V3-SHELL.md] §2).
 ///
 /// [PLAN-V3-SHELL.md]: ../../docs/plans/PLAN-V3-SHELL.md
 library;
@@ -18,16 +18,11 @@ import 'app/app.dart';
 import 'protocol/protocol.dart';
 import 'ui/shell_app.dart';
 
-/// The shell's own version, sent in `hello` ([PROTOCOL.md] §4). The protocol library's default
-/// deliberately stays `0.0.0`: the version choice belongs to the shell, not the seam library. It
-/// matches the core's `CARGO_PKG_VERSION` today and becomes meaningful at packaging time.
-const String shellVersion = '0.1.0';
-
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final model = ShellModel(
     transportFactory: spawnCore,
-    shellVersion: shellVersion,
+    shellVersion: protocolClientVersion,
   );
   runApp(ShellApp(model: model));
   WidgetsBinding.instance.addPostFrameCallback(

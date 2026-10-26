@@ -18,3 +18,4 @@ export 'key_names_result.dart';
 export 'logs.dart';
 export 'shell_model.dart';
 export 'tools.dart';
+export 'version.dart';

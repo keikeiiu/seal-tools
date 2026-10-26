@@ -21,7 +21,7 @@ a new board, unzipping, first launch) is a few minutes.
 | **Board** | An **Arduino Pro Micro (ATmega32U4, 5 V / 16 MHz)** — the only board that works. Uno/Nano/Mega have no native USB HID and cannot present as a mouse. |
 | **Cable** | A USB cable that carries **data**. Charge-only cables are the most common reason a board is never found. |
 | **Game** | Seal Online (TW or US client), running **windowed**. |
-| **Rights** | None special: no installer, no `.NET` runtime, no administrator elevation, nothing written outside the app's folder. |
+| **Rights** | None special: no installer, no `.NET` runtime, no administrator elevation, and every file the app writes lives inside its folder (`config/` and `logs/`). |
 
 > **Why the Pro Micro.** The game's anti-cheat blocks synthetic input from software (`SendInput`, and
 > `SetCursorPos` while the game is focused). The Pro Micro has a native USB controller and enumerates as
@@ -115,9 +115,9 @@ look identical later.
 
 ## 3. First run
 
-Run **`SealTools.exe`**. There is no installer, no administrator requirement, and nothing is written
-outside the folder. The shell starts `seal-core.exe` for you and connects; you never start the core by
-hand.
+Run **`SealTools.exe`**. There is no installer and no administrator requirement, and nothing is written
+outside the folder (its `config/` and `logs/`). The shell starts `seal-core.exe` for you and connects;
+you never start the core by hand.
 
 On first launch the core creates **`config/local.yaml`** by copying `local.yaml.example` (only when the
 file is absent, atomically). That seed contains **placeholder measurements from an old setup**; they

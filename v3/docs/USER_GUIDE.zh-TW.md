@@ -59,8 +59,8 @@ F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這�
 視窗開啟時最上方是 **Cards**，下面是一排分頁，底部是**狀態列**。核心停止或無法啟動時，整個頁面會變成
 **當機畫面（crash view）**。
 
-- **標題列 / App bar：** `Seal Tools v3`、右側的 **Hold Space** 切換鈕，以及小小的 `v0.1.0` —— 這個小版本
-  是殼層的協定用戶端版本，**不是**產品版本；產品版本是 3.0。
+- **標題列 / App bar：** `Seal Tools v3`、右側的 **Hold Space** 切換鈕，以及小小的產品版本 `v3.0.0`。
+  （殼層↔核心的協定用戶端身分是另一個工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）
 - **分頁列：** `Cards`、`Spammer`、`Tuner`、`Gem`、`Buy/Sell`、`Quest`、`Pet`、`Attributes`、`Arduino`、
   `Hotkeys`、`Setup`、`Calibrate` —— Cards 頁面加上十一個分頁。
 - **狀態列：** `core <版本> · rev <n>`、核心正在使用的 **root** 資料夾，以及 **Logs** 按鈕。

@@ -80,7 +80,7 @@ class _ShellPageState extends State<ShellPage> {
                   ),
                   child: Center(
                     child: Text(
-                      'v${model.shellVersion}',
+                      'v$productVersion',
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ),
