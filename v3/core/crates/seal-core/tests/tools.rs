@@ -113,3 +113,129 @@ fn eof_also_stops_the_core_with_the_stopping_event() {
     assert_eq!(event["event"], "core.stopping");
     assert_eq!(event["data"]["reason"], "eof");
 }
+#[test]
+fn run_arguments_on_a_tool_that_does_not_take_them_are_a_bad_request_naming_the_field() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    // Deterministic and hardware-free: rejected before the supervisor is touched.
+    let response = session.call("tool.start", json!({"tool": "spammer", "preset": "potion"}));
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("preset"),
+        "the line names the field: {}",
+        error.message
+    );
+    assert_eq!(error.detail["field"], "preset");
+
+    let response = session.call("tool.start", json!({"tool": "tuner", "count": 3}));
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("count"),
+        "the line names the field: {}",
+        error.message
+    );
+    assert_eq!(error.detail["field"], "count");
+}
+
+#[test]
+fn a_buy_count_below_one_is_refused_not_clamped() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let response = session.call(
+        "tool.start",
+        json!({"tool": "buy", "preset": "potion", "count": 0}),
+    );
+
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("count") && error.message.contains("at least 1"),
+        "the refusal says what is wrong: {}",
+        error.message
+    );
+    assert_eq!(error.detail["field"], "count");
+}
+
+#[test]
+fn an_unknown_tool_start_field_is_a_bad_request_naming_it() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let response = session.call(
+        "tool.start",
+        json!({"tool": "buy", "preset": "potion", "count": 1, "gift": true}),
+    );
+
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("gift"),
+        "the line names the unknown field: {}",
+        error.message
+    );
+    assert_eq!(error.detail["field"], "gift");
+}
+
+#[test]
+fn a_buy_start_without_a_preset_reaches_the_domain_line() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    // The start itself is accepted (buy is served; its plan is built in `create`), and the missing
+    // preset is the domain's own line in the run's finish event — deterministic, before any board
+    // or window is opened.
+    let response = session.call("tool.start", json!({"tool": "buy"}));
+    assert!(response.ok, "the start is accepted: {:?}", response.error);
+
+    let mut finished = None;
+    for _ in 0..10 {
+        let event = session.event();
+        assert_ne!(event["event"], "core.stopping");
+        if event["event"] == "tool.finished" {
+            finished = Some(event);
+            break;
+        }
+    }
+    let finished = finished.expect("the run finishes with the refusal");
+    assert_eq!(finished["data"]["tool"], "buy");
+    assert_eq!(finished["data"]["reason"], "error");
+    assert_eq!(finished["data"]["message"], "No buy preset selected.");
+}
+#[test]
+fn a_wrongly_typed_run_argument_is_a_bad_request_naming_the_field() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let response = session.call(
+        "tool.start",
+        json!({"tool": "buy", "preset": "potion", "count": "3"}),
+    );
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("count"),
+        "the line names the field: {}",
+        error.message
+    );
+    assert_eq!(error.detail["field"], "count");
+
+    let response = session.call("tool.start", json!({"tool": "buy", "preset": 7}));
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "preset");
+    assert!(
+        error.message.contains("preset"),
+        "the line names the field: {}",
+        error.message
+    );
+}

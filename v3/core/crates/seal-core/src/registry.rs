@@ -61,7 +61,12 @@ pub trait ToolRegistry: Send + Sync {
     fn available(&self, tool: ToolId) -> Result<(), Unavailable>;
     /// Build one run. The `game` port is the capability a resident tool uses to ask for the game and
     /// give it back; tools that take the game by `start` ignore it.
-    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String>;
+    fn create(
+        &self,
+        tool: ToolId,
+        game: Arc<dyn GamePort>,
+        args: &Value,
+    ) -> Result<Session, String>;
 }
 
 /// The line every unavailable tool reports. Defined where v3 has no player-facing text yet: the tool
@@ -70,9 +75,10 @@ pub fn not_available_line(tool: ToolId) -> String {
     format!("\"{tool}\" is not available in this build yet — its tool loop is not ported.")
 }
 
-/// The binary's registry: the spammer, holdspace and tuner are live; everything else is refused by
-/// name. The store is here because the tuner's opening phase loads the attribute dictionary the
-/// active client names — the same load `config.apply` performs before a variant switch.
+/// The binary's registry: every tool id has a live session; a tool's own plan can still refuse its
+/// opening phase with the player-facing line, which is the domain's job, not a placeholder's. The
+/// store is here because the tuner's opening phase loads the attribute dictionary the active client
+/// names — the same load `config.apply` performs before a variant switch.
 pub struct ProductionRegistry {
     shared: SharedConfig,
     store: ConfigStore,
@@ -90,6 +96,34 @@ impl ProductionRegistry {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
+    fn buy_session(&self, args: &Value) -> Result<Session, String> {
+        let config = self.config();
+        let preset = args.get("preset").and_then(Value::as_str);
+        let count = args
+            .get("count")
+            .and_then(Value::as_i64)
+            .and_then(|count| i32::try_from(count).ok());
+        let plan =
+            crate::shop::buy_plan(&config, preset, count).map_err(|reason| reason.message)?;
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        // The transaction places the cursor through the closed loop, which needs the display the
+        // window was measured in; a missing window is the domain's own line.
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
+        let hwnd = seal_win::window::find_window(&title)
+            .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
+        let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
+        let effects = crate::effects::system_effects(transport, display);
+        Ok(Session {
+            tool: Box::new(ShopTool::new(ToolId::Buy, plan)),
+            effects: Box::new(effects),
+        })
+    }
     fn sell_session(&self) -> Result<Session, String> {
         let config = self.config();
         let plan = crate::shop::sell_plan(&config).map_err(|reason| reason.message)?;
@@ -304,17 +338,18 @@ impl ToolRegistry for ProductionRegistry {
                     .map(|_| ())
                     .map_err(|line| Unavailable { line })
             }
-            // Buy is SERVED but cannot start: the run's item/count has no protocol path (OPEN.md).
-            // The domain's own line answers the Start, which is better than silently buying preset #1.
-            ToolId::Buy => crate::shop::buy_plan(&self.config())
-                .map(|_| ())
-                .map_err(|reason| Unavailable {
-                    line: reason.message,
-                }),
+            // Buy is served; a missing run argument is a CREATE-time refusal so it can name the
+            // reason (the domain line for no preset / unknown preset).
+            ToolId::Buy => Ok(()), // served; args are a create-time concern
         }
     }
 
-    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String> {
+    fn create(
+        &self,
+        tool: ToolId,
+        game: Arc<dyn GamePort>,
+        args: &Value,
+    ) -> Result<Session, String> {
         match tool {
             ToolId::Spammer => self.spammer_session(),
             ToolId::HoldSpace => self.hold_space_session(),
@@ -323,10 +358,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Sell => self.sell_session(),
             ToolId::Gem => self.gem_session(),
             ToolId::Pet => self.pet_session(game),
-            ToolId::Buy => Err(crate::shop::buy_plan(&self.config())
-                .err()
-                .map(|reason| reason.message)
-                .unwrap_or_else(|| "the buy pass could not be planned".to_owned())),
+            ToolId::Buy => self.buy_session(args),
         }
     }
 }
@@ -412,8 +444,16 @@ mod tests {
     }
 
     #[test]
-    fn the_sell_tool_is_available_when_its_selection_validates_and_buy_names_its_gap() {
+    fn the_sell_tool_is_available_when_its_selection_validates_and_buy_is_served() {
         assert_eq!(registry(config_with_shop()).available(ToolId::Sell), Ok(()));
+        // Buy is served now: its missing PRESET is a create-time refusal (so it can carry the
+        // domain's line), not an availability refusal.
+        assert_eq!(registry(config_with_shop()).available(ToolId::Buy), Ok(()));
+        assert_eq!(
+            registry(serde_json::json!({})).available(ToolId::Buy),
+            Ok(()),
+            "availability does not depend on presets/calibration; create answers those"
+        );
         // Everything calibrated, but nothing selected: the refusal must be the SELECTION line, not a
         // calibration line that would hide which mark is actually missing.
         let sell_refusal = registry(serde_json::json!({
@@ -432,10 +472,16 @@ mod tests {
             "{}",
             sell_refusal.line
         );
-        let buy_refusal = registry(config_with_shop())
-            .available(ToolId::Buy)
-            .expect_err("buy has no per-run preset path");
-        assert_eq!(buy_refusal.line, "No buy preset selected.");
+        let registry = registry(config_with_shop());
+        let error = match registry.create(
+            ToolId::Buy,
+            Arc::new(seal_tools::game::AllowAll),
+            &serde_json::json!({}),
+        ) {
+            Ok(_) => panic!("an argument-less buy start has no preset"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "No buy preset selected.");
     }
 
     fn config_with_gem() -> Value {
@@ -669,7 +715,11 @@ mod tests {
         // `available` only resolves the plan; the key check is the opening phase's.
         assert_eq!(registry.available(ToolId::Spammer), Ok(()));
         let error = registry
-            .create(ToolId::Spammer, Arc::new(seal_tools::game::AllowAll))
+            .create(
+                ToolId::Spammer,
+                Arc::new(seal_tools::game::AllowAll),
+                &serde_json::json!({}),
+            )
             .err()
             .expect("a bad key refuses the run");
         assert!(error.contains("'ab'"), "{error}");

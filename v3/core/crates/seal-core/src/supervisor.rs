@@ -33,6 +33,7 @@
 //! caller has already been answered `Deferred`, so the timeout cannot turn into a response on this
 //! protocol; that is reported rather than papered over.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -45,6 +46,7 @@ use seal_tools::clock::RealClock;
 use seal_tools::game::GamePort;
 use seal_tools::runner::{self, STOPPED_MESSAGE};
 use seal_tools::tool::{ToolId, ToolPhase, ToolSnapshot};
+use serde_json::Value;
 
 use crate::events::{self, EventBus};
 use crate::registry::{Session, ToolRegistry};
@@ -85,6 +87,8 @@ type PendingReply = (ToolId, Sender<Result<(), String>>);
 enum Command {
     Start {
         tool: ToolId,
+        /// The validated `tool.start` arguments (empty object for tools with none).
+        args: Value,
         reply: Sender<StartReply>,
     },
     Stop {
@@ -148,11 +152,15 @@ impl Supervisor {
         }
     }
 
-    pub fn start_tool(&self, tool: ToolId) -> StartReply {
+    pub fn start_tool(&self, tool: ToolId, args: &Value) -> StartReply {
         let (reply, answer) = mpsc::channel();
         if self
             .incoming
-            .send(Incoming::Command(Command::Start { tool, reply }))
+            .send(Incoming::Command(Command::Start {
+                tool,
+                args: args.clone(),
+                reply,
+            }))
             .is_err()
         {
             return StartReply::Internal {
@@ -250,10 +258,11 @@ fn supervise(
     let mut arbiter = Arbiter::new();
     let mut workers: BTreeMap<ToolId, JoinHandle<()>> = BTreeMap::new();
     let mut pending_reply: Option<PendingReply> = None;
+    let deferred_args: RefCell<Option<(ToolId, Value)>> = RefCell::new(None);
 
     while let Ok(message) = receiver.recv() {
         match message {
-            Incoming::Command(Command::Start { tool, reply }) => {
+            Incoming::Command(Command::Start { tool, args, reply }) => {
                 let answer = match registry.available(tool) {
                     Err(unavailable) => StartReply::Unavailable {
                         line: unavailable.line,
@@ -266,6 +275,7 @@ fn supervise(
                                 &worker_sender,
                                 &bus,
                                 &port,
+                                args,
                                 &mut workers,
                             );
                             StartReply::Started
@@ -275,6 +285,7 @@ fn supervise(
                             // `log` event; the start itself happens when the game is handed over.
                             bus.emit(events::log_event("info", line.clone()));
                             schedule_pending_timeout(worker_sender.clone());
+                            *deferred_args.borrow_mut() = Some((tool, args.clone()));
                             StartReply::Deferred { line }
                         }
                         Start::Refused(refusal) => StartReply::Refused(refusal),
@@ -319,6 +330,7 @@ fn supervise(
                                 worker_sender: &worker_sender,
                                 bus: &bus,
                                 port: &port,
+                                deferred: &deferred_args,
                             },
                             &mut pending_reply,
                         ),
@@ -338,6 +350,7 @@ fn supervise(
                                     worker_sender: &worker_sender,
                                     bus: &bus,
                                     port: &port,
+                                    deferred: &deferred_args,
                                 },
                             );
                         }
@@ -366,6 +379,7 @@ fn supervise(
                         worker_sender: &worker_sender,
                         bus: &bus,
                         port: &port,
+                        deferred: &deferred_args,
                     },
                 );
             }
@@ -378,6 +392,7 @@ fn supervise(
                 if let Some(refusal) = arbiter.pending_timeout() {
                     // The caller was already answered `Deferred`; this protocol has no channel back
                     // to it, so the timeout is the log line rather than a response (reported).
+                    deferred_args.take();
                     bus.emit(events::log_event("warn", refusal.line));
                 }
             }
@@ -390,6 +405,7 @@ fn supervise(
                     worker_sender: &worker_sender,
                     bus: &bus,
                     port: &port,
+                    deferred: &deferred_args,
                 },
                 &mut pending_reply,
             ),
@@ -464,14 +480,25 @@ fn handle_game_release(
                 }
             }
         }
-        GameRelease::StartPending(handle) => spawn_worker(
-            handle,
-            plumbing.registry,
-            plumbing.worker_sender,
-            plumbing.bus,
-            plumbing.port,
-            workers,
-        ),
+        GameRelease::StartPending(handle) => {
+            // The start waited behind the feeder; its run arguments were stashed with it.
+            let args = plumbing
+                .deferred
+                .borrow_mut()
+                .take()
+                .filter(|(tool, _)| *tool == handle.tool)
+                .map(|(_, args)| args)
+                .unwrap_or(Value::Null);
+            spawn_worker(
+                handle,
+                plumbing.registry,
+                plumbing.worker_sender,
+                plumbing.bus,
+                plumbing.port,
+                args,
+                workers,
+            );
+        }
     }
 }
 /// The deferred start's bounded wait: v2's 45 s, after which `pending_timeout` names both sides.
@@ -489,6 +516,8 @@ struct Plumbing<'a> {
     worker_sender: &'a Sender<Incoming>,
     bus: &'a EventBus,
     port: &'a Arc<dyn GamePort>,
+    /// The args of a start waiting behind the resident feeder, so its eventual worker gets them.
+    deferred: &'a RefCell<Option<(ToolId, Value)>>,
 }
 
 fn handle_worker(
@@ -529,6 +558,7 @@ fn spawn_worker(
     worker_sender: &Sender<Incoming>,
     bus: &EventBus,
     port: &Arc<dyn GamePort>,
+    args: Value,
     workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
 ) {
     // The opening phase's snapshot: the card says Starting while the board/models are opened.
@@ -539,7 +569,7 @@ fn spawn_worker(
     let sender = worker_sender.clone();
     let port = Arc::clone(port);
     let tool = handle.tool;
-    let join = thread::spawn(move || worker_loop(handle, registry, sender, port));
+    let join = thread::spawn(move || worker_loop(handle, registry, sender, port, args));
     workers.insert(tool, join);
 }
 
@@ -549,9 +579,10 @@ fn worker_loop(
     registry: Arc<dyn ToolRegistry>,
     supervisor: Sender<Incoming>,
     port: Arc<dyn GamePort>,
+    args: Value,
 ) {
     let tool = handle.tool;
-    let session: Session = match registry.create(tool, port) {
+    let session: Session = match registry.create(tool, port, &args) {
         Ok(session) => session,
         Err(line) => {
             let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {

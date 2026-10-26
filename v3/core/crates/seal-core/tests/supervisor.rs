@@ -103,6 +103,8 @@ struct FakeRegistry {
     opening_errors: Mutex<HashMap<ToolId, String>>,
     opening_gate: Mutex<Option<mpsc::Receiver<()>>>,
     opening_started: Mutex<Option<mpsc::Sender<()>>>,
+    /// The last `create` arguments, so a test can assert the validated run args reached the seam.
+    start_args: Mutex<Option<Value>>,
     /// Tools whose worker should take the game through the port, with the gate that releases it
     /// once (empty = no gate) and the shared decision log the tests assert on.
     port_tools: Mutex<Vec<ToolId>>,
@@ -118,6 +120,7 @@ impl FakeRegistry {
             opening_errors: Mutex::new(HashMap::new()),
             opening_gate: Mutex::new(None),
             opening_started: Mutex::new(None),
+            start_args: Mutex::new(None),
             port_tools: Mutex::new(Vec::new()),
             release_gates: Mutex::new(HashMap::new()),
             decisions: Arc::new(Mutex::new(Vec::new())),
@@ -172,6 +175,9 @@ impl FakeRegistry {
         Arc::clone(self)
     }
 
+    fn start_args(&self) -> Option<Value> {
+        self.start_args.lock().expect("not poisoned").clone()
+    }
     fn decisions(&self) -> Vec<ToolId> {
         self.decisions.lock().expect("not poisoned").clone()
     }
@@ -193,7 +199,13 @@ impl ToolRegistry for FakeRegistry {
         Ok(())
     }
 
-    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String> {
+    fn create(
+        &self,
+        tool: ToolId,
+        game: Arc<dyn GamePort>,
+        args: &Value,
+    ) -> Result<Session, String> {
+        *self.start_args.lock().expect("not poisoned") = Some(args.clone());
         if let Some(started) = self.opening_started.lock().expect("not poisoned").take() {
             let _ = started.send(());
         }
@@ -291,7 +303,10 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
 
     let seen = until_finished(&events);
     assert_eq!(
@@ -325,7 +340,10 @@ fn a_stop_publishes_stopping_then_a_cancelled_finish() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the run starts", |event| {
         state_phase(event) == Some("running")
     });
@@ -352,12 +370,15 @@ fn a_second_start_is_tool_busy_with_the_arbiters_line() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
-    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the run starts", |event| {
         state_phase(event) == Some("running")
     });
 
-    let refusal = supervisor.start_tool(ToolId::Gem);
+    let refusal = supervisor.start_tool(ToolId::Gem, &Value::Null);
 
     match refusal {
         StartReply::Refused(refusal) => assert_eq!(
@@ -378,7 +399,7 @@ fn an_unavailable_tool_is_refused_by_name_without_a_run() {
     let (bus, _events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    match supervisor.start_tool(ToolId::Tuner) {
+    match supervisor.start_tool(ToolId::Tuner, &Value::Null) {
         StartReply::Unavailable { line } => {
             assert!(line.contains("\"tuner\""), "{line}");
             assert!(line.contains("not available in this build yet"), "{line}");
@@ -418,10 +439,16 @@ fn two_runs_in_sequence_release_the_slot() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
     until_finished(&events);
 
-    assert_eq!(supervisor.start_tool(ToolId::Quest), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Quest, &Value::Null),
+        StartReply::Started
+    );
     let seen = until_finished(&events);
     assert_eq!(seen.last().expect("finished").data["message"], "second");
 
@@ -439,7 +466,10 @@ fn an_opening_phase_failure_ends_as_an_error_event_and_releases_the_slot() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Gem), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Gem, &Value::Null),
+        StartReply::Started
+    );
 
     let seen = until_finished(&events);
     let finished = seen.last().expect("finished");
@@ -456,7 +486,7 @@ fn an_opening_phase_failure_ends_as_an_error_event_and_releases_the_slot() {
     );
 
     assert_eq!(
-        supervisor.start_tool(ToolId::Tuner),
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
         StartReply::Started,
         "the failed opening released the slot"
     );
@@ -477,7 +507,10 @@ fn a_start_cancelled_during_its_opening_ends_cancelled_and_leaks_nothing() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
     opening_started
         .recv_timeout(Duration::from_secs(5))
         .expect("the opening phase began");
@@ -497,7 +530,7 @@ fn a_start_cancelled_during_its_opening_ends_cancelled_and_leaks_nothing() {
     assert_eq!(finished.data["message"], "Stopped.");
 
     // The slot is free again: a different tool starts cleanly.
-    let registry_again = supervisor.start_tool(ToolId::Gem);
+    let registry_again = supervisor.start_tool(ToolId::Gem, &Value::Null);
     assert!(
         matches!(
             registry_again,
@@ -514,7 +547,10 @@ fn shutdown_stops_a_running_tool_waits_for_it_and_emits_core_stopping() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
-    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the run starts", |event| {
         state_phase(event) == Some("running")
     });
@@ -556,7 +592,10 @@ fn the_finished_event_and_the_final_snapshot_agree() {
     );
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
-    assert_eq!(supervisor.start_tool(ToolId::Quest), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Quest, &Value::Null),
+        StartReply::Started
+    );
 
     let seen = until_finished(&events);
     let final_state = seen
@@ -585,7 +624,10 @@ fn the_supervisor_can_see_the_worker_phases_from_its_own_events() {
     );
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
-    assert_eq!(supervisor.start_tool(ToolId::Sell), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Sell, &Value::Null),
+        StartReply::Started
+    );
     let phases: Vec<String> = until_finished(&events)
         .iter()
         .filter_map(|event| state_phase(event).map(str::to_owned))
@@ -613,7 +655,10 @@ fn a_worker_thread_is_really_a_thread() {
     );
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(registry, bus);
-    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
     // The start reply arrived while the run was still going (the worker sends Opened before it ends).
     wait_for(&events, "the run starts", |event| {
         state_phase(event) == Some("running")
@@ -662,14 +707,20 @@ fn a_residents_request_waits_for_the_foreground_tool_and_is_granted_after_it_fin
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the foreground run starts", |event| {
         state_for(event, "tuner") == Some("running")
     });
 
     // The resident start is armed; its worker blocks in `request` because the tuner holds the game,
     // so it must not produce a single decision.
-    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the resident starts", |event| {
         state_for(event, "pet") == Some("running")
     });
@@ -720,11 +771,17 @@ fn a_blocked_resident_request_produces_zero_decisions() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the foreground run starts", |event| {
         state_for(event, "tuner") == Some("running")
     });
-    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the resident starts", |event| {
         state_for(event, "pet") == Some("running")
     });
@@ -751,7 +808,10 @@ fn a_foreground_start_deferred_behind_the_resident_starts_when_the_resident_rele
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the resident starts", |event| {
         state_for(event, "pet") == Some("running")
     });
@@ -760,7 +820,7 @@ fn a_foreground_start_deferred_behind_the_resident_starts_when_the_resident_rele
     });
 
     // A foreground start behind a resident HOLDING the game is deferred, not started.
-    match supervisor.start_tool(ToolId::Tuner) {
+    match supervisor.start_tool(ToolId::Tuner, &Value::Null) {
         StartReply::Deferred { line } => {
             assert!(line.contains("Waiting for the pet feeder"), "{line}");
         }
@@ -789,11 +849,17 @@ fn a_pet_request_preempts_the_spammer_and_is_granted_after_it_leaves() {
     let (bus, events) = seal_core::events::event_channel();
     let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
 
-    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
     wait_for(&events, "the spammer starts", |event| {
         state_for(event, "spammer") == Some("running")
     });
-    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
 
     // The preempt cancels the spammer; its exit path hands the game to the waiting resident.
     let seen = until_finished(&events);
@@ -818,5 +884,53 @@ fn a_pet_request_preempts_the_spammer_and_is_granted_after_it_leaves() {
 
     let _ = supervisor.stop_tool(Some(ToolId::Pet));
     until_finished(&events);
+    supervisor.shutdown("test");
+}
+// ── tool.start run arguments (`PROTOCOL.md` §4 note / §12.6) ────────────────────────────────
+
+#[test]
+fn start_arguments_reach_create_verbatim() {
+    let registry = FakeRegistry::new().with_script(
+        ToolId::Spammer,
+        vec![Decision::stop(StopReason::done("no arguments needed"))],
+    );
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let args = serde_json::json!({"preset": "potion", "count": 7});
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &args),
+        StartReply::Started
+    );
+    until_finished(&events);
+
+    assert_eq!(
+        registry.start_args(),
+        Some(args),
+        "the validated run arguments are handed to `create` unchanged"
+    );
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_create_refusal_surfaces_as_the_finished_error_not_a_start_reply() {
+    // The start reply is already sent before `create` runs (the worker builds the session), so a
+    // buy start with no preset is `Started` and the domain line arrives as the run's `tool.finished`
+    // error. Pinning the existing mapping keeps the protocol honest about when the answer arrives.
+    let registry = FakeRegistry::new().failing_to_open(ToolId::Buy, "No buy preset selected.");
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let args = serde_json::json!({});
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Buy, &args),
+        StartReply::Started
+    );
+    let seen = until_finished(&events);
+    let finished = seen.last().expect("the run finished");
+    assert_eq!(finished.data["tool"], "buy");
+    assert_eq!(finished.data["reason"], "error");
+    assert_eq!(finished.data["message"], "No buy preset selected.");
+    assert_eq!(registry.start_args(), Some(args));
     supervisor.shutdown("test");
 }

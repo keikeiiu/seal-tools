@@ -64,14 +64,6 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   has been STARTED (board + window present, phase running with tally rows, stopped cleanly after one
   smoke) but a full transaction has not been watched against the game. The empty-read failure
   divergence (v3 stops, v2 failed open) is recorded in the core README's divergence list.
-- **Buy needs a per-run preset/count path before it can start.** The decision half
-  (`ShopPlan::buy`) takes `preset_name` + `count` from the RUN, but the protocol carries neither:
-  `buy_sell` has no `active`-style field and `tool.start` has no args (found by the shell's Buy card,
-  whose picker is display-only for that reason). `tool.start buy` is therefore SERVED and refuses at
-  start with the domain's "No buy preset selected." rather than silently choosing preset #1. The
-  options are a `buy_sell.active` config field (a persisted default the card can pick) or
-  `tool.start` args (a transient per-run choice); the second needs a protocol shape decision, the
-  first a config-schema one. Nothing else in the shop tool is blocked — sell is live.
 - **Tool-published message/rows surface.** LANDED as `Tool::status()`: the runner publishes the
   tool's own `message`/`countdown_s`/`rows` whenever they change, BEFORE performing the decision they
   belong to (so a countdown shows during its wait), and a runner test observes the published

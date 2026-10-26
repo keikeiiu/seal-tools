@@ -1,17 +1,17 @@
-//! The Shop tools (sell now, buy behind a recorded protocol gap): pure TRANSACTION-PLAN executors.
+//! The Shop tools (sell and buy): pure TRANSACTION-PLAN executors.
 //!
 //! Neither shop tool reads the screen. v2's `ShopTool` is geometry plus an ordered transaction: the
 //! bag grid and shop rows are DERIVED from two dragged calibrations (64 hand-marked points would be
 //! 64 chances to be wrong), the order and measured waits live in `seal-domain`'s `ShopPlan`, and this
 //! module only turns each [`ShopStep`] into a runner decision and counts the done line.
 //!
-//! Two honesty notes, both recorded rather than hidden:
+//! Two notes, both recorded rather than hidden:
 //!
-//! - **Sell is live; BUY refuses at START.** A buy pass needs the run's item and count, and the v3
-//!   protocol has no path for them: `buy_sell` has no `active`-style field and `tool.start` carries no
-//!   args (found by the shell's card work). Rather than silently buying the first preset or inventing
-//!   a run-parameter field, `buy_plan` answers the domain's own "No buy preset selected." line and the
-//!   registry reports it. That is the protocol decision named in `OPEN.md`.
+//! - **Buy takes its parameters from the RUN** (`PROTOCOL.md` §4 note / §12.6): `tool.start` carries
+//!   `preset` and `count`, a missing `count` uses the preset's configured count, and an explicit count
+//!   below 1 is refused at the argument layer. `buy_plan` resolves them against `buy_sell.presets`;
+//!   without a preset it answers the domain's own "No buy preset selected." line, and an unknown name
+//!   the domain's line naming it.
 //! - **Selling is the one irreversible thing here**, so the slot selection is filtered, de-duplicated,
 //!   highest-index-first and capped by the domain BEFORE any click; this loop only executes what that
 //!   plan says.
@@ -70,10 +70,28 @@ pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
     ShopPlan::sell(&settings(config))
 }
 
-/// One BUY pass. It needs the run's preset and count, which the protocol does not carry yet, so this
-/// always answers the domain's "No buy preset selected." line (the recorded gap).
-pub fn buy_plan(config: &Value) -> Result<ShopPlan, StopReason> {
-    ShopPlan::buy(&settings(config), None, 1)
+/// One BUY pass, from the RUN arguments (`PROTOCOL.md` §4 / §12.6): `preset` names a
+/// `buy_sell.presets` key and `count` is how many transactions; a missing `count` uses the preset
+/// configured count, never a hardcoded 1. `preset` None is v2 domain own "No buy preset selected."
+/// line; an unknown name is the domain "no longer exists" line naming it.
+///
+/// A `count` present and below 1 is refused HERE: the domain clamps to one for its own callers, but
+/// the protocol says an explicit number the player gave is refused rather than silently changed.
+pub fn buy_plan(
+    config: &Value,
+    preset: Option<&str>,
+    count: Option<i32>,
+) -> Result<ShopPlan, StopReason> {
+    if count.is_some_and(|count| count < 1) {
+        return Err(StopReason::error("The buy count must be at least 1."));
+    }
+    let settings = settings(config);
+    let count = count.unwrap_or_else(|| {
+        preset
+            .and_then(|name| settings.presets.get(name))
+            .map_or(1, |preset| preset.count)
+    });
+    ShopPlan::buy(&settings, preset, count)
 }
 
 /// The plan as the runner sees it: one decision per step, then the done line.
@@ -231,10 +249,55 @@ mod tests {
     }
 
     #[test]
-    fn a_buy_pass_refuses_because_the_protocol_carries_no_run_preset() {
-        let reason = buy_plan(&config()).expect_err("no preset can be chosen");
+    fn a_buy_pass_without_a_preset_is_the_domain_own_line() {
+        let reason = buy_plan(&config(), None, None).expect_err("no preset chosen");
 
         assert_eq!(reason.message, "No buy preset selected.");
+    }
+
+    #[test]
+    fn a_buy_pass_uses_the_run_count_and_names_the_preset() {
+        let plan = buy_plan(&config(), Some("potion"), Some(5)).expect("the plan validates");
+        assert_eq!(plan.done_message, "Bought 5x 'potion'.");
+
+        // One transaction per run count: each extra buy adds the same steps, so the deltas between
+        // counts must be equal (this is the run number, not the preset's configured count).
+        let three = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
+        let one = buy_plan(&config(), Some("potion"), Some(1)).expect("the plan validates");
+        assert_eq!(
+            plan.steps.len() - three.steps.len(),
+            three.steps.len() - one.steps.len(),
+            "one transaction per run count"
+        );
+    }
+
+    #[test]
+    fn a_missing_count_uses_the_preset_configured_count() {
+        let configured = buy_plan(&config(), Some("potion"), None).expect("the plan validates");
+        let explicit = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
+
+        assert_eq!(configured.done_message, "Bought 3x 'potion'.");
+        assert_eq!(configured.steps, explicit.steps);
+        assert_eq!(configured.done_message, explicit.done_message);
+    }
+
+    #[test]
+    fn an_unknown_preset_names_the_chosen_preset() {
+        let reason = buy_plan(&config(), Some("ghost"), Some(1)).expect_err("no such preset");
+
+        assert_eq!(reason.message, "Buy preset 'ghost' no longer exists.");
+    }
+
+    #[test]
+    fn a_count_below_one_is_refused_at_the_argument_layer() {
+        for count in [0, -1, i32::MIN] {
+            let reason = buy_plan(&config(), Some("potion"), Some(count))
+                .expect_err("an explicit count below 1 is refused");
+            assert_eq!(
+                reason.message, "The buy count must be at least 1.",
+                "{count}"
+            );
+        }
     }
 
     #[test]

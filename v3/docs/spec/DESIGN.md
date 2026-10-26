@@ -115,10 +115,10 @@ back to the colour signature — with the arduino move set placing calibrated po
 sending the measured raw `D` counts) and the **pet feeder** (the resident reader: it reads the
 boarding rows and feeder counts, schedules each row from its own time line, reloads due rows through
 the domain's step sequence, and loads food by right-click+MAX+Enter or by a firmware-2 drag, all with
-the game's foreground deferral). Every id in PROTOCOL §9 now has a loop behind it. **Buy** is the one
-served-but-refused start: its pass needs the run's item and count, and neither a `buy_sell.active`
-field nor `tool.start` args exist yet — that protocol decision is named in OPEN and was found by the
-shell's card work rather than invented around. The arbiter's resident rules are reachable by a running
+the game's foreground deferral) and **buy**, whose pass is a per-run choice: `tool.start` carries
+`preset`/`count` for it (PROTOCOL §4/§12.6), the card owns the run choice, and the core refuses an
+argument-less or unknown-preset start with the domain's own line. Every id in PROTOCOL §9 now has a
+live loop behind it. The arbiter's resident rules are reachable by a running
 tool through the `seal_tools::game::GamePort` capability: the supervisor owns the one arbiter and
 answers a worker's `request`/`release` commands (a `Waiting` request stashes its reply, so the
 supervisor never blocks; `Granted`/`Preempt` follow v2's rules). The pet feeder asks for the game

@@ -272,8 +272,9 @@ about LIVE VERIFICATION and the two loops, not about unported code.
 
 - **Six tools live** (`tool.start` executes a run): spammer (`de016c1`), holdspace (`3004cb2`),
   tuner — the first read-loop (`39ed221`) — quest (`b261b45`), sell (`14cf341`) and gem (`faa80c3`,
-  the second reader, which also populates `state.rows`). `buy` is served but refuses at start with
-  the domain's "No buy preset selected." because the protocol carries no per-run item/count (OPEN).
+  the second reader, which also populates `state.rows`). `buy` is live too: PROTOCOL §12.6
+  added optional `tool.start` run arguments (preset/count), the core validates them deterministically
+  and resolves the plan from the run, and the Buy card's picker drives it.
   The **pet feeder** landed last (`dcccd5a` + the loop/registry flip): every id in PROTOCOL §9 now has
   a loop behind it. The supervisor<->runner hand-over seam that the pet work exposed has since
   closed too (`GamePort` + stashed-reply supervisor plumbing): the resident yields between visits, a
@@ -296,8 +297,8 @@ about LIVE VERIFICATION and the two loops, not about unported code.
   exist; what v2 had and v3 does not is its per-run FILE log (`FileLogger`) — the artifact/logging
   writer that `gem.save_empty_captures` also waits on.
 - **The shell is feature-complete against its plan** (12 tabs, `62ffc4d`; 142 Dart tests): the
-  remaining shell items are the two named protocol decisions (buy per-run choice, mini-mode geometry)
-  and the pet geometry panels (blocked on the pet marks being calibrated).
+  remaining shell items are the mini-mode geometry decision and the pet geometry panels (blocked on
+  the pet marks being calibrated); the buy per-run choice is closed by §12.6.
 - **Counts at this update:** Rust workspace 73 result lines all green (core lib 84), clippy `-D
   warnings` clean, fmt clean; Flutter 142/142 analyze-clean. A live smoke has STARTED a real gem run
   (board + window present on the dev machine) and stopped it cleanly; a full transaction has still

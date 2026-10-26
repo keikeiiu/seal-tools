@@ -679,11 +679,19 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
             json!({"tool": name}),
         );
     };
+    // Run arguments are validated HERE, before the supervisor: a shell bug must not silently buy a
+    // different preset by passing the field to the wrong tool, and the refusals stay hardware-free.
+    let args = match start_arguments(tool, &request.args) {
+        Ok(args) => args,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
     let Some(supervisor) = state.supervisor.as_ref() else {
         return internal(&request.id, "the tool supervisor is not running");
     };
 
-    match supervisor.start_tool(tool) {
+    match supervisor.start_tool(tool, &args) {
         StartReply::Started => Response::ok(&request.id, json!({})),
         StartReply::Deferred { .. } => Response::ok(&request.id, json!({})),
         StartReply::Refused(refusal) => {
@@ -707,6 +715,68 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
         ),
         StartReply::Internal { line } => internal(&request.id, &line),
     }
+}
+
+/// Validate `tool.start`'s optional run arguments (`PROTOCOL.md` §4 note / §12.6) and return the
+/// object forwarded to the supervisor's `create`.
+///
+/// Today only `buy` takes any: `preset` (a string) and `count` (an integer, at least 1). `preset`
+/// and `count` on any other tool are refused by name; a `count` below 1 is refused rather than
+/// clamped (the domain would clamp, but the protocol says an explicit number is not silently
+/// changed). The error is `(message, field)` so the dispatcher can put the field in `detail`.
+fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)> {
+    let Some(object) = args.as_object() else {
+        return Err((
+            "tool.start arguments must be an object".to_owned(),
+            String::new(),
+        ));
+    };
+    for key in object.keys() {
+        if !matches!(key.as_str(), "tool" | "preset" | "count") {
+            return Err((
+                format!("tool.start doesn't take a {key:?} field"),
+                key.clone(),
+            ));
+        }
+    }
+    if tool != ToolId::Buy {
+        for field in ["preset", "count"] {
+            if object.contains_key(field) {
+                return Err((
+                    format!("tool.start's {field:?} is only accepted by \"buy\""),
+                    field.to_owned(),
+                ));
+            }
+        }
+        return Ok(args.clone());
+    }
+
+    let mut forwarded = serde_json::Map::new();
+    if let Some(value) = object.get("preset") {
+        let Some(preset) = value.as_str() else {
+            return Err((
+                "tool.start's \"preset\" must be a string".to_owned(),
+                "preset".to_owned(),
+            ));
+        };
+        forwarded.insert("preset".to_owned(), Value::String(preset.to_owned()));
+    }
+    if let Some(value) = object.get("count") {
+        let Some(count) = value.as_i64().and_then(|count| i32::try_from(count).ok()) else {
+            return Err((
+                "tool.start's \"count\" must be an integer".to_owned(),
+                "count".to_owned(),
+            ));
+        };
+        if count < 1 {
+            return Err((
+                "tool.start's \"count\" must be at least 1".to_owned(),
+                "count".to_owned(),
+            ));
+        }
+        forwarded.insert("count".to_owned(), Value::from(count));
+    }
+    Ok(Value::Object(forwarded))
 }
 
 /// `tool.stop {tool?}`: stop the named tool, or — with no name — whichever run the player means
