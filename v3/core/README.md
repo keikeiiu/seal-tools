@@ -111,7 +111,12 @@ reason.
 
 - **The models.** They are not committed (large binaries). Tests read a directory from
   `SEAL_OCR_MODELS` (e.g. `C:\Git_repo\seal-tools\v2\models`) and skip with a message when it is
-  unset, so the normal suite is green without them.
+  unset, so the normal suite is green without them. At RUN time the pipeline resolves its model
+  directory itself, in one order: `SEAL_OCR_MODELS` when set (it WINS or fails loudly — a dev
+  pointing it somewhere wrong must learn, not silently use another tree), then `<config
+  root>/models`, then `<seal-core.exe directory>/models`; a candidate counts only when all three
+  `.onnx` files are present, and the `ocr_unavailable` line names every directory tried. A release
+  install ships `models/` beside the exe and needs no environment.
 - **The ONNX Runtime binaries.** `ort = "=2.0.0-rc.15"` uses its `download-binaries` feature, which
   fetches a static, DirectML-flavoured distribution on `x86_64-pc-windows-msvc`. A clean build needs
   network for that step; where the sandbox blocks it, seed ort-sys's cache and point it with
