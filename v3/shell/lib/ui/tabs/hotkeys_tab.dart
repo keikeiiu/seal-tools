@@ -137,6 +137,7 @@ class _HotkeysTabState extends State<HotkeysTab>
       }
       final errors = result.value!.errors;
       if (errors.isNotEmpty) {
+        // The core answers at most one error per field today; first-line is defensive only.
         _fieldErrors[field] = errors.first.line;
         return;
       }

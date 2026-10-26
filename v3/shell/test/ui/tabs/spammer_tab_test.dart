@@ -346,6 +346,26 @@ void main() {
       isEmpty,
     );
   });
+
+  testWidgets('a single validation line carries the index-0 key', (
+    tester,
+  ) async {
+    final harness = await _pumpSpammer(tester);
+    await tester.enterText(_field('key-seconds-0'), '9.5');
+    await tester.pump();
+
+    harness.answerConfigCommands(errors: ['one core refusal line']);
+    await tester.tap(find.byKey(const ValueKey('save-spammer')));
+    await _flush(tester);
+
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('save-error-spammer-0')))
+          .data,
+      'one core refusal line',
+    );
+    expect(find.byKey(const ValueKey('save-error-spammer')), findsNothing);
+  });
   testWidgets('renders the core validation lines verbatim and does not apply', (
     tester,
   ) async {
@@ -361,6 +381,14 @@ void main() {
 
     expect(find.text('"buffs" has no keys to press'), findsOneWidget);
     expect(find.text('a second core refusal line'), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-error-spammer-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-error-spammer-1')), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('save-error-spammer-0')))
+          .data,
+      '"buffs" has no keys to press',
+    );
     expect(harness.lastSentWithCmd('config.apply'), isNull);
     expect(
       find.byKey(const ValueKey('dirty-spammer')),

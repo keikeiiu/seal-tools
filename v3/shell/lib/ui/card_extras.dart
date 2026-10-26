@@ -265,14 +265,17 @@ class _QuestCardExtrasState extends State<QuestCardExtras> {
             child: Text('saving…', style: theme.textTheme.labelSmall),
           ),
         if (_error != null)
-          Text(
-            _error!,
-            key: const ValueKey('quest-card-error'),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            softWrap: true,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.error,
+          Tooltip(
+            message: _error!,
+            child: Text(
+              _error!,
+              key: const ValueKey('quest-card-error'),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
           ),
       ],

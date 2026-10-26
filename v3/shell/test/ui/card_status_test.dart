@@ -96,4 +96,31 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
   });
+
+  testWidgets('long core diagnostics keep the full line in text and tooltip', (
+    tester,
+  ) async {
+    final harness = await _pumpCards(tester);
+    const longLine =
+        'the board could not be opened: no serial port matched VID 2341 / PID 8036; '
+        'check the Arduino connection and the configured ids before starting the buy run';
+    harness.emitState(tool: ToolId.buy, message: 'starting', error: longLine);
+    await _flush(tester);
+
+    final finder = find.byKey(const ValueKey('error-buy'));
+    final text = tester.widget<Text>(finder);
+    expect(text.data, longLine, reason: 'the full string, not a truncation');
+    expect(text.maxLines, 3);
+    final tooltip = tester.widget<Tooltip>(
+      find.ancestor(of: finder, matching: find.byType(Tooltip)),
+    );
+    expect(
+      tooltip.message,
+      longLine,
+      reason: 'the tooltip carries the exact line as received',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
 }

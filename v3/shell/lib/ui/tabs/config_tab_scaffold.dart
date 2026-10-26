@@ -303,12 +303,12 @@ class _SaveBar extends StatelessWidget {
               ),
             ],
             if (result != null && !result.saved)
-              for (final line in result.errorLines)
+              for (var index = 0; index < result.errorLines.length; index++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
-                    line,
-                    key: ValueKey('save-error-${group.label}'),
+                    result.errorLines[index],
+                    key: ValueKey('save-error-${group.label}-$index'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.error,
                     ),

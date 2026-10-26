@@ -333,4 +333,46 @@ void main() {
     expect(harness.lastSentWithCmd('config.apply'), isNull);
     await _unmount(tester);
   });
+
+  testWidgets(
+    'a long Quest-card error keeps the full line in text and tooltip',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(
+          quest: {
+            'active': 'flowA',
+            'active_sequence': '',
+            'presets': {
+              'flowA': {'steps': <Object?>[]},
+              'flowB': {'steps': <Object?>[]},
+            },
+            'sequences': <String, dynamic>{},
+          },
+        ),
+      );
+      const longLine =
+          'the quest flow "flowB" names a sequence entry that no longer exists; '
+          'fix it in the Quest tab before starting the run';
+
+      harness.answerConfigCommands(errors: [longLine]);
+      await tester.tap(find.byKey(const ValueKey('quest-card-flow')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('quest-card-flow-item-flowB')),
+      );
+      await _flush(tester);
+
+      final finder = find.byKey(const ValueKey('quest-card-error'));
+      final text = tester.widget<Text>(finder);
+      expect(text.data, longLine);
+      expect(text.maxLines, 3);
+      final tooltip = tester.widget<Tooltip>(
+        find.ancestor(of: finder, matching: find.byType(Tooltip)),
+      );
+      expect(tooltip.message, longLine);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      await _unmount(tester);
+    },
+  );
 }

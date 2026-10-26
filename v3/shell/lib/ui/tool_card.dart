@@ -111,13 +111,16 @@ class ToolCard extends StatelessWidget {
             ],
             if (error != null) ...[
               const SizedBox(height: 2),
-              Text(
-                error,
-                key: ValueKey('error-${tool.wire}'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
+              Tooltip(
+                message: error,
+                child: Text(
+                  error,
+                  key: ValueKey('error-${tool.wire}'),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
                 ),
               ),
             ],
@@ -134,31 +137,40 @@ class ToolCard extends StatelessWidget {
               extras!,
             ],
             if (holdSpace != null)
-              Text(
-                'Hold Space: $holdSpace',
-                key: const ValueKey('holdspace-report'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
+              Tooltip(
+                message: 'Hold Space: $holdSpace',
+                child: Text(
+                  'Hold Space: $holdSpace',
+                  key: const ValueKey('holdspace-report'),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
             if (finished != null)
-              Text(
-                finished!.message,
-                key: ValueKey('finished-${tool.wire}'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.tertiary,
+              Tooltip(
+                message: finished!.message,
+                child: Text(
+                  finished!.message,
+                  key: ValueKey('finished-${tool.wire}'),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                  ),
                 ),
               ),
             if (refusal != null)
-              Text(
-                refusal!,
-                key: ValueKey('refusal-${tool.wire}'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
+              Tooltip(
+                message: refusal!,
+                child: Text(
+                  refusal!,
+                  key: ValueKey('refusal-${tool.wire}'),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
                 ),
               ),
             const SizedBox(height: ShellSpace.sm),
