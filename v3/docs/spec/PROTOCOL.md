@@ -1,6 +1,7 @@
 # Protocol — v3 core ⇄ shell
 
-**Status: DRAFT v3, written 2026-10-25; tool.start run arguments added 2026-10-27.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
+**Status: DRAFT v3, written 2026-10-25; tool.start run arguments and the calibration kind repairs
+added 2026-10-27.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
 
 The design rationale is PLAN-V3-CORE §4. This file is the contract; both halves are written
 against it, and the golden fixtures in §10 are how they are kept in agreement.
@@ -100,7 +101,7 @@ edits; it never re-serialises the whole file (§7).
 | `window.find` | `{}` | `{"found":true,"title":"Seal Online ..."}` |
 | `window.measure` | `{}` | `{"display":{...}}` |
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
-| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"focus_point","point":{...}}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` |
+| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"scroll_point","point":{...}}`; `{"kind":"result_gem_area","region":{...},"empty":true}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` |
 | `calibration.fetch` | `{"kind":"bag_grid"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
@@ -340,3 +341,18 @@ The two halves must not drift, so the protocol is tested from both sides:
    count below 1 is refused rather than clamped. This is a DRAFT-shape change (the spec was v2); the
    golden fixtures are unchanged because they cover the envelope, not per-command argument
    semantics, and the argument rules are covered by core tests on both sides of the seam.
+
+7. **The calibration kind table was repaired, not extended silently.** Three findings from the
+   calibration gap audit changed the spec: (a) the `focus_point` kind wrote `buy_sell.focus_point`,
+   which no model field or consumer reads; the live shop reads `buy_sell.scroll_point` (v2's
+   `ScrollPoint`), so the kind is **`scroll_point`** and writes that path — no second focus field was
+   invented. (b) `max_button` was a mark CALIBRATION.md described but no kind wrote; it is now a kind
+   (a point on `buy_sell.max_button`), shared by buy/sell and the pet feeder's readiness rule. (c)
+   `result_gem_area` lost v2's empty verdict: v3 saved whatever was in the box as the "empty"
+   reference, so calibrating on a busy box poisoned the strong test. The save now carries
+   `empty: true|false`; `true` saves the crop and samples `empty_signature`, `false` samples the
+   signature only. Two items were **withdrawn rather than faked**: `tuner_region` (v2 derived the
+   region from three dragged boxes; a single rect wrote an unusable shape) until the three-box
+   session exists, and CALIBRATION.md's invented "Quest step marks" row (both codebases' `QuestStep`
+   carries only action/value/delay). Pet and gem point marks need an optional `target` on
+   `calibration.save`/`fetch` and are a pending plan, not a silent omission.

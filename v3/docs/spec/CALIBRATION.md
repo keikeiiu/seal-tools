@@ -33,17 +33,17 @@ What a mark is, and what later derives from it:
 | Bag grid (shop) | rect: whole 8×8 bag | The single uniform pitch `w/8, h/8`; all 64 slot centres are derived from it |
 | Bag slot (shop) | rect: one slot | The INDEPENDENT measurement; it must agree with the grid's pitch or the save is refused — two numbers that cannot both be right are a bad drag, not something to average |
 | Shop list region | rect: exactly the visible rows | Row tops/bottoms are derived from it; a buy preset's scroll is notches down from the list's top |
-| Focus point | point | An inert spot both shop tools left-click at run start. Starting a tool means clicking the launcher, which leaves the game unfocused — and an unfocused game ignores the wheel and a right-click. It must not be over a row or a slot, where a click selects or buys |
+| Focus / scroll point | point | An inert spot both shop tools left-click at run start, and where the wheel is aimed. Starting a tool means clicking the launcher, which leaves the game unfocused — and an unfocused game ignores the wheel and a right-click. It must not be over a row or a slot, where a click selects or buys. **v2 stored it as `buy_sell.scroll_point`; v3's kind is `scroll_point` and writes that same path** (the old `focus_point` kind wrote a field no consumer reads and was withdrawn) |
 | MAX button | point | The count dialog's MAX, clicked after a bag/row click |
 | Gem points | points: N, G, DG, Register, Combine, 3 resource slots | Absolute click targets; the composer places the cursor on one and clicks |
-| Result gem area | rect | The crop the empty check compares against; its drawn border is excluded (see §5) |
-| Tuner OCR region | rect | The capture window for a tuner scan |
+| Result gem area | rect + empty verdict | The crop the empty check compares against. The save carries the player's answer to v2's question "is the box empty?": **empty: true** saves the crop AND samples `empty_signature`; **empty: false** samples the signature only (no crop) — a crop of a busy box would poison the strong test. Its drawn border is excluded (see §5) |
+| Tuner OCR region | derived, NOT a mark | The capture window for a tuner scan is the bounding box of THREE dragged boxes (grade area, attribute band, remaining band) plus the derived `row_height`; v2 never dragged the region itself. The one-rect `tuner_region` kind wrote an array where the load path parses an object and dropped the derivation, so it was **withdrawn** until the three-box calibration session is built (OPEN) |
 | Grade area / bands | box and `[top,bottom]`/`[left,right]` bands, **region-relative** | The grade letter box and the row bands the OCR reader sub-crops. `row_height` is the measured attribute pitch (tighter than `height/3`); `grade_area` must lie inside `region` — the load-time rule is `ConfigValidator`'s |
 | Spring point | point | Where the 發條 button is; only read in `spring_mode: hid`, when the tuner places the cursor itself |
 | Pet marks | points: 目錄, pet feed icon, window X, page tabs, MAX (shared with buy/sell — the same count dialog) and the return slot in the bag; rects: per-row start/end toggle, feeder strip, boarding pet slot, the boarding bag's grid + one slot, and food cells as `[page, cell]` | The feeder's whole click path. The **boarding bag grid is its own**: the bag sits elsewhere on screen, and sharing the shop's numbers aims every click at the wrong item. The feeder strip is DIVIDED by the row's stack count — `FeederLayout` owns that arithmetic |
 | Pet reference crops | base64 PNG in `local.yaml` | Identity for "did the pet go in?" and "is a pet in there now"; the `close_button_png` is session state the RUN learns, not something the calibrator draws |
 | Tooltip | offset + shape | The hover panel the feeder reads growth / EXP% from before boarding; without it the feeder cannot tell a finished pet from a feedable one |
-| Quest step marks | points and drag boxes | The step executor's targets, stored per preset/sequence |
+| ~~Quest step marks~~ | — | **Not real, in v2 or v3**: `QuestStep` carries only action/value/delay, and the tool clicks wherever the PLAYER placed the cursor during the countdown (the cursor guard watches it). The old row invented marks the executor never used and is withdrawn |
 
 **Not coordinates, never scaled**: `gem.movements.*` are raw HID counts sent as `D dx dy` — hand-tuned,
 not pixel deltas (see §2 and `MOVE-SETS.md` in v2); `gem.empty_signature`, `colored_gap_min` and the
@@ -233,13 +233,18 @@ and the open item is named here rather than restated. The living list is
 [PROTOCOL.md](PROTOCOL.md) §11.
 
 `calibration.save` and `calibration.fetch` are implemented: the kind table lives in
-`seal-core/src/calibration.rs` (`bag_grid`, `bag_slot`, `shop_list`, `focus_point`,
-`result_gem_area`, `tuner_region`, `spring_point`), marks go through the one `local.yaml` write gate,
-and the result-gem crop is the first binary artifact. Still open:
+`seal-core/src/calibration.rs` and accepts `bag_grid`, `bag_slot`, `shop_list`, `scroll_point`,
+`max_button`, `result_gem_area` (with its `empty` verdict) and `spring_point`; marks go through the
+one `local.yaml` write gate, and the result-gem crop is the first binary artifact. The kind table was
+REPAIRED after the gap audit (`PROTOCOL §12.7`): `focus_point` wrote a field no consumer reads and
+became `scroll_point`; `max_button` had a mark with no kind and now has one; `result_gem_area` lost
+v2's empty verdict and got it back; `tuner_region` was withdrawn rather than faked (the three-box
+session is a plan), and the invented quest-step row was removed. Still open:
 
 | Not built yet | What it needs | Pointer |
 |---|---|---|
-| The remaining mark kinds | the pet marks (points, rects and the per-row crops as base64 IN `local.yaml`), the tooltip offset + shape, the quest step maps, the gem points, the MAX button and the sell slots each need a kind-table row and their own derivation rules; today they are hand-editable and preserved, not calibrated from the UI | PROTOCOL §4; this file §1 |
+| The remaining mark kinds | the pet points/rects and the gem points need the optional `target` on `calibration.save`/`fetch` (named instances: page tab, row); the tooltip offset + shape needs v2's two-capture hover session (it cannot be a single-frame mark); the pet crops/cells and the sell-slot editor are Pet-tab features, not calibration kinds. Today they are hand-editable and preserved, not calibrated from the UI | PROTOCOL §4; this file §1; OPEN |
+| The tuner's three-box session | v2 dragged grade area + attribute band + remaining band and DERIVED `region`, the bands and `row_height`; a session-shaped calibration (several marks, or several commands with a documented order) is the only way to keep that derivation. Until then the tuner OCR geometry is hand-edited and `tuner_region` is refused | OPEN; `startup.rs`'s load rules |
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
 | `config.changed` for calibration writes | LANDED: a save now queues `config.changed {rev, block, values}` for the block it marks, after its response (PROTOCOL §5), so a shell keeping a mirror updates without refetching | PROTOCOL §5 |
 | Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
