@@ -83,8 +83,9 @@ the decisions they force:
 - [ ] Name/version alignment — `SealTools.exe`, window title, pubspec `3.0.0+1`.
 - [ ] Capture/hide lifecycle (item 8) — shell runner channel + Calibrate flow + tests.
 - [ ] Naming/version alignment (`SealTools.exe`, window title, pubspec 3.0.0+1, publish script paths).
-- [ ] `USER_GUIDE.md` + `USER_GUIDE.zh-TW.md` + `INSTALL.md` (install, first run, migration, update,
-      uninstall, troubleshooting, what is not built in 3.0, the hotkey limitation).
+- [x] `USER_GUIDE.md` + `USER_GUIDE.zh-TW.md` + `INSTALL.md` (install, first run, migration, update,
+      uninstall, troubleshooting, what is not built in 3.0, the hotkey limitation). Landed text-only;
+      `publish.ps1 -Verify` now accepts all three, leaving only the four release-build artifacts red.
 - [ ] Spec corrections: PROTOCOL front matter/§11 status, DESIGN status/§8, CALIBRATION status/§4
       frame cache/§6 Setup wording/§7 counts + new §8, CONFIG stale bullets + dangling pointer,
       TOOL-FLOWS status + per-tool "loop is live" lines, OPEN prune.
