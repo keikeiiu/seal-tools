@@ -143,6 +143,14 @@ pub trait Effects {
             "this effects implementation cannot scroll the wheel",
         ))
     }
+
+    /// One raw HID move. Default refuses: the counts are measured per machine, and approximating them
+    /// with a placement would be a different move, not the measured one.
+    fn move_by(&mut self, _dx: i32, _dy: i32) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot make a raw HID move",
+        ))
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -271,6 +279,11 @@ pub fn run(
             }
             Decision::Wheel { notches, down } => {
                 if let Err(error) = effects.wheel(notches, down) {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::MoveBy { dx, dy } => {
+                if let Err(error) = effects.move_by(dx, dy) {
                     return StopReason::error(effect_message(&error));
                 }
             }

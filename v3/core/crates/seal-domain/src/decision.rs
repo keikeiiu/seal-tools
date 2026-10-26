@@ -63,6 +63,12 @@ pub enum Decision {
     /// cursor on the calibrated scroll point first. Notch counts are passed through — the firmware
     /// clamps at its own ceiling, and the host refuses above it in `seal-board`.
     Wheel { notches: i32, down: bool },
+
+    /// One raw HID move: `D dx dy`, exactly the counts. The gem composer's `tuned` move set is the
+    /// caller today — those counts are hand-measured per machine (`MOVE-SETS.md`) and must never be
+    /// scaled or rounded, which is why they travel as their own decision rather than as a point the
+    /// placement loop would recompute.
+    MoveBy { dx: i32, dy: i32 },
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

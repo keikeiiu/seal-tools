@@ -121,6 +121,10 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
         self.write(BoardCommand::RightClick)
     }
 
+    fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), EffectError> {
+        self.write(BoardCommand::move_by(dx, dy))
+    }
+
     fn wheel(&mut self, notches: i32, down: bool) -> Result<(), EffectError> {
         let Ok(notches) = u16::try_from(notches) else {
             return Err(EffectError::new(
@@ -327,10 +331,11 @@ mod tests {
         fx.right_click_here().expect("a bare right click");
         fx.wheel(3, true).expect("three notches down");
         fx.wheel(2, false).expect("two notches up");
+        fx.move_by(-40, 512).expect("a raw HID move");
         assert_eq!(
             fx.transport().writes(),
-            vec!["D 110 70\n", "C\n", "R\n", "Z 3\n", "Q 2\n"],
-            "bare clicks write C/R; a down scroll is Z, an up scroll Q"
+            vec!["D 110 70\n", "C\n", "R\n", "Z 3\n", "Q 2\n", "D -40 512\n"],
+            "bare clicks write C/R; a down scroll is Z, an up scroll Q; a raw move keeps its counts"
         );
     }
 
