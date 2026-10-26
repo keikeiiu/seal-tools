@@ -116,6 +116,10 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     fn click_here(&mut self) -> Result<(), EffectError> {
         self.write(BoardCommand::LeftClick)
     }
+
+    fn right_click_here(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::RightClick)
+    }
 }
 
 fn key_command(key: Key, fast: bool) -> BoardCommand {
@@ -309,10 +313,11 @@ mod tests {
         );
 
         fx.click_here().expect("a bare click");
+        fx.right_click_here().expect("a bare right click");
         assert_eq!(
             fx.transport().writes(),
-            vec!["D 110 70\n", "C\n"],
-            "click_here writes C without moving"
+            vec!["D 110 70\n", "C\n", "R\n"],
+            "click_here/right_click_here write C/R without moving"
         );
     }
 

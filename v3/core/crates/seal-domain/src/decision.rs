@@ -52,6 +52,11 @@ pub enum Decision {
     /// mode clicks the button the PLAYER positioned the mouse on, so there is no point to place at —
     /// and `Click(Point)` would move the cursor first, which manual mode exists to avoid.
     ClickHere,
+
+    /// Right-click wherever the cursor already is (the board's bare `R`). The quest executor's
+    /// `right_click` action is the only caller today; like [`Self::ClickHere`] it never moves the
+    /// cursor, because the player positioned the mouse during the run's countdown.
+    RightClickHere,
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///
