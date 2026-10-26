@@ -14,6 +14,7 @@
 pub mod arbiter;
 pub mod cancel;
 pub mod clock;
+pub mod game;
 pub mod held;
 pub mod runner;
 pub mod tool;

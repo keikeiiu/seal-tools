@@ -16,16 +16,16 @@
 //! verify → fold the outcome back. Failures fold into strikes and a row is dropped after
 //! `MAX_FAILURES`; every dropped row ends the run with the domain's line.
 //!
-//! # Resident hand-over: what this build does NOT wire (reported to the Lead)
+//! # The game hand-over (wired)
 //!
-//! The arbiter knows the pet is resident (`ToolId::is_resident`): a resident start is armed without
-//! taking the game, a foreground start while the feeder is mid-reload is deferred, and
-//! `request_game`/`release_game`/`should_stand_down` exist for the claim. But NO running tool has a
-//! seam to those calls — the `Tool`/`Effects` contracts the runner executes cannot see the arbiter —
-//! so this loop cannot yield the game between visits or re-acquire it. It runs like a foreground tool
-//! for the life of the run (`create` does not take the game either; the arbiter's `game` stays empty
-//! while the resident runs). The supervisor's resident hand-over is therefore NOT wired end-to-end in
-//! this build; it is reported rather than forced here, as instructed.
+//! The feeder is resident (`ToolId::is_resident`): the arbiter arms it without the game. This loop
+//! asks for the game through [`seal_tools::game::GamePort`] BEFORE its first decision that can click
+//! (the opening look included — it must not steal focus behind a foreground run), and gives it back
+//! after the window closes and before the long wait, so a foreground start that was deferred behind
+//! the feeder actually starts (`GameRelease::StartPending`). Every exit path releases: a terminal
+//! decision releases, and the tool's `Drop` guard releases a claim interrupted mid-visit. A blocked
+//! request produces NO decisions — the worker waits inside `request` while the supervisor stashes the
+//! reply. Foreground tools do not ask: `start` claims the game for them.
 //!
 //! # Deviations from v2, recorded
 //!
@@ -44,6 +44,7 @@
 //!   the backstop for a failure or cancel between them.
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use base64::Engine as _;
 use seal_domain::config::AttributesConfig;
@@ -59,6 +60,7 @@ use seal_domain::tools::pet::{
     visit_opening_message,
 };
 use seal_domain::tools::shop::BagGrid;
+use seal_tools::game::GamePort;
 use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::{ToolId, ToolRow};
 use serde_json::Value;
@@ -1125,6 +1127,9 @@ impl Visit {
 pub struct PetTool<S: PetSource> {
     plan: PetPlan,
     source: S,
+    /// The game hand-over capability; see [`PetTool::ensure_game`] / [`PetTool::release_game`].
+    game: Arc<dyn GamePort>,
+    held: bool,
     state: Vec<RowState>,
     phase: Phase,
     queue: VecDeque<Decision>,
@@ -1135,7 +1140,7 @@ pub struct PetTool<S: PetSource> {
 }
 
 impl<S: PetSource> PetTool<S> {
-    pub fn new(plan: PetPlan, source: S) -> Self {
+    pub fn new(plan: PetPlan, source: S, game: Arc<dyn GamePort>) -> Self {
         let state: Vec<RowState> = plan
             .rows
             .iter()
@@ -1150,6 +1155,8 @@ impl<S: PetSource> PetTool<S> {
         Self {
             plan,
             source,
+            game,
+            held: false,
             state,
             phase: Phase::Open,
             queue: VecDeque::new(),
@@ -1160,6 +1167,26 @@ impl<S: PetSource> PetTool<S> {
         }
     }
 
+    /// Take the game before the FIRST decision that can click (the opening look included): if a
+    /// foreground tool holds it, the worker blocks here and produces no decisions — the feeder must
+    /// not drive input behind another run.
+    fn ensure_game(&mut self) -> Result<(), StopReason> {
+        if self.held {
+            return Ok(());
+        }
+        self.game
+            .request(ToolId::Pet)
+            .map(|()| self.held = true)
+            .map_err(StopReason::error)
+    }
+
+    /// Give the game back (idempotent).
+    fn release_game(&mut self) {
+        if self.held {
+            self.game.release(ToolId::Pet);
+            self.held = false;
+        }
+    }
     pub fn card(&self) -> PetCard {
         let views: Vec<PetRowView> = self
             .plan
@@ -1784,23 +1811,7 @@ impl<S: PetSource> PetTool<S> {
         }
         self.visit = Some(visit);
     }
-}
-
-impl<S: PetSource + Send> Tool for PetTool<S> {
-    fn id(&self) -> ToolId {
-        ToolId::Pet
-    }
-
-    fn status(&self) -> ToolStatus {
-        let card = self.card();
-        ToolStatus {
-            message: self.message.clone(),
-            countdown_s: self.countdown_s,
-            rows: tool_rows(&card),
-        }
-    }
-
-    fn decide(&mut self) -> Decision {
+    fn decide_once(&mut self) -> Decision {
         loop {
             if let Some(decision) = self.queue.pop_front() {
                 return decision;
@@ -1811,6 +1822,9 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
             match self.phase {
                 Phase::Open => {
                     self.countdown_s = None;
+                    if let Err(reason) = self.ensure_game() {
+                        return Decision::Stop(reason);
+                    }
                     if let Some(menu) = self.plan.setup.menu_button.as_deref().and_then(point_of) {
                         self.click(menu);
                         self.wait(WINDOW_WAIT);
@@ -1825,6 +1839,9 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
                 Phase::Look => self.look(),
                 Phase::Visit => self.visit_step(),
                 Phase::Wait => {
+                    // The window is closed (the close decisions drained first): give the game back
+                    // before the long wait, so a deferred foreground start can run.
+                    self.release_game();
                     let scheduled: Vec<usize> = self
                         .active_rows()
                         .into_iter()
@@ -1870,6 +1887,37 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
     }
 }
 
+impl<S: PetSource + Send> Tool for PetTool<S> {
+    fn id(&self) -> ToolId {
+        ToolId::Pet
+    }
+
+    fn status(&self) -> ToolStatus {
+        let card = self.card();
+        ToolStatus {
+            message: self.message.clone(),
+            countdown_s: self.countdown_s,
+            rows: tool_rows(&card),
+        }
+    }
+
+    fn decide(&mut self) -> Decision {
+        let decision = self.decide_once();
+        if decision.is_terminal() {
+            // A terminal decision ends the run; no claim may outlive it.
+            self.release_game();
+        }
+        decision
+    }
+}
+
+impl<S: PetSource> Drop for PetTool<S> {
+    fn drop(&mut self) {
+        // A stop can land anywhere, including before the explicit release in `Phase::Wait`; the
+        // claim must never outlive the tool (the effects' Drop guard is the same principle).
+        self.release_game();
+    }
+}
 /// One compact point conversion for a config `[x, y]`.
 fn point_of(values: &[i32]) -> Option<Point> {
     (values.len() == 2).then(|| Point::new(values[0], values[1]))
@@ -2639,7 +2687,7 @@ mod loop_tests {
             "代養完成預計所需時間：約14分".to_owned(),
             "每1分 攝取3個".to_owned(),
         ];
-        let mut tool = PetTool::new(plan, source);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
 
         let (decisions, messages) = run_to_wait(&mut tool);
 
@@ -2704,7 +2752,7 @@ mod loop_tests {
             height: 40,
             rgba: vec![0u8; 40 * 40 * 4],
         };
-        let mut tool = PetTool::new(plan, source);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
 
         let (decisions, _messages) = run_to_wait(&mut tool);
 
@@ -2737,7 +2785,7 @@ mod loop_tests {
             height: 4,
             rgba: vec![255u8; 64],
         });
-        let mut tool = PetTool::new(plan, source);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
 
         let (decisions, messages) = run_to_wait(&mut tool);
 
@@ -2781,7 +2829,7 @@ mod loop_tests {
             "到2為止預計所需時間：約 20分".to_owned(),
             "每1分 攝取3個".to_owned(),
         ];
-        let mut tool = PetTool::new(plan, source);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
 
         let (_decisions, _messages) = run_to_wait(&mut tool);
 
@@ -2870,7 +2918,7 @@ mod loop_tests {
             height: 4,
             rgba: vec![255u8; 64],
         });
-        let mut tool = PetTool::new(plan, source);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
         let token = CancelToken::new();
         let handle = seal_tools::arbiter::RunHandle {
             tool: ToolId::Pet,
@@ -2962,5 +3010,132 @@ mod loop_tests {
             rgba: vec![0u8; 12 * 12 * 4],
         };
         assert_eq!(score_cell(&tight, &icon, 12, 12), None);
+    }
+    /// A scripted `/game` capability: records request/release calls and can hold the first request
+    /// until a gate opens (the blocked-worker test).
+    #[derive(Default)]
+    struct RecordingPort {
+        requests: std::sync::Mutex<Vec<ToolId>>,
+        releases: std::sync::Mutex<Vec<ToolId>>,
+        gate: std::sync::Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+    }
+
+    impl RecordingPort {
+        fn requests(&self) -> Vec<ToolId> {
+            self.requests.lock().expect("not poisoned").clone()
+        }
+
+        fn releases(&self) -> Vec<ToolId> {
+            self.releases.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl GamePort for RecordingPort {
+        fn request(&self, tool: ToolId) -> Result<(), String> {
+            self.requests.lock().expect("not poisoned").push(tool);
+            if let Some(gate) = self.gate.lock().expect("not poisoned").take() {
+                let _ = gate.recv();
+            }
+            Ok(())
+        }
+
+        fn release(&self, tool: ToolId) {
+            self.releases.lock().expect("not poisoned").push(tool);
+        }
+
+        fn should_stand_down(&self) -> bool {
+            false
+        }
+    }
+
+    fn pet_with_port(
+        config: &Value,
+        slots: Vec<SlotState>,
+        port: Arc<RecordingPort>,
+    ) -> PetTool<FakeSource> {
+        PetTool::new(plan_of(config), FakeSource::new(slots), port)
+    }
+
+    #[test]
+    fn the_pet_requests_the_game_before_its_first_click_and_releases_before_the_wait() {
+        let config = config(1, false, true, false);
+        let port = Arc::new(RecordingPort::default());
+        let mut tool = pet_with_port(
+            &config,
+            vec![empty(), empty(), populated(), populated()],
+            Arc::clone(&port),
+        );
+
+        // The first decision can click (the 目錄 button), so the claim must already be held.
+        assert_eq!(tool.decide(), Decision::Click(Point::new(10, 10)));
+        assert_eq!(port.requests(), vec![ToolId::Pet]);
+
+        let _ = run_to_wait(&mut tool);
+
+        assert_eq!(
+            port.releases(),
+            vec![ToolId::Pet],
+            "the game is given back before the long wait"
+        );
+    }
+
+    #[test]
+    fn dropping_a_pet_tool_mid_visit_releases_the_game() {
+        let config = config(1, false, true, false);
+        let port = Arc::new(RecordingPort::default());
+        let mut tool = pet_with_port(
+            &config,
+            vec![empty(), empty(), populated(), populated()],
+            Arc::clone(&port),
+        );
+        let _ = tool.decide();
+        assert_eq!(port.requests(), vec![ToolId::Pet]);
+
+        drop(tool);
+
+        assert_eq!(
+            port.releases(),
+            vec![ToolId::Pet],
+            "the Drop guard releases a claim that a stop interrupted"
+        );
+    }
+
+    #[test]
+    fn a_blocked_request_produces_no_decision_until_the_game_is_granted() {
+        let (release, gate) = std::sync::mpsc::channel();
+        let port = Arc::new(RecordingPort {
+            gate: std::sync::Mutex::new(Some(gate)),
+            ..RecordingPort::default()
+        });
+        let config = config(1, false, true, false);
+        let mut tool = pet_with_port(
+            &config,
+            vec![empty(), empty(), populated(), populated()],
+            Arc::clone(&port),
+        );
+        let (decision_sender, decisions) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let decision = tool.decide();
+            decision_sender
+                .send(decision)
+                .expect("the test is listening");
+        });
+
+        assert!(
+            decisions
+                .recv_timeout(std::time::Duration::from_millis(150))
+                .is_err(),
+            "no decision may be produced while the request is blocked"
+        );
+
+        release.send(()).expect("the game is granted");
+        assert_eq!(
+            decisions
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("a decision after the grant"),
+            Decision::Click(Point::new(10, 10))
+        );
+        worker.join().expect("the worker ends");
+        assert_eq!(port.requests(), vec![ToolId::Pet]);
     }
 }

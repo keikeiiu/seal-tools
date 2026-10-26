@@ -275,7 +275,11 @@ about LIVE VERIFICATION and the two loops, not about unported code.
   the second reader, which also populates `state.rows`). `buy` is served but refuses at start with
   the domain's "No buy preset selected." because the protocol carries no per-run item/count (OPEN).
   The **pet feeder** landed last (`dcccd5a` + the loop/registry flip): every id in PROTOCOL §9 now has
-  a loop behind it, and what remains open there is the supervisor<->runner hand-over seam, not code
+  a loop behind it. The supervisor<->runner hand-over seam that the pet work exposed has since
+  closed too (`GamePort` + stashed-reply supervisor plumbing): the resident yields between visits, a
+  foreground start defers behind it with a bounded timeout, and a preempted spammer is stood down
+  through the arbiter — only the runner-side yield hook for the spammer remains, and it is named in
+  OPEN. What remains open is live verification and the small recorded follow-ups, not code
   coverage.
 - **The effect vocabulary is complete and refusal-fenced**: `Place`, `ClickHere`, `RightClickHere`,
   `Enter`, `Wheel`, `MoveBy`, `HoldLeft`/`ReleaseLeft` and `Wait`, each with a default that refuses

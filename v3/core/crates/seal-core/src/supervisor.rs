@@ -1,5 +1,6 @@
 //! The tool supervisor: the layer that turns the protocol's tool commands into arbiter + runner
-//! activity and publishes the resulting events.
+//! activity and publishes the resulting events, and the one place a RUNNING tool can reach the
+//! arbiter.
 //!
 //! One supervisor THREAD owns the [`Arbiter`] and the worker handles, so the arbiter's state is never
 //! shared (the two-writer hazard `PROGRESS.md` entry 59 recorded is gone by construction). Workers
@@ -15,20 +16,41 @@
 //! its session (open the board, load the models). A second start while that happens sees the slot and
 //! is refused `tool_busy`; a stop during it cancels the token, and the worker ends `cancelled` by
 //! calling `Done` — no slot leaks.
+//!
+//! # The game hand-over ([`GamePort`])
+//!
+//! The arbiter is the complete state machine (the resident feeder armed without the game, a
+//! foreground start deferred behind it, the spammer preemptible). What it lacked was a way for a
+//! running worker to talk to it. [`SupervisorPort`] is that capability: `request` is a
+//! `RequestGame` command whose reply is stashed HERE (never blocking the supervisor thread) and
+//! satisfied when the arbiter's `release_game`/`finished` reports the waiter granted; `release` is a
+//! `ReleaseGame` command; `should_stand_down` answers for the spammer. A `Preempt` cancels the holder
+//! through the arbiter (the spammer is the only tool that stands down — v2's rule; its RUNNER-side
+//! use of `should_stand_down` is the recorded increment-2 follow-up, not implemented here).
+//!
+//! The deferred-start timeout is also wired: a `Start::Deferred` schedules one `PendingTimeout`
+//! command 45 s out, and the arbiter's `pending_timeout` line is published as a `log` event. The
+//! caller has already been answered `Deferred`, so the timeout cannot turn into a response on this
+//! protocol; that is reported rather than papered over.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use seal_domain::decision::StopReason;
-use seal_tools::arbiter::{Arbiter, GameRelease, Refusal, RunHandle, Start, Stop};
+use seal_tools::arbiter::{Arbiter, GameRelease, GameUse, Refusal, RunHandle, Start, Stop};
 use seal_tools::clock::RealClock;
+use seal_tools::game::GamePort;
 use seal_tools::runner::{self, STOPPED_MESSAGE};
 use seal_tools::tool::{ToolId, ToolPhase, ToolSnapshot};
 
 use crate::events::{self, EventBus};
 use crate::registry::{Session, ToolRegistry};
+
+/// v2's bounded wait for the pet feeder's reload (`LauncherService`'s 45 s).
+const PENDING_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// What `tool.start` answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +79,9 @@ pub enum StopReply {
     NotRunning,
 }
 
+/// One stashed `request` reply: the tool waiting for the game, and the channel its worker blocks on.
+type PendingReply = (ToolId, Sender<Result<(), String>>);
+
 enum Command {
     Start {
         tool: ToolId,
@@ -70,6 +95,18 @@ enum Command {
         reason: String,
         reply: Sender<()>,
     },
+    RequestGame {
+        tool: ToolId,
+        reply: Sender<Result<(), String>>,
+    },
+    ReleaseGame {
+        tool: ToolId,
+    },
+    StandDown {
+        reply: Sender<bool>,
+    },
+    /// The deferred foreground start's bounded wait ran out (v2's 45 s).
+    PendingTimeout,
 }
 
 enum WorkerEvent {
@@ -96,11 +133,15 @@ pub struct Supervisor {
 impl Supervisor {
     /// Spawns the supervisor thread. The registry is the production placeholder in the binary and a
     /// fake in the tests; the bus is the single writer's bus in the binary and a test channel in the
-    /// tests.
+    /// tests. The [`GamePort`] handed to every `create` is created here, over this supervisor's own
+    /// command channel, so a worker's request is answered by the thread that owns the arbiter.
     pub fn start(registry: Arc<dyn ToolRegistry>, bus: EventBus) -> Self {
         let (incoming, receiver) = mpsc::channel();
         let worker_sender = incoming.clone();
-        let join = thread::spawn(move || supervise(registry, bus, receiver, worker_sender));
+        let port: Arc<dyn GamePort> = Arc::new(SupervisorPort {
+            incoming: incoming.clone(),
+        });
+        let join = thread::spawn(move || supervise(registry, bus, receiver, worker_sender, port));
         Self {
             incoming,
             join: Some(join),
@@ -163,14 +204,52 @@ impl Drop for Supervisor {
     }
 }
 
+/// The worker-facing game capability: commands over the supervisor's channel, answers from the thread
+/// that owns the arbiter. `request` is the only blocking call, and it blocks only the worker.
+struct SupervisorPort {
+    incoming: Sender<Incoming>,
+}
+
+impl GamePort for SupervisorPort {
+    fn request(&self, tool: ToolId) -> Result<(), String> {
+        let (reply, answer) = mpsc::channel();
+        self.incoming
+            .send(Incoming::Command(Command::RequestGame { tool, reply }))
+            .map_err(|_| "the tool supervisor is not running".to_owned())?;
+        answer.recv().unwrap_or_else(|_| {
+            Err("the tool supervisor stopped while the tool waited for the game".to_owned())
+        })
+    }
+
+    fn release(&self, tool: ToolId) {
+        let _ = self
+            .incoming
+            .send(Incoming::Command(Command::ReleaseGame { tool }));
+    }
+
+    fn should_stand_down(&self) -> bool {
+        let (reply, answer) = mpsc::channel();
+        if self
+            .incoming
+            .send(Incoming::Command(Command::StandDown { reply }))
+            .is_err()
+        {
+            return false;
+        }
+        answer.recv().unwrap_or(false)
+    }
+}
+
 fn supervise(
     registry: Arc<dyn ToolRegistry>,
     bus: EventBus,
     receiver: Receiver<Incoming>,
     worker_sender: Sender<Incoming>,
+    port: Arc<dyn GamePort>,
 ) {
     let mut arbiter = Arbiter::new();
     let mut workers: BTreeMap<ToolId, JoinHandle<()>> = BTreeMap::new();
+    let mut pending_reply: Option<PendingReply> = None;
 
     while let Ok(message) = receiver.recv() {
         match message {
@@ -181,13 +260,21 @@ fn supervise(
                     },
                     Ok(()) => match arbiter.start(tool) {
                         Start::Started(handle) => {
-                            spawn_worker(handle, &registry, &worker_sender, &bus, &mut workers);
+                            spawn_worker(
+                                handle,
+                                &registry,
+                                &worker_sender,
+                                &bus,
+                                &port,
+                                &mut workers,
+                            );
                             StartReply::Started
                         }
                         Start::Deferred { line } => {
                             // There is no run to attach a `state` to yet, so the waiting line is a
                             // `log` event; the start itself happens when the game is handed over.
                             bus.emit(events::log_event("info", line.clone()));
+                            schedule_pending_timeout(worker_sender.clone());
                             StartReply::Deferred { line }
                         }
                         Start::Refused(refusal) => StartReply::Refused(refusal),
@@ -208,8 +295,12 @@ fn supervise(
                 let _ = reply.send(answer);
             }
             Incoming::Command(Command::Shutdown { reason, reply }) => {
-                // Nothing pending is allowed to start on the way out.
+                // Nothing pending is allowed to start on the way out. A worker blocked in `request`
+                // must be unblocked with a line, not left waiting on a channel that is going away.
                 let _ = arbiter.cancel_pending();
+                if let Some((_tool, reply)) = pending_reply.take() {
+                    let _ = reply.send(Err("the core is shutting down.".to_owned()));
+                }
                 for stop in arbiter.stop_all() {
                     if let Stop::Cancelling { handle, .. } = stop
                         && let Some(snapshot) = handle.state.read()
@@ -223,10 +314,36 @@ fn supervise(
                             event,
                             &mut arbiter,
                             &mut workers,
-                            &registry,
-                            &worker_sender,
-                            &bus,
+                            &Plumbing {
+                                registry: &registry,
+                                worker_sender: &worker_sender,
+                                bus: &bus,
+                                port: &port,
+                            },
+                            &mut pending_reply,
                         ),
+                        Ok(Incoming::Command(Command::RequestGame { tool, reply })) => {
+                            let _ = reply.send(Err(format!(
+                                "\"{tool}\" cannot take the game — the core is shutting down."
+                            )));
+                        }
+                        Ok(Incoming::Command(Command::ReleaseGame { tool })) => {
+                            let release = arbiter.release_game(tool);
+                            handle_game_release(
+                                release,
+                                &mut pending_reply,
+                                &mut workers,
+                                &Plumbing {
+                                    registry: &registry,
+                                    worker_sender: &worker_sender,
+                                    bus: &bus,
+                                    port: &port,
+                                },
+                            );
+                        }
+                        Ok(Incoming::Command(Command::StandDown { reply })) => {
+                            let _ = reply.send(false);
+                        }
                         Ok(Incoming::Command(_)) => {}
                         Err(_) => break,
                     }
@@ -235,32 +352,158 @@ fn supervise(
                 let _ = reply.send(());
                 break;
             }
+            Incoming::Command(Command::RequestGame { tool, reply }) => {
+                handle_request_game(tool, reply, &mut arbiter, &bus, &mut pending_reply);
+            }
+            Incoming::Command(Command::ReleaseGame { tool }) => {
+                let release = arbiter.release_game(tool);
+                handle_game_release(
+                    release,
+                    &mut pending_reply,
+                    &mut workers,
+                    &Plumbing {
+                        registry: &registry,
+                        worker_sender: &worker_sender,
+                        bus: &bus,
+                        port: &port,
+                    },
+                );
+            }
+            Incoming::Command(Command::StandDown { reply }) => {
+                // Only the spammer may stand down (v2's `PortGate` rule), so the tool-less
+                // capability answers for it; a tool that is not the spammer gets `false`.
+                let _ = reply.send(arbiter.should_stand_down(ToolId::Spammer));
+            }
+            Incoming::Command(Command::PendingTimeout) => {
+                if let Some(refusal) = arbiter.pending_timeout() {
+                    // The caller was already answered `Deferred`; this protocol has no channel back
+                    // to it, so the timeout is the log line rather than a response (reported).
+                    bus.emit(events::log_event("warn", refusal.line));
+                }
+            }
             Incoming::Worker(event) => handle_worker(
                 event,
                 &mut arbiter,
                 &mut workers,
-                &registry,
-                &worker_sender,
-                &bus,
+                &Plumbing {
+                    registry: &registry,
+                    worker_sender: &worker_sender,
+                    bus: &bus,
+                    port: &port,
+                },
+                &mut pending_reply,
             ),
         }
     }
+}
+
+/// Answer one worker's `request`: grant it, or publish the waiting/stand-down line and stash the
+/// reply. The supervisor thread never blocks here.
+fn handle_request_game(
+    tool: ToolId,
+    reply: Sender<Result<(), String>>,
+    arbiter: &mut Arbiter,
+    bus: &EventBus,
+    pending: &mut Option<PendingReply>,
+) {
+    if pending.is_some() {
+        let _ = reply.send(Err(
+            "another tool is already waiting for the game".to_owned()
+        ));
+        return;
+    }
+    match arbiter.request_game(tool) {
+        GameUse::Granted => {
+            let _ = reply.send(Ok(()));
+        }
+        GameUse::Waiting { holder } => {
+            bus.emit(events::log_event(
+                "info",
+                format!("\"{tool}\" is waiting for the game (\"{holder}\")."),
+            ));
+            *pending = Some((tool, reply));
+        }
+        GameUse::Preempt { holder } => {
+            // v2's only log wording for this moment is the spammer's own stream line
+            // (`[YIELD] handed the game to …`); the card has no player-facing sentence, so the
+            // report records this defined line.
+            bus.emit(events::log_event(
+                "info",
+                format!("\"{holder}\" stepped aside for \"{tool}\"."),
+            ));
+            if let Stop::Cancelling { handle, .. } = arbiter.stop(Some(holder))
+                && let Some(snapshot) = handle.state.read()
+            {
+                bus.emit(events::state_event(&snapshot));
+            }
+            *pending = Some((tool, reply));
+        }
+    }
+}
+
+/// Act on what a `release_game`/`finished` left behind: satisfy the stashed waiter, or start the
+/// foreground tool that was deferred behind the resident.
+fn handle_game_release(
+    release: GameRelease,
+    pending: &mut Option<PendingReply>,
+    workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
+    plumbing: &Plumbing<'_>,
+) {
+    match release {
+        GameRelease::Freed => {}
+        GameRelease::Granted(waiter) => {
+            plumbing.bus.emit(events::log_event(
+                "info",
+                format!("\"{waiter}\" has the game."),
+            ));
+            if let Some((tool, reply)) = pending.take() {
+                if tool == waiter {
+                    let _ = reply.send(Ok(()));
+                } else {
+                    *pending = Some((tool, reply));
+                }
+            }
+        }
+        GameRelease::StartPending(handle) => spawn_worker(
+            handle,
+            plumbing.registry,
+            plumbing.worker_sender,
+            plumbing.bus,
+            plumbing.port,
+            workers,
+        ),
+    }
+}
+/// The deferred start's bounded wait: v2's 45 s, after which `pending_timeout` names both sides.
+fn schedule_pending_timeout(sender: Sender<Incoming>) {
+    thread::spawn(move || {
+        thread::sleep(PENDING_TIMEOUT);
+        let _ = sender.send(Incoming::Command(Command::PendingTimeout));
+    });
+}
+
+/// The supervisor-owned references a worker event needs. Bundled so the call sites and the helper
+/// signatures stay readable (and clippy's argument ceiling stays satisfied).
+struct Plumbing<'a> {
+    registry: &'a Arc<dyn ToolRegistry>,
+    worker_sender: &'a Sender<Incoming>,
+    bus: &'a EventBus,
+    port: &'a Arc<dyn GamePort>,
 }
 
 fn handle_worker(
     event: WorkerEvent,
     arbiter: &mut Arbiter,
     workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
-    registry: &Arc<dyn ToolRegistry>,
-    worker_sender: &Sender<Incoming>,
-    bus: &EventBus,
+    plumbing: &Plumbing<'_>,
+    pending: &mut Option<PendingReply>,
 ) {
     match event {
         WorkerEvent::Opened { tool, snapshot } => {
             // A stop may already have been processed between the send and this handling; then the
             // card is Stopping and a stale Running event would be a lie.
             if arbiter.is_running(tool) && !arbiter.is_stopping(tool) {
-                bus.emit(events::state_event(&snapshot));
+                plumbing.bus.emit(events::state_event(&snapshot));
             }
         }
         WorkerEvent::Done { tool, reason } => {
@@ -271,31 +514,21 @@ fn handle_worker(
                 let _ = join.join();
             }
             if let Some(snapshot) = &finish.final_snapshot {
-                bus.emit(events::state_event(snapshot));
+                plumbing.bus.emit(events::state_event(snapshot));
             }
-            bus.emit(events::tool_finished_event(tool, &reason));
-
-            match finish.game {
-                GameRelease::StartPending(handle) => {
-                    spawn_worker(handle, registry, worker_sender, bus, workers);
-                }
-                GameRelease::Granted(waiter) => {
-                    bus.emit(events::log_event(
-                        "info",
-                        format!("\"{waiter}\" has the game."),
-                    ));
-                }
-                GameRelease::Freed => {}
-            }
+            plumbing
+                .bus
+                .emit(events::tool_finished_event(tool, &reason));
+            handle_game_release(finish.game, pending, workers, plumbing);
         }
     }
 }
-
 fn spawn_worker(
     handle: RunHandle,
     registry: &Arc<dyn ToolRegistry>,
     worker_sender: &Sender<Incoming>,
     bus: &EventBus,
+    port: &Arc<dyn GamePort>,
     workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
 ) {
     // The opening phase's snapshot: the card says Starting while the board/models are opened.
@@ -304,15 +537,21 @@ fn spawn_worker(
     }
     let registry = Arc::clone(registry);
     let sender = worker_sender.clone();
+    let port = Arc::clone(port);
     let tool = handle.tool;
-    let join = thread::spawn(move || worker_loop(handle, registry, sender));
+    let join = thread::spawn(move || worker_loop(handle, registry, sender, port));
     workers.insert(tool, join);
 }
 
 /// One run. Sends `Opened` once the session exists, runs the loop, and sends `Done` as its last act.
-fn worker_loop(handle: RunHandle, registry: Arc<dyn ToolRegistry>, supervisor: Sender<Incoming>) {
+fn worker_loop(
+    handle: RunHandle,
+    registry: Arc<dyn ToolRegistry>,
+    supervisor: Sender<Incoming>,
+    port: Arc<dyn GamePort>,
+) {
     let tool = handle.tool;
-    let session: Session = match registry.create(tool) {
+    let session: Session = match registry.create(tool, port) {
         Ok(session) => session,
         Err(line) => {
             let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {

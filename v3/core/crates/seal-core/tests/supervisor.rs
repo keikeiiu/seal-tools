@@ -15,6 +15,7 @@ use seal_core::supervisor::{StartReply, StopReply, Supervisor};
 use seal_domain::decision::{Decision, Key, StopReason};
 use seal_domain::geometry::Point;
 use seal_proto::Event;
+use seal_tools::game::GamePort;
 use seal_tools::runner::{EffectError, Effects, Tool};
 use seal_tools::tool::{ToolId, ToolPhase};
 use serde_json::Value;
@@ -54,6 +55,46 @@ impl Effects for RecordingEffects {
     }
 }
 
+/// A tool that takes the game through the port before its first decision. The first call requests
+/// and BLOCKS until the supervisor grants it; an optional gate releases the game once (the second
+/// decision), simulating a visit boundary.
+struct PortTool {
+    id: ToolId,
+    game: Arc<dyn GamePort>,
+    script: Vec<Decision>,
+    decisions: Arc<Mutex<Vec<ToolId>>>,
+    gate: Option<mpsc::Receiver<()>>,
+    requested: bool,
+    count: usize,
+}
+
+impl Tool for PortTool {
+    fn id(&self) -> ToolId {
+        self.id
+    }
+
+    fn decide(&mut self) -> Decision {
+        if !self.requested {
+            if let Err(line) = self.game.request(self.id) {
+                return Decision::stop(StopReason::error(line));
+            }
+            self.requested = true;
+        }
+        if self.count == 1
+            && let Some(gate) = self.gate.take()
+        {
+            let _ = gate.recv();
+            self.game.release(self.id);
+        }
+        self.decisions.lock().expect("not poisoned").push(self.id);
+        self.count += 1;
+        if self.script.is_empty() {
+            Decision::stop(StopReason::done("script ended"))
+        } else {
+            self.script.remove(0)
+        }
+    }
+}
 /// The injected registry: a script per tool, optional unavailability, an optional opening failure,
 /// and an optional gate that holds the opening phase open so a test can stop a start in flight.
 struct FakeRegistry {
@@ -62,6 +103,11 @@ struct FakeRegistry {
     opening_errors: Mutex<HashMap<ToolId, String>>,
     opening_gate: Mutex<Option<mpsc::Receiver<()>>>,
     opening_started: Mutex<Option<mpsc::Sender<()>>>,
+    /// Tools whose worker should take the game through the port, with the gate that releases it
+    /// once (empty = no gate) and the shared decision log the tests assert on.
+    port_tools: Mutex<Vec<ToolId>>,
+    release_gates: Mutex<HashMap<ToolId, mpsc::Receiver<()>>>,
+    decisions: Arc<Mutex<Vec<ToolId>>>,
 }
 
 impl FakeRegistry {
@@ -72,6 +118,9 @@ impl FakeRegistry {
             opening_errors: Mutex::new(HashMap::new()),
             opening_gate: Mutex::new(None),
             opening_started: Mutex::new(None),
+            port_tools: Mutex::new(Vec::new()),
+            release_gates: Mutex::new(HashMap::new()),
+            decisions: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -105,8 +154,28 @@ impl FakeRegistry {
         *self.opening_gate.lock().expect("not poisoned") = Some(release);
         Arc::clone(self)
     }
-}
 
+    fn with_port_tool(self: &Arc<Self>, tool: ToolId, script: Vec<Decision>) -> Arc<Self> {
+        self.port_tools.lock().expect("not poisoned").push(tool);
+        self.scripts
+            .lock()
+            .expect("not poisoned")
+            .insert(tool, script);
+        Arc::clone(self)
+    }
+
+    fn with_release_gate(self: &Arc<Self>, tool: ToolId, gate: mpsc::Receiver<()>) -> Arc<Self> {
+        self.release_gates
+            .lock()
+            .expect("not poisoned")
+            .insert(tool, gate);
+        Arc::clone(self)
+    }
+
+    fn decisions(&self) -> Vec<ToolId> {
+        self.decisions.lock().expect("not poisoned").clone()
+    }
+}
 impl ToolRegistry for FakeRegistry {
     fn available(&self, tool: ToolId) -> Result<(), Unavailable> {
         if self
@@ -124,7 +193,7 @@ impl ToolRegistry for FakeRegistry {
         Ok(())
     }
 
-    fn create(&self, tool: ToolId) -> Result<Session, String> {
+    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String> {
         if let Some(started) = self.opening_started.lock().expect("not poisoned").take() {
             let _ = started.send(());
         }
@@ -140,8 +209,32 @@ impl ToolRegistry for FakeRegistry {
             .expect("not poisoned")
             .remove(&tool)
             .unwrap_or_default();
+        let is_port_tool = self
+            .port_tools
+            .lock()
+            .expect("not poisoned")
+            .contains(&tool);
+        let gate = self
+            .release_gates
+            .lock()
+            .expect("not poisoned")
+            .remove(&tool);
+        let decisions = Arc::clone(&self.decisions);
+        let tool = if is_port_tool {
+            Box::new(PortTool {
+                id: tool,
+                game,
+                script,
+                decisions,
+                gate,
+                requested: false,
+                count: 0,
+            }) as Box<dyn Tool + Send>
+        } else {
+            Box::new(ScriptedTool { id: tool, script }) as Box<dyn Tool + Send>
+        };
         Ok(Session {
-            tool: Box::new(ScriptedTool { id: tool, script }),
+            tool,
             effects: Box::new(RecordingEffects::default()),
         })
     }
@@ -539,4 +632,191 @@ fn the_supervisor_is_joinable_and_drop_safe() {
         // Dropped without an explicit shutdown: the Drop path must stop the thread, not leak it.
     }
     thread::sleep(Duration::from_millis(10));
+}
+// ── the game hand-over seam ─────────────────────────────────────────────────────────────────
+
+fn wait_until(what: &str, predicate: impl Fn() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while std::time::Instant::now() < deadline {
+        if predicate() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+fn state_for<'a>(event: &'a Event, tool: &str) -> Option<&'a str> {
+    if event.event == "state" && event.data.get("tool").and_then(Value::as_str) == Some(tool) {
+        state_phase(event)
+    } else {
+        None
+    }
+}
+
+#[test]
+fn a_residents_request_waits_for_the_foreground_tool_and_is_granted_after_it_finishes() {
+    let registry = FakeRegistry::new()
+        .with_script(ToolId::Tuner, vec![Decision::wait(30.0)])
+        .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+
+    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    wait_for(&events, "the foreground run starts", |event| {
+        state_for(event, "tuner") == Some("running")
+    });
+
+    // The resident start is armed; its worker blocks in `request` because the tuner holds the game,
+    // so it must not produce a single decision.
+    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    wait_for(&events, "the resident starts", |event| {
+        state_for(event, "pet") == Some("running")
+    });
+    thread::sleep(Duration::from_millis(150));
+    assert!(
+        registry.decisions().is_empty(),
+        "a blocked request must produce no pet decisions: {:?}",
+        registry.decisions()
+    );
+
+    // The tuner leaves; the stashed request is granted from the finish path.
+    assert_eq!(
+        supervisor.stop_tool(Some(ToolId::Tuner)),
+        StopReply::Stopping {
+            tool: ToolId::Tuner
+        }
+    );
+    let seen = until_finished(&events);
+    let finished = seen.last().expect("the tuner finished");
+    assert_eq!(finished.data["tool"], "tuner");
+    assert_eq!(finished.data["reason"], "cancelled");
+    assert!(
+        seen.iter().any(|event| {
+            event.event == "log"
+                && event
+                    .data
+                    .get("line")
+                    .and_then(Value::as_str)
+                    .is_some_and(|line| line.contains("is waiting for the game"))
+        }),
+        "the waiting line is published: {seen:?}"
+    );
+
+    wait_until("the granted resident to decide", || {
+        registry.decisions().contains(&ToolId::Pet)
+    });
+
+    let _ = supervisor.stop_tool(Some(ToolId::Pet));
+    until_finished(&events);
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_blocked_resident_request_produces_zero_decisions() {
+    let registry = FakeRegistry::new()
+        .with_script(ToolId::Tuner, vec![Decision::wait(30.0)])
+        .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+
+    assert_eq!(supervisor.start_tool(ToolId::Tuner), StartReply::Started);
+    wait_for(&events, "the foreground run starts", |event| {
+        state_for(event, "tuner") == Some("running")
+    });
+    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    wait_for(&events, "the resident starts", |event| {
+        state_for(event, "pet") == Some("running")
+    });
+
+    thread::sleep(Duration::from_millis(150));
+    assert!(
+        registry.decisions().is_empty(),
+        "no input may be produced while the request is blocked: {:?}",
+        registry.decisions()
+    );
+
+    // Shutdown while the request is still stashed: the worker is unblocked with a line rather than
+    // left waiting on a dead channel.
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_foreground_start_deferred_behind_the_resident_starts_when_the_resident_releases() {
+    let (release, gate) = mpsc::channel();
+    let registry = FakeRegistry::new()
+        .with_port_tool(ToolId::Pet, vec![Decision::wait(0.0), Decision::wait(30.0)])
+        .with_release_gate(ToolId::Pet, gate)
+        .with_script(ToolId::Tuner, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+
+    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+    wait_for(&events, "the resident starts", |event| {
+        state_for(event, "pet") == Some("running")
+    });
+    wait_until("the resident's first decision", || {
+        registry.decisions().contains(&ToolId::Pet)
+    });
+
+    // A foreground start behind a resident HOLDING the game is deferred, not started.
+    match supervisor.start_tool(ToolId::Tuner) {
+        StartReply::Deferred { line } => {
+            assert!(line.contains("Waiting for the pet feeder"), "{line}");
+        }
+        other => panic!("expected the deferral, got {other:?}"),
+    }
+
+    // Let the resident finish its visit: its second decision releases the game, and the pending
+    // foreground start must actually start from the `StartPending` hand-over.
+    release.send(()).expect("the resident releases");
+    wait_for(&events, "the deferred start to run", |event| {
+        state_for(event, "tuner") == Some("running")
+    });
+
+    let _ = supervisor.stop_tool(Some(ToolId::Tuner));
+    until_finished(&events);
+    let _ = supervisor.stop_tool(Some(ToolId::Pet));
+    until_finished(&events);
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_pet_request_preempts_the_spammer_and_is_granted_after_it_leaves() {
+    let registry = FakeRegistry::new()
+        .with_script(ToolId::Spammer, vec![Decision::wait(30.0)])
+        .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+
+    assert_eq!(supervisor.start_tool(ToolId::Spammer), StartReply::Started);
+    wait_for(&events, "the spammer starts", |event| {
+        state_for(event, "spammer") == Some("running")
+    });
+    assert_eq!(supervisor.start_tool(ToolId::Pet), StartReply::Started);
+
+    // The preempt cancels the spammer; its exit path hands the game to the waiting resident.
+    let seen = until_finished(&events);
+    let finished = seen.last().expect("the spammer finished");
+    assert_eq!(finished.data["tool"], "spammer");
+    assert_eq!(finished.data["reason"], "cancelled");
+    assert!(
+        seen.iter().any(|event| {
+            event.event == "log"
+                && event
+                    .data
+                    .get("line")
+                    .and_then(Value::as_str)
+                    .is_some_and(|line| line.contains("stepped aside for \"pet\""))
+        }),
+        "the stand-down line is published: {seen:?}"
+    );
+
+    wait_until("the granted resident to decide", || {
+        registry.decisions().contains(&ToolId::Pet)
+    });
+
+    let _ = supervisor.stop_tool(Some(ToolId::Pet));
+    until_finished(&events);
+    supervisor.shutdown("test");
 }

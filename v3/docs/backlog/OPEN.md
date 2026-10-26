@@ -38,17 +38,13 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
-- **The supervisor <-> runner hand-over seam is the next core gap** (found by the pet feeder's
-  resident rules). The arbiter already owns `is_resident`, `request_game`/`release_game`,
-  `should_stand_down` and the deferred-start rules, but **no running tool can reach those calls**:
-  `Tool`/`Effects` do not see the arbiter. Consequences in this build: the pet feeder cannot yield
-  the game between visits or re-acquire it, and a resident start plus a foreground start can both be
-  `Started` (the foreground start sees `game == None` because the resident never took it), so two
-  runs could drive input concurrently. The pet's OPENING does not need to wait for the game (its
-  first catalogue click focuses it, v2's rule), so the adapter does not fake a gate. The options are
-  a small `GameLease` handed to `Effects` (tools request/release and a resident yields on its Wait),
-  or supervisor-side arbitration that defers/refuses a foreground start while a resident is engaged;
-  the arbiter tests are the place to pin the chosen rule. This is the next task after the pet lands.
+- **Spammer runner-side stand-down is the one remaining hand-over follow-up.** `GamePort::
+  should_stand_down` exists and the supervisor cancels a PREEMPTED spammer through the arbiter (v2's
+  [YIELD] behaviour, with a defined `"<holder>" stepped aside for "<tool>".` log line — v2 had no
+  player-facing sentence to copy), but the runner loop has no yield hook, so a running spammer is
+  stopped rather than asked to stand down in place. Also recorded: the deferred start's 45 s timeout
+  is a `log` warning because the caller was already answered `Deferred`, which this protocol has no
+  channel to update; and the hand-over's worker-side request is only used by the pet feeder today.
 - **Pet feeder follow-ups, named not hidden** (`seal-core/src/pet.rs`, LANDED with the registry flip).
   Reader-side notes: v2's `IconMatch` is ported as PURE comparison code in the adapter
   (`differing_fraction_images`/`best_offset_score`/`score_cell`/`cells_holding`, unit-tested), not a

@@ -19,6 +19,47 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-27 (20) — every tool has a loop, and the game has one owner
+
+The tool-coverage half of the core plan closed in this stretch: **seven tools live** (spammer,
+holdspace, tuner, quest, sell, gem, pet) and `buy` the one served-but-refused start. The shapes are
+deliberately different because the tools are — the tuner and gem READ (`TunerSource`, `GemSource`),
+the quest and shop are pure plan executors, the pet is the resident reader — and each earned only the
+effect seams it needed: `Enter`/`Place`/`ClickHere`, then `RightClickHere` for the quest,
+`Wheel` for a buy pass, `MoveBy` for the gem's hand-measured tuned counts, and `HoldLeft`/
+`ReleaseLeft` for the pet's drag, with `BoardEffects` releasing a held button on `Drop`. Every seam
+defaults to REFUSING, because the failure class this suite fears most is a plausible-looking wrong
+input.
+
+**Buy is the honest hole.** `ShopPlan::buy` needs the run's item and count, and neither a
+`buy_sell.active` field nor `tool.start` args exist; rather than silently buy preset #1 or invent a
+field, the tool answers v2's own "No buy preset selected." at START and the protocol decision sits in
+OPEN. The sell pass — the irreversible one — validates its whole transaction in `seal-domain` before
+any click: filtered, de-duplicated, highest-index-first, capped.
+
+**The pet feeder was the last and worst loop** (v2's 3,520-line `PetTool.cs`): opening LOOK that *is*
+the schedule, per-visit foreground deferral, reload steps (toggle/verify, place-pet by return slot or
+queue-icon sweep with hover checks, food load by right-click+MAX+Enter or a firmware-2 drag with
+before/after bag verification), `consider_veto`, `fold_back` strikes, four independent card rows. Its
+icon-match arithmetic is ported as PURE v2-named comparisons in the adapter, not a domain API, and
+its two recorded deviations (feeder-count upscale ladder, missing `docs/pet-data.csv`) are in OPEN.
+
+**The last architectural seam: one game, one owner.** The pet work exposed that the arbiter owned
+every resident rule but NO running tool could reach it — so the feeder could not yield between visits
+and two runs could both be `Started`. `seal_tools::game::GamePort` is the capability (`request` blocks
+only its worker, `release`, `should_stand_down`), and the supervisor answers it with the arbiter
+(Waiting stashes the reply so the supervisor never blocks; Preempt cancels the spammer through v2's
+rule; Granted/StartPending satisfy the waiter or start the deferred foreground tool; shutdown unblocks
+stashed requests). The pet asks before its first click in a visit and releases before its long wait.
+Registered: the spammer's runner-side yield hook is the one follow-up, and the deferred start's 45 s
+timeout is a log warning because the caller was already answered `Deferred`.
+
+**Counts:** Rust workspace 73 result lines green (core lib 118), clippy/fmt clean; shell 142/142
+analyze-clean; 140-ish commits on `v3-core`. What remains is live verification against the game and
+the small named follow-ups — not unported code.
+
+---
+
 ## 2026-10-26 (19) — the read-loop tool, the pure executor, and the shell's last faces
 
 Two tools landed after the first two, and they are deliberately different shapes because the tools

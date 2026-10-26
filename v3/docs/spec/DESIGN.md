@@ -118,9 +118,14 @@ the domain's step sequence, and loads food by right-click+MAX+Enter or by a firm
 the game's foreground deferral). Every id in PROTOCOL §9 now has a loop behind it. **Buy** is the one
 served-but-refused start: its pass needs the run's item and count, and neither a `buy_sell.active`
 field nor `tool.start` args exist yet — that protocol decision is named in OPEN and was found by the
-shell's card work rather than invented around. The arbiter's resident/hand-over rules have no
-running-tool seam yet, so the pet feeder cannot yield and re-acquire the game between visits, and two
-runs can currently drive input concurrently — the next core seam task, named in OPEN. The
+shell's card work rather than invented around. The arbiter's resident rules are reachable by a running
+tool through the `seal_tools::game::GamePort` capability: the supervisor owns the one arbiter and
+answers a worker's `request`/`release` commands (a `Waiting` request stashes its reply, so the
+supervisor never blocks; `Granted`/`Preempt` follow v2's rules). The pet feeder asks for the game
+before its first click in a visit and releases it before its long wait, so a foreground start deffers
+behind it (bounded by the supervisor's 45 s pending timeout) and the feeder never drives input behind
+another run. The spammer's own runner-side stand-down (`should_stand_down`) is the recorded
+increment-2 follow-up, not an untracked gap. The
 rest of PROTOCOL §4. The runner also publishes a tool's own card state (`Tool::status`: message,
 countdown, rows) whenever it changes, which is how the tuner's countdown and filter line reach the
 `state` event without a second writer. The rest of PROTOCOL §4

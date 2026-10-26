@@ -19,6 +19,7 @@ use seal_board::transport::Transport;
 use seal_domain::decision::Key;
 use seal_domain::geometry::Point;
 use seal_domain::tools::spammer::SpammerPlan;
+use seal_tools::game::GamePort;
 use seal_tools::runner::{EffectError, Effects, Tool};
 use seal_tools::tool::ToolId;
 use serde_json::Value;
@@ -58,7 +59,9 @@ pub struct Unavailable {
 /// load the OCR models), which is why it is not on the supervisor's thread.
 pub trait ToolRegistry: Send + Sync {
     fn available(&self, tool: ToolId) -> Result<(), Unavailable>;
-    fn create(&self, tool: ToolId) -> Result<Session, String>;
+    /// Build one run. The `game` port is the capability a resident tool uses to ask for the game and
+    /// give it back; tools that take the game by `start` ignore it.
+    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String>;
 }
 
 /// The line every unavailable tool reports. Defined where v3 has no player-facing text yet: the tool
@@ -188,7 +191,7 @@ impl ProductionRegistry {
         })
     }
 
-    fn pet_session(&self) -> Result<Session, String> {
+    fn pet_session(&self, game: Arc<dyn GamePort>) -> Result<Session, String> {
         let config = self.config();
         let root = self
             .store
@@ -213,7 +216,7 @@ impl ProductionRegistry {
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
             .map_err(|error| error.to_string())?;
         let source = PetReadSource::open(&config, &plan, &attributes, firmware_level)?;
-        let tool = PetTool::new(plan, source);
+        let tool = PetTool::new(plan, source, game);
         // The feeder clicks calibrated points, so it needs the display the clicks are measured in.
         let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
         let hwnd = seal_win::window::find_window(&title)
@@ -311,7 +314,7 @@ impl ToolRegistry for ProductionRegistry {
         }
     }
 
-    fn create(&self, tool: ToolId) -> Result<Session, String> {
+    fn create(&self, tool: ToolId, game: Arc<dyn GamePort>) -> Result<Session, String> {
         match tool {
             ToolId::Spammer => self.spammer_session(),
             ToolId::HoldSpace => self.hold_space_session(),
@@ -319,7 +322,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Quest => self.quest_session(),
             ToolId::Sell => self.sell_session(),
             ToolId::Gem => self.gem_session(),
-            ToolId::Pet => self.pet_session(),
+            ToolId::Pet => self.pet_session(game),
             ToolId::Buy => Err(crate::shop::buy_plan(&self.config())
                 .err()
                 .map(|reason| reason.message)
@@ -666,7 +669,7 @@ mod tests {
         // `available` only resolves the plan; the key check is the opening phase's.
         assert_eq!(registry.available(ToolId::Spammer), Ok(()));
         let error = registry
-            .create(ToolId::Spammer)
+            .create(ToolId::Spammer, Arc::new(seal_tools::game::AllowAll))
             .err()
             .expect("a bad key refuses the run");
         assert!(error.contains("'ab'"), "{error}");
