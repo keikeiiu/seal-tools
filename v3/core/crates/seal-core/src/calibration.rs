@@ -35,16 +35,35 @@ pub enum Shape {
     Point,
 }
 
-/// One calibratable mark: its protocol name, its shape, where it lives in `local.yaml`, and the
-/// artifact crop it owns (if any).
+/// Whether a kind is one mark or a NAMED INSTANCE selected by the protocol's `target` (§12.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Targets {
+    None,
+    /// `pet.page_tabs[index]`, wire `ITEM1`..`ITEM3`.
+    PageTab,
+    /// `pet.slots[index].<row_key>`, wire `"1"`..`"4"`.
+    PetRow,
+    /// `gem.grade_positions[<name>]`, wire v2's own names.
+    GemGrade,
+    /// `gem.resource_gems[index]`, wire `"1"`..`"3"`.
+    GemResource,
+}
+
+/// One calibratable mark: its protocol name, its shape, where it lives in `local.yaml`, the artifact
+/// crop it owns (if any), and whether it names one instance of an array/map.
 #[derive(Debug)]
 pub struct KindDef {
     pub name: &'static str,
     pub shape: Shape,
-    /// The path inside `local.yaml`'s owned body, e.g. `["buy_sell", "bag_grid"]`.
+    /// The path inside `local.yaml`'s owned body, e.g. `["buy_sell", "bag_grid"]`; for a targeted kind
+    /// this is the CONTAINER (the array or map) the instance lives in.
     pub path: &'static [&'static str],
     /// The crop artifact's bare file name under `config/`, when the kind has one.
     pub artifact: Option<&'static str>,
+    /// Named-instance selection (`PROTOCOL.md` §12.8); `None` for a single mark.
+    pub targets: Targets,
+    /// For a pet-row mark: the key written on `pet.slots[i]` (`toggle_label` etc.).
+    pub row_key: Option<&'static str>,
 }
 
 /// The kinds this build knows. Adding one is a table row, plus whatever derives from it.
@@ -54,45 +73,146 @@ pub const KINDS: &[KindDef] = &[
         shape: Shape::Rect,
         path: &["buy_sell", "bag_grid"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "bag_slot",
         shape: Shape::Rect,
         path: &["buy_sell", "bag_slot"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "shop_list",
         shape: Shape::Rect,
         path: &["buy_sell", "shop_region"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "scroll_point",
         shape: Shape::Point,
         path: &["buy_sell", "scroll_point"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "max_button",
         shape: Shape::Point,
         path: &["buy_sell", "max_button"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "result_gem_area",
         shape: Shape::Rect,
         path: &["gem", "result_gem_area"],
         artifact: Some("calib_gem_result.png"),
+        targets: Targets::None,
+        row_key: None,
     },
     KindDef {
         name: "spring_point",
         shape: Shape::Point,
         path: &["tuner", "spring_point"],
         artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_menu",
+        shape: Shape::Point,
+        path: &["pet", "menu_button"],
+        artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_feed",
+        shape: Shape::Point,
+        path: &["pet", "feed_icon"],
+        artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_close",
+        shape: Shape::Point,
+        path: &["pet", "close_button"],
+        artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_page_tab",
+        shape: Shape::Point,
+        path: &["pet", "page_tabs"],
+        artifact: None,
+        targets: Targets::PageTab,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_bag_grid",
+        shape: Shape::Rect,
+        path: &["pet", "bag_grid"],
+        artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_bag_slot",
+        shape: Shape::Rect,
+        path: &["pet", "bag_slot"],
+        artifact: None,
+        targets: Targets::None,
+        row_key: None,
+    },
+    KindDef {
+        name: "pet_toggle",
+        shape: Shape::Rect,
+        path: &["pet", "slots"],
+        artifact: None,
+        targets: Targets::PetRow,
+        row_key: Some("toggle_label"),
+    },
+    KindDef {
+        name: "pet_boarding_slot",
+        shape: Shape::Rect,
+        path: &["pet", "slots"],
+        artifact: None,
+        targets: Targets::PetRow,
+        row_key: Some("boarding_pet_slot"),
+    },
+    KindDef {
+        name: "pet_feeder_strip",
+        shape: Shape::Rect,
+        path: &["pet", "slots"],
+        artifact: None,
+        targets: Targets::PetRow,
+        row_key: Some("feeder_strip"),
+    },
+    KindDef {
+        name: "gem_grade",
+        shape: Shape::Point,
+        path: &["gem", "grade_positions"],
+        artifact: None,
+        targets: Targets::GemGrade,
+        row_key: None,
+    },
+    KindDef {
+        name: "gem_resource",
+        shape: Shape::Point,
+        path: &["gem", "resource_gems"],
+        artifact: None,
+        targets: Targets::GemResource,
+        row_key: None,
     },
 ];
-
 /// Kinds this build refuses BY NAME instead of accepting them. `focus_point` is the audit's wrong path
 /// (nothing reads `buy_sell.focus_point`; the live shop reads `scroll_point`), and `tuner_region` is
 /// withdrawn until v2's three-box derivation exists — a single rect wrote a shape the loader could
@@ -162,7 +282,203 @@ fn rect_argument(args: &Value) -> Result<Rect, String> {
     Ok(rect)
 }
 
-/// `result_gem_area`'s empty verdict: REQUIRED for that kind (the crop is the strong empty reference,
+fn allowed_targets(targets: Targets) -> &'static str {
+    match targets {
+        Targets::None => "",
+        Targets::PageTab => "ITEM1, ITEM2, ITEM3",
+        Targets::PetRow => "\"1\", \"2\", \"3\", \"4\"",
+        Targets::GemGrade => "N, G, DG, Register, Combine",
+        Targets::GemResource => "\"1\", \"2\", \"3\"",
+    }
+}
+
+/// One named instance on the wire (`echo`) and the 0-based array index or map key it maps to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Instance {
+    Index(usize),
+    Key(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Target {
+    echo: String,
+    instance: Instance,
+}
+
+fn carried_len(config: &Value, def: &KindDef) -> usize {
+    config
+        .get(def.path[0])
+        .and_then(|block| block.get(def.path[1]))
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len)
+}
+
+/// Parses `target` for one command (`save`/`fetch`), validating it against the instances the config
+/// actually carries. Returns `None` for a non-targeted kind, whose refusals name the field.
+fn target_argument(
+    def: &KindDef,
+    args: &Value,
+    command: &str,
+    config: &Value,
+) -> Result<Option<Target>, String> {
+    if def.targets == Targets::None {
+        if args.get("target").is_some() {
+            return Err(format!(
+                "calibration.{command}'s \"target\" is not accepted by {}",
+                def.name
+            ));
+        }
+        return Ok(None);
+    }
+    let Some(value) = args.get("target") else {
+        return Err(format!(
+            "calibration.{command} for {} needs \"target\" (allowed: {})",
+            def.name,
+            allowed_targets(def.targets)
+        ));
+    };
+    let Some(text) = value.as_str() else {
+        return Err(format!(
+            "calibration.{command}'s \"target\" must be a string (allowed: {})",
+            allowed_targets(def.targets)
+        ));
+    };
+    let unknown = || {
+        format!(
+            "unknown target {text:?} for {} (allowed: {})",
+            def.name,
+            allowed_targets(def.targets)
+        )
+    };
+    let instance = match def.targets {
+        Targets::PageTab => {
+            let index = text
+                .strip_prefix("ITEM")
+                .and_then(|number| number.parse::<usize>().ok())
+                .filter(|index| (1..=3).contains(index))
+                .ok_or_else(unknown)?;
+            let carried = carried_len(config, def);
+            if index > carried {
+                return Err(format!(
+                    "page tab {text} isn't configured (the config carries {carried})"
+                ));
+            }
+            Instance::Index(index - 1)
+        }
+        Targets::PetRow => {
+            let row = text
+                .parse::<usize>()
+                .ok()
+                .filter(|row| (1..=4).contains(row))
+                .ok_or_else(unknown)?;
+            let carried = carried_len(config, def);
+            if row > carried {
+                return Err(format!(
+                    "pet row {row} isn't configured (the config carries {carried})"
+                ));
+            }
+            Instance::Index(row - 1)
+        }
+        Targets::GemGrade => {
+            if !["N", "G", "DG", "Register", "Combine"].contains(&text) {
+                return Err(unknown());
+            }
+            let configured = config
+                .get("gem")
+                .and_then(|gem| gem.get("grade_positions"))
+                .and_then(Value::as_object)
+                .is_some_and(|positions| positions.contains_key(text));
+            if !configured {
+                return Err(format!("gem grade {text:?} isn't configured"));
+            }
+            Instance::Key(text.to_owned())
+        }
+        Targets::GemResource => {
+            let index = text
+                .parse::<usize>()
+                .ok()
+                .filter(|index| (1..=3).contains(index))
+                .ok_or_else(unknown)?;
+            let carried = carried_len(config, def);
+            if index > carried {
+                return Err(format!(
+                    "gem resource {text} isn't configured (the config carries {carried})"
+                ));
+            }
+            Instance::Index(index - 1)
+        }
+        Targets::None => unreachable!("handled above"),
+    };
+    Ok(Some(Target {
+        echo: text.to_owned(),
+        instance,
+    }))
+}
+
+fn instance_container<'a>(root: &'a Value, def: &KindDef) -> Option<&'a Value> {
+    root.get(def.path[0])?.get(def.path[1])
+}
+
+/// The stored mark for one named instance: the array element itself (page tabs, resources), the
+/// map value (gem grades), or the pet row's own key.
+fn instance_mark<'a>(root: &'a Value, def: &KindDef, target: &Target) -> Option<&'a Value> {
+    let container = instance_container(root, def)?;
+    match &target.instance {
+        Instance::Index(index) => {
+            let item = container.as_array()?.get(*index)?;
+            match def.row_key {
+                Some(key) => item.get(key),
+                None => Some(item),
+            }
+        }
+        Instance::Key(key) => container.as_object()?.get(key),
+    }
+}
+
+/// Writes ONE named instance. A pet-row mark inserts only `row_key` on `slots[i]`, so the row's
+/// stacks, crops, `boarding_running` and its other two marks survive; arrays keep their order/length.
+fn set_instance_mark(root: &mut Value, def: &KindDef, target: &Target, value: Value) {
+    if !root.is_object() {
+        *root = json!({});
+    }
+    let root_object = root.as_object_mut().expect("just made an object");
+    let block = root_object.entry(def.path[0]).or_insert_with(|| json!({}));
+    if !block.is_object() {
+        *block = json!({});
+    }
+    let block_object = block.as_object_mut().expect("just made an object");
+    let container = block_object.entry(def.path[1]).or_insert_with(|| json!({}));
+    match &target.instance {
+        Instance::Index(index) => {
+            if !container.is_array() {
+                *container = json!([]);
+            }
+            let array = container.as_array_mut().expect("just made an array");
+            while array.len() <= *index {
+                array.push(Value::Null);
+            }
+            if let Some(key) = def.row_key {
+                if !array[*index].is_object() {
+                    array[*index] = json!({});
+                }
+                if let Some(row) = array[*index].as_object_mut() {
+                    row.insert(key.to_owned(), value);
+                }
+            } else {
+                array[*index] = value;
+            }
+        }
+        Instance::Key(key) => {
+            if !container.is_object() {
+                *container = json!({});
+            }
+            if let Some(map) = container.as_object_mut() {
+                map.insert(key.clone(), value);
+            }
+        }
+    }
+}
+
 /// so the player must say whether the box was empty), meaningless for every other kind.
 fn empty_argument(def: &KindDef, args: &Value) -> Result<Option<bool>, String> {
     let Some(value) = args.get("empty") else {
@@ -275,6 +591,10 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     };
     let empty = match empty_argument(def, args) {
         Ok(empty) => empty,
+        Err(message) => return fail(&request.id, message, json!({"kind": kind_name})),
+    };
+    let target = match target_argument(def, args, "save", &state.config) {
+        Ok(target) => target,
         Err(message) => return fail(&request.id, message, json!({"kind": kind_name})),
     };
     let Some(frame_id) = args.get("frame_id").and_then(Value::as_str) else {
@@ -467,7 +787,11 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         "client_size": [frame_width, frame_height],
     });
     if let Err(error) = state.store.update_local(|local| {
-        set_path(local, def.path, mark_for_write);
+        if let Some(target) = &target {
+            set_instance_mark(local, def, target, mark_for_write);
+        } else {
+            set_path(local, def.path, mark_for_write);
+        }
         if !signature.is_null() {
             set_path(local, &["gem", "empty_signature"], signature.clone());
         }
@@ -497,27 +821,33 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
 
     // The merged view the shell reads stays the merge: apply the same mark to the in-memory config
     // rather than re-reading the files (no dictionary load is involved in a calibration mark).
-    let mut block = json!({});
-    set_path(&mut block, &def.path[1..], mark.clone());
-    if !signature.is_null() {
-        set_path(&mut block, &["empty_signature"], signature.clone());
+    if let Some(target) = &target {
+        // A named instance is mutated in place, so its siblings and the array order survive.
+        set_instance_mark(&mut state.config, def, target, mark.clone());
+    } else {
+        let mut block = json!({});
+        set_path(&mut block, &def.path[1..], mark.clone());
+        if !signature.is_null() {
+            set_path(&mut block, &["empty_signature"], signature.clone());
+        }
+        let mut sections = Map::new();
+        sections.insert(def.path[0].to_owned(), block);
+        state.config = crate::validate::effective_config(&state.config, &sections);
     }
-    let mut sections = Map::new();
-    sections.insert(def.path[0].to_owned(), block);
-    state.config = crate::validate::effective_config(&state.config, &sections);
     state.rev += 1;
     state.queue_config_changed(def.path[0]);
 
-    Response::ok(
-        &request.id,
-        json!({
-            "rev": state.rev,
-            "kind": def.name,
-            "mark": mark,
-            "derived": derived,
-            "artifact": artifact,
-        }),
-    )
+    let mut result = json!({
+        "rev": state.rev,
+        "kind": def.name,
+        "mark": mark,
+        "derived": derived,
+        "artifact": artifact,
+    });
+    if let Some(target) = &target {
+        result["target"] = json!(target.echo);
+    }
+    Response::ok(&request.id, result)
 }
 
 /// Run `calibration.fetch`: the stored mark and, when the kind has one, the stored crop.
@@ -543,11 +873,20 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
             json!({"kinds": supported()}),
         );
     };
+    let target = match target_argument(def, &request.args, "fetch", &state.config) {
+        Ok(target) => target,
+        Err(message) => return fail(&request.id, message, json!({"kind": kind_name})),
+    };
     let local = match state.store.load_local() {
         Ok(local) => local,
         Err(error) => return io_fail(&request.id, error.to_string()),
     };
-    let mark = get_path(&local, def.path).cloned().unwrap_or(Value::Null);
+    let mark = match &target {
+        Some(target) => instance_mark(&local, def, target)
+            .cloned()
+            .unwrap_or(Value::Null),
+        None => get_path(&local, def.path).cloned().unwrap_or(Value::Null),
+    };
     let artifact = match def.artifact {
         Some(name) => {
             let path = state.store.path_of(name);
@@ -570,15 +909,16 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
         }
         None => Value::Null,
     };
-    Response::ok(
-        &request.id,
-        json!({
-            "kind": def.name,
-            "mark": mark,
-            "artifact": artifact,
-            "rev": state.rev,
-        }),
-    )
+    let mut result = json!({
+        "kind": def.name,
+        "mark": mark,
+        "artifact": artifact,
+        "rev": state.rev,
+    });
+    if let Some(target) = &target {
+        result["target"] = json!(target.echo);
+    }
+    Response::ok(&request.id, result)
 }
 
 #[cfg(test)]

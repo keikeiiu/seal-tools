@@ -5,7 +5,7 @@ mod common;
 
 use common::TestDir;
 use seal_core::dispatch::{CoreState, handle};
-use seal_proto::Request;
+use seal_proto::{Error, Request};
 use serde_json::{Value, json};
 
 /// A fresh root with the `config/` directory the store writes into.
@@ -649,4 +649,456 @@ fn empty_false_samples_the_signature_and_writes_no_crop() {
         state.config["gem"]["result_gem_area"] == json!([0, 0, 2, 2]),
         "the area is written even when the crop is not"
     );
+}
+
+// ── named-instance marks (`PROTOCOL.md` §12.8) ──────────────────────────────────────────────
+
+/// A merged view + local file carrying four pet rows, three page tabs and every gem point, so a
+/// targeted write can prove it preserved the instance's siblings and the array order.
+fn targeted_state() -> (TestDir, CoreState, String) {
+    let dir = root();
+    let mut state = CoreState::new(dir.path().to_path_buf());
+    handle(&mut state, hello_request());
+    let local = json!({
+        "pet": {
+            "menu_button": [10, 10],
+            "feed_icon": [20, 20],
+            "close_button": [30, 30],
+            "page_tabs": [[1, 1], [2, 2], [3, 3]],
+            "bag_grid": [0, 0, 400, 400],
+            "bag_slot": [0, 0, 40, 40],
+            "slots": [
+                {
+                    "toggle_label": [100, 100, 20, 20],
+                    "boarding_pet_slot": [200, 200, 30, 40],
+                    "feeder_strip": [300, 300, 100, 20],
+                    "stacks": 2,
+                    "pet_slot_empty_png": "ROW1CROP",
+                    "boarding_running": true
+                },
+                {
+                    "toggle_label": [110, 110, 20, 20],
+                    "boarding_pet_slot": [210, 210, 30, 40],
+                    "feeder_strip": [310, 310, 100, 20],
+                    "stacks": 5,
+                    "pet_slot_empty_png": "ROW2CROP",
+                    "boarding_running": false
+                },
+                {
+                    "toggle_label": [120, 120, 20, 20],
+                    "boarding_pet_slot": [220, 220, 30, 40],
+                    "feeder_strip": [320, 320, 100, 20],
+                    "stacks": 2,
+                    "pet_slot_empty_png": "ROW3CROP",
+                    "boarding_running": true
+                },
+                {
+                    "toggle_label": [130, 130, 20, 20],
+                    "boarding_pet_slot": [230, 230, 30, 40],
+                    "stacks": 5,
+                    "pet_slot_empty_png": "ROW4CROP",
+                    "boarding_running": false
+                }
+            ]
+        },
+        "gem": {
+            "grade_positions": {
+                "N": [10, 10],
+                "G": [20, 20],
+                "DG": [30, 30],
+                "Register": [40, 40],
+                "Combine": [50, 50]
+            },
+            "resource_gems": [[60, 60], [70, 70], [80, 80]]
+        }
+    });
+    dir.write(
+        "config/local.yaml",
+        &serde_json::to_string(&local).expect("the fixture serialises"),
+    );
+    state.config = local;
+    let frame_id = state.frames.insert(json!({
+        "format": "png",
+        "width": 800,
+        "height": 600,
+        "origin": {"x": 0, "y": 0},
+        "data": "",
+    }));
+    (dir, state, frame_id)
+}
+
+fn save(state: &mut CoreState, frame_id: &str, body: Value) -> Value {
+    let mut body = body;
+    body["frame_id"] = json!(frame_id);
+    let response = handle(state, Request::new("save", "calibration.save", body));
+    assert!(response.ok, "save failed: {:?}", response.error);
+    response.result.expect("save carries a result")
+}
+
+fn save_error(state: &mut CoreState, frame_id: &str, body: Value) -> Error {
+    let mut body = body;
+    body["frame_id"] = json!(frame_id);
+    let response = handle(state, Request::new("save", "calibration.save", body));
+    assert!(!response.ok, "expected a refusal: {response:?}");
+    response.error.expect("a refusal")
+}
+
+fn fetch(state: &mut CoreState, body: Value) -> Value {
+    let response = handle(state, Request::new("fetch", "calibration.fetch", body));
+    assert!(response.ok, "fetch failed: {:?}", response.error);
+    response.result.expect("fetch carries a result")
+}
+
+fn fetch_error(state: &mut CoreState, body: Value) -> Error {
+    let response = handle(state, Request::new("fetch", "calibration.fetch", body));
+    assert!(!response.ok, "expected a fetch refusal: {response:?}");
+    response.error.expect("a refusal")
+}
+
+#[test]
+fn pet_point_and_bag_marks_round_trip_their_own_paths() {
+    let (_dir, mut state, frame_id) = targeted_state();
+
+    for (kind, point, path) in [
+        ("pet_menu", [11, 12], "pet.menu_button"),
+        ("pet_feed", [21, 22], "pet.feed_icon"),
+        ("pet_close", [31, 32], "pet.close_button"),
+    ] {
+        let result = save(
+            &mut state,
+            &frame_id,
+            json!({"kind": kind, "point": {"x": point[0], "y": point[1]}}),
+        );
+        assert_eq!(result["kind"], kind);
+        assert_eq!(result["mark"], json!(point));
+        assert!(result["target"].is_null(), "{kind} takes no target");
+        let fetched = fetch(&mut state, json!({"kind": kind}));
+        assert_eq!(fetched["mark"], json!(point));
+        assert_eq!(fetched["target"], Value::Null);
+        let local = state.store.load_local().expect("local reads");
+        assert_eq!(
+            path.split_once('.')
+                .map(|(block, key)| local[block][key].clone())
+                .expect("a two-part path"),
+            json!(point),
+            "the YAML path {path}"
+        );
+    }
+
+    for (kind, rect, block_key) in [
+        ("pet_bag_grid", [0, 0, 400, 400], "bag_grid"),
+        ("pet_bag_slot", [0, 0, 40, 40], "bag_slot"),
+    ] {
+        let result = save(
+            &mut state,
+            &frame_id,
+            json!({"kind": kind, "region": {"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]}}),
+        );
+        assert_eq!(result["mark"], json!(rect));
+        let fetched = fetch(&mut state, json!({"kind": kind}));
+        assert_eq!(fetched["mark"], json!(rect));
+        let local = state.store.load_local().expect("local reads");
+        assert_eq!(
+            local["pet"][block_key],
+            json!(rect),
+            "pet's own {block_key}"
+        );
+        assert!(
+            local
+                .get("buy_sell")
+                .and_then(|b| b.get(block_key))
+                .is_none(),
+            "the pet bag is not the shop's bag"
+        );
+    }
+}
+
+#[test]
+fn pet_page_tab_targets_are_one_based_names_and_refuse_unconfigured_tabs() {
+    let (_dir, mut state, frame_id) = targeted_state();
+
+    let result = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_page_tab", "target": "ITEM2", "point": {"x": 222, "y": 333}}),
+    );
+    assert_eq!(result["target"], "ITEM2");
+    assert_eq!(result["mark"], json!([222, 333]));
+
+    let local = state.store.load_local().expect("local reads");
+    assert_eq!(local["pet"]["page_tabs"][0], json!([1, 1]));
+    assert_eq!(local["pet"]["page_tabs"][1], json!([222, 333]));
+    assert_eq!(local["pet"]["page_tabs"][2], json!([3, 3]));
+    assert_eq!(state.config["pet"]["page_tabs"][1], json!([222, 333]));
+
+    let fetched = fetch(
+        &mut state,
+        json!({"kind": "pet_page_tab", "target": "ITEM2"}),
+    );
+    assert_eq!(fetched["target"], "ITEM2");
+    assert_eq!(fetched["mark"], json!([222, 333]));
+    state.config["pet"]["page_tabs"] = json!([[1, 1], [2, 2]]);
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_page_tab", "target": "ITEM3", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("page tab ITEM3 isn't configured"),
+        "{}",
+        error.message
+    );
+
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_page_tab", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(error.message.contains("target") && error.message.contains("pet_page_tab"));
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_page_tab", "target": "ITEM4", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("ITEM1, ITEM2, ITEM3"),
+        "{}",
+        error.message
+    );
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_page_tab", "target": "TAB1", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("ITEM1, ITEM2, ITEM3"),
+        "an unknown target names the allowed values: {}",
+        error.message
+    );
+}
+
+#[test]
+fn pet_row_marks_write_their_own_key_and_preserve_the_row() {
+    let (_dir, mut state, frame_id) = targeted_state();
+
+    // Three different marks on the same row, each a different key.
+    let toggle = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_toggle", "target": "2", "region": {"x": 111, "y": 112, "w": 21, "h": 22}}),
+    );
+    assert_eq!(toggle["target"], "2");
+    assert_eq!(toggle["mark"], json!([111, 112, 21, 22]));
+    let boarding = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_boarding_slot", "target": "2", "region": {"x": 211, "y": 212, "w": 31, "h": 42}}),
+    );
+    let strip = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_feeder_strip", "target": "2", "region": {"x": 311, "y": 312, "w": 101, "h": 22}}),
+    );
+    assert_eq!(boarding["target"], "2");
+    assert_eq!(strip["target"], "2");
+
+    let local = state.store.load_local().expect("local reads");
+    let row = &local["pet"]["slots"][1];
+    assert_eq!(row["toggle_label"], json!([111, 112, 21, 22]));
+    assert_eq!(row["boarding_pet_slot"], json!([211, 212, 31, 42]));
+    assert_eq!(row["feeder_strip"], json!([311, 312, 101, 22]));
+    assert_eq!(row["stacks"], 5, "the row's stacks survive");
+    assert_eq!(
+        row["pet_slot_empty_png"], "ROW2CROP",
+        "the row's crop survives"
+    );
+    assert_eq!(
+        row["boarding_running"], false,
+        "the row's run state survives"
+    );
+    assert_eq!(
+        local["pet"]["slots"].as_array().map(Vec::len),
+        Some(4),
+        "the array length and order are untouched"
+    );
+    // The rows before and after are exactly the fixture's.
+    assert_eq!(local["pet"]["slots"][0]["stacks"], 2);
+    assert_eq!(local["pet"]["slots"][2]["stacks"], 2);
+    assert_eq!(local["pet"]["slots"][3]["stacks"], 5);
+    assert_eq!(state.config["pet"]["slots"][1]["stacks"], 5);
+    assert_eq!(
+        state.config["pet"]["slots"][1]["pet_slot_empty_png"],
+        "ROW2CROP"
+    );
+
+    // Every mark fetches back by its target, and the untouched row 4 is null.
+    for (kind, mark) in [
+        ("pet_toggle", json!([111, 112, 21, 22])),
+        ("pet_boarding_slot", json!([211, 212, 31, 42])),
+        ("pet_feeder_strip", json!([311, 312, 101, 22])),
+    ] {
+        let fetched = fetch(&mut state, json!({"kind": kind, "target": "2"}));
+        assert_eq!(fetched["mark"], mark, "{kind}");
+        assert_eq!(fetched["target"], "2");
+    }
+    let untouched = fetch(
+        &mut state,
+        json!({"kind": "pet_feeder_strip", "target": "4"}),
+    );
+    assert_eq!(untouched["mark"], Value::Null, "not calibrated yet");
+
+    state.config["pet"]["slots"]
+        .as_array_mut()
+        .expect("slots")
+        .truncate(3);
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_toggle", "target": "4", "region": {"x": 1, "y": 1, "w": 2, "h": 2}}),
+    );
+    assert!(
+        error.message.contains("pet row 4 isn't configured"),
+        "{}",
+        error.message
+    );
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_toggle", "target": "0", "region": {"x": 1, "y": 1, "w": 2, "h": 2}}),
+    );
+    assert!(
+        error.message.contains("\"1\", \"2\", \"3\", \"4\""),
+        "an unknown row names the allowed values: {}",
+        error.message
+    );
+}
+
+#[test]
+fn gem_grade_and_resource_targets_map_names_and_numbers_to_the_arrays() {
+    let (_dir, mut state, frame_id) = targeted_state();
+
+    let grade = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "gem_grade", "target": "DG", "point": {"x": 33, "y": 44}}),
+    );
+    assert_eq!(grade["target"], "DG");
+    assert_eq!(grade["mark"], json!([33, 44]));
+    let resource = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "gem_resource", "target": "2", "point": {"x": 77, "y": 88}}),
+    );
+    assert_eq!(resource["target"], "2");
+
+    let local = state.store.load_local().expect("local reads");
+    assert_eq!(local["gem"]["grade_positions"]["DG"], json!([33, 44]));
+    assert_eq!(local["gem"]["grade_positions"]["N"], json!([10, 10]));
+    assert_eq!(local["gem"]["resource_gems"][0], json!([60, 60]));
+    assert_eq!(local["gem"]["resource_gems"][1], json!([77, 88]));
+    assert_eq!(local["gem"]["resource_gems"][2], json!([80, 80]));
+    assert_eq!(
+        state.config["gem"]["grade_positions"]["DG"],
+        json!([33, 44])
+    );
+
+    for (kind, target) in [("gem_grade", "DG"), ("gem_resource", "2")] {
+        let fetched = fetch(&mut state, json!({"kind": kind, "target": target}));
+        assert_eq!(fetched["target"], target);
+        assert!(fetched["mark"].is_array(), "{kind}");
+    }
+
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "gem_grade", "target": "SG", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("N, G, DG, Register, Combine"),
+        "{}",
+        error.message
+    );
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "gem_resource", "target": "4", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("\"1\", \"2\", \"3\""),
+        "{}",
+        error.message
+    );
+    state.config["gem"]["resource_gems"] = json!([[60, 60], [70, 70]]);
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "gem_resource", "target": "3", "point": {"x": 1, "y": 1}}),
+    );
+    assert!(
+        error.message.contains("gem resource 3 isn't configured"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn the_target_field_rules_are_pinned() {
+    let (_dir, mut state, frame_id) = targeted_state();
+
+    // A targeted kind refuses a save/fetch without one, naming the field and the kind.
+    for error in [
+        save_error(
+            &mut state,
+            &frame_id,
+            json!({"kind": "pet_toggle", "region": {"x": 1, "y": 1, "w": 2, "h": 2}}),
+        ),
+        fetch_error(&mut state, json!({"kind": "gem_grade"})),
+    ] {
+        assert!(
+            error.message.contains("target") && error.message.contains("\"target\""),
+            "{}",
+            error.message
+        );
+    }
+
+    // A non-targeted kind refuses a target, naming the field.
+    for error in [
+        save_error(
+            &mut state,
+            &frame_id,
+            json!({"kind": "scroll_point", "point": {"x": 1, "y": 2}, "target": "1"}),
+        ),
+        fetch_error(&mut state, json!({"kind": "bag_grid", "target": "1"})),
+    ] {
+        assert!(
+            error.message.contains("target") && error.message.contains("not accepted"),
+            "{}",
+            error.message
+        );
+    }
+
+    // A target that is the wrong JSON type is refused as a string field.
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({"kind": "pet_toggle", "target": 2, "region": {"x": 1, "y": 1, "w": 2, "h": 2}}),
+    );
+    assert!(
+        error.message.contains("must be a string"),
+        "{}",
+        error.message
+    );
+
+    // The supported list carries the new kinds.
+    let error = save_error(&mut state, &frame_id, json!({"kind": "nope"}));
+    let kinds = error.detail["kinds"].as_array().expect("the list travels");
+    for kind in [
+        "pet_menu",
+        "pet_page_tab",
+        "pet_toggle",
+        "gem_grade",
+        "gem_resource",
+    ] {
+        assert!(kinds.iter().any(|value| value == kind), "missing {kind}");
+    }
 }
