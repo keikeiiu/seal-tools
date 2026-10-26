@@ -261,3 +261,38 @@ other crate totals in §5 are unchanged except `seal-core`, which grew on the da
   runtime choice are the next gate.
 - **The shell exists** (`15ee238`) and its protocol client is in progress; `PLAN-V3-SHELL.md` is the
   map and `v3/docs/plans/README.md` is its status.
+
+---
+
+## 9. Update 4 — the commands, the tools, and the shell (milestone-level)
+
+This is no longer an audit snapshot with open gaps in the ordinary sense: every command
+`PROTOCOL.md` §4 lists is implemented (there is no spec-only command left), and the gap list below is
+about LIVE VERIFICATION and the two loops, not about unported code.
+
+- **Six tools live** (`tool.start` executes a run): spammer (`de016c1`), holdspace (`3004cb2`),
+  tuner — the first read-loop (`39ed221`) — quest (`b261b45`), sell (`14cf341`) and gem (`faa80c3`,
+  the second reader, which also populates `state.rows`). `buy` is served but refuses at start with
+  the domain's "No buy preset selected." because the protocol carries no per-run item/count (OPEN);
+  `pet` is the one remaining unported loop (task-41, in flight).
+- **The effect vocabulary is complete and refusal-fenced**: `Place`, `ClickHere`, `RightClickHere`,
+  `Enter`, `Wheel`, `MoveBy`, `HoldLeft`/`ReleaseLeft` and `Wait`, each with a default that refuses
+  rather than approximating, and `BoardEffects` releasing a held button on `Drop`.
+- **The runner publishes a tool's own card state** (`Tool::status`, `7a1d63d`), so `state.message` /
+  `countdown_s` / `rows` are produced by live tools rather than only specified.
+- **The calibrator flow landed** (`ab22a0a`): `calibration.save`/`fetch`, the seven-kind mark table,
+  the binary artifact writer and the first crop artifacts; **G1's remaining item is live verification
+  against the game** (the reader tools now exist to exercise it).
+- **G3 (`seal-ocr`) is no longer a gap**: the pipeline is assembled and proven on v2's real captures
+  (10/10 captures, 508 items, `OCR-RESEARCH.md`). The outstanding OCR work is the player's raw-crop
+  corpus (§13.10) for parity beyond that corpus.
+- **G8 (service/logging glue) is partly closed**: one event writer, the supervisor and `Tool::status`
+  exist; what v2 had and v3 does not is its per-run FILE log (`FileLogger`) — the artifact/logging
+  writer that `gem.save_empty_captures` also waits on.
+- **The shell is feature-complete against its plan** (12 tabs, `62ffc4d`; 142 Dart tests): the
+  remaining shell items are the two named protocol decisions (buy per-run choice, mini-mode geometry)
+  and the pet geometry panels (blocked on the pet marks being calibrated).
+- **Counts at this update:** Rust workspace 73 result lines all green (core lib 84), clippy `-D
+  warnings` clean, fmt clean; Flutter 142/142 analyze-clean. A live smoke has STARTED a real gem run
+  (board + window present on the dev machine) and stopped it cleanly; a full transaction has still
+  not been watched.

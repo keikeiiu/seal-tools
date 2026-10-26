@@ -11,7 +11,7 @@ ships, its durable reasoning graduates into `../spec/` and its row here goes awa
 
 | plan | state |
 |---|---|
-| [PLAN-V3-SHELL.md](PLAN-V3-SHELL.md) | **scaffold landed** (`15ee238`): both installs done (Flutter stable 3.47.8 at `C:\src\flutter`; VS Build Tools 2022 + SDK 10.0.26100), `flutter doctor` clean for Windows, generated app + the three Dart gates passing. Next: the hand-written protocol client (`task-25`), the board OS adapter (`task-26`), then the UI surfaces; the five ⚑ player questions are still open. |
+| [PLAN-V3-SHELL.md](PLAN-V3-SHELL.md) | **all PLAN §6 surfaces landed** (`62ffc4d`, 129→134 commits): the hand-written protocol client, 12 tabs (Cards + all config tabs + Pet/Attributes/Arduino/Setup/Hotkeys/Calibrate), the config-draft machinery with keep-alive and external-change guards, the calibrate frame/mark/gesture surface, live card status with the shared countdown ticker, and card extras. Gates: `flutter analyze` No issues, `flutter test` 142/142, format clean. Remaining shell work is blocked on core readers (shop buy needs its protocol choice; pet rows need the pet loop) or on the mini-mode geometry decision; the five ⚑ player questions are still open (they shape polish, not function). |
 
 The v3 **core** plan is not here: it is [v2's PLAN-V3-CORE.md](../../../v2/docs/plans/PLAN-V3-CORE.md),
 and its status stays on [v2's board](../../../v2/docs/plans/README.md). One plan, one status row.
