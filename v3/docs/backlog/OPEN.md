@@ -1,179 +1,69 @@
-# v3 — open work outside the pure crates
+# v3 — open work
 
-What the pure crates deliberately do not do, and where each piece lands. Ported from the
-`seal-tools` runner hand-over (2026-10-25), the `seal-tools` arbiter/runner work, and the still-open
-lists in [CONFIG.md](../spec/CONFIG.md) §5 and [PROTOCOL.md](../spec/PROTOCOL.md) §11. Like v2's
-backlog, this is work that has been decided or named — not ideas.
+What is genuinely not done in v3, and where it lands. Like v2's backlog, this is decided or named
+work — not ideas. **Nothing gets an entry just because it is hard; when a thing ships it leaves this
+file** and its reasoning graduates into `spec/` (dated history lives in `records/PROGRESS.md`). The
+cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 
-## 1. Lifecycle, to land in `seal-core` (the supervisor)
+## 1. Needs a player measurement or the game
 
-The pure crate ends at the seam; these are the v2 behaviours it deliberately does not own.
+- **Live verification per stage.** The repo's rule: a tool is done when it has run in the game, not
+  when it compiles. No card has yet been watched end-to-end against the game in v3, and no calibrator
+  pass has been taken from the shell UI. This needs the player and the game (PLAN §8).
+- **Global hotkeys — do not build until measured** (PLAN §6.5). The core never owns the foreground
+  window, so whether a core-side `GetAsyncKeyState` poller works in game is an open measurement; the
+  decision decides between core-side polling and shell-side commands. **v3.0 ships without a global
+  poller and says so** — Stop and the shell's buttons always work. This is why there is no pause
+  semantics either (v2's `PauseRequested`/`IgnoresQuitHotkey` rules become relevant only with the
+  poller).
+- **OCR parity recordings** (PLAN §13.10): the archived corpus covers the tuner's full-region path
+  only; the feeder-count and pet-panel reads need raw crops recorded from a live session, per read
+  path.
 
-| # | behaviour | where | proves it |
-|---|---|---|---|
-| 1 | **Start-in-flight / opening phase.** v2 swallowed a second Start during the async 2 s board open and could cancel a start in flight (`_startInProgress`, `_startCancelled`, `StartingId`). v3's arbiter starts synchronously, so the core needs an `opening` phase: a second `tool.start` gets `tool_busy`, and a cancelled startup calls `arbiter.finished` with a cancelled reason. | **LANDED** (`b95efc9`; `supervisor.rs`) | protocol e2e with a slow fake board open: second start refused, cancelled startup ends `cancelled`, no slot leak |
-| 2 | **Quit hotkey policy.** v2's `IgnoresQuitHotkey`: a quit press stops the FOREGROUND tool only, never the resident feeder (one press must not end a four-pet schedule). The rule lives where the token is cancelled. | core input loop | arbiter/core test: quit with pet armed stops the foreground, pet stays armed |
-| 3 | **Pause vs quit.** v2's `PauseRequested` gave the spammer a graceful pause; v3 models stop/cancel only. If the pause is kept, it needs a decision and a command before any implementation. | protocol decision | — |
-| 4 | **45 s pet-reload wait timeout.** The machine models `Deferred` and its timeout line; the constant and the timer belong to the supervisor. | core supervisor | timeout test proves the line and the pending release |
-| 5 | **Tool-side waiting strings.** Pet's "`<row>` is due — waiting for {owner} (N min of food left)" / out-of-food, and the spammer's "paused — {waiter} has the game": card strings built by the tool halves from `game_owner()`/`waiting()`. | seam between core and domain | a run where the game is held produces those card lines |
-| 6 | **`StopAll(keep: resident)` has no counterpart.** v3 refuses a second start (`tool_busy`) instead of auto-stopping, so shutdown's `stop_all` stops everything. Deliberate divergence, per PROTOCOL §4/§6. | — | recorded here and in the arbiter docs; no implementation |
-| 7 | **`ToolId::ALL` is the one accept-and-dispatch list.** v2's defect was a second hand-kept whitelist; the core must use this list for both. | **LANDED** (`dispatch.rs` parses through `ToolId::parse`; `tests/tools.rs`) | a test that every `ToolId` is startable and that no other id is |
-| 8 | **`ReleaseHeld` on stop paths.** Replaced by the `HeldInput` RAII guard; a stop path must never call the board itself. | — | held-input tests already cover the guard; core review |
-| 9 | **`IsStopping` semantics.** v3 keeps the slot until `finished` instead of deregistering plus a separate stopping set; same observable rule (nothing starts, card says Stopping), simpler state. | — | arbiter tests already pin it |
+## 2. Named code follow-ups (built around, not hidden)
 
-## 2. Protocol shape to settle
+- **Spammer runner-side stand-down.** `GamePort::should_stand_down` exists and the supervisor cancels
+  a PREEMPTED spammer through the arbiter (v2's [YIELD] behaviour); the runner loop has no yield hook,
+  so a running spammer is stopped rather than asked to step aside in place. The deferred start's 45 s
+  timeout is a `log` warning because the caller was already answered `Deferred` (this protocol has no
+  channel to update it).
+- **Single-instance cross-process lock.** The save gate is in-process; two cores on one root can
+  interleave (PROTOCOL §1's lock is specified, not built).
+- **OCR no-retry gap.** v3's pipeline scans ONCE; `tuner.ocr_retries` exists in config but is unused,
+  so v2's last-retry forced capture and its `refused:` diagnostics branch are not implemented
+  (`ocr_errors.jsonl` records a completed-but-unconfirmed scan instead). The grade colour fallback and
+  the `remaining`-band read (v2's) are also unported: `remaining` is null and the grade comes from the
+  line only.
+- **Pet feeder reader follow-ups.** v2's feeder-count 3x/9x/24x upscale ladder is not ported
+  (`scan_rgba` has no upscale parameter; one pass per slot plus the v2 warm-colour verdict). There is
+  no close-button "window already open" probe and no food-cell re-mark from the bag scan
+  (`cells_holding` is ported; the configured food list is used until exhausted). `ToolStatus` has no
+  schedule field, so the schedule line travels in the rows' `next_action_in_seconds`.
+- **Tuner wording.** The guard's recentre path surfaces a failed placement as the effects' own line
+  rather than v2's composed "cursor wouldn't re-centre — <detail>" (the runner performs effects; the
+  tool cannot see their failure).
+- **Clock trait duplication.** `seal-tools::clock::Clock` and `seal-board::clock::Clock` are the same
+  one-method seconds-only trait (seal-board does not depend on seal-tools); move it to `seal-domain`
+  when convenient. The seconds-only unit is deliberate (the eleven-minute-sleep incident).
 
-- **`state`'s `phase`** — CLOSED: PROTOCOL §5 states that `phase` is the lifecycle
-  (`idle`/`starting`/`running`/`stopping`) and that a tool sub-phase, if one is ever needed, travels
-  in `message`/`rows`; the examples use `running`.
-- **`state`'s `rows` inner shape** — CLOSED: PROTOCOL §5 now pins the four fields
-  (`name`/`status`/`detail`/`next_action_in_seconds`) from `seal-tools::ToolRow`, maps them 1:1 to
-  v2's `ToolRowState`, states that seconds are relative to the publish, and pins the empty-list rule;
-  `event.state` and `event.state.empty` are the fixtures (50 in total).
-- **Event-writer shutdown.** The single writer stops when the last event-bus sender is dropped, so
-  the binary must join the tool supervisor — the other bus holder — before finishing the writer;
-  otherwise the process can hang on a sender that outlives the loop. Implemented: `main.rs` joins the
-  supervisor before `writer.finish()`, covered by the shutdown e2e.
-- **Hotkey typed-name validation.** LANDED as `keys.parse`/`keys.names` (PROTOCOL §4/§12.5): the
-  domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
-  Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
-  refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
-- **File logs (G8) are CLOSED; one named follow-up remains.** `seal-core/src/logs.rs`
-  writes v2's per-run files under `<root>/logs/`: the OCR's `ocr_log.jsonl` /
-  `ocr_errors.jsonl` per scan, optional `captures/*.png` (with the relative `capture_path` the
-  protocol already specified), `error.log` in v2's `yyyy-MM-dd HH:mm:ss:` shape for internal errors
-  and tool opening failures (ordinary refusals deliberately excluded), `holdspace.log`'s own
-  diagnostic prefix — including a failed `U` release from `Drop`, with the domain's once-unused
-  `release_failed()` line — and one `<tool>.log` per run (start line, each CHANGED tool status
-  message, and the final reason as `finished — …` / `stopped — …` / `failed — …`).
-  `gem.save_empty_captures` writes its live crop as `logs/captures/empty_check_crop_<HHmmss_fff>.png`
-  with a `gem.log` detail line (v2 kept that line in a separate `empty_check.txt`; the detail lives in
-  the tool log here). The local wall clock moved to `seal-win/clock.rs`, so `seal-core` has no
-  `unsafe` left. Remaining follow-up: v3's pipeline scans ONCE with no retry loop
-  (`tuner.ocr_retries` exists in config but is unused), so v2's last-retry forced capture and its
-  `refused:` diagnostics branch are not implemented — `ocr_errors.jsonl` records a completed but
-  unconfirmed scan. Logging never fails a command or a run (v2's rule, in the module doc).
-- **Spammer runner-side stand-down is the one remaining hand-over follow-up.** `GamePort::
-  should_stand_down` exists and the supervisor cancels a PREEMPTED spammer through the arbiter (v2's
-  [YIELD] behaviour, with a defined `"<holder>" stepped aside for "<tool>".` log line — v2 had no
-  player-facing sentence to copy), but the runner loop has no yield hook, so a running spammer is
-  stopped rather than asked to stand down in place. Also recorded: the deferred start's 45 s timeout
-  is a `log` warning because the caller was already answered `Deferred`, which this protocol has no
-  channel to update; and the hand-over's worker-side request is only used by the pet feeder today.
-- **Pet feeder follow-ups, named not hidden** (`seal-core/src/pet.rs`, LANDED with the registry flip).
-  Reader-side notes: v2's `IconMatch` is ported as PURE comparison code in the adapter
-  (`differing_fraction_images`/`best_offset_score`/`score_cell`/`cells_holding`, unit-tested), not a
-  domain API — measurement arithmetic like the gem crop comparison, not a decision. v2's feeder-count
-  3x/9x/24x upscale ladder remains a follow-up (`scan_rgba` has no upscale parameter; one pass per
-  slot plus the v2 warm-colour verdict; the `Option<i32>` seam contract is unchanged). The feeding
-  table v2 read from `<root>/docs/pet-data.csv` is not shipped in v3's root, so computed pet-minutes
-  are unavailable until that file is copied (a docs-packaging decision); the schedule itself still
-  comes from the time line/counts/configured cycle. There is no close-button "window already open"
-  probe and no food-cell re-mark from the bag scan (`cells_holding` is ported but the configured food
-  list is used until exhausted). `ToolStatus` has no schedule field, so the schedule line is carried
-  by the rows' `next_action_in_seconds` and the message is the last action.
-- **Gem composer follow-ups, named not hidden.** `gem.save_empty_captures` is resolved into the plan
-  but nothing is written (it waits for the core's logging/artifact writer and a PNG encode outside the
-  run loop); the F9 advance-grade hotkey exists only as `advance_grade_by_hand()` because there is no
-  hotkey poller in the runner (the supervisor does not read `GetAsyncKeyState` today); and a live run
-  has been STARTED (board + window present, phase running with tally rows, stopped cleanly after one
-  smoke) but a full transaction has not been watched against the game. The empty-read failure
-  divergence (v3 stops, v2 failed open) is recorded in the core README's divergence list.
-- **Tool-published message/rows surface.** LANDED as `Tool::status()`: the runner publishes the
-  tool's own `message`/`countdown_s`/`rows` whenever they change, BEFORE performing the decision they
-  belong to (so a countdown shows during its wait), and a runner test observes the published
-  snapshots from inside the effects. The tuner publishes its countdown, the domain's filter line
-  (`disabled` when off) and the attempt number; the spareness of the other tools' cards is their own
-  lack of status, not a missing seam. The pet feeder's four rows will populate `rows` when its loop
-  lands (`seal-tools/src/runner.rs`, `seal-core/src/tuner.rs`).
-- **Tuner follow-ups, named not hidden** (`seal-core/src/tuner.rs`): the mouse-guard RECENTER path
-  surfaces a failed placement as the effects' placement line rather than v2's composed "cursor
-  wouldn't re-centre — <detail>" (the runner performs effects, the tool cannot see their failure);
-  the countdown publishes no per-second card message for the same reason as the item above; and the
-  `hid` spring placement before the FIRST attempt is implemented, while the guard's recentre during
-  the loop relies on the same `Decision::Place`. A live run against the game is still unverified
-  (needs the game foreground, a board, and the OCR models).
-- **`tool.start` reply shapes.** A deferred start answers `{}` and publishes the waiting line as a
-  `log` (there is no run yet to attach a `state` to — a state event would report a registration
-  that has not happened); a `tool_busy` refusal's detail is `{line, tool}`. Neither shape is in the
-  spec; pin both in PROTOCOL §4 once the shell exists to consume them.
-- **No game-hand-over event.** The supervisor emits an interim `log` line `"<tool>" has the game.`
-  when the game passes to a waiting run, "until the tool-side waiting strings land" (§1 item 5). A
-  proper event or those strings should replace it.
-- **The production registry's placeholder line.** Until the tool loops exist, `ProductionRegistry`
-  refuses every tool with a defined "not available in this build yet" line; the shell must show it,
-  and it must disappear when the loops land rather than become the new normal. **The spammer is the
-  first live tool**: `tool.start spammer` resolves the active preset out of the merged config, its
-  opening phase opens the serial port, the runner drives the domain's rotation through the board's
-  key effects, and the run answers `state`/`tool.finished` like any other. **Hold Space is the
-  second**: `tool.start holdspace` presses `P`, the run holds until `tool.stop` cancels it, and the
-  effects object's `Drop` sends `U` on every exit path (v2's `finally`, as RAII). The other six ids
-  still refuse by name.
-- **The `ui:` block's coordinate space.** CALIBRATION.md §1 calls it the shell's own space (machine
-  state, never read by a tool) and `ui.window` accepts numbers. If the shell needs exact semantics
-  (physical vs logical units for its own window), pin it in PROTOCOL §4 rather than letting it be
-  implied by a caller.
-- **The config-invalid path is half built.** PROTOCOL §1 states the boot-refusal channel (non-zero
-  exit, reason on stderr, nothing on stdout before `hello`) and `config.reload` answers
-  `config_invalid` (`af4d9a3`); WHAT REMAINS is the shell rendering both.
+## 3. Session-shaped features (named, not marks)
 
+- **The tuner's three-box calibration session** — v2 dragged grade area + attribute band + remaining
+  band and DERIVED `region`/bands/`row_height`. The one-rect kind was withdrawn rather than faked; a
+  session-shaped calibration is the only way to keep the derivation.
+- **The tooltip's two-capture hover session** — measure the offset by parking the cursor, hovering and
+  capturing, then boxing the panel. A single frame mark cannot express it.
+- **The pet's crop/cell editor and the sell-slot editor** — live-screen session features, not frame
+  marks: the pet's reference crops come from the running game (the close-X crop is learned by the
+  run), and the sell slots are a bag-cell editor. v2 deliberately did not persist sell slots; v3 keeps
+  that and records it here.
+- **Mini mode / shell layout questions** — the shell has a stub; the ⚑ questions in
+  [PLAN-V3-SHELL.md](../plans/PLAN-V3-SHELL.md) still decide the layout.
 
+## 4. Release inputs
 
-## 3. Deferred integration (named, not scheduled)
-
-- **Single-instance cross-process lock** — the save gate is in-process; the protocol's single-
-  instance lock is not implemented yet. Two cores on one root can interleave.
-- **Binary artifact writer** — LANDED (`calibration.save`): `ConfigStore::write_artifact` writes a
-  crop PNG with the same temp-and-rename shape as the text writer, refusing a name that is a path.
-- **Variant-dictionary switch** — LANDED (`b6a49a7`): boot and `config.reload` load the dictionary the
-  active variant names, all-or-nothing in v2's switch order.
-- **`settings:` portable-save caller** — LANDED (`af4d9a3`): `config.apply` carries the portable half
-  and projects it through `save_settings`.
-- **`config.apply` atomicity** — CLOSED (`46df1ee`): `seal-config::store::apply_sections_with_settings`
-  builds the projection first, then one `update_local` merges owned blocks and writes the settings
-  projection, so a failed apply writes nothing and consumes no rev.
-- **Field-wise validate copy** — CLOSED (`46df1ee`): `validate.rs` merges owned blocks field-wise
-  like the writer, so a rule judges the config the write produces.
-- **`Clock` trait is duplicated** — `seal-tools::clock::Clock` and `seal-board::clock::Clock` are
-  the same one-method, seconds-only trait (seal-board does not depend on seal-tools). Move it to
-  `seal-domain` and delete both copies when convenient; the seconds-only unit is deliberate (the
-  eleven-minute-sleep incident).
-- **CALIBRATION.md landed** (`c5baa65`) — the header's inherited `docs/spec/CALIBRATION.md` pointer
-  now resolves; the live measurement side remains `seal-win`'s (gap G1), as the document states.
-
-
-## 4. The shell and the Windows/IO crates
-
-- **`seal-win` LANDED (`f4e3e9b`)** — `window.find`/`window.measure`/`capture` are implemented and
-  wired into the core (`7d1942e`, including the four-frame cache); `board.probe`/`board.test` are
-  wired too (they use `seal-board`'s adapter), and `ocr.scan` is implemented (`ocr_unavailable` when
-  the models are absent). The calibrator flow is now served too: `calibration.save`/`fetch` with a
-  seven-kind table, the one `local.yaml` write gate, derived values (bag-grid pitch), the bag
-  slot-vs-grid agreement rule, the environment block and the result-gem crop as the first binary
-  artifact. What still waits there: the remaining mark kinds (pet marks/crops, tooltip, quest step
-  maps, gem points/MAX/sell slots), the drawn-over reference screenshots, and a `config.changed`
-  emitter so a shell with a mirror can see another writer's mark without refetching. The two live
-  behaviours — a real window measures/captures, a covered game is refused — are the `#[ignore]`d
-  tests in `seal-win`.
-- **OCR pipeline follow-ups, named not hidden:** the grade colour fallback and the `remaining`-band
-  read are not ported (the result carries `remaining: null` and grade-from-line only); `capture_path`
-  stays null until the core's logging writer exists; full-screen scans cost ~26 s per capture on CPU
-  (the ten real captures were 265 s in total), so a tool's OCR read should scan its crop, not the
-  screen; and end-to-end text parity still needs the raw-crop recording pass
-  (OCR-RESEARCH §"Runtime spike results" and §4).
-- **OCR shipping/build facts to settle** (measured by the runtime spike, `e106c2b`): the release zip
-  must carry **`DirectML.dll`** (~18.5 MB — the `download-binaries` static distribution links
-  `onnxruntime.lib` in and ships no `onnxruntime.dll`), and its **redistribution terms must be
-  confirmed with Microsoft before release** — the one licence item still open. A clean build needs
-  network for the ORT download or a seeded `ORT_CACHE_DIR`; the decision for now is to keep
-  `ort = "=2.0.0-rc.15"` and document the seeding rather than switch to `load-dynamic` (+ a shipped
-  `onnxruntime.dll`), which would need a Cargo feature change.
-- **VS Build Tools is INSTALLED (2026-10-25)** — VS Build Tools 2022 17.14 with the VCTools
-  workload, MSVC 14.44 and the Windows 10 SDK; the Rust workspace is now on the MSVC host
-  (`rust-toolchain.toml` pins `stable`). What remains for `seal-win`, `seal-ocr` and the board's OS
-  adapter is the port work itself, not the toolchain. **The Flutter SDK is installed** at
-  `C:\src\flutter` (stable 3.47.8, Dart 3.13.7); `flutter doctor` is clean apart from the
-  Android/Chrome sections this Windows-only project ignores.
-- **Flutter SDK** — not installed; the shell half of step 1 cannot start until both are present.
-- **OCR port and parity corpus** — `ort` + the PP-OCRv4 pipeline; the corpus covers the tuner path
-  only, and the missing feeder/pet/attribute read paths need a live recording session (PLAN §13.10).
+- **`DirectML.dll` redistribution terms** must be confirmed with Microsoft before a public zip; the
+  release script refuses without an explicit acknowledgement (CUTOVER decision; OCR-RESEARCH §6).
+- **Capture/hide lifecycle** — `PROTOCOL.md` §4 says the shell hides itself before `capture` and the
+  shell is gaining that host channel (the calibrator was unusable from the UI without it). Until the
+  runner channel lands this is a blocker, and it is being fixed rather than documented around.

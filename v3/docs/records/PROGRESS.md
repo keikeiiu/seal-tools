@@ -19,6 +19,42 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-27 (21) — buy gets its run, the logs become files, calibration is repaired, replay lands
+
+The tool-coverage and infrastructure stretch. **Buy is live**: PROTOCOL §12.6 gave `tool.start`
+optional run arguments (`preset`/`count`), the core validates them deterministically before any board
+or window is touched, and the Buy card's picker drives the run — the last served-but-refused id now
+executes. All eight tools are live.
+
+**File logs (G8) closed**: `seal-core/src/logs.rs` writes v2's per-run files under `<root>/logs/`
+(OCR JSONL + optional captures, `error.log`, `holdspace.log`, one `<tool>.log` per run with start,
+changed status messages and the final reason), logging never fails a command or a run, and the local
+wall clock moved to `seal-win/clock.rs` so `seal-core` has no `unsafe` left. `gem.save_empty_captures`
+and holdspace's failed-release line landed with it.
+
+**Calibration repaired from an audit, not from vibes.** The gap audit found `focus_point` writing a
+field nothing reads, `tuner_region` writing an unusable shape and `result_gem_area` saving any box as
+the "empty" reference. The spec was repaired first (§12.7), then the core and the Calibrate tab: kinds
+`scroll_point`/`max_button`, the gem `empty: true|false` verdict with the six-feature signature
+sampled through a domain function (the analyzer MOVED to `seal-domain` rather than copied), the tuner
+kind withdrawn with its three-box-session reason, and §12.8's `target` extension bringing the pet's
+marks and the gem's points (18 kinds total, 1-based wire strings, sibling-preserving per-row writes).
+The shell's Calibrate tab follows the same ticket with a target selector and gated Save.
+
+**Replay core**: `seal-core --replay script.json` serves the real protocol from a script with no
+config, board, window or OCR (PROTOCOL §13) — a development mode of the same binary, structurally
+isolated from machine startup, with a committed example script and ten e2e tests. First live run of
+any v3 tool happened in this stretch too: a gem smoke actually started against a real board/window,
+published tally rows and was stopped cleanly; no transaction was verified.
+
+**Packaging and docs started**: `v3/publish.ps1` (`-Verify`/`-Stage`/`-Release` with the DirectML
+acknowledgement gate and an allow-list zip audit), the shipped config templates,
+`docs/pet-data.csv`, `plans/CUTOVER.md` with its twelve decisions, and the docs audit whose findings
+this entry's documents now reflect. Next: USER_GUIDE/INSTALL, the staging run, and the live
+verification the repo's rule requires.
+
+---
+
 ## 2026-10-27 (20) — every tool has a loop, and the game has one owner
 
 The tool-coverage half of the core plan closed in this stretch: **seven tools live** (spammer,
