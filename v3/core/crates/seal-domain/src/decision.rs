@@ -57,6 +57,12 @@ pub enum Decision {
     /// `right_click` action is the only caller today; like [`Self::ClickHere`] it never moves the
     /// cursor, because the player positioned the mouse during the run's countdown.
     RightClickHere,
+
+    /// Turn the wheel `notches` notches, down (`Z`) or up (`Q`). The shop's buy pass scrolls the list
+    /// before clicking a row; the wheel is sent at whatever the cursor is over, so the plan places the
+    /// cursor on the calibrated scroll point first. Notch counts are passed through — the firmware
+    /// clamps at its own ceiling, and the host refuses above it in `seal-board`.
+    Wheel { notches: i32, down: bool },
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

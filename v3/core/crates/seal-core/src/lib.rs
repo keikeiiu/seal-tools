@@ -12,6 +12,7 @@ pub mod holdspace;
 pub mod quest;
 pub mod registry;
 pub mod root;
+pub mod shop;
 pub mod spammer;
 pub mod startup;
 pub mod supervisor;

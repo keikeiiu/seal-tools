@@ -28,6 +28,7 @@ use seal_config::ConfigStore;
 use crate::board::{BoardFailure, Settings, open_board};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
 use crate::quest::{QuestEffects, QuestTool, WinQuestSource};
+use crate::shop::ShopTool;
 use crate::spammer::{RealNow, SpammerTool};
 use crate::tuner::TunerTool;
 
@@ -82,6 +83,29 @@ impl ProductionRegistry {
             .read()
             .map(|config| config.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
+    fn sell_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let plan = crate::shop::sell_plan(&config).map_err(|reason| reason.message)?;
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        // The transaction places the cursor through the closed loop, which needs the display the
+        // window was measured in; a missing window is the domain's own line.
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
+        let hwnd = seal_win::window::find_window(&title)
+            .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
+        let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
+        let effects = crate::effects::system_effects(transport, display);
+        Ok(Session {
+            tool: Box::new(ShopTool::new(ToolId::Sell, plan)),
+            effects: Box::new(effects),
+        })
     }
 
     fn quest_session(&self) -> Result<Session, String> {
@@ -186,6 +210,18 @@ impl ToolRegistry for ProductionRegistry {
                 .map_err(|reason| Unavailable {
                     line: reason.message,
                 }),
+            ToolId::Sell => crate::shop::sell_plan(&self.config())
+                .map(|_| ())
+                .map_err(|reason| Unavailable {
+                    line: reason.message,
+                }),
+            // Buy is SERVED but cannot start: the run's item/count has no protocol path (OPEN.md).
+            // The domain's own line answers the Start, which is better than silently buying preset #1.
+            ToolId::Buy => crate::shop::buy_plan(&self.config())
+                .map(|_| ())
+                .map_err(|reason| Unavailable {
+                    line: reason.message,
+                }),
             other => Err(Unavailable {
                 line: not_available_line(other),
             }),
@@ -198,6 +234,11 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::HoldSpace => self.hold_space_session(),
             ToolId::Tuner => self.tuner_session(),
             ToolId::Quest => self.quest_session(),
+            ToolId::Sell => self.sell_session(),
+            ToolId::Buy => Err(crate::shop::buy_plan(&self.config())
+                .err()
+                .map(|reason| reason.message)
+                .unwrap_or_else(|| "the buy pass could not be planned".to_owned())),
             other => Err(not_available_line(other)),
         }
     }
@@ -264,6 +305,49 @@ mod tests {
             },
             "filter": {"enabled": false},
         })
+    }
+
+    fn config_with_shop() -> Value {
+        serde_json::json!({
+            "window": {"title": "TW_LIVE"},
+            "buy_sell": {
+                "bag_grid": [0, 0, 800, 600],
+                "bag_slot": [0, 0, 100, 75],
+                "shop_rows": 5,
+                "shop_region": [900, 400, 300, 250],
+                "scroll_point": [1000, 420],
+                "max_button": [1200, 700],
+                "sell_slots": [3, 1],
+                "sell_cap": 5
+            }
+        })
+    }
+
+    #[test]
+    fn the_sell_tool_is_available_when_its_selection_validates_and_buy_names_its_gap() {
+        assert_eq!(registry(config_with_shop()).available(ToolId::Sell), Ok(()));
+        // Everything calibrated, but nothing selected: the refusal must be the SELECTION line, not a
+        // calibration line that would hide which mark is actually missing.
+        let sell_refusal = registry(serde_json::json!({
+            "buy_sell": {
+                "bag_grid": [0, 0, 800, 600],
+                "max_button": [1200, 700],
+                "scroll_point": [1000, 420],
+                "sell_slots": [],
+                "sell_cap": 5
+            }
+        }))
+        .available(ToolId::Sell)
+        .expect_err("an empty selection is refused");
+        assert!(
+            sell_refusal.line.contains("No slots are selected"),
+            "{}",
+            sell_refusal.line
+        );
+        let buy_refusal = registry(config_with_shop())
+            .available(ToolId::Buy)
+            .expect_err("buy has no per-run preset path");
+        assert_eq!(buy_refusal.line, "No buy preset selected.");
     }
 
     fn config_with_quest() -> Value {
@@ -347,7 +431,12 @@ mod tests {
         for tool in ToolId::ALL {
             if matches!(
                 tool,
-                ToolId::Spammer | ToolId::HoldSpace | ToolId::Tuner | ToolId::Quest
+                ToolId::Spammer
+                    | ToolId::HoldSpace
+                    | ToolId::Tuner
+                    | ToolId::Quest
+                    | ToolId::Sell
+                    | ToolId::Buy
             ) {
                 continue;
             }

@@ -135,6 +135,14 @@ pub trait Effects {
             "this effects implementation cannot right-click without a target",
         ))
     }
+
+    /// One wheel scroll. Default refuses rather than silently skipping: a skipped scroll would make a
+    /// buy pass click the wrong row, which is a wrong PURCHASE, not a cosmetic failure.
+    fn wheel(&mut self, _notches: i32, _down: bool) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot scroll the wheel",
+        ))
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -258,6 +266,11 @@ pub fn run(
             }
             Decision::RightClickHere => {
                 if let Err(error) = effects.right_click_here() {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::Wheel { notches, down } => {
+                if let Err(error) = effects.wheel(notches, down) {
                     return StopReason::error(effect_message(&error));
                 }
             }

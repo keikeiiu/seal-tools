@@ -120,6 +120,17 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     fn right_click_here(&mut self) -> Result<(), EffectError> {
         self.write(BoardCommand::RightClick)
     }
+
+    fn wheel(&mut self, notches: i32, down: bool) -> Result<(), EffectError> {
+        let Ok(notches) = u16::try_from(notches) else {
+            return Err(EffectError::new(
+                "a wheel scroll needs a positive notch count",
+            ));
+        };
+        let command = BoardCommand::wheel(!down, notches)
+            .map_err(|error| EffectError::new(error.message()))?;
+        self.write(command)
+    }
 }
 
 fn key_command(key: Key, fast: bool) -> BoardCommand {
@@ -314,10 +325,12 @@ mod tests {
 
         fx.click_here().expect("a bare click");
         fx.right_click_here().expect("a bare right click");
+        fx.wheel(3, true).expect("three notches down");
+        fx.wheel(2, false).expect("two notches up");
         assert_eq!(
             fx.transport().writes(),
-            vec!["D 110 70\n", "C\n", "R\n"],
-            "click_here/right_click_here write C/R without moving"
+            vec!["D 110 70\n", "C\n", "R\n", "Z 3\n", "Q 2\n"],
+            "bare clicks write C/R; a down scroll is Z, an up scroll Q"
         );
     }
 
