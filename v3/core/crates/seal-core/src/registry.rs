@@ -26,6 +26,7 @@ use serde_json::Value;
 use seal_config::ConfigStore;
 
 use crate::board::{BoardFailure, Settings, open_board};
+use crate::gem::{GemResultSource, GemTool};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
 use crate::quest::{QuestEffects, QuestTool, WinQuestSource};
 use crate::shop::ShopTool;
@@ -154,6 +155,38 @@ impl ProductionRegistry {
         })
     }
 
+    fn gem_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let plan = crate::gem::plan(&config)?;
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        // The reference crop lives beside the other calibration artifacts, under the root. The store
+        // owns the config directory; its parent is that root (`root::find_root`).
+        let root = self
+            .store
+            .config_dir()
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let source = GemResultSource::open(&config, &plan, &root)?;
+        let tool = GemTool::new(plan, source)?;
+        // The composer clicks calibrated points, so it needs the display the clicks are measured in.
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
+        let hwnd = seal_win::window::find_window(&title)
+            .ok_or_else(|| seal_domain::tools::gem::window_missing().message)?;
+        let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
+        let effects = crate::effects::system_effects(transport, display);
+        Ok(Session {
+            tool: Box::new(tool),
+            effects: Box::new(effects),
+        })
+    }
+
     fn hold_space_session(&self) -> Result<Session, String> {
         let config = self.config();
         let settings = Settings::from_config(&config);
@@ -215,6 +248,9 @@ impl ToolRegistry for ProductionRegistry {
                 .map_err(|reason| Unavailable {
                     line: reason.message,
                 }),
+            ToolId::Gem => crate::gem::plan(&self.config())
+                .map(|_| ())
+                .map_err(|line| Unavailable { line }),
             // Buy is SERVED but cannot start: the run's item/count has no protocol path (OPEN.md).
             // The domain's own line answers the Start, which is better than silently buying preset #1.
             ToolId::Buy => crate::shop::buy_plan(&self.config())
@@ -235,6 +271,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Tuner => self.tuner_session(),
             ToolId::Quest => self.quest_session(),
             ToolId::Sell => self.sell_session(),
+            ToolId::Gem => self.gem_session(),
             ToolId::Buy => Err(crate::shop::buy_plan(&self.config())
                 .err()
                 .map(|reason| reason.message)
@@ -350,6 +387,73 @@ mod tests {
         assert_eq!(buy_refusal.line, "No buy preset selected.");
     }
 
+    fn config_with_gem() -> Value {
+        serde_json::json!({
+            "window": {"title": "TW_LIVE"},
+            "gem": {
+                "grades": ["N", "G"],
+                "start_grade": "N",
+                "move_mode": "arduino",
+                "empty_mode": "stop",
+                "grade_positions": {
+                    "N": [10, 10], "G": [20, 20],
+                    "Register": [40, 40], "Combine": [50, 50]
+                },
+                "resource_gems": [[60, 60], [70, 70], [80, 80]]
+            },
+        })
+    }
+
+    #[test]
+    fn the_gem_composer_is_available_once_its_calibration_resolves() {
+        assert_eq!(registry(config_with_gem()).available(ToolId::Gem), Ok(()));
+        // No calibrated grade button: the domain's own calibration line, before any opening work.
+        let refusal = registry(serde_json::json!({
+            "gem": {
+                "grades": ["N"],
+                "start_grade": "N",
+                "move_mode": "arduino",
+                "empty_mode": "stop",
+                "grade_positions": {}
+            }
+        }))
+        .available(ToolId::Gem)
+        .expect_err("an uncalibrated gem button is refused");
+        assert!(
+            refusal
+                .line
+                .contains("Grade position 'N' isn't calibrated yet"),
+            "{}",
+            refusal.line
+        );
+        assert!(refusal.line.contains("Calibrate Gem"), "{}", refusal.line);
+    }
+
+    #[test]
+    fn a_gem_run_that_reads_without_a_result_area_is_refused() {
+        let refusal = registry(serde_json::json!({
+            "gem": {
+                "grades": ["N"],
+                "start_grade": "N",
+                "move_mode": "arduino",
+                "empty_mode": "advance_grade",
+                "grade_positions": {"N": [10, 10], "Register": [40, 40], "Combine": [50, 50]},
+                "empty_signature": {
+                    "mean_v": 0.3, "mean_sat": 0.1, "colored_fraction": 0.05,
+                    "mean_r": 0.3, "mean_g": 0.3, "mean_b": 0.3
+                }
+            }
+        }))
+        .available(ToolId::Gem)
+        .expect_err("the read has nowhere to capture");
+
+        assert!(
+            refusal.line.contains("gem.result_gem_area"),
+            "{}",
+            refusal.line
+        );
+    }
+
     fn config_with_quest() -> Value {
         serde_json::json!({
             "window": {"title": "TW_LIVE"},
@@ -437,6 +541,7 @@ mod tests {
                     | ToolId::Quest
                     | ToolId::Sell
                     | ToolId::Buy
+                    | ToolId::Gem
             ) {
                 continue;
             }

@@ -8,6 +8,7 @@ pub mod calibration;
 pub mod dispatch;
 pub mod effects;
 pub mod events;
+pub mod gem;
 pub mod holdspace;
 pub mod quest;
 pub mod registry;

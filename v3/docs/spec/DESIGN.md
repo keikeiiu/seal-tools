@@ -110,11 +110,15 @@ the **spammer**, **holdspace**, **tuner** (the first READ-loop tool: capture →
 `TunerRun::decide` → effects, with the read behind a `TunerSource` seam), **quest** (a pure
 config-driven executor — the player positions the mouse during the countdown and a cursor guard stops
 a run whose pointer moves; the only seam is the cursor read) and **sell** (a pure transaction-plan
-executor over the derived bag/shop geometry). **Buy** is served but refuses at START with the domain's
-"No buy preset selected.": its pass needs the run's item and count, and neither a `buy_sell.active`
-field nor `tool.start` args exist yet — that protocol decision is named in OPEN and was found by the
-shell's card work rather than invented around. The other two ids (gem, pet) refuse by name until
-their loops land (the registry is the seam, and its tests pin the refusals). The
+executor over the derived bag/shop geometry) and the **gem composer** (the second reader: it alone
+of the tools reads the result box — comparing the calibrated crop inside the 6-px border or falling
+back to the colour signature — and its loop is the domain's select/combine/finish turn sequence, with
+the arduino move set placing calibrated points and the tuned set sending the measured raw `D` counts).
+**Buy** is served but refuses at START with the domain's "No buy preset selected.": its pass needs
+the run's item and count, and neither a `buy_sell.active` field nor `tool.start` args exist yet —
+that protocol decision is named in OPEN and was found by the shell's card work rather than invented
+around. **Pet** is the only id that still refuses by name until its loop lands (the registry is the
+seam, and its tests pin the refusals). The
 rest of PROTOCOL §4. The runner also publishes a tool's own card state (`Tool::status`: message,
 countdown, rows) whenever it changes, which is how the tuner's countdown and filter line reach the
 `state` event without a second writer. The rest of PROTOCOL §4

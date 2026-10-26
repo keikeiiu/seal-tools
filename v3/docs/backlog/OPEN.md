@@ -38,6 +38,13 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
+- **Gem composer follow-ups, named not hidden.** `gem.save_empty_captures` is resolved into the plan
+  but nothing is written (it waits for the core's logging/artifact writer and a PNG encode outside the
+  run loop); the F9 advance-grade hotkey exists only as `advance_grade_by_hand()` because there is no
+  hotkey poller in the runner (the supervisor does not read `GetAsyncKeyState` today); and a live run
+  has been STARTED (board + window present, phase running with tally rows, stopped cleanly after one
+  smoke) but a full transaction has not been watched against the game. The empty-read failure
+  divergence (v3 stops, v2 failed open) is recorded in the core README's divergence list.
 - **Buy needs a per-run preset/count path before it can start.** The decision half
   (`ShopPlan::buy`) takes `preset_name` + `count` from the RUN, but the protocol carries neither:
   `buy_sell` has no `active`-style field and `tool.start` has no args (found by the shell's Buy card,

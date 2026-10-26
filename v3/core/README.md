@@ -98,6 +98,13 @@ reason.
   the v3 card surface has no per-tick log line to warn into, so warn-and-continue would be a silent
   hole (the class PROGRESS entry 59 records), and a preset is fixed before Start rather than mid-run.
   Cost if wrong: a preset v2 would have run with a warning is refused here until it is fixed.
+- **The gem composer's empty-result read fails CLOSED** (`seal-core/src/gem.rs`). v2 failed OPEN when
+  the result-box read raised: the composer carried on and the read was treated as "not empty", so a
+  broken capture could keep combining. v3 stops the run with the read's own line, because combining
+  on an unknown result is the one mistake in this tool that spends resources without a visible
+  symptom until later. Cost if wrong: a transient capture failure ends a run that v2 would have
+  continued through — the player restarts, and the run stops at a known point rather than an unknown
+  one.
 ## Building the OCR crate
 
 `seal-ocr` needs two things a clean checkout does not have:
