@@ -110,8 +110,8 @@ edits; it never re-serialises the whole file (§7).
 | `window.find` | `{}` | `{"found":true,"title":"Seal Online ..."}` |
 | `window.measure` | `{}` | `{"display":{...}}` |
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
-| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"scroll_point","point":{...}}`; `{"kind":"result_gem_area","region":{...},"empty":true}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` |
-| `calibration.fetch` | `{"kind":"bag_grid"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` |
+| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"scroll_point","point":{...}}`; `{"kind":"result_gem_area","region":{...},"empty":true}`; a named instance carries `target`, e.g. `{"kind":"gem_grade","point":{...},"target":"N"}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` (a targeted save echoes `"target"`) |
+| `calibration.fetch` | `{"kind":"bag_grid"}`; a named instance needs the same `target`, e.g. `{"kind":"pet_toggle","target":"2"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` (a targeted fetch echoes `"target"`) |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -151,6 +151,14 @@ Notes:
   must not silently buy a different preset by passing the field to the wrong tool. This is ruling
   §12.6: v2's Buy card picked the preset and count per run and had no config field for them, so the
   RUN is where they belong (v2's own `ShopPlan::buy` takes `preset_name` + `count` from the run).
+- **Some calibration kinds are NAMED INSTANCES, selected by `target`** (§12.8): `pet_page_tab`
+  (`ITEM1`..`ITEM3`), `pet_toggle`/`pet_boarding_slot`/`pet_feeder_strip` (row `"1"`..`"4"`),
+  `gem_grade` (`N`,`G`,`DG`,`Register`,`Combine`) and `gem_resource` (`"1"`..`"3"`). A kind that takes
+  a target refuses a save/fetch without one; a kind that does not refuses a `target` naming the field.
+  Targets are 1-based/player-facing strings in the protocol and map to 0-based arrays inside the core;
+  a target that names an instance the config does not have is refused (the core never invents a row or
+  a page tab). Every write preserves the sibling fields: a per-row mark sets exactly its own key and
+  leaves the row's stacks, reference crops and its other marks alone.
 - **`config.apply` may carry the portable half** as a `"settings": {...}` section alongside owned
   top-level blocks. The core computes the effective merged config (owned blocks replace, `settings`
   overlays field-wise — §7), runs the authoring rules on it, then resolves the variant, loads the
@@ -370,3 +378,19 @@ The two halves must not drift, so the protocol is tested from both sides:
    session exists, and CALIBRATION.md's invented "Quest step marks" row (both codebases' `QuestStep`
    carries only action/value/delay). Pet and gem point marks need an optional `target` on
    `calibration.save`/`fetch` and are a pending plan, not a silent omission.
+
+8. **Calibration kinds gained an optional `target`, because v2's marks are named instances.** The
+   calibration audit's increment 2 is the pet's marks and the gem's points; their config shapes are
+   `page_tabs[0..2]`, `slots[i].{toggle_label, boarding_pet_slot, feeder_strip}`,
+   `grade_positions[name]` and `resource_gems[0..2]`. Fifteen fixed kind names would encode the same
+   information twice (kind and index), so the protocol keeps one kind per semantic mark plus an
+   optional **`target`** string: 1-based and player-facing on the wire (`"1"`..`"4"` rows,
+   `ITEM1`..`ITEM3` page tabs, `"1"`..`"3"` resources), 0-based arrays inside the core, and gem grade
+   points keep v2's own names (`N`/`G`/`DG`/`Register`/`Combine`). Rules: a targeted kind requires a
+   target; a non-targeted kind refuses one naming the field; an unknown target is refused with the
+   allowed values in the line; a target naming an instance the config does not carry is refused rather
+   than invented (rows and page tabs come from the config until the Pet-tab editor exists). A
+   per-instance write sets exactly its own key and preserves the siblings — `slots[i]` keeps its
+   `stacks`, crops and its other two marks, and row order is untouched. This is why the pet's crops,
+   the food cells/queue and the sell-slot selection are NOT calibration kinds: they are Pet-tab/Sell-tab
+   features whose home is a live-screen session, not a frame mark (OPEN).

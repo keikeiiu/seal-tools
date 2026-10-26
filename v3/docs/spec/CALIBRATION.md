@@ -239,6 +239,16 @@ and the open item is named here rather than restated. The living list is
 [OPEN.md](../backlog/OPEN.md) §3/§4, with the protocol's own open items in
 [PROTOCOL.md](PROTOCOL.md) §11.
 
+The **named-instance kinds** carry a `target` (PROTOCOL §12.8): `pet_page_tab` (`ITEM1`..`ITEM3` ->
+pet.page_tabs), `pet_toggle`/`pet_boarding_slot`/`pet_feeder_strip` (row `1`..`4` ->
+pet.slots[i].{toggle_label, boarding_pet_slot, feeder_strip}), `gem_grade` (N/G/DG/Register/Combine ->
+gem.grade_positions, the absolute click targets the composer places the cursor on) and `gem_resource`
+(`1`..`3` -> gem.resource_gems). The pet's single points (menu 目錄, feed icon, window X) are their own
+kinds with no target. A mounted mark that names a row or page the config does not carry is refused,
+and a per-row write leaves that row's other fields — stacks, reference crops, the other two marks —
+exactly as they were. The pet's reference crops, the food cells/queue and the sell-slot selection stay
+explicitly OUT of the kind table: they are live-screen session features (OPEN).
+
 `calibration.save` and `calibration.fetch` are implemented: the kind table lives in
 `seal-core/src/calibration.rs` and accepts `bag_grid`, `bag_slot`, `shop_list`, `scroll_point`,
 `max_button`, `result_gem_area` (with its `empty` verdict) and `spring_point`; marks go through the
