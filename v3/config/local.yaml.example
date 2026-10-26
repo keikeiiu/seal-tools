@@ -1,0 +1,58 @@
+# Seal Tools v3 — machine-specific calibration (the local.yaml seed).
+#
+# The core copies this file to config/local.yaml ONLY when that file does not exist, through the
+# same atomic writer as a save. config/local.yaml is gitignored and never shipped; every update
+# leaves it alone. Migrating from v2: copy your v2 config/local.yaml and the calib_*.png crops
+# beside it into config/ instead of using this seed — the formats are unchanged.
+#
+# The values below are the v1 measured values v2 shipped as its first-run seed; they WILL be off
+# until you run the Calibrate tabs and hit Save. The tuner.ocr geometry is v2 WINDOW-relative while
+# v3 captures are CLIENT-area-relative, so it sits low by the title-bar height until recalibrated.
+# gem.grade_positions are absolute positions — re-measure them too.
+#
+# The v3-only machine blocks are written by the calibrator/shell on first use and are deliberately
+# absent here (a fresh install is uncalibrated, so each tool refuses with its own line until then):
+#   calibration:  measured display environment (dpi_scale, monitor_dpi, screen, client_size)
+#   ui:           the shell's own window geometry (ui.window is the only writer)
+#   buy_sell:     bag grid/slot, shop region, scroll point, MAX, presets, sell selection
+#   pet:          menu/feed/close, page tabs, the boarding bag grid+slot, per-row marks
+#   tooltip:      the hover panel offset and shape
+#   quest:        the quest guard distance and active preset
+#   spammer:      personal rotations — never shipped and never part of a release
+#
+# The portable half (window title/variant, hotkeys, tuner/gem/pet settings) is NOT here; it lives in
+# config/defaults.yaml.example and is overlaid by this file's `settings:` block after a Save. See
+# docs/spec/CONFIG.md.
+tuner:
+  ocr:
+    region: {left: 1140, top: 840, width: 300, height: 320}
+    grade_area: {x1: 149, y1: 1, x2: 232, y2: 44}
+    grade_y: [1, 44]
+    attr_y: [42, 140]
+    remaining_y: [190, 235]
+    row_height: 25
+
+gem:
+  grade_positions:
+    N: [727, 696]
+    G: [777, 696]
+    DG: [827, 696]
+    Register: [835, 724]
+    Combine: [785, 871]
+  resource_gems:              # 3 click points, one per composer slot (remove a stuck gem)
+    - [450, 696]
+    - [520, 696]
+    - [590, 696]
+  result_gem_area: [610, 800, 220, 60]   # composed-result area [x, y, w, h]; OCR + centre click
+  # empty_signature is filled in automatically by the gem calibrator (it samples the result
+  # box while EMPTY). Leave unset — empty detection stays off until you calibrate. Format:
+  # {mean_v: 0.3, mean_sat: 0.1, colored_fraction: 0.05, mean_r: 0.3, mean_g: 0.3, mean_b: 0.3}
+  # empty_distance: normalised colour distance below which the result box is judged empty (0..1).
+  # Lower = stricter (more likely to call it "has a gem"). Default 0.18. Machine-specific.
+  empty_distance: 0.18
+
+arduino:
+  # optional override; empty = find the board by its IDs below. If you NAME a port that this
+  # machine does not have, nothing is opened and the reason is reported — it does NOT fall back to
+  # discovery, because opening a different board than the one you named is worse than not opening one.
+  port: ""

@@ -48,8 +48,35 @@
 12. **Merge/tag/publish is the player's call.** The final step (merge to `main`, tag `v3.0`, GitHub
     release) is not performed by this plan's work; it is prepared and verified up to the artifacts.
 
+## Packaging findings (the first `-Verify` run, 2026-10-27)
+
+The publish script exists and `-Verify` is RED on purpose (exit 1, seven named inputs). Findings and
+the decisions they force:
+
+1. **The OCR models live at `v2/models`, not `v3/models`.** The release command passes
+   `-ModelsDir v2\models` (the script's default stays `v3\models` so a missing model source is always
+   named); `-Stage` copies the three `.onnx` files into the staged `models/`. The models are not
+   committed to the v3 tree.
+2. **`DirectML.dll` exists only in the debug target today** (the ORT build artifact). `-Stage` builds
+   the release core first, so the release target must place its own; `-Verify` names it until then.
+3. **The shell bundle has never been built and still carries the scaffold naming** (`BINARY_NAME
+   "seal_shell"`, pubspec `1.0.0+1`). Naming is a cut-over work item (decision 2); the script refuses
+   to stage a `seal_shell.exe`.
+4. **`docs/pet-data.csv` is a byte-identical copy** of `<repo>/v2/docs/pet-data.csv`.
+5. **`attributes.us.yaml` ships under the `.example` name** because v3 has no committed
+   `attributes.us.yaml.example`; the script stages the committed file that way so an update never
+   overwrites a dictionary the player grows in place. `attributes.yaml` (TW) ships as maintained.
+6. **RELEASE BLOCKER — the OCR models are found only through `SEAL_OCR_MODELS`.** The core's
+   `load_from_env` reads that variable only, and the shell sets no environment when it spawns the
+   core, so shipping `models/` beside the exe is not enough by itself. Decision: the core gains a
+   root/exe-relative fallback (env var, then `<root>/models`, then `<exe dir>/models`, first
+   directory that holds all three files wins) and the shell keeps spawning with no environment. This
+   is a code item below, not a packaging workaround.
+
 ## Work items (all must be done before the merge)
 
+- [ ] OCR model resolution fallback (finding 6) — env var, then root, then exe-relative.
+- [ ] Name/version alignment — `SealTools.exe`, window title, pubspec `3.0.0+1`.
 - [ ] Capture/hide lifecycle (item 8) — shell runner channel + Calibrate flow + tests.
 - [ ] Naming/version alignment (`SealTools.exe`, window title, pubspec 3.0.0+1, publish script paths).
 - [ ] `USER_GUIDE.md` + `USER_GUIDE.zh-TW.md` + `INSTALL.md` (install, first run, migration, update,
@@ -58,7 +85,8 @@
       frame cache/§6 Setup wording/§7 counts + new §8, CONFIG stale bullets + dangling pointer,
       TOOL-FLOWS status + per-tool "loop is live" lines, OPEN prune.
 - [ ] Folder READMEs (`spec/`, `records/`, `backlog/`), PROGRESS entry, PORT-COVERAGE closure note.
-- [ ] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip), config templates,
+- [ ] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip; release command
+      `-ModelsDir v2\models`), config templates,
       `local.yaml.example`, `docs/pet-data.csv`, `DirectML.dll` licensing note (a release input; the
       OCR research record cites it).
 - [ ] Release record `records/RELEASE-v3.0.md` + root README v3.0 rewrite + board rows.
