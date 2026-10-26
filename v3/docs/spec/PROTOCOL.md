@@ -155,7 +155,7 @@ fact, and nothing in §4 is spec-only today.
 |---|---|---|
 | `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"error":null}` — the row object is specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed |
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
-| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | specified, no emitter yet (DESIGN §3): the core wrote a block the UI displays (pet session state, calibration, `ui:`) |
+| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`). Sent AFTER that command's response. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
 | `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` has no producer yet |
 

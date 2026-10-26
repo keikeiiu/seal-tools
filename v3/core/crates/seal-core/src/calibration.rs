@@ -411,6 +411,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     sections.insert(def.path[0].to_owned(), block);
     state.config = crate::validate::effective_config(&state.config, &sections);
     state.rev += 1;
+    state.queue_config_changed(def.path[0]);
 
     Response::ok(
         &request.id,

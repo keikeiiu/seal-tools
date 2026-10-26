@@ -241,7 +241,7 @@ and the result-gem crop is the first binary artifact. Still open:
 |---|---|---|
 | The remaining mark kinds | the pet marks (points, rects and the per-row crops as base64 IN `local.yaml`), the tooltip offset + shape, the quest step maps, the gem points, the MAX button and the sell slots each need a kind-table row and their own derivation rules; today they are hand-editable and preserved, not calibrated from the UI | PROTOCOL §4; this file §1 |
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
-| A `config.changed` emitter for calibration writes | a save answers `rev`, but DESIGN §3's event has no producer yet, so a shell that keeps a mirror must refetch to see another writer's mark | PROTOCOL §5; DESIGN.md §3 |
+| `config.changed` for calibration writes | LANDED: a save now queues `config.changed {rev, block, values}` for the block it marks, after its response (PROTOCOL §5), so a shell keeping a mirror updates without refetching | PROTOCOL §5 |
 | Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
 | Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result | OPEN §4 |
 | The boundary a measurement must match | `CalibrationCheck` is ported and tested in the domain; `calibration.save`'s optional `display` argument now records the environment it compares, but no Detect command consumes the comparison yet | this file §6 |

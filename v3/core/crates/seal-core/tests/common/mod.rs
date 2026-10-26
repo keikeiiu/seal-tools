@@ -166,6 +166,10 @@ pub struct Session {
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
+    /// Events that arrived while `call` was waiting for its response. The core sends a
+    /// `config.changed` AFTER the response it belongs to, but a LATER call can still find one queued
+    /// from an earlier command when that command's events were never read.
+    pending_events: std::collections::VecDeque<Value>,
 }
 
 impl Session {
@@ -186,6 +190,7 @@ impl Session {
             stdin,
             stdout,
             next_id: 0,
+            pending_events: std::collections::VecDeque::new(),
         }
     }
 
@@ -200,15 +205,26 @@ impl Session {
             .expect("the request writes");
         stdin.flush().expect("the request flushes");
 
-        let mut response_line = String::new();
-        self.stdout
-            .read_line(&mut response_line)
-            .expect("the core answers with a line");
-        assert!(
-            !response_line.is_empty(),
-            "the core closed stdout without answering {cmd:?}"
-        );
-        decode_line::<Response>(&response_line).expect("the response is protocol-shaped")
+        loop {
+            let mut response_line = String::new();
+            self.stdout
+                .read_line(&mut response_line)
+                .expect("the core answers with a line");
+            assert!(
+                !response_line.is_empty(),
+                "the core closed stdout without answering {cmd:?}"
+            );
+            // The core may interleave an event before this response (an earlier command's
+            // `config.changed` that no test read). Keep it for `event()` instead of failing.
+            let value: Value = decode_line::<Value>(&response_line)
+                .expect("every stdout line is protocol-shaped JSON");
+            if value.get("event").is_some() {
+                self.pending_events.push_back(value);
+                continue;
+            }
+            return decode_line::<Response>(&response_line)
+                .expect("the response is protocol-shaped");
+        }
     }
 
     /// The handshake, in the shape `PROTOCOL.md` §1 specifies.
@@ -238,6 +254,9 @@ impl Session {
     /// Reads one unsolicited event line from the core — used after a response whose answer arrives
     /// before the events it causes (`tool.start`, `shutdown`).
     pub fn event(&mut self) -> Value {
+        if let Some(event) = self.pending_events.pop_front() {
+            return event;
+        }
         let mut line = String::new();
         self.stdout
             .read_line(&mut line)

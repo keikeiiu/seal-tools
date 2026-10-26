@@ -76,6 +76,16 @@ fn a_rect_mark_is_written_to_local_yaml_and_answers_its_derived_pitch() {
         "the mark reached the file: {local}"
     );
     assert!(local.contains("800"), "the mark's numbers reached the file");
+
+    let events = state.take_queued_events();
+    assert_eq!(events.len(), 1, "one config.changed for the write");
+    assert_eq!(events[0].event, "config.changed");
+    assert_eq!(events[0].data["block"], "buy_sell");
+    assert_eq!(events[0].data["rev"], 1);
+    assert_eq!(
+        events[0].data["values"]["bag_grid"],
+        json!([0, 0, 800, 600])
+    );
 }
 
 #[test]

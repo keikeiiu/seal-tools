@@ -19,6 +19,49 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-26 (18) — a second live tool, the last silent event, and the shell polish set
+
+**Hold Space is the second live tool (`3004cb2`).** `tool.start holdspace` opens the board, holds the
+spacebar (`P`) on the first decision, waits on v2's 50 ms tick, and releases through
+`SpaceHoldEffects`' `Drop` — v2's `finally` expressed as RAII, so every exit path (stop, cancellation,
+effect failure, shutdown) sends `U` and no code path can forget it. The tool needed the two grammar
+commands v2's `HoldSpace.cs` used but the v3 enum had never modelled (`P`/`U`), and they came with a
+decision vocabulary (`Decision::HoldSpace`/`ReleaseSpace`, `Effects::hold_space`/`release_space`) —
+whose hold default REFUSES rather than approximating with a tap, because a tap looks like the hold
+worked while auto-pickup never happens. v2's card-mirror/F12 logic has no v3 counterpart: start/stop
+ARE the run lifecycle here, so the module doc records the mapping rather than porting the loop shape.
+
+**`config.changed` has an emitter (this commit).** The last event PROTOCOL §5 specified but the core
+never sent. Three writes produce it — `config.apply` (one event per written block, with `settings`
+fanning out to the blocks it carries), `ui.window` (`ui`) and `calibration.save` (the marked block) —
+and it is sent AFTER the response it belongs to. That ordering is load-bearing rather than tidy: a
+shell must never see a `config.changed` caused by its OWN `config.apply` before the answer to that
+apply, or every save would look like an external change. Events are therefore queued during dispatch
+and flushed by the stdio loop after the response. The e2e harness learned the same rule: `Session::call`
+now buffers any event line that arrives while it waits for a response instead of failing on it.
+
+Two real bugs surfaced while earning the tests. The first was the writer-thread shutdown rule from
+OPEN §1 taking its revenge: attaching the bus to `CoreState` left a sender alive past
+`writer.finish()`, so every e2e test hung AFTER the core wrote its final line — fixed with an explicit
+`detach_events()` before finishing the writer. The second was the test harness itself reading a queued
+event as a response. Both are the class this project keeps paying for: order between independently
+buffered things is a contract, not an implementation detail.
+
+**The shell polish set (`8fdb8ca`).** Spammer preset rename/duplicate across all four name-keyed maps
+plus `active` (with the `copy`/`copy N` base rule so duplicating a copy yields `copy 2`), the combos
+editor, the live per-second card countdown from one shared ticker (elapsed reset on each `state`
+event, disposed on unmount), and the Tuner `(none — use the shipped default)` label. Its four gate
+rounds were all test-side: a missing `setState` for a note rendered outside the draft listener (a
+real defect), a tap below the fold (the form outgrew the test surface — `ensureVisible` is the
+standing pattern), and a 1-based-vs-0-based expectation.
+
+**Counts at this milestone:** Rust workspace green (73 result lines; clippy/fmt clean) with two live
+tools and every PROTOCOL §4 command served; Flutter `flutter analyze` No issues, `flutter test`
+130/130, format clean. Next tool needs the read/sense seam (capture → OCR → decide), which is the
+next architectural piece rather than another adapter.
+
+---
+
 ## 2026-10-26 (17) — the last spec-only commands, the first live tool, and the shell's ten tabs
 
 Two milestones that change what v3 IS rather than what it contains.

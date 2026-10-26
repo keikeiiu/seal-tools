@@ -49,6 +49,9 @@ fn main() {
     };
 
     let (writer, bus) = EventWriter::spawn(Box::new(std::io::stdout()));
+    // The dispatcher queues `config.changed` events and the loop flushes them after each response, so
+    // the wire order is answer-then-event and a shell never sees its own write as an external change.
+    state.attach_events(bus.clone());
     // The registry reads the merged config through this cell; publishing before the supervisor
     // starts means the first Start already sees the config `hello` reported.
     state.publish_config();
@@ -79,6 +82,7 @@ fn main() {
             ),
         };
         writer.response(response);
+        state.flush_events();
 
         // `shutdown` answers first, then the supervisor and the writer settle; EOF does the same.
         if state.stopping {
@@ -87,6 +91,9 @@ fn main() {
     };
 
     state.shutdown_tools(reason);
+    // The dispatcher's event sender must be gone before the writer can stop: it is the last sender
+    // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
+    state.detach_events();
     writer.finish();
 }
 

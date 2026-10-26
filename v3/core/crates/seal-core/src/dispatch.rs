@@ -75,6 +75,12 @@ pub struct CoreState {
     /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
     /// builds it and later scans reuse it. `None` until then, and in dispatcher tests.
     pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
+    /// Where `config.changed` events go, when the binary attached the writer's bus. Dispatcher tests
+    /// leave it `None` and inspect [`Self::take_queued_events`] instead.
+    pub events: Option<crate::events::EventBus>,
+    /// Events produced during one dispatch, sent AFTER its response line. A shell must never see a
+    /// `config.changed` caused by its own `config.apply` BEFORE the answer to that apply.
+    queued_events: Vec<seal_proto::Event>,
 }
 
 impl CoreState {
@@ -96,6 +102,8 @@ impl CoreState {
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
             ocr: None,
+            events: None,
+            queued_events: Vec::new(),
         }
     }
 
@@ -121,6 +129,8 @@ impl CoreState {
             attributes,
             frames: win::FrameCache::default(),
             ocr: None,
+            events: None,
+            queued_events: Vec::new(),
         })
     }
 
@@ -143,6 +153,42 @@ impl CoreState {
     /// writer's [`crate::events::EventBus`], so it cannot be built inside a config-only state.
     pub fn attach_supervisor(&mut self, supervisor: supervisor::Supervisor) {
         self.supervisor = Some(supervisor);
+    }
+
+    /// Attach the writer's event bus. The binary does this before the stdio loop starts.
+    pub fn attach_events(&mut self, events: crate::events::EventBus) {
+        self.events = Some(events);
+    }
+
+    /// Queue a `config.changed` for `block` at the CURRENT revision, with the block's effective values
+    /// from the merged config. Callers queue AFTER they have updated `self.config` and `self.rev`.
+    pub(crate) fn queue_config_changed(&mut self, block: &str) {
+        let values = self.config.get(block).cloned().unwrap_or(Value::Null);
+        self.queued_events
+            .push(crate::events::config_changed_event(self.rev, block, values));
+    }
+
+    /// Send the events queued during the last dispatch. The binary calls this immediately after
+    /// writing the response, so the wire order is answer-then-event.
+    pub fn flush_events(&mut self) {
+        let Some(bus) = &self.events else {
+            self.queued_events.clear();
+            return;
+        };
+        for event in self.queued_events.drain(..) {
+            bus.emit(event);
+        }
+    }
+
+    /// Drop the event bus. The writer thread stops when the LAST sender is gone (`OPEN.md` §1), and the
+    /// state object outlives `writer.finish()` in `main` unless it lets go first.
+    pub fn detach_events(&mut self) {
+        self.events = None;
+    }
+
+    /// The events queued by the last dispatch, for tests that do not run the writer thread.
+    pub fn take_queued_events(&mut self) -> Vec<seal_proto::Event> {
+        std::mem::take(&mut self.queued_events)
     }
 
     /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
@@ -478,6 +524,21 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     state.dictionary = active.dictionary;
     state.attributes = attributes;
     state.rev += 1;
+    // One event per block the save wrote, in request order. The portable half writes its inner
+    // blocks, so `settings` fans out to the block names it carries.
+    let mut changed: Vec<String> = Vec::new();
+    for (name, requested) in &sections {
+        if name == "settings" {
+            if let Some(portable) = requested.as_object() {
+                changed.extend(portable.keys().cloned());
+            }
+        } else {
+            changed.push(name.clone());
+        }
+    }
+    for block in changed {
+        state.queue_config_changed(&block);
+    }
 
     Response::ok(
         &request.id,
@@ -591,6 +652,7 @@ fn ui_window(state: &mut CoreState, request: &Request) -> Response {
         Ok(_) => {
             state.rev += 1;
             refresh_config(state);
+            state.queue_config_changed("ui");
             Response::ok(&request.id, json!({}))
         }
         Err(error) => config_error_response(&request.id, error),

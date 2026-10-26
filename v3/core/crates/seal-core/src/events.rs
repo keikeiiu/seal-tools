@@ -177,6 +177,21 @@ pub fn core_stopping_event(reason: &str) -> Event {
     Event::new("core.stopping", json!({"reason": reason}))
 }
 
+/// A `config.changed` event (`PROTOCOL.md` §5): the core wrote a block the UI displays, carrying the
+/// new session revision and the block's effective values.
+///
+/// Emitted only for CORE-side writes — `config.apply`, `ui.window` and `calibration.save`. A
+/// `config.reload` is the shell asking to re-read; its answer already carries the whole config, so it
+/// emits nothing and the shell cannot mistake its own reload for an external write. The event is
+/// queued during dispatch and sent AFTER the response line, because a shell that sees an event before
+/// the answer to its own request would have to reconcile against itself (`dispatch::CoreState`).
+pub fn config_changed_event(rev: u64, block: &str, values: Value) -> Event {
+    Event::new(
+        "config.changed",
+        json!({"rev": rev, "block": block, "values": values}),
+    )
+}
+
 fn stop_kind_name(kind: StopKind) -> &'static str {
     match kind {
         StopKind::Done => "done",

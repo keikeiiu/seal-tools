@@ -41,6 +41,70 @@ fn hello_carries_the_merged_config_and_the_session_revision() {
 }
 
 #[test]
+fn a_config_apply_emits_config_changed_after_the_response() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let result = session.result(
+        "config.apply",
+        json!({
+            "rev": rev,
+            "sections": {"quest": {"active": "run1", "guard_px": 12}},
+        }),
+    );
+
+    // The response arrives first (Session::call already consumed it); the event follows.
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["rev"], result["rev"]);
+    assert_eq!(event["data"]["block"], "quest");
+    assert_eq!(
+        event["data"]["values"]["active"], "run1",
+        "the event carries the block's effective values"
+    );
+}
+
+#[test]
+fn a_portable_apply_fans_out_to_the_blocks_it_carries() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    session.result(
+        "config.apply",
+        json!({
+            "rev": rev,
+            "sections": {"settings": {"window": {"title": "PORTABLE_TITLE"}}},
+        }),
+    );
+
+    let first = session.event();
+    assert_eq!(first["event"], "config.changed");
+    assert_eq!(first["data"]["block"], "window");
+    assert_eq!(first["data"]["values"]["title"], "PORTABLE_TITLE");
+}
+
+#[test]
+fn ui_window_emits_config_changed_for_ui() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    session.result(
+        "ui.window",
+        json!({"left": 10, "top": 20, "width": 900, "height": 700, "pinned": false}),
+    );
+
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["block"], "ui");
+    assert_eq!(event["data"]["values"]["left"], 10);
+}
+
+#[test]
 fn apply_merges_only_the_given_blocks_and_answers_with_them() {
     let root = config_root();
     let defaults_before = root.read_bytes("config/defaults.yaml");
