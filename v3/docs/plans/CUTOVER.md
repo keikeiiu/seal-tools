@@ -25,7 +25,8 @@
    feeding estimate is unavailable and the schedule falls back). The publish script copies v2's file.
 6. **The unchanged firmware sketch is republished** as `SealTools-v3.0-firmware.zip` (same version;
    no reflash needed for an existing user) rather than linking the v2.16 asset — a fresh download
-   should contain everything.
+   should contain everything. The zip has one top folder, `seal_mouse/`, carrying only the unchanged
+   `seal_mouse.ino`; the publish script audits both the sketch directory and the archive.
 7. **v3.0 ships WITHOUT global hotkeys, and says so.** PLAN §6.5 explicitly makes hotkeys a
    measurement first, not a mechanical port: the core process never owns the foreground window, so a
    core-side `GetAsyncKeyState` poller may be blocked by the anti-cheat while in game. The Stop
@@ -88,7 +89,8 @@ the decisions they force:
       frame cache/§6 Setup wording/§7 counts + new §8, CONFIG stale bullets + dangling pointer,
       TOOL-FLOWS status + per-tool "loop is live" lines, OPEN prune.
 - [ ] Folder READMEs (`spec/`, `records/`, `backlog/`), PROGRESS entry, PORT-COVERAGE closure note.
-- [ ] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip; release command
+- [ ] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip; `-Selftest` runs
+      the version/deny/post-zip/firmware guards without a build; release command
       `-ModelsDir v2\models`), config templates,
       `local.yaml.example`, `docs/pet-data.csv`, `DirectML.dll` licensing note (a release input; the
       OCR research record cites it).
