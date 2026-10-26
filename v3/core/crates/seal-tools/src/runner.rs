@@ -38,6 +38,43 @@ pub trait Tool {
     /// The next thing to do. Returning [`Decision::Stop`] ends the run with its reason; the loop
     /// never calls this again after that.
     fn decide(&mut self) -> Decision;
+
+    /// The run's card state: the tool's own words, a countdown it is waiting out, and standing rows.
+    /// The runner publishes it when it CHANGES, so a live tool's progress reaches the `state` event
+    /// without the tool writing to the bus (one writer, `PROTOCOL.md` §5). The default is empty: a
+    /// tool with nothing to say publishes nothing extra.
+    fn status(&self) -> ToolStatus {
+        ToolStatus::default()
+    }
+}
+
+/// What a tool wants its card to say between decisions. Compared by value by the runner, so a tool
+/// may return an unchanged status as often as it likes without producing an event.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ToolStatus {
+    /// The last thing that happened, in the tool's own words.
+    pub message: String,
+    /// Remaining seconds when the tool is waiting something out; the card counts down from it.
+    pub countdown_s: Option<f64>,
+    /// Standing rows (the pet feeder's four rows today).
+    pub rows: Vec<crate::tool::ToolRow>,
+}
+
+impl ToolStatus {
+    pub fn message(mut self, message: impl Into<String>) -> Self {
+        self.message = message.into();
+        self
+    }
+
+    pub fn countdown_s(mut self, countdown_s: Option<f64>) -> Self {
+        self.countdown_s = countdown_s;
+        self
+    }
+
+    pub fn rows(mut self, rows: Vec<crate::tool::ToolRow>) -> Self {
+        self.rows = rows;
+        self
+    }
 }
 
 /// The effects one decision needs. `seal-core` implements it over the board and the cursor; the
@@ -150,12 +187,27 @@ pub fn run(
         .state
         .publish(ToolSnapshot::new(tool.id()).running(ToolPhase::Running));
 
+    let mut published_status = ToolStatus::default();
     loop {
         if control.check().is_err() {
             return StopReason::cancelled(STOPPED_MESSAGE);
         }
 
         let decision = tool.decide();
+
+        // Publish the tool's own card state BEFORE performing the decision, so a countdown shows
+        // while its wait runs and a message caused by a read is visible as soon as it exists.
+        let status = tool.status();
+        if status != published_status {
+            published_status = status.clone();
+            handle.state.publish(
+                ToolSnapshot::new(tool.id())
+                    .running(ToolPhase::Running)
+                    .message(status.message)
+                    .countdown_s(status.countdown_s)
+                    .rows(status.rows),
+            );
+        }
         match decision {
             Decision::Click(at) => {
                 if let Err(error) = effects.click(at) {

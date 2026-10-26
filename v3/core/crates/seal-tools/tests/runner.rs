@@ -11,8 +11,10 @@ use seal_domain::decision::{Decision, Key, StopKind, StopReason};
 use seal_domain::geometry::Point;
 use seal_tools::arbiter::Arbiter;
 use seal_tools::clock::Clock;
-use seal_tools::runner::{EFFECT_FAILED_MESSAGE, EffectError, Effects, STOPPED_MESSAGE, Tool, run};
-use seal_tools::tool::{ToolId, ToolPhase};
+use seal_tools::runner::{
+    EFFECT_FAILED_MESSAGE, EffectError, Effects, STOPPED_MESSAGE, Tool, ToolStatus, run,
+};
+use seal_tools::tool::{StateCell, ToolId, ToolPhase};
 
 struct ScriptedTool {
     id: ToolId,
@@ -79,6 +81,73 @@ impl Effects for RecordingEffects {
     }
 }
 
+/// A tool whose status changes with each decision, plus effects that read the PUBLISHED cell when they
+/// run — so the test observes exactly what a shell would have received, in order.
+struct StatusTool {
+    step: usize,
+}
+
+impl Tool for StatusTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tuner
+    }
+
+    fn decide(&mut self) -> Decision {
+        self.step += 1;
+        match self.step {
+            1 => Decision::click(point(1, 2)),
+            2 => Decision::key('a').unwrap(),
+            _ => Decision::stop(StopReason::done("done")),
+        }
+    }
+
+    fn status(&self) -> ToolStatus {
+        match self.step {
+            0 => ToolStatus::default(),
+            1 => ToolStatus {
+                message: "Attempt 1".to_owned(),
+                countdown_s: Some(3.0),
+                rows: Vec::new(),
+            },
+            _ => ToolStatus {
+                message: "filter disabled".to_owned(),
+                countdown_s: None,
+                rows: Vec::new(),
+            },
+        }
+    }
+}
+
+/// Records the message of the published snapshot at the moment each effect runs.
+#[derive(Default)]
+struct StatusObservingEffects {
+    seen: Mutex<Vec<String>>,
+    state: StateCell,
+}
+
+impl Effects for StatusObservingEffects {
+    fn click(&mut self, _at: Point) -> Result<(), EffectError> {
+        self.observe();
+        Ok(())
+    }
+
+    fn key(&mut self, _key: Key) -> Result<(), EffectError> {
+        self.observe();
+        Ok(())
+    }
+}
+
+impl StatusObservingEffects {
+    fn observe(&mut self) {
+        let message = self
+            .state
+            .read()
+            .map(|snapshot| format!("{}|{:?}", snapshot.message, snapshot.countdown_s))
+            .unwrap_or_else(|| "none".to_owned());
+        self.seen.lock().expect("not poisoned").push(message);
+    }
+}
+
 #[derive(Default)]
 struct RecordingClock {
     slept: Mutex<Vec<f64>>,
@@ -102,6 +171,33 @@ impl Clock for RecordingClock {
 
 fn point(x: i32, y: i32) -> Point {
     Point::new(x, y)
+}
+
+#[test]
+fn a_tool_status_is_published_before_each_decision_runs() {
+    let mut arbiter = Arbiter::new();
+    let handle = match arbiter.start(ToolId::Tuner) {
+        seal_tools::arbiter::Start::Started(handle) => handle,
+        other => panic!("expected a start, got {other:?}"),
+    };
+    let mut tool = StatusTool { step: 0 };
+    let mut effects = StatusObservingEffects {
+        seen: Mutex::new(Vec::new()),
+        state: handle.state.clone(),
+    };
+    let clock = RecordingClock::default();
+
+    let reason = run(&mut tool, &handle, &clock, &mut effects);
+
+    assert_eq!(reason.message, "done");
+    assert_eq!(
+        effects.seen.lock().expect("not poisoned").clone(),
+        vec![
+            "Attempt 1|Some(3.0)".to_owned(),
+            "filter disabled|None".to_owned()
+        ],
+        "the shell sees each status as the whole published snapshot, before its decision runs"
+    );
 }
 
 #[test]

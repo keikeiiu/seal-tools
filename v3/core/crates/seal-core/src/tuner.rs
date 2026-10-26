@@ -29,7 +29,7 @@ use seal_domain::tools::tuner::{
     MouseGuardStep, START_COUNTDOWN, SpringMode, SpringStep, TunerDecision, TunerRead, TunerRun,
     TunerSettings, after_recenter, mouse_guard_step, spring_step,
 };
-use seal_tools::runner::Tool;
+use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::ToolId;
 use serde_json::Value;
 
@@ -193,6 +193,9 @@ pub struct TunerTool<S: TunerSource> {
     recenter_count: i32,
     pending_click_delay: f64,
     pending_ocr_delay: f64,
+    /// The filter line from the last read (`filter.disabled` when off). v2 shows it on the card, so it
+    /// is the part of the run the player reads between attempts.
+    filter_line: String,
 }
 
 impl<S: TunerSource> TunerTool<S> {
@@ -212,6 +215,7 @@ impl<S: TunerSource> TunerTool<S> {
             recenter_count: 0,
             pending_click_delay: timings.0,
             pending_ocr_delay: timings.1,
+            filter_line: String::new(),
         }
     }
 
@@ -241,6 +245,29 @@ impl<S: TunerSource> TunerTool<S> {
 impl<S: TunerSource + Send> Tool for TunerTool<S> {
     fn id(&self) -> ToolId {
         ToolId::Tuner
+    }
+
+    fn status(&self) -> ToolStatus {
+        if self.step == Step::Countdown {
+            let remaining = (START_COUNTDOWN as f64 - (self.now.seconds() - self.started)).max(0.0);
+            return ToolStatus {
+                message: format!("Starting in {:.0}...", remaining.ceil()),
+                countdown_s: Some(remaining),
+                rows: Vec::new(),
+            };
+        }
+        if !self.filter_line.is_empty() {
+            return ToolStatus {
+                message: self.filter_line.clone(),
+                countdown_s: None,
+                rows: Vec::new(),
+            };
+        }
+        ToolStatus {
+            message: format!("Attempt {}", self.run.attempt().max(1)),
+            countdown_s: None,
+            rows: Vec::new(),
+        }
     }
 
     fn decide(&mut self) -> Decision {
@@ -327,6 +354,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
                         }
                     };
                     let outcome = self.run.decide(&read);
+                    self.filter_line = outcome.filter_status.clone();
                     match outcome.decision {
                         TunerDecision::Stop(reason) => {
                             self.step = Step::Read;
@@ -584,6 +612,35 @@ mod tests {
 
         assert!(line.contains("spring_mode is hid"), "{line}");
         assert!(line.contains("spring_point"), "{line}");
+    }
+
+    #[test]
+    fn the_status_shows_the_countdown_then_the_filter_line() {
+        let (mut tool, clock) = tool(config("manual", None), vec![Ok(read_target())], None);
+
+        let status = tool.status();
+        assert_eq!(status.message, "Starting in 5...");
+        assert_eq!(status.countdown_s, Some(5.0));
+
+        for _ in 0..START_COUNTDOWN {
+            tool.decide();
+            clock.fetch_add(1000, Ordering::SeqCst);
+        }
+        // The fifth Wait was decided while the clock still read 4 s; the next decision crosses the
+        // countdown boundary and starts the first attempt.
+        tool.decide();
+        assert!(
+            tool.status().countdown_s.is_none(),
+            "the countdown is over once the first attempt starts"
+        );
+
+        // Through the attempt to the read; the filter is disabled in this fixture, and the domain
+        tool.decide();
+        tool.decide();
+        tool.decide();
+        tool.decide();
+        tool.decide();
+        assert_eq!(tool.status().message, "disabled");
     }
 
     #[test]

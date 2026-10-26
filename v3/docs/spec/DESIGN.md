@@ -109,7 +109,9 @@ a `Response`; the response is queued on the SAME writer channel as events, so no
 the **spammer**, **holdspace** and **tuner** (the first READ-loop tool: capture → OCR → the domain's
 `TunerRun::decide` → effects, with the read behind a `TunerSource` seam) and refuses the other five
 ids by name until their loops land (the registry is the seam, and its tests pin the refusal). The
-rest of PROTOCOL §4
+rest of PROTOCOL §4. The runner also publishes a tool's own card state (`Tool::status`: message,
+countdown, rows) whenever it changes, which is how the tuner's countdown and filter line reach the
+`state` event without a second writer. The rest of PROTOCOL §4
 is spec-only and is reported in OPEN §3/§4. Every config save runs the domain rules first
 (`validate.rs`, "no widget keeps a rule").
 
