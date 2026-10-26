@@ -19,6 +19,53 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-26 (19) — the read-loop tool, the pure executor, and the shell's last faces
+
+Two tools landed after the first two, and they are deliberately different shapes because the tools
+are: the **tuner** (`39ed221`) reads, the **quest** (`b261b45`) does not.
+
+The tuner is v3's first READ-LOOP tool — capture → OCR → the domain's `TunerRun::decide` → effects —
+and it defined the shape the remaining reader tools will copy: the read is a seam (`TunerSource`: one
+scan + the cursor), so the loop and its conversion are tested with a scripted source (ten tests, no
+screen, no board); the production source is `win::capture` (foreground-gated) + `seal-ocr` + the
+domain matcher, and `win::CommandError::line()` was extracted so the protocol mapping and the tool
+read the same sentence instead of growing two copies. Earning it required three small effect seams,
+each committed separately because each is a wire fact: `Enter` (the firmware's `E`, never `K E`),
+`Place(Point)` (move without clicking — the HID spring placement and the guard's recentre),
+`ClickHere` (the bare `C` manual mode needs), and later `RightClickHere` (`R`).
+
+The quest is the opposite shape and proves the seam is not one mould: its decisions are pure config
+(clicks/keys/enters/waits, per-step delays, master loops and sequence passes), its only read is the
+cursor, and it may never place the cursor at all — the player positions the mouse during the
+countdown and a drift STOPs the run with v2's two stop lines. Both tools validate before anything is
+clicked, because a wrong config at a few hundred loops is unattributable afterwards.
+
+**The runner→card seam (`7a1d63d`).** `Tool::status()` (message/countdown/rows) is published as a
+whole snapshot when it changes, before the decision it belongs to, so a countdown is visible during
+its wait and a read's line appears as soon as it exists. Status equality gates publishing. This is
+the gap that had made the rich `state` event a spec-only shape for live tools; now the tuner shows
+its countdown, filter line and attempt, and the pet's rows have a place to go when its loop lands.
+
+**The shell finished PLAN §6** while the core grew: `keys.parse`/`keys.names` (`7806a9b`) put the
+typed-name rule behind the protocol (PROTOCOL §12.5) and the **Hotkeys tab** (`35c6d89`) edits names
+while the config keeps codes — including structural preservation of a code no name covers; the
+**card extras** (`62ffc4d`) added persisted Quest pickers, a display-only Buy picker whose protocol
+gap is recorded rather than invented around, a read-only 64-slot sell grid, and live-status coverage.
+
+**What the gates caught this stretch:** one stale test expectation (a theme's `quit` code renders
+`F11`, not `Escape`); one fake transport that never answered `tool.start`, leaving the client's 10 s
+timeout timer pending at teardown (the standing rule is now: a test that presses a command-sending
+button answers that command); a 49 px card overflow that forced the extras layout to be
+width-adaptive; and the fifth instance of the protocol-vs-Flutter type shadowing in a `ui.` sweep,
+which is why the shell README names `calibration_widgets.dart` as the boundary example.
+
+**Counts at this milestone:** Rust workspace green (73 result lines; core lib 54), clippy/fmt clean;
+Flutter analyze No issues, 142/142 tests, format clean. **Four live tools** (spammer, holdspace,
+tuner, quest); four ids remain refused by name. Next: the shop loops — the first readers besides the
+tuner — then gem, then the pet feeder (rows + drag hold, the hardest).
+
+---
+
 ## 2026-10-26 (18) — a second live tool, the last silent event, and the shell polish set
 
 **Hold Space is the second live tool (`3004cb2`).** `tool.start holdspace` opens the board, holds the
