@@ -66,6 +66,14 @@ pub trait Effects {
     fn release_space(&mut self) -> Result<(), EffectError> {
         Ok(())
     }
+
+    /// Press Enter. The default REFUSES rather than approximating with a printable `K E`: those are
+    /// different wires (`E` vs `K E`) and the firmware's Enter is the one a game dialog accepts.
+    fn enter(&mut self) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot press Enter",
+        ))
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -154,6 +162,11 @@ pub fn run(
             }
             Decision::ReleaseSpace => {
                 if let Err(error) = effects.release_space() {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::Enter => {
+                if let Err(error) = effects.enter() {
                     return StopReason::error(effect_message(&error));
                 }
             }

@@ -35,6 +35,12 @@ pub enum Decision {
     /// Release the spacebar (the board's `U`). Harmless when nothing is held: the release path never
     /// has to ask whether it needs to.
     ReleaseSpace,
+
+    /// Press Enter (the board's `E`). A separate decision because `Key` deliberately means one
+    /// printable character or F1-F12, and the firmware's Enter is its own command: the tuner's spring
+    /// sequence is exactly "click, then Enter", and the quest executor's `enter` action is the same
+    /// pair. Sent as `E`, never as `K E`.
+    Enter,
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

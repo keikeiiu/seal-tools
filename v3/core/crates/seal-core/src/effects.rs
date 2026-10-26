@@ -98,6 +98,10 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     fn release_space(&mut self) -> Result<(), EffectError> {
         self.write(BoardCommand::ReleaseSpace)
     }
+
+    fn enter(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::Enter)
+    }
 }
 
 fn key_command(key: Key, fast: bool) -> BoardCommand {
@@ -255,6 +259,23 @@ mod tests {
             fx.transport().writes().is_empty()
                 || !fx.transport().writes().iter().any(|w| w == "C\n"),
             "a failed placement must not click"
+        );
+    }
+
+    #[test]
+    fn enter_is_the_firmwares_own_command_not_a_printable_key() {
+        let mut fx = effects(
+            FakeTransport::new(),
+            ScriptedCursor::new(vec![Some((100, 50))]),
+            StepClock::default(),
+        );
+
+        fx.enter().expect("Enter is a plain write");
+
+        assert_eq!(
+            fx.transport().writes(),
+            vec!["E\n"],
+            "`E`, never `K E`: the firmware's Enter is what a dialog accepts"
         );
     }
 
