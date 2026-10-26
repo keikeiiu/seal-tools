@@ -106,9 +106,11 @@ a `Response`; the response is queued on the SAME writer channel as events, so no
 `ui.window`, `window.find`/`window.measure`/`capture`, `board.probe`/`board.test`, `attributes.get`,
 `calibration.save`/`calibration.fetch`, `ocr.scan`,
 `tool.start`/`tool.stop` and `shutdown` are the implemented commands today; `tool.start` is live for
-the **spammer**, **holdspace** and **tuner** (the first READ-loop tool: capture → OCR → the domain's
-`TunerRun::decide` → effects, with the read behind a `TunerSource` seam) and refuses the other five
-ids by name until their loops land (the registry is the seam, and its tests pin the refusal). The
+the **spammer**, **holdspace**, **tuner** (the first READ-loop tool: capture → OCR → the domain's
+`TunerRun::decide` → effects, with the read behind a `TunerSource` seam) and **quest** (a pure
+config-driven executor — the player positions the mouse during the countdown and a cursor guard stops
+a run whose pointer moves; the only seam is the cursor read) and refuses the other four ids by name
+until their loops land (the registry is the seam, and its tests pin the refusal). The
 rest of PROTOCOL §4. The runner also publishes a tool's own card state (`Tool::status`: message,
 countdown, rows) whenever it changes, which is how the tuner's countdown and filter line reach the
 `state` event without a second writer. The rest of PROTOCOL §4

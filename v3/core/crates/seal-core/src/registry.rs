@@ -27,6 +27,7 @@ use seal_config::ConfigStore;
 
 use crate::board::{BoardFailure, Settings, open_board};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
+use crate::quest::{QuestEffects, QuestTool, WinQuestSource};
 use crate::spammer::{RealNow, SpammerTool};
 use crate::tuner::TunerTool;
 
@@ -81,6 +82,22 @@ impl ProductionRegistry {
             .read()
             .map(|config| config.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
+    fn quest_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let plan = crate::quest::resolve(&config).map_err(|reason| reason.message)?;
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        Ok(Session {
+            tool: Box::new(QuestTool::new(plan, WinQuestSource)),
+            effects: Box::new(QuestEffects::new(transport)),
+        })
     }
 
     fn tuner_session(&self) -> Result<Session, String> {
@@ -164,6 +181,11 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Tuner => crate::tuner::plan(&self.config())
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
+            ToolId::Quest => crate::quest::resolve(&self.config())
+                .map(|_| ())
+                .map_err(|reason| Unavailable {
+                    line: reason.message,
+                }),
             other => Err(Unavailable {
                 line: not_available_line(other),
             }),
@@ -175,6 +197,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Spammer => self.spammer_session(),
             ToolId::HoldSpace => self.hold_space_session(),
             ToolId::Tuner => self.tuner_session(),
+            ToolId::Quest => self.quest_session(),
             other => Err(not_available_line(other)),
         }
     }
@@ -243,6 +266,29 @@ mod tests {
         })
     }
 
+    fn config_with_quest() -> Value {
+        serde_json::json!({
+            "window": {"title": "TW_LIVE"},
+            "quest": {
+                "active": "run1",
+                "guard_px": 8,
+                "presets": {"run1": {"initial_wait_seconds": 1.0, "loops": 1, "steps": [{"action": "click"}]}},
+            },
+        })
+    }
+
+    #[test]
+    fn the_quest_tool_is_available_once_its_flow_validates() {
+        assert_eq!(
+            registry(config_with_quest()).available(ToolId::Quest),
+            Ok(())
+        );
+        let refusal = registry(serde_json::json!({"quest": {"presets": {}}}))
+            .available(ToolId::Quest)
+            .expect_err("a flow with no steps is refused");
+        assert!(refusal.line.contains("has no steps"), "{}", refusal.line);
+    }
+
     #[test]
     fn the_tuner_is_available_once_its_region_resolves() {
         assert_eq!(
@@ -299,7 +345,10 @@ mod tests {
     #[test]
     fn every_other_tool_says_it_is_not_ported() {
         for tool in ToolId::ALL {
-            if matches!(tool, ToolId::Spammer | ToolId::HoldSpace | ToolId::Tuner) {
+            if matches!(
+                tool,
+                ToolId::Spammer | ToolId::HoldSpace | ToolId::Tuner | ToolId::Quest
+            ) {
                 continue;
             }
             let refusal = registry(config_with_spammer())
