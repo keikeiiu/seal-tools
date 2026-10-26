@@ -1,8 +1,8 @@
 # v3 CALIBRATION — the coordinate contract
 
-**Status: the contract, written 2026-10-25. The live measurement that fills it is `seal-win`'s and is
-still open (see §7).** This document is the v3 truth for what a calibrated value means and how it is
-measured; [COORDINATES.md](../../../v2/docs/spec/COORDINATES.md) and
+**Status: the contract, current 2026-10-27.** The live measurement that fills it — `seal-win`'s window
+measurement and capture — is built and in use, and `calibration.save`/`fetch` serve 18 kinds. This
+document is the v3 truth for what a calibrated value means and how it is measured; [COORDINATES.md](../../../v2/docs/spec/COORDINATES.md) and
 [CALIBRATION.md](../../../v2/docs/spec/CALIBRATION.md) in v2 remain the RECORD of the measurements
 that produced these rules — cite them for evidence, not for current behaviour. The shape of the
 values on the wire is [PROTOCOL.md](PROTOCOL.md) §3; which file they live in is
@@ -140,8 +140,8 @@ a cursor to a pixel v2 never clicked. Pinned by
   calibrator's capture is the game only.
 - **Frames carry their origin**: the frame is a rectangle of the physical screen, and
   [`Frame`](PROTOCOL.md#3-types) carries `origin` so the shell never has to guess where it came from.
-  Frames are PNG+base64 for now; the core will retain the last four by `frame_id` (not built yet) so
-  `calibration.save` references the frame the calibrator just took instead of shipping megabytes
+  Frames are PNG+base64; the core retains the last four by `frame_id` (a FIFO cache in `dispatch.rs`),
+  so `calibration.save` references the frame the calibrator just took instead of shipping megabytes
   twice.
 
 ## 4. The shell's side — mapping a frame back to coordinates
@@ -210,8 +210,9 @@ pixel size while the world view expands), so a proportional transform would plac
 
 ## 6. CalibrationCheck and the Detect flow
 
-The Setup surface answers one question: does the display environment still match the one this
-calibration was measured in? The rule is a stored field **carries a value AND it moved**:
+The CalibrationCheck arithmetic answers one question: does the display environment still match the one
+this calibration was measured in? (The rule is ported and tested; the Setup surface that would show it
+— a Detect action — is not built yet.) The rule is a stored field **carries a value AND it moved**:
 
 - A field the stored calibration does not carry is NOT a difference — an install that has never been
   calibrated has nothing to be wrong about, and the surface says "nothing stored yet" separately.
@@ -252,7 +253,8 @@ explicitly OUT of the kind table: they are live-screen session features (OPEN).
 `calibration.save` and `calibration.fetch` are implemented: the kind table lives in
 `seal-core/src/calibration.rs` and accepts `bag_grid`, `bag_slot`, `shop_list`, `scroll_point`,
 `max_button`, `result_gem_area` (with its `empty` verdict) and `spring_point`; marks go through the
-one `local.yaml` write gate, and the result-gem crop is the first binary artifact. The kind table was
+one `local.yaml` write gate, and the result-gem crop is the first binary artifact. The table is **18 kinds**: the seven repaired untargeted ones above plus the eleven named-instance
+kinds described in the previous paragraph. It was
 REPAIRED after the gap audit (`PROTOCOL §12.7`): `focus_point` wrote a field no consumer reads and
 became `scroll_point`; `max_button` had a mark with no kind and now has one; `result_gem_area` lost
 v2's empty verdict and got it back; `tuner_region` was withdrawn rather than faked (the three-box
@@ -260,10 +262,25 @@ session is a plan), and the invented quest-step row was removed. Still open:
 
 | Not built yet | What it needs | Pointer |
 |---|---|---|
-| The remaining mark kinds | the pet points/rects and the gem points need the optional `target` on `calibration.save`/`fetch` (named instances: page tab, row); the tooltip offset + shape needs v2's two-capture hover session (it cannot be a single-frame mark); the pet crops/cells and the sell-slot editor are Pet-tab features, not calibration kinds. Today they are hand-editable and preserved, not calibrated from the UI | PROTOCOL §4; this file §1; OPEN |
+| The tooltip offset + shape | needs v2's two-capture hover session — a frame mark cannot express "park the cursor, hover, then box the panel" — so it stays hand-edited until that session exists | OPEN; this file §1 |
+| The pet's crops/cells and the sell-slot selection | live-screen SESSION features, not frame marks: the pet's reference crops are captured from the running game on the Pet tab (the close-X crop is learned by the run), and the sell slots are a bag-cell editor. The calibration protocol deliberately does not grow kinds for them | OPEN; PROTOCOL §12.8 |
 | The tuner's three-box session | v2 dragged grade area + attribute band + remaining band and DERIVED `region`, the bands and `row_height`; a session-shaped calibration (several marks, or several commands with a documented order) is the only way to keep that derivation. Until then the tuner OCR geometry is hand-edited and `tuner_region` is refused | OPEN; `startup.rs`'s load rules |
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
 | `config.changed` for calibration writes | LANDED: a save now queues `config.changed {rev, block, values}` for the block it marks, after its response (PROTOCOL §5), so a shell keeping a mirror updates without refetching | PROTOCOL §5 |
 | Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
 | Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result | OPEN §4 |
 | The boundary a measurement must match | `CalibrationCheck` is ported and tested in the domain; `calibration.save`'s optional `display` argument now records the environment it compares, but no Detect command consumes the comparison yet | this file §6 |
+## 8. Portability and migration
+
+Coordinates are machine-specific, and the doc that used to carry this reasoning is v2's COORDINATES
+(the record). The v3 rules, in one place:
+
+- **What invalidates stored coordinates at once:** a different display SCALE, a different game CLIENT
+  SIZE, or a different screen. The Setup surface's CalibrationCheck compares exactly those three
+  (this file §6); if any moved, recalibrate — a proportional transform is deliberately NOT applied,
+  because the game UI does not scale linearly (this file §5).
+- **A v2 install becomes a v3 install by copying, not converting:** `config/local.yaml` and the
+  calibration artifacts beside it (`calib_gem_result.png`, any other `calib_*.png`) go into the v3
+  folder's `config/`. The file formats are unchanged; the marks mean the same physical offsets.
+- **A new PC, or a moved game window, starts with calibration** — the marks are physical
+  client-relative offsets, and the first-run flow is in the guide (INSTALL/USER_GUIDE).

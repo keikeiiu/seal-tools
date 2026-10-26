@@ -219,17 +219,19 @@ safe*, not *whether a value is allowed*.
   `seal-domain` owns the typed dictionary plus its OCR matchers
   ([attributes.rs](../../core/crates/seal-domain/src/config/attributes.rs),
   [ocr/](../../core/crates/seal-domain/src/ocr/mod.rs)); the core loads the dictionary the active
-  variant names at boot and on `config.reload`, all-or-nothing in v2's switch order (`b6a49a7`). No
-  OCR reader consumes it yet — that is `seal-ocr`'s side ([OPEN.md](../backlog/OPEN.md) §4).
+  variant names at boot and on `config.reload`, all-or-nothing in v2's switch order (`b6a49a7`). The
+  OCR reader paths consume it: the tuner, gem and pet readers load this dictionary at boot and match
+  attributes against it.
 - **The `settings:` path is wired.** `config.apply` may carry the portable half; the core merges the
   owned blocks and writes the `settings:` projection in ONE `update_local` (`46df1ee`), so a failed
   apply half-saves nothing (PROTOCOL §4/§7). `save_settings` and the composed writer share their
   projection code so they cannot drift.
 - **No cross-process lock.** The save gate is in-process, and the protocol's single-instance lock
   ([PROTOCOL.md](PROTOCOL.md) §1) is not implemented yet. Two cores on one root can interleave.
-- **Binary artifacts need their own writer.** The atomic writer carries text only. The calibration
-  PNGs that v2 wrote beside `local.yaml` need a temp-and-move sibling for binary data (a
-  `File.Copy`-to-temp-and-move shape, not this one) when `calibration.save` lands.
+- **Binary artifacts have their own writer.** The atomic text writer could not carry the calibration
+  PNGs, so `calibration.save` writes them through a temp-and-rename sibling (`write_artifact`,
+  `ab22a0a`); the result-gem crop is the first artifact it writes.
 - **The header's inherited pointer resolves.** `LOCAL_HEADER` points at `docs/spec/CALIBRATION.md`
   (and this file); both now exist in the v3 spec tree. Whether `docs/` ships beside `config/` inside
-  the install is a packaging question ([OPEN.md](../backlog/OPEN.md) §2).
+  the install is a packaging question, answered by [CUTOVER.md](../plans/CUTOVER.md) and carried out
+  by `v3/publish.ps1`.
