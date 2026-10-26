@@ -41,6 +41,17 @@ pub enum Decision {
     /// sequence is exactly "click, then Enter", and the quest executor's `enter` action is the same
     /// pair. Sent as `E`, never as `K E`.
     Enter,
+
+    /// Move the cursor to this client-relative PHYSICAL offset and DO NOT click. The tuner's HID
+    /// spring placement is the reason it exists: v2's `PlaceOnSpring` puts the cursor on the spring
+    /// button and the loop clicks separately (an extra click here would open the wrong window), and
+    /// its recenter path is the same move with no click.
+    Place(Point),
+
+    /// Click wherever the cursor already is (the board's bare `C`). v2's tuner in `manual` spring
+    /// mode clicks the button the PLAYER positioned the mouse on, so there is no point to place at —
+    /// and `Click(Point)` would move the cursor first, which manual mode exists to avoid.
+    ClickHere,
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

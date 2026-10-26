@@ -74,6 +74,23 @@ pub trait Effects {
             "this effects implementation cannot press Enter",
         ))
     }
+
+    /// Move the cursor to a client-relative PHYSICAL offset without clicking. The default REFUSES: an
+    /// implementation that cannot place must not click instead, because the click is what the caller
+    /// deliberately did not ask for.
+    fn place(&mut self, _at: Point) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot place the cursor",
+        ))
+    }
+
+    /// Click wherever the cursor already is (the board's bare `C`). The default REFUSES rather than
+    /// trying to place at an origin: a bare click at the wrong spot is worse than a card line.
+    fn click_here(&mut self) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot click without a target",
+        ))
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -167,6 +184,16 @@ pub fn run(
             }
             Decision::Enter => {
                 if let Err(error) = effects.enter() {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::Place(at) => {
+                if let Err(error) = effects.place(at) {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::ClickHere => {
+                if let Err(error) = effects.click_here() {
                     return StopReason::error(effect_message(&error));
                 }
             }

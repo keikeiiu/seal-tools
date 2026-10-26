@@ -59,9 +59,8 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
             .map_err(|error| EffectError::new(error.message()))
     }
 
-    /// Place the cursor at a client-relative PHYSICAL offset, then click. This is the only place a
-    /// decision's click becomes a cursor move; the placement loop is the board crate's.
-    pub fn click_at(&mut self, at: Point) -> Result<(), EffectError> {
+    /// Place the cursor at a client-relative PHYSICAL offset and DO NOT click.
+    pub fn place_at(&mut self, at: Point) -> Result<(), EffectError> {
         let target = self.display.cursor_target(at.x, at.y).logical;
         let placement = place(
             &mut self.transport,
@@ -74,6 +73,13 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
                 "the cursor could not be placed, so nothing was clicked".to_owned()
             })));
         }
+        Ok(())
+    }
+
+    /// Place the cursor at a client-relative PHYSICAL offset, then click. The placement loop is the
+    /// board crate's; a failed placement never clicks.
+    pub fn click_at(&mut self, at: Point) -> Result<(), EffectError> {
+        self.place_at(at)?;
         self.write(BoardCommand::LeftClick)
     }
 }
@@ -101,6 +107,14 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
 
     fn enter(&mut self) -> Result<(), EffectError> {
         self.write(BoardCommand::Enter)
+    }
+
+    fn place(&mut self, at: Point) -> Result<(), EffectError> {
+        self.place_at(at)
+    }
+
+    fn click_here(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::LeftClick)
     }
 }
 
@@ -276,6 +290,29 @@ mod tests {
             fx.transport().writes(),
             vec!["E\n"],
             "`E`, never `K E`: the firmware's Enter is what a dialog accepts"
+        );
+    }
+
+    #[test]
+    fn place_moves_without_clicking_and_click_here_writes_only_the_click() {
+        let mut fx = effects(
+            FakeTransport::new(),
+            ScriptedCursor::new(vec![Some((0, 0)), Some((110, 70))]),
+            StepClock::default(),
+        );
+
+        fx.place(Point::new(10, 20)).expect("a bare placement");
+        assert_eq!(
+            fx.transport().writes(),
+            vec!["D 110 70\n"],
+            "place never clicks"
+        );
+
+        fx.click_here().expect("a bare click");
+        assert_eq!(
+            fx.transport().writes(),
+            vec!["D 110 70\n", "C\n"],
+            "click_here writes C without moving"
         );
     }
 
