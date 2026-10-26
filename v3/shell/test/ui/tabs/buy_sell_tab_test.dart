@@ -32,7 +32,10 @@ Finder _field(String key) => find.descendant(
   matching: find.byType(TextField),
 );
 
-Future<AppHarness> _pumpBuySell(WidgetTester tester) async {
+Future<AppHarness> _pumpBuySell(
+  WidgetTester tester, {
+  Map<String, dynamic>? block,
+}) async {
   tester.view.physicalSize = const ui.Size(1600, 2400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -46,7 +49,7 @@ Future<AppHarness> _pumpBuySell(WidgetTester tester) async {
   final connecting = harness.connect(
     config: {
       'window': {'title': 'TW_LIVE'},
-      'buy_sell': _buySellBlock(),
+      'buy_sell': block ?? _buySellBlock(),
     },
   );
   for (var i = 0; i < 3; i++) {
@@ -142,4 +145,38 @@ void main() {
     expect(find.byKey(const ValueKey('dirty-buy_sell')), findsNothing);
     expect(tester.widget<TextField>(_field('buy-count')).controller?.text, '3');
   });
+
+  testWidgets('the sell grid renders the configured cells and count', (
+    tester,
+  ) async {
+    await _pumpBuySell(tester);
+
+    expect(find.text('3 of 64 slots configured'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sell-cell-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sell-cell-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sell-cell-63')), findsOneWidget);
+    // The pitch comes from the calibrated bag grid (300/8 × 400/8).
+    expect(find.textContaining('bag pitch 37.5×50.0 px'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sell-grid-not-calibrated')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'the sell grid says not calibrated yet when the config lacks it',
+    (tester) async {
+      await _pumpBuySell(
+        tester,
+        block: {'presets': <String, dynamic>{}, 'sell_cap': 5},
+      );
+
+      expect(
+        find.byKey(const ValueKey('sell-grid-not-calibrated')),
+        findsOneWidget,
+      );
+      expect(find.text('Sell grid: not calibrated yet'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sell-grid-count')), findsNothing);
+    },
+  );
 }

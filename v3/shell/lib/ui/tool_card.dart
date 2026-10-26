@@ -30,6 +30,7 @@ class ToolCard extends StatelessWidget {
     required this.onStop,
     this.holdSpaceLine,
     this.elapsedTicks = 0,
+    this.extras,
   });
 
   final ToolId tool;
@@ -54,6 +55,9 @@ class ToolCard extends StatelessWidget {
 
   /// The Spammer card's Hold Space report (TOOL-FLOWS: holdspace has no card of its own).
   final String? holdSpaceLine;
+
+  /// Card-specific config controls (Buy picker, Quest pickers) rendered above the buttons.
+  final Widget? extras;
 
   /// Whole seconds elapsed since this tool's last `state` event, driven by the grid's ONE ticker.
   /// Only the DISPLAYED countdown uses it: rows without `next_action_in_seconds` are untouched.
@@ -125,6 +129,10 @@ class ToolCard extends StatelessWidget {
                 elapsedTicks: elapsedTicks,
               ),
             ),
+            if (extras != null) ...[
+              const SizedBox(height: ShellSpace.xs),
+              extras!,
+            ],
             if (holdSpace != null)
               Text(
                 'Hold Space: $holdSpace',

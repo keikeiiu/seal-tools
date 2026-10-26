@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app.dart';
 import '../protocol/protocol.dart';
+import 'card_extras.dart';
 import 'theme.dart';
 import 'tool_card.dart';
 import 'tool_labels.dart';
@@ -102,7 +103,7 @@ class _CardGridState extends State<CardGrid> {
       padding: const EdgeInsets.all(ShellSpace.lg),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 460,
-        mainAxisExtent: 320,
+        mainAxisExtent: 360,
         crossAxisSpacing: ShellSpace.md,
         mainAxisSpacing: ShellSpace.md,
       ),
@@ -117,6 +118,11 @@ class _CardGridState extends State<CardGrid> {
           pending: widget.model.tools.isPending(tool),
           ready: widget.model.isReady,
           elapsedTicks: _elapsed[tool] ?? 0,
+          extras: switch (tool) {
+            ToolId.buy => BuyCardExtras(model: widget.model),
+            ToolId.quest => QuestCardExtras(model: widget.model),
+            _ => null,
+          },
           holdSpaceLine: tool == ToolId.spammer
               ? holdSpaceReport(
                   widget.model.tools.snapshot(ToolId.holdspace),

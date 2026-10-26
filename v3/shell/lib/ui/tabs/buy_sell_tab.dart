@@ -76,6 +76,77 @@ class _BuySellTabState extends State<BuySellTab>
   Map<String, dynamic> _calibrated() =>
       asJsonMap(model.config.config['buy_sell']);
 
+  /// The 8×8 bag as a read-only map of the configured `sell_slots` (0 = top-left). Machine state, not
+  /// an editor this wave: no cell writes, no clicks — the launcher deliberately does not persist this
+  /// field, it only displays a file that has it.
+  Widget _sellGrid(ThemeData theme) {
+    final calibrated = _calibrated();
+    final slots = <int>{};
+    for (final value in asJsonList(calibrated['sell_slots'])) {
+      final number = asNumber(value);
+      final slot = number?.round();
+      if (slot != null && slot >= 0 && slot < 64) {
+        slots.add(slot);
+      }
+    }
+    final bagGrid = <int>[];
+    for (final value in asJsonList(calibrated['bag_grid'])) {
+      final number = asNumber(value);
+      if (number != null) {
+        bagGrid.add(number.round());
+      }
+    }
+    if (bagGrid.length != 4 && slots.isEmpty) {
+      return Text(
+        'Sell grid: not calibrated yet',
+        key: const ValueKey('sell-grid-not-calibrated'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    final pitch = bagGrid.length == 4
+        ? ' · bag pitch ${(bagGrid[2] / 8).toStringAsFixed(1)}×'
+              '${(bagGrid[3] / 8).toStringAsFixed(1)} px'
+        : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Sell grid — read-only$pitch',
+          key: const ValueKey('sell-grid-pitch'),
+          style: theme.textTheme.labelLarge,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text(
+          '${slots.length} of 64 slots configured',
+          key: const ValueKey('sell-grid-count'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        for (var row = 0; row < 8; row++)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var column = 0; column < 8; column++)
+                Container(
+                  key: ValueKey('sell-cell-${row * 8 + column}'),
+                  width: 20,
+                  height: 20,
+                  margin: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: slots.contains(row * 8 + column)
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerHighest,
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   // ── writers ──────────────────────────────────────────────────────────────────────────────
 
   Map<String, dynamic> _ensureMap(Map<String, dynamic> parent, String key) {
@@ -124,6 +195,7 @@ class _BuySellTabState extends State<BuySellTab>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    final theme = Theme.of(context);
     final preset = _currentPreset();
     final names = _presetNames();
     final calibrated = _calibrated();
@@ -166,6 +238,8 @@ class _BuySellTabState extends State<BuySellTab>
               label: 'Sell slots',
               value: readOnlyText(calibrated['sell_slots']),
             ),
+            const SizedBox(height: ShellSpace.sm),
+            _sellGrid(theme),
           ],
         ),
       ],
