@@ -38,16 +38,29 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
-- **Pet feeder follow-ups, named not hidden** (`seal-core/src/pet.rs`). The module is split: increment
-  1 (plan, card surface, read seam) is committed with the tool still refusing by name; increment 2
-  (the loop, reload sequence, four-row state machine, food-load drag) is in flight, and the registry
-  flip only happens when that loop is complete. Two reader-side notes: v2's `IconMatch` (queue/food
-  icon vs bag cells) is not in `seal-domain` and is being ported as PURE comparison code in the
-  adapter (fed by the capture seam, unit-tested), not as a domain API — it is measurement arithmetic
-  like the gem crop comparison, not a decision; and v2's feeder-count read walked a 3x/9x/24x
-  upscale ladder that `OcrPipeline::scan_rgba` does not offer, so production does one OCR pass per
-  slot plus the v2 warm-colour verdict, with the ladder recorded as a follow-up that does not change
-  the `Option<i32>` seam contract.
+- **The supervisor <-> runner hand-over seam is the next core gap** (found by the pet feeder's
+  resident rules). The arbiter already owns `is_resident`, `request_game`/`release_game`,
+  `should_stand_down` and the deferred-start rules, but **no running tool can reach those calls**:
+  `Tool`/`Effects` do not see the arbiter. Consequences in this build: the pet feeder cannot yield
+  the game between visits or re-acquire it, and a resident start plus a foreground start can both be
+  `Started` (the foreground start sees `game == None` because the resident never took it), so two
+  runs could drive input concurrently. The pet's OPENING does not need to wait for the game (its
+  first catalogue click focuses it, v2's rule), so the adapter does not fake a gate. The options are
+  a small `GameLease` handed to `Effects` (tools request/release and a resident yields on its Wait),
+  or supervisor-side arbitration that defers/refuses a foreground start while a resident is engaged;
+  the arbiter tests are the place to pin the chosen rule. This is the next task after the pet lands.
+- **Pet feeder follow-ups, named not hidden** (`seal-core/src/pet.rs`, LANDED with the registry flip).
+  Reader-side notes: v2's `IconMatch` is ported as PURE comparison code in the adapter
+  (`differing_fraction_images`/`best_offset_score`/`score_cell`/`cells_holding`, unit-tested), not a
+  domain API — measurement arithmetic like the gem crop comparison, not a decision. v2's feeder-count
+  3x/9x/24x upscale ladder remains a follow-up (`scan_rgba` has no upscale parameter; one pass per
+  slot plus the v2 warm-colour verdict; the `Option<i32>` seam contract is unchanged). The feeding
+  table v2 read from `<root>/docs/pet-data.csv` is not shipped in v3's root, so computed pet-minutes
+  are unavailable until that file is copied (a docs-packaging decision); the schedule itself still
+  comes from the time line/counts/configured cycle. There is no close-button "window already open"
+  probe and no food-cell re-mark from the bag scan (`cells_holding` is ported but the configured food
+  list is used until exhausted). `ToolStatus` has no schedule field, so the schedule line is carried
+  by the rows' `next_action_in_seconds` and the message is the last action.
 - **Gem composer follow-ups, named not hidden.** `gem.save_empty_captures` is resolved into the plan
   but nothing is written (it waits for the core's logging/artifact writer and a PNG encode outside the
   run loop); the F9 advance-grade hotkey exists only as `advance_grade_by_hand()` because there is no

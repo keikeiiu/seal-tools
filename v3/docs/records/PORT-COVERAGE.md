@@ -273,8 +273,10 @@ about LIVE VERIFICATION and the two loops, not about unported code.
 - **Six tools live** (`tool.start` executes a run): spammer (`de016c1`), holdspace (`3004cb2`),
   tuner — the first read-loop (`39ed221`) — quest (`b261b45`), sell (`14cf341`) and gem (`faa80c3`,
   the second reader, which also populates `state.rows`). `buy` is served but refuses at start with
-  the domain's "No buy preset selected." because the protocol carries no per-run item/count (OPEN);
-  `pet` is the one remaining unported loop (task-41, in flight).
+  the domain's "No buy preset selected." because the protocol carries no per-run item/count (OPEN).
+  The **pet feeder** landed last (`dcccd5a` + the loop/registry flip): every id in PROTOCOL §9 now has
+  a loop behind it, and what remains open there is the supervisor<->runner hand-over seam, not code
+  coverage.
 - **The effect vocabulary is complete and refusal-fenced**: `Place`, `ClickHere`, `RightClickHere`,
   `Enter`, `Wheel`, `MoveBy`, `HoldLeft`/`ReleaseLeft` and `Wait`, each with a default that refuses
   rather than approximating, and `BoardEffects` releasing a held button on `Drop`.

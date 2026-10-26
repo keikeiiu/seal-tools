@@ -28,6 +28,7 @@ use seal_config::ConfigStore;
 use crate::board::{BoardFailure, Settings, open_board};
 use crate::gem::{GemResultSource, GemTool};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
+use crate::pet::{PetReadSource, PetTool};
 use crate::quest::{QuestEffects, QuestTool, WinQuestSource};
 use crate::shop::ShopTool;
 use crate::spammer::{RealNow, SpammerTool};
@@ -187,6 +188,44 @@ impl ProductionRegistry {
         })
     }
 
+    fn pet_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let root = self
+            .store
+            .config_dir()
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let plan = crate::pet::plan(&config, &root)?;
+        let settings = Settings::from_config(&config);
+        let (_port, mut transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        // The board's firmware level decides whether the configured food-load mode can work at all;
+        // a level-1 board in drag mode is refused with the domain's sentence by the source's opening
+        // phase (the check is `food_load::complaint`, not a second rule here).
+        let firmware = seal_board::firmware::detect(&mut transport);
+        let firmware_level = firmware.reported().map(|level| level as i32);
+        let active = crate::startup::active(&config);
+        let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
+            .map_err(|error| error.to_string())?;
+        let source = PetReadSource::open(&config, &plan, &attributes, firmware_level)?;
+        let tool = PetTool::new(plan, source);
+        // The feeder clicks calibrated points, so it needs the display the clicks are measured in.
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
+        let hwnd = seal_win::window::find_window(&title)
+            .ok_or_else(|| format!("game window not found — is {title:?} running?"))?;
+        let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
+        let effects = crate::effects::system_effects(transport, display);
+        Ok(Session {
+            tool: Box::new(tool),
+            effects: Box::new(effects),
+        })
+    }
+
     fn hold_space_session(&self) -> Result<Session, String> {
         let config = self.config();
         let settings = Settings::from_config(&config);
@@ -251,6 +290,17 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Gem => crate::gem::plan(&self.config())
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
+            ToolId::Pet => {
+                let root = self
+                    .store
+                    .config_dir()
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                crate::pet::plan(&self.config(), &root)
+                    .map(|_| ())
+                    .map_err(|line| Unavailable { line })
+            }
             // Buy is SERVED but cannot start: the run's item/count has no protocol path (OPEN.md).
             // The domain's own line answers the Start, which is better than silently buying preset #1.
             ToolId::Buy => crate::shop::buy_plan(&self.config())
@@ -258,9 +308,6 @@ impl ToolRegistry for ProductionRegistry {
                 .map_err(|reason| Unavailable {
                     line: reason.message,
                 }),
-            other => Err(Unavailable {
-                line: not_available_line(other),
-            }),
         }
     }
 
@@ -272,11 +319,11 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Quest => self.quest_session(),
             ToolId::Sell => self.sell_session(),
             ToolId::Gem => self.gem_session(),
+            ToolId::Pet => self.pet_session(),
             ToolId::Buy => Err(crate::shop::buy_plan(&self.config())
                 .err()
                 .map(|reason| reason.message)
                 .unwrap_or_else(|| "the buy pass could not be planned".to_owned())),
-            other => Err(not_available_line(other)),
         }
     }
 }
@@ -323,6 +370,7 @@ impl Effects for KeyOnlyEffects {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
 
     fn registry(config: Value) -> ProductionRegistry {
         ProductionRegistry::new(
@@ -454,6 +502,68 @@ mod tests {
         );
     }
 
+    fn config_with_pet() -> Value {
+        let empty_slot = base64::engine::general_purpose::STANDARD.encode(
+            seal_win::pure::encode_png(2, 2, &[0, 0, 255, 255].repeat(4)).expect("encodes"),
+        );
+        serde_json::json!({
+            "window": {"title": "TW_LIVE"},
+            "buy_sell": {"max_button": [900, 500]},
+            "pet": {
+                "menu_button": [10, 10],
+                "feed_icon": [20, 20],
+                "close_button": [30, 30],
+                "page_tabs": [[100, 100]],
+                "bag_grid": [0, 0, 400, 400],
+                "bag_slot": [0, 0, 40, 40],
+                "food_slots": [[0, 0], [0, 1]],
+                "return_slot": [0, 1],
+                "food_load_mode": "right_click",
+                "items_per_minute": 3,
+                "pet_slot_occupied_above": 0.05,
+                "max_button": [900, 500],
+                "slots": [{
+                    "enabled": true,
+                    "toggle_label": [5, 5, 40, 20],
+                    "boarding_pet_slot": [50, 60, 30, 40],
+                    "feeder_strip": [100, 200, 300, 50],
+                    "stacks": 2,
+                    "pet_slot_empty_png": empty_slot,
+                    "boarding_running": false
+                }]
+            }
+        })
+    }
+
+    #[test]
+    fn the_pet_feeder_is_available_once_its_marks_resolve() {
+        assert_eq!(registry(config_with_pet()).available(ToolId::Pet), Ok(()));
+        // No calibrated 目錄 button: the domain's own start line, before any opening work.
+        let refusal = registry(serde_json::json!({"pet": {}}))
+            .available(ToolId::Pet)
+            .expect_err("an uncalibrated pet setup is refused");
+        assert!(
+            refusal.line.contains("目錄 isn't calibrated"),
+            "{}",
+            refusal.line
+        );
+        assert!(refusal.line.contains("Calibrate Pet"), "{}", refusal.line);
+    }
+
+    #[test]
+    fn a_drag_food_load_config_is_available_but_refused_on_a_level_one_board() {
+        let mut config = config_with_pet();
+        config["pet"]["food_load_mode"] = serde_json::json!("drag");
+        // `available` cannot see the board (it is opened in `create`), so the plan-level gate passes;
+        // the level-1 refusal is the domain's sentence, exercised through the same helper `create`
+        // calls during its opening phase.
+        assert_eq!(registry(config.clone()).available(ToolId::Pet), Ok(()));
+        let plan = crate::pet::plan(&config, std::path::Path::new(".")).expect("the plan resolves");
+        let line = crate::pet::check_board(&plan, Some(1)).expect_err("firmware 1 has no drag");
+        assert!(line.contains("firmware 1"), "{line}");
+        assert!(line.contains("reflash the board"), "{line}");
+        assert_eq!(crate::pet::check_board(&plan, Some(2)), Ok(()));
+    }
     fn config_with_quest() -> Value {
         serde_json::json!({
             "window": {"title": "TW_LIVE"},
@@ -531,24 +641,18 @@ mod tests {
     }
 
     #[test]
-    fn every_other_tool_says_it_is_not_ported() {
+    fn every_tool_is_now_served_or_refused_by_its_own_plan() {
+        // The pet was the LAST unported loop, so no id answers the generic not-ported line any more.
+        // A refused start is the tool's own plan/calibration sentence instead.
         for tool in ToolId::ALL {
-            if matches!(
-                tool,
-                ToolId::Spammer
-                    | ToolId::HoldSpace
-                    | ToolId::Tuner
-                    | ToolId::Quest
-                    | ToolId::Sell
-                    | ToolId::Buy
-                    | ToolId::Gem
-            ) {
-                continue;
+            match registry(config_with_spammer()).available(tool) {
+                Ok(()) => {}
+                Err(refusal) => assert_ne!(
+                    refusal.line,
+                    not_available_line(tool),
+                    "{tool} still says it is not ported"
+                ),
             }
-            let refusal = registry(config_with_spammer())
-                .available(tool)
-                .expect_err("only the spammer is live");
-            assert_eq!(refusal.line, not_available_line(tool), "{tool}");
         }
     }
 

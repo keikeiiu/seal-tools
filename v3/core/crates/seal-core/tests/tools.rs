@@ -57,27 +57,26 @@ fn stopping_when_nothing_runs_is_not_running_not_a_failure() {
 }
 
 #[test]
-fn a_known_unported_tool_is_refused_by_name() {
+fn a_tool_without_its_calibration_is_refused_by_its_own_plan() {
     let root = config_root();
     let mut session = Session::start(root.path());
     session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
 
-    // `pet` is known to the protocol but has no loop in this build. (`tuner` used to be the example
-    // here; it is live now, and its opening phase's failure depends on the machine's hardware, so it
-    // is not a placeholder case any more.)
+    // Every id now has a loop; a start is refused by the tool's own plan, not by a placeholder. The
+    // pet feeder is the resident reader and its `ready` rule wants the 目錄 marks, which this fixture
+    // (deliberately minimal) does not carry — the domain's line, not a "not ported" one.
     let response = session.call("tool.start", json!({"tool": "pet"}));
 
-    assert!(!response.ok, "no loop exists in this build");
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "bad_request");
     assert!(
-        error.message.contains("\"pet\""),
-        "the line names the tool: {}",
+        error.message.contains("Calibrate Pet"),
+        "the domain's calibration line: {}",
         error.message
     );
     assert!(
-        error.message.contains("not available in this build yet"),
-        "the placeholder says why: {}",
+        !error.message.contains("not available in this build yet"),
+        "there is no unported tool left: {}",
         error.message
     );
 }

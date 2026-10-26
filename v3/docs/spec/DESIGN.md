@@ -109,16 +109,18 @@ a `Response`; the response is queued on the SAME writer channel as events, so no
 the **spammer**, **holdspace**, **tuner** (the first READ-loop tool: capture → OCR → the domain's
 `TunerRun::decide` → effects, with the read behind a `TunerSource` seam), **quest** (a pure
 config-driven executor — the player positions the mouse during the countdown and a cursor guard stops
-a run whose pointer moves; the only seam is the cursor read) and **sell** (a pure transaction-plan
-executor over the derived bag/shop geometry) and the **gem composer** (the second reader: it alone
+a run whose pointer moves; the only seam is the cursor read) **gem** (the second reader: it alone
 of the tools reads the result box — comparing the calibrated crop inside the 6-px border or falling
-back to the colour signature — and its loop is the domain's select/combine/finish turn sequence, with
-the arduino move set placing calibrated points and the tuned set sending the measured raw `D` counts).
-**Buy** is served but refuses at START with the domain's "No buy preset selected.": its pass needs
-the run's item and count, and neither a `buy_sell.active` field nor `tool.start` args exist yet —
-that protocol decision is named in OPEN and was found by the shell's card work rather than invented
-around. **Pet** is the only id that still refuses by name until its loop lands (the registry is the
-seam, and its tests pin the refusals). The
+back to the colour signature — with the arduino move set placing calibrated points and the tuned set
+sending the measured raw `D` counts) and the **pet feeder** (the resident reader: it reads the
+boarding rows and feeder counts, schedules each row from its own time line, reloads due rows through
+the domain's step sequence, and loads food by right-click+MAX+Enter or by a firmware-2 drag, all with
+the game's foreground deferral). Every id in PROTOCOL §9 now has a loop behind it. **Buy** is the one
+served-but-refused start: its pass needs the run's item and count, and neither a `buy_sell.active`
+field nor `tool.start` args exist yet — that protocol decision is named in OPEN and was found by the
+shell's card work rather than invented around. The arbiter's resident/hand-over rules have no
+running-tool seam yet, so the pet feeder cannot yield and re-acquire the game between visits, and two
+runs can currently drive input concurrently — the next core seam task, named in OPEN. The
 rest of PROTOCOL §4. The runner also publishes a tool's own card state (`Tool::status`: message,
 countdown, rows) whenever it changes, which is how the tuner's countdown and filter line reach the
 `state` event without a second writer. The rest of PROTOCOL §4
