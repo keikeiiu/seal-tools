@@ -293,6 +293,7 @@ class ShellModel extends ChangeNotifier {
     Rect? region,
     Point? point,
     bool? empty,
+    String? target,
     DisplayInfo? display,
   }) => _coreAction(
     'calibration.save',
@@ -300,6 +301,9 @@ class ShellModel extends ChangeNotifier {
     args: {
       'frame_id': frameId,
       'kind': kind,
+      // Named-instance kinds carry the 1-based/player-facing instance name (PROTOCOL §12.8); a kind
+      // without a target must omit the field entirely.
+      'target': ?target,
       if (region != null) 'region': region.toJson(),
       if (point != null) 'point': point.toJson(),
       // v2's empty verdict for `result_gem_area` (PROTOCOL §12.7): true saves the crop and samples
@@ -312,11 +316,12 @@ class ShellModel extends ChangeNotifier {
   /// `calibration.fetch`: the stored mark (null = not calibrated yet) and, for artifact kinds, the
   /// stored crop as base64 PNG.
   Future<CoreActionResult<CalibrationFetchResult>> calibrationFetch(
-    String kind,
-  ) => _coreAction(
+    String kind, {
+    String? target,
+  }) => _coreAction(
     'calibration.fetch',
     CalibrationFetchResult.fromJson,
-    args: {'kind': kind},
+    args: {'kind': kind, 'target': ?target},
   );
 
   /// `keys.names`: display names for the stored VK codes (the domain's inverse rule, hex fallback

@@ -82,6 +82,7 @@ class CalibrationSaveResult {
   const CalibrationSaveResult({
     required this.rev,
     required this.kind,
+    this.target,
     required this.mark,
     this.pitchW,
     this.pitchH,
@@ -90,6 +91,9 @@ class CalibrationSaveResult {
 
   final int rev;
   final String kind;
+
+  /// The named instance a targeted save echoed (e.g. `2`), null for a non-targeted kind.
+  final String? target;
   final CalibrationMark mark;
 
   /// `derived.pitch` — present for `bag_grid` only.
@@ -105,6 +109,7 @@ class CalibrationSaveResult {
     return CalibrationSaveResult(
       rev: asNumber(map['rev'])?.round() ?? 0,
       kind: asString(map['kind']) ?? '?',
+      target: asString(map['target']),
       mark:
           CalibrationMark.fromJson(map['mark']) ??
           const CalibrationMark.rect(0, 0, 0, 0),
@@ -139,12 +144,16 @@ class CalibrationCrop {
 class CalibrationFetchResult {
   const CalibrationFetchResult({
     required this.kind,
+    this.target,
     required this.mark,
     this.artifact,
     required this.rev,
   });
 
   final String kind;
+
+  /// The named instance the fetch echoed, when the kind is targeted.
+  final String? target;
   final CalibrationMark? mark;
   final CalibrationCrop? artifact;
   final int rev;
@@ -153,6 +162,7 @@ class CalibrationFetchResult {
     final artifact = map['artifact'];
     return CalibrationFetchResult(
       kind: asString(map['kind']) ?? '?',
+      target: asString(map['target']),
       mark: CalibrationMark.fromJson(map['mark']),
       artifact: artifact is Map<String, dynamic>
           ? CalibrationCrop.fromJson(artifact)

@@ -1,12 +1,12 @@
-/// The Calibrate tab: capture the game client, draw one of the seven calibrated surfaces, save it, and
-/// show what the core has stored.
+/// The Calibrate tab: capture the game client, draw one of the calibrated surfaces, save it, and show
+/// what the core has stored.
 ///
 /// This is wave 2's Calibrate surface (PLAN-V3-SHELL §6): the mark is CLIENT-RELATIVE PHYSICAL pixels
 /// drawn on the captured full-client frame ([CALIBRATION.md] §1); the core derives the bag-grid pitch,
 /// enforces the slot-vs-grid rule, writes the artifact crop and records the measured environment in
-/// `local.yaml`. The widget owns no rule: it sends `{frame_id, kind, region|point, display}` (plus
-/// v2's `empty: true|false` verdict for the result-gem area, PROTOCOL §12.7) and renders the core's
-/// mark/derived/artifact answer or its refusal VERBATIM.
+/// `local.yaml`. The widget owns no rule: it sends `{frame_id, kind, region|point, display}` (plus a
+/// named-instance `target`, PROTOCOL §12.8, and v2's `empty: true|false` verdict for the result-gem
+/// area, PROTOCOL §12.7) and renders the core's mark/derived/artifact answer or its refusal VERBATIM.
 ///
 /// Capture requires the game to be the foreground window. Hiding the shell is runner work (OPEN.md), so
 /// in this build the Capture button can legitimately answer `game_not_foreground`; the line is shown
@@ -30,42 +30,110 @@ import 'action_result_line.dart';
 import 'calibration_widgets.dart';
 import 'fields.dart';
 
-/// One served calibration kind: protocol name, player-facing label, shape, whether it owns a crop
-/// artifact, and whether its save needs v2's empty-result verdict.
+/// One served calibration kind: protocol name, picker group, player-facing label, shape, whether it
+/// owns a crop artifact, whether its save needs v2's empty-result verdict, and the spec's allowed
+/// `target` values when the kind marks a NAMED INSTANCE (PROTOCOL §12.8).
 class _Kind {
   const _Kind(
     this.name,
+    this.group,
     this.label, {
     required this.isRect,
     this.hasArtifact = false,
     this.requiresEmptyChoice = false,
+    this.targets,
   });
 
   final String name;
+  final String group;
   final String label;
   final bool isRect;
   final bool hasArtifact;
   final bool requiresEmptyChoice;
 
+  /// Null for a single mark; otherwise the presentation-side allowed values (1-based/player-facing).
+  /// The CORE owns validity and its refusal lines; these are only the picker's choices.
+  final List<String>? targets;
+
+  bool get isTargeted => targets != null;
+
   String get shapeLabel => isRect ? 'rectangle (x, y, w, h)' : 'point (x, y)';
 }
 
-/// The repaired kind table (PROTOCOL §4/§12.7): `focus_point` is now `scroll_point` (the field the
-/// live shop reads) and `tuner_region` is withdrawn until v2's three-box session exists.
+/// Named-instance targets (PROTOCOL §12.8), kept here as presentation constants only.
+const List<String> _petPageTargets = ['ITEM1', 'ITEM2', 'ITEM3'];
+const List<String> _petRowTargets = ['1', '2', '3', '4'];
+const List<String> _gemGradeTargets = ['N', 'G', 'DG', 'Register', 'Combine'];
+const List<String> _gemResourceTargets = ['1', '2', '3'];
+
+/// The repaired + named-instance kind table (PROTOCOL §4/§12.7/§12.8). Groups only order the picker;
+/// `focus_point`/`tuner_region` stay withdrawn.
 const List<_Kind> _kinds = [
-  _Kind('bag_grid', 'Bag grid', isRect: true),
-  _Kind('bag_slot', 'Bag slot', isRect: true),
-  _Kind('shop_list', 'Shop list region', isRect: true),
-  _Kind('scroll_point', 'Focus / scroll point', isRect: false),
-  _Kind('max_button', 'MAX button', isRect: false),
+  // Shop
+  _Kind('bag_grid', 'Shop', 'Bag grid', isRect: true),
+  _Kind('bag_slot', 'Shop', 'Bag slot', isRect: true),
+  _Kind('shop_list', 'Shop', 'Shop list region', isRect: true),
+  _Kind('scroll_point', 'Shop', 'Focus / scroll point', isRect: false),
+  _Kind('max_button', 'Shop', 'MAX button', isRect: false),
+  // Gem
   _Kind(
     'result_gem_area',
+    'Gem',
     'Result gem area',
     isRect: true,
     hasArtifact: true,
     requiresEmptyChoice: true,
   ),
-  _Kind('spring_point', 'Spring point', isRect: false),
+  _Kind(
+    'gem_grade',
+    'Gem',
+    'Grade point',
+    isRect: false,
+    targets: _gemGradeTargets,
+  ),
+  _Kind(
+    'gem_resource',
+    'Gem',
+    'Resource slot point',
+    isRect: false,
+    targets: _gemResourceTargets,
+  ),
+  // Pet
+  _Kind('pet_menu', 'Pet — points', '目錄 (menu) point', isRect: false),
+  _Kind('pet_feed', 'Pet — points', 'Pet feed icon point', isRect: false),
+  _Kind('pet_close', 'Pet — points', 'Boarding X point', isRect: false),
+  _Kind(
+    'pet_page_tab',
+    'Pet — points',
+    'Bag page tab point',
+    isRect: false,
+    targets: _petPageTargets,
+  ),
+  _Kind('pet_bag_grid', 'Pet — bag', 'Boarding bag grid', isRect: true),
+  _Kind('pet_bag_slot', 'Pet — bag', 'Boarding bag slot', isRect: true),
+  _Kind(
+    'pet_toggle',
+    'Pet — rows',
+    'Row start/end button',
+    isRect: true,
+    targets: _petRowTargets,
+  ),
+  _Kind(
+    'pet_boarding_slot',
+    'Pet — rows',
+    'Row boarding pet slot',
+    isRect: true,
+    targets: _petRowTargets,
+  ),
+  _Kind(
+    'pet_feeder_strip',
+    'Pet — rows',
+    'Row food strip',
+    isRect: true,
+    targets: _petRowTargets,
+  ),
+  // Tuner
+  _Kind('spring_point', 'Tuner', 'Spring point', isRect: false),
 ];
 
 class CalibrateTab extends StatefulWidget {
@@ -101,16 +169,16 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// v2's empty-result verdict for the gem result area: null = not answered, Save stays disabled.
   bool? _emptyChoice;
 
+  /// The NAMED INSTANCE for a targeted kind (PROTOCOL §12.8); null until the player picks one.
+  String? _target;
+
   _Kind get _selected => _kinds.firstWhere((kind) => kind.name == _kindName);
 
-  _Kind? _kindFor(String name) {
-    for (final kind in _kinds) {
-      if (kind.name == name) {
-        return kind;
-      }
-    }
-    return null;
-  }
+  /// Stored marks are keyed by kind AND instance: a targeted kind has one mark per target.
+  String _storedKey(String kind, String? target) =>
+      target == null ? kind : '$kind@$target';
+
+  String get _currentStoredKey => _storedKey(_kindName, _target);
 
   @override
   void initState() {
@@ -134,8 +202,14 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     setState(() => _loadingStored = true);
-    for (final kind in _kinds) {
+    // Targeted kinds need a target, and the core refuses a fetch without one, so only the single-mark
+    // kinds are loaded up front. The selected kind's instance is fetched when a target is chosen.
+    for (final kind in _kinds.where((kind) => !kind.isTargeted)) {
       await _fetch(kind.name, notify: false);
+    }
+    final currentTarget = _target;
+    if (_selected.isTargeted && currentTarget != null) {
+      await _fetch(_kindName, target: currentTarget, notify: false);
     }
     if (!mounted) {
       return;
@@ -146,17 +220,25 @@ class _CalibrateTabState extends State<CalibrateTab>
     });
   }
 
-  Future<void> _fetch(String kindName, {bool notify = true}) async {
-    final result = await widget.model.calibrationFetch(kindName);
+  Future<void> _fetch(
+    String kindName, {
+    String? target,
+    bool notify = true,
+  }) async {
+    final result = await widget.model.calibrationFetch(
+      kindName,
+      target: target,
+    );
     if (!mounted) {
       return;
     }
+    final key = _storedKey(kindName, target);
     setState(() {
       if (result.ok) {
-        _stored[kindName] = result.value!;
-        _storedErrors.remove(kindName);
+        _stored[key] = result.value!;
+        _storedErrors.remove(key);
       } else {
-        _storedErrors[kindName] = result.errorLine ?? 'fetch failed';
+        _storedErrors[key] = result.errorLine ?? 'fetch failed';
       }
       if (notify) {
         _fillEditorFromStored();
@@ -164,10 +246,10 @@ class _CalibrateTabState extends State<CalibrateTab>
     });
   }
 
-  /// The editor starts from the stored mark of the selected kind (typed fields are the baseline input;
-  /// the frame is drawn to read, not yet an input surface).
+  /// The editor starts from the stored mark of the selected kind/instance (typed fields are the
+  /// baseline input; the frame is drawn to read, not yet an input surface).
   void _fillEditorFromStored() {
-    final stored = _stored[_kindName]?.mark;
+    final stored = _stored[_currentStoredKey]?.mark;
     if (stored == null) {
       return;
     }
@@ -207,6 +289,14 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     final kind = _selected;
+    if (kind.isTargeted && _target == null) {
+      setState(() {
+        _save = const CoreActionResult.failure(
+          shellNote: 'choose the named instance first — a targeted mark needs its target',
+        );
+      });
+      return;
+    }
     if (kind.requiresEmptyChoice && _emptyChoice == null) {
       setState(() {
         _save = const CoreActionResult.failure(
@@ -236,25 +326,28 @@ class _CalibrateTabState extends State<CalibrateTab>
       region: kind.isRect ? Rect(x: x, y: y, w: w!, h: h!) : null,
       point: kind.isRect ? null : Point(x: x, y: y),
       empty: kind.requiresEmptyChoice ? _emptyChoice : null,
+      target: kind.isTargeted ? _target : null,
       display: capture.value!.display,
     );
     if (!mounted) {
       return;
     }
+    final key = _currentStoredKey;
     setState(() {
       _saving = false;
       _save = result;
       if (result.ok) {
-        _stored[kind.name] = CalibrationFetchResult(
+        _stored[key] = CalibrationFetchResult(
           kind: kind.name,
+          target: result.value!.target,
           mark: result.value!.mark,
-          artifact: _stored[kind.name]?.artifact,
+          artifact: _stored[key]?.artifact,
           rev: result.value!.rev,
         );
       }
     });
     if (result.ok) {
-      await _fetch(kind.name);
+      await _fetch(kind.name, target: kind.isTargeted ? _target : null);
     }
   }
 
@@ -302,8 +395,22 @@ class _CalibrateTabState extends State<CalibrateTab>
       _kindName = name;
       _save = null;
       _emptyChoice = null;
+      // Switching kind never carries a target over: the new kind's instances are its own.
+      _target = null;
       _fillEditorFromStored();
     });
+  }
+
+  /// The named instance changed: fetch that instance's stored mark; a targeted kind without a target
+  /// shows no stored mark and keeps Save disabled.
+  void _onTargetChanged(String? target) {
+    setState(() {
+      _target = target;
+      _save = null;
+    });
+    if (target != null) {
+      unawaited(_fetch(_kindName, target: target));
+    }
   }
 
   // ── UI ─────────────────────────────────────────────────────────────────────────────────────
@@ -314,8 +421,8 @@ class _CalibrateTabState extends State<CalibrateTab>
     final theme = Theme.of(context);
     final capture = _capture;
     final save = _save;
-    final stored = _stored[_kindName];
-    final storedError = _storedErrors[_kindName];
+    final stored = _stored[_currentStoredKey];
+    final storedError = _storedErrors[_currentStoredKey];
     final configuredTitle =
         asString(asJsonMap(widget.model.config.config['window'])['title']) ??
         '— (no title configured)';
@@ -452,7 +559,8 @@ class _CalibrateTabState extends State<CalibrateTab>
                                       ),
                                       value: kind.name,
                                       child: Text(
-                                        '${kind.label} (${kind.name})',
+                                        '${kind.group} · ${kind.label} '
+                                        '(${kind.name})',
                                       ),
                                     ),
                                 ],
@@ -462,15 +570,65 @@ class _CalibrateTabState extends State<CalibrateTab>
                           ),
                         ),
                         Text(
-                          '${_selected.label} · ${_selected.shapeLabel} · '
-                          'client-relative physical px'
-                          '${_selected.hasArtifact ? ' · writes a crop artifact' : ''}',
+                          '${_selected.group} · ${_selected.label} · '
+                          '${_selected.shapeLabel} · client-relative physical px'
+                          '${_selected.hasArtifact ? ' · writes a crop artifact' : ''}'
+                          '${_selected.isTargeted ? ' · named instance' : ''}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
+                    if (_selected.isTargeted) ...[
+                      const SizedBox(height: ShellSpace.sm),
+                      Wrap(
+                        spacing: ShellSpace.md,
+                        runSpacing: ShellSpace.sm,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 220,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Target instance',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  key: const ValueKey('calibrate-target'),
+                                  value: _target,
+                                  isExpanded: true,
+                                  isDense: true,
+                                  hint: const Text('Choose a target'),
+                                  items: [
+                                    for (final target
+                                        in _selected.targets ??
+                                            const <String>[])
+                                      DropdownMenuItem(
+                                        key: ValueKey(
+                                          'calibrate-target-item-$target',
+                                        ),
+                                        value: target,
+                                        child: Text(target),
+                                      ),
+                                  ],
+                                  onChanged: _onTargetChanged,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '1-based/player-facing; the core validates the instance and refuses '
+                            'with its own line.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: ShellSpace.sm),
                     Wrap(
                       spacing: ShellSpace.sm,
@@ -528,6 +686,7 @@ class _CalibrateTabState extends State<CalibrateTab>
                       key: const ValueKey('calibrate-save'),
                       onPressed:
                           _saving ||
+                              (_selected.isTargeted && _target == null) ||
                               (_selected.requiresEmptyChoice &&
                                   _emptyChoice == null)
                           ? null
@@ -587,9 +746,19 @@ class _CalibrateTabState extends State<CalibrateTab>
                   ],
                 ),
                 EditorSection(
-                  title: 'Stored mark — $_kindName',
+                  title:
+                      'Stored mark — $_kindName'
+                      '${_selected.isTargeted ? ' · target ${_target ?? '—'}' : ''}',
                   children: [
-                    if (storedError != null)
+                    if (_selected.isTargeted && _target == null)
+                      Text(
+                        'Choose a target to see its stored mark.',
+                        key: const ValueKey('calibrate-target-required'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    else if (storedError != null)
                       Text(
                         storedError,
                         key: const ValueKey('calibrate-stored-error'),
@@ -612,6 +781,14 @@ class _CalibrateTabState extends State<CalibrateTab>
                         key: const ValueKey('calibrate-stored'),
                         style: theme.textTheme.bodyMedium,
                       ),
+                      if (stored.target != null)
+                        Text(
+                          'Instance: ${stored.target} (echoed by the core)',
+                          key: const ValueKey('calibrate-stored-target'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       if (stored.artifact != null) ...[
                         const SizedBox(height: ShellSpace.sm),
                         CalibrationCropPicture(
