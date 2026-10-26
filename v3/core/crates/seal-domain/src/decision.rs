@@ -26,6 +26,15 @@ pub enum Decision {
     /// spelling asks for. A separate decision rather than a flag on [`Self::Key`] because the two
     /// are different wires and a tool that does not model fast taps cannot accidentally ask for one.
     KeyFast(Key),
+
+    /// Press and HOLD the spacebar (the board's `P`). Only the Hold Space tool asks for this, and it
+    /// must be paired with [`Self::ReleaseSpace`] on every exit path — the runner's effects object
+    /// owns that guard, not this value.
+    HoldSpace,
+
+    /// Release the spacebar (the board's `U`). Harmless when nothing is held: the release path never
+    /// has to ask whether it needs to.
+    ReleaseSpace,
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

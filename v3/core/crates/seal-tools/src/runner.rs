@@ -52,6 +52,20 @@ pub trait Effects {
     fn key_fast(&mut self, key: Key) -> Result<(), EffectError> {
         self.key(key)
     }
+
+    /// Press and hold the spacebar. The default REFUSES rather than approximating with a tap: a tap
+    /// would look like the hold worked while auto-pickup never happens, which is the silent failure
+    /// class this project keeps paying for. Only the Hold Space effects implement it.
+    fn hold_space(&mut self) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot hold the spacebar",
+        ))
+    }
+
+    /// Release the spacebar. The default is a no-op: nothing was held, so nothing needs releasing.
+    fn release_space(&mut self) -> Result<(), EffectError> {
+        Ok(())
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -130,6 +144,16 @@ pub fn run(
             }
             Decision::KeyFast(key) => {
                 if let Err(error) = effects.key_fast(key) {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::HoldSpace => {
+                if let Err(error) = effects.hold_space() {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::ReleaseSpace => {
+                if let Err(error) = effects.release_space() {
                     return StopReason::error(effect_message(&error));
                 }
             }

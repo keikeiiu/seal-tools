@@ -39,6 +39,12 @@ pub enum BoardCommand {
     HoldLeft,
     /// Release the left button — the second half of a drag. Needs firmware level 2.
     ReleaseLeft,
+    /// Press and HOLD the spacebar (`P`) — the Hold Space tool's whole effect, and v2's
+    /// `HoldSpace.cs` write. The release is ALWAYS sent, on every exit path, by `U`.
+    HoldSpace,
+    /// Release the spacebar (`U`). Sending it when nothing is held is harmless, which is why the
+    /// release path does not need to ask first.
+    ReleaseSpace,
     /// Ask the board for its protocol level (`V`). The only command that gets a reply.
     Version,
 }
@@ -136,6 +142,8 @@ impl BoardCommand {
             }
             Self::HoldLeft => "L\n".to_owned(),
             Self::ReleaseLeft => "l\n".to_owned(),
+            Self::HoldSpace => "P\n".to_owned(),
+            Self::ReleaseSpace => "U\n".to_owned(),
             Self::Version => "V\n".to_owned(),
         }
     }

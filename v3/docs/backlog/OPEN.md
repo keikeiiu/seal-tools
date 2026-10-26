@@ -49,8 +49,10 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   and it must disappear when the loops land rather than become the new normal. **The spammer is the
   first live tool**: `tool.start spammer` resolves the active preset out of the merged config, its
   opening phase opens the serial port, the runner drives the domain's rotation through the board's
-  key effects, and the run answers `state`/`tool.finished` like any other. The other seven ids still
-  refuse by name.
+  key effects, and the run answers `state`/`tool.finished` like any other. **Hold Space is the
+  second**: `tool.start holdspace` presses `P`, the run holds until `tool.stop` cancels it, and the
+  effects object's `Drop` sends `U` on every exit path (v2's `finally`, as RAII). The other six ids
+  still refuse by name.
 - **The `ui:` block's coordinate space.** CALIBRATION.md §1 calls it the shell's own space (machine
   state, never read by a tool) and `ui.window` accepts numbers. If the shell needs exact semantics
   (physical vs logical units for its own window), pin it in PROTOCOL §4 rather than letting it be

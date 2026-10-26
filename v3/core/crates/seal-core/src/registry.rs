@@ -24,6 +24,7 @@ use seal_tools::tool::ToolId;
 use serde_json::Value;
 
 use crate::board::{BoardFailure, Settings, open_board};
+use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
 use crate::spammer::{RealNow, SpammerTool};
 
 /// The merged config, shared between the dispatcher (publisher) and the registry (reader).
@@ -76,6 +77,21 @@ impl ProductionRegistry {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
+    fn hold_space_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        Ok(Session {
+            tool: Box::new(HoldSpaceTool::new()),
+            effects: Box::new(SpaceHoldEffects::new(transport)),
+        })
+    }
+
     fn spammer_session(&self) -> Result<Session, String> {
         let config = self.config();
         let plan: SpammerPlan = crate::spammer::plan(&config)?;
@@ -105,6 +121,10 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Spammer => crate::spammer::plan(&self.config())
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
+            // The hold needs nothing but a board, and the board is the OPENING phase's business
+            // (`create`), so this cheap gate always passes: a start with no board gets the opening
+            // phase's own line rather than a refusal invented here.
+            ToolId::HoldSpace => Ok(()),
             other => Err(Unavailable {
                 line: not_available_line(other),
             }),
@@ -114,6 +134,7 @@ impl ToolRegistry for ProductionRegistry {
     fn create(&self, tool: ToolId) -> Result<Session, String> {
         match tool {
             ToolId::Spammer => self.spammer_session(),
+            ToolId::HoldSpace => self.hold_space_session(),
             other => Err(not_available_line(other)),
         }
     }
@@ -196,9 +217,17 @@ mod tests {
     }
 
     #[test]
+    fn the_hold_space_tool_is_available() {
+        assert_eq!(
+            registry(config_with_spammer()).available(ToolId::HoldSpace),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn every_other_tool_says_it_is_not_ported() {
         for tool in ToolId::ALL {
-            if tool == ToolId::Spammer {
+            if matches!(tool, ToolId::Spammer | ToolId::HoldSpace) {
                 continue;
             }
             let refusal = registry(config_with_spammer())

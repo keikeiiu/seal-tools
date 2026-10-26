@@ -90,6 +90,14 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     fn key_fast(&mut self, key: Key) -> Result<(), EffectError> {
         self.write(key_command(key, true))
     }
+
+    fn hold_space(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::HoldSpace)
+    }
+
+    fn release_space(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::ReleaseSpace)
+    }
 }
 
 fn key_command(key: Key, fast: bool) -> BoardCommand {

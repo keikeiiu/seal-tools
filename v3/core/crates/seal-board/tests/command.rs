@@ -17,6 +17,8 @@ fn the_simple_commands_are_one_letter_and_a_newline() {
         (BoardCommand::Enter, "E\n"),
         (BoardCommand::HoldLeft, "L\n"),
         (BoardCommand::ReleaseLeft, "l\n"),
+        (BoardCommand::HoldSpace, "P\n"),
+        (BoardCommand::ReleaseSpace, "U\n"),
         (BoardCommand::Version, "V\n"),
     ];
 
