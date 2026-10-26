@@ -1,7 +1,10 @@
 # Protocol — v3 core ⇄ shell
 
-**Status: DRAFT v3, written 2026-10-25; tool.start run arguments and the calibration kind repairs
-added 2026-10-27.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
+**Status: current contract, 2026-10-27.** Every command in §4 is implemented and served by the core —
+there is no spec-only command left — and both halves are written against this file, with the golden
+fixtures in §10 keeping them from drifting. "DRAFT" describes v3 before cut-over, not a half-built
+seam. The step-1 measurements that shaped it are recorded in §11; every place this file changed
+against the plan is a ruling in §12.
 
 The design rationale is PLAN-V3-CORE §4. This file is the contract; both halves are written
 against it, and the golden fixtures in §10 are how they are kept in agreement.
@@ -313,7 +316,17 @@ The two halves must not drift, so the protocol is tested from both sides:
 - Planned (not built): a Rust test that replays a recorded command fixture list against the
   dispatcher with a fake core state, asserting the sequence is accepted.
 
-## 11. Open items for the step-1 spikes
+## 11. The step-1 measurements
+
+**Resolved since this list was written:** item 2 — the DPI/frame→physical-offset conversion is proved
+on this machine at 150 % and is what every placement now uses; `DisplayInfo` did not need a new field.
+Item 5 — the hotkey typed-name rule LANDED as `keys.parse`/`keys.names` (§12.5), so the Hotkeys tab no
+longer needs an exception to "no widget keeps a rule".
+**Still open:** item 1 (hotkeys — v3.0 ships WITHOUT a global poller; PLAN §6.5's measurement decides
+whether polling lives in the core or in the shell, and until it is taken the Stop button is the control
+that always works: OPEN), item 3 (frame size/transfer — PNG+base64 is retained and the four-frame cache
+exists; no measurement has superseded it), item 4 (IME — the shell's name fields are free text today;
+the .NET 10 composition regression is deferred with the v2 bump per PLAN §10 step 0).
 
 1. **Hotkeys** — whether the core (a background process) can read keys while the launcher is
    focused, or whether polling must live in the shell and send `hotkey.down`/`hotkey.up` commands.
@@ -428,3 +441,5 @@ behaves exactly as before.
   writes `local.yaml`, `logs/` or a calibration artifact. A committed example script lives in
   `v3/protocol/replay/` and the core's e2e test drives the binary through it.
 
+**Status.** Implemented (`4d4ab1f`), with the committed example script `v3/protocol/replay/smoke.json`
+and ten e2e tests that drive the real binary. It adds no command, event or field.

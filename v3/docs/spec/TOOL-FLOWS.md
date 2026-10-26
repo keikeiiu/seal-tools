@@ -1,7 +1,7 @@
 # v3 TOOL-FLOWS — what each tool does now
 
-**Status: decision halves landed and tested in `seal-domain`; effect loops not built.** This is the v3
-truth for what each tool decides and promises. v2's
+**Status: decision halves in `seal-domain` and every effect loop live.** This is the v3 truth for
+what each tool decides and what a run does. v2's
 [TOOL-FLOWS.md](../../../v2/docs/spec/TOOL-FLOWS.md) is the RECORD it supersedes — read it for how v2's
 loops actually ran. Every string quoted here exists in the landed code; the full catalogues are the
 `seal-domain/tests/*` files named per tool. What is NOT built is named per tool and collected in
@@ -55,8 +55,9 @@ reports keys the board cannot send.
 **Guards.** Combos are atomic ("no filler, no other combo" between their steps); an unusable key is
 advanced past rather than retried every tick; a leading `*` is the fast tap (same press, lowercase).
 **Yield** is `arbiter.should_stand_down` (landed) — the spammer is the only holder that acts on it.
-**Loop not built:** the board writes (G2), the yield/claim calls at the boundary, and the dead-port stop
-(a write error becomes the runner's error line). Card rows: current key/attempt are the loop's.
+**Loop (live):** the board writes through `BoardEffects`, the dead-port stop (a write error becomes the
+runner's error line), and the `GamePort` claim/yield boundary the supervisor provides. Card rows show
+the current key/attempt from the tool's own `ToolStatus`.
 
 ## Magic Tuner — `tuner`
 
@@ -88,9 +89,9 @@ line are the decision half's, so the card text is testable without a game. `Spri
 | window/placement | `game window not found — couldn't place the cursor on the spring` · `couldn't place the cursor on the spring — {detail}` |
 
 **Guards.** Cursor guard modes and the recenter budget; a signature repeated three times stops; the
-retry budget stops; the filter's `any/all/per_attr` result gates a success. **Loop not built:** capture
-and OCR (G3), `C`/`E` writes (G2), the countdown ticker and card rows (grade/attempt).
-`GradeCycles` is landed for the per-grade tally.
+retry budget stops; the filter's `any/all/per_attr` result gates a success. **Loop (live):** capture + OCR through `TunerSource` (`win::capture` + `seal-ocr`), the bare `C`/`E`
+and `D` writes through `BoardEffects`, the countdown ticker and card rows (grade/attempt) published by
+`ToolStatus`. `GradeCycles` owns the per-grade tally.
 
 ## Buy — `buy` and Sell — `sell`
 
@@ -155,9 +156,9 @@ once it reaches the setting, the run advances (or clears the resource slots firs
 
 **Guards.** Every point/route is checked before use; `empty_mode: stop` never auto-advances; the
 `empty_streak` gate prevents one read from advancing a grade; a placement failure stops rather than
-clicking blind; the game gate is claimed by the launcher (resident boundary). **Loop not built:** the
-moves themselves (`D` counts or placed moves, G2), capture/colour analysis (G3), and `gem.log` cycle
-lines; `GradeCycles` is landed.
+clicking blind; the game gate is claimed by the launcher (resident boundary). **Loop (live):** the moves themselves (`D` counts in `tuned` mode, placed points in `arduino`),
+capture/colour analysis through `GemSource`, `gem.log` cycle lines and the tally rows; `GradeCycles`
+owns the per-grade tally.
 
 ## Quest Hand-in — `quest`
 
@@ -190,8 +191,9 @@ start `guard_reference` reads the cursor once; each step is a `QuestCommand`
 **Guards.** It READS NOTHING — no capture, no OCR, no window lookup — which is why it has no
 calibration; the positioning window is the only positioning, and the cursor guard is the only
 side-effect check. A wrong flow does `loops` wrong actions and only the player can notice, which is what
-the test loop is for. **Loop not built:** board writes for the five commands and the interruptible
-waits (G2/Clock), plus the self-end teardown rule (OPEN §1; v2 TOOL-FLOWS §1.3).
+the test loop is for. **Loop (live):** the five bare commands through `QuestEffects`, the interruptible waits (the runner's
+clock), and the self-end teardown (the cursor guard stops the run; the runner's cancellation owns
+cleanup and released inputs).
 
 ## Pet Feeder — `pet`
 
@@ -272,17 +274,19 @@ which is why it says what to do.
 
 **Guards.** "Engaged" is `ToolPhase::engaged` (the `ToolToggle` re-expression); the held-input RAII guard
 releases on every stop path independently; `cleanup()` must be performed even after a cancellation.
-**Loop not built:** the `P`/`U` writes (G2), the toggle/start-stop wiring in the shell/arbiter, and the
-beeps; it has no card — its reporting is the Spammer card's surface (PROTOCOL §9).
+**Loop (live):** the `P`/`U` writes with a `Drop` release guard, the toggle/start-stop wiring through the
+protocol and arbiter, and the beeps; it has no card — its reporting is the Spammer card's surface
+(PROTOCOL §9), and a failed release goes to `holdspace.log` with the domain's own line.
 
 ---
 
 ## What every tool still shares, and what is intentionally different from v2
 
-- **Every loop needs the same three things:** its reader crate (G1 `seal-win`, G2 `seal-board`, G3
-  `seal-ocr`), its own body (OPEN §1), and its card rows (OPEN §2 pins the inner `rows` shape). Nothing
-  in `seal-domain` reads a pixel, opens a port or looks at a window — that is the boundary this document
-  keeps naming.
+- **Every loop is built from the same parts:** its reader (a seam over `seal-win`/`seal-ocr`, never
+  I/O inside the decision half), its effect vocabulary (`BoardEffects` over `seal-board`), the runner
+  (`Tool::decide` -> `Effects`, cancellation, the `Drop` guards) and its card surface (`ToolStatus`'s
+  message/countdown/rows, published by the runner when it changes). Nothing in `seal-domain` reads a
+  pixel, opens a port or looks at a window — that is the boundary this document keeps naming.
 - **Deliberate differences, recorded not re-explained:** a second start is refused (`tool_busy`) instead
   of auto-stopping the first (PROTOCOL §4); held inputs release LIFO and two new button lines exist
   (README §divergences); the pet half speaks minutes-from-now and facts-only to the arbiter

@@ -1,9 +1,10 @@
 # v3 DESIGN — the architecture as built
 
-**Status: current truth, 2026-10-25.** The pure crates and the core skeleton are built and tested; the
-Windows and OCR reader crates, the board's OS serial adapter and every tool's effect loop are not (see
-§8). This document is the map: why the shape is what it is, which crate owns what, and where the next
-piece lands. Siblings own their detail and are linked, never repeated: [PROTOCOL.md](PROTOCOL.md) (the
+**Status: current truth, 2026-10-27.** Every crate in the map is built and tested, the board's OS
+serial adapter opens real ports, the OCR pipeline runs in the production reader paths, and every tool
+id has a live loop (eight tools: spammer, holdspace, tuner, quest, sell, buy, gem, pet). What remains
+is live verification and the named measurements/follow-ups in OPEN — not unported code. This document
+is the map: why the shape is what it is and which crate owns what. Siblings own their detail and are linked, never repeated: [PROTOCOL.md](PROTOCOL.md) (the
 seam contract), [CONFIG.md](CONFIG.md) (the files), [CALIBRATION.md](CALIBRATION.md) (coordinates),
 [TOOL-FLOWS.md](TOOL-FLOWS.md) (per-tool decisions), [OPEN.md](../backlog/OPEN.md) (what is not built),
 [PORT-COVERAGE.md](../records/PORT-COVERAGE.md) (the port audit), and v2's
@@ -144,8 +145,8 @@ cancels the token and the worker still ends through `Done`: no slot leaks.
 
 **Events.** Workers only ever send; one writer thread writes. Emitted today: `state` (from an immutable
 `ToolSnapshot`), `tool.finished` (from the run's `StopReason` — the same reason that becomes the final
-snapshot), `log`, and `core.stopping`. `config.changed` is specified in PROTOCOL §5 but has no emitter
-yet — there is no shell to consume it, and a writer-side emitter is the next piece when the UI lands.
+snapshot), `log`, and `core.stopping`. `config.changed` is emitted (PROTOCOL §5): `config.apply`, `ui.window` and `calibration.save` queue it
+after their own response, and the shell's config mirror consumes it.
 Ordering is guaranteed by the single channel: a response the shell asked for and an event a worker
 raised can never be seen out of order relative to each other.
 
@@ -291,15 +292,15 @@ entry there does not exist.
 
 ## 8. What is not built
 
-Link, do not restate: [OPEN.md](../backlog/OPEN.md) §1 (supervisor behaviours: opening phase details,
-quit/pause policy, the 45 s pet wait timeout, tool-side waiting strings), §2 (protocol shapes to settle:
-`state.rows`, `config.changed`, hotkey validation, deferred-start replies), §3 (deferred integration:
-single-instance lock, binary artifact writer, dictionary switch, `settings:` save path), §4 (the shell
-and the Windows/IO crates, including the toolchain blocker). The reader gaps are
-[PORT-COVERAGE.md](../records/PORT-COVERAGE.md) §3: **G1 `seal-win`** and **G3 `seal-ocr`** are crates
-that do not exist yet, and **G2** is half done — `seal-board` now owns the grammar, placement, firmware
-and port choice, but its OS serial adapter is still the adapter's job. Those are why every effect loop
-is still "not ported" and why `ProductionRegistry` refuses every start by name.
+The port is code-complete; what remains is verification and a short list of named measurements.
+[OPEN.md](../backlog/OPEN.md) is the living list and is not restated here. In kind: live verification
+per tool in the game (the repo's rule: a tool is done when it has run, not when it compiles), the
+global-hotkey measurement (PLAN §6.5 — v3.0 ships without a poller), the single-instance lock, the
+spammer's runner-side stand-down hook, the three session-shaped calibration features (the tuner's
+three-box derivation, the tooltip offset/shape, the pet's crop/cell editor) and the sell-slot editor,
+the OCR retry/forced-capture path, and the cut-over packaging/release steps in
+[CUTOVER.md](../plans/CUTOVER.md). [PORT-COVERAGE.md](../records/PORT-COVERAGE.md) is a DATED record of
+the port's progress — its G1/G2/G3 rows are historical; those crates exist.
 
 **Where the plan's status lives:** on the plans board (`v2/docs/plans/README.md`), never in a plan's
 own text — a live plan drifts, and this repository has read a shipped plan as pending work before.
