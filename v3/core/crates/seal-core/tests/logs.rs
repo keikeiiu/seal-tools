@@ -8,8 +8,10 @@
 
 mod common;
 
+use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
+use std::rc::Rc;
 
 use common::TestDir;
 use seal_core::logs::Logs;
@@ -19,11 +21,15 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use seal_board::transport::{Deadline, LineRead, Transport, TransportError};
 use seal_core::dispatch::{CoreState, handle};
+use seal_core::gem::record_empty_check;
+use seal_core::holdspace::SpaceHoldEffects;
 use seal_core::registry::{Session, ToolRegistry, Unavailable};
 use seal_core::supervisor::{StartReply, StopReply, Supervisor};
 use seal_domain::decision::{Decision, Key, StopReason};
 use seal_domain::geometry::Point;
+use seal_domain::tools::gem::EmptyRead;
 use seal_proto::{Event, Request};
 use seal_tools::game::GamePort;
 use seal_tools::runner::{EffectError, Effects, Tool, ToolStatus};
@@ -598,5 +604,104 @@ fn an_ordinary_refusal_does_not_write_error_log() {
     assert!(
         !dir.exists("logs/error.log"),
         "player-correctable refusals must not bury the exception log"
+    );
+}
+
+// ── G8's holdspace release-failure line ──────────────────────────────────────────────────────
+
+/// Writes every line except the release; the release fails, which is the failure that happens in
+/// `Drop` after a run has ended and therefore has no card left to reach.
+struct FailingReleaseTransport {
+    writes: Rc<RefCell<Vec<String>>>,
+}
+
+impl Transport for FailingReleaseTransport {
+    fn write_line(&mut self, wire: &str) -> Result<(), TransportError> {
+        if wire == "U\n" {
+            return Err(TransportError::new("the port is gone"));
+        }
+        self.writes.borrow_mut().push(wire.to_owned());
+        Ok(())
+    }
+
+    fn read_line(&mut self, _deadline: Deadline) -> LineRead {
+        LineRead::Silent
+    }
+}
+
+#[test]
+fn a_failed_drop_release_is_written_to_holdspace_log_with_the_domain_line() {
+    let dir = TestDir::new();
+    let logs = Arc::new(Logs::new(dir.path()));
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    {
+        let mut effects = SpaceHoldEffects::new(
+            FailingReleaseTransport {
+                writes: Rc::clone(&writes),
+            },
+            Arc::clone(&logs),
+        );
+        effects.hold_space().expect("the hold writes P");
+    }
+
+    assert_eq!(*writes.borrow(), vec!["P\n"]);
+    let lines = read_lines(&dir.path_of("logs/holdspace.log"));
+    assert_eq!(lines.len(), 1, "one release-failure line");
+    let line = &lines[0];
+    assert!(
+        line.contains("[svc] Could not release the spacebar"),
+        "the domain release-failed wording: {line}"
+    );
+    assert!(
+        line.contains("tap it once in game (the port is gone)"),
+        "the transport error is carried: {line}"
+    );
+}
+
+// ── G8's opt-in gem empty-check diagnostics ─────────────────────────────────────────────────
+
+#[test]
+fn gem_empty_check_saves_the_crop_and_writes_the_detail_to_gem_log() {
+    let dir = TestDir::new();
+    let logs = Logs::new(dir.path());
+
+    let capture = record_empty_check(
+        &logs,
+        &EmptyRead::DiffFraction(0.12),
+        None,
+        0.18,
+        Some(PNG_BYTES),
+    )
+    .expect("the capture is saved while the flag is on");
+
+    assert!(
+        capture.starts_with("logs/captures/empty_check_crop_"),
+        "v2's crop name: {capture}"
+    );
+    assert!(capture.ends_with(".png"), "{capture}");
+    assert_eq!(
+        fs::read(dir.path_of(&capture)).expect("the crop exists"),
+        PNG_BYTES,
+        "the frame's own PNG bytes are the crop"
+    );
+    let lines = read_lines(&dir.path_of("logs/gem.log"));
+    assert_eq!(lines.len(), 1);
+    assert!(
+        lines[0].contains(
+            "empty check: diff=0.120 threshold=0.180 empty=true capture=logs/captures/empty_check_crop_"
+        ),
+        "v2's detail, recorded in the tool log: {}",
+        lines[0]
+    );
+
+    // The weaker read has no crop and says why; the line is still written.
+    let no_capture = record_empty_check(&logs, &EmptyRead::NoReference, None, 0.18, None);
+    assert!(no_capture.is_none());
+    let lines = read_lines(&dir.path_of("logs/gem.log"));
+    assert_eq!(lines.len(), 2);
+    assert!(
+        lines[1].contains("diff=n/a (no reference) threshold=0.180 empty=false"),
+        "{}",
+        lines[1]
     );
 }

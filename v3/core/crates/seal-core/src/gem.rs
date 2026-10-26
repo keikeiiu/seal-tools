@@ -27,14 +27,17 @@
 //!
 //! # What this build does not do (reported)
 //!
-//! - The optional empty-check debug crops (`gem.save_empty_captures`) wait for the core's logging
-//!   writer; the flag is resolved into the plan but nothing is written.
+//! - The optional empty-check diagnostics (`gem.save_empty_captures`) write the live crop under
+//!   `logs/captures/empty_check_crop_<HHmmss_fff>.png` and one detail line to `gem.log` (v2 wrote that
+//!   line to `logs/empty_check.txt`; v3 keeps the detail in the tool's own log).
 //! - The F9 "advance grade by hand" hotkey has no protocol path yet; [`GemTool::advance_grade_by_hand`]
 //!   is the seam a future hotkey poll calls, and the tests exercise it directly.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
+use std::sync::Arc;
 
+use base64::Engine as _;
 use seal_domain::config::{ColorComposition, MovementsConfig};
 use seal_domain::decision::{Decision, StopReason};
 use seal_domain::geometry::Rect;
@@ -44,6 +47,8 @@ use seal_domain::tools::gem::{
 use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::{ToolId, ToolRow};
 use serde_json::Value;
+
+use crate::logs::Logs;
 
 /// v2's per-channel difference above which a pixel counts as "not the empty box"
 /// (`GemComposer.cs:19`).
@@ -279,13 +284,21 @@ pub struct GemResultSource {
     reference: Option<ReferenceCrop>,
     signature: Option<ColorComposition>,
     colored_gap_min: i32,
+    save_empty_captures: bool,
+    empty_distance: f64,
+    logs: Arc<Logs>,
 }
 
 impl GemResultSource {
     /// Open the read side. The reference crop is loaded ONCE at open (v2's `EmptyReference()` loaded
     /// it once too); a crop that exists but cannot be decoded is a start refusal naming the file
     /// rather than a silent fallback, because the primary signal is the one the measurements trust.
-    pub fn open(config: &Value, plan: &GemPlan, root: &Path) -> Result<Self, String> {
+    pub fn open(
+        config: &Value,
+        plan: &GemPlan,
+        root: &Path,
+        logs: Arc<Logs>,
+    ) -> Result<Self, String> {
         let title = crate::win::configured_title(config).map_err(|error| error.line())?;
         let path = root.join("config").join(REFERENCE_CROP);
         let reference = if path.is_file() {
@@ -308,6 +321,9 @@ impl GemResultSource {
             reference,
             signature: plan.settings.empty_signature,
             colored_gap_min: plan.colored_gap_min,
+            save_empty_captures: plan.save_empty_captures,
+            empty_distance: plan.settings.empty_distance,
+            logs,
         })
     }
 }
@@ -320,15 +336,62 @@ impl GemSource for GemResultSource {
         let (frame, _display) =
             crate::win::capture(&self.title, Some(area)).map_err(|error| error.line())?;
         let (width, height, rgba) = crate::dispatch::frame_rgba(&frame)?;
-        Ok(empty_read_from_frame(
+        let read = empty_read_from_frame(
             self.reference.as_ref(),
             self.signature.as_ref(),
             self.colored_gap_min,
             width,
             height,
             &rgba,
-        ))
+        );
+        if self.save_empty_captures {
+            // The frame is already a PNG; the diagnostic crop is that byte string, never a re-encode.
+            let frame_png = frame
+                .get("data")
+                .and_then(Value::as_str)
+                .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok());
+            record_empty_check(
+                &self.logs,
+                &read,
+                self.signature.as_ref(),
+                self.empty_distance,
+                frame_png.as_deref(),
+            );
+        }
+        Ok(read)
     }
+}
+
+/// The optional `gem.save_empty_captures` diagnostic: the same detail v2 wrote to
+/// `logs/empty_check.txt`, plus the live crop as `logs/captures/empty_check_crop_<HHmmss_fff>.png`.
+/// Writes one `gem.log` line per empty read when the caller (the production source) has the flag on;
+/// returns the crop's relative path when one was saved. Logging is best-effort like every other file
+/// write: a failed crop never fails the read.
+pub fn record_empty_check(
+    logs: &Logs,
+    read: &EmptyRead,
+    signature: Option<&ColorComposition>,
+    empty_distance: f64,
+    frame_png: Option<&[u8]>,
+) -> Option<String> {
+    let empty = result_box_is_empty(read, signature, empty_distance);
+    let detail = match read {
+        EmptyRead::DiffFraction(fraction) => format!("diff={fraction:.3}"),
+        EmptyRead::Composition(_) => "diff=n/a (colour fallback)".to_owned(),
+        EmptyRead::NoReference => "diff=n/a (no reference)".to_owned(),
+    };
+    let mut line = format!("empty check: {detail} threshold={empty_distance:.3} empty={empty}");
+    let capture = frame_png.and_then(|png| {
+        logs.capture(
+            &format!("empty_check_crop_{}.png", crate::logs::short_stamp()),
+            png,
+        )
+    });
+    if let Some(path) = &capture {
+        line.push_str(&format!(" capture={path}"));
+    }
+    logs.tool_line(ToolId::Gem, &line);
+    capture
 }
 
 /// The pure part of the read: compare with the crop when sizes agree, else fall back to the colour

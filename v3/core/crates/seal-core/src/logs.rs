@@ -275,3 +275,10 @@ fn hold_stamp() -> String {
     let [_, _, _, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{hour:02}:{minute:02}:{second:02}.{millis:03}")
 }
+
+/// v2's short stamp for diagnostic capture names (`GemComposer`: `HHmmss_fff`), used by the optional
+/// `gem.save_empty_captures` crop.
+pub fn short_stamp() -> String {
+    let [_, _, _, hour, minute, second, millis] = seal_win::clock::local_now();
+    format!("{hour:02}{minute:02}{second:02}_{millis:03}")
+}

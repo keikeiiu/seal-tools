@@ -58,6 +58,7 @@ fn main() {
     let registry: Arc<dyn ToolRegistry> = Arc::new(ProductionRegistry::new(
         state.shared_config.clone(),
         state.store.clone(),
+        Arc::clone(&state.logs),
     ));
     state.attach_supervisor(Supervisor::start(registry, bus, Arc::clone(&state.logs)));
 

@@ -38,20 +38,21 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
-- **File logs (G8) landed in two increments; two follow-ups are named.** `seal-core/src/logs.rs`
+- **File logs (G8) are CLOSED; one named follow-up remains.** `seal-core/src/logs.rs`
   writes v2's per-run files under `<root>/logs/`: the OCR's `ocr_log.jsonl` /
   `ocr_errors.jsonl` per scan, optional `captures/*.png` (with the relative `capture_path` the
   protocol already specified), `error.log` in v2's `yyyy-MM-dd HH:mm:ss:` shape for internal errors
   and tool opening failures (ordinary refusals deliberately excluded), `holdspace.log`'s own
-  diagnostic prefix, and one `<tool>.log` per run (start line, each CHANGED tool status message, and
-  the final reason as `finished — …` / `stopped — …` / `failed — …`). The local wall clock moved to
-  `seal-win/clock.rs`, so `seal-core` has no `unsafe` left. Follow-ups recorded: (a) v3's pipeline
-  scans ONCE with no retry loop (`tuner.ocr_retries` exists in config but is unused), so v2's
-  last-retry forced capture is not implemented — `ocr_errors.jsonl` records a completed but
-  unconfirmed scan; (b) **holdspace's release failure has no reporting path**: `SpaceHoldEffects::Drop`
-  swallows the `U` write error and the domain's `release_failed()` line is unused, so `holdspace.log`
-  cannot record it until `holdspace.rs` + `registry.rs` thread the logger through (being fixed in the
-  logging follow-up increment). Logging never fails a command or a run (v2's rule, in the module doc).
+  diagnostic prefix — including a failed `U` release from `Drop`, with the domain's once-unused
+  `release_failed()` line — and one `<tool>.log` per run (start line, each CHANGED tool status
+  message, and the final reason as `finished — …` / `stopped — …` / `failed — …`).
+  `gem.save_empty_captures` writes its live crop as `logs/captures/empty_check_crop_<HHmmss_fff>.png`
+  with a `gem.log` detail line (v2 kept that line in a separate `empty_check.txt`; the detail lives in
+  the tool log here). The local wall clock moved to `seal-win/clock.rs`, so `seal-core` has no
+  `unsafe` left. Remaining follow-up: v3's pipeline scans ONCE with no retry loop
+  (`tuner.ocr_retries` exists in config but is unused), so v2's last-retry forced capture and its
+  `refused:` diagnostics branch are not implemented — `ocr_errors.jsonl` records a completed but
+  unconfirmed scan. Logging never fails a command or a run (v2's rule, in the module doc).
 - **Spammer runner-side stand-down is the one remaining hand-over follow-up.** `GamePort::
   should_stand_down` exists and the supervisor cancels a PREEMPTED spammer through the arbiter (v2's
   [YIELD] behaviour, with a defined `"<holder>" stepped aside for "<tool>".` log line — v2 had no

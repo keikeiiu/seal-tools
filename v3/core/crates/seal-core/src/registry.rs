@@ -82,11 +82,18 @@ pub fn not_available_line(tool: ToolId) -> String {
 pub struct ProductionRegistry {
     shared: SharedConfig,
     store: ConfigStore,
+    /// The per-run file logger: the hold-space release failure is the one effect-level failure that
+    /// has no card message left to reach (it happens in `Drop`), so the registry hands it the logger.
+    logs: Arc<crate::logs::Logs>,
 }
 
 impl ProductionRegistry {
-    pub fn new(shared: SharedConfig, store: ConfigStore) -> Self {
-        Self { shared, store }
+    pub fn new(shared: SharedConfig, store: ConfigStore, logs: Arc<crate::logs::Logs>) -> Self {
+        Self {
+            shared,
+            store,
+            logs,
+        }
     }
 
     fn config(&self) -> Value {
@@ -211,7 +218,7 @@ impl ProductionRegistry {
             .parent()
             .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let source = GemResultSource::open(&config, &plan, &root)?;
+        let source = GemResultSource::open(&config, &plan, &root, Arc::clone(&self.logs))?;
         let tool = GemTool::new(plan, source)?;
         // The composer clicks calibrated points, so it needs the display the clicks are measured in.
         let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
@@ -274,7 +281,7 @@ impl ProductionRegistry {
         };
         Ok(Session {
             tool: Box::new(HoldSpaceTool::new()),
-            effects: Box::new(SpaceHoldEffects::new(transport)),
+            effects: Box::new(SpaceHoldEffects::new(transport, Arc::clone(&self.logs))),
         })
     }
 
@@ -411,6 +418,7 @@ mod tests {
         ProductionRegistry::new(
             Arc::new(RwLock::new(config)),
             seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used-by-these-tests")),
+            Arc::new(crate::logs::Logs::disabled()),
         )
     }
 

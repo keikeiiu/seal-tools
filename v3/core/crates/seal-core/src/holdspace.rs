@@ -18,12 +18,16 @@
 //! it to the transport and the runner. v2's card-mirror/hotkey edge logic has no v3 counterpart
 //! because an F12 edge is a SUPERVISOR concern in v3, not a tool's.
 
+use std::sync::Arc;
+
 use seal_board::transport::Transport;
 use seal_domain::decision::Decision;
 use seal_domain::geometry::Point;
-use seal_domain::tools::hold_space::HoldSpaceAction;
+use seal_domain::tools::hold_space::{HoldSpaceAction, release_failed};
 use seal_tools::runner::{EffectError, Effects};
 use seal_tools::tool::ToolId;
+
+use crate::logs::Logs;
 
 /// v2's `HoldSpace` loop tick (`HoldSpace.cs`: `SleepCheck(0.05)`).
 pub const TICK_SECONDS: f64 = 0.05;
@@ -63,14 +67,23 @@ impl seal_tools::runner::Tool for HoldSpaceTool {
 pub struct SpaceHoldEffects<T: Transport> {
     transport: T,
     held: bool,
+    logs: Arc<Logs>,
 }
 
 impl<T: Transport> SpaceHoldEffects<T> {
-    pub fn new(transport: T) -> Self {
+    pub fn new(transport: T, logs: Arc<Logs>) -> Self {
         Self {
             transport,
             held: false,
+            logs,
         }
+    }
+
+    /// A release that failed is the one failure this tool cannot report through a card: it happens in
+    /// `Drop`, after the run has ended. The domain's own "tap it once in game" line goes to
+    /// `holdspace.log`, where the post-mortem can find it; logging never fails the drop.
+    fn log_release_failure(&self, error: &seal_board::transport::TransportError) {
+        self.logs.holdspace_line(&release_failed(error.message()));
     }
 
     fn write(&mut self, action: HoldSpaceAction) -> Result<(), EffectError> {
@@ -109,9 +122,11 @@ impl<T: Transport> Effects for SpaceHoldEffects<T> {
 impl<T: Transport> Drop for SpaceHoldEffects<T> {
     fn drop(&mut self) {
         if self.held {
-            // Best effort: a `Drop` cannot report, and the firmware's own timeout is the backstop.
-            // The explicit `release_space` is where a failure could still become a player message.
-            let _ = self.transport.write_line(HoldSpaceAction::Release.wire());
+            // A `Drop` cannot report to the player, so the failure goes to `holdspace.log` — the
+            // diagnostic trail v2's `HoldDiag` wrote — and the firmware's timeout stays the backstop.
+            if let Err(error) = self.transport.write_line(HoldSpaceAction::Release.wire()) {
+                self.log_release_failure(&error);
+            }
             self.held = false;
         }
     }
@@ -156,9 +171,12 @@ mod tests {
     #[test]
     fn holding_writes_p_and_releasing_writes_u() {
         let writes = Rc::new(RefCell::new(Vec::new()));
-        let mut effects = SpaceHoldEffects::new(RecordingTransport {
-            writes: writes.clone(),
-        });
+        let mut effects = SpaceHoldEffects::new(
+            RecordingTransport {
+                writes: writes.clone(),
+            },
+            Arc::new(Logs::disabled()),
+        );
 
         effects.hold_space().expect("holds");
         assert_eq!(*writes.borrow(), vec!["P\n"]);
@@ -171,9 +189,12 @@ mod tests {
     fn dropping_while_held_releases_the_spacebar() {
         let writes = Rc::new(RefCell::new(Vec::new()));
         {
-            let mut effects = SpaceHoldEffects::new(RecordingTransport {
-                writes: writes.clone(),
-            });
+            let mut effects = SpaceHoldEffects::new(
+                RecordingTransport {
+                    writes: writes.clone(),
+                },
+                Arc::new(Logs::disabled()),
+            );
             effects.hold_space().expect("holds");
         }
 
@@ -188,9 +209,12 @@ mod tests {
     fn dropping_after_a_release_does_not_send_u_twice() {
         let writes = Rc::new(RefCell::new(Vec::new()));
         {
-            let mut effects = SpaceHoldEffects::new(RecordingTransport {
-                writes: writes.clone(),
-            });
+            let mut effects = SpaceHoldEffects::new(
+                RecordingTransport {
+                    writes: writes.clone(),
+                },
+                Arc::new(Logs::disabled()),
+            );
             effects.hold_space().expect("holds");
             effects.release_space().expect("releases");
         }
@@ -200,9 +224,12 @@ mod tests {
 
     #[test]
     fn clicks_and_keys_are_refused_rather_than_dropped() {
-        let mut effects = SpaceHoldEffects::new(RecordingTransport {
-            writes: Rc::new(RefCell::new(Vec::new())),
-        });
+        let mut effects = SpaceHoldEffects::new(
+            RecordingTransport {
+                writes: Rc::new(RefCell::new(Vec::new())),
+            },
+            Arc::new(Logs::disabled()),
+        );
 
         assert!(effects.click(Point::new(1, 2)).is_err());
         assert!(effects.key(seal_domain::decision::Key::Char('1')).is_err());
