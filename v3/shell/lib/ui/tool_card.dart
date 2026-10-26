@@ -29,6 +29,7 @@ class ToolCard extends StatelessWidget {
     required this.onStart,
     required this.onStop,
     this.holdSpaceLine,
+    this.elapsedTicks = 0,
   });
 
   final ToolId tool;
@@ -53,6 +54,10 @@ class ToolCard extends StatelessWidget {
 
   /// The Spammer card's Hold Space report (TOOL-FLOWS: holdspace has no card of its own).
   final String? holdSpaceLine;
+
+  /// Whole seconds elapsed since this tool's last `state` event, driven by the grid's ONE ticker.
+  /// Only the DISPLAYED countdown uses it: rows without `next_action_in_seconds` are untouched.
+  final int elapsedTicks;
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +119,11 @@ class ToolCard extends StatelessWidget {
             ],
             const SizedBox(height: ShellSpace.xs),
             Expanded(
-              child: _RowsView(tool: tool, snapshot: snapshot),
+              child: _RowsView(
+                tool: tool,
+                snapshot: snapshot,
+                elapsedTicks: elapsedTicks,
+              ),
             ),
             if (holdSpace != null)
               Text(
@@ -224,10 +233,17 @@ class _PhaseChip extends StatelessWidget {
 /// The pinned row lines ([PROTOCOL.md] §5): name / status / detail / next_action_in_seconds.
 /// A `rows: []` snapshot renders one quiet line instead of an empty gap.
 class _RowsView extends StatelessWidget {
-  const _RowsView({required this.tool, required this.snapshot});
+  const _RowsView({
+    required this.tool,
+    required this.snapshot,
+    this.elapsedTicks = 0,
+  });
 
   final ToolId tool;
   final ToolSnapshot? snapshot;
+
+  /// Display-only elapsed seconds since the latest state event; the published value is the baseline.
+  final int elapsedTicks;
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +303,7 @@ class _RowsView extends StatelessWidget {
               ),
             if (row.nextActionInSeconds != null)
               Text(
-                formatNextAction(row.nextActionInSeconds),
+                formatNextAction(row.nextActionInSeconds! - elapsedTicks),
                 style: theme.textTheme.labelSmall,
               ),
           ],

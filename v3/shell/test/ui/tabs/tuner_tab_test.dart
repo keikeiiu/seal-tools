@@ -181,11 +181,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('target-grade')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('(none)').last);
+    await tester.tap(find.text('(none — use the shipped default)').last);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('dirty-tuner')), findsOneWidget);
-    expect(find.text('(none)'), findsOneWidget);
+    expect(find.text('(none — use the shipped default)'), findsOneWidget);
 
     harness.answerConfigCommands();
     await tester.tap(find.byKey(const ValueKey('save-tuner')));

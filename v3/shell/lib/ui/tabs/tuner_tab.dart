@@ -20,7 +20,7 @@ import 'fields.dart';
 /// Sentinel for the target-grade dropdown: a config Option is cleared by OMITTING the field — a
 /// JSON null is 'not stated' to the core's merge (validate's merge_overlay skips nulls) — so the
 /// shipped default then applies.
-const String _noTargetGrade = '(none)';
+const String _noTargetGrade = '(none — use the shipped default)';
 
 const List<String> _springModes = ['manual', 'hid'];
 const List<String> _mouseGuards = ['off', 'stop', 'recenter'];
