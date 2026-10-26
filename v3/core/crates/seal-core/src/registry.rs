@@ -23,9 +23,12 @@ use seal_tools::runner::{EffectError, Effects, Tool};
 use seal_tools::tool::ToolId;
 use serde_json::Value;
 
+use seal_config::ConfigStore;
+
 use crate::board::{BoardFailure, Settings, open_board};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
 use crate::spammer::{RealNow, SpammerTool};
+use crate::tuner::TunerTool;
 
 /// The merged config, shared between the dispatcher (publisher) and the registry (reader).
 pub type SharedConfig = Arc<RwLock<Value>>;
@@ -60,14 +63,17 @@ pub fn not_available_line(tool: ToolId) -> String {
     format!("\"{tool}\" is not available in this build yet — its tool loop is not ported.")
 }
 
-/// The binary's registry: the spammer is live, everything else is refused by name.
+/// The binary's registry: the spammer, holdspace and tuner are live; everything else is refused by
+/// name. The store is here because the tuner's opening phase loads the attribute dictionary the
+/// active client names — the same load `config.apply` performs before a variant switch.
 pub struct ProductionRegistry {
     shared: SharedConfig,
+    store: ConfigStore,
 }
 
 impl ProductionRegistry {
-    pub fn new(shared: SharedConfig) -> Self {
-        Self { shared }
+    pub fn new(shared: SharedConfig, store: ConfigStore) -> Self {
+        Self { shared, store }
     }
 
     fn config(&self) -> Value {
@@ -75,6 +81,36 @@ impl ProductionRegistry {
             .read()
             .map(|config| config.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
+    fn tuner_session(&self) -> Result<Session, String> {
+        let config = self.config();
+        let plan = crate::tuner::plan(&config)?;
+        let settings = Settings::from_config(&config);
+        let (_port, transport) = match open_board(&settings) {
+            Ok(opened) => opened,
+            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+                return Err(line);
+            }
+        };
+        let active = crate::startup::active(&config);
+        let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
+            .map_err(|error| error.to_string())?;
+        let (source, display) =
+            crate::tuner::OcrTunerSource::open(&config, attributes, plan.region)?;
+        let effects = crate::effects::system_effects(transport, display);
+        let (click_enter_delay, ocr_delay) = crate::tuner::timings(&config);
+        let tool = TunerTool::new(
+            plan,
+            source,
+            display,
+            Box::new(crate::tuner::RealNow::start()),
+        )
+        .with_timings(click_enter_delay, ocr_delay);
+        Ok(Session {
+            tool: Box::new(tool),
+            effects: Box::new(effects),
+        })
     }
 
     fn hold_space_session(&self) -> Result<Session, String> {
@@ -125,6 +161,9 @@ impl ToolRegistry for ProductionRegistry {
             // (`create`), so this cheap gate always passes: a start with no board gets the opening
             // phase's own line rather than a refusal invented here.
             ToolId::HoldSpace => Ok(()),
+            ToolId::Tuner => crate::tuner::plan(&self.config())
+                .map(|_| ())
+                .map_err(|line| Unavailable { line }),
             other => Err(Unavailable {
                 line: not_available_line(other),
             }),
@@ -135,6 +174,7 @@ impl ToolRegistry for ProductionRegistry {
         match tool {
             ToolId::Spammer => self.spammer_session(),
             ToolId::HoldSpace => self.hold_space_session(),
+            ToolId::Tuner => self.tuner_session(),
             other => Err(not_available_line(other)),
         }
     }
@@ -184,7 +224,39 @@ mod tests {
     use super::*;
 
     fn registry(config: Value) -> ProductionRegistry {
-        ProductionRegistry::new(Arc::new(RwLock::new(config)))
+        ProductionRegistry::new(
+            Arc::new(RwLock::new(config)),
+            seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used-by-these-tests")),
+        )
+    }
+
+    fn config_with_tuner() -> Value {
+        serde_json::json!({
+            "window": {"title": "TW_LIVE"},
+            "tuner": {
+                "grade_order": ["N", "G", "DG"],
+                "target_grade": "DG",
+                "ocr": {"region": {"left": 10, "top": 20, "width": 300, "height": 320}},
+                "spring_mode": "manual",
+            },
+            "filter": {"enabled": false},
+        })
+    }
+
+    #[test]
+    fn the_tuner_is_available_once_its_region_resolves() {
+        assert_eq!(
+            registry(config_with_tuner()).available(ToolId::Tuner),
+            Ok(())
+        );
+        let refusal = registry(config_with_spammer())
+            .available(ToolId::Tuner)
+            .expect_err("no calibrated region in that fixture");
+        assert!(
+            refusal.line.contains("tuner.ocr.region"),
+            "{}",
+            refusal.line
+        );
     }
 
     fn config_with_spammer() -> Value {
@@ -227,7 +299,7 @@ mod tests {
     #[test]
     fn every_other_tool_says_it_is_not_ported() {
         for tool in ToolId::ALL {
-            if matches!(tool, ToolId::Spammer | ToolId::HoldSpace) {
+            if matches!(tool, ToolId::Spammer | ToolId::HoldSpace | ToolId::Tuner) {
                 continue;
             }
             let refusal = registry(config_with_spammer())

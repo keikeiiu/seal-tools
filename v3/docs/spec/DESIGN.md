@@ -106,8 +106,10 @@ a `Response`; the response is queued on the SAME writer channel as events, so no
 `ui.window`, `window.find`/`window.measure`/`capture`, `board.probe`/`board.test`, `attributes.get`,
 `calibration.save`/`calibration.fetch`, `ocr.scan`,
 `tool.start`/`tool.stop` and `shutdown` are the implemented commands today; `tool.start` is live for
-the **spammer** and **holdspace** and refuses the other six ids by name until their loops land (the
-registry is the seam, and its tests pin the refusal). The rest of PROTOCOL §4
+the **spammer**, **holdspace** and **tuner** (the first READ-loop tool: capture → OCR → the domain's
+`TunerRun::decide` → effects, with the read behind a `TunerSource` seam) and refuses the other five
+ids by name until their loops land (the registry is the seam, and its tests pin the refusal). The
+rest of PROTOCOL §4
 is spec-only and is reported in OPEN §3/§4. Every config save runs the domain rules first
 (`validate.rs`, "no widget keeps a rule").
 

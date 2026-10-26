@@ -304,7 +304,7 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     )
 }
 
-fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
+pub(crate) fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
     let band = |name: &str| -> Option<(i32, i32)> {
         let array = config.pointer(&format!("/tuner/ocr/{name}"))?.as_array()?;
         Some((
@@ -324,7 +324,7 @@ fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
         row_height,
     }
 }
-fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), String> {
+pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), String> {
     let data = frame
         .get("data")
         .and_then(Value::as_str)
@@ -916,35 +916,19 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
 /// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` §6). The Win32 detail
 /// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
 fn win_error_response(id: &str, error: win::CommandError) -> Response {
+    let line = error.line();
     match error {
-        win::CommandError::MissingTitle => bad_request(
-            id,
-            "window.title is not configured",
-            json!({"section": "window"}),
-        ),
+        win::CommandError::MissingTitle => bad_request(id, &line, json!({"section": "window"})),
         win::CommandError::NotFound { title } => Response::err(
             id,
-            Error::new(
-                "window_not_found",
-                "the game window was not found",
-                json!({"title": title}),
-            ),
+            Error::new("window_not_found", &line, json!({"title": title})),
         ),
-        win::CommandError::NotForeground => Response::err(
-            id,
-            Error::new(
-                "game_not_foreground",
-                "capture refused because another window is in front",
-                json!({}),
-            ),
-        ),
-        win::CommandError::RegionOutside => bad_request(
-            id,
-            "the capture region does not fit inside the game client area",
-            json!({}),
-        ),
-        win::CommandError::BadRequest(message) => bad_request(id, &message, json!({})),
-        win::CommandError::Internal(message) => internal(id, &message),
+        win::CommandError::NotForeground => {
+            Response::err(id, Error::new("game_not_foreground", &line, json!({})))
+        }
+        win::CommandError::RegionOutside => bad_request(id, &line, json!({})),
+        win::CommandError::BadRequest(_) => bad_request(id, &line, json!({})),
+        win::CommandError::Internal(_) => internal(id, &line),
     }
 }
 

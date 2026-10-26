@@ -14,5 +14,6 @@ pub mod root;
 pub mod spammer;
 pub mod startup;
 pub mod supervisor;
+pub mod tuner;
 pub mod validate;
 pub mod win;

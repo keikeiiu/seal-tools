@@ -29,6 +29,25 @@ pub enum CommandError {
     Internal(String),
 }
 
+impl CommandError {
+    /// The player-facing sentence for this failure.
+    ///
+    /// The protocol mapping (`dispatch::win_error_response`) uses this for its message and a tool's
+    /// read loop uses it directly, so the wording lives in one place instead of growing a second
+    /// copy in the tools.
+    pub fn line(&self) -> String {
+        match self {
+            Self::MissingTitle => "window.title is not configured".to_owned(),
+            Self::NotFound { .. } => "the game window was not found".to_owned(),
+            Self::NotForeground => "capture refused because another window is in front".to_owned(),
+            Self::RegionOutside => {
+                "the capture region does not fit inside the game client area".to_owned()
+            }
+            Self::BadRequest(message) | Self::Internal(message) => message.clone(),
+        }
+    }
+}
+
 impl From<WinError> for CommandError {
     fn from(error: WinError) -> Self {
         match error {

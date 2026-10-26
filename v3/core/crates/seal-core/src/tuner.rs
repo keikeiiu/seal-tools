@@ -1,0 +1,723 @@
+//! The tuner: the first READ-LOOP tool (capture -> OCR -> decide -> effects).
+//!
+//! The other two live tools need no input from the screen. The tuner is the first that does, and that
+//! makes the shape of every later reader tool:
+//!
+//! - **The read is a seam.** [`TunerSource`] is one scan plus a cursor read; the production source is
+//!   `win::capture` + `seal-ocr`'s pipeline, and the tests script it. The DECISION half is
+//!   `seal-domain`'s [`TunerRun`] and is not repeated here: this module only turns one
+//!   [`TunerOutcome`] into the next few `Decision`s and holds the loop's state.
+//! - **The command stream is v2's exactly** (`SealTuner.cs:104-160`): countdown, then one
+//!   attempt = (HID spring placement once) `C` click, wait `click_enter_delay`, `E` Enter, wait
+//!   `ocr_delay`, one read, decide. `Retry` loops; a `Stop` reason ends the run.
+//! - **The mouse guard runs before each click and only in `hid` mode.** Both `None`s fail OPEN
+//!   (window or cursor unreadable), which is v2's acknowledged behaviour and is why the guard is a
+//!   domain function with that comment rather than a rule invented here.
+//!
+//! One recorded simplification: a FAILED recentre placement surfaces as the effects' placement line,
+//! not v2's composed "cursor wouldn't re-centre — <detail>". The stop still happens and still names
+//! the cursor; only the wording differs, because the runner performs effects and the tool cannot see
+//! their failure. Recorded in `OPEN.md`.
+
+use std::collections::VecDeque;
+use std::time::Instant;
+
+use seal_domain::config::FilterConfig;
+use seal_domain::decision::Decision;
+use seal_domain::geometry::{DisplayInfo, Point, Rect};
+use seal_domain::tools::tuner::{
+    MouseGuardStep, START_COUNTDOWN, SpringMode, SpringStep, TunerDecision, TunerRead, TunerRun,
+    TunerSettings, after_recenter, mouse_guard_step, spring_step,
+};
+use seal_tools::runner::Tool;
+use seal_tools::tool::ToolId;
+use serde_json::Value;
+
+/// v2's loop tick (`SealTuner.cs` `SleepCheck(0.05)`), used while nothing is due.
+pub const TICK_SECONDS: f64 = 0.05;
+
+/// The tuner's resolved start data: the decision settings, the spring point, and the OCR region.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TunerPlan {
+    pub settings: TunerSettings,
+    pub spring: Option<Point>,
+    pub region: Rect,
+}
+
+fn number(value: &Value, path: &str) -> Option<i32> {
+    value
+        .pointer(path)
+        .and_then(Value::as_i64)
+        .and_then(|number| i32::try_from(number).ok())
+}
+
+fn text(value: &Value, path: &str) -> Option<String> {
+    value
+        .pointer(path)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn point(value: &Value, path: &str) -> Option<Point> {
+    let array = value.pointer(path)?.as_array()?;
+    if array.len() != 2 {
+        return None;
+    }
+    Some(Point::new(
+        i32::try_from(array[0].as_i64()?).ok()?,
+        i32::try_from(array[1].as_i64()?).ok()?,
+    ))
+}
+
+/// Resolve the tuner plan out of the merged config, or the line that says which part is missing.
+pub fn plan(config: &Value) -> Result<TunerPlan, String> {
+    let region = Rect::new(
+        number(config, "/tuner/ocr/region/left").ok_or_else(|| {
+            "tuner.ocr.region isn't calibrated — draw it in Calibrate.".to_owned()
+        })?,
+        number(config, "/tuner/ocr/region/top").ok_or_else(|| {
+            "tuner.ocr.region isn't calibrated — draw it in Calibrate.".to_owned()
+        })?,
+        number(config, "/tuner/ocr/region/width").ok_or_else(|| {
+            "tuner.ocr.region isn't calibrated — draw it in Calibrate.".to_owned()
+        })?,
+        number(config, "/tuner/ocr/region/height").ok_or_else(|| {
+            "tuner.ocr.region isn't calibrated — draw it in Calibrate.".to_owned()
+        })?,
+    );
+    if region.w <= 0 || region.h <= 0 {
+        return Err("tuner.ocr.region has no area — draw it again in Calibrate.".to_owned());
+    }
+
+    let grade_order: Vec<String> = config
+        .pointer("/tuner/grade_order")
+        .and_then(Value::as_array)
+        .map(|grades| {
+            grades
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let filter: FilterConfig = match config.get("filter").cloned() {
+        Some(filter) => serde_json::from_value(filter).map_err(|error| {
+            format!("tuner.filter isn't usable — {error}. Fix it in the Tuner tab.")
+        })?,
+        None => FilterConfig::default(),
+    };
+
+    let settings = TunerSettings {
+        grade_order,
+        target_grade: text(config, "/tuner/target_grade").unwrap_or_default(),
+        max_retries: number(config, "/tuner/max_retries").unwrap_or(999_999),
+        spring_mode: SpringMode::parse(&text(config, "/tuner/spring_mode").unwrap_or_default()),
+        mouse_guard: seal_domain::tools::tuner::MouseGuard::parse(
+            &text(config, "/tuner/mouse_guard").unwrap_or_default(),
+        ),
+        guard_px: number(config, "/tuner/guard_px").unwrap_or(8),
+        recenter_max: number(config, "/tuner/recenter_max").unwrap_or(20),
+        filter,
+    };
+    let spring = point(config, "/tuner/spring_point");
+
+    // Spring mode `hid` with no point would stop on the first attempt anyway; refusing at start puts
+    // the fix before the first click and reuses the domain's own line.
+    if settings.spring_mode == SpringMode::Hid
+        && let SpringStep::Stop(reason) = spring_step(&settings, spring)
+    {
+        return Err(reason.message);
+    }
+
+    Ok(TunerPlan {
+        settings,
+        spring,
+        region,
+    })
+}
+
+/// One scan plus a cursor read: the loop's input seam.
+pub trait TunerSource {
+    /// One OCR read of the calibrated region, or the line that says why it could not be read.
+    fn read(&mut self) -> Result<TunerRead, String>;
+    /// The cursor in the LOGICAL screen space, or `None` when unreadable (the guard fails open).
+    fn cursor(&mut self) -> Option<Point> {
+        None
+    }
+}
+
+/// Where the run is in v2's command stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    Countdown,
+    PlaceSpring,
+    Guard,
+    Click,
+    WaitAfterClick,
+    Enter,
+    WaitAfterOcr,
+    Read,
+}
+
+/// Where the run's monotonic time comes from; tests step it.
+pub trait Now {
+    fn seconds(&self) -> f64;
+}
+
+/// The production clock.
+pub struct RealNow(Instant);
+
+impl RealNow {
+    pub fn start() -> Self {
+        Self(Instant::now())
+    }
+}
+
+impl Now for RealNow {
+    fn seconds(&self) -> f64 {
+        self.0.elapsed().as_secs_f64()
+    }
+}
+
+/// The tuner as the runner sees it.
+pub struct TunerTool<S: TunerSource> {
+    run: TunerRun,
+    plan: TunerPlan,
+    source: S,
+    display: DisplayInfo,
+    now: Box<dyn Now + Send>,
+    step: Step,
+    queue: VecDeque<Decision>,
+    started: f64,
+    placed_spring: bool,
+    recenter_count: i32,
+    pending_click_delay: f64,
+    pending_ocr_delay: f64,
+}
+
+impl<S: TunerSource> TunerTool<S> {
+    pub fn new(plan: TunerPlan, source: S, display: DisplayInfo, now: Box<dyn Now + Send>) -> Self {
+        let started = now.seconds();
+        let timings = (0.4, 0.8); // v2 defaults; overwritten by `with_timings`
+        Self {
+            run: TunerRun::new(plan.settings.clone()),
+            plan,
+            source,
+            display,
+            now,
+            step: Step::Countdown,
+            queue: VecDeque::new(),
+            started,
+            placed_spring: false,
+            recenter_count: 0,
+            pending_click_delay: timings.0,
+            pending_ocr_delay: timings.1,
+        }
+    }
+
+    /// The two delays between C, E and the read (`tuner.timing.click_enter_delay`/`ocr_delay`).
+    pub fn with_timings(mut self, click_enter_delay: f64, ocr_delay: f64) -> Self {
+        self.pending_click_delay = click_enter_delay;
+        self.pending_ocr_delay = ocr_delay;
+        self
+    }
+
+    fn logical_spring(&self) -> Option<Point> {
+        self.plan
+            .spring
+            .map(|spring| self.display.cursor_target(spring.x, spring.y).logical)
+    }
+
+    /// One attempt's beginning: hid mode places the cursor once, then every attempt clicks.
+    fn begin_attempt(&mut self) {
+        if self.plan.settings.spring_mode == SpringMode::Hid && !self.placed_spring {
+            self.step = Step::PlaceSpring;
+        } else {
+            self.step = Step::Guard;
+        }
+    }
+}
+
+impl<S: TunerSource + Send> Tool for TunerTool<S> {
+    fn id(&self) -> ToolId {
+        ToolId::Tuner
+    }
+
+    fn decide(&mut self) -> Decision {
+        if let Some(decision) = self.queue.pop_front() {
+            return decision;
+        }
+
+        loop {
+            match self.step {
+                Step::Countdown => {
+                    let elapsed = self.now.seconds() - self.started;
+                    if elapsed < START_COUNTDOWN as f64 {
+                        return Decision::Wait(1.0);
+                    }
+                    self.begin_attempt();
+                }
+                Step::PlaceSpring => {
+                    self.placed_spring = true;
+                    self.step = Step::Guard;
+                    match self.plan.spring {
+                        Some(spring) => return Decision::Place(spring),
+                        None => {
+                            self.step = Step::Click;
+                        }
+                    }
+                }
+                Step::Guard => {
+                    let cursor = self.source.cursor();
+                    match mouse_guard_step(
+                        &self.plan.settings,
+                        self.logical_spring(),
+                        cursor,
+                        self.recenter_count,
+                    ) {
+                        MouseGuardStep::Proceed { drift_free } => {
+                            if drift_free {
+                                self.recenter_count = 0;
+                            }
+                            self.step = Step::Click;
+                        }
+                        MouseGuardStep::Recenter => {
+                            self.recenter_count += 1;
+                            let Some(spring) = self.plan.spring else {
+                                self.step = Step::Click;
+                                continue;
+                            };
+                            if let MouseGuardStep::Stop(reason) =
+                                after_recenter(&self.plan.settings, Ok(()), self.recenter_count)
+                            {
+                                self.step = Step::Read;
+                                return Decision::Stop(reason);
+                            }
+                            self.step = Step::Click;
+                            return Decision::Place(spring);
+                        }
+                        MouseGuardStep::Stop(reason) => {
+                            self.step = Step::Read;
+                            return Decision::Stop(reason);
+                        }
+                    }
+                }
+                Step::Click => {
+                    self.step = Step::WaitAfterClick;
+                    return Decision::ClickHere;
+                }
+                Step::WaitAfterClick => {
+                    self.step = Step::Enter;
+                    return Decision::Wait(self.pending_click_delay);
+                }
+                Step::Enter => {
+                    self.step = Step::WaitAfterOcr;
+                    return Decision::Enter;
+                }
+                Step::WaitAfterOcr => {
+                    self.step = Step::Read;
+                    return Decision::Wait(self.pending_ocr_delay);
+                }
+                Step::Read => {
+                    let read = match self.source.read() {
+                        Ok(read) => read,
+                        Err(line) => {
+                            self.step = Step::Read;
+                            return Decision::Stop(seal_domain::decision::StopReason::error(line));
+                        }
+                    };
+                    let outcome = self.run.decide(&read);
+                    match outcome.decision {
+                        TunerDecision::Stop(reason) => {
+                            self.step = Step::Read;
+                            return Decision::Stop(reason);
+                        }
+                        TunerDecision::Retry => {
+                            self.run.begin_attempt();
+                            self.begin_attempt();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The two delays between the click, the Enter and the read (`tuner.timing.*`), with v2's defaults.
+pub fn timings(config: &Value) -> (f64, f64) {
+    let get = |path: &str| config.pointer(path).and_then(Value::as_f64);
+    (
+        get("/tuner/timing/click_enter_delay").unwrap_or(0.4),
+        get("/tuner/timing/ocr_delay").unwrap_or(0.8),
+    )
+}
+
+/// The production source: capture the calibrated region, OCR it, and read the cursor for the guard.
+///
+/// The opening phase ([`Self::open`]) does everything that can fail before the first click: find the
+/// window, measure the display the guard compares in, and load the OCR models. The read itself is
+/// `win::capture` (foreground-gated) + `seal-ocr`'s pipeline + `seal-domain`'s matcher, all of which
+/// are already tested on their own; this is the wiring.
+pub struct OcrTunerSource {
+    title: String,
+    region: Rect,
+    geometry: seal_ocr::modes::OcrGeometry,
+    attributes: seal_domain::config::AttributesConfig,
+    pipeline: seal_ocr::pipeline::OcrPipeline,
+}
+
+impl OcrTunerSource {
+    /// Open the read side, or name what is missing before the run starts.
+    pub fn open(
+        config: &Value,
+        attributes: seal_domain::config::AttributesConfig,
+        region: Rect,
+    ) -> Result<(Self, DisplayInfo), String> {
+        let title = crate::win::configured_title(config).map_err(|error| error.line())?;
+        let hwnd = seal_win::window::find_window(&title)
+            .ok_or_else(|| format!("game window not found — is {title:?} running?"))?;
+        let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
+        let geometry = crate::dispatch::ocr_geometry(config);
+        let pipeline =
+            seal_ocr::pipeline::OcrPipeline::load_from_env(&attributes, geometry.row_height)
+                .map_err(|error| {
+                    format!(
+                        "the OCR models are not available ({}) — set SEAL_OCR_MODELS",
+                        error.reason
+                    )
+                })?;
+        Ok((
+            Self {
+                title,
+                region,
+                geometry,
+                attributes,
+                pipeline,
+            },
+            display,
+        ))
+    }
+}
+
+impl TunerSource for OcrTunerSource {
+    fn read(&mut self) -> Result<TunerRead, String> {
+        let (frame, _display) =
+            crate::win::capture(&self.title, Some(self.region)).map_err(|error| error.line())?;
+        let (width, height, rgba) = crate::dispatch::frame_rgba(&frame)?;
+        let scan = self
+            .pipeline
+            .scan_rgba(width, height, &rgba)
+            .map_err(|error| error.message)?;
+
+        let geometry = &self.geometry;
+        let attributes_mode = seal_ocr::modes::apply(
+            seal_ocr::modes::Mode::Attributes,
+            &scan,
+            &self.attributes,
+            geometry,
+        );
+        let matcher = seal_domain::ocr::AttrMatcher::new(&self.attributes);
+        let attributes =
+            matcher.match_attributes(attributes_mode.attributes.as_deref().unwrap_or_default());
+        let grade = seal_ocr::modes::apply(
+            seal_ocr::modes::Mode::Grade,
+            &scan,
+            &self.attributes,
+            geometry,
+        )
+        .grade;
+        let remaining = seal_ocr::modes::apply(
+            seal_ocr::modes::Mode::Count,
+            &scan,
+            &self.attributes,
+            geometry,
+        )
+        .remaining
+        .and_then(|count| i32::try_from(count).ok());
+
+        Ok(TunerRead {
+            grade,
+            remaining,
+            attributes,
+        })
+    }
+
+    fn cursor(&mut self) -> Option<Point> {
+        seal_win::window::cursor_position()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use seal_domain::decision::StopKind;
+    use seal_domain::geometry::Size;
+
+    use super::*;
+
+    /// A clock in milliseconds, shared with the test so it can advance time.
+    struct StepNow(Arc<AtomicU64>);
+
+    impl StepNow {
+        fn new() -> (Self, Arc<AtomicU64>) {
+            let clock = Arc::new(AtomicU64::new(0));
+            (Self(clock.clone()), clock)
+        }
+    }
+
+    impl Now for StepNow {
+        fn seconds(&self) -> f64 {
+            self.0.load(Ordering::SeqCst) as f64 / 1000.0
+        }
+    }
+
+    /// Advance the shared clock by one second.
+    fn tick(clock: &Arc<AtomicU64>) {
+        clock.fetch_add(1000, Ordering::SeqCst);
+    }
+
+    /// A scripted source: reads are taken in order, the cursor is fixed.
+    struct FakeSource {
+        reads: Vec<Result<TunerRead, String>>,
+        cursor: Option<Point>,
+    }
+
+    impl TunerSource for FakeSource {
+        fn read(&mut self) -> Result<TunerRead, String> {
+            if self.reads.is_empty() {
+                return Err("no more reads".to_owned());
+            }
+            self.reads.remove(0)
+        }
+
+        fn cursor(&mut self) -> Option<Point> {
+            self.cursor
+        }
+    }
+
+    fn display() -> DisplayInfo {
+        DisplayInfo::from_rects(
+            Rect::new(0, 0, 900, 700),
+            Rect::new(0, 0, 900, 700),
+            Rect::new(0, 0, 900, 700),
+            Size::new(1920, 1080),
+        )
+    }
+
+    fn config(spring_mode: &str, spring: Option<[i32; 2]>) -> Value {
+        serde_json::json!({
+            "tuner": {
+                "grade_order": ["N", "G", "DG", "XG", "SG"],
+                "target_grade": "DG",
+                "max_retries": 999999,
+                "spring_mode": spring_mode,
+                "mouse_guard": "off",
+                "guard_px": 8,
+                "recenter_max": 20,
+                "ocr": {"region": {"left": 100, "top": 200, "width": 300, "height": 320}},
+                "spring_point": spring,
+                "timing": {"click_enter_delay": 0.4, "ocr_delay": 0.8},
+            },
+            "filter": {"enabled": false},
+        })
+    }
+
+    fn read_target() -> TunerRead {
+        TunerRead {
+            grade: Some("DG".to_owned()),
+            remaining: Some(10),
+            attributes: Vec::new(),
+        }
+    }
+
+    fn read_below_target() -> TunerRead {
+        TunerRead {
+            grade: Some("G".to_owned()),
+            remaining: Some(10),
+            attributes: Vec::new(),
+        }
+    }
+
+    fn plan_of(config: Value) -> TunerPlan {
+        plan(&config).expect("resolves")
+    }
+
+    fn tool(
+        config: Value,
+        reads: Vec<Result<TunerRead, String>>,
+        cursor: Option<Point>,
+    ) -> (TunerTool<FakeSource>, Arc<AtomicU64>) {
+        let plan = plan_of(config);
+        let (now, clock) = StepNow::new();
+        let source = FakeSource { reads, cursor };
+        let tool = TunerTool::new(plan, source, display(), Box::new(now));
+        (tool, clock)
+    }
+
+    #[test]
+    fn the_plan_resolves_the_settings_region_and_spring() {
+        let plan = plan_of(config("hid", Some([500, 600])));
+
+        assert_eq!(plan.settings.target_grade, "DG");
+        assert_eq!(plan.settings.grade_order.len(), 5);
+        assert_eq!(plan.settings.spring_mode, SpringMode::Hid);
+        assert_eq!(plan.region, Rect::new(100, 200, 300, 320));
+        assert_eq!(plan.spring, Some(Point::new(500, 600)));
+    }
+
+    #[test]
+    fn an_uncalibrated_region_is_refused_at_start_with_the_calibrate_line() {
+        let mut config = config("manual", None);
+        config["tuner"]["ocr"] = serde_json::json!({});
+
+        let line = plan(&config).expect_err("no region");
+
+        assert!(line.contains("tuner.ocr.region"), "{line}");
+        assert!(line.contains("Calibrate"), "{line}");
+    }
+
+    #[test]
+    fn hid_without_a_spring_point_is_refused_with_the_domains_line() {
+        let line = plan(&config("hid", None)).expect_err("hid needs a point");
+
+        assert!(line.contains("spring_mode is hid"), "{line}");
+        assert!(line.contains("spring_point"), "{line}");
+    }
+
+    #[test]
+    fn one_attempt_is_countdown_place_click_enter_wait_read_then_stop() {
+        let (mut tool, clock) = tool(
+            config("hid", Some([500, 600])),
+            vec![Ok(read_target())],
+            None,
+        );
+
+        // Countdown: one Wait per second, five of them.
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(tool.decide(), Decision::Place(Point::new(500, 600)));
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        let stop = tool.decide();
+        match stop {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Done);
+                assert!(reason.message.contains("DG"), "{}", reason.message);
+            }
+            other => panic!("expected the done stop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn manual_mode_clicks_where_the_player_left_the_cursor() {
+        let (mut tool, clock) = tool(config("manual", None), vec![Ok(read_target())], None);
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(
+            tool.decide(),
+            Decision::ClickHere,
+            "no placement in manual mode"
+        );
+    }
+
+    #[test]
+    fn a_below_target_read_retries_the_whole_attempt() {
+        let (mut tool, clock) = tool(
+            config("manual", None),
+            vec![Ok(read_below_target()), Ok(read_target())],
+            None,
+        );
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        // First attempt leads to a retry, not a stop.
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        // The retry starts a SECOND click sequence.
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        assert!(matches!(tool.decide(), Decision::Stop(_)));
+    }
+
+    #[test]
+    fn a_total_read_failure_stops_with_the_v2_line() {
+        let (mut tool, clock) = tool(config("manual", None), vec![Ok(TunerRead::default())], None);
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        match tool.decide() {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Error);
+                assert!(reason.message.contains("Read failed"), "{}", reason.message);
+            }
+            other => panic!("expected the read failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_source_error_stops_with_its_line() {
+        let (mut tool, clock) = tool(
+            config("manual", None),
+            vec![Err("the game window is not in front".to_owned())],
+            None,
+        );
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        match tool.decide() {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Error);
+                assert_eq!(reason.message, "the game window is not in front");
+            }
+            other => panic!("expected the source line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_guard_stops_when_the_cursor_left_the_spring() {
+        let mut config = config("hid", Some([500, 600]));
+        config["tuner"]["mouse_guard"] = serde_json::json!("stop");
+        // The cursor is far from the spring's logical point (500,600 at 1:1).
+        let (mut tool, clock) = tool(config, vec![Ok(read_target())], Some(Point::new(10, 10)));
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(tool.decide(), Decision::Place(Point::new(500, 600)));
+        match tool.decide() {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Guard);
+                assert!(reason.message.contains("mouse moved"), "{}", reason.message);
+            }
+            other => panic!("expected the guard stop, got {other:?}"),
+        }
+    }
+}

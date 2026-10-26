@@ -57,18 +57,21 @@ fn stopping_when_nothing_runs_is_not_running_not_a_failure() {
 }
 
 #[test]
-fn a_known_tool_is_refused_by_name_because_this_build_has_no_loop() {
+fn a_known_unported_tool_is_refused_by_name() {
     let root = config_root();
     let mut session = Session::start(root.path());
     session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
 
-    let response = session.call("tool.start", json!({"tool": "tuner"}));
+    // `pet` is known to the protocol but has no loop in this build. (`tuner` used to be the example
+    // here; it is live now, and its opening phase's failure depends on the machine's hardware, so it
+    // is not a placeholder case any more.)
+    let response = session.call("tool.start", json!({"tool": "pet"}));
 
     assert!(!response.ok, "no loop exists in this build");
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "bad_request");
     assert!(
-        error.message.contains("\"tuner\""),
+        error.message.contains("\"pet\""),
         "the line names the tool: {}",
         error.message
     );

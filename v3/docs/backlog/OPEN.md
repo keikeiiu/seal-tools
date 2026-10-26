@@ -38,6 +38,19 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
+- **Tool-published message/rows surface.** The `state` event carries `message`, `countdown_s` and
+  `rows`, but `seal-tools::runner::Tool` has no way to publish them: the supervisor publishes phase
+  transitions and the run's final line, so a live tool cannot yet show the tuner's filter line, the
+  pet feeder's four rows or a spammer countdown. The seam needs a small `Tool::status()` (or an
+  effect/queue) before the cards' richer surface is real; the tuner records its filter line
+  internally but cannot publish it yet (`seal-core/src/tuner.rs`).
+- **Tuner follow-ups, named not hidden** (`seal-core/src/tuner.rs`): the mouse-guard RECENTER path
+  surfaces a failed placement as the effects' placement line rather than v2's composed "cursor
+  wouldn't re-centre — <detail>" (the runner performs effects, the tool cannot see their failure);
+  the countdown publishes no per-second card message for the same reason as the item above; and the
+  `hid` spring placement before the FIRST attempt is implemented, while the guard's recentre during
+  the loop relies on the same `Decision::Place`. A live run against the game is still unverified
+  (needs the game foreground, a board, and the OCR models).
 - **`tool.start` reply shapes.** A deferred start answers `{}` and publishes the waiting line as a
   `log` (there is no run yet to attach a `state` to — a state event would report a registration
   that has not happened); a `tool_busy` refusal's detail is `{line, tool}`. Neither shape is in the
