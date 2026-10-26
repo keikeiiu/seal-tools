@@ -93,6 +93,9 @@ fn main() {
     };
 
     state.shutdown_tools(reason);
+    // `PROTOCOL.md` §1: shutdown flushes the logs. Every line is already durable (the logger opens,
+    // appends and closes per line), so this is the contract hook rather than a data-loss window.
+    state.logs.flush();
     // The dispatcher's event sender must be gone before the writer can stop: it is the last sender
     // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
     state.detach_events();

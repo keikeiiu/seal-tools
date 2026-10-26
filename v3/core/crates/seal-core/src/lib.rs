@@ -10,6 +10,7 @@ pub mod effects;
 pub mod events;
 pub mod gem;
 pub mod holdspace;
+pub mod logs;
 pub mod pet;
 pub mod quest;
 pub mod registry;

@@ -293,9 +293,11 @@ about LIVE VERIFICATION and the two loops, not about unported code.
 - **G3 (`seal-ocr`) is no longer a gap**: the pipeline is assembled and proven on v2's real captures
   (10/10 captures, 508 items, `OCR-RESEARCH.md`). The outstanding OCR work is the player's raw-crop
   corpus (§13.10) for parity beyond that corpus.
-- **G8 (service/logging glue) is partly closed**: one event writer, the supervisor and `Tool::status`
-  exist; what v2 had and v3 does not is its per-run FILE log (`FileLogger`) — the artifact/logging
-  writer that `gem.save_empty_captures` also waits on.
+- **G8 (service/logging glue) is closing**: one event writer, the supervisor and `Tool::status` exist,
+  and the per-run FILE log has landed (`seal-core/src/logs.rs`: `<root>/logs/` append-only text/JSONL,
+  OCR logs and optional captures with the protocol's `capture_path`); the per-tool `<tool>.log` lines
+  and `error.log` writes are the second increment, and `gem.save_empty_captures` still waits on the
+  writer's artifact path.
 - **The shell is feature-complete against its plan** (12 tabs, `62ffc4d`; 142 Dart tests): the
   remaining shell items are the mini-mode geometry decision and the pet geometry panels (blocked on
   the pet marks being calibrated); the buy per-run choice is closed by §12.6.

@@ -75,6 +75,9 @@ pub struct CoreState {
     /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
     /// builds it and later scans reuse it. `None` until then, and in dispatcher tests.
     pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
+    /// The per-run FILE logs (`logs.rs`): opened at boot from the config root. Disabled in
+    /// `new()` (the config-only dispatcher tests write no files); the binary uses `load()`.
+    pub logs: crate::logs::Logs,
     /// Where `config.changed` events go, when the binary attached the writer's bus. Dispatcher tests
     /// leave it `None` and inspect [`Self::take_queued_events`] instead.
     pub events: Option<crate::events::EventBus>,
@@ -102,6 +105,7 @@ impl CoreState {
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
             ocr: None,
+            logs: crate::logs::Logs::disabled(),
             events: None,
             queued_events: Vec::new(),
         }
@@ -115,6 +119,7 @@ impl CoreState {
     pub fn load(root: std::path::PathBuf) -> Result<Self, StartupError> {
         let store = ConfigStore::new(root.join("config"));
         let (config, active, attributes) = load_parts(&store)?;
+        let logs = crate::logs::Logs::new(&root);
         Ok(Self {
             root,
             store,
@@ -129,6 +134,7 @@ impl CoreState {
             attributes,
             frames: win::FrameCache::default(),
             ocr: None,
+            logs,
             events: None,
             queued_events: Vec::new(),
         })
@@ -292,16 +298,26 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return internal(&request.id, &error.message),
     };
     let outcome = seal_ocr::modes::apply(mode, &scan, &state.attributes, &geometry);
-    Response::ok(
-        &request.id,
-        json!({
-            "lines": outcome.lines,
-            "attributes": outcome.attributes,
-            "grade": outcome.grade,
-            "remaining": outcome.remaining,
-            "capture_path": Value::Null,
-        }),
-    )
+    // v2 wrote one `ocr_log.jsonl` record per completed scan and an `ocr_errors.jsonl` record when
+    // it stayed unconfirmed; a capture PNG is saved only while `tuner.save_captures` is on. The
+    // scan's own PNG bytes are already in the frame, so a capture is a byte copy, not a re-encode.
+    let save_captures = state
+        .config
+        .pointer("/tuner/save_captures")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let frame_png = if save_captures {
+        frame
+            .get("data")
+            .and_then(Value::as_str)
+            .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
+    } else {
+        None
+    };
+    let result = state
+        .logs
+        .record_scan(mode, &outcome, frame_png.as_deref(), save_captures);
+    Response::ok(&request.id, result)
 }
 
 pub(crate) fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {

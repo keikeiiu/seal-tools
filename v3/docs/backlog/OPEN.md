@@ -38,6 +38,18 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
+- **File logs (G8) landed in two increments; three follow-ups are named.** `seal-core/src/logs.rs`
+  writes v2's per-run files under `<root>/logs/`: the OCR's `ocr_log.jsonl` /
+  `ocr_errors.jsonl` per scan, optional `captures/*.png` (with the relative `capture_path` the
+  protocol already specified) and the two text shapes v2 used (`error.log`'s `yyyy-MM-dd HH:mm:ss:`
+  and `holdspace.log`'s own diagnostic prefix). Increment 2 adds the per-tool `<tool>.log` lines and
+  the internal-error/opening-failure `error.log` writes. Follow-ups recorded: (a) v3's pipeline scans
+  ONCE with no retry loop (`tuner.ocr_retries` exists in config but is unused), so v2's
+  last-retry FORCED capture is not implemented — `ocr_errors.jsonl` currently records a completed but
+  unconfirmed scan; (b) local wall-clock timestamps come from one `GetLocalTime` declaration inside
+  `seal-core` because `seal-win` was out of the increment's scope — the helper should move to
+  `seal-win` where every other Win32 call lives; (c) `gem.save_empty_captures` still waits on this
+  writer for its debug crops. Logging never fails a command or a run (v2's rule, in the module doc).
 - **Spammer runner-side stand-down is the one remaining hand-over follow-up.** `GamePort::
   should_stand_down` exists and the supervisor cancels a PREEMPTED spammer through the arbiter (v2's
   [YIELD] behaviour, with a defined `"<holder>" stepped aside for "<tool>".` log line — v2 had no
