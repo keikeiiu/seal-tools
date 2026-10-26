@@ -14,6 +14,7 @@ pub mod logs;
 pub mod pet;
 pub mod quest;
 pub mod registry;
+pub mod replay;
 pub mod root;
 pub mod shop;
 pub mod spammer;

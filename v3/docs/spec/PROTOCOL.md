@@ -417,6 +417,9 @@ behaves exactly as before.
   answers that request with `internal` (the line names expected vs actual), emits
   `core.stopping {"reason":"fatal"}`, writes the reason to stderr, and exits non-zero — a script that
   drifts from the shell must fail loudly, never mislead.
+- **A scripted `shutdown` turn ends the session like a normal one**: its response is written, its
+  events follow, and the core exits 0 — the script supplies the `core.stopping {"reason":"shutdown"}`
+  event, and no `eof` event is synthesised after it. Every other script ends on EOF.
 - **Lifecycle.** EOF ends the loop like a normal session (`core.stopping {"reason":"eof"}`, exit 0);
   the script running out of turns while requests keep arriving is a drift, handled as above. A
   missing/unreadable/malformed script exits non-zero with the reason on stderr and nothing on stdout

@@ -11,6 +11,10 @@
 //! Startup reads the merged config before the loop begins: a core that cannot read its config exits
 //! with a stderr line rather than answering `hello` and then failing every command.
 //!
+//! `--replay <script>` is the same binary's development mode (`PROTOCOL.md` §13): it serves the same
+//! stdio protocol from a script with no config, board, window, frame or OCR. Its branch runs BEFORE
+//! root discovery/config load below, so no machine-touching startup is reachable in that mode.
+//!
 //! Shutdown order is load-bearing (OPEN.md §1): the final response is queued FIRST, then the
 //! supervisor is shut down (it cancels runs, waits for the workers and emits `core.stopping`), and
 //! only then is the writer finished — the supervisor thread is the other `EventBus` holder, and the
@@ -29,6 +33,25 @@ use std::io::BufRead;
 use std::path::PathBuf;
 
 fn main() {
+    // Replay wins over `--root` (§13). This branch is deliberately before root discovery and before
+    // `CoreState::load`, so replay cannot construct the config store, open the board, measure/capture
+    // a window or load OCR models.
+    if let Some(replay) = replay_from_args() {
+        match replay {
+            Ok(path) => match seal_core::replay::run(&path) {
+                Ok(()) => return,
+                Err(error) => {
+                    eprintln!("seal-core: replay: {error}");
+                    std::process::exit(1);
+                }
+            },
+            Err(error) => {
+                eprintln!("seal-core: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let Some(root) = root_from_args() else {
         eprintln!(
             "seal-core: no config/defaults.yaml or config/defaults.yaml.example found; \
@@ -101,6 +124,21 @@ fn main() {
     // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
     state.detach_events();
     writer.finish();
+}
+
+/// `--replay <script>` (`PROTOCOL.md` §13). `None` means normal mode; `Some(Err(..))` means the flag
+/// was given without its value, which is a boot refusal rather than a fall-through to discovery.
+fn replay_from_args() -> Option<Result<PathBuf, String>> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--replay" {
+            return Some(match args.next() {
+                Some(value) => Ok(PathBuf::from(value)),
+                None => Err("--replay needs a script path".to_owned()),
+            });
+        }
+    }
+    None
 }
 
 /// `--root <dir>` overrides discovery, for tests and a future CLI. Otherwise the root is found by
