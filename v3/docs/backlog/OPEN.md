@@ -38,6 +38,16 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
   Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
   refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
+- **Pet feeder follow-ups, named not hidden** (`seal-core/src/pet.rs`). The module is split: increment
+  1 (plan, card surface, read seam) is committed with the tool still refusing by name; increment 2
+  (the loop, reload sequence, four-row state machine, food-load drag) is in flight, and the registry
+  flip only happens when that loop is complete. Two reader-side notes: v2's `IconMatch` (queue/food
+  icon vs bag cells) is not in `seal-domain` and is being ported as PURE comparison code in the
+  adapter (fed by the capture seam, unit-tested), not as a domain API — it is measurement arithmetic
+  like the gem crop comparison, not a decision; and v2's feeder-count read walked a 3x/9x/24x
+  upscale ladder that `OcrPipeline::scan_rgba` does not offer, so production does one OCR pass per
+  slot plus the v2 warm-colour verdict, with the ladder recorded as a follow-up that does not change
+  the `Option<i32>` seam contract.
 - **Gem composer follow-ups, named not hidden.** `gem.save_empty_captures` is resolved into the plan
   but nothing is written (it waits for the core's logging/artifact writer and a PNG encode outside the
   run loop); the F9 advance-grade hotkey exists only as `advance_grade_by_hand()` because there is no
