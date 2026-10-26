@@ -27,6 +27,7 @@ import 'calibration_result.dart';
 import 'config.dart';
 import 'connection.dart';
 import 'core_actions.dart';
+import 'key_names_result.dart';
 import 'logs.dart';
 import 'tools.dart';
 
@@ -298,6 +299,26 @@ class ShellModel extends ChangeNotifier {
     'calibration.fetch',
     CalibrationFetchResult.fromJson,
     args: {'kind': kind},
+  );
+
+  /// `keys.names`: display names for the stored VK codes (the domain's inverse rule, hex fallback
+  /// included). The Hotkeys tab shows these; it invents no name of its own.
+  Future<CoreActionResult<KeyNamesResult>> keyNames({
+    required Map<String, int> codes,
+  }) => _coreAction(
+    'keys.names',
+    KeyNamesResult.fromJson,
+    args: {'codes': codes},
+  );
+
+  /// `keys.parse`: typed names → VK codes. The domain answers every parseable field and one line per
+  /// bad box; the tab renders those lines verbatim and never parses a name itself.
+  Future<CoreActionResult<KeyParseResult>> parseKeyNames({
+    required Map<String, String> names,
+  }) => _coreAction(
+    'keys.parse',
+    KeyParseResult.fromJson,
+    args: {'names': names},
   );
 
   // ── config commands: validate, then apply ([PLAN-V3-SHELL.md] §5 / PROTOCOL §7) ───────────

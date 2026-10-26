@@ -13,6 +13,7 @@ export 'config_json.dart';
 export 'connection.dart';
 export 'core_actions.dart';
 export 'core_path.dart';
+export 'key_names_result.dart';
 export 'logs.dart';
 export 'shell_model.dart';
 export 'tools.dart';
