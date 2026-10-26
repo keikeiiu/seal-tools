@@ -151,6 +151,19 @@ pub trait Effects {
             "this effects implementation cannot make a raw HID move",
         ))
     }
+
+    /// Press and hold the left button. Default refuses rather than approximating: a drag that does
+    /// not hold drops the item somewhere else.
+    fn hold_left(&mut self) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "this effects implementation cannot hold the left button",
+        ))
+    }
+
+    /// Release the left button. Default is a no-op: nothing was held through this seam.
+    fn release_left(&mut self) -> Result<(), EffectError> {
+        Ok(())
+    }
 }
 
 /// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
@@ -284,6 +297,16 @@ pub fn run(
             }
             Decision::MoveBy { dx, dy } => {
                 if let Err(error) = effects.move_by(dx, dy) {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::HoldLeft => {
+                if let Err(error) = effects.hold_left() {
+                    return StopReason::error(effect_message(&error));
+                }
+            }
+            Decision::ReleaseLeft => {
+                if let Err(error) = effects.release_left() {
                     return StopReason::error(effect_message(&error));
                 }
             }

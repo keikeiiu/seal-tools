@@ -69,6 +69,15 @@ pub enum Decision {
     /// scaled or rounded, which is why they travel as their own decision rather than as a point the
     /// placement loop would recompute.
     MoveBy { dx: i32, dy: i32 },
+
+    /// Press and HOLD the left mouse button (the board's `L`). The pet feeder's drag-based food load
+    /// is the caller: it holds, moves in raw counts, and releases. Needs firmware level 2; the level
+    /// rule is the domain's (`pet::food_load::board_can_drag`), not this value's.
+    HoldLeft,
+
+    /// Release the left mouse button (the board's `l`). MUST follow every [`Self::HoldLeft`] on every
+    /// exit path; the runner's effects object owns that guard (RAII), the same rule as the spacebar.
+    ReleaseLeft,
     /// Sleep this many seconds — or, without a game to drive, pass that much time before the next
     /// decision. The loop implements it as `ToolBase.SleepCheck`: in chunks, watching the stop signal.
     ///

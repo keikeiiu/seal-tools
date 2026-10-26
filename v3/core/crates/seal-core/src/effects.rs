@@ -31,6 +31,10 @@ pub struct BoardEffects<T: Transport, C: Cursor, K: Clock> {
     cursor: C,
     clock: K,
     display: DisplayInfo,
+    /// True between a successful `hold_left` and its release. `Drop` releases it, because a drag
+    /// abandoned by a cancelled run would otherwise leave the host's button down — the same rule the
+    /// spacebar hold follows, at the same seam.
+    held_left: bool,
 }
 
 impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
@@ -40,6 +44,7 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
             cursor,
             clock,
             display,
+            held_left: false,
         }
     }
 
@@ -125,6 +130,18 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
         self.write(BoardCommand::move_by(dx, dy))
     }
 
+    fn hold_left(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::HoldLeft)?;
+        self.held_left = true;
+        Ok(())
+    }
+
+    fn release_left(&mut self) -> Result<(), EffectError> {
+        self.write(BoardCommand::ReleaseLeft)?;
+        self.held_left = false;
+        Ok(())
+    }
+
     fn wheel(&mut self, notches: i32, down: bool) -> Result<(), EffectError> {
         let Ok(notches) = u16::try_from(notches) else {
             return Err(EffectError::new(
@@ -141,6 +158,19 @@ fn key_command(key: Key, fast: bool) -> BoardCommand {
     match key {
         Key::Char(character) => BoardCommand::Key { character, fast },
         Key::Function(number) => BoardCommand::FunctionKey { number, fast },
+    }
+}
+
+impl<T: Transport, C: Cursor, K: Clock> Drop for BoardEffects<T, C, K> {
+    fn drop(&mut self) {
+        if self.held_left {
+            // Best effort: `Drop` cannot report, and the firmware is the backstop. The explicit
+            // `release_left` is where a failure could still become a player message.
+            let _ = self
+                .transport
+                .write_line(BoardCommand::ReleaseLeft.encode().as_str());
+            self.held_left = false;
+        }
     }
 }
 
@@ -182,6 +212,50 @@ mod tests {
     impl Clock for StepClock {
         fn sleep_seconds(&self, seconds: f64) {
             self.waited.set(self.waited.get() + seconds);
+        }
+    }
+
+    /// Records the drag's two writes in shared storage so the `Drop` release can be asserted after
+    /// the effects object is gone.
+    #[derive(Default)]
+    struct RecordingEffects {
+        writes: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    impl RecordingEffects {
+        fn record_hold_and_release(&mut self) {
+            let mut effects = BoardEffects::new(
+                RecorderTransport {
+                    writes: self.writes.clone(),
+                },
+                ScriptedCursor::new(vec![Some((100, 50))]),
+                StepClock::default(),
+                display(),
+            );
+            effects.hold_left().expect("holds");
+            // Dropping releases; that is the property under test.
+        }
+
+        fn writes(&self) -> Vec<String> {
+            self.writes.borrow().clone()
+        }
+    }
+
+    struct RecorderTransport {
+        writes: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    impl Transport for RecorderTransport {
+        fn write_line(&mut self, wire: &str) -> Result<(), seal_board::transport::TransportError> {
+            self.writes.borrow_mut().push(wire.to_owned());
+            Ok(())
+        }
+
+        fn read_line(
+            &mut self,
+            _deadline: seal_board::transport::Deadline,
+        ) -> seal_board::transport::LineRead {
+            seal_board::transport::LineRead::Silent
         }
     }
 
@@ -332,11 +406,43 @@ mod tests {
         fx.wheel(3, true).expect("three notches down");
         fx.wheel(2, false).expect("two notches up");
         fx.move_by(-40, 512).expect("a raw HID move");
+        fx.hold_left().expect("hold the button");
+        fx.release_left().expect("release the button");
         assert_eq!(
             fx.transport().writes(),
-            vec!["D 110 70\n", "C\n", "R\n", "Z 3\n", "Q 2\n", "D -40 512\n"],
-            "bare clicks write C/R; a down scroll is Z, an up scroll Q; a raw move keeps its counts"
+            vec![
+                "D 110 70\n",
+                "C\n",
+                "R\n",
+                "Z 3\n",
+                "Q 2\n",
+                "D -40 512\n",
+                "L\n",
+                "l\n"
+            ],
+            "bare clicks write C/R; a down scroll is Z, an up scroll Q; a raw move keeps its counts; \
+             the drag is L then l"
         );
+    }
+
+    #[test]
+    fn dropping_while_the_button_is_held_releases_it() {
+        let mut fx = effects(
+            FakeTransport::new(),
+            ScriptedCursor::new(vec![Some((100, 50))]),
+            StepClock::default(),
+        );
+
+        fx.hold_left().expect("holds");
+        assert_eq!(fx.transport().writes(), vec!["L\n"]);
+        drop(fx);
+
+        // The guard lives on the transport, so the assertion reads a second instance's log: the drop
+        // above moved the transport into the effects that were dropped. This test proves the write
+        // happened by exercising the same path with a shared recorder instead.
+        let mut recorder = RecordingEffects::default();
+        recorder.record_hold_and_release();
+        assert_eq!(recorder.writes(), vec!["L\n", "l\n"]);
     }
 
     #[test]
