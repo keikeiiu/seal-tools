@@ -66,12 +66,13 @@ the decisions they force:
 5. **`attributes.us.yaml` ships under the `.example` name** because v3 has no committed
    `attributes.us.yaml.example`; the script stages the committed file that way so an update never
    overwrites a dictionary the player grows in place. `attributes.yaml` (TW) ships as maintained.
-6. **RELEASE BLOCKER — the OCR models are found only through `SEAL_OCR_MODELS`.** The core's
-   `load_from_env` reads that variable only, and the shell sets no environment when it spawns the
-   core, so shipping `models/` beside the exe is not enough by itself. Decision: the core gains a
-   root/exe-relative fallback (env var, then `<root>/models`, then `<exe dir>/models`, first
-   directory that holds all three files wins) and the shell keeps spawning with no environment. This
-   is a code item below, not a packaging workaround.
+6. **CLOSED — the OCR models are found without `SEAL_OCR_MODELS`.** The core used to read that
+   variable only and the shell spawns it with no environment, so a shipped `models/` directory would
+   have been unread. `seal-ocr` now has one resolver: the env var wins or fails loudly (never
+   silently ignored), then `<config root>/models`, then `<seal-core.exe directory>/models`, a
+   directory counting only with all three model files, and `ocr_unavailable`'s `detail.message` names
+   every directory tried. The shell still spawns with no environment — nothing for packaging to do
+   beyond shipping `models/`.
 
 ## Work items (all must be done before the merge)
 

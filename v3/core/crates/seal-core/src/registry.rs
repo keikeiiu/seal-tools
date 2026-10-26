@@ -172,6 +172,12 @@ impl ProductionRegistry {
 
     fn tuner_session(&self) -> Result<Session, String> {
         let config = self.config();
+        let root = self
+            .store
+            .config_dir()
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
         let plan = crate::tuner::plan(&config)?;
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
@@ -184,7 +190,7 @@ impl ProductionRegistry {
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
             .map_err(|error| error.to_string())?;
         let (source, display) =
-            crate::tuner::OcrTunerSource::open(&config, attributes, plan.region)?;
+            crate::tuner::OcrTunerSource::open(&config, attributes, plan.region, &root)?;
         let effects = crate::effects::system_effects(transport, display);
         let (click_enter_delay, ocr_delay) = crate::tuner::timings(&config);
         let tool = TunerTool::new(
@@ -256,7 +262,7 @@ impl ProductionRegistry {
         let active = crate::startup::active(&config);
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
             .map_err(|error| error.to_string())?;
-        let source = PetReadSource::open(&config, &plan, &attributes, firmware_level)?;
+        let source = PetReadSource::open(&config, &plan, &attributes, firmware_level, &root)?;
         let tool = PetTool::new(plan, source, game);
         // The feeder clicks calibrated points, so it needs the display the clicks are measured in.
         let title = crate::win::configured_title(&config).map_err(|error| error.line())?;

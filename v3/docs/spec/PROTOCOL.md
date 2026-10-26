@@ -251,7 +251,7 @@ tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not
 | `window_not_found` | the game window is not present |
 | `game_not_foreground` | capture/placement refused because another window is in front |
 | `board_unavailable` | no board on the configured port / port unusable |
-| `ocr_unavailable` | the OCR models are not available on this machine; `detail.reason` is `models_env_unset`, `models_dir_missing` or `model_load_failed:<file>`. Shown like `board_unavailable`: the command exists but this machine cannot serve it |
+| `ocr_unavailable` | the OCR models are not available on this machine; `detail.reason` is `models_env_unset`, `models_dir_missing` or `model_load_failed:<file>`, and `detail.message` carries the resolver's line naming every directory it tried (the player needs to know WHERE it looked). Resolution order: `SEAL_OCR_MODELS` when set (it wins or fails — never silently ignored), then `<config root>/models`, then `<seal-core.exe directory>/models`; a directory counts only with all three model files. Shown like `board_unavailable`: the command exists but this machine cannot serve it |
 | `tool_busy` | `tool.start` while another tool runs |
 | `not_running` | `tool.stop` when nothing runs (not an error the UI shows as a failure) |
 | `io` | a file write failed; `detail.path` says which |

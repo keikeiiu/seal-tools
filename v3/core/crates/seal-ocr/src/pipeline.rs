@@ -14,6 +14,14 @@
 //! Known approximation (reported): the crop uses the unclipped MIN-RECT quad rather than Clipper's
 //! offset polygon as the perspective source; the offset is still computed and used as the box
 //! geometry/score gate. The real-capture tests are what settle whether that difference matters.
+//!
+//! # Model directory resolution
+//!
+//! [`resolve_models_dir`] is the ONE resolution path (`CUTOVER.md` packaging finding 6):
+//! `SEAL_OCR_MODELS` when set (wins or fails; it never falls through), then `<config root>/models`,
+//! then `<the seal-core.exe directory>/models`. A candidate counts only when all three
+//! [`MODEL_FILES`] are present; the failure line lists every attempt and becomes the player-readable
+//! `ocr_unavailable` detail.
 
 use std::path::{Path, PathBuf};
 
@@ -82,22 +90,98 @@ pub struct OcrPipeline {
     row_height: u32,
 }
 
-/// The models directory named by `SEAL_OCR_MODELS`.
-pub fn models_dir_from_env() -> Result<PathBuf, PipelineError> {
-    let Some(path) = std::env::var_os("SEAL_OCR_MODELS") else {
-        return Err(PipelineError {
-            reason: "models_env_unset",
-            message: "SEAL_OCR_MODELS is not set".to_owned(),
-        });
-    };
-    let path = PathBuf::from(path);
-    if !path.is_dir() {
-        return Err(PipelineError {
-            reason: "models_dir_missing",
-            message: format!("SEAL_OCR_MODELS is not a directory: {}", path.display()),
-        });
+/// The three model files the pipeline loads. A candidate directory is usable only when ALL THREE are
+/// present: a directory with two of three is a broken install, not a fallback.
+pub const MODEL_FILES: [&str; 3] = [
+    "ch_PP-OCRv4_det_infer.onnx",
+    "ch_PP-OCRv4_rec_infer.onnx",
+    "ch_ppocr_mobile_v2.0_cls_infer.onnx",
+];
+
+fn missing_models(dir: &Path) -> Vec<&'static str> {
+    MODEL_FILES
+        .iter()
+        .copied()
+        .filter(|name| !dir.join(name).is_file())
+        .collect()
+}
+
+/// The one models-directory resolver (`CUTOVER.md` packaging finding 6), in this fixed order:
+///
+/// 1. `SEAL_OCR_MODELS` when set — it WINS or fails; an explicit env var is never silently ignored
+///    in favour of a fallback (a dev pointing it somewhere wrong must learn);
+/// 2. `<config root>/models`;
+/// 3. `<the running seal-core.exe directory>/models`.
+///
+/// A candidate counts only when all three [`MODEL_FILES`] exist in it. When no candidate works, the
+/// error names every directory attempted (and why) because the line is the player-readable
+/// `ocr_unavailable` detail. `env`, `root` and `exe_dir` are injected so the resolver is a pure
+/// function over paths and can be unit-tested without a machine.
+pub fn resolve_models_dir(
+    env: Option<&Path>,
+    root: Option<&Path>,
+    exe_dir: Option<&Path>,
+) -> Result<PathBuf, PipelineError> {
+    if let Some(dir) = env {
+        if !dir.is_dir() {
+            return Err(PipelineError {
+                reason: "models_dir_missing",
+                message: format!("SEAL_OCR_MODELS is not a directory: {}", dir.display()),
+            });
+        }
+        let missing = missing_models(dir);
+        if !missing.is_empty() {
+            return Err(PipelineError {
+                reason: "models_dir_missing",
+                message: format!(
+                    "SEAL_OCR_MODELS is set to {} but it is missing: {}; a set SEAL_OCR_MODELS is \
+                     never ignored",
+                    dir.display(),
+                    missing.join(", ")
+                ),
+            });
+        }
+        return Ok(dir.to_path_buf());
     }
-    Ok(path)
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(root) = root {
+        candidates.push(root.join("models"));
+    }
+    if let Some(exe_dir) = exe_dir {
+        let candidate = exe_dir.join("models");
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    let mut attempted: Vec<String> = Vec::new();
+    for directory in &candidates {
+        if !directory.is_dir() {
+            attempted.push(format!("{} (no such directory)", directory.display()));
+            continue;
+        }
+        let missing = missing_models(directory);
+        if missing.is_empty() {
+            return Ok(directory.clone());
+        }
+        attempted.push(format!(
+            "{} (missing {})",
+            directory.display(),
+            missing.join(", ")
+        ));
+    }
+    let tried = if attempted.is_empty() {
+        "none (no config root or exe directory was available)".to_owned()
+    } else {
+        attempted.join("; ")
+    };
+    Err(PipelineError {
+        reason: "models_env_unset",
+        message: format!(
+            "SEAL_OCR_MODELS is not set and no models directory was found. Tried: {tried}. Place the \
+             three .onnx files in <root>/models or set SEAL_OCR_MODELS."
+        ),
+    })
 }
 
 impl OcrPipeline {
@@ -123,12 +207,19 @@ impl OcrPipeline {
         })
     }
 
-    /// `SEAL_OCR_MODELS` → [`Self::load`]; the core's lazy initialisation uses this.
-    pub fn load_from_env(
+    /// The one entry point the core uses: resolve the models directory for this install (env, then
+    /// `<root>/models`, then beside the exe) and load the pipeline. [`Self::load`] remains the
+    /// low-level "open this directory" step used by tests and by [`Self::load_for_root`].
+    pub fn load_for_root(
+        root: &Path,
         attributes: &AttributesConfig,
         row_height: u32,
     ) -> Result<Self, PipelineError> {
-        let dir = models_dir_from_env()?;
+        let env = std::env::var_os("SEAL_OCR_MODELS").map(PathBuf::from);
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf));
+        let dir = resolve_models_dir(env.as_deref(), Some(root), exe_dir.as_deref())?;
         Self::load(&dir, attributes, row_height)
     }
 
@@ -441,12 +532,6 @@ mod tests {
         assert!((scale_y - 50.0 / resized.height as f64).abs() < 1e-9);
     }
 
-    #[test]
-    fn an_environment_without_the_models_variable_says_so() {
-        if std::env::var_os("SEAL_OCR_MODELS").is_some() {
-            return; // the machine running the suite has models configured; the unset path is not testable here
-        }
-        let error = models_dir_from_env().expect_err("unset env must be a typed refusal");
-        assert_eq!(error.reason, "models_env_unset");
-    }
+    // The model-directory resolution tests live in `tests/models_resolution.rs`, as pure functions
+    // over injected paths (no process environment, no machine).
 }

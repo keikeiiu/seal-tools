@@ -676,4 +676,11 @@ fn ocr_scan_without_models_is_ocr_unavailable() {
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "ocr_unavailable");
     assert_eq!(error.detail["reason"], "models_env_unset");
+    assert!(
+        error.detail["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("Tried:")),
+        "the failure line reports the attempted directories: {:?}",
+        error.detail
+    );
 }

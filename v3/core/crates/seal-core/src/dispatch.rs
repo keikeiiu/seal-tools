@@ -277,8 +277,11 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     };
     let geometry = ocr_geometry(&state.config);
     if state.ocr.is_none() {
-        match seal_ocr::pipeline::OcrPipeline::load_from_env(&state.attributes, geometry.row_height)
-        {
+        match seal_ocr::pipeline::OcrPipeline::load_for_root(
+            &state.root,
+            &state.attributes,
+            geometry.row_height,
+        ) {
             Ok(pipeline) => state.ocr = Some(pipeline),
             Err(error) => {
                 return Response::err(
@@ -286,7 +289,7 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
                     Error::new(
                         "ocr_unavailable",
                         "the OCR models are not available",
-                        json!({"reason": error.reason}),
+                        json!({"reason": error.reason, "message": error.message}),
                     ),
                 );
             }

@@ -400,6 +400,7 @@ impl OcrTunerSource {
         config: &Value,
         attributes: seal_domain::config::AttributesConfig,
         region: Rect,
+        root: &std::path::Path,
     ) -> Result<(Self, DisplayInfo), String> {
         let title = crate::win::configured_title(config).map_err(|error| error.line())?;
         let hwnd = seal_win::window::find_window(&title)
@@ -407,13 +408,8 @@ impl OcrTunerSource {
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
         let geometry = crate::dispatch::ocr_geometry(config);
         let pipeline =
-            seal_ocr::pipeline::OcrPipeline::load_from_env(&attributes, geometry.row_height)
-                .map_err(|error| {
-                    format!(
-                        "the OCR models are not available ({}) — set SEAL_OCR_MODELS",
-                        error.reason
-                    )
-                })?;
+            seal_ocr::pipeline::OcrPipeline::load_for_root(root, &attributes, geometry.row_height)
+                .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
         Ok((
             Self {
                 title,

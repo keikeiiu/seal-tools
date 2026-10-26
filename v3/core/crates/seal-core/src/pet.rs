@@ -586,18 +586,14 @@ impl PetReadSource {
         plan: &PetPlan,
         attributes: &AttributesConfig,
         firmware_level: Option<i32>,
+        root: &std::path::Path,
     ) -> Result<Self, String> {
         check_board(plan, firmware_level)?;
         let title = crate::win::configured_title(config).map_err(|error| error.line())?;
         let geometry = crate::dispatch::ocr_geometry(config);
         let pipeline =
-            seal_ocr::pipeline::OcrPipeline::load_from_env(attributes, geometry.row_height)
-                .map_err(|error| {
-                    format!(
-                        "the OCR models are not available ({}) — set SEAL_OCR_MODELS",
-                        error.reason
-                    )
-                })?;
+            seal_ocr::pipeline::OcrPipeline::load_for_root(root, attributes, geometry.row_height)
+                .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
         Ok(Self {
             title,
             tooltip: plan.tooltip,
@@ -2495,6 +2491,7 @@ mod tests {
             &plan,
             &AttributesConfig::default(),
             Some(2),
+            Path::new("C:/root"),
         ) {
             Ok(_) => panic!("a missing title must refuse the opening phase"),
             Err(line) => line,
