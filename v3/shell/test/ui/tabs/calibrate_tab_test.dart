@@ -123,6 +123,14 @@ String _resultText(WidgetTester tester, String key) => tester
 
 Finder _field(String key) => find.byKey(ValueKey(key));
 
+/// Opens the kind picker and taps an item by its stable key.
+Future<void> _selectKind(WidgetTester tester, String kind) async {
+  await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('calibrate-kind-item-$kind')));
+  await tester.pumpAndSettle();
+}
+
 Map<String, dynamic> _saveArgs(AppHarness harness) =>
     (harness.lastSentWithCmd('calibration.save')!['args']
         as Map<String, dynamic>);
@@ -255,12 +263,13 @@ void main() {
         'calibration.fetch' => {
           'result': _fetchAnswer(
             (request['args'] as Map<String, dynamic>)['kind'] as String,
+            mark: [7, 8],
           ),
         },
         'calibration.save' => {
           'result': {
             'rev': 5,
-            'kind': 'focus_point',
+            'kind': 'scroll_point',
             'mark': [7, 8],
             'derived': <String, dynamic>{},
             'artifact': null,
@@ -272,19 +281,21 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('focus_point').last);
-    await tester.pumpAndSettle();
+    await _selectKind(tester, 'scroll_point');
     await tester.enterText(_field('calibrate-x'), '7');
     await tester.enterText(_field('calibrate-y'), '8');
     await tester.tap(find.byKey(const ValueKey('calibrate-save')));
     await _flush(tester);
 
     final args = _saveArgs(harness);
-    expect(args['kind'], 'focus_point');
+    expect(args['kind'], 'scroll_point');
     expect(args['point'], {'x': 7, 'y': 8});
     expect(args.containsKey('region'), isFalse);
+    // The stored-mark surface displays the fetched point mark.
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('calibrate-stored'))).data,
+      contains('[7, 8]'),
+    );
   });
 
   testWidgets('a bag-slot disagreement renders verbatim and keeps the draft', (
@@ -309,10 +320,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('bag_slot').last);
-    await tester.pumpAndSettle();
+    await _selectKind(tester, 'bag_slot');
     await tester.enterText(_field('calibrate-x'), '11');
     await tester.enterText(_field('calibrate-y'), '22');
     await tester.enterText(_field('calibrate-w'), '33');
@@ -408,10 +416,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
     // Point kinds are the click surface.
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('focus_point').last);
-    await tester.pumpAndSettle();
+    await _selectKind(tester, 'scroll_point');
 
     final frame = Frame.fromJson(
       _captureAnswer(width: 100, height: 75)['frame'] as Map<String, dynamic>,
@@ -629,15 +634,287 @@ void main() {
       },
     );
 
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('result_gem_area').last);
-    await tester.pumpAndSettle();
+    await _selectKind(tester, 'result_gem_area');
 
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('calibrate-stored'))).data,
       contains('Stored mark [1, 2, 30, 30] (rev 7)'),
     );
     expect(find.byKey(const ValueKey('calibrate-crop')), findsOneWidget);
+  });
+
+  testWidgets('the kind picker offers exactly the repaired seven kinds', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
+    await tester.pumpAndSettle();
+    for (final kind in [
+      'bag_grid',
+      'bag_slot',
+      'shop_list',
+      'scroll_point',
+      'max_button',
+      'result_gem_area',
+      'spring_point',
+    ]) {
+      // The menu is OPEN here, so Flutter builds each item twice: once in the button's own
+      // IndexedStack copy and once in the menu route. Presence (not singularity) is the claim.
+      expect(
+        find.byKey(ValueKey('calibrate-kind-item-$kind')),
+        findsWidgets,
+        reason: '$kind is offered',
+      );
+    }
+    expect(
+      find.byKey(const ValueKey('calibrate-kind-item-focus_point')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-kind-item-tuner_region')),
+      findsNothing,
+    );
+    expect(find.text('Focus / scroll point (scroll_point)'), findsOneWidget);
+    expect(find.text('MAX button (max_button)'), findsOneWidget);
+    // Tap the menu route's copy; the button's hidden copy is also in the tree while open.
+    await tester.tap(
+      find.byKey(const ValueKey('calibrate-kind-item-bag_grid')).last,
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('max_button saves the exact point payload', (tester) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer()},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+            mark: [10, 20],
+          ),
+        },
+        'calibration.save' => {
+          'result': {
+            'rev': 6,
+            'kind': 'max_button',
+            'mark': [10, 20],
+            'derived': <String, dynamic>{},
+            'artifact': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await _selectKind(tester, 'max_button');
+    await tester.enterText(_field('calibrate-x'), '10');
+    await tester.enterText(_field('calibrate-y'), '20');
+    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _flush(tester);
+
+    final args = _saveArgs(harness);
+    expect(args['kind'], 'max_button');
+    expect(args['point'], {'x': 10, 'y': 20});
+    expect(args.containsKey('region'), isFalse);
+    expect(
+      args.containsKey('empty'),
+      isFalse,
+      reason: 'the empty verdict belongs to result_gem_area only',
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('calibrate-stored'))).data,
+      contains('[10, 20]'),
+    );
+  });
+
+  testWidgets(
+    'result_gem_area needs the empty verdict and sends empty true with the crop',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer()},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'calibration.save' => {
+            'result': {
+              'rev': 7,
+              'kind': 'result_gem_area',
+              'mark': [1, 2, 30, 30],
+              'derived': <String, dynamic>{},
+              'artifact': {
+                'file': 'calib_gem_result.png',
+                'path': 'config/calib_gem_result.png',
+                'width': 220,
+                'height': 60,
+              },
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      await _selectKind(tester, 'result_gem_area');
+      await tester.enterText(_field('calibrate-x'), '1');
+      await tester.enterText(_field('calibrate-y'), '2');
+      await tester.enterText(_field('calibrate-w'), '30');
+      await tester.enterText(_field('calibrate-h'), '30');
+
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('calibrate-save')))
+            .onPressed,
+        isNull,
+        reason: 'the empty question is unanswered',
+      );
+      await tester.tap(find.byKey(const ValueKey('calibrate-empty-yes')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('calibrate-save')))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _flush(tester);
+
+      final args = _saveArgs(harness);
+      expect(args['kind'], 'result_gem_area');
+      expect(args['empty'], true);
+      expect(args['region'], {'x': 1, 'y': 2, 'w': 30, 'h': 30});
+      expect(
+        _resultText(tester, 'calibrate-artifact'),
+        contains('calib_gem_result.png'),
+      );
+    },
+  );
+
+  testWidgets(
+    'result_gem_area with a gem in the box sends empty false and no artifact',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer()},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'calibration.save' => {
+            'result': {
+              'rev': 8,
+              'kind': 'result_gem_area',
+              'mark': [1, 2, 30, 30],
+              'derived': <String, dynamic>{},
+              'artifact': null,
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      await _selectKind(tester, 'result_gem_area');
+      await tester.enterText(_field('calibrate-x'), '1');
+      await tester.enterText(_field('calibrate-y'), '2');
+      await tester.enterText(_field('calibrate-w'), '30');
+      await tester.enterText(_field('calibrate-h'), '30');
+      await tester.tap(find.byKey(const ValueKey('calibrate-empty-no')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _flush(tester);
+
+      final args = _saveArgs(harness);
+      expect(args['empty'], false);
+      expect(
+        find.byKey(const ValueKey('calibrate-artifact')),
+        findsNothing,
+        reason: 'a non-empty box samples the colour fallback only',
+      );
+    },
+  );
+
+  testWidgets('the tuner note is present and no tuner save is offered', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsOneWidget);
+    expect(find.textContaining('three-box session'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('calibrate-kind-item-tuner_region')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('calibrate-kind-item-bag_grid')).last,
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a fetched unknown kind renders its line, not a crash', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) {
+        if (request['cmd'] != 'calibration.fetch') {
+          return {'result': <String, dynamic>{}};
+        }
+        final kind =
+            (request['args'] as Map<String, dynamic>)['kind'] as String;
+        if (kind == 'spring_point') {
+          return {
+            'result': {
+              'kind': 'pet_menu',
+              'mark': [1, 2],
+              'artifact': null,
+              'rev': 7,
+            },
+          };
+        }
+        return {'result': _fetchAnswer(kind)};
+      },
+    );
+
+    await _selectKind(tester, 'spring_point');
+    final text = tester
+        .widget<Text>(find.byKey(const ValueKey('calibrate-stored')))
+        .data;
+    expect(text, contains('pet_menu'));
+    expect(text, contains('[1, 2]'));
   });
 }

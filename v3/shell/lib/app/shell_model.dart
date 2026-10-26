@@ -292,6 +292,7 @@ class ShellModel extends ChangeNotifier {
     required String kind,
     Rect? region,
     Point? point,
+    bool? empty,
     DisplayInfo? display,
   }) => _coreAction(
     'calibration.save',
@@ -301,6 +302,9 @@ class ShellModel extends ChangeNotifier {
       'kind': kind,
       if (region != null) 'region': region.toJson(),
       if (point != null) 'point': point.toJson(),
+      // v2's empty verdict for `result_gem_area` (PROTOCOL §12.7): true saves the crop and samples
+      // the signature, false samples the signature only. Omitted for every other kind.
+      'empty': ?empty,
       if (display != null) 'display': calibrationDisplayJson(display),
     },
   );

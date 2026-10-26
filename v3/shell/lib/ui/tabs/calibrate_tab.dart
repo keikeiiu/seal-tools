@@ -1,11 +1,12 @@
-/// The Calibrate tab: capture the game client, draw the seven calibration marks, save them, and show
-/// what the core has stored.
+/// The Calibrate tab: capture the game client, draw one of the seven calibrated surfaces, save it, and
+/// show what the core has stored.
 ///
 /// This is wave 2's Calibrate surface (PLAN-V3-SHELL §6): the mark is CLIENT-RELATIVE PHYSICAL pixels
 /// drawn on the captured full-client frame ([CALIBRATION.md] §1); the core derives the bag-grid pitch,
 /// enforces the slot-vs-grid rule, writes the artifact crop and records the measured environment in
-/// `local.yaml`. The widget owns no rule: it sends `{frame_id, kind, region|point, display}` and renders
-/// the core's mark/derived/artifact answer or its refusal VERBATIM.
+/// `local.yaml`. The widget owns no rule: it sends `{frame_id, kind, region|point, display}` (plus
+/// v2's `empty: true|false` verdict for the result-gem area, PROTOCOL §12.7) and renders the core's
+/// mark/derived/artifact answer or its refusal VERBATIM.
 ///
 /// Capture requires the game to be the foreground window. Hiding the shell is runner work (OPEN.md), so
 /// in this build the Capture button can legitimately answer `game_not_foreground`; the line is shown
@@ -29,25 +30,42 @@ import 'action_result_line.dart';
 import 'calibration_widgets.dart';
 import 'fields.dart';
 
-/// One served calibration kind: its protocol name, shape, and whether it owns a crop artifact.
+/// One served calibration kind: protocol name, player-facing label, shape, whether it owns a crop
+/// artifact, and whether its save needs v2's empty-result verdict.
 class _Kind {
-  const _Kind(this.name, {required this.isRect, this.hasArtifact = false});
+  const _Kind(
+    this.name,
+    this.label, {
+    required this.isRect,
+    this.hasArtifact = false,
+    this.requiresEmptyChoice = false,
+  });
 
   final String name;
+  final String label;
   final bool isRect;
   final bool hasArtifact;
+  final bool requiresEmptyChoice;
 
   String get shapeLabel => isRect ? 'rectangle (x, y, w, h)' : 'point (x, y)';
 }
 
+/// The repaired kind table (PROTOCOL §4/§12.7): `focus_point` is now `scroll_point` (the field the
+/// live shop reads) and `tuner_region` is withdrawn until v2's three-box session exists.
 const List<_Kind> _kinds = [
-  _Kind('bag_grid', isRect: true),
-  _Kind('bag_slot', isRect: true),
-  _Kind('shop_list', isRect: true),
-  _Kind('focus_point', isRect: false),
-  _Kind('result_gem_area', isRect: true, hasArtifact: true),
-  _Kind('tuner_region', isRect: true),
-  _Kind('spring_point', isRect: false),
+  _Kind('bag_grid', 'Bag grid', isRect: true),
+  _Kind('bag_slot', 'Bag slot', isRect: true),
+  _Kind('shop_list', 'Shop list region', isRect: true),
+  _Kind('scroll_point', 'Focus / scroll point', isRect: false),
+  _Kind('max_button', 'MAX button', isRect: false),
+  _Kind(
+    'result_gem_area',
+    'Result gem area',
+    isRect: true,
+    hasArtifact: true,
+    requiresEmptyChoice: true,
+  ),
+  _Kind('spring_point', 'Spring point', isRect: false),
 ];
 
 class CalibrateTab extends StatefulWidget {
@@ -80,7 +98,19 @@ class _CalibrateTabState extends State<CalibrateTab>
   bool _saving = false;
   bool _loadingStored = false;
 
+  /// v2's empty-result verdict for the gem result area: null = not answered, Save stays disabled.
+  bool? _emptyChoice;
+
   _Kind get _selected => _kinds.firstWhere((kind) => kind.name == _kindName);
+
+  _Kind? _kindFor(String name) {
+    for (final kind in _kinds) {
+      if (kind.name == name) {
+        return kind;
+      }
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -177,6 +207,14 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     final kind = _selected;
+    if (kind.requiresEmptyChoice && _emptyChoice == null) {
+      setState(() {
+        _save = const CoreActionResult.failure(
+          shellNote: 'answer the empty-result question first — it decides what the save samples',
+        );
+      });
+      return;
+    }
     final x = int.tryParse(_x.text.trim());
     final y = int.tryParse(_y.text.trim());
     final w = int.tryParse(_w.text.trim());
@@ -197,6 +235,7 @@ class _CalibrateTabState extends State<CalibrateTab>
       kind: kind.name,
       region: kind.isRect ? Rect(x: x, y: y, w: w!, h: h!) : null,
       point: kind.isRect ? null : Point(x: x, y: y),
+      empty: kind.requiresEmptyChoice ? _emptyChoice : null,
       display: capture.value!.display,
     );
     if (!mounted) {
@@ -262,6 +301,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     setState(() {
       _kindName = name;
       _save = null;
+      _emptyChoice = null;
       _fillEditorFromStored();
     });
   }
@@ -390,16 +430,40 @@ class _CalibrateTabState extends State<CalibrateTab>
                       runSpacing: ShellSpace.sm,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        DraftDropdownField(
-                          key: const ValueKey('calibrate-kind'),
-                          label: 'Kind',
-                          value: _kindName,
-                          options: [for (final kind in _kinds) kind.name],
-                          width: 240,
-                          onChanged: _selectKind,
+                        SizedBox(
+                          width: 260,
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Kind',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                key: const ValueKey('calibrate-kind'),
+                                value: _kindName,
+                                isExpanded: true,
+                                isDense: true,
+                                items: [
+                                  for (final kind in _kinds)
+                                    DropdownMenuItem(
+                                      key: ValueKey(
+                                        'calibrate-kind-item-${kind.name}',
+                                      ),
+                                      value: kind.name,
+                                      child: Text(
+                                        '${kind.label} (${kind.name})',
+                                      ),
+                                    ),
+                                ],
+                                onChanged: _selectKind,
+                              ),
+                            ),
+                          ),
                         ),
                         Text(
-                          '${_selected.shapeLabel} · client-relative physical px'
+                          '${_selected.label} · ${_selected.shapeLabel} · '
+                          'client-relative physical px'
                           '${_selected.hasArtifact ? ' · writes a crop artifact' : ''}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
@@ -421,9 +485,53 @@ class _CalibrateTabState extends State<CalibrateTab>
                       ],
                     ),
                     const SizedBox(height: ShellSpace.sm),
+                    if (_selected.requiresEmptyChoice) ...[
+                      Text(
+                        "v2's empty-result question — answer it before saving:",
+                        style: theme.textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: ShellSpace.xs),
+                      Wrap(
+                        spacing: ShellSpace.sm,
+                        runSpacing: ShellSpace.xs,
+                        children: [
+                          ChoiceChip(
+                            key: const ValueKey('calibrate-empty-yes'),
+                            label: const Text(
+                              'The result box is EMPTY right now',
+                            ),
+                            selected: _emptyChoice == true,
+                            onSelected: (_) =>
+                                setState(() => _emptyChoice = true),
+                          ),
+                          ChoiceChip(
+                            key: const ValueKey('calibrate-empty-no'),
+                            label: const Text('A gem is in the box'),
+                            selected: _emptyChoice == false,
+                            onSelected: (_) =>
+                                setState(() => _emptyChoice = false),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: ShellSpace.xs),
+                      Text(
+                        'Empty saves the crop and samples the colour signature. A gem in the box '
+                        'samples only the colour fallback — the strong crop test is not created.',
+                        key: const ValueKey('calibrate-empty-hint'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: ShellSpace.sm),
+                    ],
                     FilledButton(
                       key: const ValueKey('calibrate-save'),
-                      onPressed: _saving ? null : _saveMark,
+                      onPressed:
+                          _saving ||
+                              (_selected.requiresEmptyChoice &&
+                                  _emptyChoice == null)
+                          ? null
+                          : _saveMark,
                       child: _saving
                           ? const SizedBox(
                               width: 16,
@@ -464,6 +572,21 @@ class _CalibrateTabState extends State<CalibrateTab>
                   ],
                 ),
                 EditorSection(
+                  title: 'Tuner OCR geometry — not calibratable here yet',
+                  children: [
+                    Text(
+                      "The tuner's OCR region, grade box and row bands are measured as v2's "
+                      'three-box session (grade letter, attribute rows, remaining time) and the '
+                      'core derives the region from them. That session is not built in v3 yet, so '
+                      'no tuner mark is offered here.',
+                      key: const ValueKey('calibrate-tuner-note'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                EditorSection(
                   title: 'Stored mark — $_kindName',
                   children: [
                     if (storedError != null)
@@ -482,7 +605,10 @@ class _CalibrateTabState extends State<CalibrateTab>
                       )
                     else ...[
                       Text(
-                        stored.storedLine,
+                        stored.kind == _kindName
+                            ? stored.storedLine
+                            : 'core returned kind "${stored.kind}" · '
+                                  '${stored.storedLine}',
                         key: const ValueKey('calibrate-stored'),
                         style: theme.textTheme.bodyMedium,
                       ),
