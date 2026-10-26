@@ -31,11 +31,13 @@
    core-side `GetAsyncKeyState` poller may be blocked by the anti-cheat while in game. The Stop
    button and the shell's own controls always work. The poller stays a named OPEN item with the
    measurement that decides between core-side polling and shell-side commands.
-8. **Capture/hide is a cut-over BLOCKER and gets fixed, not documented around.** `PROTOCOL.md` §4
-   says the shell hides itself before asking for a capture; the shell had no hide path, so from the
-   UI the game is never foreground and `capture` refuses (`game_not_foreground`). The Flutter runner
-   gains a small host method channel (hide/show), the Calibrate tab hides → waits one frame → captures
-   → shows, and a widget test pins the order with a fake host.
+8. **CLOSED — capture/hide landed.** `PROTOCOL.md` §4 says the shell hides itself before asking for
+   a capture; the shell had no hide path, so from the UI the game was never foreground and `capture`
+   refused (`game_not_foreground`). The Windows runner now serves a small `seal/host` channel
+   (`hideWindow`/`showWindow`), the Calibrate tab waits the hide's reply, then one frame (with a
+   50 ms fallback so a stalled hidden compositor cannot hang the grab), then captures and SHOWS
+   unconditionally in a `finally`; a missing host channel is a note, not a failed capture. Widget
+   tests pin `hide, capture-sent, show` on success and on refusal.
 9. **zh-TW twin: yes.** `USER_GUIDE.zh-TW.md` written from the v3 guide (not by editing v2's), same
    heading structure. Screenshots: new captures of the v3 shell; if none can be taken, the guide
    ships text-only rather than reusing WPF screenshots.

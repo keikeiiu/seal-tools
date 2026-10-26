@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <flutter/standard_method_codec.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -27,6 +29,28 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // The capture lifecycle: hide, wait a frame, capture, then show. The hide lives here because the
+  // runner is the only place that owns the HWND; the Dart side awaits each reply, so the window is
+  // really hidden before the core checks the foreground window (`game_not_foreground` otherwise).
+  host_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "seal/host",
+          &flutter::StandardMethodCodec::GetInstance());
+  host_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "hideWindow") {
+          ::ShowWindow(GetHandle(), SW_HIDE);
+          result->Success();
+        } else if (call.method_name() == "showWindow") {
+          ::ShowWindow(GetHandle(), SW_SHOWNORMAL);
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -40,6 +64,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  host_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

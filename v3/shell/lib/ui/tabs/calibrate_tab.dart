@@ -8,11 +8,12 @@
 /// named-instance `target`, PROTOCOL §12.8, and v2's `empty: true|false` verdict for the result-gem
 /// area, PROTOCOL §12.7) and renders the core's mark/derived/artifact answer or its refusal VERBATIM.
 ///
-/// Capture requires the game to be the foreground window. Hiding the shell is runner work (OPEN.md), so
-/// in this build the Capture button can legitimately answer `game_not_foreground`; the line is shown
-/// as-is and the player brings the game forward and captures again. There is no hide hack and no
-/// auto-retry. A save after another capture is fine (four-frame cache), but an `unknown frame_id` is
-/// shown verbatim and requires a NEW Capture — never an automatic re-capture.
+/// Capture hides the shell, waits one frame, asks the core for the frame, then shows the shell again.
+/// The show is UNCONDITIONAL — a refused capture must never leave the shell hidden. The core still
+/// requires the game to be the foreground window, which the hide gives it; if the host channel is
+/// absent the capture is still attempted and its refusal/line is shown verbatim. A save after another
+/// capture is fine (four-frame cache), but an `unknown frame_id` is shown verbatim and requires a NEW
+/// Capture — never an automatic re-capture.
 ///
 /// [CALIBRATION.md]: ../../../docs/spec/CALIBRATION.md
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
@@ -137,9 +138,16 @@ const List<_Kind> _kinds = [
 ];
 
 class CalibrateTab extends StatefulWidget {
-  const CalibrateTab({super.key, required this.model});
+  const CalibrateTab({
+    super.key,
+    required this.model,
+    this.host = const MethodChannelHostActions(),
+  });
 
   final ShellModel model;
+
+  /// The runner host's window seam; tests inject a fake, production uses seal/host.
+  final HostActions host;
 
   @override
   State<CalibrateTab> createState() => _CalibrateTabState();
@@ -165,6 +173,9 @@ class _CalibrateTabState extends State<CalibrateTab>
   bool _capturing = false;
   bool _saving = false;
   bool _loadingStored = false;
+
+  /// A host-side note (e.g. the window channel is absent) shown under the capture result.
+  String? _hostNote;
 
   /// v2's empty-result verdict for the gem result area: null = not answered, Save stays disabled.
   bool? _emptyChoice;
@@ -263,19 +274,69 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   // ── actions ───────────────────────────────────────────────────────────────────────────────
 
+  /// hide → one frame → capture → show, with the show UNCONDITIONAL. The hide's reply is awaited
+  /// before the frame wait so the core sees the game as the foreground window; a missing host
+  /// channel is a note, not a failure — the capture is still attempted and its line rendered.
   Future<void> _captureFrame() async {
     setState(() {
       _capturing = true;
       _save = null;
+      _hostNote = null;
     });
-    final result = await widget.model.captureFrame();
-    if (!mounted) {
-      return;
+    var hostNote = '';
+    try {
+      try {
+        await widget.host.hideWindow();
+      } catch (_) {
+        hostNote = 'the shell could not hide itself — the game has to be in front for a capture';
+      }
+      // One frame for the hide to be composited before the core checks the foreground window.
+      await _waitOneFrame();
+      final result = await widget.model.captureFrame();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _capturing = false;
+        _capture = result;
+        _hostNote = hostNote.isEmpty ? null : hostNote;
+      });
+    } finally {
+      // A refused capture (or a thrown error) must never leave the shell hidden.
+      try {
+        await widget.host.showWindow();
+      } catch (_) {
+        // No host channel (tests/other platforms): the window was never hidden, but say so rather
+        // than failing the capture — the frame/refusal above still stands.
+        if (mounted) {
+          setState(() {
+            _hostNote ??=
+                'the shell could not be shown again — no host channel';
+          });
+        }
+      }
     }
-    setState(() {
-      _capturing = false;
-      _capture = result;
+  }
+
+  /// One frame for the compositor to apply the hide — but never longer than ~50 ms, because a hidden
+  /// window may stop producing frames on some drivers and the capture must not hang on the lifecycle
+  /// wait. In widget tests the frame completes on the next pump, which cancels the fallback timer.
+  Future<void> _waitOneFrame() async {
+    final waited = Completer<void>();
+    final fallback = Timer(const Duration(milliseconds: 50), () {
+      if (!waited.isCompleted) {
+        waited.complete();
+      }
     });
+    unawaited(
+      WidgetsBinding.instance.endOfFrame.whenComplete(() {
+        fallback.cancel();
+        if (!waited.isCompleted) {
+          waited.complete();
+        }
+      }),
+    );
+    await waited.future;
   }
 
   Future<void> _saveMark() async {
@@ -446,8 +507,9 @@ class _CalibrateTabState extends State<CalibrateTab>
                     Text('Calibrate', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 2),
                     Text(
-                      'Capture the game client, mark one of the seven surfaces, and save it. '
-                      'The core writes the mark and records the measured display.',
+                      'Capture the game client, mark one of the calibrated surfaces, and save it. '
+                      'The shell hides for the grab, waits one frame, and reopens after it; the core '
+                      'writes the mark and records the measured display.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -490,6 +552,14 @@ class _CalibrateTabState extends State<CalibrateTab>
                   Text(
                     'Capturing the game client…',
                     style: theme.textTheme.bodySmall,
+                  ),
+                if (_hostNote != null)
+                  Text(
+                    _hostNote!,
+                    key: const ValueKey('calibrate-host-note'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 if (capture != null)
                   ActionResultLine(

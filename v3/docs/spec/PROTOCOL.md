@@ -129,7 +129,10 @@ edits; it never re-serialises the whole file (§7).
 Notes:
 
 - `capture` does **not** hide the shell's window — the shell hides itself, waits one frame, then
-  asks. The core still refuses to blit unless the game window is the foreground window
+  asks. (The Windows runner serves a small `seal/host` `hideWindow`/`showWindow` channel for exactly
+  this; the Dart side contains no Win32, and the show is unconditional — a refused capture must not
+  leave the shell hidden.) The core still refuses to blit unless the game window is the foreground
+  window
   (`game_not_foreground`), which is what makes the v2 guards work without a shared process.
 - `window.find`/`window.measure` are separate because the calibrator shows "found/not found" long
   before it measures, and the game may be started later.

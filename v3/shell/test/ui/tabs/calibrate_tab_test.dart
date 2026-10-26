@@ -1,10 +1,12 @@
-/// The Calibrate tab: capture/frame/display, the calibrated mark editor (including the named-instance\n/// kinds and their target selector), save payloads, verbatim
-/// refusals, stored marks and the artifact crop — all over the fake transport.
+/// The Calibrate tab: capture/frame/display (including the hide→capture→show host lifecycle), the
+/// calibrated mark editor (including the named-instance kinds and their target selector), save
+/// payloads, verbatim refusals, stored marks and the artifact crop — all over the fake transport.
 library;
 
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/app/app.dart';
@@ -47,9 +49,35 @@ Map<String, dynamic> _captureAnswer({
 /// One answer for the fake core: `{'result': …}` or `{'error': {code, message}}`.
 typedef _Answer = Map<String, dynamic> Function(Map<String, dynamic> request);
 
+/// The runner host seam, recorded so a test can assert the capture lifecycle's order.
+class _FakeHost implements HostActions {
+  _FakeHost({this.failHide = false, this.failShow = false});
+
+  final bool failHide;
+  final bool failShow;
+  final List<String> events = [];
+
+  @override
+  Future<void> hideWindow() async {
+    events.add('hide');
+    if (failHide) {
+      throw PlatformException(code: 'no_host');
+    }
+  }
+
+  @override
+  Future<void> showWindow() async {
+    events.add('show');
+    if (failShow) {
+      throw PlatformException(code: 'no_host');
+    }
+  }
+}
+
 Future<AppHarness> _pumpCalibrate(
   WidgetTester tester, {
   required _Answer answer,
+  HostActions? host,
 }) async {
   tester.view.physicalSize = const ui.Size(1800, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -90,10 +118,12 @@ Future<AppHarness> _pumpCalibrate(
   await tester.pumpWidget(
     MaterialApp(
       theme: buildShellTheme(),
-      home: Scaffold(body: CalibrateTab(model: harness.model)),
+      home: Scaffold(
+        body: CalibrateTab(model: harness.model, host: host ?? _FakeHost()),
+      ),
     ),
   );
-  // The tab fetches all seven kinds on mount; let the sequential loop finish.
+  // The tab fetches the non-targeted kinds on mount; let the sequential loop finish.
   for (var i = 0; i < 8; i++) {
     await tester.pump();
   }
@@ -115,9 +145,9 @@ Map<String, dynamic> _fetchAnswer(
 };
 
 Future<void> _flush(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump();
-  await tester.pump();
+  for (var i = 0; i < 6; i++) {
+    await tester.pump();
+  }
 }
 
 String _resultText(WidgetTester tester, String key) => tester
@@ -1254,6 +1284,115 @@ void main() {
           .widget<Text>(find.byKey(const ValueKey('calibrate-stored-error')))
           .data,
       line,
+    );
+  });
+
+  testWidgets('capture hides the shell, sends capture, then shows it', (
+    tester,
+  ) async {
+    final host = _FakeHost();
+    await _pumpCalibrate(
+      tester,
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'capture') {
+          host.events.add('capture-sent');
+          return {'result': _captureAnswer()};
+        }
+        if (request['cmd'] == 'calibration.fetch') {
+          return {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          };
+        }
+        return {'result': <String, dynamic>{}};
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+
+    expect(host.events, ['hide', 'capture-sent', 'show']);
+    expect(
+      _resultText(tester, 'calibrate-capture-result'),
+      contains('captured frame f1'),
+    );
+    expect(find.byKey(const ValueKey('calibrate-host-note')), findsNothing);
+  });
+
+  testWidgets('a refused capture still shows the shell again', (tester) async {
+    final host = _FakeHost();
+    await _pumpCalibrate(
+      tester,
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'capture') {
+          host.events.add('capture-sent');
+          return {
+            'error': {
+              'code': 'game_not_foreground',
+              'message': 'the game is not the foreground window',
+            },
+          };
+        }
+        if (request['cmd'] == 'calibration.fetch') {
+          return {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          };
+        }
+        return {'result': <String, dynamic>{}};
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+
+    expect(host.events, ['hide', 'capture-sent', 'show']);
+    expect(
+      _resultText(tester, 'calibrate-capture-result'),
+      contains('the game is not the foreground window'),
+    );
+    expect(find.byKey(const ValueKey('calibrate-frame')), findsNothing);
+  });
+
+  testWidgets('capture proceeds when the host channel is absent', (
+    tester,
+  ) async {
+    final host = _FakeHost(failHide: true, failShow: true);
+    await _pumpCalibrate(
+      tester,
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'capture') {
+          host.events.add('capture-sent');
+          return {'result': _captureAnswer()};
+        }
+        if (request['cmd'] == 'calibration.fetch') {
+          return {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          };
+        }
+        return {'result': <String, dynamic>{}};
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+
+    expect(host.events, ['hide', 'capture-sent', 'show']);
+    expect(
+      _resultText(tester, 'calibrate-capture-result'),
+      contains('captured frame f1'),
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-host-note')),
+      findsOneWidget,
+      reason: 'a missing host channel is a note, never a failed capture',
     );
   });
 }
