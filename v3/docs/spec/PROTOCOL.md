@@ -35,6 +35,15 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
   reason on stderr and nothing on stdout. The shell shows that text on the crash channel above; it
   is not a protocol message and must not be parsed as one. A reload that meets an invalid file is
   different: it is a response with `config_invalid` (§6).
+- **Logs are files, not protocol commands.** The core appends under `<root>/logs/`:
+  `ocr_log.jsonl` (one record per completed scan), `ocr_errors.jsonl` (a completed scan that did not
+  produce its mode's target), optional `captures/*.png` while `tuner.save_captures` is on (the scan
+  result carries the relative `capture_path`), `error.log` (internal errors and tool opening
+  failures — never player-correctable refusals, which would bury them), `holdspace.log` (its own
+  diagnostic trail) and `<tool>.log` (one timestamped line each for the run's start, every CHANGED
+  tool status message, and its final reason: `finished — …`, `stopped — …`, `failed — …`). Text lines
+  use `yyyy-MM-dd HH:mm:ss `. A failed log write is swallowed and never fails a command or a run;
+  `shutdown` flushes the files.
 ## 2. Envelope
 
 Every message is one JSON object. `v` is always present and is the protocol version (`1`).
@@ -175,6 +184,11 @@ fact, and nothing in §4 is spec-only today.
 The plan's `core.ready` event is folded into the `hello` result (ruling 1, §12): the handshake
 already returns everything it carried, and a second message with the same content is a thing
 that can disagree with the first.
+
+`log` is the LIVE shell line; the run also records its own post-mortem in `<root>/logs/<tool>.log`
+(§1) — start, changed tool status messages, and the final reason, with a stop written as
+`stopped — …` and a normal finish as `finished — …`. The file is not repeated on the wire, and no
+tool writes it: the supervisor's worker derives it from the status the runner already publishes.
 
 ### `state`'s `rows`
 

@@ -16,6 +16,17 @@ use seal_core::logs::Logs;
 use seal_ocr::modes::{Mode, ModeResult};
 use seal_tools::tool::ToolId;
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use seal_core::dispatch::{CoreState, handle};
+use seal_core::registry::{Session, ToolRegistry, Unavailable};
+use seal_core::supervisor::{StartReply, StopReply, Supervisor};
+use seal_domain::decision::{Decision, Key, StopReason};
+use seal_domain::geometry::Point;
+use seal_proto::{Event, Request};
+use seal_tools::game::GamePort;
+use seal_tools::runner::{EffectError, Effects, Tool, ToolStatus};
 
 /// Magic bytes, not a valid image: the logger copies bytes and never decodes them.
 const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02];
@@ -253,5 +264,339 @@ fn an_unwritable_logs_dir_is_swallowed_and_counted() {
         logs.write_failures() >= 4,
         "every failed write is counted, not propagated: {}",
         logs.write_failures()
+    );
+}
+
+// ── increment 2: the supervisor's per-tool lines and `error.log` ─────────────────────────────
+
+/// The effects half a scripted run needs: every decision here is `Wait`/`Stop`, whose default
+/// methods are already no-ops.
+struct NoEffects;
+
+impl Effects for NoEffects {
+    fn click(&mut self, _at: Point) -> Result<(), EffectError> {
+        Err(EffectError::new("the scripted run never clicks"))
+    }
+
+    fn key(&mut self, _key: Key) -> Result<(), EffectError> {
+        Err(EffectError::new("the scripted run never presses a key"))
+    }
+}
+
+/// A run whose decisions and status words are scripted, so the `<tool>.log` sequence is deterministic.
+struct ScriptedTool {
+    id: ToolId,
+    script: Vec<Decision>,
+    messages: Vec<String>,
+    step: usize,
+}
+
+impl Tool for ScriptedTool {
+    fn id(&self) -> ToolId {
+        self.id
+    }
+
+    fn decide(&mut self) -> Decision {
+        if self.step < self.script.len() {
+            let decision = self.script[self.step].clone();
+            self.step += 1;
+            decision
+        } else {
+            Decision::Stop(StopReason::done("script ended"))
+        }
+    }
+
+    fn status(&self) -> ToolStatus {
+        let message = self
+            .messages
+            .get(self.step.saturating_sub(1))
+            .cloned()
+            .unwrap_or_default();
+        ToolStatus {
+            message,
+            ..ToolStatus::default()
+        }
+    }
+}
+
+/// The one-run registry the log tests use: either a scripted session or a scripted opening failure.
+struct ScriptedRegistry {
+    tool: Mutex<Option<Box<dyn Tool + Send>>>,
+    opening_error: Mutex<Option<String>>,
+}
+
+impl ScriptedRegistry {
+    fn scripted(id: ToolId, script: Vec<Decision>, messages: &[&str]) -> Arc<Self> {
+        Arc::new(Self {
+            tool: Mutex::new(Some(Box::new(ScriptedTool {
+                id,
+                script,
+                messages: messages
+                    .iter()
+                    .map(|message| (*message).to_owned())
+                    .collect(),
+                step: 0,
+            }))),
+            opening_error: Mutex::new(None),
+        })
+    }
+
+    fn failing(line: &str) -> Arc<Self> {
+        Arc::new(Self {
+            tool: Mutex::new(None),
+            opening_error: Mutex::new(Some(line.to_owned())),
+        })
+    }
+}
+
+impl ToolRegistry for ScriptedRegistry {
+    fn available(&self, _tool: ToolId) -> Result<(), Unavailable> {
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        _tool: ToolId,
+        _game: Arc<dyn GamePort>,
+        _args: &Value,
+    ) -> Result<Session, String> {
+        if let Some(line) = self.opening_error.lock().expect("not poisoned").take() {
+            return Err(line);
+        }
+        let tool = self
+            .tool
+            .lock()
+            .expect("not poisoned")
+            .take()
+            .expect("one run per registry");
+        Ok(Session {
+            tool,
+            effects: Box::new(NoEffects),
+        })
+    }
+}
+
+fn next_event(events: &std::sync::mpsc::Receiver<Event>) -> Event {
+    events
+        .recv_timeout(Duration::from_secs(5))
+        .expect("an event arrives")
+}
+
+fn wait_running(events: &std::sync::mpsc::Receiver<Event>) {
+    loop {
+        let event = next_event(events);
+        assert_ne!(event.event, "core.stopping");
+        if event.event == "state" && event.data["phase"] == "running" {
+            return;
+        }
+    }
+}
+
+fn wait_finished(events: &std::sync::mpsc::Receiver<Event>) -> Event {
+    loop {
+        let event = next_event(events);
+        assert_ne!(event.event, "core.stopping");
+        if event.event == "tool.finished" {
+            return event;
+        }
+    }
+}
+
+/// Strip the v2 text prefix (`yyyy-MM-dd HH:mm:ss `) from a `<tool>.log` line.
+fn message_of(line: &str) -> String {
+    line.chars().skip(20).collect()
+}
+
+fn tool_log(dir: &TestDir, tool: ToolId) -> Vec<String> {
+    read_lines(&dir.path_of(&format!("logs/{tool}.log")))
+}
+
+#[test]
+fn a_fake_run_logs_the_start_only_changed_statuses_and_the_finish() {
+    let dir = TestDir::new();
+    let logs = Arc::new(Logs::new(dir.path()));
+    let registry = ScriptedRegistry::scripted(
+        ToolId::Tuner,
+        vec![
+            Decision::wait(0.0),
+            Decision::wait(0.0),
+            Decision::stop(StopReason::done("DONE — 2")),
+        ],
+        &["first", "first", "second"],
+    );
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    let finished = wait_finished(&events);
+    supervisor.shutdown("test");
+
+    let messages: Vec<String> = tool_log(&dir, ToolId::Tuner)
+        .iter()
+        .map(|line| message_of(line))
+        .collect();
+    assert_eq!(
+        messages.join(" | "),
+        "run started | first | second | finished — DONE — 2",
+        "start, CHANGED messages only, then the final line"
+    );
+    assert_eq!(finished.data["reason"], "done");
+    assert!(logs.write_failures() == 0);
+}
+
+#[test]
+fn a_stop_logs_a_stopped_final_line_not_a_finished_one() {
+    let dir = TestDir::new();
+    let logs = Arc::new(Logs::new(dir.path()));
+    let registry = ScriptedRegistry::scripted(ToolId::Gem, vec![Decision::wait(30.0)], &[]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Gem, &Value::Null),
+        StartReply::Started
+    );
+    wait_running(&events);
+    assert_eq!(
+        supervisor.stop_tool(Some(ToolId::Gem)),
+        StopReply::Stopping { tool: ToolId::Gem }
+    );
+    let finished = wait_finished(&events);
+    supervisor.shutdown("test");
+
+    let messages: Vec<String> = tool_log(&dir, ToolId::Gem)
+        .iter()
+        .map(|line| message_of(line))
+        .collect();
+    assert_eq!(messages.join(" | "), "run started | stopped — Stopped.");
+    assert_eq!(finished.data["reason"], "cancelled");
+}
+
+#[test]
+fn an_opening_failure_writes_error_log_and_no_tool_log() {
+    let dir = TestDir::new();
+    let logs = Arc::new(Logs::new(dir.path()));
+    let registry = ScriptedRegistry::failing("the board could not be opened");
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Quest, &Value::Null),
+        StartReply::Started
+    );
+    let finished = wait_finished(&events);
+    supervisor.shutdown("test");
+
+    assert_eq!(finished.data["reason"], "error");
+    let errors = read_lines(&dir.path_of("logs/error.log"));
+    assert_eq!(errors.len(), 1);
+    assert!(
+        errors[0].ends_with("quest failed to start: the board could not be opened"),
+        "the opening line is in error.log: {}",
+        errors[0]
+    );
+    assert!(
+        !dir.exists("logs/quest.log"),
+        "a run that never began has no tool log"
+    );
+}
+
+#[test]
+fn an_internal_command_error_writes_error_log() {
+    let dir = TestDir::new();
+    let mut state = CoreState::new(dir.path().to_path_buf());
+    state.logs = Arc::new(Logs::new(dir.path()));
+    let hello = handle(
+        &mut state,
+        Request::new("1", "hello", serde_json::json!({"protocol": 1})),
+    );
+    assert!(hello.ok);
+
+    // No supervisor attached in this config-only state: `tool.start` is an internal bug, not a
+    // player-correctable refusal, so it belongs in `error.log`.
+    let response = handle(
+        &mut state,
+        Request::new("2", "tool.start", serde_json::json!({"tool": "tuner"})),
+    );
+    let error = response.error.expect("the internal failure is reported");
+    assert_eq!(error.code, "internal");
+
+    let errors = read_lines(&dir.path_of("logs/error.log"));
+    assert_eq!(errors.len(), 1);
+    assert!(
+        errors[0].contains("tool.start")
+            && errors[0].contains("the tool supervisor is not running"),
+        "the internal line is in error.log: {}",
+        errors[0]
+    );
+}
+
+#[test]
+fn a_failed_log_write_never_fails_the_run() {
+    let dir = TestDir::new();
+    fs::write(dir.path_of("blocked"), b"not a directory").expect("the blocker writes");
+    let logs = Arc::new(Logs::new(dir.path_of("blocked")));
+    let registry = ScriptedRegistry::scripted(
+        ToolId::Tuner,
+        vec![Decision::stop(StopReason::done("done anyway"))],
+        &["a status that cannot be logged"],
+    );
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    let finished = wait_finished(&events);
+    supervisor.shutdown("test");
+
+    assert_eq!(finished.data["reason"], "done");
+    assert_eq!(finished.data["message"], "done anyway");
+    assert!(
+        logs.write_failures() > 0,
+        "the failed writes were swallowed and counted"
+    );
+}
+
+#[test]
+fn an_ordinary_refusal_does_not_write_error_log() {
+    let dir = TestDir::new();
+    let mut state = CoreState::new(dir.path().to_path_buf());
+    state.logs = Arc::new(Logs::new(dir.path()));
+    let hello = handle(
+        &mut state,
+        Request::new("1", "hello", serde_json::json!({"protocol": 1})),
+    );
+    assert!(hello.ok);
+
+    let response = handle(
+        &mut state,
+        Request::new("2", "tool.start", serde_json::json!({"tool": "hover"})),
+    );
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        !dir.exists("logs/error.log"),
+        "player-correctable refusals must not bury the exception log"
     );
 }

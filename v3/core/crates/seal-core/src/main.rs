@@ -59,7 +59,7 @@ fn main() {
         state.shared_config.clone(),
         state.store.clone(),
     ));
-    state.attach_supervisor(Supervisor::start(registry, bus));
+    state.attach_supervisor(Supervisor::start(registry, bus, Arc::clone(&state.logs)));
 
     let stdin = std::io::stdin();
     let reason = loop {

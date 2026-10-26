@@ -77,7 +77,7 @@ pub struct CoreState {
     pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
     /// The per-run FILE logs (`logs.rs`): opened at boot from the config root. Disabled in
     /// `new()` (the config-only dispatcher tests write no files); the binary uses `load()`.
-    pub logs: crate::logs::Logs,
+    pub logs: std::sync::Arc<crate::logs::Logs>,
     /// Where `config.changed` events go, when the binary attached the writer's bus. Dispatcher tests
     /// leave it `None` and inspect [`Self::take_queued_events`] instead.
     pub events: Option<crate::events::EventBus>,
@@ -105,7 +105,7 @@ impl CoreState {
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
             ocr: None,
-            logs: crate::logs::Logs::disabled(),
+            logs: std::sync::Arc::new(crate::logs::Logs::disabled()),
             events: None,
             queued_events: Vec::new(),
         }
@@ -119,7 +119,7 @@ impl CoreState {
     pub fn load(root: std::path::PathBuf) -> Result<Self, StartupError> {
         let store = ConfigStore::new(root.join("config"));
         let (config, active, attributes) = load_parts(&store)?;
-        let logs = crate::logs::Logs::new(&root);
+        let logs = std::sync::Arc::new(crate::logs::Logs::new(&root));
         Ok(Self {
             root,
             store,
@@ -393,6 +393,15 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             json!({}),
         ),
     };
+    // `internal` is a core bug, not a refusal the player can correct: v2's `error.log` held
+    // exceptions, and filling it with correctable refusals would bury them.
+    if let Some(error) = &response.error
+        && error.code == "internal"
+    {
+        state
+            .logs
+            .error_line(&format!("{}: {}", request.cmd, error.message));
+    }
     state.publish_config();
     response
 }

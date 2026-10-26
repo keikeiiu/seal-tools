@@ -12,6 +12,7 @@
 //! ([`pure::encode_png`]) so both are testable without a window. Live behaviour (a real game window,
 //! a real blit) is `#[ignore]` tests with what would prove them; the pure halves run everywhere.
 
+pub mod clock;
 pub mod error;
 pub mod pure;
 

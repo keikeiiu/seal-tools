@@ -243,6 +243,17 @@ blocked on the toolchain pin, not on design ([README §Toolchain](../../core/REA
 they land they implement the read structs and `Effects`; `seal-core`'s registry builds them in a
 worker's opening phase. Nothing in `seal-domain` changes.
 
+### Logs (G8)
+
+The core owns the per-run file logs: `<root>/logs/` holds the OCR's JSONL records and optional
+captures, `error.log`/`holdspace.log`, and one `<tool>.log` per started run.
+[`seal-core/src/logs.rs`](../../core/crates/seal-core/src/logs.rs) is the only writer and every write
+is best-effort — a failure is counted and swallowed, never failing a command or a run (v2's
+`FileLogger` rule). The supervisor's worker derives the tool log from the status messages the runner
+already publishes, so no tool contains I/O code; the local wall clock lives in `seal-win/clock.rs`
+because every Win32 call lives in `seal-win`. The protocol has no log commands: `log` events are the
+live surface, the files are the post-mortem.
+
 ## 7. Testing and the port discipline
 
 **Gates** (from `v3/core`, details in the [README](../../core/README.md)):

@@ -26,11 +26,10 @@
 //!
 //! # Timestamps are LOCAL wall-clock time
 //!
-//! `std` exposes only UTC and this crate takes no time dependency (no Cargo edits in this task), so
-//! the local clock comes from one Win32 call (`GetLocalTime`). Normally every Win32 call lives in
-//! `seal-win`; that crate is out of this change's scope and the logger cannot be useful with UTC
-//! timestamps next to local in-game events, so the smallest possible call is declared here instead.
-//! Non-Windows builds fall back to UTC (this suite is Windows-only by design).
+//! `std` exposes only UTC, so the local clock is `seal_win::clock::local_now()` — a Win32
+//! `GetLocalTime` in the crate where every other Win32 call lives. That keeps this module free of
+//! platform calls and the log lines comparable with local in-game events. Non-Windows builds fall
+//! back to UTC (this suite is Windows-only by design).
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -38,6 +37,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use seal_domain::decision::{StopKind, StopReason};
 use seal_ocr::modes::{Mode, ModeResult};
 use seal_tools::tool::ToolId;
 use serde_json::{Value, json};
@@ -84,6 +84,26 @@ impl Logs {
     /// here; the method exists now because the file's shape is the logger's contract.
     pub fn tool_line(&self, tool: ToolId, line: &str) {
         self.append(&format!("{tool}.log"), &format!("{} {line}", line_stamp()));
+    }
+
+    /// The line a worker writes when a run actually begins. v2's tools each phrased it in their own
+    /// words (`run started — board firmware …`, `Quest Hand-in — flow …`); the supervisor adapter has
+    /// only the generic moment, so it writes the generic phrase and the tool's own status lines follow.
+    pub fn tool_started(&self, tool: ToolId) {
+        self.tool_line(tool, "run started");
+    }
+
+    /// The final line, distinguishable by the stop's own reason word: `finished` (done), `stopped`
+    /// (the player or the shell asked it to stop) or `failed` (an error, including a tripped guard).
+    /// v2 logged that difference in its tools' own logs (`QuestTool.cs`: `DONE — …` vs `cancelled …`);
+    /// the reason word carries it here.
+    pub fn tool_finished(&self, tool: ToolId, reason: &StopReason) {
+        let word = match reason.kind {
+            StopKind::Done => "finished",
+            StopKind::Cancelled => "stopped",
+            StopKind::Error | StopKind::Guard => "failed",
+        };
+        self.tool_line(tool, &format!("{word} — {}", reason.message));
     }
 
     /// `holdspace.log`: v2's `HoldDiag` shape, which is deliberately not the generic one (it is a
@@ -242,106 +262,16 @@ fn scan_unconfirmed(mode: Mode, outcome: &ModeResult) -> bool {
 
 /// v2's OCR stamp (`OcrEngine.ScanOnce`: `yyyyMMdd_HHmmss_fff`), also used in capture file names.
 pub fn scan_stamp() -> String {
-    let [year, month, day, hour, minute, second, millis] = now_parts();
+    let [year, month, day, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}_{millis:03}")
 }
 
 fn line_stamp() -> String {
-    let [year, month, day, hour, minute, second, _] = now_parts();
+    let [year, month, day, hour, minute, second, _] = seal_win::clock::local_now();
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
 }
 
 fn hold_stamp() -> String {
-    let [_, _, _, hour, minute, second, millis] = now_parts();
+    let [_, _, _, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{hour:02}:{minute:02}:{second:02}.{millis:03}")
-}
-
-/// `[year, month, day, hour, minute, second, milliseconds]`, local time.
-#[cfg(windows)]
-fn now_parts() -> [u16; 7] {
-    #[repr(C)]
-    struct WinSystemTime {
-        year: u16,
-        month: u16,
-        day_of_week: u16,
-        day: u16,
-        hour: u16,
-        minute: u16,
-        second: u16,
-        milliseconds: u16,
-    }
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        #[link_name = "GetLocalTime"]
-        fn get_local_time(system_time: *mut WinSystemTime);
-    }
-
-    let mut time = WinSystemTime {
-        year: 0,
-        month: 0,
-        day_of_week: 0,
-        day: 0,
-        hour: 0,
-        minute: 0,
-        second: 0,
-        milliseconds: 0,
-    };
-    // SAFETY: `GetLocalTime` writes one `SYSTEMTIME` (eight `u16`s, `repr(C)`) into the pointer and
-    // reads nothing else; `time` is a live, correctly shaped stack value for the call.
-    unsafe { get_local_time(&mut time) };
-    [
-        time.year,
-        time.month,
-        time.day,
-        time.hour,
-        time.minute,
-        time.second,
-        time.milliseconds,
-    ]
-}
-
-/// UTC fallback for non-Windows builds (this project is Windows-only; the fallback keeps the crate
-/// buildable elsewhere without a time dependency).
-#[cfg(not(windows))]
-fn now_parts() -> [u16; 7] {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    let days = i64::try_from(secs / 86_400).unwrap_or(0);
-    let seconds_of_day = u32::try_from(secs % 86_400).unwrap_or(0);
-    let (year, month, day) = civil_from_days(days);
-    [
-        u16::try_from(year).unwrap_or(1970),
-        u16::try_from(month).unwrap_or(1),
-        u16::try_from(day).unwrap_or(1),
-        u16::try_from(seconds_of_day / 3600).unwrap_or(0),
-        u16::try_from((seconds_of_day % 3600) / 60).unwrap_or(0),
-        u16::try_from(seconds_of_day % 60).unwrap_or(0),
-        u16::try_from(now.subsec_millis()).unwrap_or(0),
-    ]
-}
-
-/// Howard Hinnant's days-to-civil conversion, for the non-Windows fallback only.
-#[cfg(not(windows))]
-fn civil_from_days(days: i64) -> (i32, i32, i32) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = z - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let mp = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    let year = year + i64::from(month <= 2);
-    (
-        i32::try_from(year).unwrap_or(1970),
-        i32::try_from(month).unwrap_or(1),
-        i32::try_from(day).unwrap_or(1),
-    )
 }

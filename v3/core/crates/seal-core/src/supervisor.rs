@@ -40,15 +40,16 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use seal_domain::decision::StopReason;
+use seal_domain::decision::{Decision, StopReason};
 use seal_tools::arbiter::{Arbiter, GameRelease, GameUse, Refusal, RunHandle, Start, Stop};
 use seal_tools::clock::RealClock;
 use seal_tools::game::GamePort;
-use seal_tools::runner::{self, STOPPED_MESSAGE};
+use seal_tools::runner::{self, STOPPED_MESSAGE, Tool, ToolStatus};
 use seal_tools::tool::{ToolId, ToolPhase, ToolSnapshot};
 use serde_json::Value;
 
 use crate::events::{self, EventBus};
+use crate::logs::Logs;
 use crate::registry::{Session, ToolRegistry};
 
 /// v2's bounded wait for the pet feeder's reload (`LauncherService`'s 45 s).
@@ -139,13 +140,14 @@ impl Supervisor {
     /// fake in the tests; the bus is the single writer's bus in the binary and a test channel in the
     /// tests. The [`GamePort`] handed to every `create` is created here, over this supervisor's own
     /// command channel, so a worker's request is answered by the thread that owns the arbiter.
-    pub fn start(registry: Arc<dyn ToolRegistry>, bus: EventBus) -> Self {
+    pub fn start(registry: Arc<dyn ToolRegistry>, bus: EventBus, logs: Arc<Logs>) -> Self {
         let (incoming, receiver) = mpsc::channel();
         let worker_sender = incoming.clone();
         let port: Arc<dyn GamePort> = Arc::new(SupervisorPort {
             incoming: incoming.clone(),
         });
-        let join = thread::spawn(move || supervise(registry, bus, receiver, worker_sender, port));
+        let join =
+            thread::spawn(move || supervise(registry, bus, receiver, worker_sender, port, logs));
         Self {
             incoming,
             join: Some(join),
@@ -254,6 +256,7 @@ fn supervise(
     receiver: Receiver<Incoming>,
     worker_sender: Sender<Incoming>,
     port: Arc<dyn GamePort>,
+    logs: Arc<Logs>,
 ) {
     let mut arbiter = Arbiter::new();
     let mut workers: BTreeMap<ToolId, JoinHandle<()>> = BTreeMap::new();
@@ -271,10 +274,14 @@ fn supervise(
                         Start::Started(handle) => {
                             spawn_worker(
                                 handle,
-                                &registry,
-                                &worker_sender,
-                                &bus,
-                                &port,
+                                &Plumbing {
+                                    registry: &registry,
+                                    worker_sender: &worker_sender,
+                                    bus: &bus,
+                                    port: &port,
+                                    deferred: &deferred_args,
+                                    logs: &logs,
+                                },
                                 args,
                                 &mut workers,
                             );
@@ -331,6 +338,7 @@ fn supervise(
                                 bus: &bus,
                                 port: &port,
                                 deferred: &deferred_args,
+                                logs: &logs,
                             },
                             &mut pending_reply,
                         ),
@@ -351,6 +359,7 @@ fn supervise(
                                     bus: &bus,
                                     port: &port,
                                     deferred: &deferred_args,
+                                    logs: &logs,
                                 },
                             );
                         }
@@ -380,6 +389,7 @@ fn supervise(
                         bus: &bus,
                         port: &port,
                         deferred: &deferred_args,
+                        logs: &logs,
                     },
                 );
             }
@@ -406,6 +416,7 @@ fn supervise(
                     bus: &bus,
                     port: &port,
                     deferred: &deferred_args,
+                    logs: &logs,
                 },
                 &mut pending_reply,
             ),
@@ -489,15 +500,7 @@ fn handle_game_release(
                 .filter(|(tool, _)| *tool == handle.tool)
                 .map(|(_, args)| args)
                 .unwrap_or(Value::Null);
-            spawn_worker(
-                handle,
-                plumbing.registry,
-                plumbing.worker_sender,
-                plumbing.bus,
-                plumbing.port,
-                args,
-                workers,
-            );
+            spawn_worker(handle, plumbing, args, workers);
         }
     }
 }
@@ -518,6 +521,7 @@ struct Plumbing<'a> {
     port: &'a Arc<dyn GamePort>,
     /// The args of a start waiting behind the resident feeder, so its eventual worker gets them.
     deferred: &'a RefCell<Option<(ToolId, Value)>>,
+    logs: &'a Arc<Logs>,
 }
 
 fn handle_worker(
@@ -554,22 +558,20 @@ fn handle_worker(
 }
 fn spawn_worker(
     handle: RunHandle,
-    registry: &Arc<dyn ToolRegistry>,
-    worker_sender: &Sender<Incoming>,
-    bus: &EventBus,
-    port: &Arc<dyn GamePort>,
+    plumbing: &Plumbing<'_>,
     args: Value,
     workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
 ) {
     // The opening phase's snapshot: the card says Starting while the board/models are opened.
     if let Some(snapshot) = handle.state.read() {
-        bus.emit(events::state_event(&snapshot));
+        plumbing.bus.emit(events::state_event(&snapshot));
     }
-    let registry = Arc::clone(registry);
-    let sender = worker_sender.clone();
-    let port = Arc::clone(port);
+    let registry = Arc::clone(plumbing.registry);
+    let sender = plumbing.worker_sender.clone();
+    let port = Arc::clone(plumbing.port);
+    let logs = Arc::clone(plumbing.logs);
     let tool = handle.tool;
-    let join = thread::spawn(move || worker_loop(handle, registry, sender, port, args));
+    let join = thread::spawn(move || worker_loop(handle, registry, sender, port, args, logs));
     workers.insert(tool, join);
 }
 
@@ -580,11 +582,15 @@ fn worker_loop(
     supervisor: Sender<Incoming>,
     port: Arc<dyn GamePort>,
     args: Value,
+    logs: Arc<Logs>,
 ) {
     let tool = handle.tool;
     let session: Session = match registry.create(tool, port, &args) {
         Ok(session) => session,
         Err(line) => {
+            // An opening failure is a real failure (v2 put those in `error.log`, not among the
+            // player-correctable refusals), and the tool's own log has no run to describe yet.
+            logs.error_line(&format!("{tool} failed to start: {line}"));
             let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
                 tool,
                 reason: StopReason::error(line),
@@ -603,6 +609,9 @@ fn worker_loop(
         return;
     }
 
+    // The run begins here (the token was not cancelled during the opening phase). The tool log starts
+    // with the generic moment; the tool's own status words follow as they change.
+    logs.tool_started(tool);
     let running = Arc::new(ToolSnapshot::new(tool).running(ToolPhase::Running));
     handle.state.publish((*running).clone());
     let _ = supervisor.send(Incoming::Worker(WorkerEvent::Opened {
@@ -610,12 +619,51 @@ fn worker_loop(
         snapshot: running,
     }));
 
-    let mut session = session;
-    let reason = runner::run(
-        &mut *session.tool,
-        &handle,
-        &RealClock,
-        &mut *session.effects,
-    );
+    let Session {
+        tool: inner,
+        effects,
+    } = session;
+    let mut logged = LoggedTool::new(inner, Arc::clone(&logs));
+    let mut effects = effects;
+    let reason = runner::run(&mut logged, &handle, &RealClock, &mut *effects);
+    logs.tool_finished(tool, &reason);
     let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done { tool, reason }));
+}
+
+/// Wraps one session tool so the worker's `<tool>.log` gets the tool's OWN status words: one line per
+/// CHANGED message (the runner already deduplicates the published status, but a countdown/row change
+/// that leaves the message alone must not duplicate a log line).
+struct LoggedTool {
+    inner: Box<dyn Tool + Send>,
+    logs: Arc<Logs>,
+    last_message: RefCell<String>,
+}
+
+impl LoggedTool {
+    fn new(inner: Box<dyn Tool + Send>, logs: Arc<Logs>) -> Self {
+        Self {
+            inner,
+            logs,
+            last_message: RefCell::new(String::new()),
+        }
+    }
+}
+
+impl Tool for LoggedTool {
+    fn id(&self) -> ToolId {
+        self.inner.id()
+    }
+
+    fn decide(&mut self) -> Decision {
+        self.inner.decide()
+    }
+
+    fn status(&self) -> ToolStatus {
+        let status = self.inner.status();
+        if !status.message.is_empty() && status.message != *self.last_message.borrow() {
+            self.logs.tool_line(self.inner.id(), &status.message);
+            *self.last_message.borrow_mut() = status.message.clone();
+        }
+        status
+    }
 }

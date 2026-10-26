@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use seal_core::logs::Logs;
 use seal_core::registry::{Session, ToolRegistry, Unavailable};
 use seal_core::supervisor::{StartReply, StopReply, Supervisor};
 use seal_domain::decision::{Decision, Key, StopReason};
@@ -301,7 +302,7 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
         ],
     );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(
         supervisor.start_tool(ToolId::Tuner, &Value::Null),
@@ -338,7 +339,7 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
 fn a_stop_publishes_stopping_then_a_cancelled_finish() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(
         supervisor.start_tool(ToolId::Spammer, &Value::Null),
@@ -369,7 +370,7 @@ fn a_stop_publishes_stopping_then_a_cancelled_finish() {
 fn a_second_start_is_tool_busy_with_the_arbiters_line() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
     assert_eq!(
         supervisor.start_tool(ToolId::Spammer, &Value::Null),
         StartReply::Started
@@ -397,7 +398,7 @@ fn a_second_start_is_tool_busy_with_the_arbiters_line() {
 fn an_unavailable_tool_is_refused_by_name_without_a_run() {
     let registry = FakeRegistry::new().unavailable_for(ToolId::Tuner);
     let (bus, _events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     match supervisor.start_tool(ToolId::Tuner, &Value::Null) {
         StartReply::Unavailable { line } => {
@@ -414,7 +415,7 @@ fn an_unavailable_tool_is_refused_by_name_without_a_run() {
 fn stopping_when_nothing_runs_is_not_running() {
     let registry = FakeRegistry::new();
     let (bus, _events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(supervisor.stop_tool(None), StopReply::NotRunning);
     assert_eq!(
@@ -437,7 +438,7 @@ fn two_runs_in_sequence_release_the_slot() {
             vec![Decision::stop(StopReason::done("second"))],
         );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(
         supervisor.start_tool(ToolId::Tuner, &Value::Null),
@@ -464,7 +465,7 @@ fn an_opening_phase_failure_ends_as_an_error_event_and_releases_the_slot() {
             vec![Decision::stop(StopReason::done("after"))],
         );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(
         supervisor.start_tool(ToolId::Gem, &Value::Null),
@@ -505,7 +506,7 @@ fn a_start_cancelled_during_its_opening_ends_cancelled_and_leaks_nothing() {
         .with_script(ToolId::Spammer, vec![Decision::wait(30.0)])
         .gated_opening(started, gate);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
 
     assert_eq!(
         supervisor.start_tool(ToolId::Spammer, &Value::Null),
@@ -546,7 +547,7 @@ fn a_start_cancelled_during_its_opening_ends_cancelled_and_leaks_nothing() {
 fn shutdown_stops_a_running_tool_waits_for_it_and_emits_core_stopping() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
     assert_eq!(
         supervisor.start_tool(ToolId::Spammer, &Value::Null),
         StartReply::Started
@@ -591,7 +592,7 @@ fn the_finished_event_and_the_final_snapshot_agree() {
         vec![Decision::stop(StopReason::done("DONE — 20 loop(s)"))],
     );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
     assert_eq!(
         supervisor.start_tool(ToolId::Quest, &Value::Null),
         StartReply::Started
@@ -623,7 +624,7 @@ fn the_supervisor_can_see_the_worker_phases_from_its_own_events() {
         ],
     );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
     assert_eq!(
         supervisor.start_tool(ToolId::Sell, &Value::Null),
         StartReply::Started
@@ -654,7 +655,7 @@ fn a_worker_thread_is_really_a_thread() {
         ],
     );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(registry, bus);
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
     assert_eq!(
         supervisor.start_tool(ToolId::Tuner, &Value::Null),
         StartReply::Started
@@ -672,7 +673,7 @@ fn the_supervisor_is_joinable_and_drop_safe() {
     let registry = FakeRegistry::new();
     let (bus, _events) = seal_core::events::event_channel();
     {
-        let supervisor = Supervisor::start(registry, bus);
+        let supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
         let _ = supervisor;
         // Dropped without an explicit shutdown: the Drop path must stop the thread, not leak it.
     }
@@ -705,7 +706,11 @@ fn a_residents_request_waits_for_the_foreground_tool_and_is_granted_after_it_fin
         .with_script(ToolId::Tuner, vec![Decision::wait(30.0)])
         .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
 
     assert_eq!(
         supervisor.start_tool(ToolId::Tuner, &Value::Null),
@@ -769,7 +774,11 @@ fn a_blocked_resident_request_produces_zero_decisions() {
         .with_script(ToolId::Tuner, vec![Decision::wait(30.0)])
         .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
 
     assert_eq!(
         supervisor.start_tool(ToolId::Tuner, &Value::Null),
@@ -806,7 +815,11 @@ fn a_foreground_start_deferred_behind_the_resident_starts_when_the_resident_rele
         .with_release_gate(ToolId::Pet, gate)
         .with_script(ToolId::Tuner, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
 
     assert_eq!(
         supervisor.start_tool(ToolId::Pet, &Value::Null),
@@ -847,7 +860,11 @@ fn a_pet_request_preempts_the_spammer_and_is_granted_after_it_leaves() {
         .with_script(ToolId::Spammer, vec![Decision::wait(30.0)])
         .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
 
     assert_eq!(
         supervisor.start_tool(ToolId::Spammer, &Value::Null),
@@ -895,7 +912,11 @@ fn start_arguments_reach_create_verbatim() {
         vec![Decision::stop(StopReason::done("no arguments needed"))],
     );
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
     let args = serde_json::json!({"preset": "potion", "count": 7});
 
     assert_eq!(
@@ -919,7 +940,11 @@ fn a_create_refusal_surfaces_as_the_finished_error_not_a_start_reply() {
     // error. Pinning the existing mapping keeps the protocol honest about when the answer arrives.
     let registry = FakeRegistry::new().failing_to_open(ToolId::Buy, "No buy preset selected.");
     let (bus, events) = seal_core::events::event_channel();
-    let mut supervisor = Supervisor::start(Arc::clone(&registry) as Arc<dyn ToolRegistry>, bus);
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
     let args = serde_json::json!({});
 
     assert_eq!(
