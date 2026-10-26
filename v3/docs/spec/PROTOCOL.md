@@ -1,6 +1,6 @@
 # Protocol — v3 core ⇄ shell
 
-**Status: DRAFT v2, written 2026-10-25.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
+**Status: DRAFT v3, written 2026-10-25; tool.start run arguments added 2026-10-27.** The commands the core serves today are implemented (`hello`, `shutdown`, `config.validate`/`config.apply`/`config.reload`, `ui.window`, `tool.start`/`tool.stop`); the status paragraph in §4 names the spec-only commands that wait on the Windows and OCR crates. The step-1 spikes (DPI mapping, IME, hotkey location) can still change it.
 
 The design rationale is PLAN-V3-CORE §4. This file is the contract; both halves are written
 against it, and the golden fixtures in §10 are how they are kept in agreement.
@@ -108,7 +108,7 @@ edits; it never re-serialises the whole file (§7).
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
-| `tool.start` | `{"tool":"spammer"}` | `{}` |
+| `tool.start` | `{"tool":"spammer"}` or, for `buy`, `{"tool":"buy","preset":"大紅","count":3}` | `{}` |
 | `tool.stop` | `{"tool":"spammer"}` | `{}` |
 | `ocr.scan` | `{"frame_id":"f1","mode":"attributes"}` or `{"region":{...},"mode":"count"}` | `{"lines":[...],"attributes":[[...]],"grade":"G","remaining":null,"capture_path":"logs/captures/..."}` |
 | `shutdown` | `{}` | `{}` then the process exits |
@@ -132,6 +132,15 @@ Notes:
   so `local.yaml` keeps its v2 key names and no `height:` key is written.
 - `tool.start` on a second tool while one runs fails with `tool_busy`; `tool.stop` with no `tool`
   stops whatever is running. `holdspace` is a valid tool id (§9).
+- **`tool.start` carries optional per-run arguments, and only `buy` has any today**: `preset` (a
+  string, a key of `buy_sell.presets`) and `count` (an integer, at least 1). A buy start without
+  `preset` answers the domain's own `No buy preset selected.` line; without `count` it uses the
+  preset's configured `count`; `count` present and below 1 is `bad_request` rather than silently
+  clamped, because a clamp would buy a number the player did not ask for. Any `preset`/`count` on a
+  tool that does not take run arguments is `bad_request` naming the offending field — a shell bug
+  must not silently buy a different preset by passing the field to the wrong tool. This is ruling
+  §12.6: v2's Buy card picked the preset and count per run and had no config field for them, so the
+  RUN is where they belong (v2's own `ShopPlan::buy` takes `preset_name` + `count` from the run).
 - **`config.apply` may carry the portable half** as a `"settings": {...}` section alongside owned
   top-level blocks. The core computes the effective merged config (owned blocks replace, `settings`
   overlays field-wise — §7), runs the authoring rules on it, then resolves the variant, loads the
@@ -318,3 +327,16 @@ The two halves must not drift, so the protocol is tested from both sides:
    code, and refusing one would refuse a config v2 ran). The commands answer every parseable field
    plus one line per bad box rather than a bare refusal, because a four-box save with one typo must
    name that box.
+
+6. **`tool.start` gained optional run arguments for `buy` only** (`preset`, `count`), because Buy is
+   the one tool whose run parameters are genuinely per-run and v2 had no config field to persist
+   them: its card chose the item and count, `ShopPlan::buy` took both from the run, and `local.yaml`
+   has no `active`-style key for the buy block. The alternatives were worse: a `buy_sell.active`
+   field would persist a choice v2 never persisted and make the Buy card a config editor over a
+   setting no tool reads mid-run; a special `tool.start_buy` command would duplicate the start
+   lifecycle (busy/deferred/stopping) for one tool. The ruling therefore keeps the lifecycle in one
+   command and makes the run arguments explicit: `preset`/`count` on any other tool are a
+   `bad_request`, a buy start without `preset` is the domain's "No buy preset selected." line, and a
+   count below 1 is refused rather than clamped. This is a DRAFT-shape change (the spec was v2); the
+   golden fixtures are unchanged because they cover the envelope, not per-command argument
+   semantics, and the argument rules are covered by core tests on both sides of the seam.
