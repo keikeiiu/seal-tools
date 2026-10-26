@@ -394,3 +394,34 @@ The two halves must not drift, so the protocol is tested from both sides:
    `stacks`, crops and its other two marks, and row order is untouched. This is why the pet's crops,
    the food cells/queue and the sell-slot selection are NOT calibration kinds: they are Pet-tab/Sell-tab
    features whose home is a live-screen session, not a frame mark (OPEN).
+
+## 13. Replay mode (development)
+
+`seal-core --replay <script.json>` serves the SAME stdio protocol from a script instead of from the
+machine: no config file is loaded, no board opened, no window measured, no frame captured, no OCR
+model run. It is the plan §8's replay core — the basis for widget and golden tests and for
+developing the shell without the game. It is a development mode of the SAME binary and the SAME
+protocol; it adds no command, event or field, and a release build that never receives the flag
+behaves exactly as before.
+
+- **Script.** One JSON object: `{"protocol": 1, "turns": [<turn>, ...]}`. Each turn is
+  `{"expect": {"cmd": "hello"}, "response": <body>, "events": [<event>, ...], "delay_ms": 0}`, every
+  field but `response` optional. `expect` is a matcher on the incoming request (`cmd` required if
+  present; other keys compared shallowly against the request's `args`). `response` is a BODY —
+  `{"result": ...}` answers `ok`, `{"error": {"code": ..., "message": ..., "detail": ...}}` answers
+  that error, and an omitted/empty body answers `{"result": {}}`; the core supplies `v` and the
+  incoming request's `id`, so a script never invents an id. `events` are emitted verbatim, in order,
+  AFTER the response, which is how a script can drive a card through `state`/`tool.finished`/`log`
+  sequences. `delay_ms` (0..=10_000) delays before the response, so a demo can be watched.
+- **Matching.** One turn answers one request line, in order. If `expect` does not match, the core
+  answers that request with `internal` (the line names expected vs actual), emits
+  `core.stopping {"reason":"fatal"}`, writes the reason to stderr, and exits non-zero — a script that
+  drifts from the shell must fail loudly, never mislead.
+- **Lifecycle.** EOF ends the loop like a normal session (`core.stopping {"reason":"eof"}`, exit 0);
+  the script running out of turns while requests keep arriving is a drift, handled as above. A
+  missing/unreadable/malformed script exits non-zero with the reason on stderr and nothing on stdout
+  (the boot-refusal rule of §1).
+- **When both flags are present**, `--replay` wins and `--root` is ignored; the replay mode never
+  writes `local.yaml`, `logs/` or a calibration artifact. A committed example script lives in
+  `v3/protocol/replay/` and the core's e2e test drives the binary through it.
+
