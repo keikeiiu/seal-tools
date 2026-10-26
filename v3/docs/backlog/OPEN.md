@@ -34,9 +34,10 @@ The pure crate ends at the seam; these are the v2 behaviours it deliberately doe
   the binary must join the tool supervisor — the other bus holder — before finishing the writer;
   otherwise the process can hang on a sender that outlives the loop. Implemented: `main.rs` joins the
   supervisor before `writer.finish()`, covered by the shutdown e2e.
-- **Hotkey typed-name validation.** The Hotkeys tab parses typed names to VK codes and that rule
-  has no protocol path (the config carries codes; validating them would refuse configs v2 ran). A
-  `hotkey.parse`-style command is the natural shape. See PROTOCOL §11.5.
+- **Hotkey typed-name validation.** LANDED as `keys.parse`/`keys.names` (PROTOCOL §4/§12.5): the
+  domain's `parse_virtual_key`/`virtual_key_name` (v2's `ParseVk`/`VkName`) are now served, so the
+  Hotkeys tab can edit names while the config keeps codes — and `config.validate` still does not
+  refuse stored codes, because v2 ran configs carrying any code. What remains is the tab itself.
 - **`tool.start` reply shapes.** A deferred start answers `{}` and publishes the waiting line as a
   `log` (there is no run yet to attach a `state` to — a state event would report a registration
   that has not happened); a `tool_busy` refusal's detail is `{line, tool}`. Neither shape is in the

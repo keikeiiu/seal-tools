@@ -362,6 +362,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "window.measure" => window_measure(state, &request),
         "capture" => capture_command(state, &request),
         "ocr.scan" => ocr_scan(state, &request),
+        "keys.parse" => keys_parse(state, &request),
+        "keys.names" => keys_names(state, &request),
         "attributes.get" => attributes_get(state, &request),
         "calibration.save" => crate::calibration::save(state, &request),
         "calibration.fetch" => crate::calibration::fetch(state, &request),
@@ -747,6 +749,77 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
 
 /// `board.probe`: which port, which baud, which IDs, and the firmware level from `V` (silence = level
 /// 1). The board crate owns the choice and the open; this only maps its failure to the protocol.
+/// `keys.parse`: the Hotkeys tab's typed NAMES to the VK codes the config stores.
+///
+/// The rule itself is `seal_domain::authoring`'s `parse_virtual_key` (the ported `MainWindow.ParseVk`),
+/// not the shell's: v2 kept both directions inside the window and the plan's rule is that no widget
+/// keeps a rule. The answer carries the codes it could parse AND one line per box it could not, so a
+/// four-box save whose second box is wrong names that box instead of refusing the set anonymously.
+fn keys_parse(_state: &CoreState, request: &Request) -> Response {
+    let Some(names) = request.args.get("names").and_then(Value::as_object) else {
+        return bad_request(
+            &request.id,
+            "keys.parse needs names, an object of field to typed name",
+            json!({}),
+        );
+    };
+
+    let mut codes = Map::new();
+    let mut errors = Vec::new();
+    for (field, value) in names {
+        let Some(name) = value.as_str() else {
+            return bad_request(
+                &request.id,
+                "keys.parse needs every name to be text",
+                json!({"field": field}),
+            );
+        };
+        match seal_domain::authoring::parse_virtual_key(name) {
+            Ok(code) => {
+                codes.insert(field.clone(), json!(code));
+            }
+            Err(error) => errors.push(json!({
+                "field": field,
+                "input": error.input,
+                "line": error.message(),
+            })),
+        }
+    }
+
+    Response::ok(&request.id, json!({"codes": codes, "errors": errors}))
+}
+
+/// `keys.names`: the display names for the codes the config holds. The inverse rule to
+/// [`keys_parse`], from `seal_domain::authoring::virtual_key_name` (v2's `VkName`), including its hex
+/// fallback for a code no name covers -- a hand-edited config can carry one, and the tab must show
+/// it rather than pretend.
+fn keys_names(_state: &CoreState, request: &Request) -> Response {
+    let Some(codes) = request.args.get("codes").and_then(Value::as_object) else {
+        return bad_request(
+            &request.id,
+            "keys.names needs codes, an object of field to integer VK code",
+            json!({}),
+        );
+    };
+
+    let mut names = Map::new();
+    for (field, value) in codes {
+        let Some(code) = value.as_i64().and_then(|number| u32::try_from(number).ok()) else {
+            return bad_request(
+                &request.id,
+                "keys.names needs every code to be a non-negative integer",
+                json!({"field": field}),
+            );
+        };
+        names.insert(
+            field.clone(),
+            json!(seal_domain::authoring::virtual_key_name(code)),
+        );
+    }
+
+    Response::ok(&request.id, json!({"names": names}))
+}
+
 /// `attributes.get`: the loaded dictionary for the active client, for the Attributes surface.
 ///
 /// The whole dictionary is served because the tab shows it verbatim, it is small (a few KB), and

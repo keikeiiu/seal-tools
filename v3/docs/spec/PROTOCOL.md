@@ -102,6 +102,8 @@ edits; it never re-serialises the whole file (§7).
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
 | `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"kind":"focus_point","point":{...}}`; optional `display` writes the environment | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` |
 | `calibration.fetch` | `{"kind":"bag_grid"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` |
+| `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
+| `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
@@ -145,7 +147,8 @@ Notes:
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
-`board.test`, `attributes.get`, `calibration.save`/`calibration.fetch`, `ocr.scan`, `tool.start`,
+`board.test`, `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`,
+`ocr.scan`, `tool.start`,
 `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list is the current
 fact, and nothing in §4 is spec-only today.
 
@@ -308,3 +311,10 @@ The two halves must not drift, so the protocol is tested from both sides:
    before the write** — the authoring-rule seam already treated a payload's `settings` as an
    overlay, so this makes the implicit shape explicit rather than adding one; v2's switch order
    (resolve → validate → load → write) is the only one that cannot half-switch a variant.
+5. **`keys.parse`/`keys.names` exist because the config stores VK CODES while the Hotkeys tab
+   edits NAMES.** v2 kept both directions inside `MainWindow` (`ParseVk`/`VkName`); v3 puts them
+   behind the protocol so the typed-name rule stays in `seal-domain` (the same reason `config.validate`
+   deliberately does NOT validate stored codes — v2 accepted any code, `GetAsyncKeyState` takes any
+   code, and refusing one would refuse a config v2 ran). The commands answer every parseable field
+   plus one line per bad box rather than a bare refusal, because a four-box save with one typo must
+   name that box.

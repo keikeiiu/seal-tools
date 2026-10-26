@@ -29,6 +29,107 @@ fn hello_answers_with_the_handshake_data() {
 }
 
 #[test]
+fn keys_parse_answers_every_code_and_names_every_bad_box() {
+    let mut state = state();
+    handle(&mut state, hello());
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "5",
+            "keys.parse",
+            json!({"names": {
+                "start": "F12",
+                "quit": "Escape",
+                "advance_grade": "g",
+                "pause": "Zulu",
+            }}),
+        ),
+    );
+
+    assert!(response.ok, "parse: {:?}", response.error);
+    let result = response.result.expect("a result");
+    assert_eq!(result["codes"]["start"], 123, "F12 is 0x7B");
+    assert_eq!(result["codes"]["quit"], 27, "Escape is 0x1B");
+    assert_eq!(
+        result["codes"]["advance_grade"], 71,
+        "a letter upper-cases to its code"
+    );
+    assert!(
+        result["codes"].get("pause").is_none(),
+        "the bad box carries no code"
+    );
+    let errors = result["errors"].as_array().expect("errors is an array");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["field"], "pause");
+    assert_eq!(
+        errors[0]["input"], "Zulu",
+        "the message quotes what the player typed"
+    );
+    assert!(
+        errors[0]["line"]
+            .as_str()
+            .expect("a line")
+            .contains("\"Zulu\" is not a key"),
+        "the domain's line travels verbatim: {:?}",
+        errors[0]["line"]
+    );
+}
+
+#[test]
+fn keys_names_round_trips_a_parsed_code_and_shows_the_hex_fallback() {
+    let mut state = state();
+    handle(&mut state, hello());
+
+    let parsed = handle(
+        &mut state,
+        Request::new("5", "keys.parse", json!({"names": {"start": "F05"}})),
+    );
+    let code = parsed.result.expect("a result")["codes"]["start"].clone();
+    assert_eq!(code, 116, "F05 is F5, which is 0x74");
+
+    let named = handle(
+        &mut state,
+        Request::new(
+            "6",
+            "keys.names",
+            json!({"codes": {"start": code, "pause": 5}}),
+        ),
+    );
+
+    assert!(named.ok, "names: {:?}", named.error);
+    let result = named.result.expect("a result");
+    assert_eq!(
+        result["names"]["start"], "F5",
+        "the typed name comes back canonical"
+    );
+    assert_eq!(
+        result["names"]["pause"], "0x5",
+        "a code with no name shows its hex, as v2's VkName did"
+    );
+}
+
+#[test]
+fn keys_commands_refuse_unshaped_arguments() {
+    let mut state = state();
+    handle(&mut state, hello());
+
+    let parse = handle(
+        &mut state,
+        Request::new("5", "keys.parse", json!({"names": "F12"})),
+    );
+    assert!(!parse.ok);
+    assert_eq!(parse.error.expect("an error").code, "bad_request");
+
+    let names = handle(
+        &mut state,
+        Request::new("6", "keys.names", json!({"codes": {"start": "F12"}})),
+    );
+    assert!(!names.ok);
+    assert_eq!(names.error.expect("an error").code, "bad_request");
+}
+
+#[test]
 fn attributes_get_serves_the_loaded_dictionary_with_its_variant() {
     let mut state = state();
     handle(&mut state, hello());
