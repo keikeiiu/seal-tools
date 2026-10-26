@@ -83,6 +83,7 @@ protocol; shell state/decision → app; rendering/geometry → Flutter**.
 
 ## Running during development
 
-`flutter run -d windows` starts the app; `main.dart` spawns `seal-core.exe` (release: beside the shell;
-development: `v3/core/target/debug`, root `<repo>/v3`) with `--root`. `SEAL_CORE` / `SEAL_CORE_ROOT`
-dart-defines override the path and root (PLAN-V3-SHELL §8).
+The release binary is **`SealTools.exe`** (`windows/CMakeLists.txt`'s `BINARY_NAME`, CUTOVER.md
+decision 2); development is unchanged. `flutter run -d windows` starts the app; `main.dart` spawns
+`seal-core.exe` (release: beside the shell; development: `v3/core/target/debug`, root `<repo>/v3`) with
+`--root`. `SEAL_CORE` / `SEAL_CORE_ROOT` dart-defines override the path and root (PLAN-V3-SHELL §8).

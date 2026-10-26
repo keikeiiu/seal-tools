@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "tools.seal" "\0"
-            VALUE "FileDescription", "seal_shell" "\0"
+            VALUE "FileDescription", "Seal Tools v3" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "seal_shell" "\0"
+            VALUE "InternalName", "SealTools" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 tools.seal. All rights reserved." "\0"
-            VALUE "OriginalFilename", "seal_shell.exe" "\0"
-            VALUE "ProductName", "seal_shell" "\0"
+            VALUE "OriginalFilename", "SealTools.exe" "\0"
+            VALUE "ProductName", "Seal Tools v3" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

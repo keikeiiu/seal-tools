@@ -1,10 +1,11 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(seal_shell LANGUAGES CXX)
+project(SealTools LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "seal_shell")
+# the on-disk name of your application. The release artifact is `SealTools.exe`
+# (CUTOVER.md decision 2); the Dart package name stays `seal_shell`.
+set(BINARY_NAME "SealTools")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -65,6 +66,13 @@ include(flutter/generated_plugins.cmake)
 set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
 # Make the "install" step default, as it's required to run.
 set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
+# A renamed binary leaves the OLD target name in the cached install prefix (the prefix is a
+# generator expression holding the target it was configured with), which CMake cannot evaluate
+# once that target no longer exists. Re-anchor such a prefix to the current bundle dir so a
+# pre-existing build directory survives a BINARY_NAME change instead of failing to regenerate.
+if(CMAKE_INSTALL_PREFIX MATCHES "TARGET_FILE_DIR:")
+  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
+endif()
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
 endif()
