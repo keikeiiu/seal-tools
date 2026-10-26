@@ -206,8 +206,22 @@ class ShellModel extends ChangeNotifier {
   /// `tool.start {tool}` ([PROTOCOL.md] §4). Returns false when the command was refused; the core's
   /// own line is then on the card ([PROTOCOL.md] §6). The card's phase still changes only when the
   /// core publishes `state`.
-  Future<bool> startTool(ToolId tool) =>
-      _toolCommand(tool, (client) => client.toolStart(tool));
+  /// `tool.start {tool}`. [runArgs] are the optional per-run arguments PROTOCOL §12.6 defines; today
+  /// only `buy` accepts them (`preset`, `count`). When omitted the typed client call is used unchanged.
+  Future<bool> startTool(ToolId tool, {JsonMap? runArgs}) {
+    if (runArgs == null) {
+      return _toolCommand(tool, (client) => client.toolStart(tool));
+    }
+    return _toolCommand(tool, (client) async {
+      final response = await client.request('tool.start', {
+        'tool': tool.wire,
+        ...runArgs,
+      });
+      if (response is ErrorResponse) {
+        throw CoreCommandException(response.error);
+      }
+    });
+  }
 
   /// `tool.stop {tool}`, or none to stop whatever runs ([PROTOCOL.md] §4).
   Future<bool> stopTool([ToolId? tool]) =>

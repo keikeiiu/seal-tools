@@ -63,51 +63,170 @@ Future<void> _flush(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'the Buy card shows config presets and count, and writes nothing',
+    'the Buy card defaults to the first config preset and its count',
     (tester) async {
       final harness = await _pumpCards(
         tester,
         _config(
           buySell: {
             'presets': {
+              'Potion': {'scroll': 0, 'row': 2, 'count': 2},
               'Herb': {'scroll': 0, 'row': 1, 'count': 3},
-              'Potion': {'scroll': 0, 'row': 2, 'count': 5},
             },
             'sell_cap': 10,
           },
         ),
       );
 
-      // Sorted preset names: Herb is the display default.
-      expect(find.byKey(const ValueKey('buy-card-preset')), findsOneWidget);
-      expect(find.text('count 3'), findsOneWidget);
+      // CONFIG order, not sorted: Potion is first.
+      expect(find.text('Potion'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('buy-card-count-value')))
+            .data,
+        '2',
+      );
+      expect(find.byKey(const ValueKey('buy-card-note')), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('buy-card-preset')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('buy-card-item-Potion')));
-      await tester.pumpAndSettle();
-      expect(find.text('count 5'), findsOneWidget);
-
-      // Display-only: changing the picker is not a config save and not a run argument.
+      // Nothing is sent on mount, and the choice was never a config write.
+      expect(harness.lastSentWithCmd('tool.start'), isNull);
       expect(harness.lastSentWithCmd('config.validate'), isNull);
       expect(harness.lastSentWithCmd('config.apply'), isNull);
-      expect(
-        harness.lastSentWithCmd('tool.start'),
-        isNull,
-        reason: 'the card never starts a tool by itself',
-      );
-
-      await tester.tap(find.byKey(const ValueKey('start-buy')));
-      await _flush(tester);
-      expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'buy'});
-
-      // Answer the request: an unanswered command leaves the client's 10 s timeout timer pending.
-      harness.respondOk(<String, dynamic>{});
-      await _flush(tester);
       await _unmount(tester);
     },
   );
 
+  testWidgets('Start sends the selected buy preset and count exactly', (
+    tester,
+  ) async {
+    final harness = await _pumpCards(
+      tester,
+      _config(
+        buySell: {
+          'presets': {
+            'Potion': {'scroll': 0, 'row': 2, 'count': 2},
+            'Herb': {'scroll': 0, 'row': 1, 'count': 3},
+          },
+          'sell_cap': 10,
+        },
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('start-buy')));
+    await _flush(tester);
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'buy',
+      'preset': 'Potion',
+      'count': 2,
+    });
+    harness.respondOk(<String, dynamic>{});
+    await _flush(tester);
+    expect(harness.lastSentWithCmd('config.validate'), isNull);
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('changing the preset resets the count to its configured value', (
+    tester,
+  ) async {
+    final harness = await _pumpCards(
+      tester,
+      _config(
+        buySell: {
+          'presets': {
+            'Potion': {'scroll': 0, 'row': 2, 'count': 2},
+            'Herb': {'scroll': 0, 'row': 1, 'count': 3},
+          },
+          'sell_cap': 10,
+        },
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('buy-card-preset')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('buy-card-item-Herb')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('buy-card-count-value')))
+          .data,
+      '3',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('start-buy')));
+    await _flush(tester);
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'buy',
+      'preset': 'Herb',
+      'count': 3,
+    });
+    harness.respondOk(<String, dynamic>{});
+    await _flush(tester);
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('the stepper changes only the count, never the preset', (
+    tester,
+  ) async {
+    final harness = await _pumpCards(
+      tester,
+      _config(
+        buySell: {
+          'presets': {
+            'Potion': {'scroll': 0, 'row': 2, 'count': 2},
+          },
+        },
+      ),
+    );
+
+    // A pump between taps: each tap rebuilds the card from the new count, so two taps in one frame
+    // would both read the pre-tap value (a test artefact, not a UI defect).
+    await tester.tap(find.byKey(const ValueKey('buy-card-count-plus')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('buy-card-count-plus')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('buy-card-count-value')))
+          .data,
+      '4',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('start-buy')));
+    await _flush(tester);
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'buy',
+      'preset': 'Potion',
+      'count': 4,
+    });
+    harness.respondOk(<String, dynamic>{});
+    await _flush(tester);
+    await _unmount(tester);
+  });
+
+  testWidgets(
+    'no presets: plain Start and the core refusal line renders verbatim',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(buySell: {'presets': <String, dynamic>{}}),
+      );
+
+      expect(find.text('No buy presets configured'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('start-buy')));
+      await _flush(tester);
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'buy'});
+      harness.respondError('bad_request', message: 'No buy preset selected.');
+      await _flush(tester);
+
+      expect(find.text('No buy preset selected.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('refusal-buy')), findsOneWidget);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      await _unmount(tester);
+    },
+  );
   testWidgets(
     'Quest flow and sequence pickers save exactly the changed field',
     (tester) async {

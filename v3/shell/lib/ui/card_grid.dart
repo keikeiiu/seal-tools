@@ -41,6 +41,13 @@ class _CardGridState extends State<CardGrid> {
   /// The snapshot object each tool's elapsed count was started from; identity change = new event.
   final Map<ToolId, ToolSnapshot?> _snapshots = {};
 
+  /// The Buy card's RUN choice (PROTOCOL §12.6): the preset the player picked and how many the run
+  /// asks for. `null` means "not chosen yet" — resolution then falls back to the first preset in
+  /// config order and that preset's own configured count, so the card and the Start button cannot
+  /// disagree. Nothing here is persisted; the core receives it in `tool.start` args.
+  String? _buyPreset;
+  int? _buyCount;
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +66,48 @@ class _CardGridState extends State<CardGrid> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  // ── Buy card run choice (PROTOCOL §12.6) ─────────────────────────────────────────────────────
+
+  Map<String, dynamic> get _buyPresets =>
+      asJsonMap(asJsonMap(widget.model.config.config['buy_sell'])['presets']);
+
+  /// First preset in CONFIG order is the default selection.
+  String? get _resolvedBuyPreset {
+    final names = _buyPresets.keys.toList();
+    if (names.isEmpty) {
+      return null;
+    }
+    final selected = _buyPreset;
+    return selected != null && names.contains(selected)
+        ? selected
+        : names.first;
+  }
+
+  int _configuredBuyCount(String? preset) {
+    final count =
+        asNumber(asJsonMap(_buyPresets[preset])['count'])?.round() ?? 1;
+    return count < 1 ? 1 : count;
+  }
+
+  int get _resolvedBuyCount {
+    final chosen = _buyCount;
+    if (chosen == null) {
+      return _configuredBuyCount(_resolvedBuyPreset);
+    }
+    return chosen < 1 ? 1 : chosen;
+  }
+
+  void _onBuyPresetChanged(String? preset) {
+    setState(() {
+      _buyPreset = preset;
+      _buyCount = _configuredBuyCount(preset);
+    });
+  }
+
+  void _onBuyCountChanged(int count) {
+    setState(() => _buyCount = count < 1 ? 1 : count);
   }
 
   void _adoptSnapshots() {
@@ -97,6 +146,22 @@ class _CardGridState extends State<CardGrid> {
     }
   }
 
+  /// Start one card. `buy` carries its run choice as the optional §12.6 arguments; every other card
+  /// sends the plain command. Nothing is persisted either way.
+  Future<bool> _startTool(ToolId tool) {
+    if (tool != ToolId.buy) {
+      return widget.model.startTool(tool);
+    }
+    final preset = _resolvedBuyPreset;
+    if (preset == null) {
+      return widget.model.startTool(tool);
+    }
+    return widget.model.startTool(
+      tool,
+      runArgs: {'preset': preset, 'count': _resolvedBuyCount},
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
@@ -119,7 +184,13 @@ class _CardGridState extends State<CardGrid> {
           ready: widget.model.isReady,
           elapsedTicks: _elapsed[tool] ?? 0,
           extras: switch (tool) {
-            ToolId.buy => BuyCardExtras(model: widget.model),
+            ToolId.buy => BuyCardExtras(
+              presets: _buyPresets,
+              preset: _resolvedBuyPreset,
+              count: _resolvedBuyCount,
+              onPresetChanged: _onBuyPresetChanged,
+              onCountChanged: _onBuyCountChanged,
+            ),
             ToolId.quest => QuestCardExtras(model: widget.model),
             _ => null,
           },
@@ -129,7 +200,7 @@ class _CardGridState extends State<CardGrid> {
                   widget.model.tools.refusal(ToolId.holdspace),
                 )
               : null,
-          onStart: () => unawaited(widget.model.startTool(tool)),
+          onStart: () => unawaited(_startTool(tool)),
           onStop: () => unawaited(widget.model.stopTool(tool)),
         );
       },

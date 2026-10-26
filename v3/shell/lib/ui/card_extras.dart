@@ -2,10 +2,12 @@
 /// in a tab. Nothing here owns a rule: names and values come from the merged config, and a persisted
 /// change is a normal `config.validate`/`apply` through the model.
 ///
-/// Buy card — the picker and count are DISPLAY-ONLY. The `buy_sell` block has no `active`-style field
-/// (`LocalBuySell` carries presets/geometry only) and `tool.start` carries no run arguments, so the
-/// run always uses the configured presets; the card renders the config's items and their per-preset
-/// count and says so. That is the reported protocol gap, not a shell decision.
+/// Buy card — the picker and stepper choose the item and amount FOR THIS RUN (PROTOCOL §12.6:
+/// `tool.start {"tool":"buy","preset":<name>,"count":N}`). Nothing is persisted: no `config.apply`
+/// is ever sent for it. The selected preset defaults to the first in config order with that preset's
+/// configured count; changing the preset resets the count. With no presets configured the Start is
+/// plain `{"tool":"buy"}` and the core's "No buy preset selected." refusal renders under the card
+/// through the card's refusal line.
 ///
 /// Quest card — `quest.active` / `quest.active_sequence` ARE config fields, so a picker change is
 /// saved here as exactly `{quest: {active|active_sequence}}` (field-wise merge), only when the player
@@ -46,32 +48,34 @@ Widget _cardDropdown({
   ),
 );
 
-/// The Buy card's display-only preset picker and per-run count.
-class BuyCardExtras extends StatefulWidget {
-  const BuyCardExtras({super.key, required this.model});
+/// The Buy card's run-choice picker and count stepper (controlled by `CardGrid`, which owns the
+/// selection so the Start button and the extras cannot disagree).
+class BuyCardExtras extends StatelessWidget {
+  const BuyCardExtras({
+    super.key,
+    required this.presets,
+    required this.preset,
+    required this.count,
+    required this.onPresetChanged,
+    required this.onCountChanged,
+  });
 
-  final ShellModel model;
+  /// The config's `buy_sell.presets`, in config order.
+  final Map<String, dynamic> presets;
 
-  @override
-  State<BuyCardExtras> createState() => _BuyCardExtrasState();
-}
+  /// The selected preset, or null when no preset is configured.
+  final String? preset;
 
-class _BuyCardExtrasState extends State<BuyCardExtras> {
-  String? _selected;
+  /// The run count (>= 1); the controller clamps it.
+  final int count;
 
-  Map<String, dynamic> get _presets =>
-      asJsonMap(asJsonMap(widget.model.config.config['buy_sell'])['presets']);
-
-  List<String> get _names => _presets.keys.toList()..sort();
+  final ValueChanged<String?> onPresetChanged;
+  final ValueChanged<int> onCountChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final names = _names;
-    final selected = _selected != null && names.contains(_selected)
-        ? _selected
-        : (names.isEmpty ? null : names.first);
-    final count = asNumber(asJsonMap(_presets[selected])['count']) ?? 1;
+    final names = presets.keys.toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -80,7 +84,7 @@ class _BuyCardExtrasState extends State<BuyCardExtras> {
           child: _cardDropdown(
             key: const ValueKey('buy-card-preset'),
             label: 'Buy item',
-            value: selected,
+            value: preset,
             items: [
               for (final name in names)
                 DropdownMenuItem(
@@ -89,17 +93,42 @@ class _BuyCardExtrasState extends State<BuyCardExtras> {
                   child: Text(name),
                 ),
             ],
-            onChanged: (value) => setState(() => _selected = value),
+            onChanged: names.isEmpty ? null : onPresetChanged,
           ),
         ),
         const SizedBox(height: 2),
+        if (names.isEmpty)
+          Text(
+            'No buy presets configured',
+            key: const ValueKey('buy-card-count'),
+            style: theme.textTheme.bodySmall,
+          )
+        else
+          Row(
+            children: [
+              IconButton(
+                key: const ValueKey('buy-card-count-minus'),
+                tooltip: 'One less',
+                visualDensity: VisualDensity.compact,
+                onPressed: count <= 1 ? null : () => onCountChanged(count - 1),
+                icon: const Icon(Icons.remove, size: 16),
+              ),
+              Text(
+                '$count',
+                key: const ValueKey('buy-card-count-value'),
+                style: theme.textTheme.bodySmall,
+              ),
+              IconButton(
+                key: const ValueKey('buy-card-count-plus'),
+                tooltip: 'One more',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => onCountChanged(count + 1),
+                icon: const Icon(Icons.add, size: 16),
+              ),
+            ],
+          ),
         Text(
-          names.isEmpty ? 'No buy presets configured' : 'count $count',
-          key: const ValueKey('buy-card-count'),
-          style: theme.textTheme.bodySmall,
-        ),
-        Text(
-          'Display only — the run uses the config presets',
+          'Runs the selected item this many times — not saved to the config',
           key: const ValueKey('buy-card-note'),
           softWrap: true,
           style: theme.textTheme.labelSmall?.copyWith(
