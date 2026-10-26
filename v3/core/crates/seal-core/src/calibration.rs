@@ -67,9 +67,15 @@ pub const KINDS: &[KindDef] = &[
         artifact: None,
     },
     KindDef {
-        name: "focus_point",
+        name: "scroll_point",
         shape: Shape::Point,
-        path: &["buy_sell", "focus_point"],
+        path: &["buy_sell", "scroll_point"],
+        artifact: None,
+    },
+    KindDef {
+        name: "max_button",
+        shape: Shape::Point,
+        path: &["buy_sell", "max_button"],
         artifact: None,
     },
     KindDef {
@@ -79,18 +85,31 @@ pub const KINDS: &[KindDef] = &[
         artifact: Some("calib_gem_result.png"),
     },
     KindDef {
-        name: "tuner_region",
-        shape: Shape::Rect,
-        path: &["tuner", "ocr", "region"],
-        artifact: None,
-    },
-    KindDef {
         name: "spring_point",
         shape: Shape::Point,
         path: &["tuner", "spring_point"],
         artifact: None,
     },
 ];
+
+/// Kinds this build refuses BY NAME instead of accepting them. `focus_point` is the audit's wrong path
+/// (nothing reads `buy_sell.focus_point`; the live shop reads `scroll_point`), and `tuner_region` is
+/// withdrawn until v2's three-box derivation exists — a single rect wrote a shape the loader could
+/// not parse. The reason travels in the refusal so the player is not left guessing.
+fn withdrawn_line(name: &str) -> Option<&'static str> {
+    match name {
+        "focus_point" => Some(
+            "calibration kind \"focus_point\" was replaced by \"scroll_point\" — save scroll_point \
+             instead; buy_sell.focus_point is read by nothing.",
+        ),
+        "tuner_region" => Some(
+            "calibration kind \"tuner_region\" was withdrawn: v2 derived the OCR region from three \
+             dragged boxes and that three-box session is not built yet, so a single rect cannot \
+             become a usable tuner.ocr region — hand-edit the tuner OCR geometry until it is.",
+        ),
+        _ => None,
+    }
+}
 
 /// The kind whose pitch the bag-slot measurement must agree with.
 const BAG_GRID: &str = "bag_grid";
@@ -204,6 +223,13 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
             json!({"kinds": supported()}),
         );
     };
+    if let Some(line) = withdrawn_line(kind_name) {
+        return fail(
+            &request.id,
+            line,
+            json!({"kind": kind_name, "kinds": supported()}),
+        );
+    }
     let Some(def) = kind(kind_name) else {
         return fail(
             &request.id,
@@ -434,6 +460,13 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
             json!({"kinds": supported()}),
         );
     };
+    if let Some(line) = withdrawn_line(kind_name) {
+        return fail(
+            &request.id,
+            line,
+            json!({"kind": kind_name, "kinds": supported()}),
+        );
+    }
     let Some(def) = kind(kind_name) else {
         return fail(
             &request.id,

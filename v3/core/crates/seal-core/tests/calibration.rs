@@ -89,8 +89,8 @@ fn a_rect_mark_is_written_to_local_yaml_and_answers_its_derived_pitch() {
 }
 
 #[test]
-fn a_point_mark_is_stored_as_a_pair() {
-    let (_dir, mut state, frame_id) = harness(800, 600);
+fn a_point_mark_is_stored_as_a_pair_at_the_path_the_shop_reads() {
+    let (dir, mut state, frame_id) = harness(800, 600);
 
     let response = handle(
         &mut state,
@@ -99,7 +99,7 @@ fn a_point_mark_is_stored_as_a_pair() {
             "calibration.save",
             json!({
                 "frame_id": frame_id,
-                "kind": "focus_point",
+                "kind": "scroll_point",
                 "point": {"x": 100, "y": 200},
             }),
         ),
@@ -107,8 +107,25 @@ fn a_point_mark_is_stored_as_a_pair() {
 
     assert!(response.ok, "save: {:?}", response.error);
     let result = response.result.expect("save carries a result");
+    assert_eq!(result["kind"], "scroll_point");
     assert_eq!(result["mark"], json!([100, 200]));
     assert_eq!(result["derived"], json!({}));
+
+    let local = dir.read("config/local.yaml");
+    assert!(
+        local.contains("scroll_point"),
+        "the kind writes the path the live shop reads: {local}"
+    );
+    assert!(
+        !local.contains("focus_point"),
+        "the old dead field is gone: {local}"
+    );
+    let settings = seal_core::shop::settings(&state.config);
+    assert_eq!(
+        settings.scroll_point,
+        Some(vec![100, 200]),
+        "the shop settings resolve the saved scroll point"
+    );
 }
 
 #[test]
@@ -196,6 +213,182 @@ fn a_bag_slot_that_disagrees_with_the_grid_is_refused_and_not_written() {
         "a refused save writes nothing: {local}"
     );
     assert_eq!(state.rev, 1, "a refused save consumes no rev");
+}
+
+#[test]
+fn a_focus_point_request_is_refused_by_its_replacement_name() {
+    let (dir, mut state, frame_id) = harness(800, 600);
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "focus_point",
+                "point": {"x": 100, "y": 200},
+            }),
+        ),
+    );
+
+    assert!(!response.ok, "focus_point must not be accepted silently");
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(error.message.contains("scroll_point"), "{}", error.message);
+    assert!(error.message.contains("focus_point"), "{}", error.message);
+    assert_eq!(error.detail["kind"], "focus_point");
+    let kinds = error.detail["kinds"].as_array().expect("the list travels");
+    assert!(kinds.iter().any(|kind| kind == "scroll_point"));
+    assert!(!kinds.iter().any(|kind| kind == "focus_point"));
+    assert_eq!(state.rev, 0, "a refused save consumes no rev");
+    assert!(
+        !std::fs::read_to_string(dir.path().join("config/local.yaml"))
+            .unwrap_or_default()
+            .contains("focus_point"),
+        "a refused save writes nothing"
+    );
+
+    let fetched = handle(
+        &mut state,
+        Request::new("3", "calibration.fetch", json!({"kind": "focus_point"})),
+    );
+    assert!(!fetched.ok, "fetch refuses it too");
+    assert!(
+        fetched
+            .error
+            .expect("a refusal")
+            .message
+            .contains("scroll_point"),
+        "fetch names the replacement as well"
+    );
+}
+
+#[test]
+fn max_button_round_trips_and_uses_the_point_validation() {
+    let (dir, mut state, frame_id) = harness(800, 600);
+
+    let saved = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "max_button",
+                "point": {"x": 700, "y": 500},
+            }),
+        ),
+    );
+    assert!(saved.ok, "save: {:?}", saved.error);
+    let result = saved.result.expect("save carries a result");
+    assert_eq!(result["kind"], "max_button");
+    assert_eq!(result["mark"], json!([700, 500]));
+    let local = dir.read("config/local.yaml");
+    assert!(local.contains("max_button"), "{local}");
+    let settings = seal_core::shop::settings(&state.config);
+    assert_eq!(settings.max_button, Some(vec![700, 500]));
+
+    let fetched = handle(
+        &mut state,
+        Request::new("3", "calibration.fetch", json!({"kind": "max_button"})),
+    );
+    assert!(fetched.ok, "fetch: {:?}", fetched.error);
+    let result = fetched.result.expect("fetch carries a result");
+    assert_eq!(result["mark"], json!([700, 500]));
+    assert_eq!(result["artifact"], Value::Null);
+
+    // The same point validation the other point kinds use: a non-integer coordinate...
+    let bad = handle(
+        &mut state,
+        Request::new(
+            "4",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "max_button",
+                "point": {"x": "700", "y": 500},
+            }),
+        ),
+    );
+    assert!(!bad.ok);
+    assert!(
+        bad.error.expect("a refusal").message.contains("integer"),
+        "the shared point message"
+    );
+
+    // ...and a point outside the captured frame.
+    let outside = handle(
+        &mut state,
+        Request::new(
+            "5",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "max_button",
+                "point": {"x": 801, "y": 500},
+            }),
+        ),
+    );
+    assert!(!outside.ok);
+    assert!(
+        outside
+            .error
+            .expect("a refusal")
+            .message
+            .contains("does not fit"),
+        "the shared frame check"
+    );
+}
+
+#[test]
+fn tuner_region_is_refused_with_its_withdrawal_reason() {
+    let (dir, mut state, frame_id) = harness(800, 600);
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "tuner_region",
+                "region": {"x": 0, "y": 0, "w": 100, "h": 100},
+            }),
+        ),
+    );
+
+    assert!(
+        !response.ok,
+        "a single rect must not claim to be a tuner region"
+    );
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(error.message.contains("withdrawn"), "{}", error.message);
+    assert!(error.message.contains("three-box"), "{}", error.message);
+    assert!(error.message.contains("hand-edit"), "{}", error.message);
+    assert_eq!(error.detail["kind"], "tuner_region");
+    assert!(
+        !std::fs::read_to_string(dir.path().join("config/local.yaml"))
+            .unwrap_or_default()
+            .contains("tuner_region"),
+        "a refused save writes nothing"
+    );
+    assert_eq!(state.rev, 0, "a refused save consumes no rev");
+
+    let fetched = handle(
+        &mut state,
+        Request::new("3", "calibration.fetch", json!({"kind": "tuner_region"})),
+    );
+    assert!(!fetched.ok);
+    assert!(
+        fetched
+            .error
+            .expect("a refusal")
+            .message
+            .contains("withdrawn"),
+        "fetch names the reason too"
+    );
 }
 
 #[test]
