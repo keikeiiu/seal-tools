@@ -22,6 +22,7 @@
 
 use base64::Engine as _;
 use seal_domain::geometry::Rect;
+use seal_domain::tools::gem::analyze_composition;
 use seal_proto::{Error, Request, Response};
 use serde_json::{Map, Value, json};
 
@@ -161,6 +162,41 @@ fn rect_argument(args: &Value) -> Result<Rect, String> {
     Ok(rect)
 }
 
+/// `result_gem_area`'s empty verdict: REQUIRED for that kind (the crop is the strong empty reference,
+/// so the player must say whether the box was empty), meaningless for every other kind.
+fn empty_argument(def: &KindDef, args: &Value) -> Result<Option<bool>, String> {
+    let Some(value) = args.get("empty") else {
+        if def.name == "result_gem_area" {
+            return Err(
+                "calibration.save for result_gem_area needs \"empty\": is the result box empty \
+                 (true) or holding a gem (false)?"
+                    .to_owned(),
+            );
+        }
+        return Ok(None);
+    };
+    if def.name != "result_gem_area" {
+        return Err(format!(
+            "calibration.save's \"empty\" is only accepted by result_gem_area, not {}",
+            def.name
+        ));
+    }
+    value
+        .as_bool()
+        .map(Some)
+        .ok_or_else(|| "calibration.save's \"empty\" must be true or false".to_owned())
+}
+
+/// `gem.colored_gap_min` (0-255): the channel gap above which a pixel counts as distinctly coloured.
+/// Same default as the gem plan (`gem.rs`), so calibration samples exactly what the run measures.
+fn colored_gap_min(config: &Value) -> i32 {
+    config
+        .pointer("/gem/colored_gap_min")
+        .and_then(Value::as_i64)
+        .and_then(|number| i32::try_from(number).ok())
+        .unwrap_or(40)
+}
+
 fn point_argument(args: &Value) -> Result<(i32, i32), String> {
     let point = args
         .get("point")
@@ -236,6 +272,10 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
             format!("unknown calibration kind {kind_name:?}"),
             json!({"kinds": supported()}),
         );
+    };
+    let empty = match empty_argument(def, args) {
+        Ok(empty) => empty,
+        Err(message) => return fail(&request.id, message, json!({"kind": kind_name})),
     };
     let Some(frame_id) = args.get("frame_id").and_then(Value::as_str) else {
         return fail(
@@ -316,9 +356,12 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         }
     }
 
-    // The artifact is cropped BEFORE the first byte is written, so a decode/crop failure refuses the
-    // whole save rather than leaving a mark whose reference picture is missing.
+    // The crop is produced BEFORE the first byte is written, so a decode/crop failure refuses the
+    // whole save rather than leaving a mark whose reference picture is missing. `result_gem_area`
+    // always samples the six-feature colour signature here too: that is the weaker empty reference
+    // used when the crop is absent (`empty:false`), and it must come from the same pixels.
     let mut artifact = Value::Null;
+    let mut signature = Value::Null;
     if let Some(name) = def.artifact {
         let Some(rect) = rect else {
             return fail(
@@ -365,22 +408,42 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
                 );
             }
         };
-        let out = match seal_win::pure::encode_png(crop_w, crop_h, &cropped) {
-            Ok(png) => png,
-            Err(error) => {
-                return io_fail(&request.id, format!("cannot encode the crop: {error}"));
+        if def.name == "result_gem_area" {
+            let composition = analyze_composition(
+                &cropped,
+                crop_w as usize,
+                crop_h as usize,
+                colored_gap_min(&state.config),
+            );
+            signature = json!({
+                "mean_v": composition.mean_v,
+                "mean_sat": composition.mean_sat,
+                "colored_fraction": composition.colored_fraction,
+                "mean_r": composition.mean_r,
+                "mean_g": composition.mean_g,
+                "mean_b": composition.mean_b,
+            });
+        }
+        // `empty:false` means the box is NOT the empty reference: the area is saved, the signature is
+        // sampled, and NO crop is written (a busy-box crop would poison the strong empty test).
+        if empty != Some(false) {
+            let out = match seal_win::pure::encode_png(crop_w, crop_h, &cropped) {
+                Ok(png) => png,
+                Err(error) => {
+                    return io_fail(&request.id, format!("cannot encode the crop: {error}"));
+                }
+            };
+            match state.store.write_artifact(name, &out) {
+                Ok(path) => {
+                    artifact = json!({
+                        "file": name,
+                        "path": path.display().to_string(),
+                        "width": crop_w,
+                        "height": crop_h,
+                    });
+                }
+                Err(error) => return io_fail(&request.id, error.to_string()),
             }
-        };
-        match state.store.write_artifact(name, &out) {
-            Ok(path) => {
-                artifact = json!({
-                    "file": name,
-                    "path": path.display().to_string(),
-                    "width": crop_w,
-                    "height": crop_h,
-                });
-            }
-            Err(error) => return io_fail(&request.id, error.to_string()),
         }
     }
 
@@ -405,6 +468,9 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     });
     if let Err(error) = state.store.update_local(|local| {
         set_path(local, def.path, mark_for_write);
+        if !signature.is_null() {
+            set_path(local, &["gem", "empty_signature"], signature.clone());
+        }
         if display.is_some() {
             if !local.get("calibration").is_some_and(Value::is_object) {
                 set_path(local, &["calibration"], json!({}));
@@ -433,6 +499,9 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     // rather than re-reading the files (no dictionary load is involved in a calibration mark).
     let mut block = json!({});
     set_path(&mut block, &def.path[1..], mark.clone());
+    if !signature.is_null() {
+        set_path(&mut block, &["empty_signature"], signature.clone());
+    }
     let mut sections = Map::new();
     sections.insert(def.path[0].to_owned(), block);
     state.config = crate::validate::effective_config(&state.config, &sections);

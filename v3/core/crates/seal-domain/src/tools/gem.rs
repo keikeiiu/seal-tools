@@ -204,6 +204,60 @@ pub enum EmptyRead {
     NoReference,
 }
 
+/// v2 `GemColorAnalyzer.Analyze`: the six-feature colour fingerprint of a box. `colored_gap_min` is
+/// the channel max-min gap above which a pixel counts as distinctly coloured.
+///
+/// Measurement arithmetic, not a decision: the gem run uses it when only the colour signature can be
+/// consulted, and `calibration.save` samples the same six features from the calibrated result box.
+/// Ported verbatim from v2's analyzer; keep the attribution if it ever moves again.
+pub fn analyze_composition(
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    colored_gap_min: i32,
+) -> ColorComposition {
+    let pixels = width.saturating_mul(height);
+    if pixels == 0 || rgba.len() < pixels * 4 {
+        return ColorComposition::default();
+    }
+    let mut sum_v = 0.0;
+    let mut sum_sat = 0.0;
+    let mut sum_r = 0.0;
+    let mut sum_g = 0.0;
+    let mut sum_b = 0.0;
+    let mut colored = 0usize;
+    for pixel in rgba[..pixels * 4].as_chunks::<4>().0 {
+        let (r, g, b) = (
+            i32::from(pixel[0]),
+            i32::from(pixel[1]),
+            i32::from(pixel[2]),
+        );
+        let value = r.max(g).max(b);
+        let minimum = r.min(g).min(b);
+        let saturation = if value == 0 {
+            0
+        } else {
+            (value - minimum) * 255 / value
+        };
+        sum_v += f64::from(value) / 255.0;
+        sum_sat += f64::from(saturation) / 255.0;
+        sum_r += f64::from(r) / 255.0;
+        sum_g += f64::from(g) / 255.0;
+        sum_b += f64::from(b) / 255.0;
+        if value - minimum >= colored_gap_min {
+            colored += 1;
+        }
+    }
+    let count = pixels as f64;
+    ColorComposition {
+        mean_v: sum_v / count,
+        mean_sat: sum_sat / count,
+        colored_fraction: colored as f64 / count,
+        mean_r: sum_r / count,
+        mean_g: sum_g / count,
+        mean_b: sum_b / count,
+    }
+}
 /// Distance between two colour compositions: the EUCLIDEAN norm over the six features, not their
 /// mean.
 ///

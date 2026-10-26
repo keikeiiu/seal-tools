@@ -188,6 +188,13 @@ answer **Yes** and it saves the crop and samples `empty_signature`; answer **No*
 falls back to the weaker colour-signature test — the crop is the strong test, the signature only the
 fallback.
 
+**A save with `empty: false` samples the six-feature signature but does not delete an existing
+`config/calib_gem_result.png`.** A crop captured while the box was genuinely empty stays a valid strong
+reference for the same geometry, so discarding it on a busy-box recalibration would only weaken the
+check; if the geometry changed, the crop's size no longer matches the new area and the gem run falls
+back to the signature exactly as a missing crop does. The signature is re-sampled from the pixels the
+player just marked, so the weaker fallback always describes the current box.
+
 The crop comparison ignores the box's drawn **6-px border**: the frame moves by a pixel when the
 window moves, and the border rows alone scored an empty box 7.7 % — above the gate, so the composer
 never advanced again. Measured from the interior: empty 0.000, gem 0.55, gate `empty_distance` 0.01

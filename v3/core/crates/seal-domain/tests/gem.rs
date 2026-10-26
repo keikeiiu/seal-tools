@@ -16,7 +16,7 @@ use seal_domain::config::{ColorComposition, MovementsConfig};
 use seal_domain::geometry::Point;
 use seal_domain::tools::gem::{
     EmptyMode, EmptyRead, GemRoutes, GemRun, GemSettings, GemStep, GemTurn, MoveMode,
-    composition_distance, composition_is_empty, result_box_is_empty,
+    analyze_composition, composition_distance, composition_is_empty, result_box_is_empty,
 };
 
 fn point(x: i32, y: i32) -> Point {
@@ -546,4 +546,32 @@ fn the_reader_reported_failures_carry_v2s_messages() {
         .message,
         "Move N → Register: couldn't move the cursor to Register — started at 0."
     );
+}
+
+#[test]
+fn the_colour_composition_is_the_analyzers_six_features() {
+    // A 2x2 solid red box: brightness 1, full saturation, every pixel coloured.
+    let red = [255u8, 0, 0, 255].repeat(4);
+
+    let composition = analyze_composition(&red, 2, 2, 40);
+
+    assert!((composition.mean_v - 1.0).abs() < 1e-9);
+    assert!((composition.mean_sat - 1.0).abs() < 1e-9);
+    assert!((composition.colored_fraction - 1.0).abs() < 1e-9);
+    assert!((composition.mean_r - 1.0).abs() < 1e-9);
+    assert_eq!(composition.mean_g, 0.0);
+    assert_eq!(composition.mean_b, 0.0);
+}
+
+#[test]
+fn a_neutral_box_is_not_coloured() {
+    let gray = [128u8, 128, 128, 255].repeat(4);
+
+    let composition = analyze_composition(&gray, 2, 2, 40);
+
+    assert!((composition.mean_sat - 0.0).abs() < 1e-9);
+    assert_eq!(composition.colored_fraction, 0.0);
+    assert!((composition.mean_r - composition.mean_g).abs() < 1e-9);
+    assert_eq!(composition.mean_r, composition.mean_g);
+    assert_eq!(composition.mean_g, composition.mean_b);
 }

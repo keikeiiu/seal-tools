@@ -151,6 +151,7 @@ fn the_result_gem_crop_is_written_as_a_png_artifact() {
                 "frame_id": frame_id,
                 "kind": "result_gem_area",
                 "region": {"x": 1, "y": 1, "w": 1, "h": 1},
+                "empty": true,
             }),
         ),
     );
@@ -166,6 +167,12 @@ fn the_result_gem_crop_is_written_as_a_png_artifact() {
     let bytes = std::fs::read(&path).expect("the crop exists");
     let (width, height, _) = seal_win::pure::decode_png(&bytes).expect("the crop is a PNG");
     assert_eq!((width, height), (1, 1), "the artifact is exactly the crop");
+
+    // `empty:true` also samples the six-feature signature from the same crop; it is the weaker
+    // reference the gem run uses when the crop cannot be compared.
+    let signature = &state.config["gem"]["empty_signature"];
+    assert_eq!(signature["mean_v"], json!(1.0), "{signature}");
+    assert_eq!(signature["mean_r"], json!(1.0), "{signature}");
 }
 
 #[test]
@@ -466,6 +473,7 @@ fn fetch_returns_the_stored_mark_and_the_crop() {
                 "frame_id": frame_id,
                 "kind": "result_gem_area",
                 "region": {"x": 0, "y": 0, "w": 2, "h": 2},
+                "empty": true,
             }),
         ),
     );
@@ -485,4 +493,160 @@ fn fetch_returns_the_stored_mark_and_the_crop() {
         "the crop travels back for the calibrator to show"
     );
     assert_eq!(result["rev"], 1);
+}
+
+#[test]
+fn a_result_gem_save_without_the_empty_verdict_is_refused() {
+    let (dir, mut state, frame_id) = harness(800, 600);
+    let (data, _) = png_frame(2, 2);
+    let frame_id = {
+        let _ = frame_id;
+        state.frames.insert(json!({
+            "format": "png",
+            "width": 2,
+            "height": 2,
+            "origin": {"x": 0, "y": 0},
+            "data": data,
+        }))
+    };
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "result_gem_area",
+                "region": {"x": 0, "y": 0, "w": 2, "h": 2},
+            }),
+        ),
+    );
+
+    assert!(!response.ok, "the crop must not be written on a guess");
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("empty") && error.message.contains("result box"),
+        "the line tells the player to say whether it is empty: {}",
+        error.message
+    );
+    assert!(
+        !dir.path().join("config/calib_gem_result.png").exists(),
+        "a refused save writes no crop"
+    );
+    assert_eq!(state.rev, 0, "a refused save consumes no rev");
+    assert!(state.config["gem"]["empty_signature"].is_null());
+}
+
+#[test]
+fn a_wrongly_typed_empty_verdict_is_refused() {
+    let (_dir, mut state, frame_id) = harness(800, 600);
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "result_gem_area",
+                "region": {"x": 0, "y": 0, "w": 1, "h": 1},
+                "empty": "yes",
+            }),
+        ),
+    );
+
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(error.message.contains("true or false"), "{}", error.message);
+}
+
+#[test]
+fn an_empty_verdict_on_another_kind_is_refused_by_name() {
+    let (_dir, mut state, frame_id) = harness(800, 600);
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "scroll_point",
+                "point": {"x": 100, "y": 200},
+                "empty": true,
+            }),
+        ),
+    );
+
+    assert!(!response.ok, "empty means nothing for a point mark");
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert!(
+        error.message.contains("empty") && error.message.contains("result_gem_area"),
+        "{}",
+        error.message
+    );
+    assert_eq!(state.rev, 0);
+}
+
+#[test]
+fn empty_false_samples_the_signature_and_writes_no_crop() {
+    let dir = root();
+    let mut state = CoreState::new(dir.path().to_path_buf());
+    handle(&mut state, hello_request());
+    let (data, _) = png_frame(2, 2);
+    let frame_id = state.frames.insert(json!({
+        "format": "png",
+        "width": 2,
+        "height": 2,
+        "origin": {"x": 0, "y": 0},
+        "data": data,
+    }));
+
+    let response = handle(
+        &mut state,
+        Request::new(
+            "2",
+            "calibration.save",
+            json!({
+                "frame_id": frame_id,
+                "kind": "result_gem_area",
+                "region": {"x": 0, "y": 0, "w": 2, "h": 2},
+                "empty": false,
+            }),
+        ),
+    );
+
+    assert!(response.ok, "save: {:?}", response.error);
+    let result = response.result.expect("save carries a result");
+    assert_eq!(result["mark"], json!([0, 0, 2, 2]));
+    assert_eq!(
+        result["artifact"],
+        Value::Null,
+        "the busy box's crop must not become the empty reference"
+    );
+    assert!(
+        !dir.path().join("config/calib_gem_result.png").exists(),
+        "empty:false writes no crop"
+    );
+
+    let signature = &state.config["gem"]["empty_signature"];
+    assert_eq!(
+        signature["mean_v"],
+        json!(1.0),
+        "the sampled six-feature signature is in the merged config: {signature}"
+    );
+    assert_eq!(signature["colored_fraction"], json!(0.0));
+    let local = dir.read("config/local.yaml");
+    assert!(
+        local.contains("empty_signature"),
+        "the signature reached local.yaml: {local}"
+    );
+    assert!(
+        state.config["gem"]["result_gem_area"] == json!([0, 0, 2, 2]),
+        "the area is written even when the crop is not"
+    );
 }
