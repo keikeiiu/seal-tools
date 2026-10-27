@@ -42,6 +42,11 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 - **Tuner wording.** The guard's recentre path surfaces a failed placement as the effects' own line
   rather than v2's composed "cursor wouldn't re-centre — <detail>" (the runner performs effects; the
   tool cannot see their failure).
+- **Tuner grade-colour fallback (v2 `DetectGradeColorScores`) is not ported.** v2 used
+  `tuner.ocr.grade_area` for two jobs: selecting the grade TEXT line (now wired in v3, region-relative)
+  and deciding the grade by COLOUR when the text was unclear. v3 does the first and not the second; the
+  fallback belongs with the calibration-feature plan's tuner increment. The colour palette
+  (`tuner.grade_colors`) is already config and readable.
 - **Clock trait duplication.** `seal-tools::clock::Clock` and `seal-board::clock::Clock` are the same
   one-method seconds-only trait (seal-board does not depend on seal-tools); move it to `seal-domain`
   when convenient. The seconds-only unit is deliberate (the eleven-minute-sleep incident).
