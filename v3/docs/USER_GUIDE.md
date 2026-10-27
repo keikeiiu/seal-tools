@@ -3,8 +3,10 @@
 English · [繁體中文](USER_GUIDE.zh-TW.md)
 
 Every card, tab and button in the v3 shell: what it does and when to use it. Installing for the first
-time is [INSTALL.md](INSTALL.md); for *why* the coordinates work the way they do, see
-`v3/docs/spec/CALIBRATION.md`; for which setting lives in which file, `v3/docs/spec/CONFIG.md`.
+time is [INSTALL.md](INSTALL.md). For *why* the coordinates work the way they do and for which setting
+lives in which file, the specification lives in the **project's repository docs** —
+`v3/docs/spec/CALIBRATION.md` and `v3/docs/spec/CONFIG.md`. (This zip ships only this guide, its zh-TW
+twin, `INSTALL.md`, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`; it does not carry the spec tree.)
 
 **Nothing in v3.0 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
 v3.0 publishes the same `seal_mouse.ino` in `SealTools-v3.0-firmware.zip`, so a board that already
@@ -85,24 +87,25 @@ The panel shows the `log` lines the core publishes (tool messages, refusals wort
 
 The Cards page is a grid of seven cards — Skill Spammer, Magic Tuner, Buy, Sell, Gem Composer, Quest
 Hand-in, Pet Feeder — plus the Hold Space toggle in the app bar (Hold Space is the eighth tool but has
-no card by design; its state and failure lines are reported on the Skill Spammer card). Section 4
-explains a run on each card.
+no card by design: the Skill Spammer card shows its state, and its complete trail is in
+`holdspace.log`). Section 4 explains a run on each card.
 
 ### 2.3 Hold Space
 
 The toggle in the app bar holds the **spacebar** down so the game picks items up, and lifts it when you
 release the toggle. It is not a card because it has no run to schedule: press **Hold Space**, play, press
-**Release Space**. Its lines (including a failed release, which is the one that matters) appear on the
-**Skill Spammer** card and in `holdspace.log`. If a release ever fails, the card says so and tells you
-to tap the spacebar once in game.
+**Release Space**. The live Hold Space state is reported on the **Skill Spammer** card. A failed
+release is recorded **only in `holdspace.log`**: the release happens as the run ends and has no protocol
+event, so the card cannot show it. If a release ever needs checking, read that file; the domain's line
+there tells you to tap the spacebar once in game.
 
 ---
 
 ## 3. First run: configure, then calibrate
 
-The installer has already copied a seed `config/local.yaml` for you if you had none. That seed contains
-**placeholder measurements from an old setup**, and they will be wrong on your machine. The order is:
-**Setup → Calibrate → run a tool.**
+There is no installer. On its first launch the core copies a seed `config/local.yaml` for you if you had
+none (from `config/local.yaml.example`). That seed contains **placeholder measurements from an old
+setup**, and they will be wrong on your machine. The order is: **Setup → Calibrate → run a tool.**
 
 ### 3.1 Setup
 
@@ -123,10 +126,10 @@ resolved, validated, its dictionary loaded, and only then written, so it cannot 
 
 ### 3.2 The calibration gate
 
-Tools refuse to start until the marks they use are calibrated, and the refusal names the tab to open
-("The bag grid isn't calibrated — Calibrate Buy/Sell."). That is not a bug: a click at a guessed
-coordinate can buy or sell the wrong thing. The **Calibrate** tab (section 6) is the one place marks are
-drawn for every tool.
+Tools refuse to start until the marks they use are calibrated. The refusal names the **mark** to save
+and points at the single **Calibrate** tab: choose that kind there (and a target instance when the kind
+is a named one) and save it. That is not a bug: a click at a guessed coordinate can buy or sell the wrong
+thing. Section 6 is the walkthrough for every kind.
 
 Before calibrating anything that moves the cursor with hand-tuned counts (the Gem Composer's `tuned`
 move mode), turn **off** Windows' *Enhance pointer precision*:
@@ -149,8 +152,8 @@ section 8.
 Each card shows the tool's **name**, its **phase** (`idle`, `starting`, `running`, `stopping`), the
 core's **message** for the current step, the **rows** the tool publishes (name / status / detail / next
 action), and the **last finished line** or **refusal line** — both verbatim, in the core's words. A
-refusal is not a crash: it says what to fix ("No buy preset selected.", "The MAX button isn't
-calibrated — Calibrate Buy/Sell.").
+refusal is not a crash: it says what to fix ("No buy preset selected.", or which mark is missing and
+that it is saved on **Calibrate**).
 
 | Card | What a run does |
 |---|---|
@@ -162,10 +165,11 @@ calibrated — Calibrate Buy/Sell.").
 | **Quest Hand-in** | Replays your flow (or sequence) at the quest NPC the configured number of times, checks the cursor guard, and ends with `DONE — {n} loop(s)…`. It reads nothing from the screen. |
 | **Pet Feeder** | The resident tool: keeps each ticked breeding row fed by reloading the feeder before the pet runs out. It publishes one row line per breeding row with its schedule, and keeps running (and waiting) until Stop. The next reload waits while another tool has the game. |
 
-**Starting and stopping.** **Start** is enabled when the core is ready, the card is idle, and no other
-tool is engaged; **Stop** is enabled while this tool is engaged. Both are disabled while a start/stop
-is in flight. Starting a second tool is **refused** with the holder's name ("… is using the game right
-now — stop it, then try again."), not by stopping the first one for you.
+**Starting and stopping.** **Start** is enabled when the core is ready and **this** card is idle;
+**Stop** is enabled while **this** tool is engaged. Both are disabled while a start/stop is in flight.
+The shell does **not** disable Start because another tool is running: press it and the core refuses
+with its `tool_busy` line naming the holder ("… is using the game right now — stop it, then try
+again."), rather than stopping the first tool for you.
 
 **The resident Pet Feeder.** Starting another tool leaves the feeder armed; a reload that comes due
 while that tool runs waits, and the feeder's card says it is waiting. This is why a quit/stop of the
@@ -213,7 +217,9 @@ The tuner's portable settings; the calibrated geometry block on this tab is **re
 
 - **Grades** — the grade list, the **Target grade**, and the **require_grade** half of the filter.
 - **Retries and timing** — **Max retries**, **OCR retries**, **Click/enter delay (s)**, **OCR delay
-  (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7).
+  (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7). **OCR retries is stored but
+  currently unused:** v3.0's reader scans once; the last-retry forced capture is a named not-built item
+  in the repository's backlog.
 - **Springs** — **Spring mode** (`hid` places the cursor on the calibrated spring point; `manual` leaves
   it where it is), **Mouse guard** (`off`/`stop`/`recenter`) and its **Guard px** and **Recenter max**.
 - **Filter** — enabled, match mode (`any`/`all`/`per_attr`), require-grade and the attribute rules
@@ -273,7 +279,7 @@ pet setup/calibration surfaces land (sections 6 and 11).
   the boarding bag grid, the food slots, the return slot and the food-load mode.
 
 A fresh install has no breeding rows, and v3.0 has no row editor yet: set the feeder up by migrating
-your v2 `config/local.yaml` (which carries them) or by hand-editing that block with
+your v2 `config/local.yaml` (which carries them) or by hand-editing that block with the repository's
 `v3/docs/spec/CONFIG.md` open; otherwise the feeder refuses with its setup line. The **Calibrate** tab
 still draws the feeder's marks (`pet_*` kinds); the close-X reference crop is learned by the run
 itself.
@@ -318,8 +324,8 @@ behaviour: the shell hides itself for the grab, waits one frame, and reopens.
 
 A calibration mark is stored in **physical pixels relative to the game window's CLIENT area** (origin
 = the client's top-left, no title bar), so moving the window does not invalidate it. It is **not**
-scaled by the Windows display scale. The contract and the why are `v3/docs/spec/CALIBRATION.md`; this
-section is the operator's view.
+scaled by the Windows display scale. The contract and the why are in the repository's
+`v3/docs/spec/CALIBRATION.md`; this section is the operator's view.
 
 ### 6.1 Saving a mark
 
@@ -425,11 +431,12 @@ appends; it never truncates a log:
 | File | What it holds |
 |---|---|
 | `<tool>.log` | One line per started run, per **changed** status message, and the final reason. Tool ids: `spammer`, `tuner`, `buy`, `sell`, `gem`, `quest`, `pet`. This is the first file to read when "it did something unexpected". |
-| `holdspace.log` | Hold Space's own diagnostic trail (its shape is v2's `HoldDiag`; a failed release lands here). |
+| `holdspace.log` | Hold Space's complete trail: v2's `HoldDiag` lines (the failed release, the panel lines) **and** the generic per-run lines (`run started`, then `finished` / `stopped` / `failed`) — its diagnostics and its run log share this one file. |
 | `error.log` | Internal errors and tool-opening failures. Player-correctable refusals are **not** here — they are in the card, by design, so they do not bury real errors. |
 | `ocr_log.jsonl` | One JSON record per completed OCR scan. |
 | `ocr_errors.jsonl` | A completed scan that did not produce what its mode asked for. |
-| `captures/capture_<stamp>.png` | Only while **Save captures** is on (Tuner/Gem). Each record names its capture in `capture_path`. |
+| `captures/capture_<stamp>.png` | The tuner's save-captures diagnostic; the record's `capture_path` names it. |
+| `captures/empty_check_crop_<HHmmss_fff>.png` | The Gem's **Save empty captures** diagnostic; each one also writes a `gem.log` detail line. |
 
 A failed log write is swallowed by design: it never fails a command or a run. `shutdown` flushes the
 files.
@@ -445,7 +452,7 @@ files.
 - `docs/pet-data.csv` — the feeding table the feeder reads from `<root>/docs/pet-data.csv`; without it
   the feeding estimate is unavailable and the schedule falls back to the configured cycle.
 
-The full file split, loading order and fold are `v3/docs/spec/CONFIG.md`.
+The full file split, loading order and fold are in the repository's `v3/docs/spec/CONFIG.md`.
 
 ---
 
@@ -463,7 +470,8 @@ What this means in practice:
 
 This is a deliberate deferral, not a regression hidden in the docs: the plan requires a measurement of
 whether a background process can see keys while the game is focused (the anti-cheat may block it), and
-the protocol gains the commands that measurement chooses. It is listed in `v3/docs/backlog/OPEN.md`.
+the protocol gains the commands that measurement chooses. It is listed in the repository's backlog
+(`v3/docs/backlog/OPEN.md`).
 
 ---
 
@@ -482,7 +490,9 @@ the protocol gains the commands that measurement chooses. It is listed in `v3/do
 1. Start the game, windowed, and log in.
 2. Open Seal Tools; the core connects (status strip shows `core … · rev …`).
 3. On the tool's tab set what the run needs (spammer preset, tuner target/filter, gem start grade,
-   quest flow, pet rows), then **Start** on the card. **Stop** when done.
+   quest flow). For the Pet Feeder, rows and the queue come from a migrated v2 `local.yaml` or a
+   hand-edited block — the Pet tab is read-only in v3.0, so there is no row editor yet. Then **Start**
+   on the card. **Stop** when done.
 4. For Buy/Sell use the card's run choice (Buy) or the prepared selection (Sell) and remember: Sell is
    irreversible and capped.
 5. Close Seal Tools when finished — closing the UI stops the tools and the core. One copy at a time
@@ -499,14 +509,14 @@ marks are physical client-relative offsets; they do not travel.
 |---|---|
 | Whole window says **"The core is not running"** with **Stderr tail** and **Restart core** | The core crashed or its boot was refused. The tail is the reason (a boot refusal prints to stderr, not as a protocol message). **Restart core** starts a fresh process and handshake. A **protocol mismatch** (`bad_version`) hides Restart on purpose: replace both `SealTools.exe` and `seal-core.exe` with a matched pair; do not mix versions. |
 | `bad_version` | You mixed binaries. Use one zip's pair. |
-| **game window not found** | Wrong window title or variant (`Settings → Game window title` / `Client variant`), or the game is not running/minimised. **Find window** on Setup reports what the core sees. |
+| **game window not found** | Wrong window title or variant (the **Game window title** and **Client variant** fields on the **Setup** tab), or the game is not running/minimised. **Find window** on Setup reports what the core sees. |
 | **`game_not_foreground`** | Another window is in front of the game. Bring the game to the front and retry; the Calibrate tab's capture hides the shell for one frame itself. |
-| **`ocr_unavailable`** | The OCR models were not found or would not load. `detail.reason` says `models_env_unset`, `models_dir_missing` or `model_load_failed:<file>`, and `detail.message` names **every directory tried**. Resolution order: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
+| **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
-| A card line like "The bag grid isn't calibrated — Calibrate Buy/Sell." | Not a bug; the mark that tool needs is missing. Draw it in **Calibrate** (the line names the tool's group). |
+| A card line saying a mark isn't calibrated | Not a bug; the line names the **mark** to save and the single **Calibrate** tab. Draw that kind there (with its target instance if the kind is a named one) and save it. |
 | "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). Sell needs its slot selection, which v3.0 has no editor for (section 11): a migrated selection can be present, otherwise the tool cannot run. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
-| Pet Feeder refuses on start (a `… isn't calibrated` or `No breeding row is set up` line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; a new install has no rows yet (section 11) — migrate a v2 `local.yaml` or edit the block per CONFIG.md. |
+| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; a new install has no rows yet (section 11) — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open. |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
 | "The window blinks when I press Capture" | Expected: the shell hides itself for one frame so the capture is of the game, then reopens. v2 blinked ~0.3 s; v3 blinks for a frame plus the round-trip. |
 | Need the last run's detail | Read `<root>/logs/<tool>.log` (status strip prints the root); `error.log` and `ocr_errors.jsonl` are beside it. |
@@ -515,9 +525,9 @@ marks are physical client-relative offsets; they do not travel.
 
 ## 11. What is not built in v3.0
 
-Named here so a missing capability is a known boundary, not a mystery. The living list is
-`v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "planned for tomorrow" unless the
-repository says so.
+Named here so a missing capability is a known boundary, not a mystery. The living list is the
+repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "planned for tomorrow"
+unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
 - **Mini mode / pin-on-top / hide-the-cards.** v2's card-window chrome is gone; v3's window is the tab
@@ -541,7 +551,12 @@ repository says so.
 
 ## 12. Where the rest is documented
 
-- `v3/docs/INSTALL.md` — install, migrate, update, uninstall, troubleshooting (same folder as this file).
+**What the zip carries:** this guide, its zh-TW twin, `INSTALL.md`, `THIRD-PARTY-NOTICES.md` and
+`docs/pet-data.csv`. Everything below that starts with `v3/` is a path in the **project repository**,
+not a file inside the zip.
+
+- `v3/docs/INSTALL.md` — install, migrate, update, uninstall, troubleshooting (also in the zip beside
+  this guide).
 - `v3/docs/spec/CONFIG.md` — every config file, which one is yours, and the loading/fold rules.
 - `v3/docs/spec/CALIBRATION.md` — the coordinate contract, why DPI/scale work the way they do, and the
   artifact rules. v2's `docs/spec/COORDINATES.md` and `CALIBRATION.md` are the measurement record.

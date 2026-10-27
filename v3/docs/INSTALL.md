@@ -2,7 +2,9 @@
 
 From nothing to a working install: the board, the app and the first calibration. If you already have it
 running and want to know what a button does, that is [USER_GUIDE.md](USER_GUIDE.md). If you are curious
-*why* calibration is mandatory, `v3/docs/spec/CALIBRATION.md` explains the coordinate contract.
+*why* calibration is mandatory, the repository's `v3/docs/spec/CALIBRATION.md` explains the coordinate
+contract. (The zip ships only these guides, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`, not the
+spec tree.)
 
 **Nothing in v3.0 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level **2**):
 v3.0 publishes the same `seal_mouse.ino` in `SealTools-v3.0-firmware.zip`, so a board already flashed for
@@ -39,9 +41,9 @@ From the release page, pick the app zip — and the firmware zip **only if your 
 | `SealTools-v3.0.zip` | The app: shell, core, OCR models, config templates and these docs. | Always. |
 | `SealTools-v3.0-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino` (unchanged). | Only to flash a board that is not already running the v2.15+ firmware. |
 
-There is no installer and no `-local` zip in v3.0: the app zip carries **program files only**. Your
-settings live in `config/local.yaml`, a file the zip never contains, so unzipping an update cannot cover
-them.
+There is no installer and no `-local` zip in v3.0: the app zip carries **program files, templates and the
+guides only** — never a real `local.yaml`. Your settings live in `config/local.yaml`, a file the zip never
+contains, so unzipping an update cannot cover them.
 
 Unzip the app zip anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no installation step
 and nothing is registered with Windows. One top folder appears:
@@ -67,6 +69,7 @@ SealTools-v3.0\
     USER_GUIDE.md               this app's user guide
     USER_GUIDE.zh-TW.md         the same guide in 繁體中文
     INSTALL.md                  this file
+    THIRD-PARTY-NOTICES.md      the bundled components' licences and terms
 ```
 
 Keep the files together: `SealTools.exe` finds `seal-core.exe` **beside itself** (never on `PATH`), and
@@ -219,7 +222,9 @@ v3 side is verified.
    seed is replaced in step 2).
 2. Close Seal Tools. Then copy into `SealTools-v3.0\config\`:
    - `local.yaml` — your machine's state: calibration, presets, pet rows, quest flows and so on.
-   - `calib_gem_result.png` and any other `calib_*.png` beside it (the calibration artifacts).
+   - `calib_gem_result.png` — **the only calibration image v3 consumes** (the result-gem crop for the
+     empty test). Other `calib_*.png` files beside it are v2's drawn-over screenshots: copying them is
+     harmless history, but no v3 tool reads them.
    - Your attribute files if you edited or grew them: `attributes.yaml` (TW) and/or
      `attributes.us.yaml` (US). Do **not** copy `attributes.us.yaml.example`.
    - Optionally `defaults.yaml`, **only if your v2 folder predates v2.16 and you had edited portable
@@ -240,14 +245,14 @@ are physical client-relative offsets.
 ## Updating
 
 1. Close Seal Tools.
-2. Back up `config/local.yaml`, `config/attributes*.yaml` and `config/calib_*.png` if you want a safety
-   copy.
+2. Back up `config/local.yaml`, `config/attributes*.yaml` and `config/calib_gem_result.png` (plus any older
+   `calib_*.png` you want to keep; v3 reads only the result crop) if you want a safety copy.
 3. Unzip the new release. You can replace the program files in the existing folder or use a fresh folder
    and copy your `config/` files across.
 4. Start it. **The zip never contains `local.yaml`**, so an update cannot overwrite your settings; the
    only files it replaces are program files and the shipped templates/dictionaries. If a release changes
-   a default, the core's once-only fold carries your old stated values into `local.yaml` (see
-   `v3/docs/spec/CONFIG.md`).
+   a default, the core's once-only fold carries your old stated values into `local.yaml` (see the
+   repository's `v3/docs/spec/CONFIG.md`).
 5. There is no auto-update and no installer: replacing files is the whole update.
 
 ## Uninstalling
@@ -267,9 +272,9 @@ you want to keep your calibration.
 | `bad_version` | The shell and core are from different versions. Replace **both** files from the same zip; Restart will not fix a mismatch. |
 | `game window not found` | Wrong title/variant, or the game is not running/windowed/restored. Check **Setup** and press **Find window**. |
 | `game_not_foreground` | Something is in front of the game. Bring the game forward; the Calibrate capture hides the shell itself for one frame. |
-| `ocr_unavailable` | The OCR models were not found or failed to load. `detail.reason` is `models_env_unset`, `models_dir_missing` or `model_load_failed:<file>`; `detail.message` names **every directory tried**. Order: `SEAL_OCR_MODELS` if set (it wins or fails loudly), then `<root>/models`, then `<seal-core.exe folder>/models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/`. |
+| `ocr_unavailable` | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names what failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line. Order for models: `SEAL_OCR_MODELS` if set (it wins or fails loudly), then `<root>/models`, then `<seal-core.exe folder>/models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/`. |
 | `board_unavailable` | No board on the configured port, or the port cannot be opened. Check the data cable, the USB driver (CH340 clones), the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
-| A card line “The bag grid isn't calibrated — Calibrate Buy/Sell.” | The mark the tool needs is missing — draw it in **Calibrate**. The line names the tool's group. |
+| A card line saying a mark isn't calibrated | The line names the **mark** to save and the single **Calibrate** tab; choose that kind there (with its target instance if the kind is a named one) and save it. |
 | Hotkeys do not fire in game | Expected in v3.0: there is no global hotkey poller. Use **Stop** and the shell's controls. |
 | “The window blinks when I press Capture” | Expected: one frame of hide so the capture sees the game (v2 blinked ~0.3 s). |
 | A run did something unexpected | Read `<root>/logs/<tool>.log`, then `error.log` / `ocr_errors.jsonl` beside it. The status strip prints `<root>`. |
@@ -281,6 +286,6 @@ you want to keep your calibration.
 ## What this guide does not cover
 
 - **The window and the tabs**: [USER_GUIDE.md](USER_GUIDE.md) (and its zh-TW twin).
-- **Config files, loading order, the fold**: `v3/docs/spec/CONFIG.md`.
-- **Coordinates, DPI and calibration rules**: `v3/docs/spec/CALIBRATION.md`.
-- **The live not-built list**: `v3/docs/backlog/OPEN.md`.
+- **Config files, loading order, the fold**: the repository's `v3/docs/spec/CONFIG.md`.
+- **Coordinates, DPI and calibration rules**: the repository's `v3/docs/spec/CALIBRATION.md`.
+- **The live not-built list**: the repository's `v3/docs/backlog/OPEN.md`.

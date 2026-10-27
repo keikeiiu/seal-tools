@@ -3,8 +3,9 @@
 [English](USER_GUIDE.md) · 繁體中文
 
 v3 殼層（shell）每一張卡片、每一個分頁與按鈕的功能，以及何時使用。第一次安裝請看
-[INSTALL.md](INSTALL.md)；座標為什麼這樣運作，請看 `v3/docs/spec/CALIBRATION.md`；哪個設定放在哪個檔案，
-請看 `v3/docs/spec/CONFIG.md`。
+[INSTALL.md](INSTALL.md)。座標為什麼這樣運作、哪個設定放在哪個檔案，規格放在**專案倉庫的文件**裡 ——
+`v3/docs/spec/CALIBRATION.md` 與 `v3/docs/spec/CONFIG.md`。（這個 zip 只帶本指南、它的英文版、
+`INSTALL.md`、`THIRD-PARTY-NOTICES.md` 與 `docs/pet-data.csv`，不帶規格樹。）
 
 **v3.0 不需要重新燒錄韌體。** Arduino 韌體自 v2.15 起沒有變更（韌體等級 2）：v3.0 在
 `SealTools-v3.0-firmware.zip` 裡提供同一份 `seal_mouse.ino`，所以已經跑 v2 韌體的板子可以直接用。
@@ -76,21 +77,23 @@ F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這�
 ### 2.2 Cards 頁面
 
 Cards 頁面是七張卡片的格狀排列 —— Skill Spammer、Magic Tuner、Buy、Sell、Gem Composer、Quest
-Hand-in、Pet Feeder —— 再加上 App bar 裡的 Hold Space 切換鈕（Hold Space 是第八個工具，但刻意沒有卡片；
-它的狀態與失敗訊息會顯示在 Skill Spammer 卡片上）。第 4 節說明每張卡片的執行。
+Hand-in、Pet Feeder —— 再加上 App bar 裡的 Hold Space 切換鈕（Hold Space 是第八個工具，但刻意沒有卡片：
+Skill Spammer 卡片顯示它的狀態，完整的軌跡在 `holdspace.log`）。第 4 節說明每張卡片的執行。
 
 ### 2.3 Hold Space
 
 App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時鬆開。它沒有卡片，因為它沒有可排程的執行：
-按 **Hold Space**，遊玩，按 **Release Space**。它的訊息（尤其是釋放失敗，那才是重要的）會出現在
-**Skill Spammer** 卡片與 `holdspace.log`。若釋放失敗，卡片會說明並要你在遊戲中按一下空白鍵。
+按 **Hold Space**，遊玩，按 **Release Space**。即時的 Hold Space 狀態顯示在 **Skill Spammer** 卡片上。
+釋放失敗**只記在 `holdspace.log`**：釋放發生在執行結束時，而且沒有協定事件，所以卡片無法顯示它。
+若需要檢查釋放，請讀那個檔案；裡面屬於領域的訊息會要你在遊戲中按一下空白鍵。
 
 ---
 
 ## 3. 第一次啟動：先設定，再校正
 
-如果你原本沒有 `config/local.yaml`，程式已為你複製了一份種子檔。那份種子包含**來自舊設定的預留量測值**，
-在你的機器上一定是錯的。順序是：**Setup → 校正 → 執行工具。**
+沒有安裝程式。第一次啟動時，若你原本沒有 `config/local.yaml`，**核心**會為你從
+`config/local.yaml.example` 複製一份種子檔。那份種子包含**來自舊設定的預留量測值**，在你的機器上一定是
+錯的。順序是：**Setup → 校正 → 執行工具。**
 
 ### 3.1 Setup
 
@@ -110,9 +113,9 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 
 ### 3.2 校正門檻
 
-工具在它需要的標記完成校正前會拒絕啟動，而且拒絕訊息會指出要開哪個分頁（例如「The bag grid isn't
-calibrated — Calibrate Buy/Sell.」）。這不是 bug：在猜測的座標點擊可能買錯或賣錯東西。**Calibrate**
-分頁（第 6 節）是唯一繪製所有工具標記的地方。
+工具在它需要的標記完成校正前會拒絕啟動。拒絕訊息會指出要儲存的**標記**與唯一的 **Calibrate** 分頁：
+到那裡選那個種類（若是具名種類，再選目標實例）並儲存。這不是 bug：在猜測的座標點擊可能買錯或賣錯東西。
+第 6 節是每一種標記的完整流程。
 
 在替需要手調相對位移的工具（Gem Composer 的 `tuned` 移動模式）校正之前，請**關閉** Windows 的
 *增強指標精確度*：
@@ -132,8 +135,8 @@ calibrated — Calibrate Buy/Sell.」）。這不是 bug：在猜測的座標點
 
 每張卡片顯示工具的**名稱**、**階段**（`idle`、`starting`、`running`、`stopping`）、核心給目前步驟的
 **訊息**、工具發布的**列**（名稱 / 狀態 / 細節 / 下一步行動），以及**最後的完成行**或**拒絕行** —— 兩者
-都是核心原文。拒絕不是當機：它會說要修什麼（「No buy preset selected.」、「The MAX button isn't
-calibrated — Calibrate Buy/Sell.」）。
+都是核心原文。拒絕不是當機：它會說要修什麼（「No buy preset selected.」，或缺少哪個標記、要在
+**Calibrate** 儲存）。
 
 | 卡片 | 一次執行做什麼 |
 |---|---|
@@ -145,9 +148,10 @@ calibrated — Calibrate Buy/Sell.」）。
 | **Quest Hand-in** | 在任務 NPC 前重播你的流程（或序列）指定次數，監看游標防護，最後以 `DONE — {n} loop(s)…` 結束。它不讀畫面。 |
 | **Pet Feeder** | 常駐工具：在寵物用完食物前重新載入餵食器，讓每個勾選的繁殖列都有食物。它會為每一列發布排程列，並持續執行（與等待）到 Stop。下一次重新載入時，若其他工具正佔用遊戲，會先等待。 |
 
-**啟動與停止。** 核心就緒、卡片閒置且沒有其他工具在執行時，**Start** 才可用；**Stop** 只在這張卡片
-對應的工具執行中可用。啟動/停止進行中時兩個按鈕都會停用。啟動第二個工具會被**拒絕**並指出持有者
-（「… is using the game right now — stop it, then try again.」），不會替你停掉第一個工具。
+**啟動與停止。** 核心就緒且**這張**卡片閒置時，**Start** 才可用；**Stop** 只在**這個**工具執行中可用。
+啟動/停止進行中時兩個按鈕都會停用。殼層**不會**因為別的工具在跑就停用 Start：按下去之後，核心會用
+`tool_busy` 的訊息指名持有者（「… is using the game right now — stop it, then try again.」），而不是替你
+停掉第一個工具。
 
 **常駐的寵物餵食器。** 啟動其他工具不會解除餵食器；若輪到重新載入而該工具正在跑，餵食器會等待，卡片也會
 顯示它在等待。這就是為什麼停止前景工具永遠不會結束四列的餵食排程。
@@ -188,7 +192,8 @@ calibrated — Calibrate Buy/Sell.」）。
 
 - **Grades** —— 等級清單、**Target grade**，以及篩選的 **require_grade** 部分。
 - **Retries and timing** —— **Max retries**、**OCR retries**、**Click/enter delay (s)**、**OCR delay
-  (s)**、**Save captures**（會寫入 `logs/captures/` PNG —— 見第 7 節）。
+  (s)**、**Save captures**（會寫入 `logs/captures/` PNG —— 見第 7 節）。**`OCR retries` 只被儲存、目前
+  沒有作用：** v3.0 的讀取器只掃描一次；最後一次重試的強制擷取是倉庫待辦清單中的未實作項目。
 - **Springs** —— **Spring mode**（`hid` 把游標放到已校正的發條點；`manual` 留在原處）、**Mouse guard**
   （`off`/`stop`/`recenter`）與其 **Guard px**、**Recenter max**。
 - **Filter** —— 啟用、比對模式（`any`/`all`/`per_attr`）、require-grade 與屬性規則（名稱、數量、min、
@@ -236,15 +241,15 @@ calibrated — Calibrate Buy/Sell.」）。
 
 餵食器的**可攜**設定 —— 機器列、裁切圖與標記在寵物設定/校正介面完成前都是**唯讀**的（第 6 與 11 節）。
 
-- **Feeding** —— **Items per minute (fallback rate)**（只有在讀不到浮空窗自己的速率行時使用）與
+- **Feeding** —— **Items per minute (fallback rate)**（只有在讀不到代養視窗自己的速率行時使用）與
   **Occupied above (0–1 distance)**（格子的讀數要多不像空的參考值才算「有寵物」）。
 - **Machine rows — read-only this wave：** 設定中的繁殖列（啟用/停用、堆疊數、餵食條）與 **Queue** 數量。
-- **Calibration crops — read-only this wave：** 浮空 X 裁切與食物圖示裁切是否存在、浮空背包格、食物格、
-  回歸格與食物載入模式。
+- **Calibration crops — read-only this wave：** 代養視窗的關閉鈕的裁切與食物圖示裁切是否存在、代養背包格、
+  食物格、回歸格與食物載入模式。
 
 全新安裝沒有繁殖列，而 v3.0 還沒有列編輯器：請遷移 v2 的 `config/local.yaml`（裡面有這些資料），或開著
-`v3/docs/spec/CONFIG.md` 手動編輯該區塊；否則餵食器會以設定訊息拒絕。**Calibrate** 分頁仍可繪製餵食器的
-標記（`pet_*` 種類）；浮空 X 的參考裁切圖由執行時自行學習。
+倉庫的 `v3/docs/spec/CONFIG.md` 手動編輯該區塊；否則餵食器會以設定訊息拒絕。**Calibrate** 分頁仍可繪製
+餵食器的標記（`pet_*` 種類）；代養視窗的關閉鈕的參考裁切圖由執行時自行學習。
 
 ### 5.7 Attributes
 
@@ -279,7 +284,8 @@ calibrated — Calibrate Buy/Sell.」）。
 ## 6. 校正：18 種標記
 
 校正標記以**遊戲視窗客戶區的實體像素**儲存（原點 = 客戶區左上角，不含標題列），所以移動視窗不會讓校正
-失效；它**不會**被 Windows 顯示縮放換算。契約與原因在 `v3/docs/spec/CALIBRATION.md`；本節是操作者視角。
+失效；它**不會**被 Windows 顯示縮放換算。契約與原因在倉庫的 `v3/docs/spec/CALIBRATION.md`；本節是操作者
+視角。
 
 ### 6.1 儲存一個標記
 
@@ -318,7 +324,7 @@ calibrated — Calibrate Buy/Sell.」）。
 | Pet — points | **Pet feed icon point** | 點 | Pet Feeder |
 | Pet — points | **Boarding X point** | 點 | Pet Feeder |
 | Pet — points | **Bag page tab point** | 點 | Pet Feeder —— 目標 ITEM1..ITEM3 |
-| Pet — bag | **Boarding bag grid** | 矩形 | Pet Feeder —— 它自己的格網：浮空背包在畫面的另一個位置 |
+| Pet — bag | **Boarding bag grid** | 矩形 | Pet Feeder —— 它自己的格網：代養背包在畫面的另一個位置 |
 | Pet — bag | **Boarding bag slot** | 矩形 | Pet Feeder —— 該格網的一格 |
 | Pet — rows | **Row start/end button** | 矩形 | Pet Feeder —— 目標 "1".."4" |
 | Pet — rows | **Row boarding pet slot** | 矩形 | Pet Feeder —— 目標 "1".."4" |
@@ -348,7 +354,8 @@ calibrated — Calibrate Buy/Sell.」）。
   **Spring point** 種類，沒有 `tuner_region`，改造師的 OCR 幾何在該會談完成前仍由 `local.yaml`
   （`tuner.ocr`）設定。Calibrate 分頁的改造師說明也會這樣寫。
 - **提示面板（tooltip）** —— 停住、懸停、擷取量到的偏移無法用單張畫面的標記表達；由 v2 設定手動編輯。
-- **寵物的參考裁切圖與食物格** —— 即時畫面的會談功能（連浮空 X 裁切都由執行時學習），不是畫面標記。
+- **寵物的參考裁切圖與食物格** —— 即時畫面的會談功能（連代養視窗的關閉鈕的裁切都由執行時學習），不是畫面
+  標記。
 - **賣出格子選擇** —— 是背包格編輯器，不是校正標記。
 - **環境檢查（Detect）** —— 比對規則已在核心，但 v3.0 的 Setup 還沒顯示「你的顯示環境變了」。若換螢幕、
   縮放、視窗大小或換電腦，請**重新校正**；標記是實體位移，v3 刻意不做比例換算（遊戲 UI 不是線性縮放）。
@@ -368,11 +375,12 @@ calibrated — Calibrate Buy/Sell.」）。
 | 檔案 | 內容 |
 |---|---|
 | `<tool>.log` | 每次執行一行開始、每一則**變更的**狀態訊息，以及最終原因。工具 id：`spammer`、`tuner`、`buy`、`sell`、`gem`、`quest`、`pet`。「它做了奇怪的事」時先讀這個。 |
-| `holdspace.log` | Hold Space 自己的診斷軌跡（形狀是 v2 的 `HoldDiag`；釋放失敗會落在這裡）。 |
+| `holdspace.log` | Hold Space 的完整軌跡：v2 的 `HoldDiag` 行（釋放失敗、面板行）**以及**一般的分次執行行（`run started`，接著 `finished` / `stopped` / `failed`）—— 它的診斷與執行日誌共用這個檔案。 |
 | `error.log` | 內部錯誤與工具開啟失敗。可歸因於玩家的拒絕**不會**在這裡 —— 它們在卡片上，這是刻意的，以免蓋掉真正的錯誤。 |
 | `ocr_log.jsonl` | 每次完成的 OCR 掃描一筆 JSON。 |
 | `ocr_errors.jsonl` | 完成但沒有產出該模式要的結果的掃描。 |
-| `captures/capture_<stamp>.png` | 只在 **Save captures** 開啟時（Tuner/Gem）。每筆紀錄會以 `capture_path` 指出檔案。 |
+| `captures/capture_<stamp>.png` | 改造師的 save-captures 診斷檔；紀錄會以 `capture_path` 指出它。 |
+| `captures/empty_check_crop_<HHmmss_fff>.png` | 寶石的 **Save empty captures** 診斷檔；每一張也會寫一行 `gem.log` 詳細紀錄。 |
 
 日誌寫入失敗會被吞掉：它永不使指令或執行失敗。`shutdown` 會把檔案沖出。
 
@@ -387,7 +395,7 @@ calibrated — Calibrate Buy/Sell.」）。
 - `docs/pet-data.csv` —— 餵食器從 `<root>/docs/pet-data.csv` 讀取的餵食表；少了它，餵食預估不可用，排程
   回到設定的週期。
 
-檔案切分、載入順序與折疊的完整說明在 `v3/docs/spec/CONFIG.md`。
+檔案切分、載入順序與折疊的完整說明在倉庫的 `v3/docs/spec/CONFIG.md`。
 
 ---
 
@@ -403,7 +411,7 @@ calibrated — Calibrate Buy/Sell.」）。
 - v3.0 不要依賴「退出/暫停鍵」；那些行為要等輪詢器回來。
 
 這是刻意的延後，不是藏在文件裡的退步：計畫要求先量測背景程序能否在遊戲取得焦點時讀到按鍵（防作弊可能
-阻擋），協定會依量測結果長出指令。它列在 `v3/docs/backlog/OPEN.md`。
+阻擋），協定會依量測結果長出指令。它列在倉庫的待辦清單（`v3/docs/backlog/OPEN.md`）。
 
 ---
 
@@ -421,8 +429,9 @@ calibrated — Calibrate Buy/Sell.」）。
 
 1. 啟動遊戲（視窗模式），登入。
 2. 開啟 Seal Tools；核心會連上（狀態列顯示 `core … · rev …`）。
-3. 在工具分頁設定這次執行需要的東西（Spammer 預設、Tuner 目標/篩選、Gem 開始等級、Quest 流程、Pet 列），
-   然後在卡片按 **Start**。結束時按 **Stop**。
+3. 在工具分頁設定這次執行需要的東西（Spammer 預設、Tuner 目標/篩選、Gem 開始等級、Quest 流程）。
+   Pet Feeder 的列與佇列來自遷移的 v2 `local.yaml` 或手動編輯的區塊 —— Pet 分頁在 v3.0 是唯讀的，還沒有
+   列編輯器。然後在卡片按 **Start**。結束時按 **Stop**。
 4. Buy/Sell：Buy 用卡片的執行選擇；Sell 用備妥的選擇，並記住：賣出無法復原且有上限。
 5. 結束時關閉 Seal Tools —— 關掉 UI 會停止工具與核心。一次只開一份（v3.0 沒有單一實例防護）。
 
@@ -437,14 +446,14 @@ calibrated — Calibrate Buy/Sell.」）。
 |---|---|
 | 整個視窗顯示 **「The core is not running」**，有 **Stderr tail** 與 **Restart core** | 核心當掉或開機被拒絕。尾端就是原因（開機拒絕會印到 stderr，不是協定訊息）。**Restart core** 會開新程序與新手勢。**協定版本不合**（`bad_version`）刻意隱藏 Restart：請把 `SealTools.exe` 與 `seal-core.exe` 換成一對相符的版本；不要混用。 |
 | `bad_version` | 你混用了執行檔。請用同一份 zip 的一對。 |
-| **找不到遊戲視窗（game window not found）** | 視窗標題或變體錯（`Settings → Game window title` / `Client variant`），或遊戲沒開/被最小化。Setup 的 **Find window** 會回報核心看到的東西。 |
-| **`game_not_foreground`** | 遊戲前面有別的公視窗。把遊戲帶到最前面再試；Calibrate 分頁的擷取會自己隱藏殼層一個影格。 |
-| **`ocr_unavailable`** | 找不到 OCR 模型或模型載入失敗。`detail.reason` 會是 `models_env_unset`、`models_dir_missing` 或 `model_load_failed:<file>`，而 `detail.message` 會列出**每一個嘗試過的資料夾**。解析順序：`SEAL_OCR_MODELS`（有設定就優先，失敗就明確失敗）、`<root>/models`、`seal-core.exe` 所在資料夾 + `models`；資料夾必須有三個 `.onnx` 才算數。還原出貨的 `models/`（或為自訂位置設 `SEAL_OCR_MODELS`）。 |
+| **找不到遊戲視窗（game window not found）** | 視窗標題或變體錯（**Setup** 分頁的 **Game window title** / **Client variant** 欄位），或遊戲沒開/被最小化。Setup 的 **Find window** 會回報核心看到的東西。 |
+| **`game_not_foreground`** | 遊戲前面有別的視窗。把遊戲帶到最前面再試；Calibrate 分頁的擷取會自己隱藏殼層一個影格。 |
+| **`ocr_unavailable`** | OCR 管線在這台機器上無法完成這次讀取。`detail.reason` 是程式在「管線建不起來」時給的原因 —— `models_env_unset`、`models_dir_missing`、`text_fixes_invalid`、`model_load_failed`、`runtime_failed` 之一 —— 而 `detail.message` 會指出失敗的檔案、模型或資料夾（若是模型缺失，會列出**每一個嘗試過的資料夾**）。若失敗發生在掃描已建好的管線時（`bad_image`、`det_output_shape`），會以 `internal` 回報並附上 OCR 訊息：那是壞畫面或程式錯誤，不是機器無法提供 OCR。模型解析順序：`SEAL_OCR_MODELS`（有設定就優先，失敗就明確失敗）、`<root>/models`、`seal-core.exe` 所在資料夾 + `models`；資料夾必須有三個 `.onnx` 才算數。還原出貨的 `models/`（或為自訂位置設 `SEAL_OCR_MODELS`）。 |
 | **`board_unavailable`** | 設定的埠上沒有板子，或埠打不開。檢查線材（要能傳資料，不是純充電線）、板子的 USB 驅動、Setup 的 **VID/PID/port**，並按 **Probe board**。同一個 COM 埠只能有一個程式使用。 |
-| 卡片出現「The bag grid isn't calibrated — Calibrate Buy/Sell.」這類行 | 不是 bug；該工具需要的標記不存在。到 **Calibrate** 繪製（行內會指出工具群組）。 |
+| 卡片出現「某個標記尚未校正」這類行 | 不是 bug；行內會指出要儲存的**標記**與唯一的 **Calibrate** 分頁。到那裡選該種類（若是具名種類，再選目標實例）並儲存。 |
 | 「No buy preset selected.」/「No slots are selected to sell.」 | 在 Buy/Sell 新增/選擇買入預設（卡片的選擇器）。Sell 需要它的格子選擇，而 v3.0 沒有編輯器（第 11 節）：若遷移來的設定有選擇才可能執行，否則工具跑不了。 |
 | 「The active preset … was not found — pick one in the Spammer tab.」 | 在 Spammer 分頁設定 **Active preset (runs)**。 |
-| 寵物餵食器啟動被拒絕（`… isn't calibrated` 或 `No breeding row is set up` 之類） | 餵食器的標記與列必須存在。校正它的 `pet_*` 種類；新安裝還沒有列（第 11 節）—— 遷移 v2 的 `local.yaml`，或依 CONFIG.md 編輯該區塊。 |
+| 寵物餵食器啟動被拒絕（標記或繁殖列相關的行） | 餵食器的標記與列必須存在。校正它的 `pet_*` 種類；新安裝還沒有列（第 11 節）—— 遷移 v2 的 `local.yaml`，或開著倉庫的 `v3/docs/spec/CONFIG.md` 編輯該區塊。 |
 | 熱鍵在遊戲中沒反應 | v3.0 的正常情況 —— 沒有輪詢器（第 8 節）。用殼層的 Stop。 |
 | 「按 Capture 時視窗會閃」 | 正常：殼層隱藏一個影格，讓擷取拍到遊戲，然後開回來。v2 閃約 0.3 秒；v3 是一個影格加上來回通訊。 |
 | 需要上次執行的細節 | 讀 `<root>/logs/<tool>.log`（狀態列會印 root）；`error.log` 與 `ocr_errors.jsonl` 就在旁邊。 |
@@ -453,8 +462,8 @@ calibrated — Calibrate Buy/Sell.」）。
 
 ## 11. v3.0 尚未實作的部分
 
-列在這裡，讓缺少的能力是已知邊界，而不是謎團。最新清單在 `v3/docs/backlog/OPEN.md`；以下每一項都是
-「3.0 沒有」，不是「明天就會有」，除非倉庫另外說明。
+列在這裡，讓缺少的能力是已知邊界，而不是謎團。最新清單在倉庫的 `v3/docs/backlog/OPEN.md`；以下每一項
+都是「3.0 沒有」，不是「明天就會有」，除非倉庫另外說明。
 
 - **全域熱鍵。** 沒有輪詢器；見第 8 節。Stop 與殼層控制項都能用。
 - **迷你模式 / 置頂 / 隱藏卡片。** v2 的卡片視窗外觀不再；v3 視窗是分頁殼層，精簡模式是之後的版面決定。
@@ -472,7 +481,10 @@ calibrated — Calibrate Buy/Sell.」）。
 
 ## 12. 其餘文件在哪裡
 
-- `v3/docs/INSTALL.md` —— 安裝、遷移、更新、移除、疑難排解（與本檔同一資料夾）。
+**zip 帶什麼：** 本指南、它的英文版、`INSTALL.md`、`THIRD-PARTY-NOTICES.md` 與 `docs/pet-data.csv`。
+以下以 `v3/` 開頭的路徑都是**專案倉庫**中的路徑，不是 zip 內的檔案。
+
+- `v3/docs/INSTALL.md` —— 安裝、遷移、更新、移除、疑難排解（也在 zip 裡，與本指南同一個資料夾）。
 - `v3/docs/spec/CONFIG.md` —— 每個設定檔、哪個是你的，以及載入/折疊規則。
 - `v3/docs/spec/CALIBRATION.md` —— 座標契約、DPI/縮放為何如此，以及產物規則。v2 的
   `docs/spec/COORDINATES.md` 與 `CALIBRATION.md` 是量測紀錄。
