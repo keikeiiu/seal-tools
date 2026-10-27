@@ -124,10 +124,15 @@ verification item stays open.
       the version/deny/post-zip/firmware guards without a build; release command
       `-ModelsDir v2\models`), config templates,
       `local.yaml.example`, `docs/pet-data.csv`, `DirectML.dll` licensing note (a release input; the
-      OCR research record cites it). **Staged and launched; the zip step waits on the DirectML
-      acknowledgement and the player's live check.**
-- [ ] Run `-Release -ModelsDir v2\models -AcceptDirectMLRedistribution` after the player acknowledges
-      the DirectML redistribution terms, then record both zip SHA-256s. ⚑ player decision.
+      OCR research record cites it). Staged and launched.
+- [x] DirectML redistribution acknowledged by the player (2026-10-27); the terms were read at source
+      (Microsoft Software License Terms for DirectML, clause 1(a)) and `docs/THIRD-PARTY-NOTICES.md`
+      ships as a required release doc. `-Release -ModelsDir v2\models -AcceptDirectMLRedistribution`
+      then passed all three audits: `SealTools-v3.0.zip` 44,808,739 B SHA-256
+      `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA`,
+      `SealTools-v3.0-firmware.zip` 5,254 B SHA-256
+      `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`. Recorded in
+      `records/RELEASE-v3.0.md`.
 - [ ] Release record `records/RELEASE-v3.0.md` + root README v3.0 rewrite + board rows.
 - [ ] Live verification: at least one run of each card in the game (the repo's rule: a tool is done
       when it has run, not when it compiles) and one calibrator pass from the shell UI. ⚑ needs the
