@@ -100,7 +100,13 @@ dist/SealTools-v3.0/
 
 `-Verify -ModelsDir v2\models` now exits 0 with "All release sources are present."
 
-**The release ZIP was also extracted to a fresh temp folder and launched from there: the extracted `SealTools.exe` spawned the extracted `seal-core.exe` and seeded a fresh config, so the artifact is verified as an INSTALL rather than only as a staging folder.
+****Re-cut (2026-10-27).** The pre-publish conformance audit (see the release record) found shipped
+message/doc truth defects and a fixture-coverage gap; they were fixed at source, all gates re-run, and
+the zips re-cut. Final artifact: `SealTools-v3.0.zip` 44,811,539 B SHA-256
+`990C262906966DBE86AB1FF2667063492A00FF1C715B57DE1A1CD1E7995F483A`; the firmware zip is unchanged (`498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`). The first cut's
+hashes are superseded and nothing was published.
+
+The release ZIP was also extracted to a fresh temp folder and launched from there: the extracted `SealTools.exe` spawned the extracted `seal-core.exe` and seeded a fresh config, so the artifact is verified as an INSTALL rather than only as a staging folder.
 
 The staged build was launched as a real release (not the debug dev pair) and self-checked:**
 `SealTools.exe` resolved `seal-core.exe` BESIDE it (the release rule, no environment), the core
@@ -118,8 +124,8 @@ live pass is clean, the release step is mechanical:
    push the branch and the tag — the push is the player's call, this repository has never pushed from
    the v3 work.
 2. **GitHub release** `v3.0` with the two assets:
-   - `dist/SealTools-v3.0.zip` — 44,808,739 B,
-     SHA-256 `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA`
+   - `dist/SealTools-v3.0.zip` — 44,811,539 B,
+     SHA-256 `990C262906966DBE86AB1FF2667063492A00FF1C715B57DE1A1CD1E7995F483A`
    - `dist/SealTools-v3.0-firmware.zip` — 5,254 B,
      SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
    Release body: `v3/docs/records/RELEASE-v3.0.md` (it already states the no-reflash paragraph, the
@@ -161,7 +167,8 @@ live pass is clean, the release step is mechanical:
       (Microsoft Software License Terms for DirectML, clause 1(a)) and `docs/THIRD-PARTY-NOTICES.md`
       ships as a required release doc. `-Release -ModelsDir v2\models -AcceptDirectMLRedistribution`
       then passed all three audits: `SealTools-v3.0.zip` 44,808,739 B SHA-256
-      `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA`,
+      `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA` (the first cut, superseded the same day by the pre-publish audit fixes — final hashes in
+      `records/RELEASE-v3.0.md`: 44,811,539 B, SHA-256 `990C262906966DBE86AB1FF2667063492A00FF1C715B57DE1A1CD1E7995F483A`),
       `SealTools-v3.0-firmware.zip` 5,254 B SHA-256
       `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`. Recorded in
       `records/RELEASE-v3.0.md`.

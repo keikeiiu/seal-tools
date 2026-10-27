@@ -19,6 +19,50 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-27 (23) — the pre-publish audit: the release tells the truth, then it is re-cut
+
+Before the player could publish, the independent builder-check (plan-reviewer, read-only) compared the
+contract docs, the guides and the built payload against the code. It found no packaging drift — the
+zip's docs were byte-identical to the repo — but it found truth defects, and a shipped artifact that
+lies is worse than one that lacks a feature.
+
+The worst were in the SHIPPED BINARY: refusals sent the player to "Calibrate Gem/Tuner/Pet",
+"Calibrate Buy/Sell" and a "Save Composer Moves" button, and told them to edit rows and food load on a
+Pet tab that is read-only in v3.0. Those messages now name the MARK to save on the single Calibrate
+tab, or the exact `config/local.yaml` key, and say which editor is not built. The shipped guides
+repeated the phantom tab, claimed a Hold Space release failure appears on the card (it is
+`holdspace.log`-only), claimed a shell-wide Start disable that does not exist, blamed an installer that
+does not exist, merged two different capture files, promised a `model_load_failed:<file>` suffix the
+code never emits, implied repository-only spec files ship in the zip, omitted the notices file from
+INSTALL's tree, told the player to edit a read-only tab, presented unused OCR retries as working,
+said Settings where the tab is Setup, and used the hover-panel word for the boarding window in zh-TW.
+All fixed in both languages (38 = 38 headings) and INSTALL.
+
+The contract docs had their own contradictions: PROTOCOL's OCR failure reasons and `io` meaning, a
+frame cache still marked "not built", `core.stopping`'s `fatal` producer, the hotkey section that
+contradicted itself, §12.7's "pending plan" for targets that shipped, §7's v2-era writers paragraph, a
+single-instance pointer to the wrong OPEN section and no documented resident/deferred `tool.start`
+rules; CALIBRATION's §8 contradicted §6 on display-scale changes; OPEN still called DirectML/capture
+unresolved and never listed the missing Detect surface; TOOL-FLOWS quoted the old refusals. And the
+golden fixtures covered 26 of 29 commands: `keys.parse`, `keys.names` and `attributes.get` had none,
+and both calibration exemplars used a kind the core refuses (`bag`).
+
+Everything was fixed at source, not documented around. The fixture generator now covers all 29 §4
+commands with the shell's case-keyed guard extended in test support (**65 fixtures**: 29 request /
+30 response / 6 event, 0 mismatches), and `native_assets.json` — the Flutter manifest the re-cut
+bundle legitimately carries — joined the publish allow-list after the audit refused it, which is the
+audit doing its job.
+
+**The zips were re-cut after all gates**: Rust workspace 76 result lines/0 failed, clippy/fmt clean;
+Flutter analyze clean, 165/165, format 81 files; `-Selftest` 26/26, `-Verify` exit 0, `-Release` exit 0
+with stage/app-zip/firmware audits PASS. Final artifacts: `SealTools-v3.0.zip` 44,811,539 B SHA-256
+`990C2629…F483A`; `SealTools-v3.0-firmware.zip` unchanged 5,254 B SHA-256 `498E6A4B…EF3B`. The release
+record carries both cuts, the audit findings and the final hashes; the launch's payload-hash,
+packaged-core replay and clean-unzip checks were re-run against the new artifact. Still unpublished,
+still the player's live pass and merge/tag/publish.
+
+---
+
 ## 2026-10-27 (22) — v3.0 packaged: the stage artifact, the licence file, and the zips
 
 The last stretch of the cut-over. The docs audit's findings were paid off in three docs commits

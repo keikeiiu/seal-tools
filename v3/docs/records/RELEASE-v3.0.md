@@ -11,8 +11,17 @@ run. **The firmware is unchanged: no reflash is needed from v2.15+.**
 
 | artifact | bytes | SHA-256 |
 |---|---|---|
-| `dist/SealTools-v3.0.zip` | 44,808,739 | `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA` |
+| `dist/SealTools-v3.0.zip` | 44,811,539 | `990C262906966DBE86AB1FF2667063492A00FF1C715B57DE1A1CD1E7995F483A` |
 | `dist/SealTools-v3.0-firmware.zip` | 5,254 | `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B` |
+
+**Re-cut (2026-10-27).** These are the hashes of the SECOND cut. The first cut
+(`B38E673C...C9CA`, 44,808,739 B) was superseded the same day by the pre-publish conformance audit:
+it found shipped strings and shipped-guide sentences that told the player to use calibration tabs and
+a Pet-tab editor v3 does not have, plus contract-doc contradictions and three commands with no golden
+fixture. Those were fixed at source (core messages, guides EN+zh, PROTOCOL/CALIBRATION/OPEN,
+TOOL-FLOWS, fixture coverage), the tests were re-run, and the zips re-cut. The firmware zip is
+byte-identical across both cuts (`498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`) because the sketch never changed. Nothing was published
+from either cut; the re-cut is the one to ship.
 
 The app zip holds one top folder `SealTools-v3.0/`: `SealTools.exe` + `data/` + `flutter_windows.dll`
 (the Flutter release bundle), `seal-core.exe`, `DirectML.dll`, `models/` (three PP-OCRv4 `.onnx`),
@@ -50,6 +59,7 @@ and the exact staged file list are in the build log.
 | `cargo fmt --all -- --check` | clean |
 | Flutter `analyze` / `test` / `format` | No issues / 165 tests / 81 files clean |
 | `flutter build windows --debug` and `--release` | built; release renamed `SealTools.exe` |
+| `cargo test -p seal-proto` (golden fixtures) | 13 tests green; **65** fixture files (29 request / 30 response / 6 event) with 0 shell-guard mismatches |
 | `v3/publish.ps1 -Selftest` | exit 0, 26/26 (version-schema, deny, hidden/reparse, post-zip, firmware guards) |
 | `v3/publish.ps1 -Verify -ModelsDir v2\models` | exit 0 "All release sources are present." |
 | `v3/publish.ps1 -Release …` | exit 0; stage audit, app-zip audit, firmware audit all PASS; SHA-256 above |
@@ -58,7 +68,7 @@ and the exact staged file list are in the build log.
 
 ## Artifact integrity (checked after the zips were built)
 
-- **Structure:** the app zip has 28 entries, exactly ONE top folder (`SealTools-v3.0/`), and zero
+- **Structure:** the app zip has 29 entries, exactly ONE top folder (`SealTools-v3.0/`; the re-cut bundle carries the Flutter `native_assets.json` manifest beside the exe), and zero
   forbidden entries (no `local.yaml`, no `logs/`, no `*.backup-*`, no `calib_*.png`).
 - **Payload equals sources:** extracting and hashing the zip's `docs/USER_GUIDE.md`,
   `docs/USER_GUIDE.zh-TW.md`, `docs/INSTALL.md`, `docs/THIRD-PARTY-NOTICES.md`, `docs/pet-data.csv`,
@@ -72,6 +82,41 @@ and the exact staged file list are in the build log.
   state+finished / shutdown sequence, exit 0.
 - **Gates re-run at the recorded commit (`680199f`):** Rust workspace 76 result lines, 0 failed,
   clippy `-D warnings` 0, fmt clean; Flutter analyze No issues, 165/165 tests, format 81 files clean.
+
+## Pre-publish conformance audit (2026-10-27)
+
+An independent read-only audit (the plan's builder-check role) compared PROTOCOL, CALIBRATION, OPEN,
+TOOL-FLOWS, the two guides and INSTALL against the code and the built payload. It found no packaging
+drift -- the zip's docs were byte-identical to the repo -- but it found **truth defects**, and they
+were fixed rather than shipped:
+
+- **CONTRADICTION, shipped binary:** refusal messages sent the player to "Calibrate Gem/Tuner/Pet",
+  "Calibrate Buy/Sell" and a "Save Composer Moves" button; the Pet-tab messages told the player to
+  tick rows and edit food load on a tab that is read-only in v3.0. Every message now names the MARK to
+  save on the single **Calibrate** tab, or the config key to edit in `config/local.yaml`, and says the
+  editor it replaces is not built.
+- **CONTRADICTION, shipped guides:** a quoted phantom refusal, Hold Space release failure claimed on
+  the card (it is `holdspace.log`-only), a shell-wide Start disable that does not exist, an "installer
+  copied a seed" claim with no installer, a capture table that merged two different files, a
+  `model_load_failed:<file>` reason that does not exist, repository-only paths implied to ship in the
+  zip, a missing `THIRD-PARTY-NOTICES.md` in INSTALL's tree, a consumed-vs-harmless `calib_*.png`
+  distinction, a read-only Pet tab that the workflow told the player to edit, unused OCR retries
+  presented as working, Settings-vs-Setup, and zh-TW boarding terminology. All corrected in EN and
+  zh-TW (heading parity 38 = 38) and in INSTALL.
+- **Contract docs:** PROTOCOL's model-failure reasons, `io` meaning, frame-cache "not built" line,
+  `fatal` producer, §11 hotkey item, §12.7 pending-plan sentence, §7 writers/`config.changed`,
+  §4 resident/deferred `tool.start` rules and a single-instance pointer; CALIBRATION §8 vs §6 on
+  display-scale changes; OPEN's stale release-inputs section and the missing Detect gap; TOOL-FLOWS'
+  quoted refusals.
+- **Golden fixtures (T1):** `keys.parse`, `keys.names`, `attributes.get` had no fixture, and both
+  calibration exemplars used a kind the core refuses (`bag`). The generator now covers all 29 §4
+  commands and the accepted kinds: **65 fixtures** (29 request / 30 response / 6 event, 0 shell-guard
+  mismatches), with the shell's test-only decoders extended to match.
+
+Final gates for the re-cut: Rust workspace **76 result lines, 0 failed**, clippy `-D warnings` 0, fmt
+clean; Flutter analyze **No issues**, **165/165** tests, format 81 files clean; `-Selftest` 26/26,
+`-Verify` exit 0, `-Release` exit 0 with all three audits PASS; payload hash-match, packaged-core
+replay smoke, and a clean-unzip launch re-checked against the new artifact.
 
 ## Not verified / deliberately not in v3.0
 
