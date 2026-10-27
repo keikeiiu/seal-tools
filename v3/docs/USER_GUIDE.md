@@ -168,7 +168,7 @@ that it is saved on **Calibrate**).
 | **Skill Spammer** | Presses the active preset's cooldown-governed rotation: the opening sequence, then combos (each step must be atomic), then the singles on their own cooldowns. It has no natural end; it runs until Stop. It stands down when another tool needs the game. A leading `*` in a key means the fast tap. |
 | **Magic Tuner** | Clicks the 發條 button through the board, OCRs the result panel, and repeats until the target grade and filter match, the retry budget runs out, the same result repeats three times, the cursor guard trips, the panel cannot be read, or you press Stop. |
 | **Buy** | One counted pass: focus the game, scroll the shop list for the selected preset, then for each of the count: click the row, click MAX, Enter, Enter. Finished line `Bought {n}x '{item}'.`; stops by itself. |
-| **Sell** | One counted pass over the prepared slot selection, highest slot first, capped by the sell cap. Finished line `Sold {n} slot(s).`; stops by itself. Selling cannot be undone. |
+| **Sell** | One counted pass over the saved slot selection, highest slot first, capped by the sell cap. Finished line `Sold {n} slot(s).`; stops by itself. Selling cannot be undone. |
 | **Gem Composer** | Selects a grade, moves to Register, combines; an empty result box (after the configured empty streak) advances N → G → DG, and the run ends by itself after the last grade. |
 | **Quest Hand-in** | Replays your flow (or sequence) at the quest NPC the configured number of times, checks the cursor guard, and ends with `DONE — {n} loop(s)…`. It reads nothing from the screen. |
 | **Pet Feeder** | The resident tool: keeps each ticked breeding row fed by reloading the feeder before the pet runs out. It publishes one row line per breeding row with its schedule, and keeps running (and waiting) until Stop. The next reload waits while another tool has the game. |
@@ -253,13 +253,21 @@ The gem composer's grades and behaviour; the calibrated **Grade positions**, **R
 ### 5.4 Buy/Sell
 
 The calibrated geometry block here is **read-only this wave** — draw those marks in **Calibrate**.
+The sell-slot *selection* is editable, but it needs the calibrated **Bag grid** to place its cells.
 
 - **Buy presets** — item name, then **Scroll notches**, **Row** and **Count per run**. Add/delete
   presets with **Add item** / **Delete item**. The Buy card picks one for a run (not saved).
-- **Sell** — **Max slots per run (sell cap)**, the hard ceiling on one sell pass. **Note:** the editor
-  for *which* bag slots to sell is one of the not-built surfaces in v3.0 (section 11); without a
-  selection the Sell card refuses with "No slots are selected to sell.", and the core never runs past
-  the cap.
+- **Sell** — **Max slots per run (sell cap)**, the hard ceiling on one sell pass, and the **bag-slot
+  selection**: an 8×8 grid of the bag, where each cell toggles one slot. The header above it prints the
+  pitch derived from the calibrated **Bag grid**, and a line below shows how many of the 64 slots are
+  selected; until that mark is saved the grid is disabled with a line pointing at **Calibrate**, because
+  a Sell run cannot place the cells without it. **Save selection** sends exactly `buy_sell.sell_slots`
+  (a machine block) through the normal validate/apply path, so the selection persists in `local.yaml`
+  across restarts — a deliberate change from v2, whose selection lived only in memory. The tab's
+  **Save** saves the presets and the cap; the selection has its own button, and a refusal leaves it
+  dirty and editable. At run time the core sells the selected slots highest index first and never past
+  the cap — the saved list's order is not the sell order. Without a selection the Sell card refuses
+  with "No slots are selected to sell."
 
 ### 5.5 Quest
 
@@ -279,19 +287,38 @@ cursor against **Cursor guard px**; moving the mouse past the guard stops it.
 
 ### 5.6 Pet
 
-The feeder's **portable** settings — the machine rows, crops and marks stay **read-only** until the
-pet setup/calibration surfaces land (sections 6 and 11).
+The feeder's setup — the machine rows, queue, bag food cells and run settings, plus the portable
+fallbacks — edited in one place and saved together. **One Save** sends one `config.apply` carrying the
+machine `pet` block and/or the portable `settings.pet` halves (whichever have data); a refusal leaves
+the edits in place.
 
-- **Feeding** — **Items per minute (fallback rate)** (used only when the boarding window's own rate
-  line cannot be read) and **Occupied above (0–1 distance)** (how unlike the empty reference a slot
-  must look before it counts as occupied).
-- **Machine rows — read-only this wave:** the configured breeding rows (enabled/disabled, stacks, feeder
-  strip), and the **Queue** count.
-- **Calibration crops — read-only this wave:** whether the boarding-X crop and food-icon crop exist,
-  the boarding bag grid, the food slots, the return slot and the food-load mode.
+- **Breeding rows** — for each row the config already carries: **Row N enabled** (a ticked row is fed;
+  an unticked one is ignored) and **Stacks per reload** (the food strip is divided by it). The row's
+  marks — start/end button, boarding pet slot, food strip, empty-slot crop and boarding state — are
+  read-only here and ride the save verbatim.
+- **Queue** — each queued pet's label/species with **Remove**. Removing an entry is saved by **Save**;
+  adding one still needs the pet capture session (section 11), because it crops the pet icon from the
+  live bag. When the queue is empty the **Return slot** is the fallback the run right-clicks.
+- **Bag food cells** — per page (**ITEM1**..**ITEM3**) an 8×8 grid of the boarding bag; toggle the
+  cells that hold pet food. The grid is available only after the **Boarding bag grid** mark is
+  calibrated; otherwise a line points at **Calibrate** (the boarding bag's own grid, not the shop's)
+  and asks for the **Boarding bag slot** the run needs. A marked page also needs its ITEM tab point
+  saved there.
+- **Return slot** — **Bag page** (1-based, ITEM1 = 1) and **Cell** (0–63, row-major). The pair is
+  written only when both values are known, and the config stores the page 0-based.
+- **Food loading** — **Food load mode** (`right_click` lets the game pick the box; `drag` names it,
+  which needs the row's food strip and a board whose firmware can drag) and **Reload on start** (open
+  and close the boarding window once when a run begins).
+- **Timing & read thresholds** — **Action wait (ms)**, **Wait after empty (minutes)** and the
+  **Count read — left fraction (0–1)** / **Count read — min score (0–1)** thresholds.
+- **Feeding (portable — saved in `settings.pet`)** — **Items per minute (fallback rate)**, used only
+  when the boarding window's own rate line cannot be read, and **Occupied above (0–1 distance)**, how
+  unlike the empty reference a slot must look before it counts as occupied.
 
-A fresh install has no breeding rows, and v3.0 has no row editor yet: set the feeder up by migrating
-your v2 `config/local.yaml` (which carries them) or by hand-editing that block with the repository's
+The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
+the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no
+breeding rows and v3.0 cannot add rows, queue entries or re-capture crops yet — migrate your v2
+`config/local.yaml` (which carries them) or hand-edit that block with the repository's
 `v3/docs/spec/CONFIG.md` open; otherwise the feeder refuses with its setup line. The **Calibrate** tab
 still draws the feeder's marks (`pet_*` kinds); the close-X reference crop is learned by the run
 itself.
@@ -419,9 +446,13 @@ deliberately offers no fake one.
   `local.yaml` (`tuner.ocr`) until that session exists. The Calibrate tab says so in its tuner note.
 - **The tooltip panel** — a hover offset measured by parking, hovering and capturing cannot be
   expressed as one frame mark; hand-edited from v2 config.
-- **The pet's reference crops and food cells** — live-screen session features (the close-X crop is even
-  learned by the run), not frame marks.
-- **The sell-slot selection** — a bag-cell editor, not a calibration mark.
+- **The pet's reference crops and row/queue entries** — live-screen session features (the close-X crop
+  is even learned by the run), not frame marks. The Pet tab edits the setup the config already carries,
+  but adding rows or queue entries and re-capturing those crops needs the pet capture session
+  (section 11).
+- **The sell-slot selection** — not a calibration mark: it is a bag-cell selection edited on the
+  **Buy/Sell** tab (§5.4). It needs the calibrated **Bag grid** to place the cells, but has no kind of
+  its own.
 - **The environment check (Detect)** — the comparison rule exists in the core, but v3.0's Setup surfaces
   do not show a "your display moved" result yet. If you change monitor, scale, window size or move to a
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
@@ -504,11 +535,12 @@ the protocol gains the commands that measurement chooses. It is listed in the re
 1. Start the game, windowed, and log in.
 2. Open Seal Tools; the core connects (status strip shows `core … · rev …`).
 3. On the tool's tab set what the run needs (spammer preset, tuner target/filter, gem start grade,
-   quest flow). For the Pet Feeder, rows and the queue come from a migrated v2 `local.yaml` or a
-   hand-edited block — the Pet tab is read-only in v3.0, so there is no row editor yet. Then **Start**
+   quest flow). For the Pet Feeder, its tab edits the existing rows (enabled/stacks), removes queue
+   entries, marks the bag food cells and sets the load mode and timings; adding rows/queue entries or
+   re-capturing crops still comes from a migrated v2 `local.yaml` or a hand-edited block. Then **Start**
    on the card. **Stop** when done.
-4. For Buy/Sell use the card's run choice (Buy) or the prepared selection (Sell) and remember: Sell is
-   irreversible and capped.
+4. For Buy/Sell use the card's run choice (Buy) or the saved slot selection (Sell) and remember: Sell
+   is irreversible and capped.
 5. Close Seal Tools when finished — closing the UI stops the tools and the core. One copy at a time
    (there is no single-instance guard in v3.0).
 
@@ -528,9 +560,9 @@ marks are physical client-relative offsets; they do not travel.
 | **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
 | A card line saying a mark isn't calibrated | Not a bug; the line names the **mark** to save and the single **Calibrate** tab. Draw that kind there (with its target instance if the kind is a named one) and save it. |
-| "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). Sell needs its slot selection, which v3.0 has no editor for (section 11): a migrated selection can be present, otherwise the tool cannot run. |
+| "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell and press **Save selection**; the grid needs the calibrated **Bag grid** (§5.4). A migrated v2 selection can already be present, but v3's editor is how you change it. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
-| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; a new install has no rows yet (section 11) — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open. |
+| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open (adding rows needs the pet capture session, section 11). |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
 | "The window blinks when I press Capture" | Expected: the shell hides itself for one frame so the capture is of the game, then reopens. v2 blinked ~0.3 s; v3 blinks for a frame plus the round-trip. |
 | Need the last run's detail | Read `<root>/logs/<tool>.log` (status strip prints the root); `error.log` and `ocr_errors.jsonl` are beside it. |
@@ -549,10 +581,10 @@ unless the repository says so.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
-- **The pet reference-crop / food-cell editor and the pet row/queue setup UI.** The Pet tab shows
-  machine rows read-only in v3.0; migrated v2 configs carry them, fresh installs need the editor (or
-  hand-editing) before the feeder can board.
-- **The sell-slot selection editor.** The cap is editable; selecting which bag slots to sell is not yet.
+- **The pet capture session.** The Pet tab edits the setup the machine already carries — rows
+  enabled/stacks, queue removal, bag food cells, return slot, load mode and timings — but adding rows or
+  queue entries and re-capturing the reference crops/rects still needs a live pet capture session;
+  migrated v2 configs carry the current data.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
   copies of Seal Tools at once.

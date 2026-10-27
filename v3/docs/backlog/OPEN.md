@@ -58,10 +58,9 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
   session-shaped calibration is the only way to keep the derivation.
 - **The tooltip's two-capture hover session** — measure the offset by parking the cursor, hovering and
   capturing, then boxing the panel. A single frame mark cannot express it.
-- **The pet's crop/cell editor and the sell-slot editor** — live-screen session features, not frame
-  marks: the pet's reference crops come from the running game (the close-X crop is learned by the
-  run), and the sell slots are a bag-cell editor. v2 deliberately did not persist sell slots; v3 keeps
-  that and records it here.
+- **The pet's capture session** — reference crops, new row/queue entries and food-cell re-marking from
+  the live bag (the close-X crop is learned by the run); the Pet tab edits the setup the config already
+  carries, not the captures.
 - **The environment-check (Detect) surface** — `CalibrationCheck` is ported and tested in the domain
   and `calibration.save`'s optional `display` argument records the environment, but there is no shell
   canvas and no protocol path that SHOWS the comparison; today the player recalibrates manually after
@@ -77,6 +76,9 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 - **Capture/hide lifecycle is CLOSED**: the runner's `seal/host` channel and the Calibrate
   hide → one frame → capture → show path landed (`CUTOVER.md` decision 8), so calibrating from the UI
   works.
+- **Sell-slot selection is CLOSED**: the Buy/Sell tab's 8×8 bag-cell grid saves `buy_sell.sell_slots`
+  with its own **Save selection** (machine block, persisted in `local.yaml`). This deliberately
+  replaces v2's memory-only selection; no open sell-slot work remains.
 - **What remains is not a release INPUT**: the player's live acceptance pass (the repo rule: a tool is
   done when it has run) and the publishing steps (merge/tag/GitHub release/root README) listed in
   [CUTOVER.md](../plans/CUTOVER.md)'s publishing checklist.
