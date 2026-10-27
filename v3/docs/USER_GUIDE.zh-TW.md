@@ -97,17 +97,24 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 
 ### 3.1 Setup
 
-打開 **Setup**。它會一次儲存四項：
+打開 **Setup**。分頁的 **Save** 會寫入客戶端變體、Arduino ID 與埠；Game window title 是唯讀的，由下面的
+動作來設定。
 
 | 欄位 | 意義 |
 |---|---|
-| **Game window title** | 要尋找的視窗。比對是**子字串**比對，所以只要客戶端標題中好辨認的部分即可。 |
+| **Game window title** | **唯讀。** 要尋找的視窗；比對是**子字串**比對，所以只要客戶端標題中好辨認的部分即可。它由 **Find window** 找到、再用 **Use detected title** 儲存 —— 標題是辨認遊戲視窗的依據，所以不用手動輸入。 |
 | **Client variant** | `tw`、`us`，或你的設定（`game.variants`）定義的變體名稱。變體同時決定視窗標題**與**要載入哪一本屬性字典。請選對：選錯會變成「找不到遊戲視窗」，或改造師什麼都對不上。 |
 | **Arduino VID / PID list / Baud** | 沒有指定埠時，用來尋找板子的方式。出貨值是這裡使用的 Pro Micro；只有換板子才需要改。 |
 | **COM port override** | 選填。留空表示依 ID 尋找板子。**指定了不存在的埠會被拒絕**，不會默默改用另一塊板子。 |
 
-**唯讀**區塊顯示目前生效的標題與變體（以及變體指向的字典檔）。三個**動作** —— **Find window**、
-**Measure**、**Probe board** —— 請核心檢查標題、回報量到的視窗框/客戶區矩形，或回報板子的韌體回應。
+**唯讀**區塊顯示目前生效的變體（以及變體指向的字典檔）；上面的標題也是唯讀的。**動作**會請核心：
+
+- **Find window** —— 尋找遊戲視窗並回報偵測到的標題；
+- **Measure** —— 回報量到的視窗框/客戶區矩形；
+- **Probe board** —— 回報板子的韌體回應；
+- **Use detected title** —— 儲存上一次 Find 偵測到的標題（只有在 Find 成功且標題非空時可用；這是唯一會
+  儲存的動作，走一般的 `config.validate`/`config.apply` 流程）。
+
 顯示的行是核心的原文。欄位正確後按 **Save**；切換變體會先解析、驗證、載入字典，最後才寫入，所以不會
 切到一半。
 
@@ -190,21 +197,24 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 改造師的可攜設定；本分頁上的校正幾何區塊在**這階段是唯讀**的（在三個框校正會談完成前由設定檔管理 ——
 第 6.4 節）。
 
-- **Grades** —— 等級清單、**Target grade**，以及篩選的 **require_grade** 部分。
+- **Grades** —— **固定等級順序**，唯讀（chip 列）；**Target grade** 與篩選的 **require_grade** 部分都從
+  這裡選。
 - **Retries and timing** —— **Max retries**、**OCR retries**、**Click/enter delay (s)**、**OCR delay
   (s)**、**Save captures**（會寫入 `logs/captures/` PNG —— 見第 7 節）。**`OCR retries` 只被儲存、目前
   沒有作用：** v3.0 的讀取器只掃描一次；最後一次重試的強制擷取是倉庫待辦清單中的未實作項目。
 - **Springs** —— **Spring mode**（`hid` 把游標放到已校正的發條點；`manual` 留在原處）、**Mouse guard**
   （`off`/`stop`/`recenter`）與其 **Guard px**、**Recenter max**。
-- **Filter** —— 啟用、比對模式（`any`/`all`/`per_attr`）、require-grade 與屬性規則（名稱、數量、min、
-  max），以及覆寫規則。名稱必須與載入的字典相符 —— 請看 **Attributes** 分頁。
+- **Filter** —— 啟用、比對模式（`any`/`all`/`per_attr`）、require-grade 與屬性規則（**名稱**、**數量**、
+  **min**、**max**），以及覆寫規則。**名稱**是從已載入字典的屬性名稱中選取（**Attributes** 分頁列出的
+  那些），不是手動輸入：字典以外的既有名稱會保持選取，而字典正在載入、讀取失敗或沒有任何名稱時，
+  **Add** 會停用並顯示原因。
 
 ### 5.3 Gem
 
 寶石合成器的等級與行為；已校正的 **Grade positions**、**Resource slots**、**Result gem area** 在**這階段
 是唯讀**的（在 **Calibrate** 繪製）。
 
-- **Grades** —— 等級清單與開始的 **Start grade**。
+- **Grades** —— **固定的等級順序**，唯讀（chip 列）；**Start grade** 從這裡選。
 - **Empty result** —— **Empty mode**（`stop`、`advance_grade`，或 `advance_grade_clear`：先清空資源格
   再推進）、**Empty streak**（連續幾次空結果才動作，以免一次讀錯就推進等級）、**Colored gap min**、
   **Save empty captures**。
@@ -265,7 +275,8 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 
 ### 5.9 Setup
 
-視窗、客戶端變體與板子設定，加上三個唯讀動作。見第 3.1 節 —— 同一個分頁就是第一次啟動的設定介面。
+視窗、客戶端變體與板子設定，加上 **Find window**／**Measure**／**Probe board** 與會儲存的
+**Use detected title** 動作。見第 3.1 節 —— 同一個分頁就是第一次啟動的設定介面。
 
 ### 5.10 Hotkeys
 
@@ -420,7 +431,8 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 **每台機器一次（約 15 分鐘，加上校正）：**
 
 1. 安裝並啟動 —— 見 [INSTALL.md](INSTALL.md)。
-2. **Setup**：遊戲視窗標題、客戶端變體、板子 ID；**Save**；然後 **Probe board**。
+2. **Setup**：客戶端變體與板子 ID；**Save**；**Find window**，再用 **Use detected title**；然後
+   **Probe board**。
 3. **Calibrate**：擷取，然後為你要用的工具繪製標記。要買賣先做商店群組，再做寶石，若要餵食再做寵物種類。
    每種標記一次儲存。
 4. 跑一個短工具，確認板子與遊戲有回應。`logs/<tool>.log` 會證明它做了什麼。
@@ -446,7 +458,7 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 |---|---|
 | 整個視窗顯示 **「The core is not running」**，有 **Stderr tail** 與 **Restart core** | 核心當掉或開機被拒絕。尾端就是原因（開機拒絕會印到 stderr，不是協定訊息）。**Restart core** 會開新程序與新手勢。**協定版本不合**（`bad_version`）刻意隱藏 Restart：請把 `SealTools.exe` 與 `seal-core.exe` 換成一對相符的版本；不要混用。 |
 | `bad_version` | 你混用了執行檔。請用同一份 zip 的一對。 |
-| **找不到遊戲視窗（game window not found）** | 視窗標題或變體錯（**Setup** 分頁的 **Game window title** / **Client variant** 欄位），或遊戲沒開/被最小化。Setup 的 **Find window** 會回報核心看到的東西。 |
+| **找不到遊戲視窗（game window not found）** | **Setup** 分頁的變體錯，或標題已不再符合遊戲（標題是唯讀的 —— 用 **Find window**，再用 **Use detected title**），或遊戲沒開/被最小化。Setup 的 **Find window** 會回報核心看到的東西。 |
 | **`game_not_foreground`** | 遊戲前面有別的視窗。把遊戲帶到最前面再試；Calibrate 分頁的擷取會自己隱藏殼層一個影格。 |
 | **`ocr_unavailable`** | OCR 管線在這台機器上無法完成這次讀取。`detail.reason` 是程式在「管線建不起來」時給的原因 —— `models_env_unset`、`models_dir_missing`、`text_fixes_invalid`、`model_load_failed`、`runtime_failed` 之一 —— 而 `detail.message` 會指出失敗的檔案、模型或資料夾（若是模型缺失，會列出**每一個嘗試過的資料夾**）。若失敗發生在掃描已建好的管線時（`bad_image`、`det_output_shape`），會以 `internal` 回報並附上 OCR 訊息：那是壞畫面或程式錯誤，不是機器無法提供 OCR。模型解析順序：`SEAL_OCR_MODELS`（有設定就優先，失敗就明確失敗）、`<root>/models`、`seal-core.exe` 所在資料夾 + `models`；資料夾必須有三個 `.onnx` 才算數。還原出貨的 `models/`（或為自訂位置設 `SEAL_OCR_MODELS`）。 |
 | **`board_unavailable`** | 設定的埠上沒有板子，或埠打不開。檢查線材（要能傳資料，不是純充電線）、板子的 USB 驅動、Setup 的 **VID/PID/port**，並按 **Probe board**。同一個 COM 埠只能有一個程式使用。 |

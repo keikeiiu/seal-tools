@@ -37,6 +37,10 @@ The template defines the portable *shape*: a save projects the merged config ont
 never projected even if a template carried them — `spammer` (personal rotations must never ship) and
 `settings` (where the projection itself lives).
 
+The shipped UI treats `tuner.grade_order` and `gem.grades` as **fixed**: both remain portable fields
+(and hand-editable in config), but the Tuner and Gem tabs render them read-only, offer no add/remove
+editor, and do not send them on a save — do not look for that control in the shell.
+
 ## 2. Loading: three layers and the fold
 
 `ConfigStore::load` returns the merged config as JSON. Sources, weakest first

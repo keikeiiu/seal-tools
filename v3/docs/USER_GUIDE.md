@@ -109,18 +109,26 @@ setup**, and they will be wrong on your machine. The order is: **Setup → Calib
 
 ### 3.1 Setup
 
-Open **Setup**. It saves four things in one action:
+Open **Setup**. The tab's **Save** writes the client variant, the Arduino IDs and the port; the Game
+window title is read-only, and the actions below set it.
 
 | Field | What it means |
 |---|---|
-| **Game window title** | The window to find. Matching is a **substring**, so the client title's distinctive part is enough. |
+| **Game window title** | **Read-only.** The window to find; matching is a **substring**, so the client title's distinctive part is enough. It is set with **Find window**, then **Use detected title** — the title identifies the game window, so it is not typed. |
 | **Client variant** | `tw`, `us`, or a variant name your config defines (`game.variants`). The variant supplies the window title **and** which attribute dictionary is loaded. Leave it on the right one: a wrong variant is "game window not found" or "the tuner matches nothing". |
 | **Arduino VID / PID list / Baud** | How the board is found when no port is named. The shipped values fit the Pro Micro used here; change them only for a different board. |
 | **COM port override** | Optional. Leave empty to find the board by its IDs. A **named port that does not exist is a refusal**, not a silent fallback to another board. |
 
-The **read-only** section shows the title and variant currently in effect (and the dictionary file the
-variant names). The three **Actions** — **Find window**, **Measure**, **Probe board** — ask the core to
-check the title, report the measured frame/client rectangles, or report the board's firmware reply.
+The **read-only** section shows the variant currently in effect (and the dictionary file the variant
+names); the title above is read-only too. The **Actions** ask the core to:
+
+- **Find window** — find the game window and report the detected title;
+- **Measure** — report the measured frame/client rectangles;
+- **Probe board** — report the board's firmware reply;
+- **Use detected title** — save the title the last Find detected (enabled only after a successful Find
+  with a non-empty title; this is the one action that saves, through the normal
+  `config.validate`/`config.apply` path).
+
 Their lines are the core's own, verbatim. Press **Save** when the fields are right; a variant switch is
 resolved, validated, its dictionary loaded, and only then written, so it cannot half-switch.
 
@@ -215,7 +223,8 @@ Start with a line naming the tab.
 The tuner's portable settings; the calibrated geometry block on this tab is **read-only in this wave**
 (it is owned by config until the three-box calibration session lands — section 6.4).
 
-- **Grades** — the grade list, the **Target grade**, and the **require_grade** half of the filter.
+- **Grades** — the **fixed grade order**, read-only (a chip row); the **Target grade** and the
+  **require_grade** half of the filter are selected from it.
 - **Retries and timing** — **Max retries**, **OCR retries**, **Click/enter delay (s)**, **OCR delay
   (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7). **OCR retries is stored but
   currently unused:** v3.0's reader scans once; the last-retry forced capture is a named not-built item
@@ -223,15 +232,18 @@ The tuner's portable settings; the calibrated geometry block on this tab is **re
 - **Springs** — **Spring mode** (`hid` places the cursor on the calibrated spring point; `manual` leaves
   it where it is), **Mouse guard** (`off`/`stop`/`recenter`) and its **Guard px** and **Recenter max**.
 - **Filter** — enabled, match mode (`any`/`all`/`per_attr`), require-grade and the attribute rules
-  (name, count, min, max), plus override rules. The names must match the loaded dictionary — check the
-  **Attributes** tab.
+  (**name**, **count**, **min**, **max**), plus override rules. The **name** is selected from the loaded
+  dictionary's attribute names (the **Attributes** tab lists them), not typed: a stored name outside the
+  dictionary stays selected, and **Add** is disabled with the reason shown while the dictionary is
+  loading, failed, or has no names.
 
 ### 5.3 Gem
 
 The gem composer's grades and behaviour; the calibrated **Grade positions**, **Resource slots** and
 **Result gem area** are **read-only this wave** (draw them in **Calibrate**).
 
-- **Grades** — the list and the **Start grade** to begin at.
+- **Grades** — the **fixed grade ladder**, read-only (a chip row); the **Start grade** is selected from
+  it.
 - **Empty result** — **Empty mode** (`stop`, `advance_grade`, or `advance_grade_clear` — advance after
   clearing the resource slots first), **Empty streak** (how many consecutive empty reads before acting,
   so one bad read cannot advance a grade), **Colored gap min** and **Save empty captures**.
@@ -301,8 +313,9 @@ on the **Setup** tab's actions (**Probe board**).
 
 ### 5.9 Setup
 
-The window, client variant and board settings, plus the three read-only actions. See section 3.1 — the
-same tab is the first-run configuration surface.
+The window, client variant and board settings, plus **Find window**/**Measure**/**Probe board** and the
+saving **Use detected title** action. See section 3.1 — the same tab is the first-run configuration
+surface.
 
 ### 5.10 Hotkeys
 
@@ -480,7 +493,8 @@ the protocol gains the commands that measurement chooses. It is listed in the re
 **Once per machine (≈15 minutes plus calibration):**
 
 1. Install and launch — see [INSTALL.md](INSTALL.md).
-2. **Setup**: game window title, client variant, board IDs; **Save**; then **Probe board**.
+2. **Setup**: client variant and board IDs; **Save**; **Find window**, then **Use detected title**; then
+   **Probe board**.
 3. **Calibrate**: capture, then draw the marks for the tools you will use. Start with the shop group if
    you Buy/Sell, then Gem, then the pet kinds if you feed. Each kind is one save.
 4. Run one short tool to confirm the board and the game respond. `logs/<tool>.log` proves what it did.
@@ -509,7 +523,7 @@ marks are physical client-relative offsets; they do not travel.
 |---|---|
 | Whole window says **"The core is not running"** with **Stderr tail** and **Restart core** | The core crashed or its boot was refused. The tail is the reason (a boot refusal prints to stderr, not as a protocol message). **Restart core** starts a fresh process and handshake. A **protocol mismatch** (`bad_version`) hides Restart on purpose: replace both `SealTools.exe` and `seal-core.exe` with a matched pair; do not mix versions. |
 | `bad_version` | You mixed binaries. Use one zip's pair. |
-| **game window not found** | Wrong window title or variant (the **Game window title** and **Client variant** fields on the **Setup** tab), or the game is not running/minimised. **Find window** on Setup reports what the core sees. |
+| **game window not found** | Wrong variant on the **Setup** tab, or a title that no longer matches the game (the title is read-only — use **Find window**, then **Use detected title**), or the game is not running/minimised. **Find window** on Setup reports what the core sees. |
 | **`game_not_foreground`** | Another window is in front of the game. Bring the game to the front and retry; the Calibrate tab's capture hides the shell for one frame itself. |
 | **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |

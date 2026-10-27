@@ -146,21 +146,24 @@ quarantine, or a `config/` that cannot be read. The full list is in **Troublesho
 
 ## 4. Configure
 
-Open **Setup** and fill in the four settings, then press **Save**:
+Open **Setup**. The client variant, the Arduino IDs and the port are editable and saved with **Save**;
+the game window title is **read-only** and is set with the actions below.
 
 | Field | What to put there |
 |---|---|
-| **Game window title** | The game window's title (matching is a **substring**, so the distinctive part is enough). |
+| **Game window title** | **Read-only.** The game window's title (matching is a **substring**, so the distinctive part is enough). It is set with **Find window**, then **Use detected title** — the title identifies the window, so it is not typed. |
 | **Client variant** | `tw` or `us` (or a variant your config defines). The variant supplies the window title **and** the attribute dictionary the OCR matches against; a wrong variant is "game window not found" or "the tuner matches nothing". |
 | **Arduino VID / PID list / Baud** | How the board is found when no port is named. The shipped values fit the Pro Micro; change only for a different board. |
 | **COM port override** | Optional — leave empty to find the board by IDs. A named port that does not exist is a **refusal**, not a silent fallback. |
 
-Then use the read-only actions to confirm:
+Then use the actions:
 
-- **Find window** — does the core see the game with that title?
+- **Find window** — does the core see the game, and what title does it report?
 - **Measure** — reports the frame and client rectangles it measured.
 - **Probe board** — opens the board and reports its firmware reply. This is the same probe as the
   **Arduino** tab.
+- **Use detected title** — saves the title the last Find detected (enabled only after a successful Find
+  with a non-empty title; this is the one action that writes config, through the normal save path).
 
 Press **Save** on Setup. A variant switch is resolved, validated, its dictionary loaded, and only then
 written; it cannot half-switch.
@@ -270,7 +273,7 @@ you want to keep your calibration.
 |---|---|
 | **"The core is not running"** with a **Stderr tail** | `seal-core.exe` could not start or exited. Read the tail: a boot refusal (missing/unreadable config, an invalid merged config, a dictionary that cannot load) prints there, not as a protocol message. **Restart core** retries. Common causes: `seal-core.exe` moved out of the folder, antivirus blocked it, or `config/` is unreadable. |
 | `bad_version` | The shell and core are from different versions. Replace **both** files from the same zip; Restart will not fix a mismatch. |
-| `game window not found` | Wrong title/variant, or the game is not running/windowed/restored. Check **Setup** and press **Find window**. |
+| `game window not found` | Wrong variant, or a title that no longer matches the game (the title is read-only — use **Find window**, then **Use detected title**), or the game is not running/windowed/restored. Check **Setup** and press **Find window**. |
 | `game_not_foreground` | Something is in front of the game. Bring the game forward; the Calibrate capture hides the shell itself for one frame. |
 | `ocr_unavailable` | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names what failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line. Order for models: `SEAL_OCR_MODELS` if set (it wins or fails loudly), then `<root>/models`, then `<seal-core.exe folder>/models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/`. |
 | `board_unavailable` | No board on the configured port, or the port cannot be opened. Check the data cable, the USB driver (CH340 clones), the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
