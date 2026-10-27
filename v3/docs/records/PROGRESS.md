@@ -19,6 +19,36 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-27 (22) — v3.0 packaged: the stage artifact, the licence file, and the zips
+
+The last stretch of the cut-over. The docs audit's findings were paid off in three docs commits
+(PROTOCOL/DESIGN/TOOL-FLOWS statuses made true again, CALIBRATION's counts and a new portability
+section, CONFIG's stale bullets, OPEN pruned to genuinely-open work, folder READMEs, a v3.0 release
+record); the product announcement stopgap was removed by separating `productVersion 3.0.0` (app bar)
+from `protocolClientVersion 0.1.0` (handshake); the capture/hide lifecycle landed so calibration from
+the UI is actually possible; naming/version alignment made the binary `SealTools.exe`.
+
+Packaging took four attempts and each failure was a real defect the gates caught: `-Verify` red on
+seven inputs at first; the staging attempt blocked by the sandbox's Flutter restrictions (the Lead
+session ran it); the first authorized `-Release` refused `data/app.so` and zipped nothing; and before
+that an adversarial review of `publish.ps1` found a path-traversal delete via `-Version` in a script
+that had never been run. All fixed at cause, with a 26-check `-Selftest` pinning the guards.
+
+**The DirectML licence question is settled by its terms, not by hope:** Microsoft's Software License
+Terms for Microsoft DirectML clause 1(a) permit distributing the unmodified DLL inside Windows
+applications, with the other clauses applying. `docs/THIRD-PARTY-NOTICES.md` now ships (a fourth
+required release doc) with the distribution clause, the shipped copy's FileVersion, the canonical
+1.15.4 terms URL, ONNX Runtime's MIT text, the PP-OCRv4 attributions and Flutter's notes pointer.
+
+The release run then passed all three audits and produced `dist/SealTools-v3.0.zip` (44,808,739 B,
+SHA-256 B38E673C…C9CA) and `dist/SealTools-v3.0-firmware.zip` (5,254 B, SHA-256 498E6A4B…EF3B);
+`RELEASE-v3.0.md` records both, what was verified, and what deliberately is not in v3.0. The staged
+release build was launched and self-checked: shell found the core beside it with no environment, the
+core seeded `local.yaml`, the window opened. What remains is the player's live pass and their
+merge/tag/publish decision — the repo's own rule says a tool is done when it has run.
+
+---
+
 ## 2026-10-27 (21) — buy gets its run, the logs become files, calibration is repaired, replay lands
 
 The tool-coverage and infrastructure stretch. **Buy is live**: PROTOCOL §12.6 gave `tool.start`
