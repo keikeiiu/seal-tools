@@ -1,5 +1,7 @@
 /// The `calibration.save`/`calibration.fetch` results, decoded app-locally (the shell alone consumes
-/// the mark/derived/artifact shapes; no wire type or fixture exists for them, like `attributes.get`).
+/// the mark/derived/artifact shapes; the wire envelopes have golden fixtures —
+/// `response.ok.calibration_save*` / `response.ok.calibration_fetch*` — and these decoders exist
+/// because the payloads are presentation-only rather than typed app state).
 ///
 /// The units are the calibration contract's ([CALIBRATION.md] §1): every mark is CLIENT-RELATIVE
 /// PHYSICAL pixels, drawn on the captured full-client frame. The core owns the derived pitch and the
