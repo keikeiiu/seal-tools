@@ -193,7 +193,15 @@ function Get-StageSafetyProblems([string]$stageDir) {
 }
 
 function Test-AllowedStageRelative([string]$relative) {
-    $allowedRoot = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll', 'flutter_windows.dll')
+    # native_assets.json is the Flutter tool's native-asset manifest: a legitimate part of the
+    # release bundle (the engine reads it when the app has no native assets too), and NOT player state.
+    $allowedRoot = @(
+        'SealTools.exe',
+        'seal-core.exe',
+        'DirectML.dll',
+        'flutter_windows.dll',
+        'native_assets.json'
+    )
     $allowedConfig = @(
         'config/defaults.yaml.example',
         'config/local.yaml.example',
@@ -903,6 +911,7 @@ if ($Verify) {
     Write-Host ''
     Write-Host "Planned payload -> $StageDir\ (one top folder):"
     Write-Host '  SealTools.exe + data/ (app.so, icudtl.dat, flutter_assets/) + flutter_windows.dll'
+    Write-Host '  native_assets.json (the Flutter native-asset manifest)'
     Write-Host '  seal-core.exe, DirectML.dll'
     Write-Host '  models/<the three PP-OCRv4 .onnx files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
