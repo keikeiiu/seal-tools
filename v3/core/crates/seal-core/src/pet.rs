@@ -272,9 +272,9 @@ fn decode_crop(png: &str, what: &str) -> Result<ReferenceCrop, String> {
     let payload = png.rsplit(',').next().unwrap_or(png).trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the crops come from your v2 config; re-capturing them is not built yet)."))?;
     let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the crops come from your v2 config; re-capturing them is not built yet)."))?;
     Ok(ReferenceCrop {
         width: width as usize,
         height: height as usize,
@@ -288,9 +288,9 @@ fn decode_icon(png: &str, what: &str) -> Result<PetImage, String> {
     let payload = png.rsplit(',').next().unwrap_or(png).trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the crops come from your v2 config; re-capturing them is not built yet)."))?;
     let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the crops come from your v2 config; re-capturing them is not built yet)."))?;
     Ok(PetImage {
         width: width as usize,
         height: height as usize,
@@ -1623,8 +1623,7 @@ impl<S: PetSource> PetTool<S> {
                         None => {
                             visit.outcome = Some(RowOutcome::Failed {
                                 error: format!(
-                                    "No food cells left — {} of {} used. Mark the cells holding food \
-                                     again in config/local.yaml (the Pet tab is read-only in v3.0).",
+                                    "No food cells left — {} of {} used. Mark the cells holding food again on the Pet tab.",
                                     visit.food_used,
                                     self.plan.food_slots.len()
                                 ),
@@ -1658,10 +1657,7 @@ impl<S: PetSource> PetTool<S> {
                     let slot = visit.slot_centre;
                     let Some(slot) = slot else {
                         visit.outcome = Some(RowOutcome::Failed {
-                            error: "The food load is set to drag but this row's food strip doesn't \
-                                    divide into its stack count — save the Row food strip on the \
-                                    Calibrate tab, or set pet.food_load_mode back to \"right_click\" \
-                                    in config/local.yaml (the Pet tab is read-only in v3.0)."
+                            error: "The food load is set to drag but this row's food strip doesn't divide into its stack count — save the Row food strip on the Calibrate tab, or set the load mode back to \"right_click\" on the Pet tab."
                                 .to_owned(),
                         });
                         visit.stage = Stage::Fold;
@@ -2059,7 +2055,7 @@ mod tests {
 
         assert_eq!(
             line,
-            "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0)."
+            "Every row is unticked — nothing to feed. Tick the row on the Pet tab."
         );
     }
 

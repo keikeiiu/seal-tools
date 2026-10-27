@@ -795,13 +795,11 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     }
     if setup.slots.is_empty() {
         return refusal(
-            "No breeding row is set up — add it in config/local.yaml (the Pet tab is read-only in v3.0). Each row needs its start/end button and its pet slot marked on the Calibrate tab.",
+            "No breeding row is set up — rows come from your migrated v2 config and adding a row is not built yet. Each row needs its start/end button and its pet slot marked on the Calibrate tab.",
         );
     }
     if !setup.slots.iter().any(|row| row.enabled) {
-        return refusal(
-            "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0).",
-        );
+        return refusal("Every row is unticked — nothing to feed. Tick the row on the Pet tab.");
     }
 
     // EVERY row the tool DRIVES, not just the first. Only the ticked ones: a row that is switched off
@@ -813,7 +811,7 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
         }
         if !valid_rect(&row.toggle_label) {
             return Err(StopReason::error(format!(
-                "Row {}'s start/end button isn't marked — save the Row start/end button for row {} on the Calibrate tab. The tool has nothing to click for that row. Untick it in config/local.yaml (the Pet tab is read-only in v3.0) to leave it alone.",
+                "Row {}'s start/end button isn't marked — save the Row start/end button for row {} on the Calibrate tab. The tool has nothing to click for that row. Untick it on the Pet tab to leave it alone.",
                 index + 1,
                 index + 1
             )));
@@ -856,7 +854,7 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     for (what, page) in pages {
         if page < 0 || page as usize >= setup.page_tabs.len() {
             return Err(StopReason::error(format!(
-                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or move the cell in config/local.yaml.",
+                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or change it on the Pet tab.",
                 page + 1,
                 setup.page_tabs.len()
             )));
@@ -878,12 +876,12 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
         && setup.queue_len == 0
     {
         return refusal(
-            "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the pet by. Set pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0), or add a pet icon to pet.queue.",
+            "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the pet by. Set the return slot on the Pet tab, or add a pet icon to pet.queue in config/local.yaml (adding queue entries is not built yet).",
         );
     }
     if setup.food_slots.is_empty() {
         return refusal(
-            "No food cells are marked — set pet.food_slots in config/local.yaml (the Pet tab is read-only in v3.0). Nothing says where the pet food lives.",
+            "No food cells are marked — mark the food cells on the Pet tab. Nothing says where the pet food lives.",
         );
     }
     if max_button(setup).is_none() {
@@ -950,48 +948,37 @@ pub fn end_toggle_failed(row: &str) -> String {
         "{row}: the pet did NOT come back out of the loader after pressing the end button — so that \
          press did the opposite of what was asked and a boarding may now be running with nothing in \
          it. Stopping rather than clicking on: check the row in the game, and re-capture its \
-         empty-slot reference in config/local.yaml (the Pet tab is read-only in v3.0) if the slot is \
-         empty."
+         empty-slot reference in config/local.yaml (the crops come from your v2 config; re-capturing them is not built yet) if the slot is empty."
     )
 }
 
 /// The right-click placement never took: the slot still looks empty after the attempts.
 pub fn pet_did_not_go_in() -> String {
     format!(
-        "The pet did not go in after {PLACE_ATTEMPTS} right-clicks — the slot still looks empty. \
-         Nothing was loaded. Check pet.return_slot in config/local.yaml (the Pet tab is read-only \
-         in v3.0)."
+        "The pet did not go in after {PLACE_ATTEMPTS} right-clicks — the slot still looks empty. Nothing was loaded. Check the return slot on the Pet tab."
     )
 }
 /// Every candidate was found and REFUSED (+9/100 %), which is a different fix from "nothing found".
 pub fn all_refused_message(refused: &[String]) -> String {
     format!(
-        "Every pet that could be boarded reads +9/100%. Refused {}. Capture the icon of a pet that \
-         can still be fed and add it to pet.queue in config/local.yaml (the Pet tab is read-only in \
-         v3.0).",
+        "Every pet that could be boarded reads +9/100%. Refused {}. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet).",
         refused.join("; ")
     )
 }
 /// Nothing usable in the bag: the return slot is empty and no queued icon matched.
 pub fn nothing_matched_message() -> String {
-    "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of a \
-     pet that can still be fed and add it to pet.queue in config/local.yaml (the Pet tab is read-only \
-     in v3.0)."
+    "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet)."
         .to_owned()
 }
 /// No way to find a pet at all — no queued icon and no return slot marked.
 pub fn no_way_to_find_pet_message() -> String {
-    "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set \
-     pet.return_slot or add a pet icon to pet.queue in config/local.yaml (the Pet tab is read-only in \
-     v3.0)."
+    "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set the return slot on the Pet tab, or add a pet icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
         .to_owned()
 }
 /// The bag held no feedable pet, with the sweep's reason.
 pub fn no_pet_in_bag_message(why: &str) -> String {
     format!(
-        "No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished it was \
-         mailed, so this is the queue being empty of live pets — add the next one's icon to pet.queue \
-         in config/local.yaml (the Pet tab is read-only in v3.0)."
+        "No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished it was mailed, so this is the queue being empty of live pets — add the next one's icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     )
 }
 pub fn bag_grid_missing_message() -> String {

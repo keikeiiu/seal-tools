@@ -634,14 +634,14 @@ fn ready_names_each_missing_calibration_in_v2s_order() {
     broken.slots.clear();
     assert_eq!(
         refusal(&broken),
-        "No breeding row is set up — add it in config/local.yaml (the Pet tab is read-only in v3.0). Each row needs its start/end button and its pet slot marked on the Calibrate tab."
+        "No breeding row is set up — rows come from your migrated v2 config and adding a row is not built yet. Each row needs its start/end button and its pet slot marked on the Calibrate tab."
     );
 
     let mut broken = setup();
     broken.slots[0].enabled = false;
     assert_eq!(
         refusal(&broken),
-        "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0)."
+        "Every row is unticked — nothing to feed. Tick the row on the Pet tab."
     );
 }
 #[test]
@@ -650,7 +650,7 @@ fn a_ticked_row_with_no_button_is_refused_but_an_unticked_one_is_left_alone() {
     broken.slots[0].toggle_label = None;
     assert_eq!(
         refusal(&broken),
-        "Row 1's start/end button isn't marked — save the Row start/end button for row 1 on the Calibrate tab. The tool has nothing to click for that row. Untick it in config/local.yaml (the Pet tab is read-only in v3.0) to leave it alone."
+        "Row 1's start/end button isn't marked — save the Row start/end button for row 1 on the Calibrate tab. The tool has nothing to click for that row. Untick it on the Pet tab to leave it alone."
     );
 
     // The unticked row is not driven, so its missing marks must NOT block a run.
@@ -661,7 +661,7 @@ fn a_ticked_row_with_no_button_is_refused_but_an_unticked_one_is_left_alone() {
     ignored.slots[0].toggle_label = None;
     assert_eq!(
         refusal(&ignored),
-        "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0)."
+        "Every row is unticked — nothing to feed. Tick the row on the Pet tab."
     );
 }
 /// A drag has to name the box it drops into, so the strip is required only in drag mode.
@@ -686,7 +686,7 @@ fn a_cell_on_an_uncalibrated_page_is_refused_before_the_run() {
     broken.return_slot = Some(vec![3, 1]);
     assert_eq!(
         refusal(&broken),
-        "The return slot is marked on bag page 4, but only 1 page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or move the cell in config/local.yaml."
+        "The return slot is marked on bag page 4, but only 1 page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or change it on the Pet tab."
     );
 
     let mut untabbed = setup();
@@ -704,14 +704,14 @@ fn a_pet_needs_a_way_to_be_found_and_food_and_a_max() {
     no_way.queue_len = 0;
     assert_eq!(
         refusal(&no_way),
-        "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the pet by. Set pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0), or add a pet icon to pet.queue."
+        "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the pet by. Set the return slot on the Pet tab, or add a pet icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     );
 
     let mut no_food = setup();
     no_food.food_slots.clear();
     assert_eq!(
         refusal(&no_food),
-        "No food cells are marked — set pet.food_slots in config/local.yaml (the Pet tab is read-only in v3.0). Nothing says where the pet food lives."
+        "No food cells are marked — mark the food cells on the Pet tab. Nothing says where the pet food lives."
     );
 
     let mut no_max = setup();
@@ -758,31 +758,23 @@ fn the_load_bearing_failure_messages_are_v2s() {
     assert_eq!(
         pet_did_not_go_in(),
         "The pet did not go in after 3 right-clicks — the slot still looks empty. Nothing was \
-         loaded. Check pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0)."
+         loaded. Check the return slot on the Pet tab."
     );
     assert_eq!(
         all_refused_message(&["Knight0-9 at page 1 cell 4".to_owned()]),
-        "Every pet that could be boarded reads +9/100%. Refused Knight0-9 at page 1 cell 4. Capture \
-         the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (the \
-         Pet tab is read-only in v3.0)."
+        "Every pet that could be boarded reads +9/100%. Refused Knight0-9 at page 1 cell 4. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     );
     assert_eq!(
         nothing_matched_message(),
-        "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of \
-         a pet that can still be fed and add it to pet.queue in config/local.yaml (the Pet tab is \
-         read-only in v3.0)."
+        "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     );
     assert_eq!(
         no_way_to_find_pet_message(),
-        "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set \
-         pet.return_slot or add a pet icon to pet.queue in config/local.yaml (the Pet tab is read-only \
-         in v3.0)."
+        "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set the return slot on the Pet tab, or add a pet icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     );
     assert_eq!(
         no_pet_in_bag_message("the queue has no icons in it"),
-        "No queued pet is in the bag (the queue has no icons in it). Right-clicked nothing. If the \
-         pet finished it was mailed, so this is the queue being empty of live pets — add the next \
-         one's icon to pet.queue in config/local.yaml (the Pet tab is read-only in v3.0)."
+        "No queued pet is in the bag (the queue has no icons in it). Right-clicked nothing. If the pet finished it was mailed, so this is the queue being empty of live pets — add the next one's icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     );
     assert_eq!(
         bag_grid_missing_message(),

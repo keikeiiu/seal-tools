@@ -40,8 +40,8 @@ fn anything_else_is_not_a_drag() {
     }
 }
 
-/// `ThePickerOffersEveryMode` (`:38-44`) — v2's picker offered every mode; v3.0's read-only
-/// Pet tab shows the current one, and the setting itself is edited in config/local.yaml.
+/// `ThePickerOffersEveryMode` (`:38-44`) — v2's picker offered every mode; the Pet tab now edits
+/// the setting, so the picker offers both modes.
 #[test]
 fn the_picker_offers_every_mode() {
     assert!(ALL.contains(&RIGHT_CLICK));
@@ -112,14 +112,10 @@ fn drag_on_an_old_board_says_which_board_and_what_to_do_about_it() {
 fn the_complaint_texts_are_v2s() {
     assert_eq!(
         complaint(Some(DRAG), Some(1)).unwrap(),
-        "Food load is set to drag but the board reports firmware 1, which has no drag commands — \
-         reflash the board, or set pet.food_load_mode back to \"right_click\" in config/local.yaml \
-         (the Pet tab is read-only in v3.0)."
+        "Food load is set to drag but the board reports firmware 1, which has no drag commands — reflash the board, or set the load mode back to \"right_click\" on the Pet tab."
     );
     assert_eq!(
         complaint(Some(DRAG), None).unwrap(),
-        "Food load is set to drag but the board did not report a firmware version, so it predates the \
-         drag commands — reflash the board, or set pet.food_load_mode back to \"right_click\" in \
-         config/local.yaml (the Pet tab is read-only in v3.0)."
+        "Food load is set to drag but the board did not report a firmware version, so it predates the drag commands — reflash the board, or set the load mode back to \"right_click\" on the Pet tab."
     );
 }
