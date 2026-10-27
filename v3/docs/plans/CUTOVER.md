@@ -109,6 +109,36 @@ seeded `config/local.yaml` from `local.yaml.example` on first run, and the windo
 it cannot prove without the player is the tools actually driving the game, which is why the live
 verification item stays open.
 
+## Publishing checklist (player)
+
+The artifacts exist locally; publishing is deliberately not performed by the plan's work. When the
+live pass is clean, the release step is mechanical:
+
+1. **Merge and tag** (on the player's machine): merge `v3-core` into `main`, then `git tag v3.0` and
+   push the branch and the tag — the push is the player's call, this repository has never pushed from
+   the v3 work.
+2. **GitHub release** `v3.0` with the two assets:
+   - `dist/SealTools-v3.0.zip` — 44,808,739 B,
+     SHA-256 `B38E673C0CA75892C30AAD6239222582A88ADDDCD58C86CDAD50EC59F529C9CA`
+   - `dist/SealTools-v3.0-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.md` (it already states the no-reflash paragraph, the
+   not-built list and the DirectML basis). Attach the zips exactly as built; do not re-zip.
+3. **Root README**: rewrite for v3.0 and add the version-table row. Draft row (keep the table's existing
+   columns):
+   `| v3.0 | 2026-10-27 | Rust core + Flutter shell; all eight tools live; 18 calibration marks; per-run logs; replay core. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older-release history, update the download link to the v3.0 release, and
+   leave the firmware link pointing at the v3.0-firmware asset (same sketch).
+4. **Archive the plans per the repo rule**: `PLAN-V3-CORE.md` → `v2/docs/archive/` (it lives in v2's
+   plans tree) and `PLAN-V3-SHELL.md` → `v3/docs/archive/` (create the folder with a README); the
+   cut-over plan moves with them once the release is published. Their durable reasoning has already
+   graduated into `spec/`.
+5. **Post-publish check**: download both assets from the release, compare SHA-256 with the values
+   above, unzip the app and launch it once (the same check done locally), and confirm the firmware zip
+   contains only `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2's docs into v3 (PLAN §13.5) and do not start a second changelog — the release
+   record + root README table are the two homes.
+
 ## Work items (all must be done before the merge)
 
 - [ ] OCR model resolution fallback (finding 6) — env var, then root, then exe-relative.
