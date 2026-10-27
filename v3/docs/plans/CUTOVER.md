@@ -77,6 +77,35 @@ the decisions they force:
    every directory tried. The shell still spawns with no environment — nothing for packaging to do
    beyond shipping `models/`.
 
+## Staging result (2026-10-27)
+
+`-Stage -ModelsDir v2\models` completed in this checkout after the sandbox interference was worked
+around (the teammate session could not run Flutter at all; the Lead session could). Cargo's release
+core built in 7 s (incremental after the earlier 16.7 s full build), the Flutter Windows release
+bundle built in 30.2 s, and the hardened stage audit passed, producing ONE top folder:
+
+```
+dist/SealTools-v3.0/
+  SealTools.exe            125,440   (release shell; window title "Seal Tools v3")
+  flutter_windows.dll   21,289,472
+  data/                    app.so, icudtl.dat, flutter_assets/**
+  seal-core.exe        25,491,968
+  DirectML.dll         18,527,776
+  models/                  the three PP-OCRv4 .onnx files
+  config/                  defaults.yaml.example, local.yaml.example, attributes.yaml,
+                           attributes.us.yaml.example  (NO real local.yaml)
+  docs/                    USER_GUIDE.md, USER_GUIDE.zh-TW.md, INSTALL.md, pet-data.csv
+```
+
+`-Verify -ModelsDir v2\models` now exits 0 with "All release sources are present."
+
+**The staged build was launched as a real release (not the debug dev pair) and self-checked:**
+`SealTools.exe` resolved `seal-core.exe` BESIDE it (the release rule, no environment), the core
+seeded `config/local.yaml` from `local.yaml.example` on first run, and the window came up titled
+"Seal Tools v3" -- so the packaged folder is internally consistent before any game is involved. What
+it cannot prove without the player is the tools actually driving the game, which is why the live
+verification item stays open.
+
 ## Work items (all must be done before the merge)
 
 - [ ] OCR model resolution fallback (finding 6) — env var, then root, then exe-relative.
@@ -90,11 +119,14 @@ the decisions they force:
       frame cache/§6 Setup wording/§7 counts + new §8, CONFIG stale bullets + dangling pointer,
       TOOL-FLOWS status + per-tool "loop is live" lines, OPEN prune.
 - [ ] Folder READMEs (`spec/`, `records/`, `backlog/`), PROGRESS entry, PORT-COVERAGE closure note.
-- [ ] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip; `-Selftest` runs
+- [x] Packaging: `v3/publish.ps1` (build → stage → allow-list → zip → firmware zip; `-Selftest` runs
       the version/deny/post-zip/firmware guards without a build; release command
       `-ModelsDir v2\models`), config templates,
       `local.yaml.example`, `docs/pet-data.csv`, `DirectML.dll` licensing note (a release input; the
-      OCR research record cites it).
+      OCR research record cites it). **Staged and launched; the zip step waits on the DirectML
+      acknowledgement and the player's live check.**
+- [ ] Run `-Release -ModelsDir v2\models -AcceptDirectMLRedistribution` after the player acknowledges
+      the DirectML redistribution terms, then record both zip SHA-256s. ⚑ player decision.
 - [ ] Release record `records/RELEASE-v3.0.md` + root README v3.0 rewrite + board rows.
 - [ ] Live verification: at least one run of each card in the game (the repo's rule: a tool is done
       when it has run, not when it compiles) and one calibrator pass from the shell UI. ⚑ needs the
