@@ -85,7 +85,7 @@ line are the decision half's, so the card text is testable without a game. `Spri
 | unreadable panel | `Read failed — nothing recognised in the OCR region.` |
 | guard stop | `mouse moved — stopped` · `cursor keeps drifting — stopped` |
 | guard recenter failure | `cursor wouldn't re-centre — {detail}` |
-| hid without a point | `spring_mode is hid but tuner.spring_point isn't calibrated — click the 發條 button in Calibrate Tuner` |
+| hid without a point | `spring_mode is hid but tuner.spring_point isn't calibrated — save the Spring point on the Calibrate tab` |
 | window/placement | `game window not found — couldn't place the cursor on the spring` · `couldn't place the cursor on the spring — {detail}` |
 
 **Guards.** Cursor guard modes and the recenter budget; a signature repeated three times stops; the
@@ -109,14 +109,14 @@ bag by leaving the room.*
 
 **Start refusals (verbatim).**
 
-- `The bag grid isn't calibrated — Calibrate Buy/Sell.` · `No slots are selected to sell.` ·
+- `The bag grid isn't calibrated — save the Bag grid on the Calibrate tab.` · `No slots are selected to sell.` ·
   `{n} slots selected but the per-run cap is {cap}. Raise the cap on purpose, or narrow the selection.`
-- `The focus point isn't calibrated — Calibrate Buy/Sell. The game ignores a click while it is unfocused, and it is unfocused because you just clicked this window to start the run.`
+- `The focus point isn't calibrated — save the Focus / scroll point on the Calibrate tab. The game ignores a click while it is unfocused, and it is unfocused because you just clicked this window to start the run.`
 - `No buy preset selected.` · `Buy preset '{name}' no longer exists.` ·
   `Shop rows aren't calibrated — {problem}.` (problem: `the shop list region isn't drawn` /
-  `the configured row count is 0`) · `The scroll point isn't calibrated — Calibrate Buy/Sell.`
-- Mid-run focus failure (a DIFFERENT sentence): `The focus point isn't calibrated — the game has to be focused before it will take a click or a wheel notch. Mark it in Calibrate Buy / Sell.`
-- `The MAX button isn't calibrated — Calibrate Buy/Sell.` ·
+  `the configured row count is 0`) · `The scroll point isn't calibrated — save the Focus / scroll point on the Calibrate tab.`
+- Mid-run focus failure (a DIFFERENT sentence): `The focus point isn't calibrated — the game has to be focused before it will take a click or a wheel notch. Save the Focus / scroll point on the Calibrate tab.`
+- `The MAX button isn't calibrated — save the MAX button on the Calibrate tab.` ·
   `Couldn't work out the shop row — recalibrate the two row marks.` ·
   `Game window not found (or minimized) — open and restore the game first.` ·
   `couldn't place the cursor at ({x},{y})` (fallback placement detail).
@@ -147,9 +147,9 @@ once it reaches the setting, the run advances (or clears the resource slots firs
 - `No gem grades are configured — the composer has nothing to work through.`
 - `All grades done (last was {grade}) — composer stopped.`
 - `{what}: unknown route '{route_key}'.` · `No route Resource3 → {other}.`
-- `{what}: '{destination}' isn't calibrated yet — open Calibrate Gem and save it.`
-- `{what} isn't saved yet — open Calibrate Gem and press Save Composer Moves.`
-- `Grade position '{grade}' isn't calibrated yet — open Calibrate Gem and save it.`
+- `{what}: '{destination}' isn't calibrated yet — save the Grade point '{destination}' on the Calibrate tab.`
+- `{what} isn't saved yet — the tuned movements are hand-edited in gem.movements in config/local.yaml (the movement editor is not built in v3.0).`
+- `Grade position '{grade}' isn't calibrated yet — save the Grade point '{grade}' on the Calibrate tab.`
 - `Game window not found (or minimized) — open and restore the game first.`
 - `Couldn't move the cursor onto the {grade} button — {detail}. Stopped instead of clicking blind.`
 - `{what}: couldn't move the cursor to {point_name} — {detail}.`
@@ -214,18 +214,18 @@ arbiter gets (wants the game now, next action, card) — the resident/deferral r
 
 **Player lines (verbatim; every one is pinned in `tests/pet_decision.rs`).**
 
-- Start refusals (13, in `ready`, in this order): `目錄 isn't calibrated — Calibrate Pet.` ·
-  `The pet feed icon isn't calibrated — Calibrate Pet.` ·
-  `The boarding window's X isn't calibrated — Calibrate Pet.` ·
-  `The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)` ·
-  `The bag page tabs aren't calibrated — Calibrate Pet.` ·
-  `No breeding row is set up — Calibrate Pet. Each row needs its start/end button and its pet slot marked.` ·
-  `Every row is unticked — nothing to feed. Tick a row on the Pet tab.` ·
+- Start refusals (13, in `ready`, in this order): `The pet menu button isn't calibrated — save the 目錄 (menu) point on the Calibrate tab.` ·
+  `The pet feed icon isn't calibrated — save the Pet feed icon point on the Calibrate tab.` ·
+  `The boarding window's X isn't calibrated — save the Boarding X point on the Calibrate tab.` ·
+  `The boarding bag's grid isn't calibrated — save the Boarding bag grid and Boarding bag slot on the Calibrate tab. (Its own, not the shop's.)` ·
+  `The bag page tabs aren't calibrated — save the Bag page tab points on the Calibrate tab.` ·
+  `No breeding row is set up — add it in config/local.yaml (the Pet tab is read-only in v3.0). Each row needs its start/end button and its pet slot marked on the Calibrate tab.` ·
+  `Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0).` ·
   `Row {n}'s start/end button isn't marked — …` · `Row {n}'s food strip isn't drawn — …` ·
   `{what} is marked on bag page {p}, but only {t} page tab(s) are calibrated — …` ·
   `Neither a return slot nor any queued pet icon is set — …` ·
-  `No food cells are marked — Calibrate Pet. Nothing says where the pet food lives.` ·
-  `No MAX is calibrated — Calibrate Buy/Sell, or mark one on Calibrate Pet.`
+  `No food cells are marked — set pet.food_slots in config/local.yaml (the Pet tab is read-only in v3.0). Nothing says where the pet food lives.` ·
+  `No MAX is calibrated — save the MAX button on the Calibrate tab.`
 - Card: statuses `given up` / `boarding` / `waiting for a reload`; detail `{pet}  ·  → +{growth}  ·  {rate}/min (game line)`;
   schedule line `boarding {rows}  ·  next {row} at {HH:mm}  ·  {n} more queued` or `no rows scheduled`.
 - Schedule/reload: `Checking what is already running…` · `Opening the breeder for {n} rows…` / `{row}: opening the boarding window…` ·
@@ -235,7 +235,7 @@ arbiter gets (wants the game now, next action, card) — the resident/deferral r
   `{row} failed {strikes}/3: {error}`
 - Guards/aborts: `The game window isn't in front — {row} keeps its place; nothing was clicked, and it is tried again in 5 min.` ·
   `The game window left the front while reading the rows — trying again in 5 min.` ·
-  `The pet did not go in after 3 right-clicks — the slot still looks empty. Nothing was loaded. Check the return slot on the Pet tab.` ·
+  `The pet did not go in after 3 right-clicks — the slot still looks empty. Nothing was loaded. Check pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0).` ·
   `The pet did NOT come back out of the loader after pressing the end button — …` ·
   `Every pet that could be boarded reads +9/100%. Refused {list}. …` ·
   `The return slot holds no pet, and no queued icon matched one in the bag. …` ·
