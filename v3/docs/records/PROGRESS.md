@@ -19,6 +19,37 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (24) — the first live pass, and v3.0.1
+
+The player ran v3.0.0 and reported real defects. The diagnostic that mattered was not a UI bug: their
+migrated v2 config holds quest key steps as integers (`value: 1`), which v3's typed `QuestStep.value`
+(String) rejected, so the whole quest block failed to decode and every flow selection, save and hand-in
+was refused. The scalar decoder now accepts v2's shapes, the full typed config was audited against the
+player's actual file (that was the only decode-class mismatch), and committed sanitised v2-era replay
+fixtures now pin typed decode plus the real reader paths — every merged pointer matched the v2 file.
+The same audit found a second honest gap: `tuner.ocr.grade_area` was decoded and documented but never
+consumed; v2 source proves it is region-relative inside the OCR region, and the reader now uses it with
+`grade_y` as fallback (the v2 grade-colour fallback stays OPEN).
+
+The rest of the pass was UI truth: tuner grades fixed/read-only and filter rule names selected from the
+dictionary (the player: "no one would remember the options"); gem grades fixed/read-only; the game
+window title read-only, detected by Find and saved by the new Use detected title; the Sell 8x8 grid
+selectable with its own Save writing `buy_sell.sell_slots` (a deliberate replacement of v2's
+memory-only selection); the Pet tab's machine setup editable again (rows enabled/stacks, queue removal,
+per-page food cells, return slot, load mode, timings — one Save, capture data preserved byte-for-byte);
+and the refusal strings now point at the Pet tab instead of calling it read-only (the genuine
+exceptions say so). Two gate-found bugs were fixed on the way: the Sell grid re-baselined a dirty
+selection on a refusal, and the Pet tab's State-built count didn't rebuild on draft edits.
+
+Docs were rewritten in both languages (38 = 38), INSTALL/CONFIG/OPEN/TOOL-FLOWS aligned, the product
+version became 3.0.1, and the release was rebuilt: `SealTools-v3.0.1.zip` 44,841,808 B SHA-256
+`85AAAF98…8961`, firmware byte-identical `498E6A4B…EF3B`. Gates: Rust 79 result lines/0 failed, clippy
+0, fmt clean; Flutter analyze clean, 181/181, format clean; all three publish audits PASS; payload
+hash-match; the player's v2 config validates clean; staged and clean-unzip launches started. It awaits
+the second live pass and the v2 parity worksheet before the calibration-plan increments.
+
+---
+
 ## 2026-10-27 (23) — the pre-publish audit: the release tells the truth, then it is re-cut
 
 Before the player could publish, the independent builder-check (plan-reviewer, read-only) compared the

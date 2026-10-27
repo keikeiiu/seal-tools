@@ -117,6 +117,11 @@ verification item stays open.
 
 ## Publishing checklist (player)
 
+**v3.0.0 was superseded before publication.** The player's first live pass found defects that
+v3.0.1 fixes (see `records/RELEASE-v3.0.1.md`). Use the **v3.0.1 fix-release section at the end of this
+file** for the release actually to publish; the checklist below is the original v3.0.0 plan, kept for
+its reasoning.
+
 The artifacts exist locally; publishing is deliberately not performed by the plan's work. When the
 live pass is clean, the release step is mechanical:
 
@@ -176,3 +181,31 @@ live pass is clean, the release step is mechanical:
 - [ ] Live verification: at least one run of each card in the game (the repo's rule: a tool is done
       when it has run, not when it compiles) and one calibrator pass from the shell UI. ⚑ needs the
       player.
+
+---
+
+## v3.0.1 fix release (2026-10-28)
+
+The release to publish. The version bump covers the first live pass's fixes, listed in
+`records/RELEASE-v3.0.1.md`; the firmware zip is byte-identical to v3.0.0's because the sketch never
+changed.
+
+1. **Merge and tag**: merge `v3-core` into `main`, `git tag v3.0.1`, push branch + tag (the push is the
+   player's call).
+2. **GitHub release** `v3.0.1` with:
+   - `dist/SealTools-v3.0.1.zip` — 44,841,808 B,
+     SHA-256 `85AAAF9833E53D1AC7E9894E09C4556B2CB514BAA4D5F537BF15BF43AFB08961`
+   - `dist/SealTools-v3.0.1-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.1.md`. Attach exactly as built; do not re-zip.
+3. **Root README**: rewrite for v3.0.1 and add the version-table row:
+   `| v3.0.1 | 2026-10-28 | Rust core + Flutter shell; all eight tools live; 18 calibration marks; per-run logs; replay core. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older history and point downloads/firmware at the v3.0.1 assets.
+4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`, `PLAN-V3-SHELL.md` and
+   `CUTOVER.md` → `v3/docs/archive/` (with a folder README); `PLAN-V3-CALIBRATION.md` stays a live
+   proposal until its work ships.
+5. **Post-publish check**: download both v3.0.1 assets, compare SHA-256 with the values above, unzip
+   the app and launch it once (the same check done locally), and confirm the firmware zip holds only
+   `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2 docs into v3, and do not start a second changelog — the release records plus the
+   root README table are the homes.
