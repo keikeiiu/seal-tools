@@ -56,6 +56,23 @@ and the exact staged file list are in the build log.
 | staged release LAUNCHED | shell resolved `seal-core.exe` beside itself **with no environment**; the core seeded `config/local.yaml` from `local.yaml.example`; window came up as "Seal Tools v3" (core process observed) |
 | **release ZIP clean-unzip launch** | `SealTools-v3.0.zip` extracted to a fresh temp folder and launched there: the extracted `SealTools.exe` spawned the extracted `seal-core.exe` (paths observed), seeded a fresh `config/local.yaml` (3,210 B from the template) and opened the window — i.e. the artifact works as an install, not just as the staging folder; the temp copy was then closed and removed |
 
+## Artifact integrity (checked after the zips were built)
+
+- **Structure:** the app zip has 28 entries, exactly ONE top folder (`SealTools-v3.0/`), and zero
+  forbidden entries (no `local.yaml`, no `logs/`, no `*.backup-*`, no `calib_*.png`).
+- **Payload equals sources:** extracting and hashing the zip's `docs/USER_GUIDE.md`,
+  `docs/USER_GUIDE.zh-TW.md`, `docs/INSTALL.md`, `docs/THIRD-PARTY-NOTICES.md`, `docs/pet-data.csv`,
+  `seal-core.exe`, `DirectML.dll` and a model file against their repo sources gives identical
+  SHA-256s — the zip carries exactly the committed bytes, not a stale copy.
+- **Firmware unchanged:** the firmware zip contains only `seal_mouse/seal_mouse.ino`, whose SHA-256
+  (`AA6D71A3…8940`) is byte-identical to the repo sketch, and `arduino/` has **zero commits** on
+  `v3-core` since `main` — the "no reflash" claim is structural, not asserted.
+- **The packaged binary works:** the zip's own `seal-core.exe` ran the committed replay script
+  (`v3/protocol/replay/smoke.json`) and produced the scripted hello / config.reload / pet start /
+  state+finished / shutdown sequence, exit 0.
+- **Gates re-run at the recorded commit (`680199f`):** Rust workspace 76 result lines, 0 failed,
+  clippy `-D warnings` 0, fmt clean; Flutter analyze No issues, 165/165 tests, format 81 files clean.
+
 ## Not verified / deliberately not in v3.0
 
 - **No live tool run against the game yet** in v3 — the repo's rule is that a tool is done when it
