@@ -8,7 +8,7 @@ library;
 
 /// The product version shown in the app bar and named by a release. Keep it in step with
 /// `pubspec.yaml`'s `version:` (which also feeds `SealTools.exe`'s Windows resource version).
-const String productVersion = '3.0.0';
+const String productVersion = '3.0.1';
 
 /// The shell's PROTOCOL CLIENT identity, sent in `hello`'s `client` field. This is an engineering
 /// value — do not change it when the product version changes.
