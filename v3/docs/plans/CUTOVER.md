@@ -100,7 +100,9 @@ dist/SealTools-v3.0/
 
 `-Verify -ModelsDir v2\models` now exits 0 with "All release sources are present."
 
-**The staged build was launched as a real release (not the debug dev pair) and self-checked:**
+**The release ZIP was also extracted to a fresh temp folder and launched from there: the extracted `SealTools.exe` spawned the extracted `seal-core.exe` and seeded a fresh config, so the artifact is verified as an INSTALL rather than only as a staging folder.
+
+The staged build was launched as a real release (not the debug dev pair) and self-checked:**
 `SealTools.exe` resolved `seal-core.exe` BESIDE it (the release rule, no environment), the core
 seeded `config/local.yaml` from `local.yaml.example` on first run, and the window came up titled
 "Seal Tools v3" -- so the packaged folder is internally consistent before any game is involved. What

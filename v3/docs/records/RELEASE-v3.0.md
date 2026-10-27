@@ -54,6 +54,7 @@ and the exact staged file list are in the build log.
 | `v3/publish.ps1 -Verify -ModelsDir v2\models` | exit 0 "All release sources are present." |
 | `v3/publish.ps1 -Release …` | exit 0; stage audit, app-zip audit, firmware audit all PASS; SHA-256 above |
 | staged release LAUNCHED | shell resolved `seal-core.exe` beside itself **with no environment**; the core seeded `config/local.yaml` from `local.yaml.example`; window came up as "Seal Tools v3" (core process observed) |
+| **release ZIP clean-unzip launch** | `SealTools-v3.0.zip` extracted to a fresh temp folder and launched there: the extracted `SealTools.exe` spawned the extracted `seal-core.exe` (paths observed), seeded a fresh `config/local.yaml` (3,210 B from the template) and opened the window — i.e. the artifact works as an install, not just as the staging folder; the temp copy was then closed and removed |
 
 ## Not verified / deliberately not in v3.0
 
