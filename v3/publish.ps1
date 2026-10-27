@@ -59,7 +59,11 @@ $ModelNames = @(
 # required by -Verify and exact-name allow-listed exactly like the guides.
 $GuideNames = @('USER_GUIDE.md', 'USER_GUIDE.zh-TW.md', 'INSTALL.md', 'THIRD-PARTY-NOTICES.md')
 $FirmwareFiles = @('seal_mouse.ino')
-$FlutterRuntimeFiles = @('flutter_windows.dll', 'data\icudtl.dat')
+# The Flutter release bundle's exact data\ root file set (checked against
+# v3\shell\build\windows\x64\runner\Release\data): app.so is the AOT snapshot, icudtl.dat the ICU
+# data. flutter_assets\ is the asset tree. No data\ directory wildcard is allowed.
+$FlutterDataFiles = @('app.so', 'icudtl.dat')
+$FlutterRuntimeFiles = @('flutter_windows.dll') + ($FlutterDataFiles | ForEach-Object { "data\$_" })
 
 function Fail([string]$message) {
     Write-Host ''
@@ -202,7 +206,9 @@ function Test-AllowedStageRelative([string]$relative) {
     if ($allowedConfig -contains $relative) { return $true }
     if ($allowedDocs -contains $relative) { return $true }
     if ($allowedModels -contains $relative) { return $true }
-    if ($relative -eq 'data/icudtl.dat') { return $true }
+    foreach ($name in $FlutterDataFiles) {
+        if ($relative -eq "data/$name") { return $true }
+    }
     if ($relative -like 'data/flutter_assets/*') { return $true }
     return $false
 }
@@ -213,12 +219,9 @@ function Get-StageAuditProblems([string]$stageDir) {
         $problems.Add($safetyProblem)
     }
 
-    $required = @(
-        'SealTools.exe',
-        'seal-core.exe',
-        'DirectML.dll',
-        'flutter_windows.dll',
-        'data/icudtl.dat',
+    $required = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll')
+    foreach ($runtime in $FlutterRuntimeFiles) { $required += $runtime.Replace('\', '/') }
+    $required += @(
         'models/ch_PP-OCRv4_det_infer.onnx',
         'models/ch_PP-OCRv4_rec_infer.onnx',
         'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
@@ -764,12 +767,9 @@ function Invoke-Selftest {
         Write-Host ''
         Write-Host 'Stage audit:'
         $auditStage = Join-Path $temp 'stage-audit'
-        $requiredFiles = @(
-            'SealTools.exe',
-            'seal-core.exe',
-            'DirectML.dll',
-            'flutter_windows.dll',
-            'data/icudtl.dat',
+        $requiredFiles = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll')
+        foreach ($runtime in $FlutterRuntimeFiles) { $requiredFiles += $runtime.Replace('\', '/') }
+        $requiredFiles += @(
             'models/ch_PP-OCRv4_det_infer.onnx',
             'models/ch_PP-OCRv4_rec_infer.onnx',
             'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
@@ -902,7 +902,7 @@ if ($Verify) {
     }
     Write-Host ''
     Write-Host "Planned payload -> $StageDir\ (one top folder):"
-    Write-Host '  SealTools.exe + data/ + flutter_windows.dll  (the shell bundle)'
+    Write-Host '  SealTools.exe + data/ (app.so, icudtl.dat, flutter_assets/) + flutter_windows.dll'
     Write-Host '  seal-core.exe, DirectML.dll'
     Write-Host '  models/<the three PP-OCRv4 .onnx files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
