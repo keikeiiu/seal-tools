@@ -1,11 +1,13 @@
 /// The Gem tab: the PORTABLE gem settings (`settings.gem`) plus a read-only view of the calibrated
 /// grade positions and resource slots.
 ///
-/// The split is the config's, not the UI's: `grades`, `start_grade`, `empty_mode`, `empty_streak`,
+/// The split is the config's, not the UI's: `start_grade`, `empty_mode`, `empty_streak`,
 /// `colored_gap_min`, `save_empty_captures` and `move_mode` are portable and saved through the
-/// `settings:` overlay; `gem.grade_positions`, `gem.resource_gems`, `gem.result_gem_area` and the
-/// empty-slot signature are machine calibration and are shown, not sent (PROTOCOL §4/§7 — wave 2
-/// owns the calibration canvases).
+/// `settings:` overlay; `grades` is the composer's fixed grade ladder (the player's live pass: "the
+/// config we set are final, don't need feature to add it"), so it is rendered read-only and no save
+/// writes it; `gem.grade_positions`, `gem.resource_gems`, `gem.result_gem_area` and the empty-slot
+/// signature are machine calibration and are shown, not sent (PROTOCOL §4/§7 — wave 2 owns the
+/// calibration canvases).
 library;
 
 import 'package:flutter/material.dart';
@@ -22,9 +24,9 @@ const List<String> _emptyModes = [
 ];
 const List<String> _moveModes = ['tuned', 'arduino'];
 
-/// The portable fields this tab owns; everything else in the merged `gem` block is calibration.
+/// The portable fields this tab owns; everything else in the merged `gem` block is calibration or
+/// the fixed grade ladder.
 const Set<String> _editableGemKeys = {
-  'grades',
   'start_grade',
   'empty_mode',
   'empty_streak',
@@ -59,17 +61,11 @@ class _GemTabState extends State<GemTab>
     editableKeys: _editableGemKeys,
   );
 
-  final _newGrade = TextEditingController();
-
-  @override
-  void dispose() {
-    _newGrade.dispose();
-    super.dispose();
-  }
-
   // ── readers ──────────────────────────────────────────────────────────────────────────────
 
-  List<String> _grades() => asStringList(draft.value['grades']);
+  /// The composer's fixed grade ladder, from the merged config (this tab never edits it).
+  List<String> _grades() =>
+      asStringList(asJsonMap(model.config.config['gem'])['grades']);
 
   String? _startGrade() => asString(draft.value['start_grade']);
 
@@ -77,10 +73,6 @@ class _GemTabState extends State<GemTab>
   Map<String, dynamic> _calibrated() => asJsonMap(model.config.config['gem']);
 
   // ── writers ──────────────────────────────────────────────────────────────────────────────
-
-  void _setGrades(List<String> grades) => draft.edit((value) {
-    value['grades'] = grades;
-  });
 
   void _setPortable(String key, Object? value) => draft.edit((map) {
     if (value == null) {
@@ -137,67 +129,27 @@ class _GemTabState extends State<GemTab>
           EditorSection(
             title: 'Grades',
             children: [
-              for (var index = 0; index < grades.length; index++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-                  child: Row(
-                    children: [
-                      DraftFieldSlot(
-                        slotKey: 'gem-grade-$index',
-                        syncToken: draft.seedRevision,
-                        child: DraftTextField(
-                          label: 'Grade ${index + 1}',
-                          value: grades[index],
-                          width: 180,
-                          onChanged: (value) {
-                            final next = [...grades];
-                            next[index] = value;
-                            _setGrades(next);
-                          },
-                        ),
-                      ),
-                      IconButton(
-                        key: ValueKey('gem-grade-remove-$index'),
-                        tooltip: 'Remove',
-                        onPressed: () {
-                          final next = [...grades]..removeAt(index);
-                          _setGrades(next);
-                        },
-                        icon: const Icon(Icons.close, size: 18),
-                      ),
-                    ],
-                  ),
+              Text(
+                'Fixed grades (read-only):',
+                key: const ValueKey('gem-grades-caption'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-              Row(
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.xs,
+                runSpacing: ShellSpace.xs,
                 children: [
-                  SizedBox(
-                    width: 180,
-                    child: TextField(
-                      key: const ValueKey('new-gem-grade'),
-                      controller: _newGrade,
-                      decoration: const InputDecoration(
-                        labelText: 'New grade',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
+                  for (final grade in grades)
+                    Chip(
+                      key: ValueKey('gem-grade-$grade'),
+                      label: Text(grade),
+                      visualDensity: VisualDensity.compact,
                     ),
-                  ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton(
-                    key: const ValueKey('add-gem-grade'),
-                    onPressed: () {
-                      final name = _newGrade.text.trim();
-                      if (name.isEmpty || grades.contains(name)) {
-                        return;
-                      }
-                      _setGrades([...grades, name]);
-                      _newGrade.clear();
-                    },
-                    child: const Text('Add grade'),
-                  ),
                 ],
               ),
-              const SizedBox(height: ShellSpace.sm),
+              const SizedBox(height: ShellSpace.md),
               DraftDropdownField(
                 key: const ValueKey('gem-start-grade'),
                 label: 'Start grade',

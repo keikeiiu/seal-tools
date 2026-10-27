@@ -1,11 +1,17 @@
-/// The Setup tab: one save across the blocks Setup owns — portable `window.title`, the game variant
-/// switch (`settings.game.variant`, resolved/validated/dictionary-loaded by the core), the portable
-/// Arduino ids (`settings.arduino.vid/pid/baud`) and the machine `arduino.port` — plus the three
-/// read-only actions the core serves: Find window, Measure, Probe board.
+/// The Setup tab: one save across the blocks Setup owns — the read-only portable `window.title`, the
+/// game variant switch (`settings.game.variant`, resolved/validated/dictionary-loaded by the core),
+/// the portable Arduino ids (`settings.arduino.vid/pid/baud`) and the machine `arduino.port` — plus
+/// the three read-only actions the core serves (Find window, Measure, Probe board) and **Use detected
+/// title**, which saves the detected title through the same draft/save path.
 ///
-/// No rule lives here: the variant's order (resolve → validate → LOAD the dictionary → write) and its
-/// refusals are the core's, and every action result/refusal is rendered verbatim ([PROTOCOL.md]
-/// §4/§7).
+/// The player's live pass asked whether the game-window name should be editable and concluded not:
+/// the title identifies the game window, so Setup displays the configured value read-only and lets
+/// **Find window** detect it; **Use detected title** then saves the detected string through the same
+/// draft/save path (a normal config save — never written without the player pressing it).
+///
+/// No other rule lives here: the variant's order (resolve → validate → LOAD the dictionary → write)
+/// and its refusals are the core's, and every action result/refusal is rendered verbatim
+/// ([PROTOCOL.md] §4/§7).
 library;
 
 import 'package:flutter/material.dart';
@@ -65,7 +71,7 @@ class _SetupTabState extends State<SetupTab>
   @override
   ConfigDraftGroup get draftGroup => _group;
 
-  // Actions are read-only: results are state for this tab, never config writes.
+  // Actions: Find/Measure/Probe are read-only; Use detected title is the one normal config save.
   CoreActionResult<WindowFindResult>? _find;
   CoreActionResult<DisplayInfo>? _measure;
   CoreActionResult<BoardProbeResult>? _probe;
@@ -82,10 +88,18 @@ class _SetupTabState extends State<SetupTab>
       asJsonMap(model.config.config[block]);
 
   String get _configuredTitle {
-    final title =
-        asString(_windowDraft.value['title']) ??
-        asString(_merged('window')['title']);
+    final title = asString(_merged('window')['title']);
     return title == null || title.isEmpty ? '— (no title configured)' : title;
+  }
+
+  /// The title the last `window.find` actually detected, or null when there is none to offer.
+  String? get _detectedTitle {
+    final find = _find;
+    if (find == null || !find.ok || !find.value!.found) {
+      return null;
+    }
+    final title = find.value!.title?.trim();
+    return title == null || title.isEmpty ? null : title;
   }
 
   String get _activeVariant =>
@@ -153,6 +167,17 @@ class _SetupTabState extends State<SetupTab>
     setState(() => _probe = result);
   }
 
+  /// Saves the title the last Find detected through the normal draft/Save path. Only the player's
+  /// press can do this; no config write happens without it.
+  Future<void> _useDetectedTitle() async {
+    final title = _detectedTitle;
+    if (title == null || !model.isReady || saving) {
+      return;
+    }
+    setState(() => _set(_windowDraft, 'title', title));
+    await save();
+  }
+
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
 
   @override
@@ -167,7 +192,6 @@ class _SetupTabState extends State<SetupTab>
         EditorSection(
           title: 'Configured now — read-only',
           children: [
-            ReadOnlyValue(label: 'Configured title', value: _configuredTitle),
             ReadOnlyValue(
               label: 'Active variant',
               value: '$_activeVariant · dictionary $_dictionaryName',
@@ -181,21 +205,25 @@ class _SetupTabState extends State<SetupTab>
           EditorSection(
             title: 'Window and client',
             children: [
-              DraftFieldSlot(
-                slotKey: 'setup-window-title',
-                syncToken: _windowDraft.seedRevision,
-                child: DraftTextField(
-                  label: 'Game window title',
-                  value: asString(_windowDraft.value['title']) ?? '',
-                  width: 320,
-                  onChanged: (value) => _set(
-                    _windowDraft,
-                    'title',
-                    value.trim().isEmpty ? null : value,
+              ReadOnlyValue(
+                key: const ValueKey('setup-window-title'),
+                label: 'Game window title',
+                value: _configuredTitle,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 220,
+                  bottom: ShellSpace.sm,
+                ),
+                child: Text(
+                  'The title identifies the game window, so it is read-only here: '
+                  'Find window detects it, then Use detected title saves it.',
+                  key: const ValueKey('setup-title-caption'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
-              const SizedBox(height: ShellSpace.md),
               DraftDropdownField(
                 key: const ValueKey('setup-variant'),
                 label: 'Client variant',
@@ -267,7 +295,7 @@ class _SetupTabState extends State<SetupTab>
             ],
           ),
           EditorSection(
-            title: 'Actions — read-only, served by the core',
+            title: 'Actions — served by the core',
             children: [
               Wrap(
                 spacing: ShellSpace.sm,
@@ -287,6 +315,14 @@ class _SetupTabState extends State<SetupTab>
                     key: const ValueKey('setup-probe-board'),
                     onPressed: model.isReady ? _runProbe : null,
                     child: const Text('Probe board'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('setup-use-detected-title'),
+                    onPressed:
+                        model.isReady && !saving && _detectedTitle != null
+                        ? _useDetectedTitle
+                        : null,
+                    child: const Text('Use detected title'),
                   ),
                 ],
               ),

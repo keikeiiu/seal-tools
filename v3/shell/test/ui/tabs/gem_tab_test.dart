@@ -90,6 +90,19 @@ void main() {
     expect(find.text('[450, 696]'), findsOneWidget);
     expect(find.textContaining('read-only this wave'), findsOneWidget);
 
+    // The grade ladder is fixed: rendered, but no add/remove/edit control exists.
+    for (final grade in ['N', 'G', 'DG']) {
+      expect(
+        find.byKey(ValueKey('gem-grade-$grade')),
+        findsOneWidget,
+        reason: 'the fixed grade is rendered read-only',
+      );
+    }
+    expect(find.byKey(const ValueKey('add-gem-grade')), findsNothing);
+    expect(find.byKey(const ValueKey('new-gem-grade')), findsNothing);
+    expect(find.byKey(const ValueKey('gem-grade-remove-0')), findsNothing);
+    expect(find.byKey(const ValueKey('gem-grade-0')), findsNothing);
+
     await tester.enterText(_field('gem-empty-streak'), '5');
     await tester.pump();
     expect(find.byKey(const ValueKey('dirty-gem')), findsOneWidget);
@@ -108,6 +121,11 @@ void main() {
     expect(settings.keys, ['gem']);
     final gem = settings['gem'] as Map<String, dynamic>;
     expect(gem['empty_streak'], 5);
+    expect(
+      gem.containsKey('grades'),
+      isFalse,
+      reason: 'the fixed grade ladder is not this tab\'s to send',
+    );
     expect(
       gem.containsKey('grade_positions'),
       isFalse,

@@ -228,8 +228,10 @@ void main() {
     },
   );
   testWidgets(
-    'Quest flow and sequence pickers save exactly the changed field',
+    'a v2-shaped quest config: the flow picker saves exactly the active field',
     (tester) async {
+      // v2 quest steps carry a NUMERIC `value` (e.g. 1) while the wire type is a string; the core
+      // fix accepts that config, and the card must list/save the presets without touching steps.
       final harness = await _pumpCards(
         tester,
         _config(
@@ -237,8 +239,16 @@ void main() {
             'active': 'flowA',
             'active_sequence': '',
             'presets': {
-              'flowA': {'steps': <Object?>[]},
-              'flowB': {'steps': <Object?>[]},
+              'flowA': {
+                'steps': [
+                  {'action': 'click', 'value': 1, 'delay_seconds': 0.5},
+                ],
+              },
+              'flowB': {
+                'steps': [
+                  {'action': 'click', 'value': 1, 'delay_seconds': 0.5},
+                ],
+              },
             },
             'sequences': {
               'seq1': {'entries': <Object?>[]},
@@ -247,9 +257,27 @@ void main() {
         ),
       );
 
+      expect(
+        tester
+            .widget<DropdownButton<String>>(
+              find.byKey(const ValueKey('quest-card-flow')),
+            )
+            .value,
+        'flowA',
+        reason: 'quest.active is the selected preset',
+      );
+
       harness.answerConfigCommands();
       await tester.tap(find.byKey(const ValueKey('quest-card-flow')));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('quest-card-flow-item-flowA')),
+        findsWidgets,
+      );
+      expect(
+        find.byKey(const ValueKey('quest-card-flow-item-flowB')),
+        findsWidgets,
+      );
       await tester.tap(
         find.byKey(const ValueKey('quest-card-flow-item-flowB')),
       );
@@ -312,8 +340,16 @@ void main() {
           'active': 'flowA',
           'active_sequence': '',
           'presets': {
-            'flowA': {'steps': <Object?>[]},
-            'flowB': {'steps': <Object?>[]},
+            'flowA': {
+              'steps': [
+                {'action': 'click', 'value': 1, 'delay_seconds': 0.5},
+              ],
+            },
+            'flowB': {
+              'steps': [
+                {'action': 'click', 'value': 1, 'delay_seconds': 0.5},
+              ],
+            },
           },
           'sequences': <String, dynamic>{},
         },

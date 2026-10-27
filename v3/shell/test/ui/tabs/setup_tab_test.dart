@@ -90,14 +90,27 @@ void main() {
     (tester) async {
       final harness = await _pumpSetup(tester);
 
-      // Read-only readouts: the configured title and the active variant's dictionary.
-      expect(find.textContaining('TW_LIVE'), findsWidgets);
+      // The game window title is read-only (the player's live-pass decision).
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('setup-window-title')),
+          matching: find.byType(TextField),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('setup-window-title')),
+          matching: find.text('TW_LIVE'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('setup-title-caption')), findsOneWidget);
       expect(
         find.textContaining('tw · dictionary attributes.yaml'),
         findsOneWidget,
       );
 
-      await tester.enterText(_field('setup-window-title'), 'US_LIVE');
       await tester.enterText(_field('setup-arduino-baud'), '9600');
       await tester.pump();
       expect(find.byKey(const ValueKey('dirty-setup')), findsOneWidget);
@@ -119,7 +132,11 @@ void main() {
       );
       final settings = sections['settings'] as Map<String, dynamic>;
       expect(settings.keys.toSet(), {'window', 'game', 'arduino'});
-      expect((settings['window'] as Map<String, dynamic>)['title'], 'US_LIVE');
+      expect(
+        (settings['window'] as Map<String, dynamic>)['title'],
+        'TW_LIVE',
+        reason: 'the title is displayed read-only, so the save keeps it',
+      );
       expect((settings['game'] as Map<String, dynamic>)['variant'], 'tw');
       final arduino = settings['arduino'] as Map<String, dynamic>;
       expect(arduino['baud'], 9600);
@@ -137,7 +154,7 @@ void main() {
   );
 
   testWidgets(
-    'the three actions render the core\'s data and its no-board line',
+    'the core actions render the data and the no-board refusal line',
     (tester) async {
       final harness = await _pumpSetup(tester);
       var noBoard = false;
@@ -206,7 +223,7 @@ void main() {
     tester,
   ) async {
     final harness = await _pumpSetup(tester);
-    await tester.enterText(_field('setup-window-title'), 'US_LIVE');
+    await tester.enterText(_field('setup-arduino-baud'), '9600');
     await tester.pump();
 
     harness.answerConfigCommands(
@@ -224,8 +241,60 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('cancel-setup')));
     await tester.pump();
     expect(
-      tester.widget<TextField>(_field('setup-window-title')).controller?.text,
-      'TW_LIVE',
+      tester.widget<TextField>(_field('setup-arduino-baud')).controller?.text,
+      '115200',
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('setup-window-title')),
+        matching: find.text('TW_LIVE'),
+      ),
+      findsOneWidget,
     );
   });
+
+  testWidgets(
+    'Use detected title is gated on a successful Find and saves the detected title',
+    (tester) async {
+      final harness = await _pumpSetup(tester);
+      var detected = '';
+
+      harness.onWrite = (line, fake) {
+        final message = fake.sentJson(fake.sent.length - 1);
+        final id = message['id'] as String;
+        if (message['cmd'] == 'window.find') {
+          fake.emitJson(
+            okResponse(id, {'found': detected.isNotEmpty, 'title': detected}),
+          );
+        }
+      };
+
+      final use = find.byKey(const ValueKey('setup-use-detected-title'));
+      expect(tester.widget<OutlinedButton>(use).onPressed, isNull);
+
+      // A find that detected no title must not enable the save.
+      await tester.tap(find.byKey(const ValueKey('setup-find-window')));
+      await _flush(tester);
+      expect(tester.widget<OutlinedButton>(use).onPressed, isNull);
+
+      detected = 'DETECTED_TITLE';
+      await tester.tap(find.byKey(const ValueKey('setup-find-window')));
+      await _flush(tester);
+      expect(tester.widget<OutlinedButton>(use).onPressed, isNotNull);
+
+      harness.answerConfigCommands();
+      await tester.tap(use);
+      await _flush(tester);
+
+      final apply = harness.lastSentWithCmd('config.apply');
+      expect(apply, isNotNull);
+      final sections =
+          (apply!['args'] as Map<String, dynamic>)['sections']
+              as Map<String, dynamic>;
+      final window =
+          (sections['settings'] as Map<String, dynamic>)['window']
+              as Map<String, dynamic>;
+      expect(window['title'], 'DETECTED_TITLE');
+    },
+  );
 }

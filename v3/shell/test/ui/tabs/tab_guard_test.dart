@@ -41,6 +41,20 @@ Map<String, dynamic> _changedSpammerBlock() => {
   },
 };
 
+/// The Tuner tab lazily fetches the attribute dictionary on first build; answer it here so opening
+/// that tab in a guard test leaves no request (and its 10 s timer) pending. The content does not
+/// matter to these tests — only that the command is answered.
+Map<String, dynamic> _attributesAnswer() => {
+  'variant': 'tw',
+  'dictionary': 'attributes.yaml',
+  'attributes': {
+    'attributes': <Object?>[],
+    'per_level_stats': <String>[],
+    'negative_attr_markers': <String>[],
+    'text_fixes': <String, dynamic>{},
+  },
+};
+
 Finder _field(String key) => find.descendant(
   of: find.byKey(ValueKey(key)),
   matching: find.byType(TextField),
@@ -67,6 +81,12 @@ Future<AppHarness> _pumpShell(WidgetTester tester) async {
     await tester.pump();
   }
   await connecting;
+  harness.onWrite = (line, fake) {
+    final message = fake.sentJson(fake.sent.length - 1);
+    if (message['cmd'] == 'attributes.get') {
+      fake.emitJson(okResponse(message['id'] as String, _attributesAnswer()));
+    }
+  };
   await tester.pumpWidget(ShellApp(model: harness.model));
   await tester.pump();
   return harness;

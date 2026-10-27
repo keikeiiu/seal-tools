@@ -43,12 +43,35 @@ Map<String, dynamic> _tunerBlock() => {
   'spring_point': [800, 900],
 };
 
+/// A minimal `attributes.get` answer (the tuner's rule-name dropdowns read the dictionary here).
+Map<String, dynamic> _attributesAnswer({List<String>? names}) => {
+  'variant': 'tw',
+  'dictionary': 'attributes.yaml',
+  'attributes': {
+    'attributes': [
+      for (final name in names ?? const ['攻擊力', '減少傷害'])
+        {
+          'name': name,
+          'category': 'attack',
+          'variants': [name],
+        },
+    ],
+    'per_level_stats': <String>[],
+    'negative_attr_markers': <String>[],
+    'text_fixes': <String, dynamic>{},
+  },
+};
+
 Finder _field(String key) => find.descendant(
   of: find.byKey(ValueKey(key)),
   matching: find.byType(TextField),
 );
 
-Future<AppHarness> _pumpTuner(WidgetTester tester) async {
+Future<AppHarness> _pumpTuner(
+  WidgetTester tester, {
+  Map<String, dynamic>? attributes,
+  Map<String, dynamic>? tuner,
+}) async {
   tester.view.physicalSize = const ui.Size(1600, 2400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -62,20 +85,31 @@ Future<AppHarness> _pumpTuner(WidgetTester tester) async {
   final connecting = harness.connect(
     config: {
       'window': {'title': 'TW_LIVE'},
-      'tuner': _tunerBlock(),
+      'tuner': tuner ?? _tunerBlock(),
     },
   );
   for (var i = 0; i < 3; i++) {
     await tester.pump();
   }
   await connecting;
+  // The tab fetches the dictionary on first build; answer it before the first frame it needs it.
+  harness.onWrite = (line, fake) {
+    final message = fake.sentJson(fake.sent.length - 1);
+    if (message['cmd'] == 'attributes.get') {
+      fake.emitJson(
+        okResponse(message['id'] as String, attributes ?? _attributesAnswer()),
+      );
+    }
+  };
   await tester.pumpWidget(
     MaterialApp(
       theme: buildShellTheme(),
       home: Scaffold(body: TunerTab(model: harness.model)),
     ),
   );
-  await tester.pump();
+  for (var i = 0; i < 8; i++) {
+    await tester.pump();
+  }
   return harness;
 }
 
@@ -83,6 +117,24 @@ Future<void> _flush(WidgetTester tester) async {
   await tester.pump();
   await tester.pump();
   await tester.pump();
+}
+
+/// The `tuner` section one save sent (through the settings overlay).
+Map<String, dynamic> _savedTuner(AppHarness harness) {
+  final apply = harness.lastSentWithCmd('config.apply')!;
+  final sections =
+      (apply['args'] as Map<String, dynamic>)['sections']
+          as Map<String, dynamic>;
+  return (sections['settings'] as Map<String, dynamic>)['tuner']
+      as Map<String, dynamic>;
+}
+
+/// Scrolls a control into view and taps it (the rule lists sit below the first screen).
+Future<void> _tapVisible(WidgetTester tester, String key) async {
+  final finder = find.byKey(ValueKey(key));
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
 }
 
 void main() {
@@ -203,5 +255,150 @@ void main() {
       isFalse,
       reason: 'a cleared Option is OMITTED from the override, not sent as null',
     );
+  });
+
+  testWidgets('the grade ladder is fixed and read-only', (tester) async {
+    await _pumpTuner(tester);
+
+    for (final grade in ['N', 'G', 'DG', 'XG', 'SG']) {
+      expect(
+        find.byKey(ValueKey('grade-order-$grade')),
+        findsOneWidget,
+        reason: 'the fixed grade ladder is rendered',
+      );
+    }
+    expect(find.byKey(const ValueKey('add-grade')), findsNothing);
+    expect(find.byKey(const ValueKey('new-grade-name')), findsNothing);
+    expect(find.byKey(const ValueKey('grade-remove-0')), findsNothing);
+    expect(find.byKey(const ValueKey('grade-up-0')), findsNothing);
+    expect(find.byKey(const ValueKey('grade-down-0')), findsNothing);
+  });
+
+  testWidgets('rule names are a dropdown of the loaded dictionary', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.byKey(const ValueKey('rules-name-0')),
+          )
+          .value,
+      '減少傷害',
+    );
+
+    await _tapVisible(tester, 'rules-name-0');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('rules-name-0-item-攻擊力')), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('rules-name-0-item-攻擊力')).last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('dirty-tuner')), findsOneWidget);
+
+    harness.answerConfigCommands();
+    await tester.tap(find.byKey(const ValueKey('save-tuner')));
+    await _flush(tester);
+
+    final filter = _savedTuner(harness)['filter'] as Map<String, dynamic>;
+    expect((filter['rules'] as List).first['name'], '攻擊力');
+  });
+
+  testWidgets('a stored rule name outside the dictionary stays selected', (
+    tester,
+  ) async {
+    final tuner = _tunerBlock();
+    final rules = (tuner['filter'] as Map<String, dynamic>)['rules'] as List;
+    (rules.first as Map<String, dynamic>)['name'] = 'UnknownAttr';
+    final harness = await _pumpTuner(tester, tuner: tuner);
+
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.byKey(const ValueKey('rules-name-0')),
+          )
+          .value,
+      'UnknownAttr',
+      reason: 'a stored name outside the dictionary is never lost',
+    );
+
+    harness.answerConfigCommands();
+    await tester.enterText(_field('max-retries'), '6');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('save-tuner')));
+    await _flush(tester);
+
+    final filter = _savedTuner(harness)['filter'] as Map<String, dynamic>;
+    expect((filter['rules'] as List).first['name'], 'UnknownAttr');
+  });
+
+  testWidgets('an empty dictionary disables Add and says why', (tester) async {
+    await _pumpTuner(tester, attributes: _attributesAnswer(names: []));
+
+    expect(
+      find.byKey(const ValueKey('rules-attributes-reason')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('override_rules-attributes-reason')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('rules-add')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('override_rules-add')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.byKey(const ValueKey('rules-new-name')),
+          )
+          .onChanged,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.byKey(const ValueKey('rules-name-0')),
+          )
+          .onChanged,
+      isNull,
+      reason: 'no dictionary names means no valid new pick',
+    );
+  });
+
+  testWidgets('adding a rule picks a dictionary name and saves it', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+
+    await _tapVisible(tester, 'rules-new-name');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('rules-new-name-item-攻擊力')), findsWidgets);
+    await tester.tap(
+      find.byKey(const ValueKey('rules-new-name-item-攻擊力')).last,
+    );
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, 'rules-add');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('dirty-tuner')), findsOneWidget);
+
+    harness.answerConfigCommands();
+    await tester.tap(find.byKey(const ValueKey('save-tuner')));
+    await _flush(tester);
+
+    final filter = _savedTuner(harness)['filter'] as Map<String, dynamic>;
+    final savedRules = filter['rules'] as List;
+    expect(savedRules.length, 2);
+    expect((savedRules.last as Map<String, dynamic>)['name'], '攻擊力');
+    expect((savedRules.last as Map<String, dynamic>)['count'], 1);
   });
 }
