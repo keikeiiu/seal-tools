@@ -55,7 +55,9 @@ $ModelNames = @(
     'ch_PP-OCRv4_rec_infer.onnx',
     'ch_ppocr_mobile_v2.0_cls_infer.onnx'
 )
-$GuideNames = @('USER_GUIDE.md', 'USER_GUIDE.zh-TW.md', 'INSTALL.md')
+# Release docs. THIRD-PARTY-NOTICES.md is a licence obligation, not an optional guide: it is
+# required by -Verify and exact-name allow-listed exactly like the guides.
+$GuideNames = @('USER_GUIDE.md', 'USER_GUIDE.zh-TW.md', 'INSTALL.md', 'THIRD-PARTY-NOTICES.md')
 $FirmwareFiles = @('seal_mouse.ino')
 $FlutterRuntimeFiles = @('flutter_windows.dll', 'data\icudtl.dat')
 
@@ -904,7 +906,7 @@ if ($Verify) {
     Write-Host '  seal-core.exe, DirectML.dll'
     Write-Host '  models/<the three PP-OCRv4 .onnx files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
-    Write-Host '  docs/pet-data.csv, USER_GUIDE.md, USER_GUIDE.zh-TW.md, INSTALL.md'
+    Write-Host '  docs/pet-data.csv, USER_GUIDE.md, USER_GUIDE.zh-TW.md, INSTALL.md, THIRD-PARTY-NOTICES.md'
     Write-Host "Firmware -> $FirmwareZip (seal_mouse/ + seal_mouse.ino)"
     Write-Host "App zip  -> $AppZip"
     Write-Host ''

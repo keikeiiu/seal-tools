@@ -42,8 +42,9 @@
 9. **zh-TW twin: yes.** `USER_GUIDE.zh-TW.md` written from the v3 guide (not by editing v2's), same
    heading structure. Screenshots: new captures of the v3 shell; if none can be taken, the guide
    ships text-only rather than reusing WPF screenshots.
-10. **Docs ship in the zip** (`docs/USER_GUIDE.md`, `docs/USER_GUIDE.zh-TW.md`, `docs/INSTALL.md`)
-    as well as staying in the repo — the offline user needs them.
+10. **Docs ship in the zip** (`docs/USER_GUIDE.md`, `docs/USER_GUIDE.zh-TW.md`, `docs/INSTALL.md`,
+    and `docs/THIRD-PARTY-NOTICES.md` for the DirectML/ONNX/PP-OCR/Flutter/Rust notices) as well as
+    staying in the repo — the offline user needs them, and the notices are a licence obligation.
 11. **COORDINATES is not a separate v3 file.** `CALIBRATION.md` already owns the one-space/two-space
     model, DPI-unawareness, capture, frame→offset and artifacts; a second file would duplicate it. Add
     `CALIBRATION.md` §8 "Portability and migration" and keep v2's COORDINATES as the record; PLAN step
