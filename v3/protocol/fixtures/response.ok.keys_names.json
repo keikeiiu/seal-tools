@@ -1,0 +1,17 @@
+{
+  "case": "response.ok.keys_names",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "38",
+    "ok": true,
+    "result": {
+      "names": {
+        "start": "F12",
+        "quit": "F11",
+        "advance_grade": "G",
+        "pause": "P"
+      }
+    }
+  }
+}

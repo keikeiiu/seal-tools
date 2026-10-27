@@ -1,0 +1,20 @@
+{
+  "case": "response.ok.calibration_fetch",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "9",
+    "ok": true,
+    "result": {
+      "kind": "bag_grid",
+      "mark": [
+        12,
+        47,
+        300,
+        200
+      ],
+      "artifact": null,
+      "rev": 10
+    }
+  }
+}

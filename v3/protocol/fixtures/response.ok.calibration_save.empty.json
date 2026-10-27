@@ -1,0 +1,21 @@
+{
+  "case": "response.ok.calibration_save.empty",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "41",
+    "ok": true,
+    "result": {
+      "rev": 12,
+      "kind": "result_gem_area",
+      "mark": [
+        610,
+        800,
+        220,
+        60
+      ],
+      "derived": {},
+      "artifact": null
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "case": "request.calibration.save.targeted",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "40",
+    "cmd": "calibration.save",
+    "args": {
+      "kind": "gem_grade",
+      "point": {
+        "x": 120,
+        "y": 240
+      },
+      "target": "N"
+    }
+  }
+}

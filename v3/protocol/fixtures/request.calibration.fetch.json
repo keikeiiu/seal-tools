@@ -6,7 +6,7 @@
     "id": "9",
     "cmd": "calibration.fetch",
     "args": {
-      "kind": "bag"
+      "kind": "bag_grid"
     }
   }
 }

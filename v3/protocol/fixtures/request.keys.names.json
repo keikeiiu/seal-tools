@@ -1,0 +1,17 @@
+{
+  "case": "request.keys.names",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "38",
+    "cmd": "keys.names",
+    "args": {
+      "codes": {
+        "start": 123,
+        "quit": 122,
+        "advance_grade": 71,
+        "pause": 20
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "case": "request.calibration.fetch.targeted",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "42",
+    "cmd": "calibration.fetch",
+    "args": {
+      "kind": "pet_toggle",
+      "target": "2"
+    }
+  }
+}

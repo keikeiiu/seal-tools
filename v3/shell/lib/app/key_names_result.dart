@@ -1,5 +1,6 @@
 /// The `keys.parse` / `keys.names` results, decoded APP-LOCALLY (the shell alone consumes these two
-/// untyped answers, like `attributes.get`; no protocol type or fixture change exists or is needed).
+/// untyped answers, like `attributes.get`; their golden fixtures pin the envelope and exact result
+/// keys, while the typed models stay app-local).
 ///
 /// The rule is the domain's, not the tab's:
 /// - `keys.parse {"names": {field: typedName}}` → `{codes: {field: vk}, errors: [{field, input, line}]}`;

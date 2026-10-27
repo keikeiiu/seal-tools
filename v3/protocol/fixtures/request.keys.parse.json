@@ -1,0 +1,17 @@
+{
+  "case": "request.keys.parse",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "37",
+    "cmd": "keys.parse",
+    "args": {
+      "names": {
+        "start": "F12",
+        "quit": "F11",
+        "advance_grade": "G",
+        "pause": "Zulu"
+      }
+    }
+  }
+}

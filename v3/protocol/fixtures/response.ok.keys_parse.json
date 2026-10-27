@@ -1,0 +1,23 @@
+{
+  "case": "response.ok.keys_parse",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "37",
+    "ok": true,
+    "result": {
+      "codes": {
+        "start": 123,
+        "quit": 122,
+        "advance_grade": 71
+      },
+      "errors": [
+        {
+          "field": "pause",
+          "input": "Zulu",
+          "line": "\"Zulu\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit."
+        }
+      ]
+    }
+  }
+}

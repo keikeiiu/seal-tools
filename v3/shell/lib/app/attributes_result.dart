@@ -1,6 +1,6 @@
 /// The `attributes.get` result, decoded APP-LOCALLY (the shell alone consumes it; it is not a wire
-/// type in `lib/protocol`, so no protocol/fixture change is needed — PROTOCOL §4 documents the
-/// untyped result and the shell decodes what it renders).
+/// type in `lib/protocol`, and the golden fixture pins the untyped envelope + key shape —
+/// PROTOCOL §4 documents the untyped result and the shell decodes what it renders).
 ///
 /// Shapes are the core's serde names: `{variant, dictionary, attributes: {attributes: [{name,
 /// category, variants}], per_level_stats, negative_attr_markers, text_fixes: {whole, substring,

@@ -38,6 +38,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "capture",
     "calibration.save",
     "calibration.fetch",
+    "keys.parse",
+    "keys.names",
+    "attributes.get",
     "board.probe",
     "board.test",
     "ui.window",
@@ -205,15 +208,51 @@ fn cases() -> Vec<Case> {
             json!({
                 "frame_id": "f1",
                 "region": {"x": 12, "y": 47, "w": 300, "h": 200},
-                "kind": "bag",
+                "kind": "bag_grid",
             }),
         ),
         request_case(
             "request.calibration.fetch",
             "9",
             "calibration.fetch",
-            json!({"kind": "bag"}),
+            json!({"kind": "bag_grid"}),
         ),
+        request_case(
+            "request.calibration.save.targeted",
+            "40",
+            "calibration.save",
+            json!({"kind": "gem_grade", "point": {"x": 120, "y": 240}, "target": "N"}),
+        ),
+        request_case(
+            "request.calibration.save.empty",
+            "41",
+            "calibration.save",
+            json!({
+                "frame_id": "f1",
+                "kind": "result_gem_area",
+                "region": {"x": 610, "y": 800, "w": 220, "h": 60},
+                "empty": true,
+            }),
+        ),
+        request_case(
+            "request.calibration.fetch.targeted",
+            "42",
+            "calibration.fetch",
+            json!({"kind": "pet_toggle", "target": "2"}),
+        ),
+        request_case(
+            "request.keys.parse",
+            "37",
+            "keys.parse",
+            json!({"names": {"start": "F12", "quit": "F11", "advance_grade": "G", "pause": "Zulu"}}),
+        ),
+        request_case(
+            "request.keys.names",
+            "38",
+            "keys.names",
+            json!({"codes": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20}}),
+        ),
+        request_case("request.attributes.get", "39", "attributes.get", json!({})),
         request_case("request.board.probe", "10", "board.probe", json!({})),
         request_case(
             "request.board.test.click",
@@ -340,6 +379,98 @@ fn cases() -> Vec<Case> {
             }),
         ),
         ok_case("response.ok.empty", "20", json!({})),
+        ok_case(
+            "response.ok.calibration_save",
+            "8",
+            json!({
+                "rev": 10,
+                "kind": "bag_grid",
+                "mark": [12, 47, 300, 200],
+                "derived": {"pitch": {"w": 37.5, "h": 25.0}},
+                "artifact": null,
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_save.targeted",
+            "40",
+            json!({
+                "rev": 11,
+                "kind": "gem_grade",
+                "mark": [120, 240],
+                "derived": {},
+                "artifact": null,
+                "target": "N",
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_save.empty",
+            "41",
+            json!({
+                "rev": 12,
+                "kind": "result_gem_area",
+                "mark": [610, 800, 220, 60],
+                "derived": {},
+                "artifact": null,
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_fetch",
+            "9",
+            json!({
+                "kind": "bag_grid",
+                "mark": [12, 47, 300, 200],
+                "artifact": null,
+                "rev": 10,
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_fetch.targeted",
+            "42",
+            json!({
+                "kind": "pet_toggle",
+                "mark": [100, 200, 40, 40],
+                "artifact": null,
+                "rev": 13,
+                "target": "2",
+            }),
+        ),
+        ok_case(
+            "response.ok.keys_parse",
+            "37",
+            json!({
+                "codes": {"start": 123, "quit": 122, "advance_grade": 71},
+                "errors": [{
+                    "field": "pause",
+                    "input": "Zulu",
+                    "line": "\"Zulu\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single letter/digit.",
+                }],
+            }),
+        ),
+        ok_case(
+            "response.ok.keys_names",
+            "38",
+            json!({"names": {"start": "F12", "quit": "F11", "advance_grade": "G", "pause": "P"}}),
+        ),
+        ok_case(
+            "response.ok.attributes_get",
+            "39",
+            json!({
+                "variant": "tw",
+                "dictionary": "attributes.yaml",
+                "attributes": {
+                    "attributes": [],
+                    "per_level_stats": [],
+                    "negative_attr_markers": [],
+                    "text_fixes": {
+                        "whole": [],
+                        "substring": [],
+                        "simplified_traditional": [],
+                        "final": [],
+                        "regex": [],
+                    },
+                },
+            }),
+        ),
         // ── Error responses: every code in §6 ───────────────────────────────────────────────────
         error_case(
             "response.error.bad_request",

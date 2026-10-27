@@ -1,0 +1,20 @@
+{
+  "case": "request.calibration.save.empty",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "41",
+    "cmd": "calibration.save",
+    "args": {
+      "frame_id": "f1",
+      "kind": "result_gem_area",
+      "region": {
+        "x": 610,
+        "y": 800,
+        "w": 220,
+        "h": 60
+      },
+      "empty": true
+    }
+  }
+}

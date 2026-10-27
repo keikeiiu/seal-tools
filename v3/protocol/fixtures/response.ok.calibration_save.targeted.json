@@ -1,0 +1,20 @@
+{
+  "case": "response.ok.calibration_save.targeted",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "40",
+    "ok": true,
+    "result": {
+      "rev": 11,
+      "kind": "gem_grade",
+      "mark": [
+        120,
+        240
+      ],
+      "derived": {},
+      "artifact": null,
+      "target": "N"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "case": "response.ok.calibration_fetch.targeted",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "42",
+    "ok": true,
+    "result": {
+      "kind": "pet_toggle",
+      "mark": [
+        100,
+        200,
+        40,
+        40
+      ],
+      "artifact": null,
+      "rev": 13,
+      "target": "2"
+    }
+  }
+}

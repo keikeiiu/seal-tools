@@ -84,7 +84,18 @@ DecodedEventFixture _event(
   ProtocolEvent event,
 ) => DecodedEventFixture(caseName, event);
 
-/// The 23 request fixtures.
+/// A result whose typed model lives app-locally, not in `lib/protocol`: the test still checks that
+/// the envelope and the exact key shape decode from the fixture, without inventing a wire type.
+final class EnvelopePayload implements WirePayload {
+  const EnvelopePayload(this.value);
+
+  final JsonMap value;
+
+  @override
+  JsonMap toJson() => value;
+}
+
+/// The 29 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.test.click': (message) =>
@@ -97,6 +108,16 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.fetch', message),
   'request.calibration.save': (message) =>
       _request('request.calibration.save', message),
+  'request.calibration.fetch.targeted': (message) =>
+      _request('request.calibration.fetch.targeted', message),
+  'request.calibration.save.empty': (message) =>
+      _request('request.calibration.save.empty', message),
+  'request.calibration.save.targeted': (message) =>
+      _request('request.calibration.save.targeted', message),
+  'request.attributes.get': (message) =>
+      _request('request.attributes.get', message),
+  'request.keys.names': (message) => _request('request.keys.names', message),
+  'request.keys.parse': (message) => _request('request.keys.parse', message),
   'request.capture': (message) {
     final args = _args(message);
     return _request(
@@ -199,7 +220,7 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.window.measure', message),
 };
 
-/// The 21 response fixtures: 9 successes with typed results, 12 errors.
+/// The 30 response fixtures: 17 successes (9 typed, 8 envelope-only) and 13 errors.
 final Map<String, FixtureDecoder> responseDecoders = {
   'response.ok.capture': (message) => _ok(
     'response.ok.capture',
@@ -233,6 +254,40 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.empty': (message) =>
       _ok('response.ok.empty', message, EmptyResult.fromJson(_result(message))),
+  'response.ok.calibration_save': (message) => _ok(
+    'response.ok.calibration_save',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_save.targeted': (message) => _ok(
+    'response.ok.calibration_save.targeted',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_save.empty': (message) => _ok(
+    'response.ok.calibration_save.empty',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_fetch': (message) => _ok(
+    'response.ok.calibration_fetch',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_fetch.targeted': (message) => _ok(
+    'response.ok.calibration_fetch.targeted',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.keys_parse': (message) =>
+      _ok('response.ok.keys_parse', message, EnvelopePayload(_result(message))),
+  'response.ok.keys_names': (message) =>
+      _ok('response.ok.keys_names', message, EnvelopePayload(_result(message))),
+  'response.ok.attributes_get': (message) => _ok(
+    'response.ok.attributes_get',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
   'response.ok.hello': (message) =>
       _ok('response.ok.hello', message, HelloResult.fromJson(_result(message))),
   'response.ok.ocr_scan': (message) => _ok(
