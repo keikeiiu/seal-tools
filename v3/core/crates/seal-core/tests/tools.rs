@@ -239,3 +239,72 @@ fn a_wrongly_typed_run_argument_is_a_bad_request_naming_the_field() {
         error.message
     );
 }
+
+#[test]
+fn sell_slots_are_validated_at_the_dispatch_before_the_supervisor() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    for (case, args) in [
+        ("wrong tool", json!({"tool": "spammer", "slots": [1]})),
+        ("buy is not sell", json!({"tool": "buy", "slots": [1]})),
+        ("non-array", json!({"tool": "sell", "slots": "1"})),
+        ("non-integer", json!({"tool": "sell", "slots": [1, "2"]})),
+        ("float", json!({"tool": "sell", "slots": [1.5]})),
+        ("out of range", json!({"tool": "sell", "slots": [64]})),
+        ("negative", json!({"tool": "sell", "slots": [-1]})),
+        ("empty", json!({"tool": "sell", "slots": []})),
+    ] {
+        let response = session.call("tool.start", args);
+        assert!(!response.ok, "{case}: the start must be refused");
+        let error = response.error.expect("a refusal");
+        assert_eq!(error.code, "bad_request", "{case}");
+        assert_eq!(error.detail["field"], "slots", "{case}");
+        assert!(
+            error.message.contains("slots"),
+            "{case}: the line names the field: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn a_sell_start_without_slots_reaches_the_domains_selection_line() {
+    let root = config_root();
+    // Every shop mark is calibrated, but the migrated config has no selection and the start carries
+    // no slots: the start is accepted (the per-run selection is run data) and the domain's own
+    // line arrives as the run's finish error, not as a bad_request from the dispatcher.
+    root.write(
+        "config/local.yaml",
+        "buy_sell:\n  bag_grid: [0, 0, 800, 600]\n  bag_slot: [0, 0, 100, 75]\n  shop_rows: 5\n  shop_region: [900, 400, 300, 250]\n  scroll_point: [1000, 420]\n  max_button: [1200, 700]\n  sell_cap: 5\n",
+    );
+    let before = root.read("config/local.yaml");
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let response = session.call("tool.start", json!({"tool": "sell"}));
+    assert!(response.ok, "the start is accepted: {:?}", response.error);
+
+    let mut finished = None;
+    for _ in 0..20 {
+        let event = session.event();
+        assert_ne!(event["event"], "core.stopping");
+        if event["event"] == "tool.finished" {
+            finished = Some(event);
+            break;
+        }
+    }
+    let finished = finished.expect("the run finishes with the domain line");
+    assert_eq!(finished["data"]["tool"], "sell");
+    assert_eq!(finished["data"]["reason"], "error");
+    assert_eq!(
+        finished["data"]["message"],
+        "No slots are selected to sell."
+    );
+    assert_eq!(
+        root.read("config/local.yaml"),
+        before,
+        "a tool start never writes the config"
+    );
+}

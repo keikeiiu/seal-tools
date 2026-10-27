@@ -777,10 +777,11 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
 /// Validate `tool.start`'s optional run arguments (`PROTOCOL.md` §4 note / §12.6) and return the
 /// object forwarded to the supervisor's `create`.
 ///
-/// Today only `buy` takes any: `preset` (a string) and `count` (an integer, at least 1). `preset`
-/// and `count` on any other tool are refused by name; a `count` below 1 is refused rather than
-/// clamped (the domain would clamp, but the protocol says an explicit number is not silently
-/// changed). The error is `(message, field)` so the dispatcher can put the field in `detail`.
+/// `buy` takes `preset` (a string) and `count` (an integer, at least 1); `sell` takes `slots` (a
+/// non-empty array of bag indexes 0..63). A run argument on any other tool is refused by name; a
+/// `count` below 1 and an empty/invalid `slots` are refused rather than clamped or defaulted (the
+/// protocol says an explicit value the player gave is not silently changed). The error is
+/// `(message, field)` so the dispatcher can put the field in `detail`.
 fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)> {
     let Some(object) = args.as_object() else {
         return Err((
@@ -789,53 +790,118 @@ fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)
         ));
     };
     for key in object.keys() {
-        if !matches!(key.as_str(), "tool" | "preset" | "count") {
+        if !matches!(key.as_str(), "tool" | "preset" | "count" | "slots") {
             return Err((
                 format!("tool.start doesn't take a {key:?} field"),
                 key.clone(),
             ));
         }
     }
-    if tool != ToolId::Buy {
-        for field in ["preset", "count"] {
-            if object.contains_key(field) {
+
+    match tool {
+        ToolId::Buy => {
+            if object.contains_key("slots") {
                 return Err((
-                    format!("tool.start's {field:?} is only accepted by \"buy\""),
-                    field.to_owned(),
+                    "tool.start's \"slots\" is only accepted by \"sell\"".to_owned(),
+                    "slots".to_owned(),
                 ));
             }
+            let mut forwarded = serde_json::Map::new();
+            if let Some(value) = object.get("preset") {
+                let Some(preset) = value.as_str() else {
+                    return Err((
+                        "tool.start's \"preset\" must be a string".to_owned(),
+                        "preset".to_owned(),
+                    ));
+                };
+                forwarded.insert("preset".to_owned(), Value::String(preset.to_owned()));
+            }
+            if let Some(value) = object.get("count") {
+                let Some(count) = value.as_i64().and_then(|count| i32::try_from(count).ok()) else {
+                    return Err((
+                        "tool.start's \"count\" must be an integer".to_owned(),
+                        "count".to_owned(),
+                    ));
+                };
+                if count < 1 {
+                    return Err((
+                        "tool.start's \"count\" must be at least 1".to_owned(),
+                        "count".to_owned(),
+                    ));
+                }
+                forwarded.insert("count".to_owned(), Value::from(count));
+            }
+            Ok(Value::Object(forwarded))
         }
-        return Ok(args.clone());
-    }
-
-    let mut forwarded = serde_json::Map::new();
-    if let Some(value) = object.get("preset") {
-        let Some(preset) = value.as_str() else {
-            return Err((
-                "tool.start's \"preset\" must be a string".to_owned(),
-                "preset".to_owned(),
-            ));
-        };
-        forwarded.insert("preset".to_owned(), Value::String(preset.to_owned()));
-    }
-    if let Some(value) = object.get("count") {
-        let Some(count) = value.as_i64().and_then(|count| i32::try_from(count).ok()) else {
-            return Err((
-                "tool.start's \"count\" must be an integer".to_owned(),
-                "count".to_owned(),
-            ));
-        };
-        if count < 1 {
-            return Err((
-                "tool.start's \"count\" must be at least 1".to_owned(),
-                "count".to_owned(),
-            ));
+        ToolId::Sell => {
+            for field in ["preset", "count"] {
+                if object.contains_key(field) {
+                    return Err((
+                        format!("tool.start's {field:?} is only accepted by \"buy\""),
+                        field.to_owned(),
+                    ));
+                }
+            }
+            let mut forwarded = serde_json::Map::new();
+            if let Some(value) = object.get("slots") {
+                let slots = slot_selection(value)?;
+                forwarded.insert("slots".to_owned(), Value::Array(slots));
+            }
+            Ok(Value::Object(forwarded))
         }
-        forwarded.insert("count".to_owned(), Value::from(count));
+        _ => {
+            for field in ["preset", "count"] {
+                if object.contains_key(field) {
+                    return Err((
+                        format!("tool.start's {field:?} is only accepted by \"buy\""),
+                        field.to_owned(),
+                    ));
+                }
+            }
+            if object.contains_key("slots") {
+                return Err((
+                    "tool.start's \"slots\" is only accepted by \"sell\"".to_owned(),
+                    "slots".to_owned(),
+                ));
+            }
+            Ok(args.clone())
+        }
     }
-    Ok(Value::Object(forwarded))
 }
 
+/// The `sell` run's bag selection: a non-empty array of integers 0..63. Order and duplicates are
+/// irrelevant; the domain's sell plan dedupes, sorts highest-first and applies `sell_cap`.
+fn slot_selection(value: &Value) -> Result<Vec<Value>, (String, String)> {
+    let Some(values) = value.as_array() else {
+        return Err((
+            "tool.start's \"slots\" must be an array of integers 0..63".to_owned(),
+            "slots".to_owned(),
+        ));
+    };
+    if values.is_empty() {
+        return Err((
+            "tool.start's \"slots\" must contain at least one bag slot".to_owned(),
+            "slots".to_owned(),
+        ));
+    }
+    let mut selection = Vec::with_capacity(values.len());
+    for value in values {
+        let Some(slot) = value.as_i64().and_then(|slot| i32::try_from(slot).ok()) else {
+            return Err((
+                "tool.start's \"slots\" must contain only integers 0..63".to_owned(),
+                "slots".to_owned(),
+            ));
+        };
+        if !(0..=63).contains(&slot) {
+            return Err((
+                "tool.start's \"slots\" must contain only integers 0..63".to_owned(),
+                "slots".to_owned(),
+            ));
+        }
+        selection.push(Value::from(slot));
+    }
+    Ok(selection)
+}
 /// `tool.stop {tool?}`: stop the named tool, or — with no name — whichever run the player means
 /// (`PROTOCOL.md` §4: "stops whatever is running"). The response arrives while the loop is still
 /// leaving; the `state`(stopping) and `tool.finished` events follow it.
@@ -1196,4 +1262,42 @@ fn bad_request(id: &str, message: &str, detail: Value) -> Response {
 /// A bug in the core, not a bad request: the shell shows it and logs the detail (`PROTOCOL.md` §6).
 fn internal(id: &str, message: &str) -> Response {
     Response::err(id, Error::new("internal", message, json!({})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn sell_slots_are_forwarded_only_after_validation() {
+        let forwarded = start_arguments(
+            ToolId::Sell,
+            &json!({"tool": "sell", "slots": [3, 7, 12, 3]}),
+        )
+        .expect("valid bag indexes");
+        assert_eq!(
+            forwarded,
+            json!({"slots": [3, 7, 12, 3]}),
+            "order and duplicates are the domain's to normalise, not this layer's"
+        );
+
+        assert_eq!(
+            start_arguments(ToolId::Sell, &json!({"tool": "sell"})).expect("no slots"),
+            json!({}),
+            "absent slots leave the config fallback to create"
+        );
+
+        for (case, slots) in [
+            ("non-array", json!("3")),
+            ("non-integer", json!([1, "2"])),
+            ("out of range", json!([64])),
+            ("empty", json!([])),
+        ] {
+            let error = start_arguments(ToolId::Sell, &json!({"tool": "sell", "slots": slots}))
+                .expect_err(case);
+            assert_eq!(error.1, "slots", "{case}");
+            assert!(error.0.contains("slots"), "{case}: {}", error.0);
+        }
+    }
 }

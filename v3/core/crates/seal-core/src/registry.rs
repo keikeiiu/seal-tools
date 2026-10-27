@@ -131,9 +131,12 @@ impl ProductionRegistry {
             effects: Box::new(effects),
         })
     }
-    fn sell_session(&self) -> Result<Session, String> {
+    fn sell_session(&self, args: &Value) -> Result<Session, String> {
         let config = self.config();
-        let plan = crate::shop::sell_plan(&config).map_err(|reason| reason.message)?;
+        // The per-run selection lives only in the start arguments; it never touches the config.
+        let slots = run_slots(args)?;
+        let plan = crate::shop::sell_plan_with_slots(&config, slots.as_deref())
+            .map_err(|reason| reason.message)?;
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
@@ -332,11 +335,11 @@ impl ToolRegistry for ProductionRegistry {
                 .map_err(|reason| Unavailable {
                     line: reason.message,
                 }),
-            ToolId::Sell => crate::shop::sell_plan(&self.config())
-                .map(|_| ())
-                .map_err(|reason| Unavailable {
+            ToolId::Sell => {
+                crate::shop::sell_available(&self.config()).map_err(|reason| Unavailable {
                     line: reason.message,
-                }),
+                })
+            }
             ToolId::Gem => crate::gem::plan(&self.config())
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
@@ -368,7 +371,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::HoldSpace => self.hold_space_session(),
             ToolId::Tuner => self.tuner_session(),
             ToolId::Quest => self.quest_session(),
-            ToolId::Sell => self.sell_session(),
+            ToolId::Sell => self.sell_session(args),
             ToolId::Gem => self.gem_session(),
             ToolId::Pet => self.pet_session(game),
             ToolId::Buy => self.buy_session(args),
@@ -415,6 +418,32 @@ impl Effects for KeyOnlyEffects {
     }
 }
 
+/// The validated sell selection from `tool.start`, or `None` for the config fallback. The
+/// dispatcher already rejects malformed shapes; this re-checks at the creation seam so a direct
+/// caller cannot silently fall back to a persisted selection.
+fn run_slots(args: &Value) -> Result<Option<Vec<i32>>, String> {
+    let Some(value) = args.get("slots") else {
+        return Ok(None);
+    };
+    let Some(values) = value.as_array() else {
+        return Err("tool.start's \"slots\" must be an array of integers 0..63".to_owned());
+    };
+    if values.is_empty() {
+        return Err("tool.start's \"slots\" must contain at least one bag slot".to_owned());
+    }
+    let mut slots = Vec::with_capacity(values.len());
+    for value in values {
+        let Some(slot) = value.as_i64().and_then(|slot| i32::try_from(slot).ok()) else {
+            return Err("tool.start's \"slots\" must contain only integers 0..63".to_owned());
+        };
+        if !(0..=63).contains(&slot) {
+            return Err("tool.start's \"slots\" must contain only integers 0..63".to_owned());
+        }
+        slots.push(slot);
+    }
+    Ok(Some(slots))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sell_tool_is_available_when_its_selection_validates_and_buy_is_served() {
+    fn the_sell_tool_is_available_without_a_persisted_selection_and_buy_is_served() {
         assert_eq!(registry(config_with_shop()).available(ToolId::Sell), Ok(()));
         // Buy is served now: its missing PRESET is a create-time refusal (so it can carry the
         // domain's line), not an availability refusal.
@@ -468,9 +497,11 @@ mod tests {
             Ok(()),
             "availability does not depend on presets/calibration; create answers those"
         );
-        // Everything calibrated, but nothing selected: the refusal must be the SELECTION line, not a
-        // calibration line that would hide which mark is actually missing.
-        let sell_refusal = registry(serde_json::json!({
+
+        // Everything calibrated, but nothing selected: the per-run selection is run data, so the
+        // cheap availability gate must let the start through; `create` answers the domain's own
+        // selection line rather than the dispatcher inventing a bad_request.
+        let without_selection = registry(serde_json::json!({
             "buy_sell": {
                 "bag_grid": [0, 0, 800, 600],
                 "max_button": [1200, 700],
@@ -478,14 +509,22 @@ mod tests {
                 "sell_slots": [],
                 "sell_cap": 5
             }
-        }))
-        .available(ToolId::Sell)
-        .expect_err("an empty selection is refused");
-        assert!(
-            sell_refusal.line.contains("No slots are selected"),
-            "{}",
-            sell_refusal.line
+        }));
+        assert_eq!(
+            without_selection.available(ToolId::Sell),
+            Ok(()),
+            "an empty persisted fallback must not refuse a start that may carry slots"
         );
+        let error = match without_selection.create(
+            ToolId::Sell,
+            Arc::new(seal_tools::game::AllowAll),
+            &serde_json::json!({}),
+        ) {
+            Ok(_) => panic!("a selection-less sell start has nothing to sell"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "No slots are selected to sell.");
+
         let registry = registry(config_with_shop());
         let error = match registry.create(
             ToolId::Buy,

@@ -7,11 +7,13 @@
 //!
 //! Two notes, both recorded rather than hidden:
 //!
-//! - **Buy takes its parameters from the RUN** (`PROTOCOL.md` §4 note / §12.6): `tool.start` carries
-//!   `preset` and `count`, a missing `count` uses the preset's configured count, and an explicit count
-//!   below 1 is refused at the argument layer. `buy_plan` resolves them against `buy_sell.presets`;
-//!   without a preset it answers the domain's own "No buy preset selected." line, and an unknown name
-//!   the domain's line naming it.
+//! - **Both tools take their run parameters from `tool.start`** (`PROTOCOL.md` §4 note / §12.6):
+//!   `buy` carries `preset` and `count`; `sell` carries `slots`, a per-run bag selection that
+//!   REPLACES the migrated `buy_sell.sell_slots` fallback and is never written back to config. A
+//!   missing buy `count` uses the preset's configured count, an explicit count below 1 is refused at
+//!   the argument layer, and `buy_plan` resolves the preset against `buy_sell.presets`; without a
+//!   preset it answers the domain's own "No buy preset selected." line, and an unknown name the
+//!   domain's line naming it.
 //! - **Selling is the one irreversible thing here**, so the slot selection is filtered, de-duplicated,
 //!   highest-index-first and capped by the domain BEFORE any click; this loop only executes what that
 //!   plan says.
@@ -66,8 +68,34 @@ pub fn settings(config: &Value) -> ShopSettings {
 
 /// One SELL pass, validated: the domain refuses an uncalibrated grid, a missing MAX/focus point, an
 /// empty selection, or a selection above the per-run cap BEFORE this returns.
+///
+/// `slots` is the per-run selection from `tool.start` (`PROTOCOL.md` §4 / §12.6 ruling 6). It
+/// REPLACES the migrated config's `buy_sell.sell_slots` for this run only; config is read, never
+/// written. `None` keeps the v2-compatibility fallback from the config.
 pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
-    ShopPlan::sell(&settings(config))
+    sell_plan_with_slots(config, None)
+}
+
+/// [`sell_plan`] with the run argument applied: the selected bag cells, or the config fallback when
+/// the per-run argument is absent. The domain does the filtering, dedupe, sort and `sell_cap`.
+pub fn sell_plan_with_slots(config: &Value, slots: Option<&[i32]>) -> Result<ShopPlan, StopReason> {
+    let mut settings = settings(config);
+    if let Some(slots) = slots {
+        settings.sell_slots = slots.to_vec();
+    }
+    ShopPlan::sell(&settings)
+}
+
+/// The supervisor's cheap availability gate for SELL. The per-run selection arrives later with
+/// `tool.start`, so this validates the calibration/geometry half with a probe selection instead of
+/// rejecting a config whose persisted fallback is empty (or too large): the selection is run data,
+/// not availability. A start with no selection still reaches `create`, where the domain answers its
+/// own "No slots are selected to sell." line.
+pub fn sell_available(config: &Value) -> Result<(), StopReason> {
+    let mut settings = settings(config);
+    settings.sell_slots = vec![0];
+    settings.sell_cap = settings.sell_cap.max(1);
+    ShopPlan::sell(&settings).map(|_| ())
 }
 
 /// One BUY pass, from the RUN arguments (`PROTOCOL.md` §4 / §12.6): `preset` names a
@@ -246,6 +274,69 @@ mod tests {
         let reason = sell_plan(&config).expect_err("nothing selected");
 
         assert_eq!(reason.message, "No slots are selected to sell.");
+    }
+
+    #[test]
+    fn a_sell_run_uses_the_start_slots_over_the_config_fallback() {
+        let config = config(); // the fallback selection is [3, 1]
+        let plan =
+            sell_plan_with_slots(&config, Some(&[5, 1, 5])).expect("the run selection validates");
+
+        assert_eq!(plan.done_message, "Sold 2 slot(s).", "dedupe, then cap");
+        let centres = seal_domain::tools::shop::BagGrid::centres(Some(&[0, 0, 800, 600]));
+        let max = seal_domain::geometry::Point::new(1200, 700);
+        let places: Vec<_> = plan
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ShopStep::Place(point) => Some(*point),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            places,
+            vec![
+                seal_domain::geometry::Point::new(1000, 420),
+                centres[5],
+                max,
+                centres[1],
+                max
+            ],
+            "focus, then the highest selected cell first; the config's [3,1] is not used"
+        );
+    }
+
+    #[test]
+    fn a_sell_run_without_slots_uses_the_migrated_config_fallback() {
+        let plan = sell_plan_with_slots(&config(), None).expect("the fallback selection validates");
+        assert_eq!(plan.done_message, "Sold 2 slot(s).");
+
+        let centres = seal_domain::tools::shop::BagGrid::centres(Some(&[0, 0, 800, 600]));
+        let places: Vec<_> = plan
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ShopStep::Place(point) => Some(*point),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(places[1], centres[3]);
+        assert_eq!(places[3], centres[1]);
+    }
+
+    #[test]
+    fn the_availability_gate_ignores_the_selection_but_still_checks_calibration() {
+        let mut unselected = config();
+        unselected["buy_sell"]["sell_slots"] = serde_json::json!([]);
+        assert!(
+            sell_available(&unselected).is_ok(),
+            "the selection arrives with the start, so an empty fallback is not a preflight refusal"
+        );
+
+        let mut uncalibrated = unselected.clone();
+        uncalibrated["buy_sell"]["bag_grid"] = serde_json::Value::Null;
+        let reason = sell_available(&uncalibrated).expect_err("the grid is still required");
+        assert!(reason.message.contains("bag grid"), "{}", reason.message);
     }
 
     #[test]
