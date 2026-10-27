@@ -15,6 +15,7 @@
 //!   written before sequences existed; it must stay a real, expressible choice.
 
 use crate::config::de::{map_with_default_bodies, null_as_default, vec_with_default_bodies};
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -62,6 +63,28 @@ fn default_step_action() -> String {
 
 fn default_step_delay_seconds() -> f64 {
     0.25
+}
+
+/// v2's `QuestStep.value` was a YAML scalar (`"1"`, `1`, `true`); accept all three shapes and
+/// normalise to the string the executor sends. Anything else is a genuinely malformed body.
+fn quest_step_value<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(text)) => Ok(Some(text)),
+        Some(serde_json::Value::Number(number)) => Ok(Some(number.to_string())),
+        Some(serde_json::Value::Bool(flag)) => Ok(Some(if flag {
+            "true".to_owned()
+        } else {
+            "false".to_owned()
+        })),
+        Some(other) => Err(de::Error::custom(format!(
+            "quest step value must be a string, number, bool or null; got {other}"
+        ))),
+    }
 }
 
 fn default_times() -> i32 {
@@ -236,7 +259,12 @@ pub struct QuestStep {
     pub action: String,
 
     /// The character a `key` step sends. Ignored by the others.
-    #[serde(default)]
+    ///
+    /// v2 wrote this as a YAML scalar, so a migrated file can carry `value: 1` or `value: true`
+    /// where the model wants text. v2's YamlDotNet binding accepted those and the tool sent the
+    /// character; a migrated config must not be refused just because the step is a digit. Strings
+    /// stay unchanged, numbers/bools are normalised through their display form, null stays None.
+    #[serde(default, deserialize_with = "quest_step_value")]
     pub value: Option<String>,
 
     #[serde(default = "default_step_delay_seconds")]
@@ -250,5 +278,44 @@ impl Default for QuestStep {
             value: None,
             delay_seconds: default_step_delay_seconds(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// v2 wrote quest step values as YAML scalars: a key step for "1" can be `value: 1`, and a
+    /// hand-entered boolean stays a bool. The decode normalises the scalar and leaves null as None.
+    #[test]
+    fn v2_scalar_step_values_decode_as_their_string_form() {
+        let quest: QuestConfig = serde_json::from_value(json!({
+            "active": "god8",
+            "presets": {
+                "god8": {
+                    "steps": [
+                        {"action": "key", "value": 1, "delay_seconds": 0.25},
+                        {"action": "key", "value": true, "delay_seconds": 0.25},
+                        {"action": "enter", "value": null}
+                    ]
+                }
+            }
+        }))
+        .expect("a v2-shaped quest block decodes");
+
+        let steps = &quest.presets["god8"].steps;
+        assert_eq!(steps[0].value.as_deref(), Some("1"));
+        assert_eq!(steps[1].value.as_deref(), Some("true"));
+        assert_eq!(steps[2].value, None);
+    }
+
+    #[test]
+    fn a_structured_step_value_is_still_a_malformed_body() {
+        let error = serde_json::from_value::<QuestConfig>(json!({
+            "presets": {"god8": {"steps": [{"value": [1, 2]}]}}
+        }))
+        .expect_err("a list is not a scalar character");
+        assert!(error.to_string().contains("string, number, bool or null"));
     }
 }
