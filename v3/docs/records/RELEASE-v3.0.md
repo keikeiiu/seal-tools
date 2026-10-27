@@ -1,6 +1,7 @@
 # Release v3.0 — the Rust core + Flutter shell
 
-**Date:** 2026-10-27 · **Branch:** `v3-core` · **Built from:** `41faf1a` plus this record's commit
+**Date:** 2026-10-27 · **Branch:** `v3-core` · **Built from:** `0239214` (the re-cut; later commits only
+touch these records, and the shipped guides' final bytes predate it at `61a6d3f`)
 
 The first release of the v3 shape: a headless Rust core (`seal-core.exe`) and a Flutter Windows
 shell (`SealTools.exe`) that spawns it, talking the protocol in
