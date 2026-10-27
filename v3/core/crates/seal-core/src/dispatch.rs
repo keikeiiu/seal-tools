@@ -323,7 +323,10 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     Response::ok(&request.id, result)
 }
 
-pub(crate) fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
+/// The OCR geometry the tuner read uses, including the region-relative v2 `grade_area` when it is
+/// present and valid. Public for the committed v2-config replay test; no production caller outside
+/// the core uses it.
+pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
     let band = |name: &str| -> Option<(i32, i32)> {
         let array = config.pointer(&format!("/tuner/ocr/{name}"))?.as_array()?;
         Some((
@@ -340,8 +343,34 @@ pub(crate) fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
         attr_x: band("attr_x"),
         attr_y: band("attr_y"),
         grade_y: band("grade_y"),
+        grade_area: grade_area(config),
         row_height,
     }
+}
+
+/// The v2 `tuner.ocr.grade_area` box, in the same region-relative space as `region` and the bands.
+/// v2 cropped the captured region image with it (`DetectGradeColorScores(mat, ga)`), and its
+/// `ConfigValidator` checks x2/y2 against the region size. Any missing/negative/out-of-order/outside
+/// box returns `None`, which makes the reader fall back to the unchanged `grade_y` band.
+fn grade_area(config: &Value) -> Option<seal_ocr::modes::GradeArea> {
+    let area = config.pointer("/tuner/ocr/grade_area")?.as_object()?;
+    let component = |name: &str| -> Option<i32> { i32::try_from(area.get(name)?.as_i64()?).ok() };
+    let (x1, y1, x2, y2) = (
+        component("x1")?,
+        component("y1")?,
+        component("x2")?,
+        component("y2")?,
+    );
+    if x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 {
+        return None;
+    }
+    let region = config.pointer("/tuner/ocr/region")?.as_object()?;
+    let width = i32::try_from(region.get("width")?.as_i64()?).ok()?;
+    let height = i32::try_from(region.get("height")?.as_i64()?).ok()?;
+    if width <= 0 || height <= 0 || x2 > width || y2 > height {
+        return None;
+    }
+    Some(seal_ocr::modes::GradeArea { x1, y1, x2, y2 })
 }
 pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), String> {
     let data = frame

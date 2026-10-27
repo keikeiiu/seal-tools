@@ -2,9 +2,10 @@
 //!
 //! Text rules stay in `seal-domain`: attribute sign fixing is [`seal_domain::ocr::fix_sign`] and line
 //! text was already cleaned by the pipeline's `TextCleaner`. The v2 call sites this ports:
-//! `OcrEngine.ScanOnce` (`v2/SealTools.Core/OcrEngine.cs:273-345`): grade line from the full read
-//! (Y-filtered), attributes from the X+Y-filtered items grouped by row and classified label/value,
-//! `FixSign`, first 3 rows starting at Y >= 10.
+//! `OcrEngine.ScanOnce` (`v2/SealTools.Core/OcrEngine.cs:273-345`): grade line from the configured
+//! region-relative `grade_area` box when present, otherwise the full read Y-filtered; attributes
+//! from the X+Y-filtered items grouped by row and classified label/value, `FixSign`, first 3 rows
+//! starting at Y >= 10.
 //!
 //! **Follow-ups, marked here rather than silently omitted:** the grade COLOUR fallback
 //! (`DetectGradeColorScores`/`DecideGrade`) and the `remaining` count read are not ported; the result
@@ -53,7 +54,34 @@ pub struct OcrGeometry {
     pub attr_x: Option<(i32, i32)>,
     pub attr_y: Option<(i32, i32)>,
     pub grade_y: Option<(i32, i32)>,
+    /// The grade-letter box, REGION-RELATIVE (the same space as every band): v2's
+    /// `DetectGradeColorScores(mat, ga)` cropped the captured REGION image with it, and
+    /// `ConfigValidator` checks its x2/y2 against `region.width/height`. `None` means absent or
+    /// outside the region; the reader then falls back to [`Self::grade_y`].
+    pub grade_area: Option<GradeArea>,
     pub row_height: u32,
+}
+
+/// A rectangle inside the captured OCR region: `x1..x2`, `y1..y2` (half-open, v2's `BoxConfig`).
+/// Only constructed for valid, in-region boxes by the core's [`OcrGeometry`] producer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GradeArea {
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
+}
+
+impl GradeArea {
+    /// Whether a recognized item's box touches this area. Boxes are in the recognized region's
+    /// pixels (the pipeline runs on the region capture), so the comparison is direct.
+    fn selects(&self, item: &RecognizedLine) -> bool {
+        // v2 cropped `Rect(x1, y1, x2 - x1, y2 - y1)`: left/top inclusive, right/bottom exclusive.
+        item_max_x(item) > f64::from(self.x1)
+            && item_x(item) < f64::from(self.x2)
+            && item_max_y(item) > f64::from(self.y1)
+            && item_y(item) < f64::from(self.y2)
+    }
 }
 
 impl Default for OcrGeometry {
@@ -62,6 +90,7 @@ impl Default for OcrGeometry {
             attr_x: None,
             attr_y: None,
             grade_y: None,
+            grade_area: None,
             row_height: 10,
         }
     }
@@ -136,10 +165,23 @@ fn has_digit(text: &str) -> bool {
 /// after the last `:`/`：` (or a leading `GRADE`/`等级` label), then take the longest-first match of
 /// `SG, XG, DG, G, N`.
 pub fn read_grade(items: &[RecognizedLine], geometry: &OcrGeometry) -> Option<String> {
-    let mut band: Vec<&RecognizedLine> = items
-        .iter()
-        .filter(|item| in_band(item_y(item), geometry.grade_y))
-        .collect();
+    // v2 used grade_area for its colour fallback; the colour decision is a marked follow-up in
+    // v3, so its region-relative box selects the grade line here instead. When the box is absent
+    // or invalid the caller leaves it None and today's grade_y band is preserved; if a present box
+    // selects nothing (a hand-edited/legacy box), fall back to the band rather than losing the read.
+    let mut band: Vec<&RecognizedLine> = match geometry.grade_area {
+        Some(area) => items.iter().filter(|item| area.selects(item)).collect(),
+        None => items
+            .iter()
+            .filter(|item| in_band(item_y(item), geometry.grade_y))
+            .collect(),
+    };
+    if band.is_empty() {
+        band = items
+            .iter()
+            .filter(|item| in_band(item_y(item), geometry.grade_y))
+            .collect();
+    }
     if band.is_empty() {
         band = items.iter().collect();
     }
@@ -265,6 +307,14 @@ fn item_max_x(item: &RecognizedLine) -> f64 {
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
+fn item_max_y(item: &RecognizedLine) -> f64 {
+    item.box_quad
+        .0
+        .iter()
+        .map(|point| point.y)
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,6 +402,77 @@ mod tests {
             read_grade(&items, &empty_band).is_some(),
             "an empty band falls back to all items"
         );
+    }
+
+    #[test]
+    fn the_grade_area_is_a_half_open_region_relative_box() {
+        let area = GradeArea {
+            x1: 100,
+            y1: 10,
+            x2: 200,
+            y2: 40,
+        };
+        assert!(area.selects(&item("inside", 0.9, 120.0, 20.0)));
+        assert!(area.selects(&item("left edge", 0.9, 100.0, 10.0)));
+        assert!(!area.selects(&item("right edge", 0.9, 200.0, 20.0)));
+        assert!(!area.selects(&item("below", 0.9, 120.0, 40.0)));
+        assert!(!area.selects(&item("above", 0.9, 120.0, 0.0)));
+        assert!(!area.selects(&item("left", 0.9, 80.0, 20.0)));
+    }
+
+    #[test]
+    fn the_grade_area_bounds_the_grade_read_and_absent_falls_back_to_the_band() {
+        let items = vec![
+            item("GRADE: DG", 0.9, 120.0, 2.0),
+            item("XG", 0.9, 500.0, 2.0),
+        ];
+        let area = OcrGeometry {
+            grade_area: Some(GradeArea {
+                x1: 100,
+                y1: 0,
+                x2: 200,
+                y2: 40,
+            }),
+            grade_y: Some((0, 40)),
+            ..OcrGeometry::default()
+        };
+        assert_eq!(
+            read_grade(&items, &area),
+            Some("DG".to_owned()),
+            "the box selects the grade line and excludes the XG outside it"
+        );
+
+        let band_only = OcrGeometry {
+            grade_y: Some((0, 40)),
+            ..OcrGeometry::default()
+        };
+        assert_eq!(
+            read_grade(&items, &band_only),
+            Some("XG".to_owned()),
+            "without a box, the pre-existing grade_y band sees both lines"
+        );
+    }
+
+    #[test]
+    fn the_grade_mode_selects_the_line_inside_the_area() {
+        let scan = Scan {
+            items: vec![
+                item("GRADE: G", 0.9, 120.0, 2.0),
+                item("DG", 0.9, 500.0, 2.0),
+            ],
+            lines: Vec::new(),
+        };
+        let geometry = OcrGeometry {
+            grade_area: Some(GradeArea {
+                x1: 100,
+                y1: 0,
+                x2: 200,
+                y2: 40,
+            }),
+            ..OcrGeometry::default()
+        };
+        let result = apply(Mode::Grade, &scan, &AttributesConfig::default(), &geometry);
+        assert_eq!(result.grade, Some("G".to_owned()));
     }
 
     #[test]

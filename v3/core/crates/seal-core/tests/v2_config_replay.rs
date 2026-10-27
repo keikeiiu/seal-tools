@@ -6,6 +6,7 @@ use std::path::Path;
 use seal_core::{gem, pet, shop, spammer, tuner};
 use seal_domain::config::LocalOverrides;
 use seal_domain::geometry::Rect;
+use seal_ocr::modes::GradeArea;
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../seal-domain/tests/fixtures/v2-era-config.json");
@@ -16,7 +17,57 @@ fn the_sanitized_v2_era_config_replays_through_the_tool_readers() {
     let local: LocalOverrides =
         serde_json::from_value(config.clone()).expect("the overlay decodes");
 
-    // Tuner: the OCR region and spring point survive into the plan the tool runs.
+    // Tuner: the OCR region, the region-relative v2 grade box and the spring point reach the
+    // geometry/plan the tool runs. The fixture's box must be inside its region.
+    let geometry = seal_core::dispatch::ocr_geometry(&config);
+    assert_eq!(
+        geometry.grade_area,
+        Some(GradeArea {
+            x1: 10,
+            y1: 5,
+            x2: 100,
+            y2: 45
+        })
+    );
+    assert_eq!(geometry.grade_y, Some((5, 45)));
+
+    let mut without_area = config.clone();
+    without_area["tuner"]["ocr"]
+        .as_object_mut()
+        .expect("ocr object")
+        .remove("grade_area");
+    assert_eq!(
+        seal_core::dispatch::ocr_geometry(&without_area).grade_area,
+        None,
+        "an absent box leaves the grade_y fallback in place"
+    );
+    assert_eq!(
+        seal_core::dispatch::ocr_geometry(&without_area).grade_y,
+        Some((5, 45))
+    );
+
+    let mut outside_region = config.clone();
+    outside_region["tuner"]["ocr"]["grade_area"]["x2"] = serde_json::json!(9999);
+    assert_eq!(
+        seal_core::dispatch::ocr_geometry(&outside_region).grade_area,
+        None,
+        "an out-of-region box is invalid and falls back"
+    );
+
+    for (field, value) in [
+        ("x2", serde_json::json!(5)),
+        ("x1", serde_json::json!(-1)),
+        ("y2", serde_json::json!(9999)),
+    ] {
+        let mut invalid = config.clone();
+        invalid["tuner"]["ocr"]["grade_area"][field] = value;
+        assert_eq!(
+            seal_core::dispatch::ocr_geometry(&invalid).grade_area,
+            None,
+            "an invalid {field} falls back to grade_y"
+        );
+    }
+
     let tuner = tuner::plan(&config).expect("tuner plan");
     assert_eq!(tuner.region, Rect::new(100, 200, 280, 232));
     assert_eq!(
