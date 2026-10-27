@@ -121,7 +121,7 @@ edits; it never re-serialises the whole file (§7).
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
-| `tool.start` | `{"tool":"spammer"}` or, for `buy`, `{"tool":"buy","preset":"大紅","count":3}` | `{}` |
+| `tool.start` | `{"tool":"spammer"}`, for `buy` `{"tool":"buy","preset":"大紅","count":3}`, for `sell` `{"tool":"sell","slots":[3,7,12]}` | `{}` |
 | `tool.stop` | `{"tool":"spammer"}` | `{}` |
 | `ocr.scan` | `{"frame_id":"f1","mode":"attributes"}` or `{"region":{...},"mode":"count"}` | `{"lines":[...],"attributes":[[...]],"grade":"G","remaining":null,"capture_path":"logs/captures/..."}` |
 | `shutdown` | `{}` | `{}` then the process exits |
@@ -153,15 +153,24 @@ Notes:
   the feeder releases the game. A 45 s pending timeout publishes a `log` warning; the start then does
   not happen. Deferred is not an error and not `tool_busy`. `tool.stop` with no `tool` stops whatever
   is running. `holdspace` is a valid tool id (§9).
-- **`tool.start` carries optional per-run arguments, and only `buy` has any today**: `preset` (a
-  string, a key of `buy_sell.presets`) and `count` (an integer, at least 1). A buy start without
-  `preset` answers the domain's own `No buy preset selected.` line; without `count` it uses the
-  preset's configured `count`; `count` present and below 1 is `bad_request` rather than silently
-  clamped, because a clamp would buy a number the player did not ask for. Any `preset`/`count` on a
-  tool that does not take run arguments is `bad_request` naming the offending field — a shell bug
-  must not silently buy a different preset by passing the field to the wrong tool. This is ruling
-  §12.6: v2's Buy card picked the preset and count per run and had no config field for them, so the
-  RUN is where they belong (v2's own `ShopPlan::buy` takes `preset_name` + `count` from the run).
+- **`tool.start` carries optional per-run arguments, and `buy` and `sell` are the two tools with
+  any.** `buy`: `preset` (a string, a key of `buy_sell.presets`) and `count` (an integer, at least
+  1) — a buy start without `preset` answers the domain's own `No buy preset selected.` line;
+  without `count` it uses the preset's configured `count`; `count` below 1 is `bad_request` rather
+  than silently clamped, because a clamp would buy a number the player did not ask for. `sell`:
+  `slots` (an array of bag cell indexes `0..63`; order and duplicates are irrelevant — the core
+  dedupes, sorts highest-first and the run's `buy_sell.sell_cap` still applies). **The selection
+  changes between sells**, which is why it is a run argument and never a saved setting: v2 kept it
+  in memory only, and persisting it risks selling the slots the player selected last time — a
+  data-loss bug, not a convenience. `slots` is validated before the tool starts: a non-array, a
+  non-integer, an out-of-range value or an empty array is `bad_request` naming the field, because
+  an empty selection has nothing to sell and a shell that sends it has a bug. With `slots` absent
+  the core falls back to the migrated config's `buy_sell.sell_slots` (v2 compatibility, usually
+  `null`); with neither, the start answers the domain's own `No slots are selected to sell.` line.
+  Any run argument on a tool that does not take it is `bad_request` naming the offending field —
+  a shell bug must not silently buy or sell something else. This is ruling §12.6: v2's Buy card
+  and Buy/Sell tab picked these from the run, and `local.yaml` had no `active`-style field for
+  either.
 - **Some calibration kinds are NAMED INSTANCES, selected by `target`** (§12.8): `pet_page_tab`
   (`ITEM1`..`ITEM3`), `pet_toggle`/`pet_boarding_slot`/`pet_feeder_strip` (row `"1"`..`"4"`),
   `gem_grade` (`N`,`G`,`DG`,`Register`,`Combine`) and `gem_resource` (`"1"`..`"3"`). A kind that takes
