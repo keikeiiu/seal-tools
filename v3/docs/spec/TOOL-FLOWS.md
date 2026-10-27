@@ -219,12 +219,12 @@ arbiter gets (wants the game now, next action, card) — the resident/deferral r
   `The boarding window's X isn't calibrated — save the Boarding X point on the Calibrate tab.` ·
   `The boarding bag's grid isn't calibrated — save the Boarding bag grid and Boarding bag slot on the Calibrate tab. (Its own, not the shop's.)` ·
   `The bag page tabs aren't calibrated — save the Bag page tab points on the Calibrate tab.` ·
-  `No breeding row is set up — add it in config/local.yaml (the Pet tab is read-only in v3.0). Each row needs its start/end button and its pet slot marked on the Calibrate tab.` ·
-  `Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0).` ·
+  `No breeding row is set up — rows come from your migrated v2 config and adding a row is not built yet. Each row needs its start/end button and its pet slot marked on the Calibrate tab.` ·
+  `Every row is unticked — nothing to feed. Tick the row on the Pet tab.` ·
   `Row {n}'s start/end button isn't marked — …` · `Row {n}'s food strip isn't drawn — …` ·
   `{what} is marked on bag page {p}, but only {t} page tab(s) are calibrated — …` ·
   `Neither a return slot nor any queued pet icon is set — …` ·
-  `No food cells are marked — set pet.food_slots in config/local.yaml (the Pet tab is read-only in v3.0). Nothing says where the pet food lives.` ·
+  `No food cells are marked — mark the food cells on the Pet tab. Nothing says where the pet food lives.` ·
   `No MAX is calibrated — save the MAX button on the Calibrate tab.`
 - Card: statuses `given up` / `boarding` / `waiting for a reload`; detail `{pet}  ·  → +{growth}  ·  {rate}/min (game line)`;
   schedule line `boarding {rows}  ·  next {row} at {HH:mm}  ·  {n} more queued` or `no rows scheduled`.
@@ -235,7 +235,7 @@ arbiter gets (wants the game now, next action, card) — the resident/deferral r
   `{row} failed {strikes}/3: {error}`
 - Guards/aborts: `The game window isn't in front — {row} keeps its place; nothing was clicked, and it is tried again in 5 min.` ·
   `The game window left the front while reading the rows — trying again in 5 min.` ·
-  `The pet did not go in after 3 right-clicks — the slot still looks empty. Nothing was loaded. Check pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0).` ·
+  `The pet did not go in after 3 right-clicks — the slot still looks empty. Nothing was loaded. Check the return slot on the Pet tab.` ·
   `The pet did NOT come back out of the loader after pressing the end button — …` ·
   `Every pet that could be boarded reads +9/100%. Refused {list}. …` ·
   `The return slot holds no pet, and no queued icon matched one in the bag. …` ·
