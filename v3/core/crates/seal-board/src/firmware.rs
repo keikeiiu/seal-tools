@@ -159,12 +159,13 @@ pub fn describe(level: Option<u32>) -> String {
 pub fn summary(level: Option<u32>) -> String {
     match level {
         None => "Too old to report a version, so it also predates the drag commands — a food drag \
-                 would silently do nothing. Reflash the board, or set the Pet tab's food load back \
-                 to right-click."
+                 would silently do nothing. Reflash the board, or set pet.food_load_mode back \
+                 to \"right_click\" in config/local.yaml (the Pet tab is read-only in v3.0)."
             .to_owned(),
         Some(level) if level < DRAG_LEVEL => "Older than this launcher's — it cannot drag food, and \
                                               a drag would silently do nothing. Reflash the board, \
-                                              or set the Pet tab's food load back to right-click."
+                                              or set pet.food_load_mode back to \"right_click\" in \
+                                              config/local.yaml (the Pet tab is read-only in v3.0)."
             .to_owned(),
         Some(level) if level > CURRENT_LEVEL => "Newer than this launcher knows — it should work, but \
                                                  anything added since is not something this launcher \

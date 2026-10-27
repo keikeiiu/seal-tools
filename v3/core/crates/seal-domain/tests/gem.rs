@@ -187,7 +187,7 @@ fn a_tuned_move_that_was_never_saved_is_refused_with_the_instruction() {
     let err = run.combine_turn().unwrap_err();
     assert_eq!(
         err.message,
-        "Move Register → Combine isn't saved yet — open Calibrate Gem and press Save Composer Moves."
+        "Move Register → Combine isn't saved yet — the tuned movements are hand-edited in gem.movements in config/local.yaml (the movement editor is not built in v3.0)."
     );
 }
 
@@ -203,7 +203,7 @@ fn an_uncalibrated_point_is_refused_with_its_name() {
     let err = run.combine_turn().unwrap_err();
     assert_eq!(
         err.message,
-        "Move Register → Combine: 'Combine' isn't calibrated yet — open Calibrate Gem and save it."
+        "Move Register → Combine: 'Combine' isn't calibrated yet — save the Grade point 'Combine' on the Calibrate tab."
     );
 }
 

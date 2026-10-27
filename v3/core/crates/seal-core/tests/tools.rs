@@ -70,7 +70,7 @@ fn a_tool_without_its_calibration_is_refused_by_its_own_plan() {
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "bad_request");
     assert!(
-        error.message.contains("Calibrate Pet"),
+        error.message.contains("Calibrate tab"),
         "the domain's calibration line: {}",
         error.message
     );

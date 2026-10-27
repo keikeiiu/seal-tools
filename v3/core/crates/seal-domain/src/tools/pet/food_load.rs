@@ -72,11 +72,12 @@ pub fn complaint(mode: Option<&str>, firmware_level: Option<i32>) -> Option<Stri
     Some(match firmware_level {
         Some(level) => format!(
             "Food load is set to drag but the board reports firmware {level}, which has no drag \
-             commands — reflash the board, or set the Pet tab's food load back to right-click."
+             commands — reflash the board, or set pet.food_load_mode back to \"right_click\" in \
+             config/local.yaml (the Pet tab is read-only in v3.0)."
         ),
         None => "Food load is set to drag but the board did not report a firmware version, so it \
-                 predates the drag commands — reflash the board, or set the Pet tab's food load back \
-                 to right-click."
+                 predates the drag commands — reflash the board, or set pet.food_load_mode back to \
+                 \"right_click\" in config/local.yaml (the Pet tab is read-only in v3.0)."
             .to_owned(),
     })
 }

@@ -31,9 +31,10 @@
 //!
 //! - The feeder-count read is ONE OCR pass per slot plus the warm-colour verdict; v2's 3×/9×/24×
 //!   upscale ladder is a recorded follow-up (the `Option<i32>` seam does not change).
-//! - The feeding table is `<root>/docs/pet-data.csv`; v3's root does not ship that file yet, so the
-//!   computed pet-minutes are unavailable (the schedule still comes from the time line / counts /
-//!   configured cycle, exactly v2's fallback). Copying the table is a docs decision, not code I/O.
+//! - The feeding table is `<root>/docs/pet-data.csv`; the release zip ships that file, so the
+//!   computed pet-minutes are available in an installed payload. If the file is absent (an older
+//!   or manually extracted install), the schedule still comes from the time line / counts /
+//!   configured cycle, exactly v2's fallback; a missing table is not a code I/O failure.
 //! - There is no close-button "is the boarding window still open" probe; the visit always opens and
 //!   closes with the configured marks.
 //! - `ToolStatus` has no schedule field: the message is the last action and the schedule line lives in
@@ -271,9 +272,9 @@ fn decode_crop(png: &str, what: &str) -> Result<ReferenceCrop, String> {
     let payload = png.rsplit(',').next().unwrap_or(png).trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it on the Pet tab."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
     let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it on the Pet tab."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
     Ok(ReferenceCrop {
         width: width as usize,
         height: height as usize,
@@ -287,9 +288,9 @@ fn decode_icon(png: &str, what: &str) -> Result<PetImage, String> {
     let payload = png.rsplit(',').next().unwrap_or(png).trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it on the Pet tab."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
     let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
-        .map_err(|_| format!("{what} couldn't be decoded — re-capture it on the Pet tab."))?;
+        .map_err(|_| format!("{what} couldn't be decoded — re-capture it and set the new crop in config/local.yaml (the Pet tab is read-only in v3.0)."))?;
     Ok(PetImage {
         width: width as usize,
         height: height as usize,
@@ -1623,7 +1624,7 @@ impl<S: PetSource> PetTool<S> {
                             visit.outcome = Some(RowOutcome::Failed {
                                 error: format!(
                                     "No food cells left — {} of {} used. Mark the cells holding food \
-                                     again on the Pet tab.",
+                                     again in config/local.yaml (the Pet tab is read-only in v3.0).",
                                     visit.food_used,
                                     self.plan.food_slots.len()
                                 ),
@@ -1636,7 +1637,7 @@ impl<S: PetSource> PetTool<S> {
             Stage::FoodPlace => {
                 let Some(cell) = visit.food_cell else {
                     visit.outcome = Some(RowOutcome::Failed {
-                        error: "The bag grid isn't calibrated — there is nothing to right-click."
+                        error: "The bag grid isn't calibrated — save the Boarding bag grid on the Calibrate tab; there is nothing to right-click."
                             .to_owned(),
                     });
                     visit.stage = Stage::Fold;
@@ -1658,8 +1659,9 @@ impl<S: PetSource> PetTool<S> {
                     let Some(slot) = slot else {
                         visit.outcome = Some(RowOutcome::Failed {
                             error: "The food load is set to drag but this row's food strip doesn't \
-                                    divide into its stack count — draw the strip on Calibrate Pet, or \
-                                    set the Pet tab's food load back to right-click."
+                                    divide into its stack count — save the Row food strip on the \
+                                    Calibrate tab, or set pet.food_load_mode back to \"right_click\" \
+                                    in config/local.yaml (the Pet tab is read-only in v3.0)."
                                 .to_owned(),
                         });
                         visit.stage = Stage::Fold;
@@ -2043,8 +2045,8 @@ mod tests {
         let line = plan(&serde_json::json!({"pet": {}}), Path::new("C:/root"))
             .expect_err("an empty pet block cannot start");
 
-        assert!(line.contains("目錄 isn't calibrated"), "{line}");
-        assert!(line.contains("Calibrate Pet"), "{line}");
+        assert!(line.contains("pet menu button isn't calibrated"), "{line}");
+        assert!(line.contains("Calibrate tab"), "{line}");
     }
 
     #[test]
@@ -2057,7 +2059,7 @@ mod tests {
 
         assert_eq!(
             line,
-            "Every row is unticked — nothing to feed. Tick a row on the Pet tab."
+            "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0)."
         );
     }
 
@@ -2070,7 +2072,7 @@ mod tests {
         let line = plan(&config, Path::new("C:/root")).expect_err("drag needs the strip");
 
         assert!(line.contains("food strip isn't drawn"), "{line}");
-        assert!(line.contains("Calibrate Pet"), "{line}");
+        assert!(line.contains("Calibrate tab"), "{line}");
     }
 
     #[test]
@@ -2146,7 +2148,10 @@ mod tests {
             line.contains("Row 1's empty-slot reference couldn't be decoded"),
             "{line}"
         );
-        assert!(line.contains("re-capture it on the Pet tab"), "{line}");
+        assert!(
+            line.contains("re-capture it and set the new crop"),
+            "{line}"
+        );
     }
 
     #[test]

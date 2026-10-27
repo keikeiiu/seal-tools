@@ -347,8 +347,9 @@ fn a_null_tuner_section_is_reported_not_dereferenced() {
     assert_eq!(
         lines(&validate(&input)),
         [
-            "tuner: the section is empty — it needs grade_order, the ocr geometry and the timing (run \
-          Calibrate Tuner, or copy the tuner block from defaults.yaml)"
+            "tuner: the section is empty — it needs grade_order, the ocr geometry and the timing (edit \
+             the tuner block in config/local.yaml; the tuner's OCR geometry is hand-edited in v3.0 \
+             because the three-box session is not built)"
         ]
     );
 }
@@ -364,7 +365,9 @@ fn a_null_ocr_section_is_reported() {
 
     assert_eq!(
         lines(&validate(&input)),
-        ["tuner.ocr: missing — the tuner needs its OCR geometry (run Calibrate Tuner)"]
+        [
+            "tuner.ocr: missing — the tuner needs its OCR geometry (the tuner's OCR geometry is hand-edited in config/local.yaml; the three-box session is not built in v3.0)"
+        ]
     );
 }
 

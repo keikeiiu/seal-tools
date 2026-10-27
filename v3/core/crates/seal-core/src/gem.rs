@@ -6,7 +6,7 @@
 //!
 //! # The raw crop is the primary empty test
 //!
-//! `config/calib_gem_result.png` (saved by Calibrate Gem; `CALIBRATION.md` §5) is the empty result
+//! `config/calib_gem_result.png` (saved from the Calibrate tab's Result gem area mark; `CALIBRATION.md` §5) is the empty result
 //! box. The live capture of `gem.result_gem_area` is compared against it with v2's rule
 //! (`GemComposer.cs:19,26`): a pixel differs when ANY channel differs by more than 30, and the
 //! comparison ignores a 6-px inset because the box's drawn frame moves by a pixel when the window
@@ -60,12 +60,11 @@ const EMPTY_DIFF_TOLERANCE: i32 = 30;
 const EMPTY_COMPARE_INSET: usize = 6;
 
 /// The refusal when the run needs the result-box read but the area is not calibrated.
-const RESULT_AREA_LINE: &str =
-    "gem.result_gem_area isn't calibrated — draw the result box in Calibrate Gem and save it.";
+const RESULT_AREA_LINE: &str = "gem.result_gem_area isn't calibrated — draw the Result gem area on the Calibrate tab and save it.";
 
 /// The refusal when the area exists but is unusable.
 const RESULT_AREA_AREA_LINE: &str =
-    "gem.result_gem_area has no area — draw it again in Calibrate Gem.";
+    "gem.result_gem_area has no area — draw the Result gem area again on the Calibrate tab.";
 
 /// The reference crop's path convention (`CALIBRATION.md` §5): beside the other calibration
 /// artifacts, under the application root.
@@ -185,7 +184,7 @@ fn settings(config: &Value) -> Result<GemSettings, String> {
     let empty_signature = match config.pointer("/gem/empty_signature") {
         None | Some(Value::Null) => None,
         Some(value) => Some(serde_json::from_value(value.clone()).map_err(|_| {
-            "gem.empty_signature isn't usable — sample the empty result box again in Calibrate Gem."
+            "gem.empty_signature isn't usable — sample the Result gem area again on the Calibrate tab."
                 .to_owned()
         })?),
     };
@@ -218,10 +217,10 @@ fn result_area(config: &Value) -> Result<Option<Rect>, String> {
         return Ok(None);
     }
     let Some(values) = value.as_array() else {
-        return Err("gem.result_gem_area isn't a usable [x, y, w, h] area — draw it again in Calibrate Gem.".to_owned());
+        return Err("gem.result_gem_area isn't a usable [x, y, w, h] area — draw the Result gem area again on the Calibrate tab.".to_owned());
     };
     if values.len() != 4 {
-        return Err("gem.result_gem_area isn't a usable [x, y, w, h] area — draw it again in Calibrate Gem.".to_owned());
+        return Err("gem.result_gem_area isn't a usable [x, y, w, h] area — draw the Result gem area again on the Calibrate tab.".to_owned());
     }
     let mut numbers = [0i32; 4];
     for (slot, value) in numbers.iter_mut().zip(values) {
@@ -229,7 +228,7 @@ fn result_area(config: &Value) -> Result<Option<Rect>, String> {
             .as_i64()
             .and_then(|number| i32::try_from(number).ok())
             .ok_or_else(|| {
-                "gem.result_gem_area isn't a usable [x, y, w, h] area — draw it again in Calibrate Gem."
+                "gem.result_gem_area isn't a usable [x, y, w, h] area — draw the Result gem area again on the Calibrate tab."
                     .to_owned()
             })?;
     }
@@ -306,7 +305,7 @@ impl GemResultSource {
             let bytes = std::fs::read(&path)
                 .map_err(|error| format!("config/{REFERENCE_CROP} could not be read — {error}"))?;
             let (width, height, rgba) = seal_win::pure::decode_png(&bytes).map_err(|_| {
-                format!("config/{REFERENCE_CROP} couldn't be decoded — save the empty result box again in Calibrate Gem.")
+                format!("config/{REFERENCE_CROP} couldn't be decoded — save the Result gem area again on the Calibrate tab.")
             })?;
             Some(ReferenceCrop {
                 width: width as usize,
@@ -740,7 +739,7 @@ mod tests {
         let line = plan(&config).expect_err("the read has nowhere to capture");
 
         assert!(line.contains("gem.result_gem_area"), "{line}");
-        assert!(line.contains("Calibrate Gem"), "{line}");
+        assert!(line.contains("Result gem area"), "{line}");
         assert_eq!(line, RESULT_AREA_LINE);
     }
 
@@ -769,7 +768,7 @@ mod tests {
             line.contains("Grade position 'N' isn't calibrated yet"),
             "{line}"
         );
-        assert!(line.contains("Calibrate Gem"), "{line}");
+        assert!(line.contains("Grade point"), "{line}");
     }
 
     #[test]
@@ -779,7 +778,7 @@ mod tests {
 
         let line = plan(&config).expect_err("no tuned counts");
 
-        assert!(line.contains("Save Composer Moves"), "{line}");
+        assert!(line.contains("gem.movements"), "{line}");
     }
 
     #[test]

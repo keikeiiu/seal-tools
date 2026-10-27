@@ -769,30 +769,39 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     let refusal = |message: &str| Err(StopReason::error(message));
 
     if !is_point(&setup.menu_button) {
-        return refusal("目錄 isn't calibrated — Calibrate Pet.");
+        return refusal(
+            "The pet menu button isn't calibrated — save the 目錄 (menu) point on the Calibrate tab.",
+        );
     }
     if !is_point(&setup.feed_icon) {
-        return refusal("The pet feed icon isn't calibrated — Calibrate Pet.");
+        return refusal(
+            "The pet feed icon isn't calibrated — save the Pet feed icon point on the Calibrate tab.",
+        );
     }
     if !is_point(&setup.close_button) {
-        return refusal("The boarding window's X isn't calibrated — Calibrate Pet.");
+        return refusal(
+            "The boarding window's X isn't calibrated — save the Boarding X point on the Calibrate tab.",
+        );
     }
     if !valid_rect(&setup.bag_grid) || !valid_rect(&setup.bag_slot) {
         return refusal(
-            "The boarding bag's grid isn't calibrated — Calibrate Pet. (Its own, not the shop's.)",
+            "The boarding bag's grid isn't calibrated — save the Boarding bag grid and Boarding bag slot on the Calibrate tab. (Its own, not the shop's.)",
         );
     }
     if setup.page_tabs.is_empty() {
-        return refusal("The bag page tabs aren't calibrated — Calibrate Pet.");
+        return refusal(
+            "The bag page tabs aren't calibrated — save the Bag page tab points on the Calibrate tab.",
+        );
     }
     if setup.slots.is_empty() {
         return refusal(
-            "No breeding row is set up — Calibrate Pet. Each row needs its start/end button and its \
-             pet slot marked.",
+            "No breeding row is set up — add it in config/local.yaml (the Pet tab is read-only in v3.0). Each row needs its start/end button and its pet slot marked on the Calibrate tab.",
         );
     }
     if !setup.slots.iter().any(|row| row.enabled) {
-        return refusal("Every row is unticked — nothing to feed. Tick a row on the Pet tab.");
+        return refusal(
+            "Every row is unticked — nothing to feed. Tick the row in config/local.yaml (the Pet tab is read-only in v3.0).",
+        );
     }
 
     // EVERY row the tool DRIVES, not just the first. Only the ticked ones: a row that is switched off
@@ -804,8 +813,8 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
         }
         if !valid_rect(&row.toggle_label) {
             return Err(StopReason::error(format!(
-                "Row {}'s start/end button isn't marked — Calibrate Pet. The tool has nothing to click \
-                 for that row. Untick it on the Pet tab to leave it alone.",
+                "Row {}'s start/end button isn't marked — save the Row start/end button for row {} on the Calibrate tab. The tool has nothing to click for that row. Untick it in config/local.yaml (the Pet tab is read-only in v3.0) to leave it alone.",
+                index + 1,
                 index + 1
             )));
         }
@@ -821,9 +830,8 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
             }
             if FeederLayout::slot_boxes(row.feeder_strip.as_deref(), row.stacks).is_none() {
                 return Err(StopReason::error(format!(
-                    "Row {}'s food strip isn't drawn — Calibrate Pet. The food load is set to drag, \
-                     which has to name the box it drops into, and the strip is what says where the \
-                     boxes are.",
+                    "Row {}'s food strip isn't drawn — save the Row food strip for row {} on the Calibrate tab. The food load is set to drag, which has to name the box it drops into, and the strip is what says where the boxes are.",
+                    index + 1,
                     index + 1
                 )));
             }
@@ -848,16 +856,14 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     for (what, page) in pages {
         if page < 0 || page as usize >= setup.page_tabs.len() {
             return Err(StopReason::error(format!(
-                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — mark the \
-                 tab on Calibrate Pet, or move the cell.",
+                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or move the cell in config/local.yaml.",
                 page + 1,
                 setup.page_tabs.len()
             )));
         }
         if setup.page_tabs[page as usize].len() != 2 {
             return Err(StopReason::error(format!(
-                "{what} is marked on bag page {}, and that page's tab isn't calibrated — mark ITEM{} \
-                 on Calibrate Pet.",
+                "{what} is marked on bag page {}, and that page's tab isn't calibrated — save the Bag page tab point ITEM{} on the Calibrate tab.",
                 page + 1,
                 page + 1
             )));
@@ -872,21 +878,19 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
         && setup.queue_len == 0
     {
         return refusal(
-            "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the \
-             pet by. Mark the return slot on the Pet tab, or capture a pet icon.",
+            "Neither a return slot nor any queued pet icon is set — the tool has nothing to find the pet by. Set pet.return_slot in config/local.yaml (the Pet tab is read-only in v3.0), or add a pet icon to pet.queue.",
         );
     }
     if setup.food_slots.is_empty() {
         return refusal(
-            "No food cells are marked — Calibrate Pet. Nothing says where the pet food lives.",
+            "No food cells are marked — set pet.food_slots in config/local.yaml (the Pet tab is read-only in v3.0). Nothing says where the pet food lives.",
         );
     }
     if max_button(setup).is_none() {
-        return refusal("No MAX is calibrated — Calibrate Buy/Sell, or mark one on Calibrate Pet.");
+        return refusal("No MAX is calibrated — save the MAX button on the Calibrate tab.");
     }
     Ok(())
 }
-
 fn is_drag(food_load_mode: &str) -> bool {
     food_load_mode.eq_ignore_ascii_case("drag")
 }
@@ -946,7 +950,8 @@ pub fn end_toggle_failed(row: &str) -> String {
         "{row}: the pet did NOT come back out of the loader after pressing the end button — so that \
          press did the opposite of what was asked and a boarding may now be running with nothing in \
          it. Stopping rather than clicking on: check the row in the game, and re-capture its \
-         empty-slot reference on Calibrate Pet if the slot is empty."
+         empty-slot reference in config/local.yaml (the Pet tab is read-only in v3.0) if the slot is \
+         empty."
     )
 }
 
@@ -954,46 +959,46 @@ pub fn end_toggle_failed(row: &str) -> String {
 pub fn pet_did_not_go_in() -> String {
     format!(
         "The pet did not go in after {PLACE_ATTEMPTS} right-clicks — the slot still looks empty. \
-         Nothing was loaded. Check the return slot on the Pet tab."
+         Nothing was loaded. Check pet.return_slot in config/local.yaml (the Pet tab is read-only \
+         in v3.0)."
     )
 }
-
 /// Every candidate was found and REFUSED (+9/100 %), which is a different fix from "nothing found".
 pub fn all_refused_message(refused: &[String]) -> String {
     format!(
         "Every pet that could be boarded reads +9/100%. Refused {}. Capture the icon of a pet that \
-         can still be fed, on the Pet tab.",
+         can still be fed and add it to pet.queue in config/local.yaml (the Pet tab is read-only in \
+         v3.0).",
         refused.join("; ")
     )
 }
-
 /// Nothing usable in the bag: the return slot is empty and no queued icon matched.
 pub fn nothing_matched_message() -> String {
     "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of a \
-     pet that can still be fed, on the Pet tab."
+     pet that can still be fed and add it to pet.queue in config/local.yaml (the Pet tab is read-only \
+     in v3.0)."
         .to_owned()
 }
-
 /// No way to find a pet at all — no queued icon and no return slot marked.
 pub fn no_way_to_find_pet_message() -> String {
-    "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Mark the \
-     return slot or capture a pet icon, on the Pet tab."
+    "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set \
+     pet.return_slot or add a pet icon to pet.queue in config/local.yaml (the Pet tab is read-only in \
+     v3.0)."
         .to_owned()
 }
-
 /// The bag held no feedable pet, with the sweep's reason.
 pub fn no_pet_in_bag_message(why: &str) -> String {
     format!(
         "No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished it was \
-         mailed, so this is the queue being empty of live pets — capture the next one's icon on the \
-         Pet tab."
+         mailed, so this is the queue being empty of live pets — add the next one's icon to pet.queue \
+         in config/local.yaml (the Pet tab is read-only in v3.0)."
     )
 }
-
 pub fn bag_grid_missing_message() -> String {
-    "The bag grid isn't calibrated — there is nothing to right-click.".to_owned()
+    "The bag grid isn't calibrated — save the Boarding bag grid on the Calibrate tab; there is \
+     nothing to right-click."
+        .to_owned()
 }
-
 /// Every row was dropped after its strikes: the run has nothing left to feed.
 pub fn every_row_failed_message() -> String {
     "Every row has failed repeatedly — stopped.".to_owned()

@@ -133,7 +133,7 @@ pub struct TunerInput {
 impl Default for TunerInput {
     /// v2's `TunerConfig` field initialisers: manual spring, guard off, a default filter and an
     /// empty-but-object OCR geometry. The geometry is what makes a fresh install fail validation with
-    /// the descriptive "Calibrate Tuner" lines rather than a null dereference.
+    /// the descriptive tuner OCR lines rather than a null dereference.
     fn default() -> Self {
         Self {
             spring_mode: Some("manual".to_owned()),
@@ -292,14 +292,15 @@ fn relational_errors(input: &ValidationInput, errors: &mut ConfigErrors) {
     let Some(tuner) = &input.tuner else {
         errors.push(
             "tuner: the section is empty — it needs grade_order, the ocr geometry and the timing \
-             (run Calibrate Tuner, or copy the tuner block from defaults.yaml)",
+             (edit the tuner block in config/local.yaml; the tuner's OCR geometry is hand-edited \
+             in v3.0 because the three-box session is not built)",
         );
         return;
     };
 
     // `ConfigValidator.cs:35-39`.
     let Some(ocr) = &tuner.ocr else {
-        errors.push("tuner.ocr: missing — the tuner needs its OCR geometry (run Calibrate Tuner)");
+        errors.push("tuner.ocr: missing — the tuner needs its OCR geometry (the tuner's OCR geometry is hand-edited in config/local.yaml; the three-box session is not built in v3.0)");
         return;
     };
 

@@ -395,8 +395,8 @@ pub fn spring_step(settings: &TunerSettings, spring_point: Option<Point>) -> Spr
     }
     match spring_point {
         None => SpringStep::Stop(StopReason::error(
-            "spring_mode is hid but tuner.spring_point isn't calibrated — click the 發條 button in \
-             Calibrate Tuner",
+            "spring_mode is hid but tuner.spring_point isn't calibrated — save the Spring point on \
+             the Calibrate tab",
         )),
         Some(point) => SpringStep::Place { point },
     }

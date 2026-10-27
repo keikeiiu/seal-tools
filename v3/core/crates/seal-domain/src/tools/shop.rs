@@ -379,7 +379,7 @@ pub fn sell_slots_to_sell(settings: &ShopSettings) -> Vec<i32> {
 fn ready_sell(settings: &ShopSettings) -> Result<(), StopReason> {
     if !BagGrid::is_valid_rect(settings.bag_grid.as_deref()) {
         return Err(StopReason::error(
-            "The bag grid isn't calibrated — Calibrate Buy/Sell.",
+            "The bag grid isn't calibrated — save the Bag grid on the Calibrate tab.",
         ));
     }
     if !is_point(&settings.max_button) {
@@ -389,7 +389,7 @@ fn ready_sell(settings: &ShopSettings) -> Result<(), StopReason> {
         // A DIFFERENT sentence from the mid-run focus failure: at Start the explanation is why the
         // first click will be ignored, and it ends by telling the player where the mark is.
         return Err(StopReason::error(
-            "The focus point isn't calibrated — Calibrate Buy/Sell. The game ignores a click while \
+            "The focus point isn't calibrated — save the Focus / scroll point on the Calibrate tab. The game ignores a click while \
              it is unfocused, and it is unfocused because you just clicked this window to start the \
              run.",
         ));
@@ -430,7 +430,7 @@ fn ready_buy<'a>(
     }
     if !is_point(&settings.scroll_point) {
         return Err(StopReason::error(
-            "The scroll point isn't calibrated — Calibrate Buy/Sell.",
+            "The scroll point isn't calibrated — save the Focus / scroll point on the Calibrate tab.",
         ));
     }
     if !is_point(&settings.max_button) {
@@ -483,18 +483,20 @@ fn transaction(target: Point, max: Point) -> Vec<ShopStep> {
 pub fn focus_point_missing() -> StopReason {
     StopReason::error(
         "The focus point isn't calibrated — the game has to be focused before it will take a click \
-         or a wheel notch. Mark it in Calibrate Buy / Sell.",
+         or a wheel notch. Save the Focus / scroll point on the Calibrate tab.",
     )
 }
 
 /// The MAX button was missing when the pass tried to use it.
 fn max_button_missing() -> StopReason {
-    StopReason::error("The MAX button isn't calibrated — Calibrate Buy/Sell.")
+    StopReason::error("The MAX button isn't calibrated — save the MAX button on the Calibrate tab.")
 }
 
 /// The shop row could not be derived from the region.
 pub fn row_unknown() -> StopReason {
-    StopReason::error("Couldn't work out the shop row — recalibrate the two row marks.")
+    StopReason::error(
+        "Couldn't work out the shop row — save the Shop list region on the Calibrate tab.",
+    )
 }
 
 /// The game window was not found (or is minimized) when a placement was attempted.

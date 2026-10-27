@@ -242,7 +242,7 @@ fn selling_without_a_bag_grid_is_refused() {
 
     assert_eq!(
         error_message(ShopPlan::sell(&settings)),
-        "The bag grid isn't calibrated — Calibrate Buy/Sell."
+        "The bag grid isn't calibrated — save the Bag grid on the Calibrate tab."
     );
 }
 
@@ -253,7 +253,7 @@ fn selling_without_a_max_button_is_refused() {
 
     assert_eq!(
         error_message(ShopPlan::sell(&settings)),
-        "The MAX button isn't calibrated — Calibrate Buy/Sell."
+        "The MAX button isn't calibrated — save the MAX button on the Calibrate tab."
     );
 }
 
@@ -266,7 +266,7 @@ fn selling_without_a_focus_point_explains_why_it_matters() {
 
     assert_eq!(
         error_message(ShopPlan::sell(&settings)),
-        "The focus point isn't calibrated — Calibrate Buy/Sell. The game ignores a click while it is \
+        "The focus point isn't calibrated — save the Focus / scroll point on the Calibrate tab. The game ignores a click while it is \
          unfocused, and it is unfocused because you just clicked this window to start the run."
     );
 }
@@ -470,7 +470,7 @@ fn the_mid_run_failure_messages_are_v2s() {
     assert_eq!(
         seal_domain::tools::shop::focus_point_missing().message,
         "The focus point isn't calibrated — the game has to be focused before it will take a click \
-         or a wheel notch. Mark it in Calibrate Buy / Sell."
+         or a wheel notch. Save the Focus / scroll point on the Calibrate tab."
     );
     assert_eq!(
         seal_domain::tools::shop::window_missing().message,
@@ -487,6 +487,6 @@ fn the_mid_run_failure_messages_are_v2s() {
     );
     assert_eq!(
         seal_domain::tools::shop::row_unknown().message,
-        "Couldn't work out the shop row — recalibrate the two row marks."
+        "Couldn't work out the shop row — save the Shop list region on the Calibrate tab."
     );
 }

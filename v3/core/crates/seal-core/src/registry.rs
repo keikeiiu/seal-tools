@@ -537,7 +537,7 @@ mod tests {
             "{}",
             refusal.line
         );
-        assert!(refusal.line.contains("Calibrate Gem"), "{}", refusal.line);
+        assert!(refusal.line.contains("Grade point"), "{}", refusal.line);
     }
 
     #[test]
@@ -606,11 +606,11 @@ mod tests {
             .available(ToolId::Pet)
             .expect_err("an uncalibrated pet setup is refused");
         assert!(
-            refusal.line.contains("目錄 isn't calibrated"),
+            refusal.line.contains("pet menu button isn't calibrated"),
             "{}",
             refusal.line
         );
-        assert!(refusal.line.contains("Calibrate Pet"), "{}", refusal.line);
+        assert!(refusal.line.contains("Calibrate tab"), "{}", refusal.line);
     }
 
     #[test]

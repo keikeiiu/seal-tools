@@ -540,7 +540,7 @@ fn hid_mode_without_a_calibrated_point_refuses_with_the_instruction() {
     };
     assert_eq!(
         stop.message,
-        "spring_mode is hid but tuner.spring_point isn't calibrated — click the 發條 button in Calibrate Tuner"
+        "spring_mode is hid but tuner.spring_point isn't calibrated — save the Spring point on the Calibrate tab"
     );
 }
 

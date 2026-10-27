@@ -622,8 +622,8 @@ impl GemRun {
                 )
                 .ok_or_else(|| {
                     StopReason::error(format!(
-                        "{what}: '{destination}' isn't calibrated yet — open Calibrate Gem and save \
-                         it."
+                        "{what}: '{destination}' isn't calibrated yet — save the Grade point \
+                         '{destination}' on the Calibrate tab."
                     ))
                 })?;
                 Ok(GemStep::Place(point))
@@ -634,7 +634,8 @@ impl GemRun {
                     dy: tuned[1],
                 }),
                 _ => Err(StopReason::error(format!(
-                    "{what} isn't saved yet — open Calibrate Gem and press Save Composer Moves."
+                    "{what} isn't saved yet — the tuned movements are hand-edited in \
+                     gem.movements in config/local.yaml (the movement editor is not built in v3.0)."
                 ))),
             },
         }
@@ -657,7 +658,7 @@ impl GemRun {
                 y: position[1],
             }),
             _ => Err(StopReason::error(format!(
-                "Grade position '{grade}' isn't calibrated yet — open Calibrate Gem and save it."
+                "Grade position '{grade}' isn't calibrated yet — save the Grade point '{grade}' on the Calibrate tab."
             ))),
         }
     }
