@@ -237,8 +237,8 @@ the CURRENTLY measured scale (§2).
 
 Nothing in this document is invented: where v3 has no implementation, the v2 behaviour is cited above
 and the open item is named here rather than restated. The living list is
-[OPEN.md](../backlog/OPEN.md) §3/§4, with the protocol's own open items in
-[PROTOCOL.md](PROTOCOL.md) §11.
+[OPEN.md](../backlog/OPEN.md) (its session-shaped features and release-input sections), with the
+protocol's own open items in [PROTOCOL.md](PROTOCOL.md) §11.
 
 The **named-instance kinds** carry a `target` (PROTOCOL §12.8): `pet_page_tab` (`ITEM1`..`ITEM3` ->
 pet.page_tabs), `pet_toggle`/`pet_boarding_slot`/`pet_feeder_strip` (row `1`..`4` ->
@@ -268,17 +268,21 @@ session is a plan), and the invented quest-step row was removed. Still open:
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
 | `config.changed` for calibration writes | LANDED: a save now queues `config.changed {rev, block, values}` for the block it marks, after its response (PROTOCOL §5), so a shell keeping a mirror updates without refetching | PROTOCOL §5 |
 | Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
-| Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result | OPEN §4 |
+| Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result; the CalibrationCheck ARITHMETIC is ported, the surface is not built | OPEN |
 | The boundary a measurement must match | `CalibrationCheck` is ported and tested in the domain; `calibration.save`'s optional `display` argument now records the environment it compares, but no Detect command consumes the comparison yet | this file §6 |
 ## 8. Portability and migration
 
 Coordinates are machine-specific, and the doc that used to carry this reasoning is v2's COORDINATES
 (the record). The v3 rules, in one place:
 
-- **What invalidates stored coordinates at once:** a different display SCALE, a different game CLIENT
-  SIZE, or a different screen. The Setup surface's CalibrationCheck compares exactly those three
-  (this file §6); if any moved, recalibrate — a proportional transform is deliberately NOT applied,
-  because the game UI does not scale linearly (this file §5).
+- **What invalidates stored coordinates at once:** a different game CLIENT SIZE or a different screen.
+  A different display SCALE alone does NOT: the offsets are physical client pixels, measured in the
+  space the screen is painted in, so a Windows scaling change keeps them valid and only the
+  cursor-move conversion uses the current scale (this file §2 and the same rule at §6). The Setup
+  surface's CalibrationCheck still flags a scale change because it reports any environment drift, not
+  because the marks die — recalibrate when the client size/window/screen changes, and whenever a mark
+  no longer lands where you saved it. A proportional transform is deliberately NOT applied, because
+  the game UI does not scale linearly (this file §5).
 - **A v2 install becomes a v3 install by copying, not converting:** `config/local.yaml` and the
   calibration artifacts beside it (`calib_gem_result.png`, any other `calib_*.png`) go into the v3
   folder's `config/`. The file formats are unchanged; the marks mean the same physical offsets.

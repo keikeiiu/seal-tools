@@ -57,13 +57,21 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
   marks: the pet's reference crops come from the running game (the close-X crop is learned by the
   run), and the sell slots are a bag-cell editor. v2 deliberately did not persist sell slots; v3 keeps
   that and records it here.
+- **The environment-check (Detect) surface** — `CalibrationCheck` is ported and tested in the domain
+  and `calibration.save`'s optional `display` argument records the environment, but there is no shell
+  canvas and no protocol path that SHOWS the comparison; today the player recalibrates manually after
+  an environment change.
 - **Mini mode / shell layout questions** — the shell has a stub; the ⚑ questions in
   [PLAN-V3-SHELL.md](../plans/PLAN-V3-SHELL.md) still decide the layout.
 
 ## 4. Release inputs
 
-- **`DirectML.dll` redistribution terms** must be confirmed with Microsoft before a public zip; the
-  release script refuses without an explicit acknowledgement (CUTOVER decision; OCR-RESEARCH §6).
-- **Capture/hide lifecycle** — `PROTOCOL.md` §4 says the shell hides itself before `capture` and the
-  shell is gaining that host channel (the calibrator was unusable from the UI without it). Until the
-  runner channel lands this is a blocker, and it is being fixed rather than documented around.
+- **DirectML redistribution is RESOLVED and recorded**: Microsoft's license terms for DirectML,
+  clause 1(a), permit distributing the unmodified DLL inside Windows applications; the payload ships
+  `docs/THIRD-PARTY-NOTICES.md` and `-Release` still requires the explicit acknowledgement flag.
+- **Capture/hide lifecycle is CLOSED**: the runner's `seal/host` channel and the Calibrate
+  hide → one frame → capture → show path landed (`CUTOVER.md` decision 8), so calibrating from the UI
+  works.
+- **What remains is not a release INPUT**: the player's live acceptance pass (the repo rule: a tool is
+  done when it has run) and the publishing steps (merge/tag/GitHub release/root README) listed in
+  [CUTOVER.md](../plans/CUTOVER.md)'s publishing checklist.

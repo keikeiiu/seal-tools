@@ -2,7 +2,7 @@
 
 One JSON file per message shape. These are the cross-language contract of
 [PROTOCOL.md](../../docs/spec/PROTOCOL.md) §10: the Rust core produces them from its real types, and
-the future Flutter shell decodes the same files — so a wire change that only one side makes cannot
+the Flutter shell decodes the same files — so a wire change that only one side makes cannot
 pass unnoticed.
 
 ## File format

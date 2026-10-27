@@ -20,7 +20,7 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
   trailing carriage return on a line (Windows pipes); the core never writes one.
 - The core discovers its root the way v2 does: walk up from the executable for
   `config/defaults.yaml`, else `config/defaults.yaml.example`.
-- **Single instance (designed, not built yet — [OPEN.md](../backlog/OPEN.md) §3):** the core will
+- **Single instance (designed, not built yet — [OPEN.md](../backlog/OPEN.md) §2):** the core will
   hold an exclusive OS file lock on `<root>/config/.seal-core.lock`. A second core exits with
   code `2` and one stderr line; the shell shows it. The lock is released by the OS when the
   process dies, so a crash leaves no stale lock to clear by hand.
@@ -146,8 +146,13 @@ Notes:
   single writer (§7). `height` is the height to restore when the config region is expanded — v2's
   `ui.expanded_height`; the collapsed and mini heights are computed by the window and never stored,
   so `local.yaml` keeps its v2 key names and no `height:` key is written.
-- `tool.start` on a second tool while one runs fails with `tool_busy`; `tool.stop` with no `tool`
-  stops whatever is running. `holdspace` is a valid tool id (§9).
+- `tool.start` follows the arbiter's one-game rules: a second FOREGROUND tool while one runs fails
+  `tool_busy`; a RESIDENT start (`pet`) while a foreground tool runs is accepted (armed, not holding
+  the game); and a foreground start while the resident feeder holds the game mid-visit is
+  **DEFERRED** — the reply is still `{}`, a `log` line names the waiter, and the start happens when
+  the feeder releases the game. A 45 s pending timeout publishes a `log` warning; the start then does
+  not happen. Deferred is not an error and not `tool_busy`. `tool.stop` with no `tool` stops whatever
+  is running. `holdspace` is a valid tool id (§9).
 - **`tool.start` carries optional per-run arguments, and only `buy` has any today**: `preset` (a
   string, a key of `buy_sell.presets`) and `count` (an integer, at least 1). A buy start without
   `preset` answers the domain's own `No buy preset selected.` line; without `count` it uses the
@@ -193,7 +198,7 @@ fact, and nothing in §4 is spec-only today.
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
 | `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`). Sent AFTER that command's response. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
-| `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` has no producer yet |
+| `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` is produced only by replay drift (§13) — a normal session ends `eof` or `shutdown` |
 
 The plan's `core.ready` event is folded into the `hello` result (ruling 1, §12): the handshake
 already returns everything it carried, and a second message with the same content is a thing
@@ -254,17 +259,19 @@ tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not
 | `window_not_found` | the game window is not present |
 | `game_not_foreground` | capture/placement refused because another window is in front |
 | `board_unavailable` | no board on the configured port / port unusable |
-| `ocr_unavailable` | the OCR models are not available on this machine; `detail.reason` is `models_env_unset`, `models_dir_missing` or `model_load_failed:<file>`, and `detail.message` carries the resolver's line naming every directory it tried (the player needs to know WHERE it looked). Resolution order: `SEAL_OCR_MODELS` when set (it wins or fails — never silently ignored), then `<config root>/models`, then `<seal-core.exe directory>/models`; a directory counts only with all three model files. Shown like `board_unavailable`: the command exists but this machine cannot serve it |
+| `ocr_unavailable` | the OCR models are not available on this machine; `detail.reason` is one of `models_env_unset`, `models_dir_missing`, `model_load_failed`, `runtime_failed`, `text_fixes_invalid`; `detail.message` carries the resolver's line naming every directory it tried, and for a load failure the model/file that failed (the player needs to know WHERE it looked and WHICH file). Resolution order: `SEAL_OCR_MODELS` when set (it wins or fails — never silently ignored), then `<config root>/models`, then `<seal-core.exe directory>/models`; a directory counts only with all three model files. Shown like `board_unavailable`: the command exists but this machine cannot serve it |
 | `tool_busy` | `tool.start` while another tool runs |
 | `not_running` | `tool.stop` when nothing runs (not an error the UI shows as a failure) |
-| `io` | a file write failed; `detail.path` says which |
+| `io` | a file read/write or parse failed (config load, dictionary load, artifact write); `detail.path` says which path when one is known |
 | `config_invalid` | the on-disk config is invalid; `detail.errors` carries the ported validator's player-facing lines (a boot-time failure uses the stderr channel in §1, not this code) |
 | `internal` | a bug; `message` is safe to show, `detail` goes to the log |
 
 ## 7. Config merge semantics
 
-`local.yaml` is not only settings: the pet feeder persists run state mid-run and the launcher
-persists `ui:` on every move. The core is the only writer and the only merger.
+`local.yaml` is machine state the CORE alone writes and merges. The only writers are `config.apply`
+(the owned blocks plus the portable `settings:` projection), `ui.window` (`ui`) and
+`calibration.save` (the block it marks, plus its binary artifact); tool run state lives in memory and
+is not persisted mid-run (v2's pet `ApplySession` half is not carried over).
 
 - The shell holds a working copy of the blocks it is allowed to edit and sends **only those**
   blocks: `config.apply {rev, sections}`. Never the whole file, never a whole block it does not
@@ -278,7 +285,8 @@ persists `ui:` on every move. The core is the only writer and the only merger.
   result echoes the effective sections for the requested names, not the whole file (§12.2).
 - A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
   underneath before saving again.
-- Core-initiated writes will emit `config.changed {rev, block, values}` (specified, no emitter yet —
+- Core-initiated writes emit `config.changed {rev, block, values}` AFTER their own response
+  (`config.apply`, `ui.window`, `calibration.save`) —
   DESIGN §3). A shell that is not editing that block applies it silently; one that is editing shows
   the conflict.
 - `ui:` is fully core-owned; it is written only through `ui.window`.
@@ -293,7 +301,7 @@ Frames are PNG, base64 in JSON, for v1. At a 2865×1789 client a frame is ~1–3
 base64; calibration is human-paced, so this is fine. Raw BGRA framing is a later optimisation,
 measured before adopted.
 
-Specified, not built: the core will keep the last **four** frames by `frame_id` (FIFO). `calibration.save` references the
+The core keeps the last **four** frames by `frame_id` (FIFO, `win::FrameCache`). `calibration.save` references the
 frame the calibrator just captured instead of re-sending megabytes; a `frame_id` older than the
 cache fails with `bad_request: unknown frame_id` and the shell re-captures.
 
@@ -340,12 +348,9 @@ the .NET 10 composition regression is deferred with the v2 bump per PLAN §10 st
 3. **Frame size** — measure a real capture's size and transfer time before deciding PNG stays.
 4. **IME** — not a protocol item, but it decides whether name fields are free text (PLAN-V3-CORE §13.2); if
    they are not, no protocol change is needed.
-5. **Hotkey typed-name validation** — the Hotkeys tab parses typed names (`F12`, `q`) into VK
-   codes, and that rule has no protocol path: the config carries codes, and validating a stored
-   code would refuse configs v2 ran (v2's `ConfigValidator` had no hotkey rule; the rule belonged
-   to the tab's text). A `hotkey.parse`-style command — names in, codes or player-facing error
-   lines out — is the natural shape. Not defined yet; until it is, "no widget keeps a rule" has one
-   documented exception in the shell's hotkey editor.
+5. **RESOLVED — Hotkey typed-name validation.** The rule landed behind the protocol as
+   `keys.parse`/`keys.names` (§12.5): names in, codes or player-facing error lines out, so the
+   Hotkeys tab has no exception to "no widget keeps a rule" any more.
 
 ## 12. Rulings against the plan (recorded, not silent)
 
@@ -392,8 +397,8 @@ the .NET 10 composition regression is deferred with the v2 bump per PLAN §10 st
    signature only. Two items were **withdrawn rather than faked**: `tuner_region` (v2 derived the
    region from three dragged boxes; a single rect wrote an unusable shape) until the three-box
    session exists, and CALIBRATION.md's invented "Quest step marks" row (both codebases' `QuestStep`
-   carries only action/value/delay). Pet and gem point marks need an optional `target` on
-   `calibration.save`/`fetch` and are a pending plan, not a silent omission.
+   carries only action/value/delay). Pet and gem point marks were the reason `calibration.save`/`fetch` grew the optional `target` —
+LANDED as §12.8, not left as a silent omission.
 
 8. **Calibration kinds gained an optional `target`, because v2's marks are named instances.** The
    calibration audit's increment 2 is the pet's marks and the gem's points; their config shapes are
