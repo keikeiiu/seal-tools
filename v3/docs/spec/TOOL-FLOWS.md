@@ -104,10 +104,13 @@ bag by leaving the room.*
   calibrated list region; `focus_steps` clicks the focus point; one `ShopStep::Scroll{notches, down}`
   applies the preset; then `transaction(row, max)` per run count — `Place`, right `Click`, `Place(MAX)`,
   `Enter`, `Enter` — finished by `Bought {count}x '{name}'.`
-- **Sell:** the run's selection is the `tool.start` `slots` argument (PROTOCOL §12.6) — deduped,
-  sorted high-index-first and capped by `sell_cap`; the config's `buy_sell.sell_slots` is never
-  consulted — then the same transaction per slot, finished by `Sold {n} slot(s).` A sell start with no
-  `slots` has no selection and answers the domain's own `No slots are selected to sell.`
+- **Sell:** the run's selection is the `tool.start` `slots` argument (PROTOCOL §12.6) — deduped
+  and sorted high-index-first; the config's `buy_sell.sell_slots` is never consulted. A selection whose
+  DEDUPED valid count exceeds `sell_cap` is refused before any click with the cap line below (v2
+  counted the raw list, so duplicates could refuse a run that would sell fewer; v3 counts the set the
+  run would actually sell), and the truncation is only a defensive belt after readiness. Otherwise the
+  same transaction per slot, finished by `Sold {n} slot(s).` A sell start with no `slots` has no
+  selection and answers the domain's own `No slots are selected to sell.`
 
 **Start refusals (verbatim).**
 

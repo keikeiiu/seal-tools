@@ -120,6 +120,8 @@ edits; it never re-serialises the whole file (§7).
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
+| `pointer.place` | `{"x":1213,"y":1077}` | `{}` — closed-loop placement at a CLIENT-RELATIVE PHYSICAL point; never `SetCursorPos` |
+| `pointer.click` | `{"x":1213,"y":1077}` | `{}` — place, then a bare left click; never clicks after a failed placement |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
 | `tool.start` | `{"tool":"spammer"}`, for `buy` `{"tool":"buy","preset":"大紅","count":3}`, for `sell` `{"tool":"sell","slots":[3,7,12]}` | `{}` |
 | `tool.stop` | `{"tool":"spammer"}` | `{}` |
@@ -165,7 +167,6 @@ Notes:
   data-loss bug, not a convenience. `slots` is validated before the tool starts: a non-array, a
   non-integer, an out-of-range value or an empty array is `bad_request` naming the field, because
   an empty selection has nothing to sell and a shell that sends it has a bug. With `slots` absent
-  an empty selection has nothing to sell and a shell that sends it has a bug. With `slots` absent
   the run has NO selection and the start answers the domain's own `No slots are selected to sell.`
   line. The config's `buy_sell.sell_slots` is deliberately NEVER read by a run: v2 never wrote it,
   v3.0.1 briefly did, and a stale value would silently sell the slots chosen last time — the
@@ -175,6 +176,13 @@ Notes:
   a shell bug must not silently buy or sell something else. This is ruling §12.6: v2's Buy card
   and Buy/Sell tab picked these from the run, and `local.yaml` had no `active`-style field for
   either.
+- **`pointer.place` / `pointer.click` take the input lease for the COMMAND only.** Both move or
+  click at a client-relative PHYSICAL point through the board's closed-loop placement (never
+  `SetCursorPos`), and both require integers >= 0. While a foreground tool is running or the
+  resident feeder holds the game they answer `tool_busy` naming the holder — the same line a
+  tool start gets — instead of steering the game behind a run. Session-wide holding/queueing
+  (a calibration action that spans several commands) is a session increment's job, not faked here
+  (ruling §12.9).
 - **Some calibration kinds are NAMED INSTANCES, selected by `target`** (§12.8): `pet_page_tab`
   (`ITEM1`..`ITEM3`), `pet_toggle`/`pet_boarding_slot`/`pet_feeder_strip` (row `"1"`..`"4"`),
   `gem_grade` (`N`,`G`,`DG`,`Register`,`Combine`) and `gem_resource` (`"1"`..`"3"`). A kind that takes
@@ -273,7 +281,7 @@ tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not
 | `game_not_foreground` | capture/placement refused because another window is in front |
 | `board_unavailable` | no board on the configured port / port unusable |
 | `ocr_unavailable` | the OCR pipeline cannot serve this read on this machine; `detail.reason` is one of `models_env_unset`, `models_dir_missing`, `model_load_failed`, `runtime_failed`, `text_fixes_invalid` (all failures of building the pipeline); `detail.message` carries the resolver's line naming every directory it tried, and for a load/runtime failure the model/file that failed (the player needs to know WHERE it looked and WHICH file). A failure while SCANNING an already-built pipeline (`bad_image`, `det_output_shape`) is a bad frame or a bug, not a machine that cannot serve OCR, and is reported as `internal` with the OCR message. Resolution order: `SEAL_OCR_MODELS` when set (it wins or fails — never silently ignored), then `<config root>/models`, then `<seal-core.exe directory>/models`; a directory counts only with all three model files. Shown like `board_unavailable`: the command exists but this machine cannot serve it |
-| `tool_busy` | `tool.start` while another tool runs |
+| `tool_busy` | `tool.start` (or a pointer action) while another tool holds the game; `detail` names the holder |
 | `not_running` | `tool.stop` when nothing runs (not an error the UI shows as a failure) |
 | `io` | a file read/write or parse failed (config load, dictionary load, artifact write); `detail.path` says which path when one is known |
 | `config_invalid` | the on-disk config is invalid; `detail.errors` carries the ported validator's player-facing lines (a boot-time failure uses the stderr channel in §1, not this code) |
@@ -432,6 +440,15 @@ LANDED as §12.8, not left as a silent omission.
    `stacks`, crops and its other two marks, and row order is untouched. This is why the pet's crops,
    the food cells/queue and the sell-slot selection are NOT calibration kinds: they are Pet-tab/Sell-tab
    features whose home is a live-screen session, not a frame mark (OPEN).
+
+9. **`pointer.place`/`pointer.click` exist for the calibration sessions' tests and are deliberately
+   per-command.** v2's Calibrate Gem "Place cursor + click" and Calibrate Tuner "Test Click" need
+   to steer the cursor without running a tool; the pointer commands are that primitive. They take
+   the same input lease a tool takes (refuse `tool_busy` naming the holder while a foreground tool
+   runs or the resident feeder holds the game) but hold it only for the command: a calibration
+   action that spans several commands is a session increment and gets its own ruling when it lands,
+   rather than being half-faked behind a different command. They steer only through the board's
+   closed-loop placement — v3 forbids `SetCursorPos` (CALIBRATION.md §2).
 
 ## 13. Replay mode (development)
 
