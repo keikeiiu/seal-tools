@@ -483,6 +483,16 @@ class ShellModel extends ChangeNotifier {
   Future<CoreActionResult<AttributesResult>> attributesGet() =>
       _coreAction('attributes.get', AttributesResult.fromJson);
 
+  /// `logs.cleanup_captures` — the Tuner tab's "Clean up capture images" housekeeping
+  /// ([PROTOCOL.md] §2/§4). The result carries the deleted count and the ROOT-RELATIVE directory; the
+  /// core logs per-file failures and still answers ok, so a refusal here is a real protocol problem
+  /// and its line is rendered verbatim.
+  ///
+  /// Housekeeping, not a run: it opens no game or board and takes no input lease, so it is
+  /// deliberately NOT gated on the tool arbiter — it works while a write tool or the feeder is busy.
+  Future<CoreActionResult<JsonMap>> cleanupCaptures() =>
+      _coreAction('logs.cleanup_captures', (result) => result);
+
   /// `board.test` — the calibrator's input tests. A command reaches the board only after the port
   /// opens; every refusal line is the core's ([PROTOCOL.md] §4/§6).
   Future<CoreActionResult<JsonMap>> boardTestClick() => _coreAction(

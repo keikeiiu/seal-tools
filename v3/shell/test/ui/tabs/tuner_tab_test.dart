@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/protocol/protocol.dart';
 import 'package:seal_shell/ui/tabs/tuner_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -400,5 +401,98 @@ void main() {
     expect(savedRules.length, 2);
     expect((savedRules.last as Map<String, dynamic>)['name'], '攻擊力');
     expect((savedRules.last as Map<String, dynamic>)['count'], 1);
+  });
+
+  testWidgets('the cleanup row asks first and Cancel sends nothing', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+
+    await _tapVisible(tester, 'tuner-cleanup-captures');
+    await tester.pumpAndSettle();
+    expect(find.text('Delete the capture images?'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tuner-cleanup-cancel')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete the capture images?'), findsNothing);
+    expect(harness.lastSentWithCmd('logs.cleanup_captures'), isNull);
+    expect(find.byKey(const ValueKey('tuner-cleanup-result')), findsNothing);
+  });
+
+  testWidgets(
+    'confirming sends logs.cleanup_captures and shows the count and dir',
+    (tester) async {
+      final harness = await _pumpTuner(tester);
+
+      await _tapVisible(tester, 'tuner-cleanup-captures');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tuner-cleanup-confirm')));
+      // The dialog pops while the request is in flight; the progress spinner animates, so do not
+      // pumpAndSettle here.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(harness.lastRequest['cmd'], 'logs.cleanup_captures');
+      expect(harness.lastRequest['args'], <String, dynamic>{});
+      harness.respondOk({'deleted': 3, 'dir': 'logs/captures'});
+      await _flush(tester);
+
+      expect(
+        find.text('Deleted 3 capture image(s) from logs/captures.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tuner-cleanup-result')),
+        findsOneWidget,
+      );
+      // Housekeeping only: no config traffic, and the tab's draft is untouched.
+      expect(harness.lastSentWithCmd('config.validate'), isNull);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      expect(find.byKey(const ValueKey('dirty-tuner')), findsNothing);
+    },
+  );
+
+  testWidgets('a refused cleanup renders the core line verbatim', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+
+    await _tapVisible(tester, 'tuner-cleanup-captures');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tuner-cleanup-confirm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    harness.respondError(
+      'bad_request',
+      message: 'the log directory is not readable',
+    );
+    await _flush(tester);
+
+    expect(find.text('the log directory is not readable'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tuner-cleanup-result')),
+      findsOneWidget,
+      reason: 'a refusal is rendered, not swallowed',
+    );
+    expect(harness.lastSentWithCmd('config.validate'), isNull);
+  });
+
+  testWidgets('the cleanup row is not disabled while a tool runs', (
+    tester,
+  ) async {
+    final harness = await _pumpTuner(tester);
+    harness.emitState(tool: ToolId.tuner, message: 'scanning the grade');
+    await _flush(tester);
+
+    final button = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('tuner-cleanup-captures')),
+    );
+    expect(
+      button.onPressed,
+      isNotNull,
+      reason: 'housekeeping opens no game or board, so a run must not gate it',
+    );
   });
 }

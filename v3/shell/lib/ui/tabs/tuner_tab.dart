@@ -84,6 +84,12 @@ class _TunerTabState extends State<TunerTab>
   String? _newRulePick;
   String? _newOverridePick;
 
+  /// The capture-cleanup maintenance row's own state (v2 kept a line beside the button): the last
+  /// result line, whether it is the error colour, and whether the housekeeping request is in flight.
+  String? _cleanupResult;
+  bool _cleanupFailed = false;
+  bool _cleaningCaptures = false;
+
   @override
   void initState() {
     super.initState();
@@ -146,6 +152,65 @@ class _TunerTabState extends State<TunerTab>
       _loadingAttributes = false;
       _attributes = result;
     });
+  }
+
+  /// The capture-cleanup button asks first: the command deletes files and cannot be undone.
+  Future<void> _confirmCaptureCleanup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete the capture images?'),
+        content: const Text(
+          'Every saved OCR capture PNG under logs/captures is deleted. '
+          'This cannot be undone; the rest of the log is kept.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('tuner-cleanup-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('tuner-cleanup-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete captures'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    await _cleanupCaptures();
+  }
+
+  /// Tuner housekeeping: `logs.cleanup_captures` deletes the saved OCR capture PNGs. It is NOT gated
+  /// on a running tool — the command opens no game or board and takes no input lease
+  /// ([PROTOCOL.md] §2's one explicit log-housekeeping exception), so it works mid-run too.
+  Future<void> _cleanupCaptures() async {
+    setState(() {
+      _cleaningCaptures = true;
+      _cleanupResult = null;
+    });
+    final result = await model.cleanupCaptures();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _cleaningCaptures = false;
+      _cleanupFailed = !result.ok;
+      _cleanupResult = result.ok
+          ? _cleanupLine(result.value!)
+          : result.errorLine;
+    });
+  }
+
+  /// v2's line ("Deleted N capture image(s).") plus the core-echoed directory, so the shell never
+  /// guesses the root-relative path it just had the core clean.
+  String _cleanupLine(Map<String, dynamic> result) {
+    final deleted = asNumber(result['deleted'])?.round() ?? 0;
+    final dir = asString(result['dir']) ?? 'logs/captures';
+    return 'Deleted $deleted capture image(s) from $dir.';
   }
 
   /// A stored rule name outside the dictionary stays selectable as the current value; new picks
@@ -416,6 +481,52 @@ class _TunerTabState extends State<TunerTab>
                 value: asBool(draft.value['save_captures']) ?? false,
                 onChanged: (value) => _setPortable('save_captures', value),
               ),
+              const SizedBox(height: ShellSpace.md),
+              Row(
+                children: [
+                  OutlinedButton(
+                    key: const ValueKey('tuner-cleanup-captures'),
+                    // Housekeeping only: never disabled for a RUNNING tool (it opens no game or
+                    // board — PROTOCOL §2's one log-housekeeping exception) — only while its own
+                    // request is in flight.
+                    onPressed: _cleaningCaptures
+                        ? null
+                        : _confirmCaptureCleanup,
+                    child: const Text('Clean up capture images'),
+                  ),
+                  if (_cleaningCaptures) ...[
+                    const SizedBox(width: ShellSpace.sm),
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Text(
+                'Deletes the saved OCR capture PNGs under the root\'s '
+                'logs/captures. It removes image files only; the rest of the '
+                'log stays.',
+                key: const ValueKey('tuner-cleanup-caption'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (_cleanupResult != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: ShellSpace.xs),
+                  child: Text(
+                    _cleanupResult!,
+                    key: const ValueKey('tuner-cleanup-result'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _cleanupFailed
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                  ),
+                ),
             ],
           ),
           EditorSection(
