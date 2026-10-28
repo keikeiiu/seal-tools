@@ -411,10 +411,13 @@ impl ConfigStore {
         } else {
             DEFAULTS
         };
-        let base = self.read_yaml(base_name)?;
+        let mut base = self.read_yaml(base_name)?;
+        // `ui.always_on_top` is the shell's portable window preference, introduced after the shipped
+        // template was written. Its shape is added here explicitly so the projection can carry it
+        // without making every unknown `settings` key writable.
+        ensure_portable_ui(&mut base);
         Ok(portable_projection(config, &base))
     }
-
     /// Writes the portable half of `config` into `local.yaml`'s `settings:` block — v2's
     /// `SaveSettings`, the save path that replaced writing the shipped file.
     ///
@@ -695,9 +698,12 @@ fn migrate_spammer_presets(config: &mut Value) {
 
 /// The portable top-level sections: everything the shipped template carries, except the two names
 /// that are never portable by construction — `spammer` (personal rotations must never ship) and
-/// `settings` (where the projection itself lives).
+/// `settings` (where the projection itself lives). `ui` is the one post-template portable section:
+/// its shape is added by [`ensure_portable_ui`] so a hand-written or applied
+/// `settings.ui.always_on_top` is read even on an install whose shipped template predates it.
 fn portable_sections(base: &Value) -> Vec<String> {
-    base.as_object()
+    let mut sections: Vec<String> = base
+        .as_object()
         .map(|sections| {
             sections
                 .keys()
@@ -705,7 +711,25 @@ fn portable_sections(base: &Value) -> Vec<String> {
                 .cloned()
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if !sections.iter().any(|name| name == "ui") {
+        sections.push("ui".to_owned());
+    }
+    sections
+}
+
+/// The portable shape of the one post-template setting section: `ui.always_on_top: false`. The
+/// projection still reduces the merged config to these leaves, so the machine `ui` block's geometry
+/// can never enter the portable `settings:` half.
+fn ensure_portable_ui(base: &mut Value) {
+    let Some(object) = base.as_object_mut() else {
+        return;
+    };
+    object.entry("ui".to_owned()).or_insert_with(|| {
+        let mut shape = Map::new();
+        shape.insert("always_on_top".to_owned(), Value::Bool(false));
+        Value::Object(shape)
+    });
 }
 
 fn is_portable_section(name: &str) -> bool {

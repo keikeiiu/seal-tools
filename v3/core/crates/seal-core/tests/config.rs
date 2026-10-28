@@ -568,3 +568,69 @@ fn a_partial_owned_block_is_validated_against_the_config_the_write_produces() {
         "nothing was written"
     );
 }
+
+#[test]
+fn always_on_top_is_accepted_written_and_preserved() {
+    let root = config_root();
+    let defaults_before = root.read_bytes("config/defaults.yaml");
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let validated = session.result(
+        "config.validate",
+        json!({"sections": {"settings": {"ui": {"always_on_top": true}}}}),
+    );
+    assert_eq!(validated["errors"], json!([]));
+    assert_eq!(validated["warnings"], json!([]));
+
+    let applied = session.result(
+        "config.apply",
+        json!({"rev": rev, "sections": {"settings": {"ui": {"always_on_top": true}}}}),
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["always_on_top"], true,
+        "apply echoes the effective ui section"
+    );
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["block"], "ui");
+    assert_eq!(event["data"]["values"]["always_on_top"], true);
+
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(
+        local["settings"]["ui"]["always_on_top"], true,
+        "the field is written into the portable settings overlay"
+    );
+    assert_eq!(root.read_bytes("config/defaults.yaml"), defaults_before);
+
+    // A later apply of a DIFFERENT settings block must not drop the ui block.
+    let next_rev = applied["rev"].as_u64().expect("apply carries the rev");
+    session.result(
+        "config.apply",
+        json!({"rev": next_rev, "sections": {"settings": {
+            "hotkeys": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20}
+        }}}),
+    );
+    let hotkey_event = session.event();
+    assert_eq!(hotkey_event["data"]["block"], "hotkeys");
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(local["settings"]["ui"]["always_on_top"], true);
+    assert_eq!(local["settings"]["hotkeys"]["start"], 123);
+
+    let reloaded = session.result("config.reload", json!({}));
+    assert_eq!(
+        reloaded["config"]["ui"]["always_on_top"], true,
+        "the merged config carries the portable ui section"
+    );
+
+    // A hand-written false loads as false.
+    let hand_written = config_root();
+    hand_written.write(
+        "config/local.yaml",
+        "settings:\n  ui:\n    always_on_top: false\n",
+    );
+    let mut hand_session = Session::start(hand_written.path());
+    let hand_hello = hand_session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    assert_eq!(hand_hello["config"]["ui"]["always_on_top"], false);
+}
