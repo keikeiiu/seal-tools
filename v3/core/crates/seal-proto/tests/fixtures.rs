@@ -474,7 +474,7 @@ fn cases() -> Vec<Case> {
                 "page": 1,
                 "cells": [13, 36],
                 "report": ["page 1: 2 cell(s) — 13, 36"],
-                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_20261028_120000.txt"]
+                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_page1_20261028_120000.txt"]
             }),
         ),
         ok_case(
@@ -485,7 +485,7 @@ fn cases() -> Vec<Case> {
                 "per_entry": [{"index": 0, "label": "red", "hits": [{"cell": 13, "score": 0.0, "runner_up": 1.0}]}],
                 "claimed": [],
                 "deduced": ["red ×1"],
-                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_20261028_120000.txt"]
+                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_page1_20261028_120000.txt"]
             }),
         ),
         ok_case(

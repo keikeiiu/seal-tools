@@ -119,14 +119,19 @@ fn icon_error(error: IconError) -> (String, &'static str) {
     }
 }
 
-/// Food scan: the configured `pet.food_icon_png` against every cell of the page, in CELL order.
-/// Returns `(result, report-lines)`; evidence paths are added by the handler.
-pub fn food_scan(
-    config: &Value,
-    page: usize,
-    bag: &PetImage,
-) -> Result<(Value, Vec<String>), (String, &'static str)> {
-    let grid = page_grid(config, page).map_err(icon_error)?;
+/// The two `logs/reads/` names for one page scan. The report carries the page too: the stamp is
+/// second-resolution, so sweeping ITEM1–3 quickly used to let page 2's report overwrite page 1's
+/// while page 1's returned evidence path pointed at the newer file.
+pub fn evidence_names(page: usize, stamp: &str) -> (String, String) {
+    (
+        format!("scan_page{page}_{stamp}.png"),
+        format!("scan_page{page}_{stamp}.txt"),
+    )
+}
+
+/// The configured food icon, decoded. Kept separate from the scan so the handler can refuse a
+/// missing/corrupt icon BEFORE the foreground capture and evidence write.
+pub fn food_icon(config: &Value) -> Result<PetImage, (String, &'static str)> {
     let food_icon_png = config
         .pointer("/pet/food_icon_png")
         .and_then(Value::as_str)
@@ -138,14 +143,23 @@ pub fn food_scan(
                 "food_icon_png",
             )
         })?;
-    let icon = decode_icon(food_icon_png, "The food icon").map_err(|message| {
+    decode_icon(food_icon_png, "The food icon").map_err(|message| {
         (
             format!("The stored food icon could not be decoded — capture it again: {message}"),
             "food_icon_png",
         )
-    })?;
+    })
+}
 
-    let scores = score_all_scores(bag, &grid, &icon);
+/// Food scan with an already-decoded icon (the handler validates it before capturing).
+pub fn food_scan_with_icon(
+    config: &Value,
+    page: usize,
+    bag: &PetImage,
+    icon: &PetImage,
+) -> Result<(Value, Vec<String>), (String, &'static str)> {
+    let grid = page_grid(config, page).map_err(icon_error)?;
+    let scores = score_all_scores(bag, &grid, icon);
     let mut hits: Vec<(usize, f64)> = scores
         .iter()
         .copied()
@@ -191,6 +205,16 @@ pub fn food_scan(
         }),
         report,
     ))
+}
+
+/// Food scan convenience: decode the configured icon then run the body above.
+pub fn food_scan(
+    config: &Value,
+    page: usize,
+    bag: &PetImage,
+) -> Result<(Value, Vec<String>), (String, &'static str)> {
+    let icon = food_icon(config)?;
+    food_scan_with_icon(config, page, bag, &icon)
 }
 
 /// One queued pet's icon, already decoded; `None` is a crop that would not decode.
@@ -481,5 +505,15 @@ mod tests {
                 .1,
             "cells"
         );
+    }
+
+    #[test]
+    fn evidence_names_are_page_specific_even_for_the_same_stamp() {
+        let (png1, txt1) = evidence_names(1, "20261028_120000");
+        let (png2, txt2) = evidence_names(2, "20261028_120000");
+        assert_eq!(png1, "scan_page1_20261028_120000.png");
+        assert_eq!(txt1, "scan_page1_20261028_120000.txt");
+        assert_ne!(png1, png2);
+        assert_ne!(txt1, txt2, "same-second page reports must not overwrite");
     }
 }

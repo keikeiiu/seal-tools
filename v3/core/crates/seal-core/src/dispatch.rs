@@ -1130,6 +1130,16 @@ fn pet_scan_page(state: &mut CoreState, request: &Request, queue: bool) -> Respo
     if let Err(error) = crate::pet_capture::page_grid(&state.config, page) {
         return icon_error_response(&request.id, error);
     }
+    // N2: the food icon is a config prerequisite. Validate/decode it BEFORE the hidden capture and
+    // evidence write, so a missing/corrupt crop is a cheap refusal with no orphan PNG.
+    let food_icon = if queue {
+        None
+    } else {
+        match crate::pet_scan::food_icon(&state.config) {
+            Ok(icon) => Some(icon),
+            Err(error) => return scan_error_response(&request.id, error),
+        }
+    };
     let title = match win::configured_title(&state.config) {
         Ok(title) => title,
         Err(error) => return win_error_response(&request.id, error),
@@ -1143,7 +1153,7 @@ fn pet_scan_page(state: &mut CoreState, request: &Request, queue: bool) -> Respo
         Err(message) => return internal(&request.id, &message),
     };
     let stamp = crate::logs::read_stamp();
-    let page_name = format!("scan_page{page}_{stamp}.png");
+    let (page_name, report_name) = crate::pet_scan::evidence_names(page, &stamp);
     let mut evidence = Vec::new();
     if let Some(data) = frame.get("data").and_then(Value::as_str)
         && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
@@ -1158,12 +1168,16 @@ fn pet_scan_page(state: &mut CoreState, request: &Request, queue: bool) -> Respo
             Err(error) => return scan_error_response(&request.id, error),
         }
     } else {
-        match crate::pet_scan::food_scan(&state.config, page, &image) {
+        match crate::pet_scan::food_scan_with_icon(
+            &state.config,
+            page,
+            &image,
+            food_icon.as_ref().expect("checked before capture"),
+        ) {
             Ok(result) => result,
             Err(error) => return scan_error_response(&request.id, error),
         }
     };
-    let report_name = format!("scan_{stamp}.txt");
     if let Some(path) = state
         .logs
         .write_read(&report_name, report.join("\n").as_bytes())
@@ -1929,5 +1943,35 @@ mod tests {
 
         let _ = release.send(());
         state.shutdown_tools("test");
+    }
+
+    #[test]
+    fn scan_food_missing_icon_is_refused_before_any_capture_or_evidence() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("scan-no-evidence-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut state = CoreState::new(root.clone());
+        state.config = json!({
+            "pet": {"bag_grid": [0, 0, 80, 80], "page_tabs": [[10, 10]]}
+        });
+        state.logs = Arc::new(Logs::new(&root));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        let response = handle(
+            &mut state,
+            Request::new("scan", "pet.scan_food_page", json!({"page": 1})),
+        );
+        let error = response.error.expect("the missing icon is refused");
+        assert_eq!(error.code, "bad_request");
+        assert_eq!(error.detail["field"], "food_icon_png");
+        assert!(
+            !root.join("logs/reads").exists(),
+            "no capture/evidence file was written before the icon check"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

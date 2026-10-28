@@ -667,3 +667,44 @@ fn pet_apply_food_scan_refuses_empty_or_malformed_selections_without_writing() {
     }
     assert_eq!(root.read("config/local.yaml"), before, "nothing written");
 }
+
+#[cfg(windows)]
+#[test]
+fn a_blocked_pet_apply_food_scan_is_io_and_emits_no_event() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let before = root.read("config/local.yaml");
+
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(root.path_of("config/local.yaml"))
+        .expect("the test holds local.yaml");
+
+    let (response, before_response) =
+        session.call_note_order("pet.apply_food_scan", json!({"cells": [[1, 1], [1, 5]]}));
+    assert!(
+        before_response.is_empty(),
+        "no event before the failure response"
+    );
+    assert!(!response.ok);
+    let error = response.error.expect("an io refusal");
+    assert_eq!(error.code, "io");
+
+    drop(held);
+    assert_eq!(
+        root.read("config/local.yaml"),
+        before,
+        "the file is untouched"
+    );
+    let (preflight, extra) = session.call_note_order("pet.preflight", json!({}));
+    assert!(preflight.ok);
+    assert!(
+        extra.is_empty(),
+        "the failed apply emits no config.changed: {extra:?}"
+    );
+}
