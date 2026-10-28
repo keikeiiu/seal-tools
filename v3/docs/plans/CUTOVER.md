@@ -267,7 +267,7 @@ clean-up-captures command/button, and the read-only `board.details` core command
 
 ---
 
-## v3.0.4 diagnostics + pet checklists release (2026-10-28) — the one to publish
+## v3.0.4 diagnostics + pet checklists release (2026-10-28) — superseded by v3.0.5
 
 Supersedes v3.0.0–v3.0.3. The rebuilt Arduino connection card on read-only `board.details` (safe
 while a tool runs), the first Pet-session increment (`pet.preflight` Setup-so-far/Ready-to-run
@@ -290,5 +290,33 @@ docs. Details and gates: `records/RELEASE-v3.0.4.md`.
    → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md`, `PLAN-V3-PET-SESSION.md` and
    `PLAN-V3-STATUS-DETAIL.md` stay live proposals.
 5. **Post-publish check**: download both v3.0.4 assets, compare SHA-256 with the values above, unzip and
+   launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2 docs into v3, and do not start a second changelog.
+
+---
+
+## v3.0.5 Pet queue-by-icon release (2026-10-28) — the one to publish
+
+Supersedes v3.0.0–v3.0.4. The Pet tab can add and edit queue pets by capturing a bag cell's icon and
+capture the food icon (Pet-session increment 2, on the capture-only `pet.capture_icon` with the run's
+shared bag-cell geometry), with the builder-check guard fix and docs corrections. Details and gates:
+`records/RELEASE-v3.0.5.md`.
+
+1. **Merge and tag**: merge `v3-core` into `main`, `git tag v3.0.5`, push branch + tag (the push is the
+   player's call).
+2. **GitHub release** `v3.0.5` with:
+   - `dist/SealTools-v3.0.5.zip` — 45,033,252 B,
+     SHA-256 `BFB0870C806C1920E6077F8863DC10FD8C8816C1D670B5E445D4AE684A34BE72`
+   - `dist/SealTools-v3.0.5-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.5.md`. Attach exactly as built; do not re-zip. The
+   firmware is byte-identical to v3.0.0–v3.0.4 — no reflash.
+3. **Root README**: rewrite for v3.0.5 and add the version-table row:
+   `| v3.0.5 | 2026-10-28 | Rust core + Flutter shell; full v2→v3 parity audit; rebuilt read-only Arduino card; Pet Feeder setup/readiness checklists, boarding ticks, queue add/edit by captured icon and captured food icon; per-run Sell selection with over-cap refusal; always-on-top + remembered placement; pet run-state persistence. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older history and point downloads/firmware at the v3.0.5 assets.
+4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`; `PLAN-V3-SHELL.md` and `CUTOVER.md`
+   → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md`, `PLAN-V3-PET-SESSION.md` and
+   `PLAN-V3-STATUS-DETAIL.md` stay live proposals.
+5. **Post-publish check**: download both v3.0.5 assets, compare SHA-256 with the values above, unzip and
    launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
 6. **do not** move v2 docs into v3, and do not start a second changelog.

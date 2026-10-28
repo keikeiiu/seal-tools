@@ -19,6 +19,35 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (28) — the Pet tab can queue pets again (v3.0.5)
+
+The parity audit's bluntest Pet finding was that v3 could not queue a new pet at all: the tab could
+remove queue entries but not add one, because v2's queue was populated by capturing the marked bag
+cell's icon. Increment 2 restores it as a capture-only primitive rather than a second run path.
+`pet.capture_icon` (a10726f) validates the input lease, the calibrated `pet.bag_grid` and the requested
+page's 2-point tab mark, takes ONE foreground-gated client capture and crops it in memory — no click, no
+cursor move, no board open, no config or log write — using the run's own bag-cell box. The
+builder-check's structural note was right: the box expression had been duplicated, so `4d593b8` moved
+it to a shared BagGrid helper (`pitch`, `pitch_box`, `cell_box`) used by both the run and the capture,
+and removed a validate-then-recompute path. The shell (39ce9fe) hides itself for the shot and shows
+again in a finally (so a refusal can never leave it hidden), appends the captured `{label,species,rect,
+png}` to the queue DRAFT, and writes it only with the tab's one Save; the food icon goes to
+`pet.food_icon_png` the same way. The UI never clicks the ITEM tab — the core cannot verify which bag page
+is displayed, only that the requested page's mark exists — so a wrong page gives a plausible wrong
+crop; the preview and the echoed page/cell/rect are the only checks, and the docs say so explicitly
+after the builder-check caught the phrase "nothing is queued until Save" (the entry is visible in the
+draft list immediately; only persistence waits) and an overclaim that the food icon is matched by a
+scan (the scans are increment 3+). The check also caught a guard edge — the food-icon source was seeded
+once and could survive a Cancel pointing at an unmarked cell — fixed in `35600cd` by reconciling it on
+every seed revision (the same seam the return-slot mirror uses).
+
+Gates at `ecfbd2e`: Rust 79 result lines/0 failed (core lib 168), Flutter 251/251, clippy/fmt/analyze/
+format clean, publish stage/app-zip/firmware audits PASS, fixtures 75 with 0 decoder mismatches.
+Artifacts: `dist/SealTools-v3.0.5.zip` 45,033,252 B `BFB0870C...34BE72`; firmware 5,254 B
+`498E6A4BA...35CCEF3B` (byte-identical, no reflash). Unpublished; CUTOVER has the checklist. Remaining:
+the bag scans / panel test read / feedable sweep (increment 3+), B5 card live detail (v3.1), dry runs /
+Quest Test-one-loop, the spammer raw-key editor — OPEN §5.
+
 ## 2026-10-28 (27) — diagnostics back, and the Pet tab can check itself (v3.0.4)
 
 Two audit gaps closed in one release, and both were shaped by the builder-check loop. The Arduino tab
