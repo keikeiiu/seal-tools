@@ -306,11 +306,19 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 重新啟動後不會再對已用過的格子或錯誤的 boarding 狀態繼續。Pet 分頁的已存值因此可能在執行期間更新 —— 那是
 餵食器自己的進度寫入，不是你做的編輯。
 
-**Setup so far & Ready to run。** 分頁在開啟時與按 **Refresh checklists** 時讀取核心的 preflight：先
-**Calibration** 清單、再 **Setup so far** 清單，最後是核心的就緒行原文。判定是 **Ready to run.** 或
-**Not ready yet — see the lines below.**；✓ 表示通過、✗ 表示失敗、ℹ 表示核心沒有檢查該項（例如板子韌體
-只是資訊，不是通過的檢查）。清單描述的是**已儲存**的設定：只要這裡有任何編輯，就會顯示「Based on the saved
-config — Save to refresh」，按 **Save** 會重新整理。preflight 是唯讀的 —— 不會開啟板子或讀取遊戲。
+**Setup so far & Ready to run。** 分頁在開啟時、按 **Refresh checklists**、成功 **Save** 之後，以及成功勾選
+boarding 之後讀取核心的 preflight：先 **Calibration** 清單、再 **Setup so far** 清單，最後是核心的就緒行
+原文。**Ready to run.** 表示核心預期 Start 會**接受**這份已儲存的設定 —— 它反映 Start 的拒絕條件，不是
+端到端執行一定成功：手改的畸形值仍可能被 Start 拒絕，執行中或非閘門的事實仍可能影響執行；**Not ready yet
+— see the lines below.** 表示有就緒行觸發。✓ 是通過、✗ 是失敗，但 Calibration 清單混合了 Start 閘門與有用的
+事實 —— 某列的 boarding slot 或 empty-slot reference 可以是 ✗，food strip 只在 `drag` 食物載入模式需要，
+page tabs 只在已存標記使用到的頁面需要 —— 所以 ✗ 不代表一定「尚未就緒」：只有就緒行與判定決定。
+
+ℹ 是殼層對核心沒有檢查的 `ok` 項目的標記（其 detail 以「not checked by preflight」開頭；目前只有板子韌體
+——「not checked by preflight — normal」），不是第三種核心狀態。清單描述的是**已儲存**的設定：只要這裡有
+任何編輯，就會顯示「Based on the saved config — Save to refresh」且不是即時更新；開啟、**Refresh
+checklists**、成功 Save 或成功勾選會重新讀取。餵食器自己在執行中的 `boarding_running` 寫入會透過設定鏡像
+更新**勾選值**，但不會重新讀取清單。preflight 是唯讀的 —— 不會開啟板子或讀取遊戲。
 
 - **Breeding rows** —— 設定中已存在的每一列：**Row N enabled**（勾選的列會餵食；未勾選的忽略）與
   **Stacks per reload**（餵食條會除以它）。該列的標記 —— start/end 按鈕、boarding pet slot、food strip、

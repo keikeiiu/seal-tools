@@ -353,13 +353,24 @@ The feeder also keeps its own run progress: while it works it saves `food_slots_
 state. The Pet tab's stored values can therefore update while a run is in progress — that is the
 feeder's own progress write, not a player edit.
 
-**Setup so far & Ready to run.** The tab reads the core's preflight on open and via **Refresh
-checklists**: a **Calibration** list, a **Setup so far** list, then the core's readiness lines
-verbatim. The verdict is **Ready to run.** or **Not ready yet — see the lines below.**; ✓ marks a
-passed check, ✗ a failed one, and ℹ means the core did not check that item (board firmware is
-informational, for example — not a passed check). The lists describe the **saved** config: while
-anything here is edited they show “Based on the saved config — Save to refresh”, and **Save** refreshes
-them. The preflight is read-only — it does not open the board or read the game.
+**Setup so far & Ready to run.** The tab reads the core's preflight on open, on **Refresh
+checklists**, after a successful **Save** and after a successful boarding tick: a **Calibration** list,
+a **Setup so far** list, then the core's readiness lines verbatim. **Ready to run.** means the core
+expects Start to **accept** this saved setup — it mirrors Start's refusals, not end-to-end run
+success: a hand-edited malformed value can still be refused by Start, and mid-run or non-gate facts
+can still affect a run; **Not ready yet — see the lines below.** means a readiness line fired. ✓ is a
+passed check and ✗ a failed one, but the calibration list mixes Start gates with useful facts — a
+row's boarding slot or empty-slot reference can be ✗, the food strip is only required in `drag` food-load mode, and page tabs
+only for the pages the saved marks use — so a ✗ is not automatically “not ready”: only the readiness
+lines and the verdict decide.
+
+ℹ is the shell's marker for an `ok` item the core did not check (its detail begins “not checked by
+preflight”; today only board firmware — “not checked by preflight — normal”), not a third core state.
+The lists describe the **saved** config: while anything here is edited they show “Based on the saved
+config — Save to refresh” and are not live; open, **Refresh checklists**, a successful Save or a
+successful tick re-reads them. A feeder's own mid-run `boarding_running` write updates the **tick**
+through the config mirror, but it does not re-read the checklists. The preflight is read-only — it
+does not open the board or read the game.
 
 - **Breeding rows** — for each row the config already carries: **Row N enabled** (a ticked row is fed;
   an unticked one is ignored) and **Stacks per reload** (the food strip is divided by it). The row's
