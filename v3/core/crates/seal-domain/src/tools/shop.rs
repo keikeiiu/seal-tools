@@ -359,6 +359,17 @@ impl ShopPlan {
 /// skip items if it does, because removing slot 0 shifts slot 1 into it. The cap is re-applied here
 /// even though readiness checked it, because this is the loop that destroys things.
 pub fn sell_slots_to_sell(settings: &ShopSettings) -> Vec<i32> {
+    let mut slots = valid_selection(settings);
+    let cap = settings.sell_cap.max(0) as usize;
+    slots.truncate(cap);
+    slots
+}
+
+/// The set a run would actually sell BEFORE the cap: real bag cells only, de-duplicated, highest
+/// index first. This is the count readiness must compare with the cap — v2 compared the raw list,
+/// so duplicates or stale indices could refuse a run that would have sold fewer slots. The plan's
+/// truncation below is defensive only; an over-cap selection is refused in [`ready_sell`] first.
+fn valid_selection(settings: &ShopSettings) -> Vec<i32> {
     let centres = BagGrid::centres(settings.bag_grid.as_deref());
 
     let mut slots: Vec<i32> = Vec::new();
@@ -369,9 +380,6 @@ pub fn sell_slots_to_sell(settings: &ShopSettings) -> Vec<i32> {
         }
     }
     slots.sort_unstable_by(|left, right| right.cmp(left));
-
-    let cap = settings.sell_cap.max(0) as usize;
-    slots.truncate(cap);
     slots
 }
 
@@ -397,11 +405,11 @@ fn ready_sell(settings: &ShopSettings) -> Result<(), StopReason> {
     if settings.sell_slots.is_empty() {
         return Err(StopReason::error("No slots are selected to sell."));
     }
-    if settings.sell_slots.len() as i32 > settings.sell_cap {
+    let selected = valid_selection(settings).len() as i32;
+    if selected > settings.sell_cap {
         return Err(StopReason::error(format!(
-            "{} slots selected but the per-run cap is {}. Raise the cap on purpose, or narrow the \
-             selection.",
-            settings.sell_slots.len(),
+            "{selected} slots selected but the per-run cap is {}. Raise the cap on purpose, or \
+             narrow the selection.",
             settings.sell_cap
         )));
     }

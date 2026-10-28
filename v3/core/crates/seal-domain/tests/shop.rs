@@ -293,6 +293,45 @@ fn selling_more_slots_than_the_cap_allows_is_refused_with_both_numbers() {
 }
 
 #[test]
+fn over_cap_counts_the_deduped_valid_selection_not_the_raw_list() {
+    let mut settings = settings();
+    settings.sell_slots = vec![1, 2, 3, 3];
+    settings.sell_cap = 2;
+
+    assert_eq!(
+        error_message(ShopPlan::sell(&settings)),
+        "3 slots selected but the per-run cap is 2. Raise the cap on purpose, or narrow the \
+         selection.",
+        "the three distinct cells are over the cap; the duplicate does not change the count"
+    );
+}
+
+#[test]
+fn duplicates_that_fit_under_the_cap_run_without_a_refusal() {
+    let mut settings = settings();
+    settings.sell_slots = vec![1, 1, 2, 2, 2];
+    settings.sell_cap = 2;
+
+    let plan = ShopPlan::sell(&settings).expect("two distinct cells fit");
+    assert_eq!(plan.done_message, "Sold 2 slot(s).");
+    assert_eq!(
+        seal_domain::tools::shop::sell_slots_to_sell(&settings),
+        vec![2, 1],
+        "the plan sells the deduped set highest-first"
+    );
+}
+
+#[test]
+fn exactly_the_cap_runs_without_a_refusal() {
+    let mut settings = settings();
+    settings.sell_slots = vec![4, 2];
+    settings.sell_cap = 2;
+
+    let plan = ShopPlan::sell(&settings).expect("exactly the cap fits");
+    assert_eq!(plan.done_message, "Sold 2 slot(s).");
+}
+
+#[test]
 fn buying_without_a_preset_is_refused() {
     let mut settings = settings();
     settings.presets.clear();
