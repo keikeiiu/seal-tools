@@ -273,6 +273,11 @@ The tuner's portable settings; the calibrated geometry block on this tab is **re
   dictionary stays selected, and **Add** is disabled with the reason shown while the dictionary is
   loading, failed, or has no names.
 
+**Clean up capture images** sits under the **Save captures** switch. It asks for confirmation (“Delete
+the capture images?”), then deletes only the saved OCR capture PNGs under the root's `logs/captures`
+and reports “Deleted N capture image(s) from logs/captures.”; the rest of the log is kept. It is
+housekeeping with no game or board access, so it stays available while a tool runs.
+
 ### 5.3 Gem
 
 The gem composer's grades and behaviour; the calibrated **Grade positions**, **Resource slots** and

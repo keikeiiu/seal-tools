@@ -238,6 +238,10 @@ spammer 參數 —— 儲存被拒絕時卡片下方會顯示核心的訊息。�
   那些），不是手動輸入：字典以外的既有名稱會保持選取，而字典正在載入、讀取失敗或沒有任何名稱時，
   **Add** 會停用並顯示原因。
 
+**Clean up capture images** 位於 **Save captures** 開關下方。它會先要求確認（「Delete the capture
+images?」），然後只刪除 root 的 `logs/captures` 底下已儲存的 OCR 擷取 PNG，並回報「Deleted N capture
+image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理，不碰遊戲或板子，所以工具執行期間也能使用。
+
 ### 5.3 Gem
 
 寶石合成器的等級與行為；已校正的 **Grade positions**、**Resource slots**、**Result gem area** 在**這階段
