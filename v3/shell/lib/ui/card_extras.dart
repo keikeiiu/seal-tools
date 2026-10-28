@@ -13,7 +13,11 @@
 /// saved here as exactly `{quest: {active|active_sequence}}` (field-wise merge), only when the player
 /// changes it. The empty sequence choice is the config's "single flow only" meaning.
 ///
-/// Both layouts are width-adaptive: a grid card is ~360 px wide, so controls stack instead of
+/// Spammer card — v2's rotation picker, which the player uses to choose which preset a run presses
+/// without opening the tab. `tool.start` has no spammer run argument (PROTOCOL §12.6), so a change is
+/// saved as exactly `{spammer: {active}}` through the normal config path, like the Quest pickers.
+///
+/// All three layouts are width-adaptive: a grid card is ~360 px wide, so controls stack instead of
 /// overflowing a fixed Row.
 library;
 
@@ -135,6 +139,131 @@ class BuyCardExtras extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// The Spammer card's rotation picker: which preset's rotation the run presses.
+///
+/// v2's card ComboBox set `spammer.active` in memory and left persistence to the tab's Save. v3 has
+/// no per-run spammer argument — `tool.start`'s run arguments are `buy`'s preset/count and `sell`'s
+/// slots (PROTOCOL §12.6) — and the card shares no draft with the tab, so this picker saves
+/// `spammer.active` through the normal config path (`config.validate` → `config.apply`, the core is
+/// the only writer). A refusal renders verbatim under the picker; the displayed value always comes
+/// from the mirror, so a refused save leaves the picker showing the still-active preset.
+class SpammerCardExtras extends StatefulWidget {
+  const SpammerCardExtras({super.key, required this.model});
+
+  final ShellModel model;
+
+  @override
+  State<SpammerCardExtras> createState() => _SpammerCardExtrasState();
+}
+
+class _SpammerCardExtrasState extends State<SpammerCardExtras> {
+  bool _saving = false;
+  String? _error;
+
+  Map<String, dynamic> get _spammer =>
+      asJsonMap(widget.model.config.config['spammer']);
+
+  /// The configured rotations, v2's order: names sorted case-insensitively.
+  List<String> get _names {
+    final names = asJsonMap(_spammer['presets']).keys.toList();
+    names.sort(
+      (left, right) => left.toLowerCase().compareTo(right.toLowerCase()),
+    );
+    return names;
+  }
+
+  /// The active rotation when it still exists, else the first one: v2's fallback, because a blank
+  /// picker cannot be used to switch and a deleted preset leaves `active` naming nothing.
+  String? get _selected {
+    final names = _names;
+    if (names.isEmpty) {
+      return null;
+    }
+    final active = asString(_spammer['active']);
+    return active != null && names.contains(active) ? active : names.first;
+  }
+
+  Future<void> _choose(String? name) async {
+    if (name == null || _saving) {
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final outcome = await widget.model.saveConfig({
+      'spammer': {'active': name},
+    });
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _saving = false;
+      _error = outcome.saved ? null : outcome.errorLines.join('\n');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final names = _names;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 170,
+          child: _cardDropdown(
+            key: const ValueKey('spammer-card-preset'),
+            label: 'Rotation',
+            value: _selected,
+            items: [
+              for (final name in names)
+                DropdownMenuItem(
+                  key: ValueKey('spammer-card-preset-item-$name'),
+                  value: name,
+                  child: Text(name),
+                ),
+            ],
+            onChanged: _saving || names.isEmpty ? null : _choose,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Starts this rotation for the run — saved as the active preset',
+          key: const ValueKey('spammer-card-note'),
+          softWrap: true,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (_saving)
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              'saving…',
+              key: const ValueKey('spammer-card-saving'),
+              style: theme.textTheme.labelSmall,
+            ),
+          ),
+        if (_error != null)
+          Tooltip(
+            message: _error!,
+            child: Text(
+              _error!,
+              key: const ValueKey('spammer-card-error'),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
       ],
     );
   }

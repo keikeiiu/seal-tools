@@ -202,6 +202,7 @@ class _CardGridState extends State<CardGrid> {
               onPresetChanged: _onBuyPresetChanged,
               onCountChanged: _onBuyCountChanged,
             ),
+            ToolId.spammer => SpammerCardExtras(model: widget.model),
             ToolId.quest => QuestCardExtras(model: widget.model),
             _ => null,
           },

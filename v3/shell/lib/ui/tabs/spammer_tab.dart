@@ -254,6 +254,12 @@ class _SpammerTabState extends State<SpammerTab>
   }
 
   void _deletePreset(String name) {
+    // v2's guard (its preset ConfirmAndDelete): a spammer config with no preset has no rotation a
+    // run could press, so the last one cannot be deleted. Same refusal line; the draft is untouched.
+    if (_block('presets').length <= 1) {
+      setState(() => _presetNote = 'The last preset cannot be deleted.');
+      return;
+    }
     draft.edit((value) {
       asJsonMap(value['presets']).remove(name);
       asJsonMap(value['priority']).remove(name);
@@ -264,7 +270,10 @@ class _SpammerTabState extends State<SpammerTab>
         value['active'] = remaining.isEmpty ? '' : remaining.first;
       }
     });
-    setState(() => _editingPreset = null);
+    setState(() {
+      _editingPreset = null;
+      _presetNote = null;
+    });
   }
 
   void _addKey(String preset) {

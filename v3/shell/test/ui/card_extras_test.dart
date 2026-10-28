@@ -16,10 +16,26 @@ import '../support/app_harness.dart';
 Map<String, dynamic> _config({
   Map<String, dynamic>? buySell,
   Map<String, dynamic>? quest,
+  Map<String, dynamic>? spammer,
 }) => {
   'window': {'title': 'TW_LIVE'},
   'buy_sell': ?buySell,
   'quest': ?quest,
+  'spammer': ?spammer,
+};
+
+/// A minimal spammer block: two rotations, `buffs` active (v2's card falls back to the first when
+/// `active` names nothing).
+Map<String, dynamic> _spammerBlock() => {
+  'active': 'buffs',
+  'presets': {
+    'buffs': {'1': 1.2},
+    'core': {'2': 3.0},
+  },
+  'priority': {
+    'buffs': ['1'],
+    'core': ['2'],
+  },
 };
 
 Future<AppHarness> _pumpCards(
@@ -295,6 +311,110 @@ void main() {
       expect(find.text('No slots are selected to sell.'), findsOneWidget);
       expect(find.byKey(const ValueKey('refusal-sell')), findsOneWidget);
       expect(harness.lastSentWithCmd('config.apply'), isNull);
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'the Spammer card picker shows the active rotation and saves exactly it',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(spammer: _spammerBlock()),
+      );
+      final picker = find.byKey(const ValueKey('spammer-card-preset'));
+      expect(
+        tester.widget<DropdownButton<String>>(picker).value,
+        'buffs',
+        reason: 'spammer.active is the selected rotation',
+      );
+
+      // A real core echoes the EFFECTIVE block (PROTOCOL §7), so the picker can follow the round
+      // trip instead of guessing from what it sent.
+      harness.onWrite = (line, fake) {
+        final message = fake.sentJson(fake.sent.length - 1);
+        final id = message['id'] as String;
+        switch (message['cmd']) {
+          case 'config.validate':
+            fake.emitJson(
+              okResponse(id, {'errors': <String>[], 'warnings': <String>[]}),
+            );
+          case 'config.apply':
+            fake.emitJson(
+              okResponse(id, {
+                'rev': 8,
+                'sections': {
+                  'spammer': {..._spammerBlock(), 'active': 'core'},
+                },
+              }),
+            );
+        }
+      };
+
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spammer-card-preset-item-core')),
+      );
+      await _flush(tester);
+
+      final apply = harness.lastSentWithCmd('config.apply');
+      expect(apply, isNotNull);
+      expect((apply!['args'] as Map<String, dynamic>)['sections'], {
+        'spammer': {'active': 'core'},
+      }, reason: 'a picker change saves ONLY the active field');
+      expect(
+        tester.widget<DropdownButton<String>>(picker).value,
+        'core',
+        reason: 'the picker follows the saved mirror, not the click',
+      );
+
+      // There is no per-run spammer argument (§12.6): Start stays the plain command.
+      await tester.tap(find.byKey(const ValueKey('start-spammer')));
+      await _flush(tester);
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {
+        'tool': 'spammer',
+      });
+      harness.respondOk(<String, dynamic>{});
+      await _flush(tester);
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'a refused Spammer rotation save renders the core line verbatim',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(spammer: _spammerBlock()),
+      );
+      final picker = find.byKey(const ValueKey('spammer-card-preset'));
+
+      harness.answerConfigCommands(
+        errors: ['the spammer preset "core" does not exist'],
+      );
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spammer-card-preset-item-core')),
+      );
+      await _flush(tester);
+
+      expect(
+        find.text('the spammer preset "core" does not exist'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('spammer-card-error')), findsOneWidget);
+      expect(
+        harness.lastSentWithCmd('config.apply'),
+        isNull,
+        reason: 'a refused validate never applies',
+      );
+      expect(
+        tester.widget<DropdownButton<String>>(picker).value,
+        'buffs',
+        reason: 'the refused attempt leaves the actual active rotation showing',
+      );
       await _unmount(tester);
     },
   );

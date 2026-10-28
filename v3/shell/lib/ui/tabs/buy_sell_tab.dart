@@ -11,6 +11,11 @@
 /// [ShellModel] and sent as `tool.start`'s `slots` argument (PROTOCOL §12.6). The selection can
 /// differ every sell, so it must never be written to `local.yaml` — a saved selection can sell the
 /// slots chosen last time, which is data loss rather than convenience.
+///
+/// The buy preset's row is a LABELLED picker, not a number (v2's `BuyRowPicker`): the preset stores
+/// the 0-based row index the geometry works in, the label says "Row N" (1-based), and a stored row
+/// outside the calibrated list gets its own marked entry rather than a blank. v2 removed its free
+/// numeric field after a "1" bought the second item down — there is nothing here to get off by one.
 library;
 
 import 'package:flutter/material.dart';
@@ -108,6 +113,17 @@ class _BuySellTabState extends State<BuySellTab>
       return null;
     }
     return rect;
+  }
+
+  /// `ShopGeometry::DEFAULT_ROWS`: the core's visible-row count when `buy_sell.shop_rows` is unset.
+  static const int _defaultShopRows = 10;
+
+  /// How many shop-list rows the picker can label: the calibrated count, or the core's default when
+  /// the config states none ([ShopGeometry::DEFAULT_ROWS]); a zero count is an uncalibrated geometry
+  /// the core refuses the run for, so it falls back here too rather than rendering an empty picker.
+  int _shopRowCount() {
+    final rows = asNumber(_calibrated()['shop_rows'])?.round();
+    return rows != null && rows > 0 ? rows : _defaultShopRows;
   }
 
   // ── writers ──────────────────────────────────────────────────────────────────────────────
@@ -342,18 +358,7 @@ class _BuySellTabState extends State<BuySellTab>
                             _setPresetField(preset, 'scroll', value),
                       ),
                     ),
-                    DraftFieldSlot(
-                      slotKey: 'buy-row',
-                      syncToken: draft.seedRevision,
-                      child: DraftNumberField(
-                        label: 'Row',
-                        integer: true,
-                        value: asNumber(values['row']),
-                        width: 120,
-                        onChanged: (value) =>
-                            _setPresetField(preset, 'row', value),
-                      ),
-                    ),
+                    _rowPicker(preset, values),
                     DraftFieldSlot(
                       slotKey: 'buy-count',
                       syncToken: draft.seedRevision,
@@ -368,6 +373,7 @@ class _BuySellTabState extends State<BuySellTab>
                     ),
                   ],
                 ),
+                _rowWarning(values),
               ],
             ],
           ),
@@ -410,6 +416,76 @@ class _BuySellTabState extends State<BuySellTab>
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// v2's labelled buy-row picker (`BuyRowPicker`/`SyncBuyRowPicker`): the config stores the 0-BASED
+  /// row index the geometry works in, while the picker labels it 1-based ("Row 1" is index 0). v2
+  /// replaced its free numeric field with this picker after a "1" bought the second item down — there
+  /// is no number to type here, so a row cannot be off by one.
+  Widget _rowPicker(String preset, Map<String, dynamic> values) {
+    final rows = _shopRowCount();
+    final stored = asNumber(values['row'])?.round();
+    final options = _rowOptions(rows, stored);
+    return DraftDropdownField(
+      key: const ValueKey('buy-row'),
+      label: 'Row',
+      value: stored == null ? null : _rowLabel(stored, rows: rows),
+      options: options,
+      width: 220,
+      onChanged: (label) {
+        if (label == null) {
+          return;
+        }
+        final index = options.indexOf(label);
+        // A legacy row outside the list is DISPLAYED (its own marked entry) but is not a choice:
+        // selecting it would store an index the calibrated list does not have.
+        if (index < 0 || index >= rows) {
+          return;
+        }
+        // `setState` because the picker is built in this State's `build()`: a draft edit alone does
+        // not repaint content handed to `buildConfigTab(child:)` (the Pet-tab count-line rule).
+        setState(() => _setPresetField(preset, 'row', index));
+      },
+    );
+  }
+
+  /// The 1-based label for a stored 0-based row; v2 marks a row outside the configured list rather
+  /// than blanking it (blanking would make the next Save write the wrong row).
+  String _rowLabel(int row, {required int rows}) {
+    if (row >= 0 && row < rows) {
+      return 'Row ${row + 1}';
+    }
+    return 'Row ${row + 1} — past the bottom of the list';
+  }
+
+  /// The picker's entries: every row the calibrated list has, plus the legacy out-of-range row when
+  /// the preset stores one.
+  List<String> _rowOptions(int rows, int? stored) => [
+    for (var index = 0; index < rows; index++) 'Row ${index + 1}',
+    if (stored != null && (stored < 0 || stored >= rows))
+      _rowLabel(stored, rows: rows),
+  ];
+
+  /// v2's row warning (its `ShopRowOk` line), shown while the preset's stored row is outside the
+  /// calibrated list: the geometry would click below the list, so the player must pick a lower row.
+  /// A refusal of this kind is the shell's advisory here, not a core Save rule (the core does not
+  /// re-validate buy presets on apply).
+  Widget _rowWarning(Map<String, dynamic> values) {
+    final rows = _shopRowCount();
+    final stored = asNumber(values['row'])?.round();
+    if (stored == null || (stored >= 0 && stored < rows)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: ShellSpace.xs),
+      child: Text(
+        'Row ${stored + 1} is past the bottom of the list — only $rows '
+        'rows are visible at once. Scroll further and pick a lower row.',
+        key: const ValueKey('buy-row-warning'),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.error),
       ),
     );
   }

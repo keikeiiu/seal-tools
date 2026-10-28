@@ -470,4 +470,39 @@ void main() {
       );
     },
   );
+
+  testWidgets('the last preset cannot be deleted (v2 guard)', (tester) async {
+    final harness = await _pumpSpammer(tester);
+
+    await tester.tap(find.byKey(const ValueKey('delete-preset')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('The last preset cannot be deleted.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('spammer-preset-note')),
+      findsOneWidget,
+      reason: 'the refusal uses the tab\'s existing preset note line',
+    );
+    // The guard is a refusal, not an edit: the draft stays clean and nothing is sent.
+    expect(find.byKey(const ValueKey('dirty-spammer')), findsNothing);
+    expect(harness.lastSentWithCmd('config.validate'), isNull);
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+  });
+
+  testWidgets('a preset that is not the last one can still be deleted', (
+    tester,
+  ) async {
+    final block = _block();
+    (block['presets'] as Map<String, dynamic>)['second'] = {'3': 1.0};
+    await _pumpSpammer(tester, spammer: block);
+
+    // The first preset in sorted order is "buffs" (chars: b < s), and two of them exist.
+    await tester.tap(find.byKey(const ValueKey('delete-preset')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('spammer-preset-note')), findsNothing);
+    expect(find.byKey(const ValueKey('dirty-spammer')), findsOneWidget);
+  });
 }

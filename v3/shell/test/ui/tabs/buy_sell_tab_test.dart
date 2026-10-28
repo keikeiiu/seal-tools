@@ -75,7 +75,6 @@ Future<void> _flush(WidgetTester tester) async {
   await tester.pump();
 }
 
-/// Taps one bag cell and pumps twice: the toggle mutates the model, then `setState` redraws the grid.
 /// Taps one keyed control and pumps twice: a selection change mutates the model, then `setState`
 /// redraws the grid, the cap status line and the count header.
 Future<void> _tap(WidgetTester tester, String key) async {
@@ -92,6 +91,25 @@ Text _statusWidget(WidgetTester tester) {
   return tester.widget<Text>(
     find.byKey(const ValueKey('sell-selection-status')),
   );
+}
+
+/// The current value of a [DraftDropdownField] (its inner form field, not the wrapper).
+String? _dropdownValue(WidgetTester tester, String key) {
+  final field = tester.widget<DropdownButtonFormField<String>>(
+    find.descendant(
+      of: find.byKey(ValueKey(key)),
+      matching: find.byType(DropdownButtonFormField<String>),
+    ),
+  );
+  return field.initialValue;
+}
+
+/// Picks [option] from a [DraftDropdownField]'s open menu.
+Future<void> _pick(WidgetTester tester, String key, String option) async {
+  await tester.tap(find.byKey(ValueKey(key)));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(option).last);
+  await tester.pumpAndSettle();
 }
 
 /// True when the shell has sent no config command at all — the toggle is memory-only.
@@ -387,4 +405,76 @@ void main() {
     );
     expect(find.byKey(const ValueKey('sell-cell-0')), findsNothing);
   });
+
+  testWidgets('the buy row picker labels 1-based and stores the 0-based row', (
+    tester,
+  ) async {
+    final harness = await _pumpBuySell(tester);
+
+    // The fixture preset stores row 2 (0-based) → the picker shows "Row 3", and there is no free
+    // number field left to type an index into.
+    expect(_field('buy-row'), findsNothing);
+    expect(_dropdownValue(tester, 'buy-row'), 'Row 3');
+
+    await _pick(tester, 'buy-row', 'Row 1');
+    expect(_dropdownValue(tester, 'buy-row'), 'Row 1');
+
+    await tester.enterText(_field('buy-count'), '5');
+    await tester.pump();
+    harness.answerConfigCommands();
+    await tester.tap(find.byKey(const ValueKey('save-buy_sell')));
+    await _flush(tester);
+
+    final apply = harness.lastSentWithCmd('config.apply')!;
+    final sections =
+        (apply['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final savedBlock = sections['buy_sell'] as Map<String, dynamic>;
+    final presets = savedBlock['presets'] as Map<String, dynamic>;
+    final potion = presets['potion'] as Map<String, dynamic>;
+    expect(potion['row'], 0, reason: 'Row 1 must store the 0-based index 0');
+    expect(potion['scroll'], 1, reason: 'the picker only touches row');
+  });
+
+  testWidgets(
+    'a stored row past the calibrated list is marked and cannot be picked',
+    (tester) async {
+      final block = _buySellBlock();
+      final presets = block['presets'] as Map<String, dynamic>;
+      final potion = presets['potion'] as Map<String, dynamic>;
+      potion['row'] = 12;
+      final harness = await _pumpBuySell(tester, block: block);
+
+      expect(
+        _dropdownValue(tester, 'buy-row'),
+        'Row 13 — past the bottom of the list',
+        reason: 'a legacy out-of-range row is shown, never blanked',
+      );
+      expect(
+        find.textContaining('Row 13 is past the bottom of the list — only 8'),
+        findsOneWidget,
+      );
+
+      // Picking a valid row stores its 0-based index and clears the warning.
+      await _pick(tester, 'buy-row', 'Row 8');
+      expect(find.byKey(const ValueKey('buy-row-warning')), findsNothing);
+      expect(_dropdownValue(tester, 'buy-row'), 'Row 8');
+
+      harness.answerConfigCommands();
+      await tester.tap(find.byKey(const ValueKey('save-buy_sell')));
+      await _flush(tester);
+      final apply = harness.lastSentWithCmd('config.apply')!;
+      final sections =
+          (apply['args'] as Map<String, dynamic>)['sections']
+              as Map<String, dynamic>;
+      final blockSaved = sections['buy_sell'] as Map<String, dynamic>;
+      final savedPresets = blockSaved['presets'] as Map<String, dynamic>;
+      final savedPotion = savedPresets['potion'] as Map<String, dynamic>;
+      expect(
+        savedPotion['row'],
+        7,
+        reason: 'Row 8 must store the 0-based index 7',
+      );
+    },
+  );
 }

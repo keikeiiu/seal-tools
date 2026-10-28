@@ -224,4 +224,51 @@ void main() {
       reason: 'hiding the field must not drop the stored value',
     );
   });
+
+  testWidgets('the last flow cannot be deleted (v2 guard)', (tester) async {
+    final harness = await _pumpQuest(tester);
+
+    await tester.tap(find.byKey(const ValueKey('quest-delete-flow')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('This is the only flow — create another before deleting it.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('quest-note')), findsOneWidget);
+    // The guard refuses, it does not edit: the draft stays clean and nothing is sent.
+    expect(find.byKey(const ValueKey('dirty-quest')), findsNothing);
+    expect(harness.lastSentWithCmd('config.validate'), isNull);
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+    expect(find.text('Steps — run1'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a second flow can be deleted, and a sequence delete needs no guard',
+    (tester) async {
+      final quest = _questBlock();
+      (quest['presets'] as Map<String, dynamic>)['run2'] = {
+        'initial_wait_seconds': 1.0,
+        'loops': 1,
+        'steps': <dynamic>[],
+      };
+      await _pumpQuest(tester, quest: quest);
+
+      // Delete the edited flow (run1) while two exist: it is a normal draft edit.
+      await tester.tap(find.byKey(const ValueKey('quest-delete-flow')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('quest-note')), findsNothing);
+      expect(find.byKey(const ValueKey('dirty-quest')), findsOneWidget);
+
+      // v2 deletes a sequence with only a confirmation (its ConfirmAndDelete has no count guard):
+      // removing one never removes what a single-flow run needs.
+      await tester.tap(find.byKey(const ValueKey('quest-delete-sequence')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('quest-note')), findsNothing);
+      expect(find.byKey(const ValueKey('quest-no-sequence')), findsOneWidget);
+    },
+  );
 }

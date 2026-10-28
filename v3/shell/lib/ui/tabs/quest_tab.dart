@@ -62,6 +62,14 @@ class _QuestTabState extends State<QuestTab>
   String? _selectedFlow;
   String? _selectedSequence;
 
+  /// The tab's refusal line for the UI-owned deletion guards (v2's phrasing); null when there is
+  /// nothing to say. A refusal from the CORE still renders through the shared Save frame.
+  String? _questNote;
+
+  /// v2's exact line when the last flow would be deleted (its flow `ConfirmAndDelete`).
+  static const String _lastFlowRefusal =
+      'This is the only flow — create another before deleting it.';
+
   @override
   void dispose() {
     _newFlow.dispose();
@@ -189,10 +197,19 @@ class _QuestTabState extends State<QuestTab>
       }
     });
     _newFlow.clear();
-    setState(() => _selectedFlow = name);
+    setState(() {
+      _selectedFlow = name;
+      _questNote = null;
+    });
   }
 
   void _deleteFlow(String name) {
+    // v2's guard (its flow ConfirmAndDelete): the last flow IS the tab's usable configuration — a
+    // quest config with no flow has nothing any run can replay. Same refusal line; no draft edit.
+    if (_flowNames().length <= 1) {
+      setState(() => _questNote = _lastFlowRefusal);
+      return;
+    }
     draft.edit((value) {
       asJsonMap(value['presets']).remove(name);
       if (value['active'] == name) {
@@ -200,7 +217,10 @@ class _QuestTabState extends State<QuestTab>
         value['active'] = remaining.isEmpty ? '' : remaining.first;
       }
     });
-    setState(() => _selectedFlow = null);
+    setState(() {
+      _selectedFlow = null;
+      _questNote = null;
+    });
   }
 
   void _setFlowField(String name, String field, Object? value) =>
@@ -422,7 +442,12 @@ class _QuestTabState extends State<QuestTab>
                     width: 240,
                     onChanged: (value) {
                       if (value != null) {
-                        setState(() => _selectedFlow = value);
+                        // A refusal about the previously edited flow is stale once another is picked
+                        // (v2's SelectionReport rule); a successful note was already cleared.
+                        setState(() {
+                          _selectedFlow = value;
+                          _questNote = null;
+                        });
                       }
                     },
                   ),
@@ -457,6 +482,16 @@ class _QuestTabState extends State<QuestTab>
                   ),
                 ],
               ),
+              if (_questNote != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: ShellSpace.xs),
+                  child: Text(
+                    _questNote!,
+                    key: const ValueKey('quest-note'),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
               if (flow == null)
                 const Padding(
                   key: ValueKey('quest-no-flow'),
