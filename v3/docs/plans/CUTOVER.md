@@ -237,7 +237,7 @@ and a saved one can sell the wrong slots. Details and gates: `records/RELEASE-v3
 
 ---
 
-## v3.0.3 parity release (2026-10-28) — the one to publish
+## v3.0.3 parity release (2026-10-28) — superseded by v3.0.4
 
 Supersedes v3.0.0, v3.0.1 and v3.0.2. The full v2→v3 parity audit (records/PARITY-AUDIT-2026-10-28.md)
 and the player's Sell-grid report drove a bigger release than a single fix: Sell controls + deduped
@@ -262,5 +262,33 @@ clean-up-captures command/button, and the read-only `board.details` core command
    → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md`, `PLAN-V3-PET-SESSION.md` and
    `PLAN-V3-STATUS-DETAIL.md` stay live proposals.
 5. **Post-publish check**: download both v3.0.3 assets, compare SHA-256 with the values above, unzip and
+   launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2 docs into v3, and do not start a second changelog.
+
+---
+
+## v3.0.4 diagnostics + pet checklists release (2026-10-28) — the one to publish
+
+Supersedes v3.0.0–v3.0.3. The rebuilt Arduino connection card on read-only `board.details` (safe
+while a tool runs), the first Pet-session increment (`pet.preflight` Setup-so-far/Ready-to-run
+checklists + per-row `pet.set_boarding` ticks), the builder-check parity fixes they forced, and the
+docs. Details and gates: `records/RELEASE-v3.0.4.md`.
+
+1. **Merge and tag**: merge `v3-core` into `main`, `git tag v3.0.4`, push branch + tag (the push is the
+   player's call).
+2. **GitHub release** `v3.0.4` with:
+   - `dist/SealTools-v3.0.4.zip` — 45,005,039 B,
+     SHA-256 `51308D181D1708C11B292A54F750EFB300BBC3EF7FE01C66E27CCF40589385B6`
+   - `dist/SealTools-v3.0.4-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.4.md`. Attach exactly as built; do not re-zip. The
+   firmware is byte-identical to v3.0.0–v3.0.3 — no reflash.
+3. **Root README**: rewrite for v3.0.4 and add the version-table row:
+   `| v3.0.4 | 2026-10-28 | Rust core + Flutter shell; the full v2→v3 parity audit; rebuilt read-only Arduino connection card; Pet Feeder setup/readiness checklists + boarding ticks (pet session increment 1); per-run Sell selection with over-cap refusal; always-on-top + remembered placement; pet run-state persistence. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older history and point downloads/firmware at the v3.0.4 assets.
+4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`; `PLAN-V3-SHELL.md` and `CUTOVER.md`
+   → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md`, `PLAN-V3-PET-SESSION.md` and
+   `PLAN-V3-STATUS-DETAIL.md` stay live proposals.
+5. **Post-publish check**: download both v3.0.4 assets, compare SHA-256 with the values above, unzip and
    launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
 6. **do not** move v2 docs into v3, and do not start a second changelog.

@@ -19,6 +19,41 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (27) — diagnostics back, and the Pet tab can check itself (v3.0.4)
+
+Two audit gaps closed in one release, and both were shaped by the builder-check loop. The Arduino tab
+regained v2's Connection card (the audit called its loss a diagnostic regression) but not by opening the
+port on tab open — that is what v2 did and it is exactly wrong while a tool runs. `board.details`
+(82d640c) answers the same questions read-only: expected IDs/port override, chosen-first port list,
+one of three choice states with the core's refusal sentence, and a memory-only protocol-level cache fed
+by `board.probe` and the pet session's detect. The shell card (`ea3ae90`) renders it with v2's three
+verdict lines and ●/○ markers; the builder-check caught that a silent/legacy board a pet run had opened
+still read "not checked yet", so the cache now maps silence to level 1 like probe (110dcc7), and that the
+not_found advice was duplicated shell-side (fixed in `1f166e0` to trust `choice.refusal` with a
+documented v2 fallback).
+
+The Pet tab got its first session increment: `pet.preflight` is read-only and answers the Setup-so-far /
+Ready-to-run facts in v2's lines, and `pet.set_boarding` writes one row's boarding state through the A1
+field-precise writer (one field, shared rev, one `config.changed` after the response). The shell renders
+the checklists generically and adds per-row **Boarding now** ticks that are disabled while the tab has
+unsaved edits — a `config.changed` against a dirty draft would banner the player's own tick as an
+external change, so the tick waits for a Save instead. The builder-check found preflight could say ready
+while Start refuses: the ready line's per-row format was wrong for >1 row, page tabs were accepted
+non-empty instead of for the pages the run uses with 2-point marks, and the food strip was required even
+in right-click mode. `17e1ff2` fixes all three against the run's own derivations, adds the
+"every row is unticked — nothing to feed" line, and closes the review's cheap gaps (io e2e with a held
+local.yaml, raw event-order proof, malformed config). A second check (task-109) then caught that the
+docs overclaimed "ready" and the ✗/ℹ markers; the guide was corrected to say ready mirrors Start's
+gates for the SAVED, UI-shaped config, that the calibration list mixes gates with facts, and that ℹ is a
+shell marker, not a protocol state.
+
+Gates at `7ec3539`: Rust 79 result lines/0 failed (core lib 158, pet_session 13/13), Flutter 243/243,
+clippy/fmt/analyze/format clean, publish stage/app-zip/firmware audits PASS. Artifacts:
+`dist/SealTools-v3.0.4.zip` 45,005,039 B `51308D18...9385B6`; firmware 5,254 B
+`498E6A4BA...35CCEF3B` (byte-identical, no reflash). Unpublished; CUTOVER has the checklist. Remaining:
+Pet session increments 2+ (capture/scan/queue/test read), B5 card live detail (v3.1), dry runs / Quest
+Test-one-loop, the spammer raw-key editor — OPEN §5.
+
 ## 2026-10-28 (26) — the parity audit, v3.0.3, and the calibration foundation
 
 The first two live passes had each found one design error (the Sell grid was persisted, then the tuning
