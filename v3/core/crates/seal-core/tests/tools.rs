@@ -308,3 +308,72 @@ fn a_sell_start_without_slots_reaches_the_domains_selection_line() {
         "a tool start never writes the config"
     );
 }
+
+#[test]
+fn an_over_cap_sell_selection_finishes_with_the_domain_refusal() {
+    let root = config_root();
+    root.write(
+        "config/local.yaml",
+        "buy_sell:\n  bag_grid: [0, 0, 800, 600]\n  bag_slot: [0, 0, 100, 75]\n  shop_rows: 5\n  shop_region: [900, 400, 300, 250]\n  scroll_point: [1000, 420]\n  max_button: [1200, 700]\n  sell_cap: 2\n",
+    );
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    // Three distinct cells after dedupe, cap 2: the start validates (shape/range are fine), and the
+    // domain's over-cap line arrives as the run's finish error before any click.
+    let response = session.call("tool.start", json!({"tool": "sell", "slots": [1, 1, 2, 3]}));
+    assert!(response.ok, "the start is accepted: {:?}", response.error);
+
+    let mut finished = None;
+    for _ in 0..20 {
+        let event = session.event();
+        assert_ne!(event["event"], "core.stopping");
+        if event["event"] == "tool.finished" {
+            finished = Some(event);
+            break;
+        }
+    }
+    let finished = finished.expect("the run finishes with the domain line");
+    assert_eq!(finished["data"]["tool"], "sell");
+    assert_eq!(finished["data"]["reason"], "error");
+    assert_eq!(
+        finished["data"]["message"],
+        "3 slots selected but the per-run cap is 2. Raise the cap on purpose, or narrow the selection."
+    );
+}
+
+#[test]
+fn pointer_arguments_are_validated_before_any_window_or_board_work() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    for (cmd, args, field) in [
+        ("pointer.place", json!({}), "x"),
+        ("pointer.place", json!({"x": 10}), "y"),
+        ("pointer.click", json!({"x": -1, "y": 20}), "x"),
+        ("pointer.click", json!({"x": 10, "y": -1}), "y"),
+        ("pointer.place", json!({"x": 1.5, "y": 20}), "x"),
+        ("pointer.click", json!({"x": 10, "y": "20"}), "y"),
+    ] {
+        let response = session.call(cmd, args);
+        assert!(!response.ok, "{cmd} must be refused");
+        let error = response.error.expect("a refusal");
+        assert_eq!(error.code, "bad_request", "{cmd}");
+        assert_eq!(error.detail["field"], field, "{cmd}");
+    }
+}
+
+#[test]
+fn pointer_with_a_missing_game_window_is_window_not_found() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    for cmd in ["pointer.place", "pointer.click"] {
+        let response = session.call(cmd, json!({"x": 10, "y": 20}));
+        assert!(!response.ok, "{cmd} needs the game window");
+        let error = response.error.expect("a refusal");
+        assert_eq!(error.code, "window_not_found", "{cmd}: {}", error.message);
+    }
+}

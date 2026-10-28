@@ -110,6 +110,11 @@ enum Command {
     StandDown {
         reply: Sender<bool>,
     },
+    /// A calibration pointer action asks whether the arbiter currently leases the game. `None`
+    /// means free to act; `Some(line)` is the same player-facing busy line a tool start would carry.
+    InputLease {
+        reply: Sender<Option<String>>,
+    },
     /// The deferred foreground start's bounded wait ran out (v2's 45 s).
     PendingTimeout,
 }
@@ -184,6 +189,22 @@ impl Supervisor {
             return StopReply::NotRunning;
         }
         answer.recv().unwrap_or(StopReply::NotRunning)
+    }
+
+    /// The per-command input lease for a calibration pointer action
+    /// ([PLAN-V3-CALIBRATION.md](../../../docs/plans/PLAN-V3-CALIBRATION.md) §5.1 principle 6):
+    /// `None` when no foreground run is engaged and the resident feeder is not holding the game,
+    /// otherwise the same busy/still-stopping line a tool start would answer. This is a SNAPSHOT,
+    /// not a held lease — session-wide leases and queueing belong to the calibration session
+    /// increments; a pointer action only refuses while a tool already owns the game.
+    pub fn input_lease(&self) -> Result<Option<String>, String> {
+        let (reply, answer) = mpsc::channel();
+        self.incoming
+            .send(Incoming::Command(Command::InputLease { reply }))
+            .map_err(|_| "the tool supervisor is not running".to_owned())?;
+        answer
+            .recv()
+            .map_err(|_| "the tool supervisor stopped while checking the game lease".to_owned())
     }
 
     /// Stops every run, waits for the workers to leave, emits `core.stopping`, then joins the
@@ -398,6 +419,9 @@ fn supervise(
                 // capability answers for it; a tool that is not the spammer gets `false`.
                 let _ = reply.send(arbiter.should_stand_down(ToolId::Spammer));
             }
+            Incoming::Command(Command::InputLease { reply }) => {
+                let _ = reply.send(input_lease_line(&arbiter));
+            }
             Incoming::Command(Command::PendingTimeout) => {
                 if let Some(refusal) = arbiter.pending_timeout() {
                     // The caller was already answered `Deferred`; this protocol has no channel back
@@ -422,6 +446,26 @@ fn supervise(
             ),
         }
     }
+}
+
+/// The line a calibration pointer action gets while a tool owns the game. The foreground run is
+/// checked first (including a run that is still leaving), then the resident feeder's game claim.
+/// The wording is v2's `InputArbiter.Busy` / v3's start-refusal wording.
+fn input_lease_line(arbiter: &Arbiter) -> Option<String> {
+    if let Some(holder) = arbiter
+        .running()
+        .into_iter()
+        .find(|tool| !tool.is_resident())
+    {
+        return Some(if arbiter.is_stopping(holder) {
+            format!("\"{holder}\" is still stopping — wait for it to finish, then start again.")
+        } else {
+            format!("\"{holder}\" is using the game right now — stop it, then try again.")
+        });
+    }
+    arbiter.game_owner().map(|holder| {
+        format!("\"{holder}\" is using the game right now — stop it, then try again.")
+    })
 }
 
 /// Answer one worker's `request`: grant it, or publish the waiting/stand-down line and stash the

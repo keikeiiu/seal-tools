@@ -1,17 +1,17 @@
 //! The request dispatcher: one place where a [`Request`] becomes a [`Response`].
 //!
 //! It is deliberately separate from the stdio loop so the handshake and the command surface can
-//! be tested without spawning a process (`PROTOCOL.md` §1 and §4).
+//! be tested without spawning a process (`PROTOCOL.md` 禮1 and 禮4).
 //!
 //! The config commands are the shell's only writer-side surface, and their contract is
-//! `PROTOCOL.md` §§4 and 7 plus `PLAN-V3-CORE.md` §4.1: the core is the only merger, a save sends
+//! `PROTOCOL.md` 禮禮4 and 7 plus `PLAN-V3-CORE.md` 禮4.1: the core is the only merger, a save sends
 //! **only the blocks the tab owns**, a stale revision is refused rather than replayed, and the rev
 //! is a session counter the shell echoes back. Every save also runs the domain authoring rules
-//! ([`crate::validate`]) before it writes — no widget keeps a rule. The file semantics themselves
-//! live in [`seal_config::ConfigStore`] — this module only speaks protocol to them.
+//! ([`crate::validate`]) before it writes ??no widget keeps a rule. The file semantics themselves
+//! live in [`seal_config::ConfigStore`] ??this module only speaks protocol to them.
 //!
 //! The tool commands ([`tool_start`], [`tool_stop`]) are thin: they validate the id against
-//! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` §1 item 7) and translate the
+//! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` 禮1 item 7) and translate the
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
 use std::path::Path;
@@ -30,8 +30,8 @@ use crate::win;
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
 ///
-/// `height` is the window height to restore when the config region is expanded — `expanded_height`
-/// in v2's `LocalUi` and in the domain model — so it is stored under that name rather than putting a
+/// `height` is the window height to restore when the config region is expanded ??`expanded_height`
+/// in v2's `LocalUi` and in the domain model ??so it is stored under that name rather than putting a
 /// second key into the player's file. The whole block is the five v2 fields, and it is core-owned:
 /// the UI only ever reaches it through `ui.window`.
 const WINDOW_FIELDS: &[(&str, &str)] = &[
@@ -48,7 +48,7 @@ const WINDOW_FIELDS: &[(&str, &str)] = &[
 /// `rev` is a SESSION revision, not an on-disk counter: it starts at 0 for one core process and is
 /// incremented by every successful write or reload. The shell holds the value from `hello` and sends
 /// it back with `config.apply`, so a stale copy is refused rather than silently overwriting a block
-/// the core wrote in the meantime (`PROTOCOL.md` §7, `PLAN-V3-CORE.md` §4.1).
+/// the core wrote in the meantime (`PROTOCOL.md` 禮7, `PLAN-V3-CORE.md` 禮4.1).
 pub struct CoreState {
     pub root: std::path::PathBuf,
     /// The merged config as the PRODUCTION REGISTRY reads it. The dispatcher publishes after every
@@ -60,7 +60,7 @@ pub struct CoreState {
     pub handshaken: bool,
     pub stopping: bool,
     /// The tool layer, attached by the binary. `None` in the config-only dispatcher tests, and in a
-    /// future core that has no tools yet — a tool command then says so rather than pretending.
+    /// future core that has no tools yet ??a tool command then says so rather than pretending.
     pub supervisor: Option<supervisor::Supervisor>,
     /// The active game client, when one resolved (`game.variant`), else `None`.
     pub variant: Option<String>,
@@ -69,7 +69,7 @@ pub struct CoreState {
     /// The loaded dictionary. Boot-time and every `config.reload` reload it, so a variant switch is
     /// never half-applied.
     pub attributes: AttributesConfig,
-    /// The last four captured frames by id (`PROTOCOL.md` §8), so `calibration.save` can reference a
+    /// The last four captured frames by id (`PROTOCOL.md` 禮8), so `calibration.save` can reference a
     /// frame the calibrator just took instead of re-sending megabytes.
     pub frames: win::FrameCache,
     /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
@@ -113,7 +113,7 @@ impl CoreState {
 
     /// The binary's startup: bind to `root` and read the merged config through the store.
     ///
-    /// Failing here is fatal rather than a degraded start — v2 fails loudly for the same reason: a
+    /// Failing here is fatal rather than a degraded start ??v2 fails loudly for the same reason: a
     /// core with no config cannot run a tool, and a silent empty config would look exactly like a
     /// game that changed.
     pub fn load(root: std::path::PathBuf) -> Result<Self, StartupError> {
@@ -141,7 +141,7 @@ impl CoreState {
     }
 
     /// Re-reads everything a `config.reload` replaces: the merged config, the validator rules, and the
-    /// active variant's dictionary. Nothing is committed unless ALL of it succeeds — the v2 rule
+    /// active variant's dictionary. Nothing is committed unless ALL of it succeeds ??the v2 rule
     /// behind `SwitchVariant` ("the variant is resolved first, its dictionary is LOADED second, and
     /// the config is only left switched once that load succeeded"; `LauncherService.cs:723-747`):
     /// a config pointing at a missing dictionary is one that will not start at all, so a failed reload
@@ -186,7 +186,7 @@ impl CoreState {
         }
     }
 
-    /// Drop the event bus. The writer thread stops when the LAST sender is gone (`OPEN.md` §1), and the
+    /// Drop the event bus. The writer thread stops when the LAST sender is gone (`OPEN.md` 禮1), and the
     /// state object outlives `writer.finish()` in `main` unless it lets go first.
     pub fn detach_events(&mut self) {
         self.events = None;
@@ -199,7 +199,7 @@ impl CoreState {
 
     /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
     /// thread. Called by the binary after the final response is queued and before the writer is
-    /// finished — the supervisor is the other `EventBus` holder, and the writer only stops when the
+    /// finished ??the supervisor is the other `EventBus` holder, and the writer only stops when the
     /// last one is gone.
     pub fn shutdown_tools(&mut self, reason: &str) {
         if let Some(mut supervisor) = self.supervisor.take() {
@@ -415,6 +415,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "attributes.get" => attributes_get(state, &request),
         "calibration.save" => crate::calibration::save(state, &request),
         "calibration.fetch" => crate::calibration::fetch(state, &request),
+        "pointer.place" => pointer_command(state, &request, false),
+        "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),
         "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),
@@ -483,7 +485,7 @@ fn hello(state: &mut CoreState, request: Request) -> Response {
 ///
 /// The shape is checked first (owned block names, mappings), then the domain's authoring rules run
 /// on a COPY of the merged config with the given sections laid on it ([`crate::validate`]). The
-/// answer is one player-facing line per array entry — the same lines the v2 tab showed — and
+/// answer is one player-facing line per array entry ??the same lines the v2 tab showed ??and
 /// `warnings` is the fixed protocol slot, empty until a rule has an advisory result.
 fn config_validate(state: &CoreState, request: &Request) -> Response {
     let sections = match sections_argument(request) {
@@ -499,12 +501,11 @@ fn config_validate(state: &CoreState, request: &Request) -> Response {
 }
 
 /// `config.apply {rev, sections}`: merge the blocks the shell owns into `local.yaml`, bump the
-/// revision, answer with the merged sections (`PROTOCOL.md` §4 and §7).
+/// revision, answer with the merged sections (`PROTOCOL.md` 禮4 and 禮7).
 ///
 /// The SAME authoring checks `config.validate` runs go first, so a Save cannot bypass the gate the
 /// shell showed: on any error the write is refused as `bad_request` with the lines in
-/// `detail.errors`, and nothing is written or consumed. (Warnings have no channel in this response —
-/// the protocol fixes its shape at `{rev, sections}` — so they are reported by `config.validate`
+/// `detail.errors`, and nothing is written or consumed. (Warnings have no channel in this response ??/// the protocol fixes its shape at `{rev, sections}` ??so they are reported by `config.validate`
 /// only; no current rule produces one.)
 fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     let rev = match revision_argument(request) {
@@ -545,11 +546,10 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
 
     // The effective config is the merge the shell will see AND the merge the rules just ran on: the
     // echo and the settings projection both come from it, so apply, validate and the answer cannot
-    // describe different configs (`PROTOCOL.md` §7).
+    // describe different configs (`PROTOCOL.md` 禮7).
     let effective = crate::validate::effective_config(&state.config, &sections);
 
-    // v2's SwitchVariant order, the only one that cannot half-switch a variant: resolve → validate →
-    // LOAD the dictionary the effective config names → write. A missing dictionary refuses here,
+    // v2's SwitchVariant order, the only one that cannot half-switch a variant: resolve ??validate ??    // LOAD the dictionary the effective config names ??write. A missing dictionary refuses here,
     // before the first byte is written and before a rev is consumed.
     let active = startup::active(&effective);
     let attributes = match startup::load_dictionary(&state.store, &active.dictionary) {
@@ -558,7 +558,7 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     };
 
     // ONE read-modify-write: the owned blocks and the portable projection land together, so a failure
-    // at any point writes NOTHING and consumes no rev (`PROTOCOL.md` §4's promise). Two separate
+    // at any point writes NOTHING and consumes no rev (`PROTOCOL.md` 禮4's promise). Two separate
     // writes could and did leave the file half-saved. `settings` is filtered out of the owned map and
     // written only through the projection.
     let owned: Map<String, Value> = sections
@@ -607,7 +607,7 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
 
 /// The apply result echoes the EFFECTIVE sections for the names in the request, in the request's
 /// structure: owned blocks at top level, the portable half nested under `settings` (`PROTOCOL.md`
-/// §4). "Effective" means what the merge resolves the name to, not the overlay the shell sent — a
+/// 禮4). "Effective" means what the merge resolves the name to, not the overlay the shell sent ??a
 /// shell cannot map a merged projection it does not own, and it should not have to guess which fields
 /// the core's rules added.
 fn echo_sections(effective: &Value, sections: &Map<String, Value>) -> Map<String, Value> {
@@ -653,8 +653,8 @@ fn config_reload(state: &mut CoreState, request: &Request) -> Response {
 }
 
 /// A reload failure: an INVALID on-disk config is its own protocol answer (`config_invalid`,
-/// `PROTOCOL.md` §6/§4) carrying the ported validator's lines, while file-level failures keep the
-/// `io`/config mapping. Boot-time invalidity stays on stderr (§1); this is the reload case only.
+/// `PROTOCOL.md` 禮6/禮4) carrying the ported validator's lines, while file-level failures keep the
+/// `io`/config mapping. Boot-time invalidity stays on stderr (禮1); this is the reload case only.
 fn reload_error_response(id: &str, error: StartupError) -> Response {
     if let Some(errors) = error.invalid_errors() {
         return Response::err(
@@ -670,7 +670,7 @@ fn reload_error_response(id: &str, error: StartupError) -> Response {
 }
 
 /// `ui.window {left, top, width, height, pinned}`: the one path window geometry and pin state take
-/// into `local.yaml`. The `ui:` block is core-owned — nobody edits it in a tab — so the shell sends
+/// into `local.yaml`. The `ui:` block is core-owned ??nobody edits it in a tab ??so the shell sends
 /// it and the core is the writer.
 fn ui_window(state: &mut CoreState, request: &Request) -> Response {
     let Some(arguments) = request.args.as_object() else {
@@ -720,11 +720,11 @@ fn ui_window(state: &mut CoreState, request: &Request) -> Response {
 
 /// `tool.start {tool}`: ask the supervisor to start one of `ToolId::ALL`.
 ///
-/// `bad_request` for an unknown id (this is the ONE list — `OPEN.md` §1 item 7: v2's second whitelist
+/// `bad_request` for an unknown id (this is the ONE list ??`OPEN.md` 禮1 item 7: v2's second whitelist
 /// looked wired and did nothing); `tool_busy` for a refusal, with the arbiter's player-facing line in
 /// both `message` and `detail.line`; `bad_request` with the named line when this build has no loop
 /// for the tool. A deferred start answers `{}` and its waiting line was already emitted as a `log`
-/// event — there is no run to attach a `state` to yet, so a state event would misreport registration.
+/// event ??there is no run to attach a `state` to yet, so a state event would misreport registration.
 fn tool_start(state: &mut CoreState, request: &Request) -> Response {
     let Some(name) = request.args.get("tool").and_then(Value::as_str) else {
         return bad_request(&request.id, "tool.start needs a \"tool\" id", json!({}));
@@ -774,7 +774,7 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
     }
 }
 
-/// Validate `tool.start`'s optional run arguments (`PROTOCOL.md` §4 note / §12.6) and return the
+/// Validate `tool.start`'s optional run arguments (`PROTOCOL.md` 禮4 note / 禮12.6) and return the
 /// object forwarded to the supervisor's `create`.
 ///
 /// `buy` takes `preset` (a string) and `count` (an integer, at least 1); `sell` takes `slots` (a
@@ -902,8 +902,8 @@ fn slot_selection(value: &Value) -> Result<Vec<Value>, (String, String)> {
     }
     Ok(selection)
 }
-/// `tool.stop {tool?}`: stop the named tool, or — with no name — whichever run the player means
-/// (`PROTOCOL.md` §4: "stops whatever is running"). The response arrives while the loop is still
+/// `tool.stop {tool?}`: stop the named tool, or ??with no name ??whichever run the player means
+/// (`PROTOCOL.md` 禮4: "stops whatever is running"). The response arrives while the loop is still
 /// leaving; the `state`(stopping) and `tool.finished` events follow it.
 fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
     let tool = match request.args.get("tool") {
@@ -932,10 +932,54 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
 
     match supervisor.stop_tool(tool) {
         StopReply::Stopping { .. } => Response::ok(&request.id, json!({})),
-        // `not_running` is the protocol's non-failure for "nothing to stop" (`PROTOCOL.md` §6).
+        // `not_running` is the protocol's non-failure for "nothing to stop" (`PROTOCOL.md` 禮6).
         StopReply::NotRunning => Response::err(
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
+        ),
+    }
+}
+
+/// `pointer.place` / `pointer.click`: a calibration pointer action at a client-relative PHYSICAL
+/// point. The per-command input lease is a snapshot of the arbiter's game owner: while a foreground
+/// tool is running/stopping (or the resident feeder holds the game) the action is refused with the
+/// same `tool_busy` line a start gets. Session-wide leases and queueing are the later calibration
+/// session increments; this does not fake one. The action itself is the same closed-loop placement
+/// every tool uses ??never `SetCursorPos`.
+fn pointer_command(state: &mut CoreState, request: &Request, click: bool) -> Response {
+    let point = match crate::pointer::point_arguments(&request.cmd, &request.args) {
+        Ok(point) => point,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(supervisor) = state.supervisor.as_ref() {
+        match supervisor.input_lease() {
+            Ok(Some(line)) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": request.cmd}),
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(line) => return internal(&request.id, &line),
+        }
+    }
+    match crate::pointer::system_perform(&state.config, point, click) {
+        Ok(()) => Response::ok(&request.id, json!({})),
+        Err(crate::pointer::PointerFailure::Window(error)) => {
+            win_error_response(&request.id, error)
+        }
+        Err(crate::pointer::PointerFailure::Board(error)) => {
+            board_error_response(&request.id, error)
+        }
+        Err(crate::pointer::PointerFailure::Effects(line)) => Response::err(
+            &request.id,
+            Error::new("board_unavailable", &line, json!({})),
         ),
     }
 }
@@ -1016,7 +1060,7 @@ fn keys_names(_state: &CoreState, request: &Request) -> Response {
 /// `attributes.get`: the loaded dictionary for the active client, for the Attributes surface.
 ///
 /// The whole dictionary is served because the tab shows it verbatim, it is small (a few KB), and
-/// the core already holds it — boot and every variant switch load it, so this reads no disk. `variant`
+/// the core already holds it ??boot and every variant switch load it, so this reads no disk. `variant`
 /// is null when no client resolved: the shell shows that rather than inventing one.
 fn attributes_get(state: &CoreState, request: &Request) -> Response {
     Response::ok(
@@ -1056,8 +1100,8 @@ fn board_error_response(id: &str, error: board::BoardFailure) -> Response {
     }
 }
 
-/// `window.find`: a not-found window is a RESULT (`found: false`), not an error — the calibrator
-/// shows found/not-found long before it measures (`PROTOCOL.md` §4).
+/// `window.find`: a not-found window is a RESULT (`found: false`), not an error ??the calibrator
+/// shows found/not-found long before it measures (`PROTOCOL.md` 禮4).
 fn window_find(state: &CoreState, request: &Request) -> Response {
     let title = match win::configured_title(&state.config) {
         Ok(title) => title,
@@ -1082,7 +1126,7 @@ fn window_measure(state: &CoreState, request: &Request) -> Response {
     }
 }
 
-/// `capture`: a PNG frame plus the fresh `DisplayInfo`. The frame is cached by id (§8) before the
+/// `capture`: a PNG frame plus the fresh `DisplayInfo`. The frame is cached by id (禮8) before the
 /// response is built so the shell can reference it immediately.
 fn capture_command(state: &mut CoreState, request: &Request) -> Response {
     let region = match win::parse_region(&request.args) {
@@ -1106,7 +1150,7 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
     Response::ok(&request.id, json!({"frame": frame, "display": display}))
 }
 
-/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` §6). The Win32 detail
+/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` 禮6). The Win32 detail
 /// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
 fn win_error_response(id: &str, error: win::CommandError) -> Response {
     let line = error.line();
@@ -1147,7 +1191,7 @@ fn revision_argument(request: &Request) -> Result<u64, Box<Response>> {
 }
 
 /// The `sections` argument shared by `config.apply` and `config.validate`: a mapping of owned block
-/// names to block mappings. A foreign block is refused rather than silently dropped — the shell can
+/// names to block mappings. A foreign block is refused rather than silently dropped ??the shell can
 /// only ever own the blocks `CONFIG.md` names, and a save must never rewrite the player's own.
 fn sections_argument(request: &Request) -> Result<Map<String, Value>, Box<Response>> {
     let Some(sections) = request.args.get("sections") else {
@@ -1186,7 +1230,7 @@ fn sections_argument(request: &Request) -> Result<Map<String, Value>, Box<Respon
 }
 
 /// A stale revision: answer with the current one and the current value of every block the shell
-/// asked to write, so it can reconcile before saving again (`PROTOCOL.md` §6).
+/// asked to write, so it can reconcile before saving again (`PROTOCOL.md` 禮6).
 fn conflict(state: &CoreState, id: &str, requested: &Map<String, Value>) -> Response {
     let current: Map<String, Value> = requested
         .keys()
@@ -1207,7 +1251,7 @@ fn conflict(state: &CoreState, id: &str, requested: &Map<String, Value>) -> Resp
 
 /// The session view is re-read after a successful write so every later command sees the merged
 /// result. The write already happened: a re-read failure is logged (stderr is the log channel,
-/// `PROTOCOL.md` §1) rather than turned into a failed response the shell would replay against a file
+/// `PROTOCOL.md` 禮1) rather than turned into a failed response the shell would replay against a file
 /// that is already correct.
 fn refresh_config(state: &mut CoreState) {
     match state.store.load() {
@@ -1217,7 +1261,7 @@ fn refresh_config(state: &mut CoreState) {
 }
 
 /// Maps a store failure to a protocol error: a section the core does not own is a bad request, and
-/// every file failure is `io` with the path in `detail` (`PROTOCOL.md` §6).
+/// every file failure is `io` with the path in `detail` (`PROTOCOL.md` 禮6).
 fn config_error_response(id: &str, error: ConfigError) -> Response {
     if let ConfigError::SectionNotOwned(name) = &error {
         return bad_request(
@@ -1246,8 +1290,8 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
 }
 
 /// A boot/reload failure as a protocol answer. A file-level failure keeps the existing `io`/config
-/// mapping; an INVALID config has no protocol code of its own yet (`PROTOCOL.md` §6 has no
-/// `config_invalid`), so the v2 `ConfigException` text is carried under `io` — reported to the Lead
+/// mapping; an INVALID config has no protocol code of its own yet (`PROTOCOL.md` 禮6 has no
+/// `config_invalid`), so the v2 `ConfigException` text is carried under `io` ??reported to the Lead
 /// as a protocol proposal rather than silently inventing a code.
 fn startup_error_response(id: &str, error: StartupError) -> Response {
     match error {
@@ -1259,15 +1303,128 @@ fn bad_request(id: &str, message: &str, detail: Value) -> Response {
     Response::err(id, Error::new("bad_request", message, detail))
 }
 
-/// A bug in the core, not a bad request: the shell shows it and logs the detail (`PROTOCOL.md` §6).
+/// A bug in the core, not a bad request: the shell shows it and logs the detail (`PROTOCOL.md` 禮6).
 fn internal(id: &str, message: &str) -> Response {
     Response::err(id, Error::new("internal", message, json!({})))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex, mpsc};
+
+    use seal_domain::decision::{Decision, Key, StopReason};
+    use seal_domain::geometry::Point;
+    use seal_tools::game::GamePort;
+    use seal_tools::runner::{EffectError, Effects};
+    use seal_tools::tool::ToolId;
+
+    use crate::events::event_channel;
+    use crate::logs::Logs;
+    use crate::registry::{Session, ToolRegistry, Unavailable};
+    use crate::supervisor::Supervisor;
+
     use super::*;
     use serde_json::json;
+
+    /// A tool that blocks in its first decision until the test releases it. No hardware and no
+    /// window: it exists only to put a foreground run in the arbiter for the lease assertion.
+    struct BlockingTool {
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl seal_tools::runner::Tool for BlockingTool {
+        fn id(&self) -> ToolId {
+            ToolId::Tuner
+        }
+
+        fn decide(&mut self) -> Decision {
+            let _ = self.release.lock().expect("not poisoned").recv();
+            Decision::stop(StopReason::done("released"))
+        }
+    }
+
+    struct NoEffects;
+
+    impl Effects for NoEffects {
+        fn click(&mut self, _at: Point) -> Result<(), EffectError> {
+            Ok(())
+        }
+
+        fn key(&mut self, _key: Key) -> Result<(), EffectError> {
+            Ok(())
+        }
+    }
+
+    struct BlockingRegistry {
+        release: Mutex<Option<mpsc::Receiver<()>>>,
+    }
+
+    impl ToolRegistry for BlockingRegistry {
+        fn available(&self, _tool: ToolId) -> Result<(), Unavailable> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            _tool: ToolId,
+            _game: Arc<dyn GamePort>,
+            _args: &Value,
+        ) -> Result<Session, String> {
+            let release = self
+                .release
+                .lock()
+                .expect("not poisoned")
+                .take()
+                .expect("one create");
+            Ok(Session {
+                tool: Box::new(BlockingTool {
+                    release: Mutex::new(release),
+                }),
+                effects: Box::new(NoEffects),
+            })
+        }
+    }
+
+    #[test]
+    fn a_pointer_action_while_a_foreground_tool_runs_is_tool_busy_naming_the_holder() {
+        let (release, release_rx) = mpsc::channel();
+        let registry = Arc::new(BlockingRegistry {
+            release: Mutex::new(Some(release_rx)),
+        });
+        let (bus, _events) = event_channel();
+        let supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        state.attach_supervisor(supervisor);
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        assert_eq!(
+            state
+                .supervisor
+                .as_ref()
+                .expect("attached")
+                .start_tool(ToolId::Tuner, &Value::Null),
+            StartReply::Started
+        );
+
+        let response = handle(
+            &mut state,
+            Request::new("pointer-lease", "pointer.place", json!({"x": 10, "y": 20})),
+        );
+        let error = response
+            .error
+            .expect("the pointer action is refused while busy");
+        assert_eq!(error.code, "tool_busy");
+        assert_eq!(
+            error.message,
+            "\"tuner\" is using the game right now — stop it, then try again."
+        );
+        assert_eq!(error.detail["command"], "pointer.place");
+
+        let _ = release.send(());
+        state.shutdown_tools("test");
+    }
 
     #[test]
     fn sell_slots_are_forwarded_only_after_validation() {

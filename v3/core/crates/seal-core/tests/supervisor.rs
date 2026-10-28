@@ -906,6 +906,47 @@ fn a_pet_request_preempts_the_spammer_and_is_granted_after_it_leaves() {
 // ── tool.start run arguments (`PROTOCOL.md` §4 note / §12.6) ────────────────────────────────
 
 #[test]
+fn the_input_lease_names_the_running_holder_and_is_free_again_after_it_finishes() {
+    let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
+    assert_eq!(supervisor.input_lease(), Ok(None), "nothing is running yet");
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Spammer, &Value::Null),
+        StartReply::Started
+    );
+    wait_for(&events, "the run starts", |event| {
+        state_phase(event) == Some("running")
+    });
+    assert_eq!(
+        supervisor.input_lease(),
+        Ok(Some(
+            "\"spammer\" is using the game right now — stop it, then try again.".to_owned()
+        )),
+        "the pointer action must name the holder"
+    );
+
+    assert_eq!(
+        supervisor.stop_tool(None),
+        StopReply::Stopping {
+            tool: ToolId::Spammer
+        }
+    );
+    let _ = until_finished(&events);
+    assert_eq!(
+        supervisor.input_lease(),
+        Ok(None),
+        "the lease is free again after the finish"
+    );
+    supervisor.shutdown("test");
+}
+
+#[test]
 fn start_arguments_reach_create_verbatim() {
     let registry = FakeRegistry::new().with_script(
         ToolId::Spammer,
