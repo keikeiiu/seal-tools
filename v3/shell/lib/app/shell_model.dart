@@ -44,11 +44,12 @@ const int _sellSlotCount = 64;
 class ShellModel extends ChangeNotifier {
   ShellModel({
     required this.transportFactory,
-    this.host = const MethodChannelHostActions(),
+    HostActions? host,
     this.shellVersion = protocolClientVersion,
     this.requestTimeout = const Duration(seconds: 10),
     this.handshakeTimeout = const Duration(seconds: 5),
-  }) {
+    this.windowSaveDebounce = const Duration(milliseconds: 600),
+  }) : host = host ?? const MethodChannelHostActions() {
     connection.addListener(_onSubmodelChanged);
     tools.addListener(_onSubmodelChanged);
     config.addListener(_onSubmodelChanged);
@@ -61,6 +62,10 @@ class ShellModel extends ChangeNotifier {
 
   /// The runner window seam. Production uses the `seal/host` method channel; tests inject a fake.
   final HostActions host;
+
+  /// How long a user move/resize must settle before the placement is written with `ui.window`.
+  /// A drag reports a rect on every step; one write per settled placement keeps `local.yaml` quiet.
+  final Duration windowSaveDebounce;
 
   /// The shell's PROTOCOL CLIENT identity, sent in `hello`; supplied by `main.dart` from
   /// `version.dart`. It is not the product version (the app bar shows [productVersion]) and the
@@ -149,6 +154,139 @@ class ShellModel extends ChangeNotifier {
     }
   }
 
+  // ── window placement (v2 parity: the launcher reopens where the player left it) ─────────────
+
+  StreamSubscription<WindowRect>? _windowMoveSubscription;
+  Timer? _windowSaveTimer;
+  WindowRect? _lastSavedWindow;
+  WindowRect? _pendingWindow;
+
+  /// The placement the shell last applied or saved. A move event that reports the SAME rect is not
+  /// news — the restore's own `SetWindowPos` reports one too — so it never schedules a write.
+  WindowRect? get windowPlacement => _lastSavedWindow;
+
+  /// Restores `ui`'s remembered placement after `hello` and starts watching the runner's rect
+  /// reports.
+  ///
+  /// No placement stated (a fresh install, or v2's optional `LocalUi` fields left unset) means the
+  /// window keeps its created rect, which becomes the baseline a later move is compared against.
+  ///
+  /// A placement that still fits on the monitors that exist is applied exactly; one saved on a
+  /// monitor that is now gone is clamped into the PRIMARY work area, so the window opens somewhere
+  /// the player can see and reach instead of off-screen.
+  Future<void> _restoreWindowPlacement() async {
+    if (_disposed) {
+      return;
+    }
+    _windowMoveSubscription ??= host.windowMoves.listen(_onWindowMoved);
+    final saved = _savedWindowRect();
+    if (saved != null) {
+      try {
+        final virtualScreen = await host.virtualScreen();
+        var placed = saved;
+        if (!virtualScreen.encloses(saved)) {
+          placed = saved.clampedTo(await host.primaryWorkArea());
+        }
+        // Mark it BEFORE applying: the runner's own `windowMoved` for this SetWindowPos can reach
+        // Dart before the method reply, and it must compare equal to something (otherwise a launch
+        // with a remembered placement would write it straight back once).
+        final previous = _lastSavedWindow;
+        _lastSavedWindow = placed;
+        try {
+          await host.setWindowRect(placed);
+        } catch (error) {
+          _lastSavedWindow = previous;
+          rethrow;
+        }
+        if (placed != saved) {
+          logs.addShellNote(
+            'window placement clamped into the primary monitor '
+            '($saved → $placed)',
+          );
+        }
+        return;
+      } catch (error) {
+        logs.addShellNote('cannot restore the window placement: $error');
+      }
+    }
+    try {
+      _lastSavedWindow = await host.windowRect();
+    } catch (error) {
+      logs.addShellNote('cannot read the window placement: $error');
+    }
+  }
+
+  /// The machine `ui` block's remembered placement, or null when it is not all there: v2's
+  /// `LocalUi` keeps left/top/width/expanded_height optional, and a partial one is not a placement.
+  WindowRect? _savedWindowRect() {
+    final ui = asJsonMap(config.config['ui']);
+    final left = asNumber(ui['left'])?.round();
+    final top = asNumber(ui['top'])?.round();
+    final width = asNumber(ui['width'])?.round();
+    final height = asNumber(ui['expanded_height'])?.round();
+    if (left == null || top == null || width == null || height == null) {
+      return null;
+    }
+    return WindowRect(left: left, top: top, width: width, height: height);
+  }
+
+  void _onWindowMoved(WindowRect rect) {
+    if (!isReady || _closing || _disposed) {
+      return;
+    }
+    if (rect == _lastSavedWindow || rect == _pendingWindow) {
+      return;
+    }
+    _pendingWindow = rect;
+    _windowSaveTimer?.cancel();
+    _windowSaveTimer = Timer(windowSaveDebounce, () {
+      unawaited(_savePendingWindow());
+    });
+  }
+
+  Future<void> _savePendingWindow() async {
+    final rect = _pendingWindow;
+    _pendingWindow = null;
+    if (rect == null || _disposed || _closing || !isReady) {
+      return;
+    }
+    // The restore's own `SetWindowPos` can report its rect before the restore's await resumed; the
+    // pending copy is then already the saved placement and there is nothing to write.
+    if (rect == _lastSavedWindow) {
+      return;
+    }
+    // The capture lifecycle hides the window (hide → capture → show). A hidden window has no
+    // placement the player chose, so nothing is written then; the next move after the show is a
+    // fresh placement.
+    final bool visible;
+    try {
+      visible = await host.isWindowVisible();
+    } catch (error) {
+      logs.addShellNote('cannot read the window visibility: $error');
+      return;
+    }
+    if (!visible || _disposed || _closing || !isReady) {
+      return;
+    }
+    // `ui.window` carries the WHOLE five-field machine block, so the stored pin travels through
+    // unchanged: `pinned` belongs to v2's machine `ui` block, while the portable pin is
+    // `settings.ui.always_on_top` (`setAlwaysOnTop`) — this feature never edits either.
+    final pinned = asBool(asJsonMap(config.config['ui'])['pinned']) ?? false;
+    final saved = await saveWindow(
+      UiWindowArgs(
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        pinned: pinned,
+      ),
+    );
+    if (saved) {
+      _lastSavedWindow = rect;
+    }
+    // A refusal is already on the log/status through `_voidCommand`; the next settled move retries.
+  }
+
   /// Spawns (or reuses) the core, performs `hello`, and fills the config mirror.
   ///
   /// Safe to call more than once: a call while a connection attempt is in flight joins it. A failure
@@ -224,6 +362,9 @@ class ShellModel extends ChangeNotifier {
     // The config mirror is now the truth; apply the persisted pin exactly once. Hide/show stays
     // untouched: this is one SetWindowPos, not part of the capture's frame lifecycle.
     await _applyAlwaysOnTopFromMirror();
+    // Then put the window back where the player left it (v2 parity), clamped into the primary
+    // monitor, and start watching for the moves this run will remember.
+    await _restoreWindowPlacement();
   }
 
   /// One click, one new process, one new handshake ([PLAN-V3-SHELL.md] §2) — never an auto loop.
@@ -788,6 +929,8 @@ class ShellModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _windowSaveTimer?.cancel();
+    _windowMoveSubscription?.cancel();
     connection.removeListener(_onSubmodelChanged);
     tools.removeListener(_onSubmodelChanged);
     config.removeListener(_onSubmodelChanged);

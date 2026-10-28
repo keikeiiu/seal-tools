@@ -12,6 +12,10 @@ import 'package:seal_shell/protocol/protocol.dart';
 
 import '../support/app_harness.dart';
 
+/// A logical window rect, written once so the placement tests stay readable.
+WindowRect _rect(int left, int top, int width, int height) =>
+    WindowRect(left: left, top: top, width: width, height: height);
+
 void main() {
   test('hello fills the connection and the config mirror', () async {
     final harness = AppHarness();
@@ -433,6 +437,317 @@ void main() {
       );
       expect(harness.lastSentWithCmd('config.validate'), isNull);
       expect(harness.lastSentWithCmd('config.apply'), isNull);
+    },
+  );
+
+  // ── window placement (v2 parity: the launcher reopens where the player left it) ─────────────
+
+  test(
+    'a remembered placement is applied after hello, with no config write',
+    () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+
+      await harness.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'ui': {
+            'left': 120,
+            'top': 80,
+            'width': 1000,
+            'expanded_height': 700,
+            'pinned': false,
+          },
+        },
+      );
+
+      // The machine `ui` block's v2 names map onto the host call in LOGICAL coordinates: the
+      // runner does the DPI conversion, the shell never sees a scale factor.
+      expect(host.appliedRects, [
+        const WindowRect(left: 120, top: 80, width: 1000, height: 700),
+      ]);
+      expect(
+        harness.model.windowPlacement,
+        const WindowRect(left: 120, top: 80, width: 1000, height: 700),
+      );
+      // Restoring is a window action, not a config write — the core writes `ui.window` only when
+      // the PLAYER moves the window.
+      expect(harness.lastSentWithCmd('ui.window'), isNull);
+    },
+  );
+
+  test('a placement on a monitor that still exists is kept exactly', () async {
+    final host = FakeHost(
+      primaryWorkArea: const WindowRect(
+        left: 0,
+        top: 0,
+        width: 1920,
+        height: 1040,
+      ),
+      virtualScreen: const WindowRect(
+        left: 0,
+        top: 0,
+        width: 3840,
+        height: 1040,
+      ),
+    );
+    final harness = AppHarness(host: host);
+    addTearDown(harness.dispose);
+
+    await harness.connect(
+      config: {
+        'window': {'title': 'TW_LIVE'},
+        'ui': {
+          'left': 2100,
+          'top': 100,
+          'width': 1000,
+          'expanded_height': 700,
+          'pinned': false,
+        },
+      },
+    );
+
+    expect(host.appliedRects, [
+      const WindowRect(left: 2100, top: 100, width: 1000, height: 700),
+    ], reason: 'a secondary monitor that still exists is not clamped away');
+    expect(
+      harness.model.logs.entries.any(
+        (entry) => entry.text.contains('window placement clamped'),
+      ),
+      isFalse,
+    );
+  });
+
+  test(
+    'an off-screen placement is clamped into the primary work area',
+    () async {
+      final host = FakeHost(
+        primaryWorkArea: const WindowRect(
+          left: 0,
+          top: 0,
+          width: 1920,
+          height: 1040,
+        ),
+      );
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+
+      await harness.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'ui': {
+            'left': 5000,
+            'top': -900,
+            'width': 4000,
+            'expanded_height': 3000,
+            'pinned': false,
+          },
+        },
+      );
+
+      expect(host.appliedRects, [
+        const WindowRect(left: 0, top: 0, width: 1920, height: 1040),
+      ], reason: 'the saved monitor is gone, so the primary one wins');
+      expect(
+        harness.model.logs.entries.any(
+          (entry) => entry.text.contains('window placement clamped'),
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'no remembered placement means the current rect becomes the baseline',
+    () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+
+      await harness.connect();
+
+      expect(host.appliedRects, isEmpty);
+      expect(host.windowRectQueries, 1);
+      expect(
+        harness.model.windowPlacement,
+        const WindowRect(left: 10, top: 10, width: 1280, height: 720),
+      );
+    },
+  );
+
+  test('a settled move is saved once with the LAST rect', () async {
+    final host = FakeHost();
+    final harness = AppHarness(
+      host: host,
+      windowSaveDebounce: const Duration(milliseconds: 20),
+    );
+    addTearDown(harness.dispose);
+    await harness.connect();
+
+    // Two reports inside the debounce are one placement: the player dragged once.
+    host.emitMove(_rect(100, 50, 1200, 800));
+    host.emitMove(_rect(140, 90, 1300, 840));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    final request = harness.lastSentWithCmd('ui.window');
+    expect(request, isNotNull);
+    expect(request!['args'], {
+      'left': 140,
+      'top': 90,
+      'width': 1300,
+      'height': 840,
+      // The whole five-field machine block is written by the command, so the stored pin rides
+      // along unchanged (this feature owns no pin; `settings.ui.always_on_top` is the portable
+      // one).
+      'pinned': false,
+    });
+    expect(
+      harness.sentMessages.where((message) => message['cmd'] == 'ui.window'),
+      hasLength(1),
+    );
+    harness.respondOk();
+    await settle();
+
+    // The restore/move echo of the rect just saved is not new information.
+    host.emitMove(_rect(140, 90, 1300, 840));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(
+      harness.sentMessages.where((message) => message['cmd'] == 'ui.window'),
+      hasLength(1),
+    );
+  });
+
+  test('a stored pin is carried through unchanged', () async {
+    final host = FakeHost();
+    final harness = AppHarness(
+      host: host,
+      windowSaveDebounce: const Duration(milliseconds: 20),
+    );
+    addTearDown(harness.dispose);
+    await harness.connect(
+      config: {
+        'window': {'title': 'TW_LIVE'},
+        'ui': {
+          'left': 100,
+          'top': 100,
+          'width': 1280,
+          'expanded_height': 720,
+          'pinned': true,
+        },
+      },
+    );
+
+    host.emitMove(_rect(200, 200, 1280, 720));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    expect(harness.lastSentWithCmd('ui.window')!['args'], {
+      'left': 200,
+      'top': 200,
+      'width': 1280,
+      'height': 720,
+      'pinned': true,
+    });
+    harness.respondOk();
+    await settle();
+  });
+
+  test(
+    'no placement is saved while the capture has the window hidden',
+    () async {
+      final host = FakeHost(visible: false);
+      final harness = AppHarness(
+        host: host,
+        windowSaveDebounce: const Duration(milliseconds: 20),
+      );
+      addTearDown(harness.dispose);
+      await harness.connect();
+
+      host.emitMove(_rect(100, 50, 1200, 800));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(
+        harness.lastSentWithCmd('ui.window'),
+        isNull,
+        reason: 'a hidden window has no placement the player chose',
+      );
+
+      // The show ends the capture; the next settled move is a real placement and saves.
+      host.visible = true;
+      host.emitMove(_rect(200, 120, 1200, 800));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(harness.lastSentWithCmd('ui.window')!['args'], {
+        'left': 200,
+        'top': 120,
+        'width': 1200,
+        'height': 800,
+        'pinned': false,
+      });
+      harness.respondOk();
+      await settle();
+    },
+  );
+
+  test('a refused ui.window is logged verbatim and the model stays usable', () async {
+    final host = FakeHost();
+    final harness = AppHarness(
+      host: host,
+      windowSaveDebounce: const Duration(milliseconds: 20),
+    );
+    addTearDown(harness.dispose);
+    await harness.connect();
+
+    host.emitMove(_rect(100, 50, 1200, 800));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(harness.lastSentWithCmd('ui.window'), isNotNull);
+    const refusal = 'ui.window field "pinned" has the wrong type';
+    harness.respondError('bad_request', message: refusal);
+    await settle();
+
+    expect(
+      harness.model.logs.entries.map((entry) => entry.text),
+      contains(refusal),
+      reason: 'the core\'s line reaches the status surface unchanged',
+    );
+    expect(harness.model.isReady, isTrue);
+    // The failed placement is not remembered as saved, so a later move retries.
+    host.emitMove(_rect(110, 60, 1200, 800));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(
+      harness.sentMessages.where((message) => message['cmd'] == 'ui.window'),
+      hasLength(2),
+    );
+    harness.respondOk();
+    await settle();
+  });
+
+  test(
+    'a host that cannot restore the placement logs it and stays ready',
+    () async {
+      final host = FakeHost(failWindowCalls: true);
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+
+      await harness.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'ui': {
+            'left': 1,
+            'top': 2,
+            'width': 3,
+            'expanded_height': 4,
+            'pinned': false,
+          },
+        },
+      );
+
+      expect(harness.model.isReady, isTrue);
+      expect(host.appliedRects, isEmpty);
+      expect(
+        harness.model.logs.entries.any(
+          (entry) => entry.text.contains('cannot restore the window placement'),
+        ),
+        isTrue,
+      );
     },
   );
 }

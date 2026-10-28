@@ -77,6 +77,29 @@ class _FakeHost implements HostActions {
   Future<void> setAlwaysOnTop(bool enabled) async {
     // The capture lifecycle does not use the pin; the model's own fake host covers it.
   }
+
+  // The window-placement half of the seam: the calibrate surface never asks for it, so these are
+  // inert values rather than recordings.
+  @override
+  Future<WindowRect> windowRect() async =>
+      const WindowRect(left: 0, top: 0, width: 1280, height: 720);
+
+  @override
+  Future<void> setWindowRect(WindowRect rect) async {}
+
+  @override
+  Future<WindowRect> primaryWorkArea() async =>
+      const WindowRect(left: 0, top: 0, width: 1920, height: 1040);
+
+  @override
+  Future<WindowRect> virtualScreen() async =>
+      const WindowRect(left: 0, top: 0, width: 1920, height: 1040);
+
+  @override
+  Future<bool> isWindowVisible() async => true;
+
+  @override
+  Stream<WindowRect> get windowMoves => const Stream<WindowRect>.empty();
 }
 
 Future<AppHarness> _pumpCalibrate(

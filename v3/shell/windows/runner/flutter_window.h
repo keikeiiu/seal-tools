@@ -31,9 +31,16 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // One tiny window-control channel (`seal/host`): hide/show for the capture lifecycle. The runner
-  // is the only place the process touches its own window.
+  // One tiny window-control channel (`seal/host`): hide/show for the capture lifecycle, the
+  // always-on-top pin, and the remembered window placement. The runner is the only place the process
+  // touches its own window, and, because the shell is DPI-unaware, the only place logical
+  // coordinates are converted to and from physical pixels.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> host_channel_;
+
+  // Reports the window's current rect to Dart as `windowMoved` (logical screen coordinates): after a
+  // user move/resize settles and when the window is maximized or restored. Dart debounces the
+  // `ui.window` write; a no-op before the channel exists.
+  void NotifyWindowMoved();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

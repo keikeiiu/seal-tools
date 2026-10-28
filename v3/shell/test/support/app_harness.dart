@@ -18,6 +18,7 @@ class AppHarness {
   AppHarness({
     this.shellVersion = '0.1.0',
     Duration requestTimeout = const Duration(seconds: 10),
+    this.windowSaveDebounce = const Duration(milliseconds: 600),
     FakeHost? host,
   }) : host = host ?? FakeHost() {
     model = ShellModel(
@@ -25,10 +26,15 @@ class AppHarness {
       host: this.host,
       shellVersion: shellVersion,
       requestTimeout: requestTimeout,
+      windowSaveDebounce: windowSaveDebounce,
     );
   }
 
   final String shellVersion;
+
+  /// The placement save's debounce, short in tests so a move settles without a real 600 ms wait.
+  final Duration windowSaveDebounce;
+
   late final ShellModel model;
 
   /// The fake runner the model talks to for hide/show and always-on-top; the harness supplies one
@@ -253,6 +259,7 @@ class AppHarness {
 
   Future<void> dispose() async {
     model.dispose();
+    await host.closeMoves();
     for (final fake in transports) {
       await fake.dispose();
     }
