@@ -172,7 +172,7 @@ that it is saved on **Calibrate**).
 
 | Card | What a run does |
 |---|---|
-| **Skill Spammer** | Presses the active preset's cooldown-governed rotation: the opening sequence, then combos (each step must be atomic), then the singles on their own cooldowns. It has no natural end; it runs until Stop. It stands down when another tool needs the game. A leading `*` in a key means the fast tap. |
+| **Skill Spammer** | Presses the active preset's cooldown-governed rotation: the opening sequence, then combos (each step must be atomic), then the singles on their own cooldowns. It has no natural end; it runs until Stop. It stands down when another tool needs the game. A leading `*` in a key means the fast tap. The card's **Rotation** picker chooses which preset that is and saves it as the active preset. |
 | **Magic Tuner** | Clicks the 發條 button through the board, OCRs the result panel, and repeats until the target grade and filter match, the retry budget runs out, the same result repeats three times, the cursor guard trips, the panel cannot be read, or you press Stop. |
 | **Buy** | One counted pass: focus the game, scroll the shop list for the selected preset, then for each of the count: click the row, click MAX, Enter, Enter. Finished line `Bought {n}x '{item}'.`; stops by itself. |
 | **Sell** | One counted pass over the slots marked for that run in the Sell grid, highest slot first, capped by the sell cap. Finished line `Sold {n} slot(s).`; stops by itself. Selling cannot be undone. |
@@ -188,7 +188,9 @@ again."), rather than stopping the first tool for you.
 
 **The resident Pet Feeder.** Starting another tool leaves the feeder armed; a reload that comes due
 while that tool runs waits, and the feeder's card says it is waiting. This is why a quit/stop of the
-foreground tool never ends a four-row feeding schedule.
+foreground tool never ends a four-row feeding schedule. It also persists its own progress as it works
+(`food_slots_used` and each row's `boarding_running`), so a restart resumes with the cells and boarding
+state it already reached rather than the pre-run values.
 
 **The Buy card's run choice (v3.0).** The Buy card carries **Buy item** (one of `buy_sell.presets`) and
 a **count** stepper. They choose **this run only** — nothing is saved to the config, so the next run
@@ -224,6 +226,18 @@ Presets of key rotations. **Presets** lists them; you can **Add**, **Rename**, *
 
 A leading `*` is the fast tap form. A missing active preset or an empty preset list is refused at
 Start with a line naming the tab.
+
+The **Skill Spammer card** has a compact **Rotation** picker, v2's card control: choosing a preset
+there makes it the active rotation and saves `spammer.active` through the normal config save, so the
+choice persists across runs and restarts (v3 deliberately differs from v2's in-memory card here:
+the core is the only writer). Start still sends the plain `{"tool":"spammer"}` — there is no per-run
+spammer argument — and a refused save shows the core's line under the card. The tab's **Active preset
+(runs)** is the same field, so the tab and the card always agree.
+
+**The last preset cannot be deleted.** The **Delete** action stays enabled, but refuses with “The last
+preset cannot be deleted.” (the tab's note line) while deleting it would leave a spammer config with no
+rotation to press. Create another preset first; the guard is v2's, and the draft is untouched by the
+refused action.
 
 ### 5.2 Tuner
 
@@ -263,7 +277,11 @@ The calibrated geometry block here is **read-only this wave** — draw those mar
 The sell-slot *selection* is editable, but it needs the calibrated **Bag grid** to place its cells and
 it is for the next run only.
 
-- **Buy presets** — item name, then **Scroll notches**, **Row** and **Count per run**. Add/delete
+- **Buy presets** — item name, then **Scroll notches**, **Row** and **Count per run**. **Row** is a
+  **Row 1**…**Row N** picker derived from the calibrated shop list (labels are 1-based; the config stores
+  the 0-based row index the geometry uses), so the off-by-one number cannot be typed. A preset migrated
+  with a row past the calibrated list shows that row marked “past the bottom of the list” — plus the
+  warning naming the visible row count — and it cannot be picked again; choose a lower row. Add/delete
   presets with **Add item** / **Delete item**. The Buy card picks one for a run (not saved).
 - **Sell** — **Max slots per run (sell cap)**, the hard ceiling on one sell pass, and the **bag-slot
   selection**: an 8×8 grid of the bag, where each cell toggles one slot. The header above it prints the
@@ -292,9 +310,13 @@ row. The tab has three parts:
   Quest card's pickers edit too.
 - **Flows** — per flow: the **Initial wait (s)**, **Loops**, and an ordered step list of **Action**
   (`click` / `right_click` / `key` / `enter` / `wait`; `wait` is the no-input pause), **Key value** and
-  **Delay (s)**, with move up/move down/remove. Add and delete flows by name.
+  **Delay (s)**, with move up/move down/remove. Add and delete flows by name. The delete action stays
+  enabled but refuses “This is the only flow — create another before deleting it.” in the tab's note
+  line while it is the last flow (a quest config with no flow has nothing a run can replay).
 - **Sequences** — per sequence: **Initial wait (s)**, **Master loops**, and the flow entries with their
-  **Flow** name and **Times**. The core refuses a save whose sequence names a flow that does not exist.
+  **Flow** name and **Times**. The pickers offer only existing names; deleting a flow that a sequence
+  still names leaves a dangling reference, which the core refuses on Save (the same as v2) — update the
+  sequence before deleting that flow.
 
 The run only clicks where **you** put the cursor during the positioning countdown, and it watches the
 cursor against **Cursor guard px**; moving the mouse past the guard stops it.
@@ -305,6 +327,11 @@ The feeder's setup — the machine rows, queue, bag food cells and run settings,
 fallbacks — edited in one place and saved together. **One Save** sends one `config.apply` carrying the
 machine `pet` block and/or the portable `settings.pet` halves (whichever have data); a refusal leaves
 the edits in place.
+
+The feeder also keeps its own run progress: while it works it saves `food_slots_used` and each row's
+`boarding_running`, so a crash or restart does not resume aiming at used cells or the wrong boarding
+state. The Pet tab's stored values can therefore update while a run is in progress — that is the
+feeder's own progress write, not a player edit.
 
 - **Breeding rows** — for each row the config already carries: **Row N enabled** (a ticked row is fed;
   an unticked one is ignored) and **Stacks per reload** (the food strip is divided by it). The row's

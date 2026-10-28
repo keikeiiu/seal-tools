@@ -75,24 +75,22 @@ The gaps still to restore, in the audit's priority order:
 
 **Restored since the audit** (verified in the committed shell/core): the Sell grid's **row 1..8**
 shortcuts, **Select all**/**Clear** and three-state cap status line; the **over-cap refusal** (A6 —
-the deduped, valid selection is compared with the cap and the start is refused before any click);
-and the **always-on-top pin** with its portable `settings.ui.always_on_top`. The pin is not window
-placement: saving the window's position/size is still missing and remains in the list below.
+the deduped, valid selection is compared with the cap and the start is refused before any click); the
+**always-on-top pin** with its portable `settings.ui.always_on_top`; the **Spammer card Rotation
+picker**; the **last-preset / last-flow deletion guards**; the **Buy row picker** (1-based labels,
+0-based stored, legacy out-of-range marked); and the **Pet Feeder's run-state persistence**
+(`food_slots_used` and per-row `boarding_running` are written mid-run, so a restart no longer resumes
+on stale state). The pin is not window placement: saving the window's position/size is still missing
+and remains in the list below.
 
-- **Pet run-state persistence (safety).** v2 wrote ood_slots_used, per-row oarding_running and the
-  close-guard belief back to local.yaml mid-run; v3 reads but never writes them, so a restart can make
-  the feeder feed used cells again. Needs a protocol ruling for core-initiated run-state writes
-  (PROTOCOL 7 anticipates the emitter) and a Pet-tab boarding surface.
 - **Buy/Sell dry runs** (click nothing; verify targeting) and **Quest Test one loop** - v2's two
   pre-run safety tests; absent in v3 (need run-argument commands).
 - **Pet tab session surface** - capture/scan food cells, queue pets by icon capture, bank scans, test
   read, and the Setup-so-far / Ready-to-run checklists (v2's Pet-tab maintenance workflow).
-- **Deletion guards** - the last spammer preset / last quest flow / sequence only-flow guards v2 had.
-- **Spammer card rotation picker**; **Tuner card live detail** (grade/remaining/attempt/attributes -
-  needs a ToolStatus/protocol extension); **Arduino connection diagnostics** (port list, chosen marker,
-  VID/PID/PnP, firmware detail); **Tuner clean-up-captures**; **Spammer advanced raw-key editor**;
-  **Buy row labelled picker** (v2 removed the free field after an off-by-one bought the wrong item);
-  **window placement persistence** (v2 remembered it; saveWindow has no caller).
+- **Tuner card live detail** (grade/remaining/attempt/attributes - needs a ToolStatus/protocol
+  extension); **Arduino connection diagnostics** (port list, chosen marker, VID/PID/PnP, firmware
+  detail); **Tuner clean-up-captures**; **Spammer advanced raw-key editor**; **window placement
+  persistence** (v2 remembered it; saveWindow has no caller).
 - **Calibration plan additions**: the Pet tab's Setup-so-far checklist; loading the saved overlay
   PNG when a calibrate tab reopens; one decided home for the Gem Move mode.
 
