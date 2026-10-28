@@ -76,9 +76,10 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 - **Capture/hide lifecycle is CLOSED**: the runner's `seal/host` channel and the Calibrate
   hide → one frame → capture → show path landed (`CUTOVER.md` decision 8), so calibrating from the UI
   works.
-- **Sell-slot selection is CLOSED**: the Buy/Sell tab's 8×8 bag-cell grid saves `buy_sell.sell_slots`
-  with its own **Save selection** (machine block, persisted in `local.yaml`). This deliberately
-  replaces v2's memory-only selection; no open sell-slot work remains.
+- **Sell-slot selection is CLOSED (v2 parity restored)**: the per-run selection is implemented —
+  the Sell tab's 8×8 grid is memory-only, the **Sell card's Start** sends it as `tool.start`'s `slots`
+  (PROTOCOL §12.6), and `buy_sell.sell_slots` is never read by a run (migration-compatible field only).
+  No open sell-slot work remains.
 - **What remains is not a release INPUT**: the player's live acceptance pass (the repo rule: a tool is
   done when it has run) and the publishing steps (merge/tag/GitHub release/root README) listed in
   [CUTOVER.md](../plans/CUTOVER.md)'s publishing checklist.

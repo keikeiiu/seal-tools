@@ -207,8 +207,8 @@ Which marks to draw depends on the tools you will use — the picker groups them
   session-shaped calibration); they stay hand-edited in `config/local.yaml` under `tuner.ocr` /
   `tooltip`. The pet's reference crops are also not drawable marks yet, but the **Pet** tab edits the
   rows and food cells the config already carries once its boarding bag grid/slot are calibrated, and
-  the **Buy/Sell** tab's Sell section has its own bag-cell grid that saves `sell_slots`. See the
-  guide's sections 5.4 and 5.6.
+  the **Buy/Sell** tab's Sell section has its own bag-cell grid for the next run — that selection is
+  memory-only, sent by the **Sell card's Start**, and never saved. See the guide's sections 5.4 and 5.6.
 
 **Do one short run before trusting anything.** Press **Probe board** on Arduino/Setup, then start the
 shortest run you have configured on the Cards page — a Spammer run after adding a preset on the

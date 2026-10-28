@@ -168,7 +168,7 @@ that it is saved on **Calibrate**).
 | **Skill Spammer** | Presses the active preset's cooldown-governed rotation: the opening sequence, then combos (each step must be atomic), then the singles on their own cooldowns. It has no natural end; it runs until Stop. It stands down when another tool needs the game. A leading `*` in a key means the fast tap. |
 | **Magic Tuner** | Clicks the 發條 button through the board, OCRs the result panel, and repeats until the target grade and filter match, the retry budget runs out, the same result repeats three times, the cursor guard trips, the panel cannot be read, or you press Stop. |
 | **Buy** | One counted pass: focus the game, scroll the shop list for the selected preset, then for each of the count: click the row, click MAX, Enter, Enter. Finished line `Bought {n}x '{item}'.`; stops by itself. |
-| **Sell** | One counted pass over the saved slot selection, highest slot first, capped by the sell cap. Finished line `Sold {n} slot(s).`; stops by itself. Selling cannot be undone. |
+| **Sell** | One counted pass over the slots marked for that run in the Sell grid, highest slot first, capped by the sell cap. Finished line `Sold {n} slot(s).`; stops by itself. Selling cannot be undone. |
 | **Gem Composer** | Selects a grade, moves to Register, combines; an empty result box (after the configured empty streak) advances N → G → DG, and the run ends by itself after the last grade. |
 | **Quest Hand-in** | Replays your flow (or sequence) at the quest NPC the configured number of times, checks the cursor guard, and ends with `DONE — {n} loop(s)…`. It reads nothing from the screen. |
 | **Pet Feeder** | The resident tool: keeps each ticked breeding row fed by reloading the feeder before the pet runs out. It publishes one row line per breeding row with its schedule, and keeps running (and waiting) until Stop. The next reload waits while another tool has the game. |
@@ -202,8 +202,8 @@ once a second; it is a display of the core's value, not a second schedule.
 ## 5. The tool tabs
 
 The tabs edit settings; the **core** merges and writes them, and every refusal line is shown as-is.
-Changes are saved with the tab's **Save** button (some cards' pickers save immediately — the Buy card's
-run choice is the exception and never saves).
+Changes are saved with the tab's **Save** button (the Quest card's pickers save immediately; the Buy
+and Sell cards' run choices never save — they affect that run only).
 
 ### 5.1 Spammer
 
@@ -253,7 +253,8 @@ The gem composer's grades and behaviour; the calibrated **Grade positions**, **R
 ### 5.4 Buy/Sell
 
 The calibrated geometry block here is **read-only this wave** — draw those marks in **Calibrate**.
-The sell-slot *selection* is editable, but it needs the calibrated **Bag grid** to place its cells.
+The sell-slot *selection* is editable, but it needs the calibrated **Bag grid** to place its cells and
+it is for the next run only.
 
 - **Buy presets** — item name, then **Scroll notches**, **Row** and **Count per run**. Add/delete
   presets with **Add item** / **Delete item**. The Buy card picks one for a run (not saved).
@@ -261,13 +262,13 @@ The sell-slot *selection* is editable, but it needs the calibrated **Bag grid** 
   selection**: an 8×8 grid of the bag, where each cell toggles one slot. The header above it prints the
   pitch derived from the calibrated **Bag grid**, and a line below shows how many of the 64 slots are
   selected; until that mark is saved the grid is disabled with a line pointing at **Calibrate**, because
-  a Sell run cannot place the cells without it. **Save selection** sends exactly `buy_sell.sell_slots`
-  (a machine block) through the normal validate/apply path, so the selection persists in `local.yaml`
-  across restarts — a deliberate change from v2, whose selection lived only in memory. The tab's
-  **Save** saves the presets and the cap; the selection has its own button, and a refusal leaves it
-  dirty and editable. At run time the core sells the selected slots highest index first and never past
-  the cap — the saved list's order is not the sell order. Without a selection the Sell card refuses
-  with "No slots are selected to sell."
+  a Sell run cannot place the cells without it. **The selection is for the next Sell run and is not
+  saved** — it lives only in the shell's memory (it starts empty each launch) and there is no Save
+  button for it: a stored selection could sell the slots chosen last time, so v3 keeps v2's per-run
+  behaviour. Press **Start** on the **Sell card** to send the current selection; with nothing selected
+  the card shows the core's own "No slots are selected to sell." line. The tab's **Save** still saves
+  the presets and the cap. At run time the core sells the selected slots highest index first and never
+  past the cap.
 
 ### 5.5 Quest
 
@@ -450,9 +451,9 @@ deliberately offers no fake one.
   is even learned by the run), not frame marks. The Pet tab edits the setup the config already carries,
   but adding rows or queue entries and re-capturing those crops needs the pet capture session
   (section 11).
-- **The sell-slot selection** — not a calibration mark: it is a bag-cell selection edited on the
-  **Buy/Sell** tab (§5.4). It needs the calibrated **Bag grid** to place the cells, but has no kind of
-  its own.
+- **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
+  the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
+  cells, but has no kind of its own.
 - **The environment check (Detect)** — the comparison rule exists in the core, but v3.0's Setup surfaces
   do not show a "your display moved" result yet. If you change monitor, scale, window size or move to a
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
@@ -539,8 +540,9 @@ the protocol gains the commands that measurement chooses. It is listed in the re
    entries, marks the bag food cells and sets the load mode and timings; adding rows/queue entries or
    re-capturing crops still comes from a migrated v2 `local.yaml` or a hand-edited block. Then **Start**
    on the card. **Stop** when done.
-4. For Buy/Sell use the card's run choice (Buy) or the saved slot selection (Sell) and remember: Sell
-   is irreversible and capped.
+4. For Buy/Sell use the card's run choice (Buy), or mark the slots in the **Sell** grid and press
+   **Start** on the **Sell card** — the selection is for that run and is not saved. Remember: Sell is
+   irreversible and capped.
 5. Close Seal Tools when finished — closing the UI stops the tools and the core. One copy at a time
    (there is no single-instance guard in v3.0).
 
@@ -560,7 +562,7 @@ marks are physical client-relative offsets; they do not travel.
 | **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
 | A card line saying a mark isn't calibrated | Not a bug; the line names the **mark** to save and the single **Calibrate** tab. Draw that kind there (with its target instance if the kind is a named one) and save it. |
-| "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell and press **Save selection**; the grid needs the calibrated **Bag grid** (§5.4). A migrated v2 selection can already be present, but v3's editor is how you change it. |
+| "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell (it needs the calibrated **Bag grid**, §5.4), then press **Start** on the Sell card; with no slots marked the card shows this line. The selection is not saved. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
 | Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open (adding rows needs the pet capture session, section 11). |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
