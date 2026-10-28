@@ -382,12 +382,13 @@ does not open the board or read the game.
   line under the rows, and the tick shows the core's current value, so the feeder's own mid-run
   updates appear there too.
 - **Queue** — each queued pet shows its **captured icon** (the identity the run matches), an editable
-  **Label** (log/list only) and **Species** (the feeding-table line used for the minute estimate),
-  plus **Remove**. Edits and captured entries are saved by the tab's **Save** — unlike v2's per-edit
-  auto-save — and a new entry can be removed before Save. Species is a text field seeded from the last
-  queue entry (the shell cannot read v2's `docs/pet-data.csv` combo); a value that is not in the
-  feeding table simply has no minute estimate. When the queue is empty the **Return slot** is the
-  fallback the run right-clicks.
+  **Label** (log/list only) and **Species** (the free-text feeding-table line used for the minute
+  estimate), plus **Remove**. Edits and captured entries are saved by the tab's **Save** — unlike
+  v2's per-edit auto-save — and a captured entry is added to this list as a draft immediately (only
+  persistence waits for Save), so it can be Removed before saving. Species is seeded from the last
+  queue entry that has a non-empty species (the shell cannot read v2's `docs/pet-data.csv` picker or
+  validation); an empty or unmatched value simply has no minute estimate. When the queue is empty the
+  **Return slot** is the fallback the run right-clicks.
 - **Bag food cells** — per page (**ITEM1**..**ITEM3**) an 8×8 grid of the boarding bag; toggle the
   cells that hold pet food. The grid is available only after the **Boarding bag grid** mark is
   calibrated; otherwise a line points at **Calibrate** (the boarding bag's own grid, not the shop's)
@@ -404,18 +405,22 @@ does not open the board or read the game.
   when the boarding window's own rate line cannot be read, and **Occupied above (0–1 distance)**, how
   unlike the empty reference a slot must look before it counts as occupied.
 
-**Add a pet by icon.** Put the bag page holding the pet on screen — the shell hides itself for the
-shot, so the game must be in front. Choose the page with the **ITEM1**..**ITEM3** chips, click the
-cell holding the pet, then press **Capture pet icon**. The page is not clicked for you, and a wrong
-page gives a plausible wrong crop: check the preview and the echoed page/cell/crop size before
-**Save**, because nothing is queued until then. A refused capture (another tool running, the game not
-in front, or the bag grid/page-tab mark uncalibrated) shows the core's line and changes nothing;
-without a calibrated bag grid the capture controls are not offered.
+**Add a pet by icon.** Put the bag page holding the pet on screen — captures need the game in front,
+and the shell flashes hidden briefly for the shot. Choose the page with the **ITEM1**..**ITEM3** chips,
+click the cell holding the pet, then press **Capture pet icon** (one capture at a time). The page is
+not clicked for you, and the capture uses the screen only — no Arduino is opened. The preview and the
+echoed page/cell/crop size do not verify correctness — a wrong page gives a plausible wrong crop — so
+check them yourself; the icon is added to the queue list as a draft, the tab's **Save** writes it, and
+you can **Remove** it before saving. A refused capture (another tool running, the game not in front, or
+the page-tab mark uncalibrated) shows the core's line and changes nothing. The capture controls are
+absent only when the bag grid is uncalibrated; with a calibrated grid but an unmarked page tab, or
+while a tool runs, they are shown and the core refuses.
 
 **Capture food icon.** Mark a food cell first — the newest mark is the source — put that page on
-screen and press **Capture food icon**. The preview is the reference the food scan will match;
-**Save** writes `pet.food_icon_png`. Neither icon is the boarding A1 writer: both are ordinary config
-fields saved by the tab's Save.
+screen and press **Capture food icon**. The captured icon is the reference a future food scan will
+use; the bag/food scans themselves are increment 3+ and not built in this version. **Save** writes
+`pet.food_icon_png`. Neither icon is the boarding A1 writer: both are ordinary config fields saved by
+the tab's Save.
 
 The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
 the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no
