@@ -8,9 +8,9 @@
 //! Two notes, both recorded rather than hidden:
 //!
 //! - **Both tools take their run parameters from `tool.start`** (`PROTOCOL.md` §4 note / §12.6):
-//!   `buy` carries `preset` and `count`; `sell` carries `slots`, a per-run bag selection that
-//!   REPLACES the migrated `buy_sell.sell_slots` fallback and is never written back to config. A
-//!   missing buy `count` uses the preset's configured count, an explicit count below 1 is refused at
+//!   `buy` carries `preset` and `count`; `sell` carries `slots`, its ONLY selection for that run.
+//!   Absent slots mean an empty selection (never the migrated `buy_sell.sell_slots` field), and
+//!   nothing is ever written back to config. A missing buy `count` uses the preset's configured count, an explicit count below 1 is refused at
 //!   the argument layer, and `buy_plan` resolves the preset against `buy_sell.presets`; without a
 //!   preset it answers the domain's own "No buy preset selected." line, and an unknown name the
 //!   domain's line naming it.
@@ -27,7 +27,11 @@ use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::ToolId;
 use serde_json::Value;
 
-/// The merged config's `buy_sell` block, as the domain's decision half wants it.
+/// The merged config's `buy_sell` block as the DOMAIN decision half wants it. Deliberately does
+/// NOT read `buy_sell.sell_slots`: that persisted field is migration data with no writer, and a sell
+/// run's selection comes only from `tool.start`'s `slots` argument. `ShopSettings::sell_slots` is
+/// therefore left empty here and filled at the run seam; the typed model keeps the config field for
+/// compatibility only.
 pub fn settings(config: &Value) -> ShopSettings {
     let block = config.get("buy_sell");
     let ints = |name: &str| -> Option<Vec<i32>> {
@@ -61,36 +65,34 @@ pub fn settings(config: &Value) -> ShopSettings {
             .cloned()
             .and_then(|value| serde_json::from_value::<BTreeMap<String, BuyPreset>>(value).ok())
             .unwrap_or_default(),
-        sell_slots: ints("sell_slots").unwrap_or_default(),
+        sell_slots: Vec::new(),
         sell_cap: integer("sell_cap").unwrap_or(0),
     }
+}
+
+/// One SELL pass with no run argument: an EMPTY selection, never the persisted config field, so the
+/// domain's own "No slots are selected to sell." line is the answer.
+pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
+    sell_plan_with_slots(config, None)
 }
 
 /// One SELL pass, validated: the domain refuses an uncalibrated grid, a missing MAX/focus point, an
 /// empty selection, or a selection above the per-run cap BEFORE this returns.
 ///
-/// `slots` is the per-run selection from `tool.start` (`PROTOCOL.md` §4 / §12.6 ruling 6). It
-/// REPLACES the migrated config's `buy_sell.sell_slots` for this run only; config is read, never
-/// written. `None` keeps the v2-compatibility fallback from the config.
-pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
-    sell_plan_with_slots(config, None)
-}
-
-/// [`sell_plan`] with the run argument applied: the selected bag cells, or the config fallback when
-/// the per-run argument is absent. The domain does the filtering, dedupe, sort and `sell_cap`.
+/// `slots` is the per-run selection from `tool.start` (`PROTOCOL.md` §4 / §12.6 ruling 6). It is the
+/// ONLY source of a sell run's selection: absent means empty, not the migrated config field, and
+/// nothing is ever written back. The domain does the filtering, dedupe, sort and `sell_cap`.
 pub fn sell_plan_with_slots(config: &Value, slots: Option<&[i32]>) -> Result<ShopPlan, StopReason> {
     let mut settings = settings(config);
-    if let Some(slots) = slots {
-        settings.sell_slots = slots.to_vec();
-    }
+    settings.sell_slots = slots.unwrap_or_default().to_vec();
     ShopPlan::sell(&settings)
 }
 
 /// The supervisor's cheap availability gate for SELL. The per-run selection arrives later with
 /// `tool.start`, so this validates the calibration/geometry half with a probe selection instead of
-/// rejecting a config whose persisted fallback is empty (or too large): the selection is run data,
-/// not availability. A start with no selection still reaches `create`, where the domain answers its
-/// own "No slots are selected to sell." line.
+/// consulting the config's `sell_slots`: the selection is run data, not availability. A start with
+/// no selection still reaches `create`, where the domain answers its own "No slots are selected to
+/// sell." line.
 pub fn sell_available(config: &Value) -> Result<(), StopReason> {
     let mut settings = settings(config);
     settings.sell_slots = vec![0];
@@ -215,7 +217,10 @@ mod tests {
         assert_eq!(settings.shop_rows, 5);
         assert_eq!(settings.scroll_point, Some(vec![1000, 420]));
         assert_eq!(settings.sell_cap, 5);
-        assert_eq!(settings.sell_slots, vec![3, 1]);
+        assert!(
+            settings.sell_slots.is_empty(),
+            "the saved field is not adopted into the run shape"
+        );
         assert_eq!(
             settings.presets.get("potion").map(|preset| preset.row),
             Some(1)
@@ -224,7 +229,7 @@ mod tests {
 
     #[test]
     fn a_sell_pass_is_focus_then_each_selected_slot_high_first() {
-        let plan = sell_plan(&config()).expect("the plan validates");
+        let plan = sell_plan_with_slots(&config(), Some(&[3, 1])).expect("the plan validates");
         let mut tool = ShopTool::new(ToolId::Sell, plan);
 
         // Focus: place the scroll point, wait, left click, wait.
@@ -267,18 +272,19 @@ mod tests {
     }
 
     #[test]
-    fn a_sell_pass_with_no_selected_slots_is_refused_with_the_domain_line() {
-        let mut config = config();
-        config["buy_sell"]["sell_slots"] = serde_json::json!([]);
+    fn a_sell_run_without_slots_ignores_the_config_selection_and_refuses() {
+        // v3.0.1 could have left a stale selection here; a start with no `slots` must not sell it.
+        let config = config();
+        assert_eq!(config["buy_sell"]["sell_slots"], serde_json::json!([3, 1]));
 
-        let reason = sell_plan(&config).expect_err("nothing selected");
+        let reason = sell_plan(&config).expect_err("a saved selection is not run data");
 
         assert_eq!(reason.message, "No slots are selected to sell.");
     }
 
     #[test]
-    fn a_sell_run_uses_the_start_slots_over_the_config_fallback() {
-        let config = config(); // the fallback selection is [3, 1]
+    fn a_sell_run_uses_the_start_slots_and_ignores_the_config_field() {
+        let config = config(); // the stale config field is [3, 1]
         let plan =
             sell_plan_with_slots(&config, Some(&[5, 1, 5])).expect("the run selection validates");
 
@@ -307,21 +313,17 @@ mod tests {
     }
 
     #[test]
-    fn a_sell_run_without_slots_uses_the_migrated_config_fallback() {
-        let plan = sell_plan_with_slots(&config(), None).expect("the fallback selection validates");
-        assert_eq!(plan.done_message, "Sold 2 slot(s).");
+    fn a_sell_run_without_slots_never_uses_the_config_selection() {
+        let mut config = config();
+        config["buy_sell"]["sell_slots"] = serde_json::json!([9, 8, 7]);
+        let error = sell_plan_with_slots(&config, None)
+            .expect_err("a saved selection is migration data, not a run fallback");
+        assert_eq!(error.message, "No slots are selected to sell.");
 
-        let centres = seal_domain::tools::shop::BagGrid::centres(Some(&[0, 0, 800, 600]));
-        let places: Vec<_> = plan
-            .steps
-            .iter()
-            .filter_map(|step| match step {
-                ShopStep::Place(point) => Some(*point),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(places[1], centres[3]);
-        assert_eq!(places[3], centres[1]);
+        // The per-run selection is the only thing that can make a sell plan.
+        let plan =
+            sell_plan_with_slots(&config, Some(&[2])).expect("an explicit run selection validates");
+        assert_eq!(plan.done_message, "Sold 1 slot(s).");
     }
 
     #[test]
@@ -330,7 +332,7 @@ mod tests {
         unselected["buy_sell"]["sell_slots"] = serde_json::json!([]);
         assert!(
             sell_available(&unselected).is_ok(),
-            "the selection arrives with the start, so an empty fallback is not a preflight refusal"
+            "the selection arrives with the start, so the saved field is not a preflight refusal"
         );
 
         let mut uncalibrated = unselected.clone();

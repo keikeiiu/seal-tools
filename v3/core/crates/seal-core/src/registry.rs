@@ -418,7 +418,7 @@ impl Effects for KeyOnlyEffects {
     }
 }
 
-/// The validated sell selection from `tool.start`, or `None` for the config fallback. The
+/// The validated sell selection from `tool.start`; `None` means the run has no selection. The
 /// dispatcher already rejects malformed shapes; this re-checks at the creation seam so a direct
 /// caller cannot silently fall back to a persisted selection.
 fn run_slots(args: &Value) -> Result<Option<Vec<i32>>, String> {
@@ -506,14 +506,15 @@ mod tests {
                 "bag_grid": [0, 0, 800, 600],
                 "max_button": [1200, 700],
                 "scroll_point": [1000, 420],
-                "sell_slots": [],
+                // A stale v3.0.1 Save-selection value: it must still not be a run fallback.
+                "sell_slots": [3, 1],
                 "sell_cap": 5
             }
         }));
         assert_eq!(
             without_selection.available(ToolId::Sell),
             Ok(()),
-            "an empty persisted fallback must not refuse a start that may carry slots"
+            "a saved sell_slots value must not refuse a start that may carry slots"
         );
         let error = match without_selection.create(
             ToolId::Sell,

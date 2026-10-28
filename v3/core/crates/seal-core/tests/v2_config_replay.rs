@@ -87,12 +87,27 @@ fn the_sanitized_v2_era_config_replays_through_the_tool_readers() {
     );
     assert_eq!(pet.setup.food_load_mode, "right_click");
 
-    // Buy/sell: the saved geometry and the v2-era selected slots are the ones the plan sees.
+    // Buy/sell: the saved geometry survives; the v2-era sell_slots field is model/migration data,
+    // NOT a run selection. A start with no `slots` must answer the domain's own refusal.
     let shop = shop::settings(&config);
     assert_eq!(shop.bag_grid, Some(vec![0, 0, 800, 600]));
     assert_eq!(shop.shop_rows, 5);
-    assert_eq!(shop.sell_slots, vec![1, 2]);
-    assert!(shop::sell_plan(&config).is_ok(), "sell plan resolves");
+    assert!(
+        shop.sell_slots.is_empty(),
+        "the run settings never adopt the saved field"
+    );
+    assert_eq!(
+        local
+            .buy_sell
+            .as_ref()
+            .and_then(|buy| buy.sell_slots.as_deref()),
+        Some(&[1, 2][..]),
+        "the typed model keeps the field for migration compatibility"
+    );
+    let refusal = shop::sell_plan(&config).expect_err("a saved selection is not run data");
+    assert_eq!(refusal.message, "No slots are selected to sell.");
+    let plan = shop::sell_plan_with_slots(&config, Some(&[1, 2])).expect("run slots plan");
+    assert_eq!(plan.done_message, "Sold 2 slot(s).");
 
     // Gem: the saved grade/resource marks and result area survive.
     let gem = gem::plan(&config).expect("gem plan");

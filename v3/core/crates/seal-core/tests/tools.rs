@@ -277,7 +277,7 @@ fn a_sell_start_without_slots_reaches_the_domains_selection_line() {
     // line arrives as the run's finish error, not as a bad_request from the dispatcher.
     root.write(
         "config/local.yaml",
-        "buy_sell:\n  bag_grid: [0, 0, 800, 600]\n  bag_slot: [0, 0, 100, 75]\n  shop_rows: 5\n  shop_region: [900, 400, 300, 250]\n  scroll_point: [1000, 420]\n  max_button: [1200, 700]\n  sell_cap: 5\n",
+        "buy_sell:\n  bag_grid: [0, 0, 800, 600]\n  bag_slot: [0, 0, 100, 75]\n  shop_rows: 5\n  shop_region: [900, 400, 300, 250]\n  scroll_point: [1000, 420]\n  max_button: [1200, 700]\n  sell_slots: [3, 1]\n  sell_cap: 5\n",
     );
     let before = root.read("config/local.yaml");
     let mut session = Session::start(root.path());

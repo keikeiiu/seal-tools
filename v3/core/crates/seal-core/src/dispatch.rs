@@ -1285,7 +1285,7 @@ mod tests {
         assert_eq!(
             start_arguments(ToolId::Sell, &json!({"tool": "sell"})).expect("no slots"),
             json!({}),
-            "absent slots leave the config fallback to create"
+            "absent slots leave the run empty; the saved config field is never consulted"
         );
 
         for (case, slots) in [
