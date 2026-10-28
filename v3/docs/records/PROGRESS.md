@@ -19,6 +19,55 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (26) — the parity audit, v3.0.3, and the calibration foundation
+
+The first two live passes had each found one design error (the Sell grid was persisted, then the tuning
+draft resets). The third pass found a different shape of problem: "for the sell grid, there are still
+features you missed from the original v2". A single miss could be a bug; a missing row of v2 controls
+was evidence the port had silently dropped the launcher work around the tools, so the player asked for
+the check to cover everything. The read-only v2→v3 audit (`5ff5b4f`, `records/PARITY-AUDIT-2026-10-28.md`)
+is that check: every surface, v2 evidence cited, deliberate differences listed with their spec line, and
+the four Calibrate surfaces + Setup Detect compared against the calibration plan rather than counted as
+gaps. It found one real safety regression: the Pet Feeder persisted `food_slots_used` and per-row
+`boarding_running` mid-run in v2 so a days-long run could not resume on stale state; v3 read them and
+never wrote them. `b6394e2` restores that through the config store's single writer (workers cannot use the
+dispatcher's rev; CoreState now shares an `Arc<AtomicU64>` and the registry carries a `PetStateSink`), emits
+one `config.changed` with no request/response (PROTOCOL `728a15a`), logs a failed write and keeps running.
+The close-guard fields have the writer but no producer until the close-probe port — named, not faked.
+
+The rest of the release is the audit's quick batch plus two player asks. `0deda95`/`66d0f22` restore v2's
+Sell row/Select-all/Clear controls and make the over-cap guard compare the deduped valid selection rather
+than the raw list (the old check could refuse a run that would sell fewer). `b59ef12` adds the
+always-on-top pin as a portable `settings.ui.always_on_top`; proving it exposed a latent core bug —
+`settings.ui` was silently dropped by the portable projection, so the pin would have looked saved and
+vanished — fixed in `b0af630` by making `ui` a real post-template portable section with one writable
+leaf. `93d1099` brings the deletion guards, the Spammer card Rotation picker (it saves `spammer.active`
+rather than inventing a per-run argument the core does not accept) and the Buy row labelled picker (the
+field v2 removed after an off-by-one). `7dc70ea` restores remembered window placement/size: the runner
+owns DPI conversion, Dart restores/clamps/saves through the existing `ui.window` command with a debounce,
+and the limitations (no clean-shutdown hook, no maximized state) are documented rather than papered over.
+`27b9f56`/`10ed375` give the Tuner v2's clean-up-captures as an explicit `logs.cleanup_captures` command
+(PROTOCOL §2's one log-housekeeping exception) plus the button. `82d640c` adds read-only
+`board.details` — the facts behind the Arduino connection card only v3.0.4's tab will display.
+
+Calibration increment 0 landed on the way: core `pointer.place`/`pointer.click` (flat x/y, closed-loop
+placement, per-command input lease with `tool_busy` naming the holder; PROTOCOL §12.9) and the PNG
+annotation writer (`1485638`), the shell session draft and pointer actions (`6164497`). Two
+planning documents were committed — `PLAN-V3-PET-SESSION.md` (the Pet tab's missing v2 session
+surface, on the new run-state writer) and `PLAN-V3-STATUS-DETAIL.md` (card live detail in v3.1 via one
+additive `detail` field; Arduino diagnostics in v3.0.4 via `board.details`), the latter with ten Lead
+decisions. A builder-check of the B3 plan caught the firmware-cache architecture (worker detection needs
+the shared-cell pattern) and the cross-language fixture gate (the shell's test-only decoder must land with
+the fixtures) before either was coded.
+
+Gates at `898f861`: Rust 79 result lines/0 failed, Flutter 223/223, clippy/fmt/analyze/format clean,
+`flutter build windows --release` 0, publish selftest 26/26 and the stage/zip/firmware audits PASS.
+Artifacts: `dist/SealTools-v3.0.3.zip` 44,949,054 B `C19B85AB...441EE4F5`; firmware 5,254 B
+`498E6A4BA...35CCEF3B` (byte-identical to v3.0.0-v3.0.2 — no reflash; the v3.0.2 record's firmware hash
+had a transcription typo, corrected there with a note). Unpublished; CUTOVER has the publish checklist.
+Remaining from the audit is staged in OPEN §5: v3.0.4 (Arduino tab on `board.details`, then the Pet
+session surface) and v3.1 (B5 card live detail; dry runs / Quest Test-one-loop ride the command batch).
+
 ## 2026-10-28 (25) — the sell selection is per-run, and v3.0.2
 
 The second live pass corrected one design: *"sell selection could be different every sell."* v3.0.1

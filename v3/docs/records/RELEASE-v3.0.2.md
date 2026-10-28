@@ -13,7 +13,9 @@ Nothing has been published.
 | artifact | bytes | SHA-256 |
 |---|---|---|
 | `dist/SealTools-v3.0.2.zip` | 44,838,165 | `7C8D79600D0DE9349B1DF00E18789A91438AB57A77E2E5EE7CD30364BB6A3084` |
-| `dist/SealTools-v3.0.2-firmware.zip` | 5,254 | `498E6A4BA1F8552C2BBE8B828AE892B338675BA5016CACE0089A3C35CCEF3B` |
+| `dist/SealTools-v3.0.2-firmware.zip` | 5,254 | `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B` |
+
+*(Corrected 2026-10-28: the firmware row above previously had a transcription typo in its SHA-256 (a missing `CC`); the artifact is byte-identical to v3.0.0/v3.0.1 and its real hash is shown now.)*
 
 Same one-top-folder payload as before (29 entries: Flutter release bundle incl `native_assets.json`,
 `seal-core.exe`, `DirectML.dll`, three OCR models, config templates only, docs incl EN + zh-TW

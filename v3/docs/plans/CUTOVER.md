@@ -212,7 +212,7 @@ changed.
 
 ---
 
-## v3.0.2 fix release (2026-10-28) — the one to publish
+## v3.0.2 fix release (2026-10-28) — superseded by v3.0.3
 
 Supersedes v3.0.0 and v3.0.1. The only change from v3.0.1 is the Sell selection: it is now a per-run
 `tool.start` argument (memory-only UI), because the player clarified the selection changes every sell
@@ -232,5 +232,35 @@ and a saved one can sell the wrong slots. Details and gates: `records/RELEASE-v3
 4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`, `PLAN-V3-SHELL.md` and
    `CUTOVER.md` → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md` stays a live proposal.
 5. **Post-publish check**: download both v3.0.2 assets, compare SHA-256 with the values above, unzip and
+   launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2 docs into v3, and do not start a second changelog.
+
+---
+
+## v3.0.3 parity release (2026-10-28) — the one to publish
+
+Supersedes v3.0.0, v3.0.1 and v3.0.2. The full v2→v3 parity audit (records/PARITY-AUDIT-2026-10-28.md)
+and the player's Sell-grid report drove a bigger release than a single fix: Sell controls + deduped
+over-cap refusal, always-on-top + remembered placement/size, deletion guards/spammer rotation/buy row
+picker, mid-run Pet Feeder state persistence (the safety fix), calibration increment 0, the Tuner's
+clean-up-captures command/button, and the read-only `board.details` core command. Details and gates:
+`records/RELEASE-v3.0.3.md`.
+
+1. **Merge and tag**: merge `v3-core` into `main`, `git tag v3.0.3`, push branch + tag (the push is the
+   player's call).
+2. **GitHub release** `v3.0.3` with:
+   - `dist/SealTools-v3.0.3.zip` — 44,949,054 B,
+     SHA-256 `C19B85ABD084A2B85F25151B8C63C2C694DA131874E217467C749BEC441EE4F5`
+   - `dist/SealTools-v3.0.3-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.3.md`. Attach exactly as built; do not re-zip. The
+   firmware is byte-identical to v3.0.0–v3.0.2 — no reflash.
+3. **Root README**: rewrite for v3.0.3 and add the version-table row:
+   `| v3.0.3 | 2026-10-28 | Rust core + Flutter shell; full v2→v3 parity audit; per-run Sell selection with row/Select all/Clear and deduped over-cap refusal; always-on-top + remembered window placement; Pet Feeder run-state persistence; calibration increment 0 foundation; read-only board.details; capture cleanup. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older history and point downloads/firmware at the v3.0.3 assets.
+4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`; `PLAN-V3-SHELL.md` and `CUTOVER.md`
+   → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md`, `PLAN-V3-PET-SESSION.md` and
+   `PLAN-V3-STATUS-DETAIL.md` stay live proposals.
+5. **Post-publish check**: download both v3.0.3 assets, compare SHA-256 with the values above, unzip and
    launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
 6. **do not** move v2 docs into v3, and do not start a second changelog.
