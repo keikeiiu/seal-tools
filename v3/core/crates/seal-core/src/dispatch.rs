@@ -15,8 +15,8 @@
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 
 use base64::Engine as _;
 use seal_config::{ConfigError, ConfigStore};
@@ -62,6 +62,10 @@ pub struct CoreState {
     /// (pet run state) without waiting for the next command, and the dispatcher re-reads it at every
     /// request boundary. `rev` is that value's dispatcher-local snapshot.
     pub revision: Arc<AtomicU64>,
+    /// Memory-only firmware level cache: `board.details` reports it, `board.probe` and the pet
+    /// session's opening `V` detection refresh it. `None` means "not checked yet — normal"; no
+    /// command queries `V` just to read the details.
+    pub firmware: Arc<RwLock<Option<u32>>>,
     pub config: Value,
     pub handshaken: bool,
     pub stopping: bool,
@@ -103,6 +107,7 @@ impl CoreState {
             shared_config: Default::default(),
             rev: 0,
             revision: Arc::new(AtomicU64::new(0)),
+            firmware: Arc::new(RwLock::new(None)),
             config: json!({}),
             handshaken: false,
             stopping: false,
@@ -133,6 +138,7 @@ impl CoreState {
             shared_config: Default::default(),
             rev: 0,
             revision: Arc::new(AtomicU64::new(0)),
+            firmware: Arc::new(RwLock::new(None)),
             config,
             handshaken: false,
             stopping: false,
@@ -210,6 +216,21 @@ impl CoreState {
     /// `config.apply`/`hello` sees the same revision the event carried.
     pub fn revision_handle(&self) -> Arc<AtomicU64> {
         Arc::clone(&self.revision)
+    }
+
+    /// The shared memory-only firmware cache, for the production registry's pet opening phase.
+    pub fn firmware_handle(&self) -> Arc<RwLock<Option<u32>>> {
+        Arc::clone(&self.firmware)
+    }
+
+    /// The dispatcher-thread view of the memory-only firmware cache. `None` is "not checked yet".
+    pub fn firmware(&self) -> Option<u32> {
+        *self.firmware.read().expect("not poisoned")
+    }
+
+    /// Record a firmware level detected by the dispatcher (`board.probe`).
+    pub fn set_firmware(&self, level: u32) {
+        *self.firmware.write().expect("not poisoned") = Some(level);
     }
 
     /// One revision for a write this dispatcher performed; also publishes it to the shared counter so
@@ -445,6 +466,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),
+        "board.details" => board_details(state, &request),
         "board.test" => board_test(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
@@ -1119,9 +1141,26 @@ fn attributes_get(state: &CoreState, request: &Request) -> Response {
 
 fn board_probe(state: &CoreState, request: &Request) -> Response {
     match board::probe(&state.config) {
-        Ok(result) => Response::ok(&request.id, result),
+        Ok(result) => {
+            if let Some(level) = result.get("level").and_then(Value::as_u64)
+                && let Ok(level) = u32::try_from(level)
+            {
+                state.set_firmware(level);
+            }
+            Response::ok(&request.id, result)
+        }
         Err(error) => board_error_response(&request.id, error),
     }
+}
+
+/// `board.details`: READ-ONLY. It enumerates ports (the one OS call) and reads the memory-only
+/// firmware cache; it NEVER opens or reconfigures a port, so it stays usable while a tool owns the
+/// board and a missing board is a normal `choice.state`, not an error.
+fn board_details(state: &CoreState, request: &Request) -> Response {
+    let settings = board::Settings::from_config(&state.config);
+    let ports = seal_board::enumerate::available_ports();
+    let firmware = state.firmware();
+    Response::ok(&request.id, board::details(&settings, &ports, firmware))
 }
 
 /// `board.test`: send the calibrator's test command. A command is sent only after the port opens, so
@@ -1519,5 +1558,29 @@ mod tests {
         let error = response.error.expect("the stale write is refused");
         assert_eq!(error.code, "conflict");
         assert_eq!(error.detail["rev"], 4);
+    }
+
+    #[test]
+    fn board_details_reads_the_memory_only_firmware_cache_without_opening() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\\repo"));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        *state.firmware.write().expect("not poisoned") = Some(2);
+
+        let response = handle(
+            &mut state,
+            Request::new("details", "board.details", json!({})),
+        );
+
+        assert!(
+            response.ok,
+            "details is always a normal answer: {:?}",
+            response.error
+        );
+        let result = response.result.expect("a result");
+        assert_eq!(result["firmware"], json!({"level": 2, "checked": true}));
+        assert!(result["ports"].is_array());
     }
 }

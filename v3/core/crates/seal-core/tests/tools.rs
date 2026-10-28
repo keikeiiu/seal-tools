@@ -377,3 +377,30 @@ fn pointer_with_a_missing_game_window_is_window_not_found() {
         assert_eq!(error.code, "window_not_found", "{cmd}: {}", error.message);
     }
 }
+
+#[test]
+fn board_details_is_a_read_only_shape_without_opening_a_port() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    // A missing board is a normal choice state; details never opens the serial port, so the minimal
+    // fixture root (no board) can answer it without any hardware or board_unavailable refusal.
+    let result = session.result("board.details", json!({}));
+    assert!(result["baud"].is_number());
+    assert!(result["expected"]["vid"].is_string());
+    assert!(result["expected"]["pids"].is_array());
+    assert!(result["expected"]["port"].is_null());
+    assert!(result["ports"].is_array());
+    let state = result["choice"]["state"].as_str().expect("a choice state");
+    assert!(
+        matches!(state, "ready" | "named_missing" | "not_found"),
+        "unexpected choice state: {state}"
+    );
+    assert!(result["choice"]["port"].is_null() || result["choice"]["port"].is_string());
+    assert!(result["choice"]["refusal"].is_null() || result["choice"]["refusal"].is_string());
+    assert!(
+        result["firmware"].is_null(),
+        "not checked yet on a fresh session"
+    );
+}

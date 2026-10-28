@@ -5,6 +5,7 @@
 use seal_board::clock::RealClock;
 use seal_board::command::BoardCommand;
 use seal_board::enumerate;
+use seal_board::enumerate::PortInfo;
 use seal_board::firmware;
 use seal_board::serial::SerialTransport;
 use seal_board::transport::Transport;
@@ -82,6 +83,87 @@ impl Settings {
 pub enum BoardFailure {
     Unavailable(String),
     BadRequest(String),
+}
+
+/// The memory-only firmware level cache (`board.details`'s `firmware`), populated by an explicit
+/// probe (`board.probe`) or the pet session's opening `V` detection. `None` means "not checked yet —
+/// normal", never a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareLevel(pub u32);
+
+/// The v2 no-board advice sentence. The shell owns the verdict/advice lines, but the core owns the
+/// rule and the refusal sentence (PLAN-V3-STATUS-DETAIL ⚑9), so this exact sentence travels in
+/// `choice.refusal` for `not_found`.
+pub const NOT_FOUND_REFUSAL: &str = "Plug the board in, then press Refresh. A charge-only cable is \
+     the usual cause — the board lights up and never appears as a port.";
+
+/// The read-only `board.details` payload: settings + an injected port list + the memory-only firmware
+/// cache. This function never opens or configures a port; only `enumerate::available_ports()` and the
+/// dispatcher are OS-facing. Missing boards are a NORMAL answer (`choice.state`), not an error.
+pub fn details(settings: &Settings, ports: &[PortInfo], firmware: Option<u32>) -> Value {
+    let configured = settings
+        .port
+        .as_deref()
+        .map(str::trim)
+        .filter(|port| !port.is_empty());
+    let (chosen, refusal) = enumerate::choose_port(configured, ports, settings.vid, &settings.pid);
+    let state = if chosen.is_some() {
+        "ready"
+    } else if configured.is_some() {
+        "named_missing"
+    } else {
+        "not_found"
+    };
+    let choice_port = chosen.clone().or_else(|| configured.map(str::to_owned));
+    let refusal = if state == "named_missing" {
+        refusal
+    } else if state == "not_found" {
+        Some(NOT_FOUND_REFUSAL.to_owned())
+    } else {
+        None
+    };
+
+    let chosen_name = chosen.as_deref();
+    let mut ordered: Vec<&PortInfo> = Vec::with_capacity(ports.len());
+    if let Some(name) = chosen_name
+        && let Some(position) = ports
+            .iter()
+            .position(|port| port.name.eq_ignore_ascii_case(name))
+    {
+        ordered.push(&ports[position]);
+    }
+    ordered.extend(
+        ports
+            .iter()
+            .filter(|port| !chosen_name.is_some_and(|name| port.name.eq_ignore_ascii_case(name))),
+    );
+
+    let rows: Vec<Value> = ordered
+        .into_iter()
+        .map(|port| {
+            json!({
+                "port": port.name,
+                "vid": port.vid.map(|vid| format!("{vid:04x}")),
+                "pid": port.pid.map(|pid| format!("{pid:04x}")),
+                "product": port.product,
+                "manufacturer": port.manufacturer,
+                "matches_ids": seal_board::enumerate::matches_ids(port, settings.vid, &settings.pid),
+                "chosen": chosen_name.is_some_and(|name| port.name.eq_ignore_ascii_case(name)),
+            })
+        })
+        .collect();
+
+    json!({
+        "baud": settings.baud,
+        "expected": {
+            "vid": format!("{:04x}", settings.vid),
+            "pids": settings.pid.iter().map(|pid| format!("{pid:04x}")).collect::<Vec<_>>(),
+            "port": settings.port,
+        },
+        "ports": rows,
+        "choice": {"state": state, "port": choice_port, "refusal": refusal},
+        "firmware": firmware.map(|level| json!({"level": level, "checked": true})),
+    })
 }
 
 /// Find and open the board, or the line that says why not. The choice is `seal-board`'s: a NAMED
@@ -275,5 +357,78 @@ mod tests {
             command(&json!({"kind": "spin"})),
             Err(BoardFailure::BadRequest(_))
         ));
+    }
+
+    fn settings_with_port(port: Option<&str>) -> Settings {
+        Settings {
+            port: port.map(str::to_owned),
+            vid: 0x2341,
+            pid: vec![0x8036, 0x8037],
+            baud: 115200,
+        }
+    }
+
+    fn leonardo() -> PortInfo {
+        PortInfo::usb("COM5", 0x2341, 0x8036, Some("Arduino Leonardo".to_owned()))
+            .with_manufacturer(Some("Arduino LLC".to_owned()))
+    }
+
+    #[test]
+    fn details_marks_the_chosen_board_first_and_its_id_match() {
+        let ports = vec![PortInfo::plain("COM3"), leonardo()];
+        let details = details(&settings_with_port(None), &ports, None);
+        assert_eq!(details["baud"], 115200);
+        assert_eq!(details["expected"]["vid"], "2341");
+        assert_eq!(details["expected"]["pids"], json!(["8036", "8037"]));
+        assert_eq!(details["expected"]["port"], Value::Null);
+        assert_eq!(details["choice"]["state"], "ready");
+        assert_eq!(details["choice"]["port"], "COM5");
+        assert_eq!(details["choice"]["refusal"], Value::Null);
+        assert_eq!(details["firmware"], Value::Null);
+        assert_eq!(details["ports"][0]["port"], "COM5");
+        assert_eq!(details["ports"][0]["chosen"], true);
+        assert_eq!(details["ports"][0]["matches_ids"], true);
+        assert_eq!(details["ports"][0]["product"], "Arduino Leonardo");
+        assert_eq!(details["ports"][1]["port"], "COM3");
+        assert_eq!(details["ports"][1]["chosen"], false);
+        assert_eq!(details["ports"][1]["matches_ids"], false);
+    }
+
+    #[test]
+    fn details_named_missing_marks_the_named_absent_port_and_no_other_chosen() {
+        let ports = vec![leonardo()];
+        let details = details(&settings_with_port(Some("COM9")), &ports, None);
+        assert_eq!(details["choice"]["state"], "named_missing");
+        assert_eq!(details["choice"]["port"], "COM9");
+        assert!(
+            details["choice"]["refusal"]
+                .as_str()
+                .is_some_and(|line| line.contains("COM9"))
+        );
+        assert_eq!(
+            details["ports"][0]["chosen"], false,
+            "never mark another board"
+        );
+    }
+
+    #[test]
+    fn details_not_found_and_no_ports_are_a_normal_choice() {
+        let not_found = details(&settings_with_port(None), &[PortInfo::plain("COM3")], None);
+        assert_eq!(not_found["choice"]["state"], "not_found");
+        assert_eq!(not_found["choice"]["port"], Value::Null);
+        assert_eq!(not_found["choice"]["refusal"], NOT_FOUND_REFUSAL);
+
+        let no_ports = details(&settings_with_port(None), &[], None);
+        assert_eq!(no_ports["choice"]["state"], "not_found");
+        assert_eq!(no_ports["ports"], json!([]));
+    }
+
+    #[test]
+    fn details_carries_firmware_only_when_the_cache_was_checked() {
+        let ports = vec![leonardo()];
+        let unknown = details(&settings_with_port(None), &ports, None);
+        assert_eq!(unknown["firmware"], Value::Null);
+        let known = details(&settings_with_port(None), &ports, Some(2));
+        assert_eq!(known["firmware"], json!({"level": 2, "checked": true}));
     }
 }

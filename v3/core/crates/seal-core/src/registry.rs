@@ -88,6 +88,8 @@ pub struct ProductionRegistry {
     logs: Arc<crate::logs::Logs>,
     /// The mid-run pet run-state sink (A1). `None` in registry tests that never start the feeder.
     pet_state: Option<Arc<dyn PetStateSink>>,
+    /// The binary's memory-only firmware cache, filled by the pet session's opening `V` detection.
+    firmware: Option<Arc<RwLock<Option<u32>>>>,
 }
 
 impl ProductionRegistry {
@@ -97,6 +99,7 @@ impl ProductionRegistry {
             store,
             logs,
             pet_state: None,
+            firmware: None,
         }
     }
 
@@ -104,6 +107,13 @@ impl ProductionRegistry {
     /// the registry's tests leave it absent.
     pub fn with_pet_state_sink(mut self, sink: Arc<dyn PetStateSink>) -> Self {
         self.pet_state = Some(sink);
+        self
+    }
+
+    /// Attach the binary's firmware cache, so the pet session's opening `V` read also feeds
+    /// `board.details` (no extra query per open).
+    pub fn with_firmware_cache(mut self, cache: Arc<RwLock<Option<u32>>>) -> Self {
+        self.firmware = Some(cache);
         self
     }
 
@@ -272,6 +282,9 @@ impl ProductionRegistry {
         // a level-1 board in drag mode is refused with the domain's sentence by the source's opening
         // phase (the check is `food_load::complaint`, not a second rule here).
         let firmware = seal_board::firmware::detect(&mut transport);
+        if let (Some(cache), Some(level)) = (&self.firmware, firmware.reported()) {
+            *cache.write().expect("not poisoned") = Some(level);
+        }
         let firmware_level = firmware.reported().map(|level| level as i32);
         let active = crate::startup::active(&config);
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)

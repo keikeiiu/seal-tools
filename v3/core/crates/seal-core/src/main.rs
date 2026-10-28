@@ -91,7 +91,8 @@ fn main() {
             state.store.clone(),
             Arc::clone(&state.logs),
         )
-        .with_pet_state_sink(pet_state),
+        .with_pet_state_sink(pet_state)
+        .with_firmware_cache(state.firmware_handle()),
     );
     state.attach_supervisor(Supervisor::start(registry, bus, Arc::clone(&state.logs)));
 

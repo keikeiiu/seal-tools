@@ -95,9 +95,11 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 29 request fixtures.
+/// The 30 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
+  'request.board.details': (message) =>
+      _request('request.board.details', message),
   'request.board.test.click': (message) =>
       _request('request.board.test.click', message),
   'request.board.test.key': (message) =>
@@ -220,7 +222,7 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.window.measure', message),
 };
 
-/// The 30 response fixtures: 17 successes (9 typed, 8 envelope-only) and 13 errors.
+/// The 31 response fixtures: 18 successes (9 typed, 9 envelope-only) and 13 errors.
 final Map<String, FixtureDecoder> responseDecoders = {
   'response.ok.capture': (message) => _ok(
     'response.ok.capture',
@@ -254,6 +256,11 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.empty': (message) =>
       _ok('response.ok.empty', message, EmptyResult.fromJson(_result(message))),
+  'response.ok.board_details': (message) => _ok(
+    'response.ok.board_details',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
   'response.ok.calibration_save': (message) => _ok(
     'response.ok.calibration_save',
     message,

@@ -1,0 +1,40 @@
+{
+  "case": "response.ok.board_details",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "43",
+    "ok": true,
+    "result": {
+      "baud": 115200,
+      "expected": {
+        "vid": "2341",
+        "pids": [
+          "8036",
+          "8037"
+        ],
+        "port": null
+      },
+      "ports": [
+        {
+          "port": "COM5",
+          "vid": "2341",
+          "pid": "8036",
+          "product": "Arduino Leonardo",
+          "manufacturer": "Arduino LLC",
+          "matches_ids": true,
+          "chosen": true
+        }
+      ],
+      "choice": {
+        "state": "ready",
+        "port": "COM5",
+        "refusal": null
+      },
+      "firmware": {
+        "level": 2,
+        "checked": true
+      }
+    }
+  }
+}

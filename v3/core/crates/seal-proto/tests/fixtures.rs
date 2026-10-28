@@ -42,6 +42,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "keys.names",
     "attributes.get",
     "board.probe",
+    "board.details",
     "board.test",
     "ui.window",
     "tool.start",
@@ -254,6 +255,7 @@ fn cases() -> Vec<Case> {
         ),
         request_case("request.attributes.get", "39", "attributes.get", json!({})),
         request_case("request.board.probe", "10", "board.probe", json!({})),
+        request_case("request.board.details", "43", "board.details", json!({})),
         request_case(
             "request.board.test.click",
             "11",
@@ -379,6 +381,25 @@ fn cases() -> Vec<Case> {
             }),
         ),
         ok_case("response.ok.empty", "20", json!({})),
+        ok_case(
+            "response.ok.board_details",
+            "43",
+            json!({
+                "baud": 115200,
+                "expected": {"vid": "2341", "pids": ["8036", "8037"], "port": null},
+                "ports": [{
+                    "port": "COM5",
+                    "vid": "2341",
+                    "pid": "8036",
+                    "product": "Arduino Leonardo",
+                    "manufacturer": "Arduino LLC",
+                    "matches_ids": true,
+                    "chosen": true
+                }],
+                "choice": {"state": "ready", "port": "COM5", "refusal": null},
+                "firmware": {"level": 2, "checked": true}
+            }),
+        ),
         ok_case(
             "response.ok.calibration_save",
             "8",
