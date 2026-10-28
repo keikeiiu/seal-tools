@@ -1,6 +1,6 @@
-//! `board.probe` and `board.test`: the merged config → the board crate's adapter → the protocol's
-//! JSON. No Win32 and no rule lives here; the port decision is `seal-board`'s, the level is the
-//! firmware's answer, and the commands are the grammar's.
+//! `board.probe`, `board.test` and read-only `board.details`: the merged config -> the board
+//! crate's adapter -> the protocol's JSON. No Win32 and no rule lives here; the port decision is
+//! `seal-board`'s, the level is the firmware's answer, and the commands are the grammar's.
 
 use seal_board::clock::RealClock;
 use seal_board::command::BoardCommand;
@@ -85,11 +85,14 @@ pub enum BoardFailure {
     BadRequest(String),
 }
 
-/// The memory-only firmware level cache (`board.details`'s `firmware`), populated by an explicit
-/// probe (`board.probe`) or the pet session's opening `V` detection. `None` means "not checked yet —
-/// normal", never a failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FirmwareLevel(pub u32);
+/// The level recorded in the memory-only firmware cache for a detection. Silence is a definite
+/// answer, not "unchecked": a silent/legacy board predates version reporting, and `board.probe`
+/// has always reported that as level 1 (`PROTOCOL.md` §4: absent = level 1). Both cache writers
+/// (`board.probe` and the pet session's opening `V` read) must agree, or the Arduino tab says
+/// "not checked yet" after a pet run for the same board.
+pub fn cached_firmware_level(firmware: seal_board::firmware::Firmware) -> u32 {
+    firmware.reported().unwrap_or(1)
+}
 
 /// The v2 no-board advice sentence. The shell owns the verdict/advice lines, but the core owns the
 /// rule and the refusal sentence (PLAN-V3-STATUS-DETAIL ⚑9), so this exact sentence travels in
@@ -430,5 +433,12 @@ mod tests {
         assert_eq!(unknown["firmware"], Value::Null);
         let known = details(&settings_with_port(None), &ports, Some(2));
         assert_eq!(known["firmware"], json!({"level": 2, "checked": true}));
+    }
+
+    #[test]
+    fn cached_firmware_level_maps_silence_to_probes_level_one() {
+        use seal_board::firmware::Firmware;
+        assert_eq!(cached_firmware_level(Firmware::silent()), 1);
+        assert_eq!(cached_firmware_level(Firmware::reporting(2)), 2);
     }
 }

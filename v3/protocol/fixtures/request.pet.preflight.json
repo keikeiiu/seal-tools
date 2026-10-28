@@ -1,0 +1,10 @@
+{
+  "case": "request.pet.preflight",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "44",
+    "cmd": "pet.preflight",
+    "args": {}
+  }
+}

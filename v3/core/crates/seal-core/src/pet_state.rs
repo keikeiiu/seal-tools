@@ -25,6 +25,13 @@ use crate::registry::SharedConfig;
 /// the production sink logs and returns. A test can record the patches instead.
 pub trait PetStateSink: Send + Sync {
     fn persist(&self, patch: &PetRunStatePatch);
+
+    /// The command-caller half: same write/event path, with the revision returned for the response.
+    /// The default keeps a recording test sink source-compatible (it has no revision to report).
+    fn persist_rev(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
+        self.persist(patch);
+        Ok(0)
+    }
 }
 
 /// The production sink: store write → revision bump → shared mirror → one event. The revision is the
@@ -55,22 +62,29 @@ impl ConfigPetStateSink {
         }
     }
 
-    /// The fallible half, exposed for tests and for the future command wrappers. On success the file
-    /// is written, the revision bumped once, the shared mirror refreshed, and exactly one
-    /// `config.changed {rev, block:"pet", values}` emitted.
-    pub fn persist_once(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
+    /// The write half: persist the patch, reload the merged config, refresh the shared mirror, and
+    /// bump the shared revision. It deliberately does NOT emit the event — a command caller queues
+    /// the same `config.changed` after its response (`config.apply`'s order); a live tool calls
+    /// [`Self::persist_once`] and emits immediately.
+    pub fn write_rev(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
         if patch.is_empty() {
             return Err("an empty pet run-state patch is not a write".to_owned());
         }
         self.store
             .persist_pet_run_state(patch)
             .map_err(|error| error.to_string())?;
-
         let config = self.store.load().map_err(|error| error.to_string())?;
         if let Ok(mut shared) = self.shared.write() {
             *shared = config.clone();
         }
-        let rev = self.revision.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(self.revision.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+
+    /// The live-tool half: write, then emit the one `config.changed` immediately (there is no
+    /// response to order it after).
+    pub fn persist_once(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
+        let rev = self.write_rev(patch)?;
+        let config = self.store.load().map_err(|error| error.to_string())?;
         let values = config.get("pet").cloned().unwrap_or(Value::Null);
         self.bus
             .emit(events::config_changed_event(rev, "pet", values));
@@ -79,6 +93,11 @@ impl ConfigPetStateSink {
 }
 
 impl PetStateSink for ConfigPetStateSink {
+    fn persist_rev(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
+        // Command callers queue the event after their response.
+        self.write_rev(patch)
+    }
+
     fn persist(&self, patch: &PetRunStatePatch) {
         if let Err(error) = self.persist_once(patch) {
             // v2's rule: losing the state update is bad, but killing a live feeder over it is worse.

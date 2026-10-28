@@ -404,3 +404,121 @@ fn board_details_is_a_read_only_shape_without_opening_a_port() {
         "not checked yet on a fresh session"
     );
 }
+
+const PET_LOCAL: &str = "\
+foreign:
+  keep: me
+pet:
+  menu_button: [1, 1]
+  feed_icon: [2, 2]
+  close_button: [3, 3]
+  bag_grid: [0, 0, 400, 400]
+  bag_slot: [0, 0, 40, 40]
+  page_tabs: [[100, 100]]
+  food_slots: [[0, 0], [0, 1], [0, 2], [0, 3]]
+  food_slots_used: 0
+  food_load_mode: right_click
+  return_slot: [0, 5]
+  queue: []
+  max_button: [900, 500]
+  items_per_minute: 3
+  wait_after_empty_minutes: 5
+  slots:
+    - enabled: true
+      toggle_label: [10, 20, 100, 30]
+      boarding_pet_slot: [10, 60, 100, 80]
+      feeder_strip: [110, 20, 200, 80]
+      stacks: 2
+      boarding_running: false
+      pet_slot_empty_png: iVBORw0KGgo=
+";
+
+#[test]
+fn pet_preflight_answers_the_two_checklists_read_only() {
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let before = root.read("config/local.yaml");
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let result = session.result("pet.preflight", json!({}));
+
+    assert!(result["ready"].is_boolean());
+    assert!(result["calibration"].is_array());
+    assert!(result["session"].is_array());
+    assert!(result["lines"].is_array());
+    assert!(
+        result["calibration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["label"] == "Boarding bag grid" && item["ok"] == true)
+    );
+    assert!(
+        result["session"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["label"] == "food cells")
+    );
+    assert_eq!(
+        root.read("config/local.yaml"),
+        before,
+        "preflight writes nothing"
+    );
+}
+
+#[test]
+fn pet_set_boarding_writes_one_row_field_keeps_the_file_and_emits_one_event() {
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let result = session.result("pet.set_boarding", json!({"row": 1, "running": true}));
+
+    assert_eq!(result["rev"], 1, "the A1 writer bumps the shared revision");
+    assert_eq!(result["block"]["slots"][0]["boarding_running"], true);
+    assert_eq!(result["block"]["return_slot"], json!([0, 5]));
+
+    let local = root.read("config/local.yaml");
+    assert!(local.contains("boarding_running: true"), "{local}");
+    assert!(
+        local.contains("keep: me"),
+        "foreign block preserved: {local}"
+    );
+    assert!(
+        local.contains("return_slot:"),
+        "rest of pet preserved: {local}"
+    );
+
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["rev"], 1);
+    assert_eq!(event["data"]["block"], "pet");
+    assert_eq!(
+        event["data"]["values"]["slots"][0]["boarding_running"],
+        true
+    );
+}
+
+#[test]
+fn pet_set_boarding_refuses_a_bad_row_or_type_with_the_field_named() {
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let out_of_range = session.call("pet.set_boarding", json!({"row": 2, "running": true}));
+    assert!(!out_of_range.ok);
+    let error = out_of_range.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "row");
+    assert!(error.message.contains("out of range"), "{}", error.message);
+
+    let not_bool = session.call("pet.set_boarding", json!({"row": 1, "running": "yes"}));
+    assert!(!not_bool.ok);
+    let error = not_bool.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "running");
+}

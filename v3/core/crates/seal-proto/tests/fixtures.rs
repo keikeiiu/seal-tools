@@ -43,6 +43,8 @@ const REQUEST_COMMANDS: &[&str] = &[
     "attributes.get",
     "board.probe",
     "board.details",
+    "pet.preflight",
+    "pet.set_boarding",
     "board.test",
     "ui.window",
     "tool.start",
@@ -256,6 +258,13 @@ fn cases() -> Vec<Case> {
         request_case("request.attributes.get", "39", "attributes.get", json!({})),
         request_case("request.board.probe", "10", "board.probe", json!({})),
         request_case("request.board.details", "43", "board.details", json!({})),
+        request_case("request.pet.preflight", "44", "pet.preflight", json!({})),
+        request_case(
+            "request.pet.set_boarding",
+            "45",
+            "pet.set_boarding",
+            json!({"row": 1, "running": true}),
+        ),
         request_case(
             "request.board.test.click",
             "11",
@@ -381,6 +390,27 @@ fn cases() -> Vec<Case> {
             }),
         ),
         ok_case("response.ok.empty", "20", json!({})),
+        ok_case(
+            "response.ok.pet_preflight",
+            "44",
+            json!({
+                "ready": false,
+                "calibration": [{"ok": true, "label": "Pet menu point", "detail": "marked"}],
+                "session": [{"ok": true, "label": "food cells", "detail": "4 marked, 1 used (one round loads 2)"}],
+                "lines": ["no pet icon queued — the tool will use the return slot instead of looking for the pet by icon"]
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_set_boarding",
+            "45",
+            json!({
+                "rev": 1,
+                "block": {
+                    "return_slot": [0, 5],
+                    "slots": [{"boarding_running": true}]
+                }
+            }),
+        ),
         ok_case(
             "response.ok.board_details",
             "43",

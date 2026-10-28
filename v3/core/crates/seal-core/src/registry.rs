@@ -282,8 +282,11 @@ impl ProductionRegistry {
         // a level-1 board in drag mode is refused with the domain's sentence by the source's opening
         // phase (the check is `food_load::complaint`, not a second rule here).
         let firmware = seal_board::firmware::detect(&mut transport);
-        if let (Some(cache), Some(level)) = (&self.firmware, firmware.reported()) {
-            *cache.write().expect("not poisoned") = Some(level);
+        if let Some(cache) = &self.firmware {
+            // Silence is a definite level-1 answer for the CACHE (probe already reports it that
+            // way); the run's behaviour still treats it as "no version" via `firmware_level` None.
+            *cache.write().expect("not poisoned") =
+                Some(crate::board::cached_firmware_level(firmware));
         }
         let firmware_level = firmware.reported().map(|level| level as i32);
         let active = crate::startup::active(&config);

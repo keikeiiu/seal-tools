@@ -85,6 +85,9 @@ fn main() {
         Arc::clone(&state.logs),
         state.shared_config.clone(),
     ));
+    state.attach_pet_state_sink(
+        Arc::clone(&pet_state) as Arc<dyn seal_core::pet_state::PetStateSink>
+    );
     let registry: Arc<dyn ToolRegistry> = Arc::new(
         ProductionRegistry::new(
             state.shared_config.clone(),
@@ -133,6 +136,7 @@ fn main() {
     state.logs.flush();
     // The dispatcher's event sender must be gone before the writer can stop: it is the last sender
     // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
+    state.detach_pet_state_sink();
     state.detach_events();
     writer.finish();
 }

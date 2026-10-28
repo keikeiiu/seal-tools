@@ -26,6 +26,7 @@ use seal_tools::tool::ToolId;
 use serde_json::{Map, Value, json};
 
 use crate::board;
+use crate::pet_state::PetStateSink;
 use crate::startup::{self, StartupError};
 use crate::supervisor::{self, StartReply, StopReply};
 use crate::win;
@@ -72,6 +73,9 @@ pub struct CoreState {
     /// The tool layer, attached by the binary. `None` in the config-only dispatcher tests, and in a
     /// future core that has no tools yet ??a tool command then says so rather than pretending.
     pub supervisor: Option<supervisor::Supervisor>,
+    /// The A1 pet run-state writer, attached by the binary. `pet.set_boarding` goes through this
+    /// exact field-precise path; config-only tests leave it absent.
+    pub pet_state: Option<Arc<dyn PetStateSink>>,
     /// The active game client, when one resolved (`game.variant`), else `None`.
     pub variant: Option<String>,
     /// The attribute dictionary file the active client uses, e.g. `attributes.us.yaml`.
@@ -112,6 +116,7 @@ impl CoreState {
             handshaken: false,
             stopping: false,
             supervisor: None,
+            pet_state: None,
             variant: None,
             dictionary: startup::DEFAULT_DICTIONARY.to_owned(),
             attributes: AttributesConfig::default(),
@@ -143,6 +148,7 @@ impl CoreState {
             handshaken: false,
             stopping: false,
             supervisor: None,
+            pet_state: None,
             variant: active.variant,
             dictionary: active.dictionary,
             attributes,
@@ -171,6 +177,18 @@ impl CoreState {
 
     /// Gives the dispatcher its tool layer. Only the binary calls this; the supervisor needs the
     /// writer's [`crate::events::EventBus`], so it cannot be built inside a config-only state.
+    pub fn attach_pet_state_sink(&mut self, sink: Arc<dyn PetStateSink>) {
+        self.pet_state = Some(sink);
+    }
+
+    /// Drop the writer's `EventBus` clone before `writer.finish()`, exactly like
+    /// [`Self::detach_events`]. The production sink holds the bus so a worker write can emit its
+    /// `config.changed`; leaving it attached after shutdown would keep the writer's sender count
+    /// non-zero and hang the process after its final line.
+    pub fn detach_pet_state_sink(&mut self) {
+        self.pet_state = None;
+    }
+
     pub fn attach_supervisor(&mut self, supervisor: supervisor::Supervisor) {
         self.supervisor = Some(supervisor);
     }
@@ -468,6 +486,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "board.probe" => board_probe(state, &request),
         "board.details" => board_details(state, &request),
         "board.test" => board_test(state, &request),
+        "pet.preflight" => pet_preflight(state, &request),
+        "pet.set_boarding" => pet_set_boarding(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -985,6 +1005,70 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
         StopReply::NotRunning => Response::err(
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
+        ),
+    }
+}
+
+/// `pet.preflight {}`: the Pet tab's two v2 checklists and Ready verdict. READ-ONLY: no window,
+/// board or OCR access; a malformed/absent pet block still answers with `ok:false` facts.
+fn pet_preflight(state: &CoreState, request: &Request) -> Response {
+    Response::ok(&request.id, crate::pet_session::preflight(&state.config))
+}
+
+/// `pet.set_boarding {row, running}`: the tick. It writes ONE `pet.slots[row-1].boarding_running`
+/// through the A1 field-precise sink (not a whole-block apply), emits one `config.changed`, and
+/// answers `{rev, block:<merged pet>}`. A bad row/type is `bad_request`; an I/O failure is logged
+/// and answered `io` (the file is never partially written by the store).
+fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
+    let (row, running) = match crate::pet_session::boarding_arguments(&request.args) {
+        Ok(argument) => argument,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    let setup = crate::pet::setup(&state.config);
+    if row >= setup.slots.len() {
+        return bad_request(
+            &request.id,
+            &format!(
+                "pet.set_boarding's \"row\" is out of range: this setup has {} row(s)",
+                setup.slots.len()
+            ),
+            json!({"field": "row"}),
+        );
+    }
+    let Some(sink) = state.pet_state.as_ref() else {
+        return internal(
+            &request.id,
+            "the pet run-state writer is not attached in this core",
+        );
+    };
+    let patch = seal_config::PetRunStatePatch {
+        boarding_running: vec![(row, running)],
+        ..seal_config::PetRunStatePatch::default()
+    };
+    let rev = match sink.persist_rev(&patch) {
+        Ok(rev) => rev,
+        Err(line) => {
+            state.logs.error_line(&format!(
+                "pet.set_boarding could not write run state: {line}"
+            ));
+            return Response::err(&request.id, Error::new("io", &line, json!({})));
+        }
+    };
+    match state.store.load() {
+        Ok(config) => {
+            let block = config.get("pet").cloned().unwrap_or(Value::Null);
+            state.config = config;
+            state.rev = rev;
+            // A command-caused write emits its config.changed AFTER the response, matching
+            // config.apply's ordering; the sink did the write and the revision.
+            state.queue_config_changed("pet");
+            Response::ok(&request.id, json!({"rev": rev, "block": block}))
+        }
+        Err(error) => internal(
+            &request.id,
+            &format!("pet.set_boarding wrote, but the config could not be re-read: {error}"),
         ),
     }
 }

@@ -234,7 +234,7 @@ fn row_setup(value: &Value, index: usize) -> PetRowSetup {
 
 /// Build the domain's `PetSetup` from the merged config. Field sources are the machine `pet` block
 /// plus the shared buy/sell `max_button` (`PetSetup`'s own doc).
-fn setup(config: &Value) -> PetSetup {
+pub(crate) fn setup(config: &Value) -> PetSetup {
     let slots = config
         .pointer("/pet/slots")
         .and_then(Value::as_array)
