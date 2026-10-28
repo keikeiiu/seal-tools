@@ -31,6 +31,49 @@ void main() {
     expect(harness.model.logs.entries, isNotEmpty);
   });
 
+  test('a configured always-on-top is applied once at connect', () async {
+    final host = FakeHost();
+    final harness = AppHarness(host: host);
+    addTearDown(harness.dispose);
+
+    await harness.connect(
+      config: {
+        'window': {'title': 'TW_LIVE'},
+        'settings': {
+          'ui': {'always_on_top': true},
+        },
+      },
+    );
+
+    expect(harness.model.alwaysOnTop, isTrue);
+    expect(host.alwaysOnTopCalls, [true]);
+
+    // A config event updates the mirror but deliberately does not re-apply the window setting.
+    harness.emitConfigChanged(
+      rev: 9,
+      block: 'settings',
+      values: {
+        'ui': {'always_on_top': true},
+      },
+    );
+    await settle();
+    expect(harness.model.alwaysOnTop, isTrue);
+    expect(host.alwaysOnTopCalls, [
+      true,
+    ], reason: 'apply-on-connect is one-shot');
+  });
+
+  test('an absent always-on-top applies false at connect', () async {
+    final host = FakeHost();
+    final harness = AppHarness(host: host);
+    addTearDown(harness.dispose);
+
+    await harness.connect();
+
+    expect(harness.model.alwaysOnTop, isFalse);
+    expect(host.alwaysOnTopCalls, [false]);
+  });
+
   test('state events populate the cards, including a rows:[] card', () async {
     final harness = AppHarness();
     addTearDown(harness.dispose);

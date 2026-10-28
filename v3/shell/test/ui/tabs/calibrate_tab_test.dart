@@ -72,6 +72,11 @@ class _FakeHost implements HostActions {
       throw PlatformException(code: 'no_host');
     }
   }
+
+  @override
+  Future<void> setAlwaysOnTop(bool enabled) async {
+    // The capture lifecycle does not use the pin; the model's own fake host covers it.
+  }
 }
 
 Future<AppHarness> _pumpCalibrate(

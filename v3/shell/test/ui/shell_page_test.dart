@@ -27,15 +27,19 @@ import '../support/app_harness.dart';
 /// and completed by pumping the frame loop — awaiting it before the first pump is the classic way to
 /// park forever. The first frame is the connection surface (PLAN §2), the later pumps land hello,
 /// then connecting is already complete.
-Future<AppHarness> _pumpShell(WidgetTester tester) async {
+Future<AppHarness> _pumpShell(
+  WidgetTester tester, {
+  FakeHost? host,
+  Map<String, dynamic>? config,
+}) async {
   // The grid is lazy: the default 800x600 surface would only lay out the first few cards, so a
   // "seven cards" assertion has to mean all seven were really built.
   tester.view.physicalSize = const ui.Size(1600, 2400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  final harness = AppHarness();
+  final harness = AppHarness(host: host);
   addTearDown(harness.model.dispose);
-  final connecting = harness.connect();
+  final connecting = harness.connect(config: config);
   await tester.pumpWidget(ShellApp(model: harness.model));
   for (var i = 0; i < 3; i++) {
     await tester.pump();
@@ -245,4 +249,105 @@ void main() {
     expect(crashMessage, contains('protocol mismatch'));
     expect(crashMessage, contains('the core expects 1'));
   });
+
+  testWidgets(
+    'the pin starts off and a toggle applies at once then saves the exact payload',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpShell(tester, host: host);
+      final pin = find.byKey(const ValueKey('app-bar-always-on-top'));
+
+      expect(tester.widget<IconButton>(pin).isSelected, isFalse);
+      expect(host.alwaysOnTopCalls, [
+        false,
+      ], reason: 'connect applies the absent default once');
+
+      harness.answerConfigCommands();
+      await tester.tap(pin);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      final apply = harness.lastSentWithCmd('config.apply');
+      expect(apply, isNotNull);
+      expect((apply!['args'] as Map<String, dynamic>)['sections'], {
+        'settings': {
+          'ui': {'always_on_top': true},
+        },
+      }, reason: 'the pin writes the portable settings section, not a file');
+      expect(host.alwaysOnTopCalls, [
+        false,
+        true,
+      ], reason: 'the host is applied before the save completes');
+      expect(tester.widget<IconButton>(pin).isSelected, isTrue);
+      expect(harness.model.alwaysOnTop, isTrue);
+    },
+  );
+
+  testWidgets(
+    'a configured pin is applied at connect and toggles off to false',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpShell(
+        tester,
+        host: host,
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {'always_on_top': true},
+          },
+        },
+      );
+      final pin = find.byKey(const ValueKey('app-bar-always-on-top'));
+
+      expect(tester.widget<IconButton>(pin).isSelected, isTrue);
+      expect(host.alwaysOnTopCalls, [true]);
+
+      harness.answerConfigCommands();
+      await tester.tap(pin);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      final apply = harness.lastSentWithCmd('config.apply');
+      expect((apply!['args'] as Map<String, dynamic>)['sections'], {
+        'settings': {
+          'ui': {'always_on_top': false},
+        },
+      });
+      expect(host.alwaysOnTopCalls, [true, false]);
+      expect(tester.widget<IconButton>(pin).isSelected, isFalse);
+      expect(harness.model.alwaysOnTop, isFalse);
+    },
+  );
+
+  testWidgets(
+    'a refused pin save reverts the host and shows the core line, not a lie',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpShell(tester, host: host);
+      final pin = find.byKey(const ValueKey('app-bar-always-on-top'));
+      const refusal = 'the settings block is malformed';
+
+      harness.answerConfigCommands(errors: [refusal]);
+      await tester.tap(pin);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      expect(host.alwaysOnTopCalls, [
+        false,
+        true,
+        false,
+      ], reason: 'the optimistic apply is reverted to the saved mirror value');
+      expect(tester.widget<IconButton>(pin).isSelected, isFalse);
+      expect(harness.model.alwaysOnTop, isFalse);
+      expect(find.text(refusal), findsOneWidget);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+
+      // Let the SnackBar's own timer expire so the widget test leaves no pending timer.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+    },
+  );
 }

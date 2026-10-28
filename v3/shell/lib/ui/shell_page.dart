@@ -43,6 +43,28 @@ class ShellPage extends StatefulWidget {
 class _ShellPageState extends State<ShellPage> {
   bool _logsVisible = false;
 
+  /// The pin applies to the window and saves the preference; a refused save is shown with the
+  /// core's own line and the model has already put the window back on the saved value.
+  Future<void> _toggleAlwaysOnTop() async {
+    final outcome = await widget.model.setAlwaysOnTop(
+      !widget.model.alwaysOnTop,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (outcome.saved) {
+      return;
+    }
+    final lines = outcome.errorLines;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          lines.isEmpty ? 'Always-on-top was not saved.' : lines.join(' · '),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -73,6 +95,16 @@ class _ShellPageState extends State<ShellPage> {
                         ? model.stopTool(ToolId.holdspace)
                         : model.startTool(ToolId.holdspace),
                   ),
+                ),
+                IconButton(
+                  key: const ValueKey('app-bar-always-on-top'),
+                  tooltip: 'Keep Seal Tools on top',
+                  isSelected: model.alwaysOnTop,
+                  icon: const Icon(Icons.push_pin_outlined),
+                  selectedIcon: const Icon(Icons.push_pin),
+                  onPressed: ready
+                      ? () => unawaited(_toggleAlwaysOnTop())
+                      : null,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(

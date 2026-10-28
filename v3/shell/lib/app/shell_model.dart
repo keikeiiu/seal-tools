@@ -25,8 +25,10 @@ import '../protocol/protocol.dart';
 import 'attributes_result.dart';
 import 'calibration_result.dart';
 import 'config.dart';
+import 'config_json.dart';
 import 'connection.dart';
 import 'core_actions.dart';
+import 'host_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
 import 'tools.dart';
@@ -42,6 +44,7 @@ const int _sellSlotCount = 64;
 class ShellModel extends ChangeNotifier {
   ShellModel({
     required this.transportFactory,
+    this.host = const MethodChannelHostActions(),
     this.shellVersion = protocolClientVersion,
     this.requestTimeout = const Duration(seconds: 10),
     this.handshakeTimeout = const Duration(seconds: 5),
@@ -55,6 +58,9 @@ class ShellModel extends ChangeNotifier {
   /// How a connection is created: the shell's `main.dart` supplies the process spawner, tests a
   /// fake. One call per spawn, so a restart gets a fresh transport from the same factory.
   final CoreTransportFactory transportFactory;
+
+  /// The runner window seam. Production uses the `seal/host` method channel; tests inject a fake.
+  final HostActions host;
 
   /// The shell's PROTOCOL CLIENT identity, sent in `hello`; supplied by `main.dart` from
   /// `version.dart`. It is not the product version (the app bar shows [productVersion]) and the
@@ -93,6 +99,55 @@ class ShellModel extends ChangeNotifier {
 
   /// True once [shutdown] started; the app is going away and no reconnect is attempted.
   bool get isClosing => _closing;
+
+  /// The persisted always-on-top preference from the merged config mirror
+  /// (`settings.ui.always_on_top`, false when the block or field is absent).
+  ///
+  /// The runner applies it once after `hello` and on each toggle; a `config.changed` event updates
+  /// this mirror but deliberately does not re-apply it (the toggle's own save is the only writer).
+  bool get alwaysOnTop {
+    final settings = asJsonMap(config.config['settings']);
+    final portable = asBool(asJsonMap(settings['ui'])['always_on_top']);
+    if (portable != null) {
+      return portable;
+    }
+    // A core that flattens the portable overlay into the merged config exposes the same field on
+    // the top-level `ui` section; read it too so the setting works either way.
+    return asBool(asJsonMap(config.config['ui'])['always_on_top']) ?? false;
+  }
+
+  /// Applies [enabled] to the window at once, then persists it as `settings.ui.always_on_top`
+  /// through the normal validate → apply path.
+  ///
+  /// A refusal puts the host back on the saved mirror value and returns the outcome so the caller
+  /// can surface the core's line; the pin therefore never claims a setting the config refused.
+  Future<ConfigSaveOutcome> setAlwaysOnTop(bool enabled) async {
+    try {
+      await host.setAlwaysOnTop(enabled);
+    } catch (error) {
+      logs.addShellNote('cannot set always-on-top: $error');
+      return ConfigSaveOutcome(note: 'cannot set always-on-top: $error');
+    }
+    final outcome = await saveConfig({
+      'settings': {
+        'ui': {'always_on_top': enabled},
+      },
+    });
+    if (!outcome.saved) {
+      await _applyAlwaysOnTopFromMirror();
+    }
+    return outcome;
+  }
+
+  /// The host's copy of the persisted preference. Called once after `hello`, and after a refused
+  /// toggle so the window and the mirror stay in agreement.
+  Future<void> _applyAlwaysOnTopFromMirror() async {
+    try {
+      await host.setAlwaysOnTop(alwaysOnTop);
+    } catch (error) {
+      logs.addShellNote('cannot set always-on-top: $error');
+    }
+  }
 
   /// Spawns (or reuses) the core, performs `hello`, and fills the config mirror.
   ///
@@ -166,6 +221,9 @@ class ShellModel extends ChangeNotifier {
       'core ${hello.coreVersion} connected '
       '(rev ${hello.rev}, root ${hello.root})',
     );
+    // The config mirror is now the truth; apply the persisted pin exactly once. Hide/show stays
+    // untouched: this is one SetWindowPos, not part of the capture's frame lifecycle.
+    await _applyAlwaysOnTopFromMirror();
   }
 
   /// One click, one new process, one new handshake ([PLAN-V3-SHELL.md] §2) — never an auto loop.

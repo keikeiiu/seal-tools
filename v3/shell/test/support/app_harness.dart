@@ -6,19 +6,23 @@ library;
 import 'package:seal_shell/app/app.dart';
 import 'package:seal_shell/protocol/protocol.dart';
 
+import 'fake_host.dart';
 import 'fake_transport.dart';
 
 /// The raw response/hello builders the harness and its tests share, so a test that hand-writes a
 /// `hello` answer (e.g. the `bad_version` case) does not need a second support import.
+export 'fake_host.dart' show FakeHost;
 export 'fake_transport.dart' show errorResponse, helloResult, okResponse;
 
 class AppHarness {
   AppHarness({
     this.shellVersion = '0.1.0',
     Duration requestTimeout = const Duration(seconds: 10),
-  }) {
+    FakeHost? host,
+  }) : host = host ?? FakeHost() {
     model = ShellModel(
       transportFactory: _spawn,
+      host: this.host,
       shellVersion: shellVersion,
       requestTimeout: requestTimeout,
     );
@@ -26,6 +30,10 @@ class AppHarness {
 
   final String shellVersion;
   late final ShellModel model;
+
+  /// The fake runner the model talks to for hide/show and always-on-top; the harness supplies one
+  /// by default so no test reaches a real method channel.
+  final FakeHost host;
 
   /// Every transport the model created, oldest first (restart appends a new one).
   final List<FakeTransport> transports = [];

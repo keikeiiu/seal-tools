@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <variant>
 
 #include <flutter/standard_method_codec.h>
 
@@ -32,6 +33,8 @@ bool FlutterWindow::OnCreate() {
   // The capture lifecycle: hide, wait a frame, capture, then show. The hide lives here because the
   // runner is the only place that owns the HWND; the Dart side awaits each reply, so the window is
   // really hidden before the core checks the foreground window (`game_not_foreground` otherwise).
+  // `setAlwaysOnTop` is the persisted pin: applied once on load and on toggle, never per frame, so
+  // it cannot interfere with the capture's hide/show.
   host_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "seal/host",
@@ -45,6 +48,17 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "showWindow") {
           ::ShowWindow(GetHandle(), SW_SHOWNORMAL);
+          result->Success();
+        } else if (call.method_name() == "setAlwaysOnTop") {
+          const auto* enabled = std::get_if<bool>(call.arguments());
+          if (enabled == nullptr) {
+            result->Error("bad_arguments",
+                          "setAlwaysOnTop expects a bool");
+            return;
+          }
+          ::SetWindowPos(GetHandle(),
+                         *enabled ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
           result->Success();
         } else {
           result->NotImplemented();
