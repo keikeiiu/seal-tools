@@ -449,8 +449,8 @@ The Lead's answers to §7, so increment 0 can freeze the wire. The player still 
 - **^9 sell-slot selection — DECIDED: v2 parity, per-run, never saved (player, 2026-10-28: "sell
   selection could be different every sell").** The v3.0.1 Sell grid persisted `buy_sell.sell_slots`;
   that was reverted before release: PROTOCOL now carries the selection as `tool.start`'s `slots`
-  argument, the shell keeps it in memory only, and `buy_sell.sell_slots` survives solely as a
-  migrated-config fallback. Increment 4 below therefore implements the v2 semantics, not a persisted
+  argument, the shell keeps it in memory only, and `buy_sell.sell_slots` is never read by a run (it
+  stays in the typed config for migration compatibility only). Increment 4 below therefore implements the v2 semantics, not a persisted
   one; the data-loss reasoning (a stale selection sells the wrong slots) is in PROTOCOL §12.6 ruling 6.
 - **^10 boundary — CONFIRMED.** This plan owns the calibrate-tab crops (empty-slot reference,
   `calib_pet.png`); the Pet-tab queue/food-cell **capture** session is a named follow-on, not this

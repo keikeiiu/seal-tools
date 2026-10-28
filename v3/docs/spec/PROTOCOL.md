@@ -165,8 +165,12 @@ Notes:
   data-loss bug, not a convenience. `slots` is validated before the tool starts: a non-array, a
   non-integer, an out-of-range value or an empty array is `bad_request` naming the field, because
   an empty selection has nothing to sell and a shell that sends it has a bug. With `slots` absent
-  the core falls back to the migrated config's `buy_sell.sell_slots` (v2 compatibility, usually
-  `null`); with neither, the start answers the domain's own `No slots are selected to sell.` line.
+  an empty selection has nothing to sell and a shell that sends it has a bug. With `slots` absent
+  the run has NO selection and the start answers the domain's own `No slots are selected to sell.`
+  line. The config's `buy_sell.sell_slots` is deliberately NEVER read by a run: v2 never wrote it,
+  v3.0.1 briefly did, and a stale value would silently sell the slots chosen last time — the
+  data-loss path this ruling exists to prevent. The field stays in the typed config for migration
+  compatibility and has no writer.
   Any run argument on a tool that does not take it is `bad_request` naming the offending field —
   a shell bug must not silently buy or sell something else. This is ruling §12.6: v2's Buy card
   and Buy/Sell tab picked these from the run, and `local.yaml` had no `active`-style field for
@@ -381,18 +385,22 @@ the .NET 10 composition regression is deferred with the v2 bump per PLAN §10 st
    plus one line per bad box rather than a bare refusal, because a four-box save with one typo must
    name that box.
 
-6. **`tool.start` gained optional run arguments for `buy` only** (`preset`, `count`), because Buy is
-   the one tool whose run parameters are genuinely per-run and v2 had no config field to persist
-   them: its card chose the item and count, `ShopPlan::buy` took both from the run, and `local.yaml`
-   has no `active`-style key for the buy block. The alternatives were worse: a `buy_sell.active`
-   field would persist a choice v2 never persisted and make the Buy card a config editor over a
-   setting no tool reads mid-run; a special `tool.start_buy` command would duplicate the start
-   lifecycle (busy/deferred/stopping) for one tool. The ruling therefore keeps the lifecycle in one
-   command and makes the run arguments explicit: `preset`/`count` on any other tool are a
-   `bad_request`, a buy start without `preset` is the domain's "No buy preset selected." line, and a
-   count below 1 is refused rather than clamped. This is a DRAFT-shape change (the spec was v2); the
-   golden fixtures are unchanged because they cover the envelope, not per-command argument
-   semantics, and the argument rules are covered by core tests on both sides of the seam.
+6. **`tool.start` gained optional run arguments for `buy` and `sell`**, because both tools'
+   parameters are genuinely per-run and v2 had no config field to persist them: the Buy card chose
+   the item and count (`ShopPlan::buy` took both from the run), and the Buy/Sell tab's sell-slot
+   selection changed between sells (v2 kept it in memory only). The alternatives were worse: a
+   `buy_sell.active`-style field would persist a choice v2 never persisted and make the cards config
+   editors over settings no tool reads mid-run; the sell case is stronger still, because persisting
+   the selection risks selling the slots chosen last time (a data-loss bug, not a convenience); a
+   special `tool.start_buy`/`start_sell` command would duplicate the start lifecycle
+   (busy/deferred/stopping) for two tools. The ruling therefore keeps the lifecycle in one command
+   and makes the run arguments explicit: `preset`/`count` (buy) and `slots` (sell), each validated
+   before the tool starts, wrong on any other tool (`bad_request` naming the field), with the
+   domain's own refusal line when a required selection is missing. `buy_sell.sell_slots` stays in
+   the typed config for migration compatibility but NO run reads it; a sell run is exactly the
+   shell's `slots` or nothing. This is a DRAFT-shape change (the spec was v2); the golden fixtures
+   cover the envelope, not per-command argument semantics, and the argument rules are covered by
+   core tests on both sides of the seam.
 
 7. **The calibration kind table was repaired, not extended silently.** Three findings from the
    calibration gap audit changed the spec: (a) the `focus_point` kind wrote `buy_sell.focus_point`,
