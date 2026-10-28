@@ -353,10 +353,23 @@ The feeder also keeps its own run progress: while it works it saves `food_slots_
 state. The Pet tab's stored values can therefore update while a run is in progress — that is the
 feeder's own progress write, not a player edit.
 
+**Setup so far & Ready to run.** The tab reads the core's preflight on open and via **Refresh
+checklists**: a **Calibration** list, a **Setup so far** list, then the core's readiness lines
+verbatim. The verdict is **Ready to run.** or **Not ready yet — see the lines below.**; ✓ marks a
+passed check, ✗ a failed one, and ℹ means the core did not check that item (board firmware is
+informational, for example — not a passed check). The lists describe the **saved** config: while
+anything here is edited they show “Based on the saved config — Save to refresh”, and **Save** refreshes
+them. The preflight is read-only — it does not open the board or read the game.
+
 - **Breeding rows** — for each row the config already carries: **Row N enabled** (a ticked row is fed;
   an unticked one is ignored) and **Stacks per reload** (the food strip is divided by it). The row's
   marks — start/end button, boarding pet slot, food strip, empty-slot crop and boarding state — are
-  read-only here and ride the save verbatim.
+  read-only here and ride the save verbatim. The row's **Boarding now** tick writes that row's
+  `boarding_running` immediately through the core into `local.yaml` (one field, not part of this tab's
+  Save) and works while a tool runs; it is disabled while any edit here is unsaved (“Save the row
+  edits first”, or “Save the edits first” for portable-only edits). A refused tick shows the core's
+  line under the rows, and the tick shows the core's current value, so the feeder's own mid-run
+  updates appear there too.
 - **Queue** — each queued pet's label/species with **Remove**. Removing an entry is saved by **Save**;
   adding one still needs the pet capture session (section 11), because it crops the pet icon from the
   live bag. When the queue is empty the **Return slot** is the fallback the run right-clicks.

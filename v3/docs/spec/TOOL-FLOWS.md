@@ -205,6 +205,10 @@ cleanup and released inputs).
 *Keeps each ticked breeding row fed on its own per-row clock by reloading the feeder before the pet runs
 out; it loops for days, and it is the one tool that ignores the quit hotkey.*
 
+Each row's `boarding_running` is its boarding state: the Pet tab's **Boarding now** tick is its manual
+writer (`pet.set_boarding`, one field through the core, not part of a tab Save), and a run also updates
+the same field mid-run; the tab renders the core's current value.
+
 **Flow (decision half: `tools/pet.rs` + `pet/decision.rs` + `pet/food_load.rs`).** `ready` refuses a
 half-calibrated setup (below). The opening look sets the schedule: per row, the slot reads empty /
 occupied / unreadable (`ReadRows` contract), `FeederEta` reads the game's own time line (completion form

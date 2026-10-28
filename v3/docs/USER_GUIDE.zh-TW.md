@@ -306,9 +306,19 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 重新啟動後不會再對已用過的格子或錯誤的 boarding 狀態繼續。Pet 分頁的已存值因此可能在執行期間更新 —— 那是
 餵食器自己的進度寫入，不是你做的編輯。
 
+**Setup so far & Ready to run。** 分頁在開啟時與按 **Refresh checklists** 時讀取核心的 preflight：先
+**Calibration** 清單、再 **Setup so far** 清單，最後是核心的就緒行原文。判定是 **Ready to run.** 或
+**Not ready yet — see the lines below.**；✓ 表示通過、✗ 表示失敗、ℹ 表示核心沒有檢查該項（例如板子韌體
+只是資訊，不是通過的檢查）。清單描述的是**已儲存**的設定：只要這裡有任何編輯，就會顯示「Based on the saved
+config — Save to refresh」，按 **Save** 會重新整理。preflight 是唯讀的 —— 不會開啟板子或讀取遊戲。
+
 - **Breeding rows** —— 設定中已存在的每一列：**Row N enabled**（勾選的列會餵食；未勾選的忽略）與
   **Stacks per reload**（餵食條會除以它）。該列的標記 —— start/end 按鈕、boarding pet slot、food strip、
-  空格裁切圖與 boarding 狀態 —— 在這裡是唯讀，會原樣帶過儲存。
+  空格裁切圖與 boarding 狀態 —— 在這裡是唯讀，會原樣帶過儲存。該列的 **Boarding now** 勾選會立即透過核心
+  把該列的 `boarding_running` 寫入 `local.yaml`（單一欄位，不屬於這個分頁的 Save），且工具執行中也能使用；
+  只要這裡有任何未儲存的編輯就會停用（「Save the row edits first」，若只有可攜編輯則是「Save the edits
+  first」）。被拒絕的勾選會在列下方顯示核心的行；勾選顯示的是核心目前的值，所以餵食器自己在執行中的更新
+  也會反映在這裡。
 - **Queue** —— 每個排隊寵物的 label/species 與 **Remove**。移除項目會由 **Save** 儲存；新增項目仍需要
   寵物擷取會談（第 11 節），因為要從即時背包裁切寵物圖示。佇列為空時，**Return slot** 就是執行時右鍵點擊
   的備援位置。
