@@ -149,14 +149,63 @@ class _BuySellTabState extends State<BuySellTab>
     setState(() => _selectedPreset = null);
   }
 
-  void _setSellCap(num value) => draft.edit((block) {
-    block['sell_cap'] = value;
-  });
+  /// Edits the form's sell cap and rebuilds the tab: the status line under the grid quotes the cap,
+  /// and content built in this `build()` does not repaint from the draft's own notification alone.
+  void _setSellCap(num value) {
+    setState(() {
+      draft.edit((block) {
+        block['sell_cap'] = value;
+      });
+    });
+  }
 
   /// Toggles one bag cell in the model's in-memory selection. `setState` is what redraws the grid:
   /// the model is not a draft and does not notify (nothing else renders the selection).
   void _toggleSlot(int slot) {
     setState(() => model.toggleSellSlot(slot));
+  }
+
+  // ── v2's row shortcuts and bulk actions (the same memory selection) ─────────────────────────
+  //
+  // The model owns only a per-cell toggle, so the bulk actions are compositions of it in ONE
+  // setState: no config command, no per-cell notification storm.
+
+  /// v2 `ToggleSellRow`: selects all 8 cells of [row] when any are off, clears them when all are on.
+  void _toggleRow(int row) {
+    final cells = [
+      for (var column = 0; column < _bagColumns; column++)
+        row * _bagColumns + column,
+    ];
+    final selected = model.sellSlots.toSet();
+    final allOn = cells.every(selected.contains);
+    setState(() {
+      for (final cell in cells) {
+        if (allOn || !selected.contains(cell)) {
+          model.toggleSellSlot(cell);
+        }
+      }
+    });
+  }
+
+  /// v2 "Select all": every bag cell is selected for the next run.
+  void _selectAll() {
+    final selected = model.sellSlots.toSet();
+    setState(() {
+      for (var cell = 0; cell < _bagSlots; cell++) {
+        if (!selected.contains(cell)) {
+          model.toggleSellSlot(cell);
+        }
+      }
+    });
+  }
+
+  /// v2 "Clear": nothing is selected for the next run.
+  void _clearSelection() {
+    setState(() {
+      for (final cell in model.sellSlots) {
+        model.toggleSellSlot(cell);
+      }
+    });
   }
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
@@ -338,6 +387,8 @@ class _BuySellTabState extends State<BuySellTab>
               ),
               const SizedBox(height: ShellSpace.md),
               _sellGrid(theme),
+              const SizedBox(height: ShellSpace.xs),
+              _selectionStatus(theme),
               const SizedBox(height: ShellSpace.sm),
               Text(
                 'This selection is for the next run only — it is not saved.',
@@ -366,6 +417,9 @@ class _BuySellTabState extends State<BuySellTab>
   /// The 8×8 selector. Every cell is one bag slot; the geometry comes from the calibrated
   /// `bag_grid` exactly as the read-only map did (`w/8, h/8` pitch). Disabled with the core's own
   /// refusal line when the grid is not calibrated, because a Sell run could not run either.
+  ///
+  /// The bulk actions and the per-row shortcut buttons are v2 parity (`BuildSellTab`'s pick row and
+  /// `MakeBagPicker(onRow:)`): they touch only the in-memory selection, never config.
   Widget _sellGrid(ThemeData theme) {
     final rect = _bagGridRect();
     if (rect == null) {
@@ -397,6 +451,22 @@ class _BuySellTabState extends State<BuySellTab>
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: ShellSpace.xs),
+        Row(
+          children: [
+            OutlinedButton(
+              key: const ValueKey('sell-select-all'),
+              onPressed: _selectAll,
+              child: const Text('Select all'),
+            ),
+            const SizedBox(width: ShellSpace.sm),
+            OutlinedButton(
+              key: const ValueKey('sell-clear'),
+              onPressed: _clearSelection,
+              child: const Text('Clear'),
+            ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
         for (var row = 0; row < _bagColumns; row++)
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -407,9 +477,56 @@ class _BuySellTabState extends State<BuySellTab>
                   row * _bagColumns + column,
                   selected.contains(row * _bagColumns + column),
                 ),
+              const SizedBox(width: ShellSpace.sm),
+              _rowButton(row),
             ],
           ),
       ],
+    );
+  }
+
+  /// v2's `row N` shortcut column: one click fills or clears the whole bag row.
+  Widget _rowButton(int row) => Tooltip(
+    key: ValueKey('sell-row-$row'),
+    message: 'Select or clear all 8 slots of bag row ${row + 1}',
+    child: TextButton(
+      onPressed: () => _toggleRow(row),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xs),
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(0, 20),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text('row ${row + 1}', style: const TextStyle(fontSize: 10)),
+    ),
+  );
+
+  /// v2 `PaintSellSlots`' status line: none / within the cap / over the cap. The over-cap state is
+  /// the error colour and says what is true — the run refuses either way (the core enforces the cap
+  /// in its plan).
+  Widget _selectionStatus(ThemeData theme) {
+    final count = model.sellSlots.length;
+    final cap = asNumber(draft.value['sell_cap'])?.round();
+    final over = cap != null && count > cap;
+    final String text;
+    if (count == 0) {
+      text = 'No slots selected — click the grid to choose what to sell.';
+    } else if (cap == null) {
+      text = '$count slot(s) selected.';
+    } else if (count > cap) {
+      text =
+          '$count slots selected, which is over the cap of $cap. Raise the '
+          'cap on purpose, or narrow the selection — the run refuses either '
+          'way.';
+    } else {
+      text = '$count slot(s) selected (cap $cap).';
+    }
+    return Text(
+      text,
+      key: const ValueKey('sell-selection-status'),
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: over ? theme.colorScheme.error : null,
+      ),
     );
   }
 
@@ -417,15 +534,18 @@ class _BuySellTabState extends State<BuySellTab>
     return InkWell(
       key: ValueKey('sell-cell-$slot'),
       onTap: () => _toggleSlot(slot),
-      child: Container(
-        width: 20,
-        height: 20,
-        margin: const EdgeInsets.all(1),
-        decoration: BoxDecoration(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+      child: Tooltip(
+        message: 'Bag slot ${slot + 1}',
+        child: Container(
+          width: 20,
+          height: 20,
+          margin: const EdgeInsets.all(1),
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.surfaceContainerHighest,
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
         ),
       ),
     );

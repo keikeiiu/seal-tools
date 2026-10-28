@@ -1,6 +1,7 @@
 /// The Buy/Sell tab: the form's `buy_sell` half (presets + sell cap) saves only those fields, and the
 /// 8×8 sell grid is PER-RUN state — toggling updates [ShellModel]'s in-memory selection, never config
-/// (PROTOCOL §12.6: the selection can differ every sell).
+/// (PROTOCOL §12.6: the selection can differ every sell). The grid carries v2's row shortcuts, the
+/// Select all / Clear bulk actions and the cap status line.
 library;
 
 import 'dart:ui' as ui;
@@ -75,10 +76,22 @@ Future<void> _flush(WidgetTester tester) async {
 }
 
 /// Taps one bag cell and pumps twice: the toggle mutates the model, then `setState` redraws the grid.
-Future<void> _tapCell(WidgetTester tester, int slot) async {
-  await tester.tap(find.byKey(ValueKey('sell-cell-$slot')));
+/// Taps one keyed control and pumps twice: a selection change mutates the model, then `setState`
+/// redraws the grid, the cap status line and the count header.
+Future<void> _tap(WidgetTester tester, String key) async {
+  await tester.tap(find.byKey(ValueKey(key)));
   await tester.pump();
   await tester.pump();
+}
+
+Future<void> _tapCell(WidgetTester tester, int slot) =>
+    _tap(tester, 'sell-cell-$slot');
+
+/// The status line below the grid (v2 `PaintSellSlots`): its text and its colour.
+Text _statusWidget(WidgetTester tester) {
+  return tester.widget<Text>(
+    find.byKey(const ValueKey('sell-selection-status')),
+  );
 }
 
 /// True when the shell has sent no config command at all — the toggle is memory-only.
@@ -222,6 +235,95 @@ void main() {
       await _tapCell(tester, 0);
       expect(find.text('1 of 64 slots selected'), findsOneWidget);
       expect(harness.model.sellSlots, [63]);
+      expect(_noConfigCommands(harness), isTrue);
+    },
+  );
+
+  testWidgets('a row shortcut selects and clears exactly that bag row', (
+    tester,
+  ) async {
+    final harness = await _pumpBuySell(tester);
+
+    await _tap(tester, 'sell-row-0');
+    expect(find.text('8 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, [0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(_cellColor(tester, 0), _scheme(tester).primary);
+    expect(_cellColor(tester, 7), _scheme(tester).primary);
+    expect(_cellColor(tester, 8), _scheme(tester).surfaceContainerHighest);
+
+    // Pressing it again clears the same row (v2's ToggleSellRow).
+    await _tap(tester, 'sell-row-0');
+    expect(find.text('0 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, isEmpty);
+
+    // A partially selected row is COMPLETED, not cleared.
+    await _tapCell(tester, 9);
+    await _tap(tester, 'sell-row-1');
+    expect(find.text('8 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, [8, 9, 10, 11, 12, 13, 14, 15]);
+
+    // v2's tooltips: the row button names the row, each cell names its 1-based slot.
+    final rowTooltip = tester.widget<Tooltip>(
+      find.byKey(const ValueKey('sell-row-0')),
+    );
+    expect(rowTooltip.message, 'Select or clear all 8 slots of bag row 1');
+    final cellTooltip = tester.widget<Tooltip>(
+      find.descendant(
+        of: find.byKey(const ValueKey('sell-cell-0')),
+        matching: find.byType(Tooltip),
+      ),
+    );
+    expect(cellTooltip.message, 'Bag slot 1');
+    expect(_noConfigCommands(harness), isTrue);
+  });
+
+  testWidgets('Select all selects the 64 cells and Clear empties them', (
+    tester,
+  ) async {
+    final harness = await _pumpBuySell(tester);
+
+    await _tap(tester, 'sell-select-all');
+    expect(find.text('64 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, hasLength(64));
+    expect(harness.model.sellSlots.first, 0);
+    expect(harness.model.sellSlots.last, 63);
+
+    await _tap(tester, 'sell-clear');
+    expect(find.text('0 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, isEmpty);
+    expect(_noConfigCommands(harness), isTrue);
+  });
+
+  testWidgets(
+    'the status line has v2\'s three states and follows the cap live',
+    (tester) async {
+      final harness = await _pumpBuySell(tester);
+
+      expect(
+        _statusWidget(tester).data,
+        'No slots selected — click the grid to choose what to sell.',
+      );
+      expect(_statusWidget(tester).style?.color, isNot(_scheme(tester).error));
+
+      await _tapCell(tester, 0);
+      expect(_statusWidget(tester).data, '1 slot(s) selected (cap 20).');
+
+      // The cap is the form's own field; the warning follows it live, including going over.
+      await tester.enterText(_field('sell-cap'), '1');
+      await tester.pump();
+      await _tapCell(tester, 1);
+      expect(
+        _statusWidget(tester).data,
+        '2 slots selected, which is over the cap of 1. Raise the cap on '
+        'purpose, or narrow the selection — the run refuses either way.',
+      );
+      expect(_statusWidget(tester).style?.color, _scheme(tester).error);
+
+      // Raising the cap clears the warning.
+      await tester.enterText(_field('sell-cap'), '5');
+      await tester.pump();
+      expect(_statusWidget(tester).data, '2 slot(s) selected (cap 5).');
+      expect(_statusWidget(tester).style?.color, isNot(_scheme(tester).error));
       expect(_noConfigCommands(harness), isTrue);
     },
   );
