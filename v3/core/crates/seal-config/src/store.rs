@@ -26,6 +26,27 @@ const ATTRIBUTES: &str = "attributes.yaml";
 const SETTINGS: &str = "settings";
 const LEGACY_FOLDED: &str = "legacy_folded";
 
+/// The machine-side pet RUN state a live feeder may update mid-run. This is deliberately not a
+/// whole `pet` block: a field the run does not own can never be touched by this writer.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PetRunStatePatch {
+    pub food_slots_used: Option<i32>,
+    /// `(row index, boarding_running)` in the existing `pet.slots` order.
+    pub boarding_running: Vec<(usize, bool)>,
+    /// `Some(None)` clears a learned crop; `Some(Some(png))` sets it.
+    pub close_button_png: Option<Option<String>>,
+    pub boarding_window_may_be_open: Option<bool>,
+}
+
+impl PetRunStatePatch {
+    pub fn is_empty(&self) -> bool {
+        self.food_slots_used.is_none()
+            && self.boarding_running.is_empty()
+            && self.close_button_png.is_none()
+            && self.boarding_window_may_be_open.is_none()
+    }
+}
+
 /// One writer at a time, and a temp name nobody else can be holding.
 ///
 /// v2 made the save gate a `static` object for exactly this reason: two `ConfigLoader` instances
@@ -229,6 +250,18 @@ impl ConfigStore {
     /// Everything the application does not own is carried through the save verbatim (see
     /// [`crate::foreign`]), and the constant header is prepended to every write.
     pub fn update_local<F: FnOnce(&mut Value)>(&self, mutate: F) -> Result<(), ConfigError> {
+        self.update_local_checked(|local| {
+            mutate(local);
+            Ok(())
+        })
+    }
+
+    /// The same one-writer read-modify-write, but the mutator may refuse the write. A refused
+    /// mutation leaves the file untouched and the gate still covers the whole read/write.
+    pub fn update_local_checked<F>(&self, mutate: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut Value) -> Result<(), ConfigError>,
+    {
         let _gate = lock_save_gate();
         let path = self.path_of(LOCAL);
         let existing = if path.is_file() {
@@ -258,7 +291,7 @@ impl ConfigStore {
             _ => local = Value::Object(Map::new()),
         }
 
-        mutate(&mut local);
+        mutate(&mut local)?;
 
         let body = yaml::to_string(&local).map_err(|message| ConfigError::Serialize {
             path: path.clone(),
@@ -270,6 +303,77 @@ impl ConfigStore {
         text.push_str(&body);
         text.push_str(&foreign);
         self.write_atomically(&path, &text)
+    }
+
+    /// Persist one pet run-state update through the same gate/read-modify-write as every other
+    /// save. Field-wise by construction: only the fields named in `patch` are touched, inside the
+    /// existing `pet` block; the rest of `local.yaml` (foreign text included) is carried as usual.
+    pub fn persist_pet_run_state(&self, patch: &PetRunStatePatch) -> Result<(), ConfigError> {
+        if patch.is_empty() {
+            return Ok(());
+        }
+        let local_path = self.path_of(LOCAL);
+        self.update_local_checked(|local| {
+            let Some(local_object) = local.as_object_mut() else {
+                return Err(ConfigError::Parse {
+                    path: local_path.clone(),
+                    message: "local.yaml does not contain a mapping".to_owned(),
+                });
+            };
+            let pet = local_object
+                .entry("pet".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            let Some(pet) = pet.as_object_mut() else {
+                return Err(ConfigError::Parse {
+                    path: local_path.clone(),
+                    message: "pet is not a mapping".to_owned(),
+                });
+            };
+
+            if let Some(used) = patch.food_slots_used {
+                pet.insert("food_slots_used".to_owned(), Value::from(used));
+            }
+            if !patch.boarding_running.is_empty() {
+                let slots = pet
+                    .entry("slots".to_owned())
+                    .or_insert_with(|| Value::Array(Vec::new()));
+                let Some(slots) = slots.as_array_mut() else {
+                    return Err(ConfigError::Parse {
+                        path: local_path.clone(),
+                        message: "pet.slots is not a list".to_owned(),
+                    });
+                };
+                for (row, running) in &patch.boarding_running {
+                    let Some(slot) = slots.get_mut(*row) else {
+                        return Err(ConfigError::Parse {
+                            path: local_path.clone(),
+                            message: format!("pet.slots has no row {}", row + 1),
+                        });
+                    };
+                    let Some(slot) = slot.as_object_mut() else {
+                        return Err(ConfigError::Parse {
+                            path: local_path.clone(),
+                            message: format!("pet.slots row {} is not a mapping", row + 1),
+                        });
+                    };
+                    slot.insert("boarding_running".to_owned(), Value::Bool(*running));
+                }
+            }
+            if let Some(close) = &patch.close_button_png {
+                match close {
+                    Some(png) => {
+                        pet.insert("close_button_png".to_owned(), Value::String(png.clone()));
+                    }
+                    None => {
+                        pet.remove("close_button_png");
+                    }
+                }
+            }
+            if let Some(open) = patch.boarding_window_may_be_open {
+                pet.insert("boarding_window_may_be_open".to_owned(), Value::Bool(open));
+            }
+            Ok(())
+        })
     }
 
     /// Writes a binary artifact (a calibration crop) beside the config files, atomically.

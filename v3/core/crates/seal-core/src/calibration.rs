@@ -834,7 +834,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         sections.insert(def.path[0].to_owned(), block);
         state.config = crate::validate::effective_config(&state.config, &sections);
     }
-    state.rev += 1;
+    state.bump_revision();
     state.queue_config_changed(def.path[0]);
 
     let mut result = json!({

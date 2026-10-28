@@ -15,6 +15,8 @@
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::Engine as _;
 use seal_config::{ConfigError, ConfigStore};
@@ -56,6 +58,10 @@ pub struct CoreState {
     pub shared_config: crate::registry::SharedConfig,
     pub store: ConfigStore,
     pub rev: u64,
+    /// The session revision as a shared counter: tool workers can bump it for a mid-run write
+    /// (pet run state) without waiting for the next command, and the dispatcher re-reads it at every
+    /// request boundary. `rev` is that value's dispatcher-local snapshot.
+    pub revision: Arc<AtomicU64>,
     pub config: Value,
     pub handshaken: bool,
     pub stopping: bool,
@@ -96,6 +102,7 @@ impl CoreState {
             store,
             shared_config: Default::default(),
             rev: 0,
+            revision: Arc::new(AtomicU64::new(0)),
             config: json!({}),
             handshaken: false,
             stopping: false,
@@ -125,6 +132,7 @@ impl CoreState {
             store,
             shared_config: Default::default(),
             rev: 0,
+            revision: Arc::new(AtomicU64::new(0)),
             config,
             handshaken: false,
             stopping: false,
@@ -195,6 +203,21 @@ impl CoreState {
     /// The events queued by the last dispatch, for tests that do not run the writer thread.
     pub fn take_queued_events(&mut self) -> Vec<seal_proto::Event> {
         std::mem::take(&mut self.queued_events)
+    }
+
+    /// The shared revision handle, for the production pet run-state sink. A worker's mid-run write
+    /// bumps this counter; the dispatcher re-reads it before each request so the next
+    /// `config.apply`/`hello` sees the same revision the event carried.
+    pub fn revision_handle(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.revision)
+    }
+
+    /// One revision for a write this dispatcher performed; also publishes it to the shared counter so
+    /// a later worker write cannot move the session backwards.
+    pub(crate) fn bump_revision(&mut self) -> u64 {
+        self.rev += 1;
+        self.revision.store(self.rev, Ordering::SeqCst);
+        self.rev
     }
 
     /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
@@ -386,6 +409,9 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
 }
 /// Answers one request. Never panics: a bad request is a refusal the client can show.
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
+    // A mid-run pet write can bump the shared revision between requests; every boundary starts from
+    // that value so `hello`, conflict checks and echoes never report a pre-write revision.
+    state.rev = state.revision.load(Ordering::SeqCst);
     if request.cmd == "hello" {
         return hello(state, request);
     }
@@ -582,7 +608,7 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     state.variant = active.variant;
     state.dictionary = active.dictionary;
     state.attributes = attributes;
-    state.rev += 1;
+    state.bump_revision();
     // One event per block the save wrote, in request order. The portable half writes its inner
     // blocks, so `settings` fans out to the block names it carries.
     let mut changed: Vec<String> = Vec::new();
@@ -642,7 +668,7 @@ fn echo_sections(effective: &Value, sections: &Map<String, Value>) -> Map<String
 fn config_reload(state: &mut CoreState, request: &Request) -> Response {
     match state.reload() {
         Ok(()) => {
-            state.rev += 1;
+            state.bump_revision();
             Response::ok(
                 &request.id,
                 json!({"rev": state.rev, "config": state.config}),
@@ -709,7 +735,7 @@ fn ui_window(state: &mut CoreState, request: &Request) -> Response {
     sections.insert("ui".to_owned(), Value::Object(ui));
     match state.store.apply_sections(&sections) {
         Ok(_) => {
-            state.rev += 1;
+            state.bump_revision();
             refresh_config(state);
             state.queue_config_changed("ui");
             Response::ok(&request.id, json!({}))
@@ -1456,5 +1482,24 @@ mod tests {
             assert_eq!(error.1, "slots", "{case}");
             assert!(error.0.contains("slots"), "{case}: {}", error.0);
         }
+    }
+
+    #[test]
+    fn a_stale_shell_revision_conflicts_after_a_mid_run_revision_bump() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\\repo"));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        state.revision.store(4, std::sync::atomic::Ordering::SeqCst);
+
+        let response = handle(
+            &mut state,
+            Request::new("stale", "config.apply", json!({"rev": 3, "sections": {}})),
+        );
+
+        let error = response.error.expect("the stale write is refused");
+        assert_eq!(error.code, "conflict");
+        assert_eq!(error.detail["rev"], 4);
     }
 }

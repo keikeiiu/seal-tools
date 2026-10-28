@@ -30,7 +30,7 @@ pub mod store;
 pub mod yaml;
 
 pub use error::ConfigError;
-pub use store::ConfigStore;
+pub use store::{ConfigStore, PetRunStatePatch};
 
 /// The top-level blocks of `local.yaml` this application owns and rewrites, ported verbatim from
 /// `ConfigLoader.OwnedLocalBlocks`. Every other top-level block is foreign: carried through a save

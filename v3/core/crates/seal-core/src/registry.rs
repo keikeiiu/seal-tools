@@ -30,6 +30,7 @@ use crate::board::{BoardFailure, Settings, open_board};
 use crate::gem::{GemResultSource, GemTool};
 use crate::holdspace::{HoldSpaceTool, SpaceHoldEffects};
 use crate::pet::{PetReadSource, PetTool};
+use crate::pet_state::PetStateSink;
 use crate::quest::{QuestEffects, QuestTool, WinQuestSource};
 use crate::shop::ShopTool;
 use crate::spammer::{RealNow, SpammerTool};
@@ -85,6 +86,8 @@ pub struct ProductionRegistry {
     /// The per-run file logger: the hold-space release failure is the one effect-level failure that
     /// has no card message left to reach (it happens in `Drop`), so the registry hands it the logger.
     logs: Arc<crate::logs::Logs>,
+    /// The mid-run pet run-state sink (A1). `None` in registry tests that never start the feeder.
+    pet_state: Option<Arc<dyn PetStateSink>>,
 }
 
 impl ProductionRegistry {
@@ -93,7 +96,15 @@ impl ProductionRegistry {
             shared,
             store,
             logs,
+            pet_state: None,
         }
+    }
+
+    /// Attach the production pet run-state sink. The binary does this before the supervisor starts;
+    /// the registry's tests leave it absent.
+    pub fn with_pet_state_sink(mut self, sink: Arc<dyn PetStateSink>) -> Self {
+        self.pet_state = Some(sink);
+        self
     }
 
     fn config(&self) -> Value {
@@ -266,7 +277,10 @@ impl ProductionRegistry {
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
             .map_err(|error| error.to_string())?;
         let source = PetReadSource::open(&config, &plan, &attributes, firmware_level, &root)?;
-        let tool = PetTool::new(plan, source, game);
+        let mut tool = PetTool::new(plan, source, game);
+        if let Some(sink) = &self.pet_state {
+            tool = tool.with_state_sink(Arc::clone(sink));
+        }
         // The feeder clicks calibrated points, so it needs the display the clicks are measured in.
         let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
         let hwnd = seal_win::window::find_window(&title)

@@ -78,11 +78,21 @@ fn main() {
     // The registry reads the merged config through this cell; publishing before the supervisor
     // starts means the first Start already sees the config `hello` reported.
     state.publish_config();
-    let registry: Arc<dyn ToolRegistry> = Arc::new(ProductionRegistry::new(
-        state.shared_config.clone(),
+    let pet_state = Arc::new(seal_core::pet_state::ConfigPetStateSink::new(
         state.store.clone(),
+        state.revision_handle(),
+        bus.clone(),
         Arc::clone(&state.logs),
+        state.shared_config.clone(),
     ));
+    let registry: Arc<dyn ToolRegistry> = Arc::new(
+        ProductionRegistry::new(
+            state.shared_config.clone(),
+            state.store.clone(),
+            Arc::clone(&state.logs),
+        )
+        .with_pet_state_sink(pet_state),
+    );
     state.attach_supervisor(Supervisor::start(registry, bus, Arc::clone(&state.logs)));
 
     let stdin = std::io::stdin();

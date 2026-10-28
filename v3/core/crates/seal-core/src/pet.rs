@@ -43,6 +43,7 @@
 //! - A candidate pet is hover-checked before the right-click; the drag uses closed-loop `Place` for
 //!   the drop point (v2's `PlaceOn`) with an explicit hold/release pair; the effects' Drop guard is
 //!   the backstop for a failure or cancel between them.
+use crate::pet_state::PetStateSink;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1134,6 +1135,8 @@ pub struct PetTool<S: PetSource> {
     visit: Option<Visit>,
     message: String,
     countdown_s: Option<f64>,
+    /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
+    state_sink: Option<Arc<dyn PetStateSink>>,
 }
 
 impl<S: PetSource> PetTool<S> {
@@ -1161,6 +1164,20 @@ impl<S: PetSource> PetTool<S> {
             visit: None,
             message,
             countdown_s: None,
+            state_sink: None,
+        }
+    }
+
+    /// Attach the mid-run state sink (production only). Returns `self` so the registry can build the
+    /// tool chain without a second constructor.
+    pub fn with_state_sink(mut self, sink: Arc<dyn PetStateSink>) -> Self {
+        self.state_sink = Some(sink);
+        self
+    }
+
+    fn persist_state(&self, patch: seal_config::PetRunStatePatch) {
+        if let Some(sink) = &self.state_sink {
+            sink.persist(&patch);
         }
     }
 
@@ -1246,14 +1263,28 @@ impl<S: PetSource> PetTool<S> {
             match self.source.slot_state(&row) {
                 Ok(slot) => match slot.empty {
                     Some(true) => {
+                        let was_boarding = self.state[index].boarding;
                         self.state[index].boarding = false;
+                        if was_boarding {
+                            self.persist_state(seal_config::PetRunStatePatch {
+                                boarding_running: vec![(index, false)],
+                                ..seal_config::PetRunStatePatch::default()
+                            });
+                        }
                         self.state[index].detail = None;
                         self.state[index].species = None;
                         self.state[index].next_minutes = Some(0.0);
                         due.push(index);
                     }
                     Some(false) => {
+                        let was_boarding = self.state[index].boarding;
                         self.state[index].boarding = true;
+                        if !was_boarding {
+                            self.persist_state(seal_config::PetRunStatePatch {
+                                boarding_running: vec![(index, true)],
+                                ..seal_config::PetRunStatePatch::default()
+                            });
+                        }
                         let was_due = self.state[index]
                             .next_minutes
                             .is_some_and(|minutes| minutes <= 0.0);
@@ -1411,6 +1442,11 @@ impl<S: PetSource> PetTool<S> {
             RowOutcome::Failed { .. } => {}
             RowOutcome::Deferred | RowOutcome::NothingToBoard => state.boarding = false,
         }
+        let running = state.boarding;
+        self.persist_state(seal_config::PetRunStatePatch {
+            boarding_running: vec![(index, running)],
+            ..seal_config::PetRunStatePatch::default()
+        });
         self.message = folded.message;
     }
 
@@ -1733,6 +1769,10 @@ impl<S: PetSource> PetTool<S> {
             }
             Stage::FoodDone => {
                 visit.food_used += 1;
+                self.persist_state(seal_config::PetRunStatePatch {
+                    food_slots_used: Some(visit.food_used),
+                    ..seal_config::PetRunStatePatch::default()
+                });
                 visit.stack += 1;
                 visit.stage = Stage::FoodPick;
             }
@@ -3135,5 +3175,57 @@ mod loop_tests {
         );
         worker.join().expect("the worker ends");
         assert_eq!(port.requests(), vec![ToolId::Pet]);
+    }
+
+    /// A sink that records the patches a live tool emits, without a config root.
+    struct RecordingSink {
+        patches: std::sync::Mutex<Vec<seal_config::PetRunStatePatch>>,
+    }
+
+    impl RecordingSink {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                patches: std::sync::Mutex::new(Vec::new()),
+            })
+        }
+
+        fn patches(&self) -> Vec<seal_config::PetRunStatePatch> {
+            self.patches.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl crate::pet_state::PetStateSink for RecordingSink {
+        fn persist(&self, patch: &seal_config::PetRunStatePatch) {
+            self.patches
+                .lock()
+                .expect("not poisoned")
+                .push(patch.clone());
+        }
+    }
+
+    #[test]
+    fn a_live_boarding_fold_persists_the_row_state_through_the_sink() {
+        let port = Arc::new(RecordingPort::default());
+        let plan = plan_of(&config(1, false, true, false));
+        let source = FakeSource::new(vec![empty()]);
+        let sink = RecordingSink::new();
+        let mut tool = PetTool::new(plan, source, port)
+            .with_state_sink(Arc::clone(&sink) as Arc<dyn crate::pet_state::PetStateSink>);
+
+        tool.fold(
+            0,
+            seal_domain::tools::pet::RowOutcome::Reloaded {
+                pet_minutes: None,
+                landed_line_minutes: None,
+            },
+        );
+
+        let patches = sink.patches();
+        assert!(
+            patches
+                .iter()
+                .any(|patch| patch.boarding_running == vec![(0, true)]),
+            "the run wrote the row's boarding belief: {patches:?}"
+        );
     }
 }
