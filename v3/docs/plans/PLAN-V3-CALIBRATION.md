@@ -264,8 +264,8 @@ draft → preview → save) rather than one-mark-at-a-time fields.
 | `calibration.tooltip.hover_capture` | `{"point":{"x":..,"y":..},"hover_delay_ms":700}` | `{"frame":{…},"display":{…},"placed":{"x":..,"y":..},"line":"…"}` — place (closed loop), click to focus, wait, capture; shell hides/shows around it; used for the offset measurement and Test read |
 | `calibration.tooltip.save` | `{"offset_x":-8,"offset_y":-6,"width":320,"height":210,"hover_delay_ms":700}` | `{"rev":18,"block":{…tooltip…}}` — validates size ≥20, offset fields present |
 | `calibration.tooltip.test` | `{"point":{"x":..,"y":..},"hover_delay_ms":700,"debug":true?}` | `{"lines":[{"text":"…","score":0.93}],"region":{…},"debug_path":"logs/reads/tooltip_…png"?}` — hover then read at point+offset |
-| `pointer.place` | `{"point":{"x":..,"y":..}}` | `{"placed":{"x":..,"y":..},"ok":true}` — closed-loop placement only |
-| `pointer.click` | `{"point":{"x":..,"y":..}}` | `{"placed":{…},"clicked":true}` — v2 "Place cursor + click" / "Test Click (發條)" |
+| `pointer.place` | `{"x":..,"y":..}` | `{}` — closed-loop placement only |
+| `pointer.click` | `{"x":..,"y":..}` | `{}` — v2 "Place cursor + click" / "Test Click (發條)" |
 
 Notes:
 - `calibration.save`/`fetch` (18 marks) remain unchanged for pixel marks and third-party/test use;
