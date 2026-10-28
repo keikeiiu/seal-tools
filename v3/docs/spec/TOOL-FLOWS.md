@@ -207,7 +207,9 @@ out; it loops for days, and it is the one tool that ignores the quit hotkey.*
 
 Each row's `boarding_running` is its boarding state: the Pet tab's **Boarding now** tick is its manual
 writer (`pet.set_boarding`, one field through the core, not part of a tab Save), and a run also updates
-the same field mid-run; the tab renders the core's current value.
+the same field mid-run; the tab renders the core's current value. Queue entries are added by capturing
+the chosen bag cell's icon (`label`, `species`, `rect`, `png`), edited in the Pet tab and written by
+its one Save; the run matches queued pets by that captured icon.
 
 **Flow (decision half: `tools/pet.rs` + `pet/decision.rs` + `pet/food_load.rs`).** `ready` refuses a
 half-calibrated setup (below). The opening look sets the schedule: per row, the slot reads empty /

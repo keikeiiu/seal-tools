@@ -381,9 +381,13 @@ does not open the board or read the game.
   edits first”, or “Save the edits first” for portable-only edits). A refused tick shows the core's
   line under the rows, and the tick shows the core's current value, so the feeder's own mid-run
   updates appear there too.
-- **Queue** — each queued pet's label/species with **Remove**. Removing an entry is saved by **Save**;
-  adding one still needs the pet capture session (section 11), because it crops the pet icon from the
-  live bag. When the queue is empty the **Return slot** is the fallback the run right-clicks.
+- **Queue** — each queued pet shows its **captured icon** (the identity the run matches), an editable
+  **Label** (log/list only) and **Species** (the feeding-table line used for the minute estimate),
+  plus **Remove**. Edits and captured entries are saved by the tab's **Save** — unlike v2's per-edit
+  auto-save — and a new entry can be removed before Save. Species is a text field seeded from the last
+  queue entry (the shell cannot read v2's `docs/pet-data.csv` combo); a value that is not in the
+  feeding table simply has no minute estimate. When the queue is empty the **Return slot** is the
+  fallback the run right-clicks.
 - **Bag food cells** — per page (**ITEM1**..**ITEM3**) an 8×8 grid of the boarding bag; toggle the
   cells that hold pet food. The grid is available only after the **Boarding bag grid** mark is
   calibrated; otherwise a line points at **Calibrate** (the boarding bag's own grid, not the shop's)
@@ -400,9 +404,22 @@ does not open the board or read the game.
   when the boarding window's own rate line cannot be read, and **Occupied above (0–1 distance)**, how
   unlike the empty reference a slot must look before it counts as occupied.
 
+**Add a pet by icon.** Put the bag page holding the pet on screen — the shell hides itself for the
+shot, so the game must be in front. Choose the page with the **ITEM1**..**ITEM3** chips, click the
+cell holding the pet, then press **Capture pet icon**. The page is not clicked for you, and a wrong
+page gives a plausible wrong crop: check the preview and the echoed page/cell/crop size before
+**Save**, because nothing is queued until then. A refused capture (another tool running, the game not
+in front, or the bag grid/page-tab mark uncalibrated) shows the core's line and changes nothing;
+without a calibrated bag grid the capture controls are not offered.
+
+**Capture food icon.** Mark a food cell first — the newest mark is the source — put that page on
+screen and press **Capture food icon**. The preview is the reference the food scan will match;
+**Save** writes `pet.food_icon_png`. Neither icon is the boarding A1 writer: both are ordinary config
+fields saved by the tab's Save.
+
 The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
 the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no
-breeding rows and v3.0 cannot add rows, queue entries or re-capture crops yet — migrate your v2
+breeding rows and v3.0 cannot add rows or re-capture the row's reference crops yet — migrate your v2
 `config/local.yaml` (which carries them) or hand-edit that block with the repository's
 `v3/docs/spec/CONFIG.md` open; otherwise the feeder refuses with its setup line. The **Calibrate** tab
 still draws the feeder's marks (`pet_*` kinds); the close-X reference crop is learned by the run
@@ -548,10 +565,9 @@ deliberately offers no fake one.
   `local.yaml` (`tuner.ocr`) until that session exists. The Calibrate tab says so in its tuner note.
 - **The tooltip panel** — a hover offset measured by parking, hovering and capturing cannot be
   expressed as one frame mark; hand-edited from v2 config.
-- **The pet's reference crops and row/queue entries** — live-screen session features (the close-X crop
-  is even learned by the run), not frame marks. The Pet tab edits the setup the config already carries,
-  but adding rows or queue entries and re-capturing those crops needs the pet capture session
-  (section 11).
+- **The pet's reference crops and row entries** — live-screen session features (the close-X crop is
+  even learned by the run), not frame marks. The Pet tab adds queue pets by icon capture, but adding
+  rows and re-capturing the row reference crops needs the pet capture session (section 11).
 - **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
   the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
   cells, but has no kind of its own.
@@ -637,10 +653,10 @@ the protocol gains the commands that measurement chooses. It is listed in the re
 1. Start the game, windowed, and log in.
 2. Open Seal Tools; the core connects (status strip shows `core … · rev …`).
 3. On the tool's tab set what the run needs (spammer preset, tuner target/filter, gem start grade,
-   quest flow). For the Pet Feeder, its tab edits the existing rows (enabled/stacks), removes queue
-   entries, marks the bag food cells and sets the load mode and timings; adding rows/queue entries or
-   re-capturing crops still comes from a migrated v2 `local.yaml` or a hand-edited block. Then **Start**
-   on the card. **Stop** when done.
+   quest flow). For the Pet Feeder, its tab edits the existing rows (enabled/stacks), removes or adds
+   queue pets by icon capture, marks the bag food cells and sets the load mode and timings; adding rows
+   or re-capturing the row crops still comes from a migrated v2 `local.yaml` or a hand-edited block.
+   Then **Start** on the card. **Stop** when done.
 4. For Buy/Sell use the card's run choice (Buy), or mark the slots in the **Sell** grid and press
    **Start** on the **Sell card** — the selection is for that run and is not saved. Remember: Sell is
    irreversible and capped.
@@ -687,10 +703,11 @@ unless the repository says so.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
-- **The pet capture session.** The Pet tab edits the setup the machine already carries — rows
-  enabled/stacks, queue removal, bag food cells, return slot, load mode and timings — but adding rows or
-  queue entries and re-capturing the reference crops/rects still needs a live pet capture session;
-  migrated v2 configs carry the current data.
+- **The pet session surface (increment 3+).** The Pet tab edits the setup the machine already carries —
+  rows enabled/stacks, queue add/edit by icon capture, bag food cells, return slot, load mode and
+  timings — but adding rows, re-capturing the row reference crops/rects, the bag scans, the panel test
+  read and the feedable sweep still need a live pet capture session; migrated v2 configs carry the
+  current data.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
   copies of Seal Tools at once.
