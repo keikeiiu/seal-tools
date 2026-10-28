@@ -19,6 +19,43 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (29) — the Pet tab can scan the bag again (v3.0.6)
+
+The last automatic half of v2's Pet-tab maintenance workflow: the bag scans, and the explicit write they
+feed. `pet.scan_food_page`/`pet.scan_queue_page` (253d7db) are READ-ONLY — input lease, bag-grid/page-tab
+validation, one foreground-gated capture, the EXISTING v2 matcher (pet.rs grew one unfiltered
+`score_all_scores` sweep that the run's `score_all` wraps, so there is structurally ONE scorer), then
+best-effort evidence under logs/reads and a result: food cells 1-based in CELL order, queue `per_entry` in
+queue order with score-ordered hits, runner-up, claimed conflicts and v2's deduced "label x n" lines.
+`pet.apply_food_scan` (253d7db) is the only writer: 1-based args to 0-based stored pairs, replaces
+`food_slots` AND resets `food_slots_used` in one A1 field-precise patch, one `config.changed` after the
+response, empty selection refused because nothing-found must not silently clear a live run. The shell
+(771a60a) generalised the capture flow into one `_runHiddenWindow` shared by captures and scans (show
+always in a finally), added the Scan-the-bag section with the page echo, verbatim report/evidence and
+the neutral `hits: []` caption, and the confirmed Apply with REPLACE/RESET/immediate wording, dirty-gate
+and mirror refresh. Nothing is auto-applied; the player reviews the report/evidence first.
+
+The check found issues worth recording. The core cannot click or verify the ITEM tab (it validates the
+page's mark only), so a wrong page yields a plausible result under the requested page — the scan rows
+gained the capture row's page-up/wrong-page caveat (2ec2897) and the docs/UI warn that Apply can then
+save wrong-page cells. Two robustness fixes followed (6eba880): the report filename gained the page
+(both files are `scan_page{N}_{stamp}.png/.txt`) because a same-second sweep of ITEM1–3 could overwrite
+a previous report while the first result's evidence path pointed at the newer one; and the food icon is
+decoded BEFORE any capture/evidence, because a missing icon used to cost a hidden capture and leave an
+orphan PNG. A final check (task-125) caught two docs nuances now recorded: scans read the SAVED config
+(they are not dirty-gated; only Apply is), and Apply acts on the scanned page named in its confirmation,
+not the ITEM chip switched afterwards. Test-count note: the shell commit message says 9 new widget
+tests/36 in file; the accurate figure verified at the gate is 8 new / 35 in file (suite 264) — recorded
+here because a commit message is not rewritten after review.
+
+Gates at `7d2829b`: Rust 79 result lines/0 failed (core lib 176), Flutter 264/264, clippy/fmt/analyze/
+format clean, publish stage/app-zip/firmware audits PASS, fixtures 81 (37/38/6) with 0 decoder
+mismatches. Artifacts: `dist/SealTools-v3.0.6.zip` 45,073,095 B `21D53399...ACEEE`;
+firmware 5,254 B `498E6A4BA...35CCEF3B` (byte-identical, no reflash). Unpublished; CUTOVER has the
+checklist. Remaining: the panel test read and the feedable sweep/queue rebuild (increment 4+; the long
+sweep's per-page-blocking-vs-background-job surface decision is open), B5 card live detail (v3.1), dry
+runs / Quest Test-one-loop, the spammer raw-key editor — OPEN §5.
+
 ## 2026-10-28 (28) — the Pet tab can queue pets again (v3.0.5)
 
 The parity audit's bluntest Pet finding was that v3 could not queue a new pet at all: the tab could
