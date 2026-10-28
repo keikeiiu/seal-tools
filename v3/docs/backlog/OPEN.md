@@ -85,17 +85,19 @@ picker**; the **last-preset / last-flow deletion guards**; the **Buy row picker*
 maintenance row (confirmed, deletes only `logs/captures` PNGs, works mid-run); the **Pet tab's
 setup/readiness checklists and per-row Boarding now ticks** (increment 1: read-only `pet.preflight` +
 `pet.set_boarding`); the **Pet tab's queue add/edit by icon capture and food-icon capture** (increment
-2: `pet.capture_icon`); and the **Pet Feeder's run-state persistence** (`food_slots_used` and per-row
-`boarding_running` are written mid-run, so a restart no longer resumes on stale state). The pin is the
-portable `settings.ui.always_on_top`; placement is independent machine state in `ui` and is not the
-pin.
+2: `pet.capture_icon`); the **Pet tab's per-page bag scans and explicit food-scan apply** (increment
+3: `pet.scan_food_page`/`pet.scan_queue_page` + `pet.apply_food_scan`); and the **Pet Feeder's run-state
+persistence** (`food_slots_used` and per-row `boarding_running` are written mid-run, so a restart no
+longer resumes on stale state). The pin is the portable `settings.ui.always_on_top`; placement is
+independent machine state in `ui` and is not the pin.
 
 - **Buy/Sell dry runs** (click nothing; verify targeting) and **Quest Test one loop** - v2's two
   pre-run safety tests; absent in v3 (need run-argument commands).
-- **Pet tab session surface (increment 3+, per
-  [PLAN-V3-PET-SESSION](../plans/PLAN-V3-PET-SESSION.md))** - the bag scans, the panel test read and the
-  feedable sweep (the setup-so-far/ready-to-run checklists, boarding ticks, queue add/edit by icon
-  capture and food-icon capture are restored).
+- **Pet tab session surface (increment 4+, per
+  [PLAN-V3-PET-SESSION](../plans/PLAN-V3-PET-SESSION.md))** - the panel test read and the feedable
+  sweep/queue rebuild (the setup-so-far/ready-to-run checklists, boarding ticks, queue add/edit by icon
+  capture, food-icon capture and the per-page bag scans + explicit food apply are restored). A
+  scan-derived queue rebuild remains later.
 - **Tuner card live detail** (grade/remaining/attempt/attributes - needs a ToolStatus/protocol
   extension); **Spammer advanced raw-key editor**.
 - **Calibration plan additions**: loading the saved overlay PNG when a calibrate tab reopens; one

@@ -417,10 +417,30 @@ absent only when the bag grid is uncalibrated; with a calibrated grid but an unm
 while a tool runs, they are shown and the core refuses.
 
 **Capture food icon.** Mark a food cell first — the newest mark is the source — put that page on
-screen and press **Capture food icon**. The captured icon is the reference a future food scan will
-use; the bag/food scans themselves are increment 3+ and not built in this version. **Save** writes
-`pet.food_icon_png`. Neither icon is the boarding A1 writer: both are ordinary config fields saved by
-the tab's Save.
+screen and press **Capture food icon**. The captured icon is the reference **Scan this page for
+food** matches against; **Save** writes `pet.food_icon_png`. Neither icon is the boarding A1 writer:
+both are ordinary config fields saved by the tab's Save.
+
+**Scan the bag (read-only).** The bag scan reads **one page at a time** — there is no all-page sweep.
+Put the page on screen yourself: the shell hides for the shot, the game must be in front, and the
+core does **not** click or verify the ITEM tab, so a **wrong page gives a plausible wrong result**.
+Pick **ITEM1**..**ITEM3**, then **Scan this page for food** or **Scan this page for pets**.
+
+- **Scan this page for food** matches the saved food icon and lists the found cells (1-based) plus the
+  core's report lines. Evidence files are best-effort under `logs/reads/` and may be missing or
+  partial.
+- **Scan this page for pets** shows each queued pet's hit cells, scores and runner-up, claimed-cell
+  conflicts, and the deduced “label ×n” lines. A pet with no hit may be absent, or its stored icon may
+  not decode — the scan report says which.
+
+Scanning only looks: it changes no config and applies nothing.
+
+**Apply a food scan.** After a food scan, **Apply N cells to the food list** is a separate, confirmed
+action. It **replaces** the food-cell list and **resets the used-cell count** (the run's progress), and
+it takes effect immediately even while a run is in progress. It is disabled while there are unsaved
+edits (“Save the edits first”); check the report and evidence first, because a wrong page saves wrong
+cells. An empty scan result means “nothing found” (a success), so Apply stays disabled. **Capture food
+icon** remains how the matching icon is (re)made; **Save** writes it.
 
 The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
 the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no
@@ -708,11 +728,12 @@ unless the repository says so.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
-- **The pet session surface (increment 3+).** The Pet tab edits the setup the machine already carries —
-  rows enabled/stacks, queue add/edit by icon capture, bag food cells, return slot, load mode and
-  timings — but adding rows, re-capturing the row reference crops/rects, the bag scans, the panel test
-  read and the feedable sweep still need a live pet capture session; migrated v2 configs carry the
-  current data.
+- **The pet session surface (increment 4+).** The Pet tab edits the setup the machine already carries —
+  rows enabled/stacks, queue add/edit by icon capture, bag food cells, per-page bag scans and the
+  explicit food-scan apply, return slot, load mode and timings — but adding rows, re-capturing the row
+  reference crops/rects, the panel test read and the feedable sweep/queue rebuild still need a live pet
+  capture session (a scan-derived queue rebuild comes later); migrated v2 configs carry the current
+  data.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
   copies of Seal Tools at once.
