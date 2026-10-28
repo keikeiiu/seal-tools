@@ -424,7 +424,9 @@ both are ordinary config fields saved by the tab's Save.
 **Scan the bag (read-only).** The bag scan reads **one page at a time** — there is no all-page sweep.
 Put the page on screen yourself: the shell hides for the shot, the game must be in front, and the
 core does **not** click or verify the ITEM tab, so a **wrong page gives a plausible wrong result**.
-Pick **ITEM1**..**ITEM3**, then **Scan this page for food** or **Scan this page for pets**.
+Pick **ITEM1**..**ITEM3**, then **Scan this page for food** or **Scan this page for pets**. The scan
+uses the **saved** setup, not your unsaved draft (scans are not blocked by edits) — if you just changed
+the food cells or re-captured the food icon, **Save** first so the scan matches what is stored.
 
 - **Scan this page for food** matches the saved food icon and lists the found cells (1-based) plus the
   core's report lines. Evidence files are best-effort under `logs/reads/` and may be missing or
@@ -437,10 +439,12 @@ Scanning only looks: it changes no config and applies nothing.
 
 **Apply a food scan.** After a food scan, **Apply N cells to the food list** is a separate, confirmed
 action. It **replaces** the food-cell list and **resets the used-cell count** (the run's progress), and
-it takes effect immediately even while a run is in progress. It is disabled while there are unsaved
-edits (“Save the edits first”); check the report and evidence first, because a wrong page saves wrong
-cells. An empty scan result means “nothing found” (a success), so Apply stays disabled. **Capture food
-icon** remains how the matching icon is (re)made; **Save** writes it.
+it takes effect immediately even while a run is in progress. Apply uses the page named in the
+confirmation (the page that was scanned) — switching the **ITEM** chip afterwards does not change what
+Apply sends. It is disabled while there are unsaved edits (“Save the edits first”); check the report and
+evidence first, because a wrong page saves wrong cells. An empty scan result means “nothing found” (a
+success), so Apply stays disabled. **Capture food icon** remains how the matching icon is (re)made;
+**Save** writes it.
 
 The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
 the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no

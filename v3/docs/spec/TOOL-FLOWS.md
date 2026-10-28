@@ -214,10 +214,12 @@ its one Save; the run matches queued pets by that captured icon.
 **Bag scans and the food apply.** `pet.scan_food_page` / `pet.scan_queue_page` capture ONE bag page
 (the shell puts it up; the core never clicks or verifies the ITEM tab) and score it against the saved
 `pet.food_icon_png` or the queued icons; they are read-only, write no config, and may write best-effort
-evidence under `logs/reads/`. One command per page — no sweep. `pet.apply_food_scan` is the only writer:
-it replaces `pet.food_slots` and resets `pet.food_slots_used` through the single A1 writer, effective
-immediately even mid-run (no board/game lease); the shell requires its own confirmation and nothing is
-applied automatically.
+evidence under `logs/reads/`. One command per page — no sweep. Scans read the persisted config, so
+unsaved tab edits are ignored (Save first); the apply sends the cells under the page named in its
+confirmation (the scanned result's page), not the chip selected afterwards. `pet.apply_food_scan` is
+the only writer: it replaces `pet.food_slots` and resets `pet.food_slots_used` through the single A1
+writer, effective immediately even mid-run (no board/game lease); the shell requires its own
+confirmation and nothing is applied automatically.
 
 **Flow (decision half: `tools/pet.rs` + `pet/decision.rs` + `pet/food_load.rs`).** `ready` refuses a
 half-calibrated setup (below). The opening look sets the schedule: per row, the slot reads empty /
