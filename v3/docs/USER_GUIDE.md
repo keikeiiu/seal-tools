@@ -83,6 +83,21 @@ next launch starts in the same state. It is a config preference, not part of the
 path. If the save is refused the pin returns to the saved value and the core's line is shown; check
 the pin when the window will not stay in front.
 
+**The window remembers its placement and size.** After the core handshake the shell puts the window
+back where it was last left, from the machine `ui` block in `local.yaml` (`left`, `top`, `width`,
+`expanded_height` — this machine's state, not the portable `settings:` half; `expanded_height` is the
+height to restore, not the current height). Moving or resizing saves that placement automatically
+about 0.6 s after it settles, through the normal `ui.window` command, so the core remains the only
+file writer. A saved rectangle that no longer fits any attached monitor is moved into the primary
+monitor's work area (a log line says it was clamped), so the window cannot open off-screen.
+`ui.pinned` is carried through unchanged and is **not** the app-bar pin; that is the portable
+`settings.ui.always_on_top` above.
+
+Three honest limits: there is no clean-shutdown save hook, so a move made in the last fraction of a
+second before closing can be lost (move or resize, then pause a moment before closing); a maximized
+window reopens at its geometry — the maximized state itself is not remembered; and mixed-DPI
+multi-monitor setups make that clamp approximate.
+
 ### 2.1 The Logs panel
 
 **Logs (N)** in the status strip opens the live log panel and reads **Hide logs** while it is open.
@@ -602,6 +617,7 @@ marks are physical client-relative offsets; they do not travel.
 | **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
 | The window does not stay above the game | Check the **always-on-top pin** in the app bar: filled means it is on, and it saves `settings.ui.always_on_top` (portable, default off). A refused save leaves the pin at the saved value and shows the core's line. |
+| The window comes back in an odd spot | That is the saved placement restored from the machine `ui` block. Move/resize it and pause a moment before closing so the debounced save lands; a rectangle saved on a monitor that is gone is clamped into the primary work area, and the log says so. |
 | A card line saying a mark isn't calibrated | Not a bug; the line names the **mark** to save and the single **Calibrate** tab. Draw that kind there (with its target instance if the kind is a named one) and save it. |
 | "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell (it needs the calibrated **Bag grid**, §5.4), then press **Start** on the Sell card; with no slots marked the card shows this line. The selection is not saved. |
 | "{n} slots selected but the per-run cap is {cap}…" | The selection is larger than **Max slots per run (sell cap)**. Raise the cap on purpose or narrow the selection; the core refuses the start before any click and prints the full line, including the count and the cap. |
@@ -620,9 +636,8 @@ repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "p
 unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
-- **Mini mode / hide-the-cards / window placement.** v2's card-window chrome is gone; v3's window is the
-  tab shell, and a compact mode is a later layout decision. The app-bar pin now provides
-  always-on-top, but the window's saved placement/size is not persisted.
+- **Mini mode / hide-the-cards.** v2's card-window chrome is gone; v3's window is the tab shell, and a
+  compact mode is a later layout decision.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
