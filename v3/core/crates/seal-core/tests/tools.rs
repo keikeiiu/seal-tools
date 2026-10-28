@@ -504,6 +504,20 @@ fn pet_set_boarding_writes_one_row_field_keeps_the_file_and_emits_one_event() {
         event["data"]["values"]["slots"][0]["boarding_running"],
         true
     );
+
+    // Exactly one: the command after the event must observe none queued before its response.
+    let (next, extra) = session.call_note_order("pet.preflight", json!({}));
+    assert!(next.ok, "the session stays usable: {:?}", next.error);
+    assert!(
+        extra.is_empty(),
+        "exactly one config.changed for one boarding tick: {extra:?}"
+    );
+    let (after, extra_after) = session.call_note_order("pet.preflight", json!({}));
+    assert!(after.ok);
+    assert!(
+        extra_after.is_empty(),
+        "no second event is observable: {extra_after:?}"
+    );
 }
 
 #[test]
@@ -546,7 +560,12 @@ fn a_blocked_pet_set_boarding_write_is_io_logged_and_leaves_the_file_alone() {
         .open(root.path_of("config/local.yaml"))
         .expect("the test holds local.yaml");
 
-    let response = session.call("pet.set_boarding", json!({"row": 1, "running": true}));
+    let (response, before_response) =
+        session.call_note_order("pet.set_boarding", json!({"row": 1, "running": true}));
+    assert!(
+        before_response.is_empty(),
+        "a failed write must not emit an event before its response: {before_response:?}"
+    );
     assert!(!response.ok, "the write must fail while the file is locked");
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "io");
@@ -562,7 +581,22 @@ fn a_blocked_pet_set_boarding_write_is_io_logged_and_leaves_the_file_alone() {
         before,
         "the file is untouched"
     );
-    // The dispatcher is still alive and answers normally after the failed write.
-    let preflight = session.result("pet.preflight", json!({}));
-    assert!(preflight["ready"].is_boolean());
+    // The dispatcher is still alive and answers normally after the failed write; no config.changed
+    // is observable before that next response either (the sink returns before it can queue one).
+    let (preflight, extra) = session.call_note_order("pet.preflight", json!({}));
+    assert!(
+        preflight.ok,
+        "the session stays usable: {:?}",
+        preflight.error
+    );
+    assert!(
+        extra.is_empty(),
+        "the I/O failure emits no config.changed: {extra:?}"
+    );
+    let (again, extra_again) = session.call_note_order("pet.preflight", json!({}));
+    assert!(again.ok);
+    assert!(
+        extra_again.is_empty(),
+        "no late event after the failure: {extra_again:?}"
+    );
 }
