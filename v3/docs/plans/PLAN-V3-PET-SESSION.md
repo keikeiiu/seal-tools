@@ -186,3 +186,47 @@ The four v2 Calibrate surfaces and Setup Detect (their own plan, in flight); Cal
 the empty-slot crop (`calibration.pet.save`); the feeder's run loop, scheduling and food-load
 behaviour; pet-data/feeding-table work; the Sell grid and other audit items (OPEN §5, separate
 batches). Nothing here changes the config field set or adds a second config path.
+
+---
+
+## 9. Lead decisions (2026-10-28)
+
+All nine questions are answered; three were settled by what already shipped in increments 1-3, and the
+answers below say where the shipped behaviour differs from the proposal on purpose.
+
+1. **^1 Write routing — DECIDED: confirmed.** Queue edits and `food_icon_png` ride the normal shell Save
+   (config.apply); `boarding_running` and food-cell replacement go through the A1 field-precise core
+   commands. This shipped: pet.set_boarding and pet.apply_food_scan use the shared field-precise writer,
+   never a whole-block apply.
+2. **^2 Blocking scan surface — DECIDED: per-page blocking commands with visible progress now.** The
+   scans are one page per command (no sweep) and the shell shows progress/result; there is no
+   mid-command cancel (v2 parity). A background-job protocol is out of scope until the live pass shows
+   the long feeding sweep (~90 s/page) is genuinely unacceptable; if it is, the job protocol gets its
+   own plan rather than being half-built into these commands.
+3. **^3 Clicking the ITEM tab for queue capture — DECIDED: NO, changed from the proposal.** The
+   shipped capture/scan commands never click or verify the ITEM tab: the shell hides itself and the
+   player/shell puts the page up, the core validates the requested page's 2-point tab mark only, and the
+   UI/docs warn that a wrong page gives a plausible wrong crop/result. Rationale: clicking needs a board
+   and a second command whose per-command lease snapshot does not cover the capture; a wrong-page
+   warning plus the mandatory preview is the smaller honest seam for now. Revisit only if live use
+   shows frequent wrong-page captures.
+4. **^4 Source-cell selection — DECIDED: confirmed.** A separate source-cell picker (page + cell, view
+   state, not config) for queue/food icon capture; shipped as the ITEM chips + single-selection 8x8
+   grid. The panel test read (increment 4) uses the same view-state picker.
+5. **^5 Queue rebuild — DECIDED: confirmed, deferred to increment 5.** Same as v2: harvested icons get
+   `page X, cell Y` labels and no species (the player sets species on the rows), and the queue is
+   replaced only when at least one icon was cropped. Never clear on an empty harvest.
+6. **^6 Boarding ticks vs a dirty draft — DECIDED: confirmed with one refinement.** The tick writes
+   immediately through pet.set_boarding and run updates arrive as config.changed. Refinement shipped:
+   while THIS tab's draft has unsaved edits the tick is DISABLED with "Save the row edits first" (or
+   "Save the edits first" for portable-only edits), because an A1 write beside a dirty draft would show
+   the player their own action as an external change. The external-change banner remains for genuinely
+   external updates.
+7. **^7 Preflight and the board — DECIDED: confirmed.** pet.preflight never opens the port; the board
+   row is informational ("not checked by preflight — normal", ok:true rendered with the information
+   marker), and the card's start refusal stays the authority.
+8. **^8 Feeding scan hiding granularity — DECIDED: confirmed.** One hide per page command, restored
+   after each page; the shell is never blank for a whole sweep. The same one-hide-per-command rule
+   applies to every capture/scan command.
+9. **^9 Remove last — DECIDED: confirmed.** v3 keeps per-entry Remove; v2's "Remove last" does not come
+   back.
