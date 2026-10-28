@@ -1,17 +1,26 @@
-/// The Arduino tab: the no-hardware and hardware test surface. It reads the board's facts
-/// (`board.probe`) and sends the calibrator's input tests (`board.test`: left click, move, key), each
-/// rendering the core's own success/refusal line.
+/// The Arduino tab: v2's Connection card rebuilt on the read-only `board.details` command, plus v3's
+/// input tests and the explicit `board.probe` firmware query.
 ///
-/// The primary **Probe** action lives on Setup; this tab keeps a probe READOUT at the top (fetched on
-/// open and refreshable) so the player can see the board before sending a test. Tests are input
-/// calibration: the board moves the cursor and clicks for real, so the buttons are explicit and
-/// nothing is sent automatically.
+/// `board.details` ENUMERATES the serial ports and reports what a Start would do; it never opens the
+/// port ([PROTOCOL.md] §4), so the card stays honest while a tool is running. `board.probe` is the
+/// only action that opens the port — it is the explicit "Query firmware" here, disabled with a
+/// reason while a tool is engaged instead of racing the running loop for the board.
+///
+/// The core owns the choice rule and its refusal sentence; this file owns the three v2 verdict/advice
+/// lines, so a wrong board reads in the player's words rather than a green light that lies.
+///
+/// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../app/arduino_details.dart';
+import '../../protocol/protocol.dart';
 import '../theme.dart';
+import '../tool_labels.dart';
 import 'action_result_line.dart';
 
 class ArduinoTab extends StatefulWidget {
@@ -32,16 +41,24 @@ class _ArduinoTabState extends State<ArduinoTab>
   final _dy = TextEditingController(text: '0');
   final _key = TextEditingController(text: 'E');
 
+  CoreActionResult<BoardDetailsResult>? _details;
   CoreActionResult<BoardProbeResult>? _probe;
   CoreActionResult<Map<String, dynamic>>? _click;
   CoreActionResult<Map<String, dynamic>>? _move;
   CoreActionResult<Map<String, dynamic>>? _keyResult;
-  bool _probing = false;
+  bool _loadingDetails = true; // initState kicks the first read.
+  bool _queryingFirmware = false;
+
+  /// A level a successful Query firmware just reported, shown until the next details fetch (the
+  /// core's cache is the authority after that, and a Refresh reads it).
+  int? _probeLevel;
 
   @override
   void initState() {
     super.initState();
-    _runProbe();
+    // Fetched ONCE on open (and on Refresh): `board.details` is enumeration only, and re-reading it
+    // on every rebuild of this State would be work for data that changes only on a plug/unplug.
+    unawaited(_loadDetails());
   }
 
   @override
@@ -52,18 +69,36 @@ class _ArduinoTabState extends State<ArduinoTab>
     super.dispose();
   }
 
-  Future<void> _runProbe() async {
+  Future<void> _loadDetails() async {
+    if (!_loadingDetails) {
+      setState(() => _loadingDetails = true);
+    }
+    final result = await widget.model.boardDetails();
     if (!mounted) {
       return;
     }
-    setState(() => _probing = true);
+    setState(() {
+      _loadingDetails = false;
+      _details = result;
+      // The core recomputed/returned its cache with the answer: it is the authority again.
+      _probeLevel = null;
+    });
+  }
+
+  /// The ONE action that opens the port: an explicit firmware query, never automatic.
+  Future<void> _queryFirmware() async {
+    setState(() => _queryingFirmware = true);
     final result = await widget.model.probeBoard();
     if (!mounted) {
       return;
     }
     setState(() {
-      _probing = false;
+      _queryingFirmware = false;
       _probe = result;
+      final value = result.value;
+      if (value != null) {
+        _probeLevel = value.level;
+      }
     });
   }
 
@@ -110,11 +145,34 @@ class _ArduinoTabState extends State<ArduinoTab>
     setState(() => _keyResult = result);
   }
 
+  /// The tool a firmware query must wait for, or null when none is engaged.
+  ///
+  /// `board.probe` opens the COM port; a run that is using the board (or may be) must not have it
+  /// taken away mid-loop, so Query firmware is disabled while any tool is not idle. The TAB itself is
+  /// not gated: `board.details` opens nothing.
+  ({ToolId tool, String name})? get _engagedTool {
+    for (final entry in widget.model.tools.snapshots.entries) {
+      if (entry.value.phase != ToolPhase.idle) {
+        return (tool: entry.key, name: toolDisplayName(entry.key));
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    // Tool phases decide whether Query firmware is available, so the tab follows the model: a run
+    // starting while the tab is open must disable the probe without a tab switch.
+    return ListenableBuilder(
+      listenable: widget.model,
+      builder: (context, _) => _content(context),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final theme = Theme.of(context);
-    final probe = _probe;
+    final engaged = _engagedTool;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -135,8 +193,9 @@ class _ArduinoTabState extends State<ArduinoTab>
                     Text('Arduino', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 2),
                     Text(
-                      'Board facts and input tests. Clicks and moves act on the real cursor through '
-                      'the board; the core\'s refusals are shown verbatim.',
+                      'What a Start would do with the board, the ports this machine has, and the '
+                      'input tests. Clicks and moves act on the real cursor; the core\'s refusals '
+                      'are shown verbatim.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -145,10 +204,10 @@ class _ArduinoTabState extends State<ArduinoTab>
                 ),
               ),
               OutlinedButton.icon(
-                key: const ValueKey('arduino-refresh-probe'),
-                onPressed: _probing ? null : _runProbe,
+                key: const ValueKey('arduino-refresh-details'),
+                onPressed: _loadingDetails ? null : _loadDetails,
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Refresh probe'),
+                label: const Text('Refresh'),
               ),
             ],
           ),
@@ -159,21 +218,18 @@ class _ArduinoTabState extends State<ArduinoTab>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (probe != null)
-                  ActionResultLine(
-                    key: const ValueKey('arduino-probe-result'),
-                    label: 'Board',
-                    line: probe.ok
-                        ? probeSummary(probe.value!)
-                        : probe.errorLine,
-                    isError: !probe.ok,
-                  )
-                else
-                  Text(
-                    _probing ? 'Probing the board…' : 'No probe yet.',
-                    style: theme.textTheme.bodySmall,
-                  ),
+                _sectionTitle(theme, 'Connection'),
+                _connection(theme),
                 const SizedBox(height: ShellSpace.md),
+                _sectionTitle(theme, 'Ports this machine has'),
+                _ports(theme),
+                const SizedBox(height: ShellSpace.md),
+                _sectionTitle(theme, 'What the launcher looks for'),
+                _lookingFor(theme),
+                const SizedBox(height: ShellSpace.md),
+                _sectionTitle(theme, 'Board firmware'),
+                _firmware(theme, engaged),
+                const SizedBox(height: ShellSpace.lg),
                 Wrap(
                   spacing: ShellSpace.lg,
                   runSpacing: ShellSpace.lg,
@@ -293,6 +349,220 @@ class _ArduinoTabState extends State<ArduinoTab>
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(ThemeData theme, String title) => Padding(
+    padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+    child: Text(title, style: theme.textTheme.titleSmall),
+  );
+
+  /// v2's three-state light + verdict + advice. The light answers "what would Start do?", which is
+  /// why `named_missing` is red even when another board matches the IDs: Start would refuse it.
+  Widget _connection(ThemeData theme) {
+    final result = _details;
+    if (result == null) {
+      return Text(
+        _loadingDetails ? 'Reading the serial ports…' : 'Not read yet.',
+        key: const ValueKey('arduino-connection-pending'),
+        style: theme.textTheme.bodySmall,
+      );
+    }
+    if (!result.ok) {
+      return ActionResultLine(
+        key: const ValueKey('arduino-details-error'),
+        label: 'Board details',
+        line: result.errorLine,
+        isError: true,
+      );
+    }
+    final details = result.value!;
+    final choice = details.choice;
+    final outcome = switch (choice.state) {
+      BoardChoiceState.ready => (
+        light: Colors.green,
+        verdict: 'Ready — Start will open ${choice.port ?? 'a port'}',
+      ),
+      BoardChoiceState.namedMissing => (
+        light: theme.colorScheme.error,
+        verdict: 'Start will refuse — the named port is missing',
+      ),
+      BoardChoiceState.notFound => (
+        light: theme.colorScheme.error,
+        verdict: 'Start will refuse — no Arduino found',
+      ),
+    };
+    final advice = switch (choice.state) {
+      BoardChoiceState.ready => null,
+      // The core's own sentence names the port and says both ways out.
+      BoardChoiceState.namedMissing =>
+        choice.refusal ??
+            'arduino.port names a port this machine does not have.',
+      // The cable first, because it is the most common cause and the one the player cannot see.
+      BoardChoiceState.notFound =>
+        'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the '
+            'board lights up and never appears as a port.',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              key: const ValueKey('arduino-connection-status'),
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: outcome.light,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: ShellSpace.sm),
+            Expanded(
+              child: Text(
+                outcome.verdict,
+                key: const ValueKey('arduino-connection-verdict'),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+        if (advice != null)
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              advice,
+              key: const ValueKey('arduino-advice'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Every enumerated port, chosen first (the core's order), with v2's bullets and reasons.
+  Widget _ports(ThemeData theme) {
+    final details = _details?.value;
+    final ports = details == null ? const <BoardPort>[] : details.ports;
+    if (ports.isEmpty) {
+      return Text(
+        'This machine reports no serial ports at all.',
+        key: const ValueKey('arduino-ports-empty'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [for (final port in ports) _portRow(theme, port)],
+    );
+  }
+
+  Widget _portRow(ThemeData theme, BoardPort port) {
+    final marker = port.chosen ? '●' : '○';
+    final reason = port.chosen
+        ? '— Start will open this one'
+        : (port.matchesIds ? '— matches the expected ID' : null);
+    final description = port.description;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Text(
+        '$marker  ${port.port}'
+        '${description == null ? '' : '   $description'}'
+        '${reason == null ? '' : '     $reason'}',
+        key: ValueKey('arduino-port-row-${port.port}'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: port.chosen
+              ? Colors.green
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// The DATA the launcher decides from, printed because it explains everything above (v2's card).
+  Widget _lookingFor(ThemeData theme) {
+    final details = _details?.value;
+    if (details == null) {
+      return const SizedBox.shrink();
+    }
+    final expected = details.expected;
+    final pids = expected.pids.map((pid) => '0x$pid').join(' / ');
+    final port = expected.hasPortOverride
+        ? 'arduino.port: ${expected.port} — a named port wins over the ID above'
+        : 'arduino.port: not set — the board is found by the ID above';
+    return Text(
+      'VID 0x${expected.vid}    PID $pids\nbaud ${details.baud}\n$port',
+      key: const ValueKey('arduino-looking-for'),
+      style: theme.textTheme.bodySmall,
+    );
+  }
+
+  /// The CACHED level: "not checked yet" is normal (v2's wording), and the explicit Query firmware
+  /// action is the only thing here that opens the port.
+  Widget _firmware(ThemeData theme, ({ToolId tool, String name})? engaged) {
+    final level = _probeLevel ?? _details?.value?.firmware?.level;
+    final queried = _probeLevel != null;
+    final headline = level == null
+        ? 'Not checked yet — this is normal.'
+        : (queried
+              ? 'Protocol level $level (queried now).'
+              : 'Protocol level $level (checked).');
+    final detail = level == null
+        ? 'The board is read the first time a tool opens it; Query firmware asks now.'
+        : "Reported by the board's V reply.";
+    final blocked = engaged != null || _queryingFirmware;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          headline,
+          key: const ValueKey('arduino-firmware'),
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          detail,
+          key: const ValueKey('arduino-firmware-detail'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton(
+              key: const ValueKey('arduino-query-firmware'),
+              onPressed: blocked ? null : _queryFirmware,
+              child: Text(_queryingFirmware ? 'Querying…' : 'Query firmware'),
+            ),
+            if (engaged != null)
+              Text(
+                'The board is busy while ${engaged.name} is running — stop the run before '
+                'querying the firmware.',
+                key: const ValueKey('arduino-query-busy'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+        if (_probe != null) ...[
+          const SizedBox(height: ShellSpace.xs),
+          ActionResultLine(
+            key: const ValueKey('arduino-probe-result'),
+            label: 'Probe',
+            line: _probe!.ok ? probeSummary(_probe!.value!) : _probe!.errorLine,
+            isError: !_probe!.ok,
+          ),
+        ],
       ],
     );
   }

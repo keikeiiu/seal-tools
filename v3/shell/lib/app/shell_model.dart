@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../protocol/protocol.dart';
+import 'arduino_details.dart';
 import 'attributes_result.dart';
 import 'calibration_result.dart';
 import 'config.dart';
@@ -477,6 +478,13 @@ class ShellModel extends ChangeNotifier {
   /// no-hardware path ([PROTOCOL.md] §4/§6).
   Future<CoreActionResult<BoardProbeResult>> probeBoard() =>
       _coreAction('board.probe', BoardProbeResult.fromJson);
+
+  /// `board.details` — READ-ONLY: enumerate the serial ports and report what a Start would use,
+  /// without opening the port ([PROTOCOL.md] §4). It stays answerable while a tool holds the game or
+  /// the board, which is exactly when the Arduino tab's facts matter; the core owns the choice rule
+  /// and its refusal sentence, and the received firmware level is the session's cache.
+  Future<CoreActionResult<BoardDetailsResult>> boardDetails() =>
+      _coreAction('board.details', BoardDetailsResult.fromJson);
 
   /// `attributes.get`: the dictionary the core already loaded for the active client. The payload is
   /// decoded app-locally (the Attributes surface consumes an untyped result; no protocol type exists).
