@@ -41,6 +41,11 @@ The shipped UI treats `tuner.grade_order` and `gem.grades` as **fixed**: both re
 (and hand-editable in config), but the Tuner and Gem tabs render them read-only, offer no add/remove
 editor, and do not send them on a save — do not look for that control in the shell.
 
+`settings.ui.always_on_top` is a portable player preference in the `settings:` overlay: a bool,
+default `false`, and an absent or non-boolean value reads as false. The shell's app-bar pin writes it
+through `config.apply` (it is not the machine `ui:` placement block) and applies it to the window
+after `hello`.
+
 ## 2. Loading: three layers and the fold
 
 `ConfigStore::load` returns the merged config as JSON. Sources, weakest first

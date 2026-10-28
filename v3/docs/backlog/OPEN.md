@@ -73,6 +73,12 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 The full matrix and evidence live in [records/PARITY-AUDIT-2026-10-28.md](../records/PARITY-AUDIT-2026-10-28.md).
 The gaps still to restore, in the audit's priority order:
 
+**Restored since the audit** (verified in the committed shell/core): the Sell grid's **row 1..8**
+shortcuts, **Select all**/**Clear** and three-state cap status line; the **over-cap refusal** (A6 —
+the deduped, valid selection is compared with the cap and the start is refused before any click);
+and the **always-on-top pin** with its portable `settings.ui.always_on_top`. The pin is not window
+placement: saving the window's position/size is still missing and remains in the list below.
+
 - **Pet run-state persistence (safety).** v2 wrote ood_slots_used, per-row oarding_running and the
   close-guard belief back to local.yaml mid-run; v3 reads but never writes them, so a restart can make
   the feeder feed used cells again. Needs a protocol ruling for core-initiated run-state writes

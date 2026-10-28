@@ -60,13 +60,19 @@ F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這�
 視窗開啟時最上方是 **Cards**，下面是一排分頁，底部是**狀態列**。核心停止或無法啟動時，整個頁面會變成
 **當機畫面（crash view）**。
 
-- **標題列 / App bar：** `Seal Tools v3`、右側的 **Hold Space** 切換鈕，以及小小的產品版本 `v3.0.0`。
-  （殼層↔核心的協定用戶端身分是另一個工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）
+- **標題列 / App bar：** `Seal Tools v3`、右側的 **Hold Space** 切換鈕、**always-on-top 釘選鈕**
+  （`Keep Seal Tools on top`），以及小小的產品版本 `v3.0.0`。（殼層↔核心的協定用戶端身分是另一個
+  工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）
 - **分頁列：** `Cards`、`Spammer`、`Tuner`、`Gem`、`Buy/Sell`、`Quest`、`Pet`、`Attributes`、`Arduino`、
   `Hotkeys`、`Setup`、`Calibrate` —— Cards 頁面加上十一個分頁。
 - **狀態列：** `core <版本> · rev <n>`、核心正在使用的 **root** 資料夾，以及 **Logs** 按鈕。
 - **當機畫面：** 核心沒在跑時取代整個頁面。它會顯示失敗原因、root、核心的 **stderr 尾端**，以及
   **Restart core** 按鈕（協定版本不合時除外：那需要換成一對相符的執行檔，不是重啟）。
+
+**Always-on-top 釘選鈕。** 釘選亮起時，殼層視窗會保持在遊戲與其他視窗上方；按一下會立即套用，並儲存
+可攜設定 `settings.ui.always_on_top`，所以下次啟動會維持相同狀態。它是設定偏好，不屬於 Calibrate 的
+隱藏/顯示流程。若儲存被拒絕，釘選會回到已儲存的值，並顯示核心的訊息；視窗不留在最上層時先檢查這個
+釘選鈕。
 
 ### 2.1 Logs 面板
 
@@ -229,12 +235,17 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 - **Buy presets** —— 物品名稱，接著是 **Scroll notches**、**Row**、**Count per run**。用 **Add item** /
   **Delete item** 新增或刪除預設。Buy 卡片會為單次執行挑一個（不儲存）。
 - **Sell** —— **Max slots per run (sell cap)**，單次賣出的硬上限；以及**背包格子選擇**：整個背包的 8×8
-  格網，每一格切換一個插槽。上方標頭會印出由已校正 **Bag grid** 推導出的間距，下方一行顯示 64 格中已選
-  幾格；在該標記存好之前，格網會停用並顯示一行指向 **Calibrate** 的說明，因為沒有它 Sell 執行無法定位
-  格子。**這個選擇只供下一次 Sell 執行使用，不會被儲存** —— 它只存在殼層的記憶體裡（每次啟動都是空的），
-  也沒有儲存按鈕：若把選擇存起來，可能賣掉上次選的格子，所以 v3 維持 v2 的單次執行行為。按 **Sell 卡片**
-  上的 **Start** 會送出目前選擇；沒有選任何格子時，卡片會顯示核心自己的「No slots are selected to
-  sell.」行。分頁的 **Save** 仍然只儲存預設與上限。執行時核心會依插槽編號由高到低賣出，且不超過上限。
+  格網，每一格切換一個插槽。上方標頭會印出由已校正 **Bag grid** 推導出的間距；在該標記存好之前，格網會
+  停用並顯示一行指向 **Calibrate** 的說明，因為沒有它 Sell 執行無法定位格子。**Select all** 會選滿 64
+  格，**Clear** 會清空；每一列背包也有一個 **row 1**…**row 8** 捷徑 —— 整列都已選取時按一下會清空，否則
+  會填滿該列。格網下方的計數行顯示 `n of 64 slots selected`，再下方的狀態行有三種：尚未選取、在上限內，
+  或**超過上限**（以錯誤色顯示，並說明執行會拒絕）。**這個選擇只供下一次 Sell 執行使用，不會被儲存** ——
+  它只存在殼層的記憶體裡（每次啟動都是空的），也沒有儲存按鈕：若把選擇存起來，可能賣掉上次選的格子，所以
+  v3 維持 v2 的單次執行行為。按 **Sell 卡片**上的 **Start** 會送出目前選擇；沒有選任何格子時，卡片會顯示
+  核心自己的「No slots are selected to sell.」行。分頁的 **Save** 仍然只儲存預設與上限。核心會計算實際
+  要賣的不重複有效插槽，不會默默截斷；選擇超過上限時，會在**任何點擊之前**以核心自己的行拒絕：
+  「{n} slots selected but the per-run cap is {cap}. Raise the cap on purpose, or narrow the selection.」
+  （完整顯示）。執行時核心會依插槽編號由高到低賣出，且不超過上限。
 
 ### 5.5 Quest
 
@@ -487,10 +498,12 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 | `bad_version` | 你混用了執行檔。請用同一份 zip 的一對。 |
 | **找不到遊戲視窗（game window not found）** | **Setup** 分頁的變體錯，或標題已不再符合遊戲（標題是唯讀的 —— 用 **Find window**，再用 **Use detected title**），或遊戲沒開/被最小化。Setup 的 **Find window** 會回報核心看到的東西。 |
 | **`game_not_foreground`** | 遊戲前面有別的視窗。把遊戲帶到最前面再試；Calibrate 分頁的擷取會自己隱藏殼層一個影格。 |
+| 視窗沒有留在遊戲上方 | 檢查 App bar 的 **always-on-top 釘選鈕**：亮起代表已開啟，它會儲存 `settings.ui.always_on_top`（可攜、預設關閉）。儲存被拒絕時，釘選會留在已儲存的值並顯示核心的訊息。 |
 | **`ocr_unavailable`** | OCR 管線在這台機器上無法完成這次讀取。`detail.reason` 是程式在「管線建不起來」時給的原因 —— `models_env_unset`、`models_dir_missing`、`text_fixes_invalid`、`model_load_failed`、`runtime_failed` 之一 —— 而 `detail.message` 會指出失敗的檔案、模型或資料夾（若是模型缺失，會列出**每一個嘗試過的資料夾**）。若失敗發生在掃描已建好的管線時（`bad_image`、`det_output_shape`），會以 `internal` 回報並附上 OCR 訊息：那是壞畫面或程式錯誤，不是機器無法提供 OCR。模型解析順序：`SEAL_OCR_MODELS`（有設定就優先，失敗就明確失敗）、`<root>/models`、`seal-core.exe` 所在資料夾 + `models`；資料夾必須有三個 `.onnx` 才算數。還原出貨的 `models/`（或為自訂位置設 `SEAL_OCR_MODELS`）。 |
 | **`board_unavailable`** | 設定的埠上沒有板子，或埠打不開。檢查線材（要能傳資料，不是純充電線）、板子的 USB 驅動、Setup 的 **VID/PID/port**，並按 **Probe board**。同一個 COM 埠只能有一個程式使用。 |
 | 卡片出現「某個標記尚未校正」這類行 | 不是 bug；行內會指出要儲存的**標記**與唯一的 **Calibrate** 分頁。到那裡選該種類（若是具名種類，再選目標實例）並儲存。 |
 | 「No buy preset selected.」/「No slots are selected to sell.」 | 在 Buy/Sell 新增/選擇買入預設（卡片的選擇器）。Sell 請在 Buy/Sell 的 **Sell** 格網標記插槽（格網需要已校正的 **Bag grid**，第 5.4 節），再按 Sell 卡片上的 **Start**；沒有標記任何插槽時卡片會顯示這一行。選擇不會被儲存。 |
+| 「{n} slots selected but the per-run cap is {cap}…」 | 選取的插槽數超過 **Max slots per run (sell cap)**。刻意調高上限，或縮小選擇；核心會在**任何點擊之前**拒絕啟動，並完整印出這一行（含數量與上限）。 |
 | 「The active preset … was not found — pick one in the Spammer tab.」 | 在 Spammer 分頁設定 **Active preset (runs)**。 |
 | 寵物餵食器啟動被拒絕（標記或繁殖列相關的行） | 餵食器的標記與列必須存在。校正它的 `pet_*` 種類；Pet 分頁可編輯設定中既有的列（啟用/堆疊）與食物格，但新安裝還沒有列 —— 遷移 v2 的 `local.yaml`，或開著倉庫的 `v3/docs/spec/CONFIG.md` 編輯該區塊（新增列需要寵物擷取會談，第 11 節）。 |
 | 熱鍵在遊戲中沒反應 | v3.0 的正常情況 —— 沒有輪詢器（第 8 節）。用殼層的 Stop。 |
@@ -505,7 +518,8 @@ App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時�
 都是「3.0 沒有」，不是「明天就會有」，除非倉庫另外說明。
 
 - **全域熱鍵。** 沒有輪詢器；見第 8 節。Stop 與殼層控制項都能用。
-- **迷你模式 / 置頂 / 隱藏卡片。** v2 的卡片視窗外觀不再；v3 視窗是分頁殼層，精簡模式是之後的版面決定。
+- **迷你模式 / 隱藏卡片 / 視窗位置。** v2 的卡片視窗外觀不再；v3 視窗是分頁殼層，精簡模式是之後的版面
+  決定。App bar 的釘選鈕現在提供 always-on-top，但視窗的位置/大小還不會被保存。
 - **改造師的三框校正會談。** 只有發條點可校正；`tuner.ocr` 幾何在會談完成前由設定手動編輯。
 - **提示面板（tooltip）兩次擷取會談** —— 由 v2 設定手動編輯。
 - **寵物擷取會談。** Pet 分頁可編輯機器已帶著的設定 —— 列啟用/堆疊、移除佇列項目、背包食物格、回歸格、

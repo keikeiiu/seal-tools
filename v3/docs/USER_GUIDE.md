@@ -65,9 +65,10 @@ measured first, because the anti-cheat may block it.
 The window opens showing **Cards** at the top and a row of tabs. Along the bottom is the **status
 strip**. When the core stops or cannot start, the whole page becomes the **crash view**.
 
-- **Title bar / app bar:** `Seal Tools v3`, the **Hold Space** toggle on the right, and the small
-  product version `v3.0.0`. (The shell↔core protocol client identity is a separate engineering value
-  documented in `PROTOCOL.md`; it does not follow the product version.)
+- **Title bar / app bar:** `Seal Tools v3`, the **Hold Space** toggle on the right, the **always-on-top
+  pin** (`Keep Seal Tools on top`), and the small product version `v3.0.0`. (The shell↔core protocol
+  client identity is a separate engineering value documented in `PROTOCOL.md`; it does not follow the
+  product version.)
 - **The tab strip:** `Cards`, `Spammer`, `Tuner`, `Gem`, `Buy/Sell`, `Quest`, `Pet`, `Attributes`,
   `Arduino`, `Hotkeys`, `Setup`, `Calibrate` — the Cards page plus eleven tabs.
 - **The status strip:** `core <version> · rev <n>`, the **root** folder the core is using, and the
@@ -75,6 +76,12 @@ strip**. When the core stops or cannot start, the whole page becomes the **crash
 - **The crash view:** shown instead of the page when the core is not running. It prints the failure,
   the root, and the core's **stderr tail**, with a **Restart core** button (except for a protocol
   version mismatch, which needs a matched pair of binaries, not a restart).
+
+**The always-on-top pin.** A filled pin keeps the shell window above the game and other windows;
+pressing it applies immediately and saves the portable setting `settings.ui.always_on_top`, so the
+next launch starts in the same state. It is a config preference, not part of the Calibrate hide/show
+path. If the save is refused the pin returns to the saved value and the core's line is shown; check
+the pin when the window will not stay in front.
 
 ### 2.1 The Logs panel
 
@@ -260,15 +267,21 @@ it is for the next run only.
   presets with **Add item** / **Delete item**. The Buy card picks one for a run (not saved).
 - **Sell** — **Max slots per run (sell cap)**, the hard ceiling on one sell pass, and the **bag-slot
   selection**: an 8×8 grid of the bag, where each cell toggles one slot. The header above it prints the
-  pitch derived from the calibrated **Bag grid**, and a line below shows how many of the 64 slots are
-  selected; until that mark is saved the grid is disabled with a line pointing at **Calibrate**, because
-  a Sell run cannot place the cells without it. **The selection is for the next Sell run and is not
-  saved** — it lives only in the shell's memory (it starts empty each launch) and there is no Save
-  button for it: a stored selection could sell the slots chosen last time, so v3 keeps v2's per-run
-  behaviour. Press **Start** on the **Sell card** to send the current selection; with nothing selected
-  the card shows the core's own "No slots are selected to sell." line. The tab's **Save** still saves
-  the presets and the cap. At run time the core sells the selected slots highest index first and never
-  past the cap.
+  pitch derived from the calibrated **Bag grid**; until that mark is saved the grid is disabled with a
+  line pointing at **Calibrate**, because a Sell run cannot place the cells without it. **Select all**
+  fills all 64 cells and **Clear** empties them; each bag row also has a **row 1**…**row 8** shortcut —
+  pressing it when the whole row is selected clears it, otherwise it fills the row. The count line below
+  the grid shows `n of 64 slots selected`, and the status line under it has three states: nothing
+  selected, within the cap, or **over the cap** in the error colour (it says the run will refuse).
+  **The selection is for the next Sell run and is not saved** — it lives only in the shell's memory (it
+  starts empty each launch) and there is no Save button for it: a stored selection could sell the slots
+  chosen last time, so v3 keeps v2's per-run behaviour. Press **Start** on the **Sell card** to send the
+  current selection; with nothing selected the card shows the core's own "No slots are selected to
+  sell." line. The tab's **Save** still saves the presets and the cap. The core counts the distinct,
+  valid slots it would sell, never silently truncates, and refuses a start whose selection exceeds the
+  cap **before any click**, with its own line “{n} slots selected but the per-run cap is {cap}. Raise
+  the cap on purpose, or narrow the selection.” (shown in full). At run time it sells the selected
+  slots highest index first and never past the cap.
 
 ### 5.5 Quest
 
@@ -561,8 +574,10 @@ marks are physical client-relative offsets; they do not travel.
 | **`game_not_foreground`** | Another window is in front of the game. Bring the game to the front and retry; the Calibrate tab's capture hides the shell for one frame itself. |
 | **`ocr_unavailable`** | The OCR pipeline cannot serve this read on this machine. `detail.reason` is the code's own reason for a pipeline that could not be built — one of `models_env_unset`, `models_dir_missing`, `text_fixes_invalid`, `model_load_failed`, `runtime_failed` — and `detail.message` names the file, model or directory that failed (for a missing-models failure it lists **every directory tried**). A failure while scanning an already-built pipeline (`bad_image`, `det_output_shape`) arrives as `internal` with the OCR line: a bad frame or a bug, not a machine that cannot serve OCR. Resolution order for models: `SEAL_OCR_MODELS` (if set it wins or fails loudly), then `<root>/models`, then the folder `seal-core.exe` is in + `models`; a directory counts only with all three `.onnx` files. Restore the shipped `models/` folder (or set `SEAL_OCR_MODELS` for a custom location). |
 | **`board_unavailable`** | No board on the configured port, or the port cannot be opened. Check the cable (data, not charge-only), the board's USB driver, the **VID/PID/port** on Setup, and press **Probe board**. Only one program may hold the COM port. |
+| The window does not stay above the game | Check the **always-on-top pin** in the app bar: filled means it is on, and it saves `settings.ui.always_on_top` (portable, default off). A refused save leaves the pin at the saved value and shows the core's line. |
 | A card line saying a mark isn't calibrated | Not a bug; the line names the **mark** to save and the single **Calibrate** tab. Draw that kind there (with its target instance if the kind is a named one) and save it. |
 | "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell (it needs the calibrated **Bag grid**, §5.4), then press **Start** on the Sell card; with no slots marked the card shows this line. The selection is not saved. |
+| "{n} slots selected but the per-run cap is {cap}…" | The selection is larger than **Max slots per run (sell cap)**. Raise the cap on purpose or narrow the selection; the core refuses the start before any click and prints the full line, including the count and the cap. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
 | Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open (adding rows needs the pet capture session, section 11). |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
@@ -578,8 +593,9 @@ repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "p
 unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
-- **Mini mode / pin-on-top / hide-the-cards.** v2's card-window chrome is gone; v3's window is the tab
-  shell, and a compact mode is a later layout decision.
+- **Mini mode / hide-the-cards / window placement.** v2's card-window chrome is gone; v3's window is the
+  tab shell, and a compact mode is a later layout decision. The app-bar pin now provides
+  always-on-top, but the window's saved placement/size is not persisted.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
