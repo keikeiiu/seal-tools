@@ -213,10 +213,10 @@ Notes:
 
 **Status of §4.** Implemented today: `hello`, `config.validate`, `config.apply`,
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
-`board.test`, `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`,
-`ocr.scan`, `tool.start`,
-`tool.stop`, `shutdown`. A command in this table is the contract; the implemented list is the current
-fact, and nothing in §4 is spec-only today.
+`board.test`, `board.details`, `pointer.place`/`pointer.click`, `logs.cleanup_captures`,
+`keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`, `ocr.scan`,
+`tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
+is the current fact, and nothing in §4 is spec-only today.
 
 ## 5. Events
 

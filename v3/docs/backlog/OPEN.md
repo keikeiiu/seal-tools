@@ -95,6 +95,9 @@ placement is independent machine state in `ui` and is not the pin.
   extension); **Spammer advanced raw-key editor**.
 - **Calibration plan additions**: the Pet tab's Setup-so-far checklist; loading the saved overlay
   PNG when a calibrate tab reopens; one decided home for the Gem Move mode.
+- **Arduino PnP device id in the connection card** - dropped for now by decision 7: v2 showed it
+  only as a tooltip, `serialport` does not expose it, and SetupAPI/WMI would be a new dependency for
+  no decision. Ask if it is wanted.
 
 ## 4. Release inputs
 
