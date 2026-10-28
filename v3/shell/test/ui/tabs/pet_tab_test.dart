@@ -1013,4 +1013,52 @@ void main() {
       reason: 'the tab keeps ONE Save; edits do not apply on their own',
     );
   });
+
+  testWidgets(
+    'the food-icon source clears when a draft reseed drops its mark',
+    (tester) async {
+      final machine = Map<String, dynamic>.of(_machinePet())
+        ..remove('food_slots');
+      await _pumpPet(tester, pet: machine);
+      const noSource =
+          'Mark a food cell first — the icon is cropped from that cell.';
+      expect(_text(tester, 'pet-food-icon-source'), noSource);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-food-icon-capture')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'nothing is marked yet',
+      );
+
+      // Marking a cell makes it the capture source (v2's "the newest mark").
+      await _tap(tester, 'pet-food-cell-0-5');
+      expect(_text(tester, 'pet-food-icon-source'), contains('ITEM1 · cell 6'));
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-food-icon-capture')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      // Cancel reseeds the draft back to the saved config (no food marks): the remembered source
+      // must clear with the reseed — disabled state, and the stale cell is not offered anywhere.
+      await tester.tap(find.byKey(const ValueKey('cancel-pet')));
+      await _flush(tester);
+      expect(_text(tester, 'pet-food-icon-source'), noSource);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-food-icon-capture')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.textContaining('ITEM1 · cell 6'), findsNothing);
+    },
+  );
 }

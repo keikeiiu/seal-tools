@@ -167,6 +167,11 @@ class _PetTabState extends State<PetTab>
   /// "click the food, then press this"), as `[page0, cell0]`. View state; null when none is marked.
   List<int>? _foodIconCell;
 
+  /// The machine draft revision [_foodIconCell] was last validated against. A reseed (Cancel, a
+  /// save's echo, reconcile, an external change) can drop or replace the marks, and the remembered
+  /// source must never outlive the mark it names.
+  int _foodIconSeedRevision = -1;
+
   /// One icon capture at a time — the window is hidden and the game must be in front, so a second
   /// request cannot start while one is in flight.
   bool _capturing = false;
@@ -191,12 +196,7 @@ class _PetTabState extends State<PetTab>
         break;
       }
     }
-    // The food-icon source starts at the last marked cell, so a restored config can be re-captured
-    // without re-clicking the grid (the mark itself is the selection).
-    final marked = _foodSlots();
-    if (marked.isNotEmpty) {
-      _foodIconCell = marked.last;
-    }
+    // The food-icon source starts at the last marked cell (see [_syncFoodIconCell], first build).
     unawaited(_loadPreflight());
   }
 
@@ -318,6 +318,28 @@ class _PetTabState extends State<PetTab>
     final cell = asNumber(pair[1])?.round();
     _returnPage = page == null ? null : page + 1;
     _returnCell = cell;
+  }
+
+  /// Keeps the food-icon source a MARKED cell. On a reseed (Cancel, a save's echo, reconcile, an
+  /// external change) the remembered cell is kept only while the CURRENT draft still marks it;
+  /// otherwise it falls back to the newest mark or clears, so "Capture food icon" then shows the
+  /// existing "Mark a food cell first…" disabled state instead of offering a cell the config no
+  /// longer has. Marking/unmarking does not bump the seed revision, so this never fights
+  /// [_toggleFoodCell]'s explicit selection while the player works.
+  void _syncFoodIconCell() {
+    if (_foodIconSeedRevision == _machineDraft.seedRevision) {
+      return;
+    }
+    _foodIconSeedRevision = _machineDraft.seedRevision;
+    final marked = _foodSlots();
+    final source = _foodIconCell;
+    final stillMarked =
+        source != null &&
+        marked.any((pair) => pair[0] == source[0] && pair[1] == source[1]);
+    if (stillMarked) {
+      return;
+    }
+    _foodIconCell = marked.isEmpty ? null : marked.last;
   }
 
   String _rowMarksText(Map<String, dynamic> row) {
@@ -788,6 +810,7 @@ class _PetTabState extends State<PetTab>
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     _syncReturnFields();
+    _syncFoodIconCell();
     final theme = Theme.of(context);
     final machine = _machine();
     final rows = _rows();
