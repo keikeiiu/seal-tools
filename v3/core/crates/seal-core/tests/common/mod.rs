@@ -228,6 +228,40 @@ impl Session {
     }
 
     /// The handshake, in the shape `PROTOCOL.md` §1 specifies.
+    /// Like [`Self::call`], but returns the response and the events that arrived BEFORE that
+    /// response. A raw-order test uses this to pin that a command-caused `config.changed` is flushed
+    /// after its answer; `call` would stash earlier events invisibly.
+    pub fn call_note_order(&mut self, cmd: &str, args: Value) -> (Response, Vec<Value>) {
+        self.next_id += 1;
+        let request = Request::new(&self.next_id.to_string(), cmd, args);
+        let line = encode_line(&request).expect("a request encodes");
+        let stdin = self.stdin.as_mut().expect("stdin is still open");
+        stdin
+            .write_all(line.as_bytes())
+            .expect("the request writes");
+        stdin.flush().expect("the request flushes");
+
+        let mut before = Vec::new();
+        loop {
+            let mut line = String::new();
+            self.stdout
+                .read_line(&mut line)
+                .expect("the core answers with a line");
+            assert!(
+                !line.is_empty(),
+                "the core closed stdout without answering {cmd:?}"
+            );
+            let value: Value =
+                decode_line::<Value>(&line).expect("every stdout line is protocol-shaped JSON");
+            if value.get("event").is_some() {
+                before.push(value);
+                continue;
+            }
+            let response = decode_line::<Response>(&line).expect("the response is protocol-shaped");
+            return (response, before);
+        }
+    }
+
     pub fn hello(&mut self) -> Response {
         self.call("hello", json!({"protocol": 1, "client": "0.1.0"}))
     }

@@ -475,7 +475,11 @@ fn pet_set_boarding_writes_one_row_field_keeps_the_file_and_emits_one_event() {
     let mut session = Session::start(root.path());
     session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
 
-    let result = session.result("pet.set_boarding", json!({"row": 1, "running": true}));
+    let (response, before) =
+        session.call_note_order("pet.set_boarding", json!({"row": 1, "running": true}));
+    assert!(before.is_empty(), "the event must NOT precede the response");
+    assert!(response.ok, "the tick succeeds: {:?}", response.error);
+    let result = response.result.expect("a result");
 
     assert_eq!(result["rev"], 1, "the A1 writer bumps the shared revision");
     assert_eq!(result["block"]["slots"][0]["boarding_running"], true);
@@ -521,4 +525,44 @@ fn pet_set_boarding_refuses_a_bad_row_or_type_with_the_field_named() {
     let error = not_bool.error.expect("a refusal");
     assert_eq!(error.code, "bad_request");
     assert_eq!(error.detail["field"], "running");
+}
+
+#[cfg(windows)]
+#[test]
+fn a_blocked_pet_set_boarding_write_is_io_logged_and_leaves_the_file_alone() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let before = root.read("config/local.yaml");
+
+    // Hold local.yaml with no sharing at all: the core's atomic temp+rename must fail, exercising
+    // the same store path a real locked/blocked file hits. (The core already read it at startup.)
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(root.path_of("config/local.yaml"))
+        .expect("the test holds local.yaml");
+
+    let response = session.call("pet.set_boarding", json!({"row": 1, "running": true}));
+    assert!(!response.ok, "the write must fail while the file is locked");
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "io");
+    assert!(
+        error.message.contains("cannot read") || error.message.contains("could not"),
+        "the core line explains the I/O failure: {}",
+        error.message
+    );
+
+    drop(held);
+    assert_eq!(
+        root.read("config/local.yaml"),
+        before,
+        "the file is untouched"
+    );
+    // The dispatcher is still alive and answers normally after the failed write.
+    let preflight = session.result("pet.preflight", json!({}));
+    assert!(preflight["ready"].is_boolean());
 }

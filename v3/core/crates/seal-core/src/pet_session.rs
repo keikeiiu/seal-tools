@@ -7,7 +7,7 @@
 //! (`ConfigStore::persist_pet_run_state`), so a tick cannot race the feeder's own mid-run updates or
 //! replace the rest of the pet block.
 
-use seal_domain::tools::pet::cycle_minutes;
+use seal_domain::tools::pet::{FeederLayout, cycle_minutes};
 use serde_json::{Value, json};
 
 use crate::pet::setup;
@@ -72,15 +72,58 @@ pub fn preflight(config: &Value) -> Value {
             "not marked — save it on the Calibrate tab".to_owned()
         }),
     );
-    mark(
-        !setup.page_tabs.is_empty(),
-        "Bag page tabs",
-        Some(if setup.page_tabs.is_empty() {
-            "not marked — save the page tab points on the Calibrate tab".to_owned()
-        } else {
-            format!("{} page tab(s) marked", setup.page_tabs.len())
-        }),
-    );
+    // The run only needs tabs for the pages its marks point at (`decision.rs:839-869`), and each
+    // such tab must carry a 2-point mark; a non-empty `page_tabs` vector is not enough.
+    let mut used_pages: Vec<usize> = Vec::new();
+    if let Some(return_slot) = &setup.return_slot
+        && return_slot.len() == 2
+        && return_slot[0] >= 0
+    {
+        used_pages.push(return_slot[0] as usize);
+    }
+    for cell in &setup.food_slots {
+        if cell.len() == 2 && cell[0] >= 0 {
+            used_pages.push(cell[0] as usize);
+        }
+    }
+    used_pages.sort_unstable();
+    used_pages.dedup();
+    let missing_pages: Vec<usize> = used_pages
+        .iter()
+        .copied()
+        .filter(|page| {
+            setup
+                .page_tabs
+                .get(*page)
+                .is_none_or(|mark| mark.len() != 2)
+        })
+        .collect();
+    let pages_ok = missing_pages.is_empty();
+    let page_detail = if used_pages.is_empty() {
+        "no pages are in use by the current marks".to_owned()
+    } else if pages_ok {
+        format!("{}/{} marked", used_pages.len(), used_pages.len())
+    } else {
+        let used = used_pages
+            .iter()
+            .map(|page| (page + 1).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let missing = missing_pages
+            .iter()
+            .map(|page| (page + 1).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "used pages: {used} — {} {missing} missing a mark",
+            if missing_pages.len() == 1 {
+                "page"
+            } else {
+                "pages"
+            }
+        )
+    };
+    mark(pages_ok, "Bag page tabs", Some(page_detail));
     let max = setup.max_button.is_some() || setup.buy_sell_max_button.is_some();
     mark(
         max,
@@ -106,10 +149,25 @@ pub fn preflight(config: &Value) -> Value {
             &format!("Row {} boarding slot", index + 1),
             Some(row_mark_detail(slot.as_deref())),
         );
+        let food_strip_ok = if setup.food_load_mode.eq_ignore_ascii_case("drag") {
+            // The run's own derivation, not a bare rect check: a malformed strip, a zero stack count
+            // and a strip that yields no boxes must all agree with Start.
+            FeederLayout::slot_boxes(row.feeder_strip.as_deref(), row.stacks).is_some()
+        } else {
+            true
+        };
         mark(
-            rect_ok(&row.feeder_strip),
+            food_strip_ok,
             &format!("Row {} food strip", index + 1),
-            Some(row_mark_detail(row.feeder_strip.as_deref())),
+            Some(if setup.food_load_mode.eq_ignore_ascii_case("drag") {
+                if food_strip_ok {
+                    "drawn".to_owned()
+                } else {
+                    "not drawn — drag mode has to name the box it drops into".to_owned()
+                }
+            } else {
+                "not needed in right-click mode".to_owned()
+            }),
         );
         let empty = config
             .pointer(&format!("/pet/slots/{index}/pet_slot_empty_png"))
@@ -125,9 +183,30 @@ pub fn preflight(config: &Value) -> Value {
             }),
         );
     }
-    let calibration_ok = calibration
+    // Only the marks Start actually refuses on count towards `ready`. The boarding-slot and
+    // empty-slot-reference rows are useful calibration facts but not start gates (`ready` in
+    // `decision.rs`); keeping them out of this predicate is what makes preflight agree with Start
+    // in BOTH directions, instead of claiming a refusal for an optional crop.
+    let drag = setup.food_load_mode.eq_ignore_ascii_case("drag");
+    let row_toggles_ok = setup
+        .slots
         .iter()
-        .all(|item| item["ok"] == Value::Bool(true));
+        .filter(|row| row.enabled)
+        .all(|row| rect_ok(&row.toggle_label));
+    let row_strips_ok =
+        !drag
+            || setup.slots.iter().filter(|row| row.enabled).all(|row| {
+                FeederLayout::slot_boxes(row.feeder_strip.as_deref(), row.stacks).is_some()
+            });
+    let calibration_ok = point_ok(&setup.menu_button)
+        && point_ok(&setup.feed_icon)
+        && point_ok(&setup.close_button)
+        && rect_ok(&setup.bag_grid)
+        && rect_ok(&setup.bag_slot)
+        && pages_ok
+        && (setup.max_button.is_some() || setup.buy_sell_max_button.is_some())
+        && row_toggles_ok
+        && row_strips_ok;
 
     let mut session = Vec::new();
     let return_ok = point_ok(&setup.return_slot);
@@ -191,6 +270,9 @@ pub fn preflight(config: &Value) -> Value {
             "no breeding rows configured — there is nothing for the feeder to run".to_owned(),
         );
     }
+    if !setup.slots.is_empty() && !setup.slots.iter().any(|row| row.enabled) {
+        lines.push("every row is unticked — nothing to feed".to_owned());
+    }
     if !return_ok && setup.queue_len == 0 {
         lines.push(
             "neither the return slot nor a pet icon is marked — nothing says where the pet is"
@@ -222,12 +304,16 @@ pub fn preflight(config: &Value) -> Value {
     }
     let ready = lines.is_empty();
     if ready {
+        // v2 formats EACH row (`"205 min"`) and joins those strings, so the unit appears once per
+        // row. The numbers use the run's guarded `cycle_minutes` rather than v2's raw
+        // LoadMinutes+WaitAfterEmpty on purpose: the preview should show what the run will use (the
+        // max(5, …) guard and the 60-minute fallback are part of that truth).
         let cycles: Vec<String> = setup
             .slots
             .iter()
             .map(|row| {
                 format!(
-                    "{}",
+                    "{} min",
                     cycle_minutes(
                         row.stacks,
                         config
@@ -243,7 +329,7 @@ pub fn preflight(config: &Value) -> Value {
             })
             .collect();
         lines.push(format!(
-            "This tab is ready. {} row(s), reloading every {} min.",
+            "This tab is ready. {} row(s), reloading every {}.",
             setup.slots.len(),
             cycles.join(" / ")
         ));
@@ -471,5 +557,129 @@ mod tests {
                 .1,
             "row"
         );
+    }
+
+    #[test]
+    fn the_ready_line_puts_min_after_each_rows_cycle() {
+        let answer = preflight(&valid_config(2));
+        assert_eq!(answer["ready"], true, "{answer}");
+        assert_eq!(
+            answer["lines"][0],
+            "This tab is ready. 2 row(s), reloading every 205 min / 205 min."
+        );
+    }
+
+    #[test]
+    fn every_used_page_needs_a_two_point_tab_mark_but_unused_pages_do_not() {
+        let mut config = valid_config(1);
+        config["pet"]["food_slots"] = json!([[1, 0]]);
+        config["pet"]["return_slot"] = Value::Null;
+        let missing = preflight(&config);
+        assert_eq!(missing["ready"], false);
+        let page_item = missing["calibration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "Bag page tabs")
+            .expect("the page item");
+        assert_eq!(page_item["ok"], false);
+        assert!(
+            page_item["detail"]
+                .as_str()
+                .unwrap()
+                .contains("used pages: 2 — page 2 missing a mark"),
+            "{page_item}"
+        );
+
+        // A page nobody's marks point at is irrelevant to Start and must not fail preflight.
+        let mut config = valid_config(1);
+        config["pet"]["page_tabs"] = json!([[100, 100]]);
+        config["pet"]["food_slots"] = json!([[0, 0], [0, 1], [0, 2], [0, 3]]);
+        assert_eq!(preflight(&config)["ready"], true);
+    }
+
+    #[test]
+    fn food_strip_is_a_gate_only_in_drag_mode_and_uses_the_run_derivation() {
+        let mut drag = valid_config(1);
+        drag["pet"]["food_load_mode"] = json!("drag");
+        drag["pet"]["slots"][0]["feeder_strip"] = Value::Null;
+        let answer = preflight(&drag);
+        assert_eq!(answer["ready"], false);
+        let strip = answer["calibration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "Row 1 food strip")
+            .expect("the strip item");
+        assert_eq!(strip["ok"], false);
+        assert!(strip["detail"].as_str().unwrap().contains("drag mode"));
+
+        let mut right_click = valid_config(1);
+        right_click["pet"]["slots"][0]["feeder_strip"] = Value::Null;
+        let answer = preflight(&right_click);
+        assert_eq!(answer["ready"], true, "{answer}");
+        let strip = answer["calibration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "Row 1 food strip")
+            .expect("the strip item");
+        assert_eq!(strip["ok"], true);
+        assert_eq!(strip["detail"], "not needed in right-click mode");
+    }
+
+    #[test]
+    fn every_row_unticked_is_a_readiness_line() {
+        let mut config = valid_config(1);
+        config["pet"]["slots"][0]["enabled"] = json!(false);
+        let answer = preflight(&config);
+        assert_eq!(answer["ready"], false);
+        assert!(
+            answer["lines"]
+                .to_string()
+                .contains("every row is unticked — nothing to feed")
+        );
+    }
+
+    #[test]
+    fn optional_empty_slot_and_boarding_slot_crops_are_facts_not_start_gates() {
+        let mut config = valid_config(1);
+        config["pet"]["slots"][0]["boarding_pet_slot"] = Value::Null;
+        config["pet"]["slots"][0]["pet_slot_empty_png"] = Value::Null;
+        let answer = preflight(&config);
+        // The run's `ready` neither reads nor refuses these crops; showing them as failed checks
+        // while `ready` stays true is the parity rule.
+        assert_eq!(answer["ready"], true, "{answer}");
+        assert!(
+            answer["calibration"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| { item["label"] == "Row 1 boarding slot" && item["ok"] == false })
+        );
+    }
+
+    #[test]
+    fn malformed_or_absent_pet_config_answers_facts_without_panicking() {
+        for config in [json!({}), json!({"pet": null}), json!({"pet": []})] {
+            let answer = preflight(&config);
+            assert_eq!(answer["ready"], false);
+            assert!(answer["calibration"].is_array());
+            assert!(answer["session"].is_array());
+            assert!(answer["lines"].is_array());
+        }
+    }
+
+    #[test]
+    fn the_board_firmware_item_is_informational() {
+        let answer = preflight(&valid_config(1));
+        let board = answer["session"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "board firmware")
+            .expect("the board item");
+        assert_eq!(board["ok"], true);
+        assert_eq!(board["detail"], "not checked by preflight — normal");
     }
 }
