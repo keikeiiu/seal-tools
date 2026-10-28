@@ -125,6 +125,7 @@ edits; it never re-serialises the whole file (§7).
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
 | `board.probe` | `{}` | `{"port":"COM5","baud":115200,"vid":"2341","pid":"8036","level":2}` |
 | `board.test` | `{"kind":"click"}` / `{"kind":"move","dx":100,"dy":0}` / `{"kind":"key","key":"E"}` | `{"ok":true,"detail":"..."}` |
+| `board.details` | `{}` | `{"baud":115200,"expected":{"vid":"2341","pids":["8036"],"port":null},"ports":[{"port":"COM5","vid":"2341","pid":"8036","product":"Arduino Leonardo","manufacturer":"Arduino LLC","matches_ids":true,"chosen":true}],"choice":{"state":"ready","port":"COM5","refusal":null},"firmware":null}` — READ-ONLY: enumerates serial ports and reports what a Start would use; never opens the port. `choice.state` is `ready`/`named_missing`/`not_found` and the core owns its `refusal` sentence; `firmware` is `null` (not checked yet — normal) or `{level, checked}` from the memory-only cache. Additive `v:1` |
 | `pointer.place` | `{"x":1213,"y":1077}` | `{}` — closed-loop placement at a CLIENT-RELATIVE PHYSICAL point; never `SetCursorPos` |
 | `pointer.click` | `{"x":1213,"y":1077}` | `{}` — place, then a bare left click; never clicks after a failed placement |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
