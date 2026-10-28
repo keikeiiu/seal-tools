@@ -9,11 +9,22 @@
 /// entries cannot be added or removed until that session exists. The read-only fields ride the save
 /// verbatim — a list-typed config field replaces wholesale (PROTOCOL §7), so a row's marks, crops and
 /// a queue entry's icon are echoed back exactly and a setup edit can never drop them.
+///
+/// Session readiness is the CORE's (`pet.preflight`, v2's Setup-so-far/Ready-to-run): this tab renders
+/// its two checklists and its ready lines exactly as they arrive (no rule and no sentence is composed
+/// here; `ℹ` marks an item the core says it did NOT check), reading them on open + Refresh and once
+/// after a Save or a boarding tick. The per-row "boarding now" tick writes ONE config field through
+/// `pet.set_boarding` (never the draft, never `config.apply`) and renders the MIRROR the core's
+/// `config.changed` updates; while the rows draft is dirty the tick is disabled, because an A1 write
+/// beside an unsaved draft would leave the two disagreeing.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../app/pet_preflight.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -108,10 +119,62 @@ class _PetTabState extends State<PetTab>
   int? _returnCell;
   int _returnSeedRevision = -1;
 
+  /// The core's session checklists (`pet.preflight`), read on open + Refresh only; refreshed once
+  /// after a successful Save or boarding tick because those are what change the saved config.
+  CoreActionResult<PetPreflightResult>? _preflight;
+  bool _loadingPreflight = true; // initState kicks the first read.
+
+  /// True while one `pet.set_boarding` request is in flight (all ticks disabled meanwhile).
+  bool _settingBoarding = false;
+
+  /// The core's line for a refused boarding tick, rendered verbatim under the rows.
+  String? _boardingError;
+
+  /// The last config revision this tab rendered. The BOARDING ticks are mirror state (the core's A1
+  /// write + `config.changed`), not draft state, so the tab must rebuild when the mirror does.
+  int? _seenConfigRev;
+
+  @override
+  void initState() {
+    super.initState();
+    _seenConfigRev = model.config.rev;
+    model.config.addListener(_onMirrorChanged);
+    unawaited(_loadPreflight());
+  }
+
   @override
   void dispose() {
+    model.config.removeListener(_onMirrorChanged);
     _group.dispose();
     super.dispose();
+  }
+
+  void _onMirrorChanged() {
+    final rev = model.config.rev;
+    if (rev == _seenConfigRev) {
+      return;
+    }
+    _seenConfigRev = rev;
+    if (!mounted) {
+      return;
+    }
+    // No command here: a boarding tick or a mid-run write changed the mirror, and the rows/tick
+    // values rendered from it must follow. The preflight is NOT re-read here (open/Refresh/Save/tick
+    // are its triggers), so an unrelated config change cannot cost a command.
+    setState(() {});
+  }
+
+  /// The Save also refreshes the checklists: `pet.preflight` describes the SAVED config, so the
+  /// moment it can change is the save that wrote it.
+  @override
+  Future<void> save() async {
+    await super.save();
+    if (!mounted) {
+      return;
+    }
+    if (outcome?.saved ?? false) {
+      await _loadPreflight();
+    }
   }
 
   // ── readers ──────────────────────────────────────────────────────────────────────────────
@@ -210,8 +273,13 @@ class _PetTabState extends State<PetTab>
 
   // ── writers ──────────────────────────────────────────────────────────────────────────────
 
-  void _setPortable(String key, num value) => _portableDraft.edit((map) {
-    map[key] = value;
+  /// Portable-half edits also rebuild this State: the tab's stale caption and tick gating are built
+  /// here, not by a draft listener, so a bare draft edit would leave them one frame stale (the
+  /// Pet-tab count-line rule).
+  void _setPortable(String key, num value) => setState(() {
+    _portableDraft.edit((map) {
+      map[key] = value;
+    });
   });
 
   /// Machine-half edits go through here so the tab rebuilds: the draft notifies its own
@@ -290,6 +358,191 @@ class _PetTabState extends State<PetTab>
     _setMachine('return_slot', [page - 1, cell]);
   }
 
+  // ── session readiness: the checklists + the boarding ticks ───────────────────────────────
+
+  /// Reads the core's Setup-so-far/Ready-to-run checklists. A READ on open, Refresh, a successful
+  /// Save and a successful boarding tick only — never per rebuild (no polling).
+  Future<void> _loadPreflight() async {
+    if (!_loadingPreflight) {
+      setState(() => _loadingPreflight = true);
+    }
+    final result = await model.petPreflight();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loadingPreflight = false;
+      _preflight = result;
+    });
+  }
+
+  /// The machine rows draft is dirty: the tick is an A1 core write outside the draft, so ticking
+  /// then would make the draft disagree with the mirror (and the scaffold would flag it). The
+  /// smallest honest UI is to disable the tick and say why.
+  bool get _rowsDirty => _machineDraft.isDirty;
+
+  /// ANY unsaved edit blocks the tick: a `config.changed` while a dirty part exists would be marked
+  /// as an external change against that part even when the write touched only the machine block, so
+  /// the tick would present the player with a confusing reconcile banner for their own action.
+  bool get _draftDirty => _group.isDirty;
+
+  /// The reason beside a blocked tick. The pinned wording names the rows, so it is kept when they
+  /// are the dirty part; a portable-only edit still blocks the tick, with its own sentence.
+  String get _tickBlockedReason =>
+      _rowsDirty ? 'Save the row edits first' : 'Save the edits first';
+
+  /// One row's `boarding_running`, from the MIRROR: the core's A1 write is the only writer (the run
+  /// also writes it mid-run), so the tab renders what the config says rather than a local guess.
+  bool _boardingRunning(int index) {
+    final rows = asJsonList(_machine()['slots']);
+    if (index < 0 || index >= rows.length) {
+      return false;
+    }
+    return asBool(asJsonMap(rows[index])['boarding_running']) ?? false;
+  }
+
+  /// Toggles one row's boarding state through `pet.set_boarding` — never a config.apply and never the
+  /// draft. `row` is 1-based (the wire's numbering). On success the mirror updates via the core's
+  /// `config.changed` and the checklists are re-read once (the tick may change readiness).
+  Future<void> _setBoarding(int row, bool running) async {
+    if (_settingBoarding || _draftDirty) {
+      return;
+    }
+    setState(() {
+      _settingBoarding = true;
+      _boardingError = null;
+    });
+    final result = await model.setPetBoarding(row: row, running: running);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _settingBoarding = false;
+      if (!result.ok) {
+        _boardingError = result.errorLine;
+      }
+    });
+    if (result.ok) {
+      await _loadPreflight();
+    }
+  }
+
+  /// A checklist row's marker: `✓` passed, `✗` failed, `ℹ` INFORMATIONAL. An informational item is
+  /// one the core says it did NOT check (its detail starts "not checked by preflight"): it is
+  /// `ok:true` because it is not a failure, but drawing it as a passed check would overstate what
+  /// the core proved. The docs name this convention; the item's own text is left untouched.
+  String _checkMarker(PetChecklistItem item) {
+    if (!item.ok) {
+      return '✗';
+    }
+    final detail = item.detail;
+    if (detail != null && detail.startsWith('not checked by preflight')) {
+      return 'ℹ';
+    }
+    return '✓';
+  }
+
+  /// One checklist list as rendered: the marker, the core's label and its detail. The shell adds no
+  /// wording of its own and infers no rules from labels or counts — `ok` + `detail` are the contract,
+  /// and the core's `lines` are rendered verbatim (untouched) elsewhere.
+  String _checklistText(List<PetChecklistItem> items) {
+    if (items.isEmpty) {
+      return '(no checks)';
+    }
+    return [
+      for (final item in items)
+        '${_checkMarker(item)} ${item.label}'
+            '${item.detail == null || item.detail!.isEmpty ? '' : ' — ${item.detail}'}',
+    ].join('\n');
+  }
+
+  /// The checklists describe the SAVED config, so while ANY part of this tab's draft is dirty they
+  /// are marked stale (a save re-reads them). This is broader than [_rowsDirty]: the portable
+  /// `settings.pet` fields feed the same preflight, not just the machine rows.
+  List<Widget> _preflightSection(ThemeData theme) {
+    final result = _preflight;
+    final stale = _group.isDirty;
+    final value = result?.value;
+    return [
+      Row(
+        children: [
+          OutlinedButton(
+            key: const ValueKey('pet-preflight-refresh'),
+            onPressed: _loadingPreflight ? null : _loadPreflight,
+            child: const Text('Refresh checklists'),
+          ),
+          if (value != null) ...[
+            const SizedBox(width: ShellSpace.sm),
+            Expanded(
+              child: Text(
+                value.ready
+                    ? 'Ready to run.'
+                    : 'Not ready yet — see the lines below.',
+                key: const ValueKey('pet-preflight-ready'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: value.ready ? theme.colorScheme.primary : null,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      if (stale)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            'Based on the saved config — Save to refresh',
+            key: const ValueKey('pet-preflight-stale'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      if (result == null)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            _loadingPreflight ? 'Reading the pet setup…' : 'Not read yet.',
+            key: const ValueKey('pet-preflight-pending'),
+            style: theme.textTheme.bodySmall,
+          ),
+        )
+      else if (!result.ok)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            result.errorLine ?? 'The core could not check the pet setup.',
+            key: const ValueKey('pet-preflight-error'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        )
+      else if (value != null) ...[
+        const SizedBox(height: ShellSpace.sm),
+        Text('Calibration', style: theme.textTheme.labelLarge),
+        Text(
+          _checklistText(value.calibration),
+          key: const ValueKey('pet-preflight-calibration'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text('Setup so far', style: theme.textTheme.labelLarge),
+        Text(
+          _checklistText(value.session),
+          key: const ValueKey('pet-preflight-session'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text(
+          value.lines.isEmpty ? '' : value.lines.join('\n'),
+          key: const ValueKey('pet-preflight-lines'),
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
+    ];
+  }
+
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
 
   @override
@@ -359,6 +612,10 @@ class _PetTabState extends State<PetTab>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           EditorSection(
+            title: 'Setup so far & ready to run (from the saved config)',
+            children: _preflightSection(theme),
+          ),
+          EditorSection(
             title: 'Breeding rows',
             children: [
               if (rows.isEmpty)
@@ -371,6 +628,17 @@ class _PetTabState extends State<PetTab>
                 ),
               for (var index = 0; index < rows.length; index++)
                 _rowEditor(index, rows[index]),
+              if (_boardingError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+                  child: Text(
+                    _boardingError!,
+                    key: const ValueKey('pet-boarding-error'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
               Text(
                 'Rows come from the pet capture session (OPEN): tick one and set its '
                 'stack count here; its rects and crops are read-only. Rows cannot be '
@@ -604,6 +872,22 @@ class _PetTabState extends State<PetTab>
             helper: 'a ticked row is fed; an unticked one is ignored',
             value: enabled,
             onChanged: (value) => _setRow(index, 'enabled', value),
+          ),
+          // v2's per-row "boarding now" tick. It is NOT a draft edit: `pet.set_boarding` writes the
+          // one field through the core (A1) so the run's own mid-run updates cannot clobber it. It
+          // renders the MIRROR, and is disabled while row edits are unsaved (the draft would
+          // disagree with the mirror the core is writing).
+          CheckboxListTile(
+            key: ValueKey('pet-boarding-tick-${index + 1}'),
+            value: _boardingRunning(index),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text('Boarding now'),
+            subtitle: _draftDirty ? Text(_tickBlockedReason) : null,
+            onChanged: _draftDirty || _settingBoarding
+                ? null
+                : (value) => _setBoarding(index + 1, value ?? false),
           ),
           DraftFieldSlot(
             slotKey: 'pet-row-$index-stacks',

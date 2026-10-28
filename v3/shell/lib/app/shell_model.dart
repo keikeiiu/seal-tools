@@ -32,6 +32,7 @@ import 'core_actions.dart';
 import 'host_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
+import 'pet_preflight.dart';
 import 'tools.dart';
 import 'version.dart';
 
@@ -490,6 +491,26 @@ class ShellModel extends ChangeNotifier {
   /// decoded app-locally (the Attributes surface consumes an untyped result; no protocol type exists).
   Future<CoreActionResult<AttributesResult>> attributesGet() =>
       _coreAction('attributes.get', AttributesResult.fromJson);
+
+  /// `pet.preflight` — READ-ONLY: the Pet tab's Setup-so-far/Ready-to-run facts and v2's ready lines,
+  /// computed by the core from the MERGED CONFIG ([PROTOCOL.md] §4). It opens no board, window or OCR,
+  /// so it is not gated on the tool arbiter; the shell renders its lists/lines and invents no rules.
+  Future<CoreActionResult<PetPreflightResult>> petPreflight() =>
+      _coreAction('pet.preflight', PetPreflightResult.fromJson);
+
+  /// `pet.set_boarding {row, running}` — ONE field through the core's field-precise writer
+  /// ([PROTOCOL.md] §4): NOT a `config.apply`, and not part of the tab's draft, so a user tick and the
+  /// run's own mid-run writes cannot clobber each other. `row` is 1-BASED. The core emits exactly one
+  /// `config.changed {block:"pet"}` AFTER the response — that is what updates the mirror the tick
+  /// renders from; a refusal is the core's line, rendered verbatim.
+  Future<CoreActionResult<JsonMap>> setPetBoarding({
+    required int row,
+    required bool running,
+  }) => _coreAction(
+    'pet.set_boarding',
+    (result) => result,
+    args: {'row': row, 'running': running},
+  );
 
   /// `logs.cleanup_captures` — the Tuner tab's "Clean up capture images" housekeeping
   /// ([PROTOCOL.md] §2/§4). The result carries the deleted count and the ROOT-RELATIVE directory; the

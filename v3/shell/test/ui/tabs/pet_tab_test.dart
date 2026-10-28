@@ -82,9 +82,82 @@ Finder _field(String key) => find.descendant(
   matching: find.byType(TextField),
 );
 
+/// A ready `pet.preflight` answer; tests override the lists/lines to exercise the checklist rendering.
+Map<String, dynamic> _preflightAnswer({
+  bool ready = true,
+  List<Map<String, dynamic>>? calibration,
+  List<Map<String, dynamic>>? session,
+  List<String>? lines,
+}) => {
+  'ready': ready,
+  'calibration':
+      calibration ??
+      [
+        {'ok': true, 'label': 'Pet menu point', 'detail': 'marked'},
+      ],
+  'session':
+      session ??
+      [
+        {'ok': true, 'label': 'return slot', 'detail': 'page 1, cell 4'},
+      ],
+  'lines':
+      lines ??
+      ['This tab is ready. 2 row(s), reloading every 205 min / 410 min.'],
+};
+
+/// The fake core's answers for the commands the Pet tab sends. The tab's RULES are the core's; a test
+/// only ever needs the shape (and can override `pet.preflight` for a checklist case).
+Map<String, dynamic> _petReply(Map<String, dynamic> request) {
+  switch (request['cmd']) {
+    case 'pet.preflight':
+      return _preflightAnswer();
+    case 'pet.set_boarding':
+      return {'rev': 9, 'block': <String, dynamic>{}};
+    case 'config.validate':
+      return {'errors': <String>[], 'warnings': <String>[]};
+    case 'config.apply':
+      final args = request['args'];
+      final sections = args is Map<String, dynamic> ? args['sections'] : null;
+      return {'rev': 8, 'sections': sections ?? <String, dynamic>{}};
+    default:
+      return <String, dynamic>{};
+  }
+}
+
+/// Installs the standard Save answers (`answerConfigCommands`) PLUS the pet reads the tab issues
+/// around a save (the checklists are re-read after a successful one), so no request is left pending.
+void _answerPetCore(AppHarness harness, {List<String> errors = const []}) {
+  harness.answerConfigCommands(errors: errors);
+  final configHandler = harness.onWrite!;
+  harness.onWrite = (line, fake) {
+    final message = fake.sentJson(fake.sent.length - 1);
+    final cmd = message['cmd'];
+    if (cmd == 'pet.preflight') {
+      fake.emitJson(okResponse(message['id'] as String, _preflightAnswer()));
+      return;
+    }
+    configHandler(line, fake);
+  };
+}
+
+/// How many `pet.preflight` reads the tab has sent.
+int _preflightCalls(AppHarness harness) => harness.sentMessages
+    .where((message) => message['cmd'] == 'pet.preflight')
+    .length;
+
+/// The `data` of one keyed Text.
+String _text(WidgetTester tester, String key) =>
+    tester.widget<Text>(find.byKey(ValueKey(key))).data!;
+
+/// One row's boarding tick state (the widget renders the MIRROR).
+bool? _tickValue(WidgetTester tester, int row) => tester
+    .widget<CheckboxListTile>(find.byKey(ValueKey('pet-boarding-tick-$row')))
+    .value;
+
 Future<AppHarness> _pumpPet(
   WidgetTester tester, {
   Map<String, dynamic>? pet,
+  Map<String, dynamic> Function(Map<String, dynamic> request)? answer,
 }) async {
   tester.view.physicalSize = const ui.Size(1600, 3400);
   tester.view.devicePixelRatio = 1.0;
@@ -106,28 +179,49 @@ Future<AppHarness> _pumpPet(
     await tester.pump();
   }
   await connecting;
+  // The tab reads `pet.preflight` on open, so the fake core must answer BEFORE it is pumped.
+  harness.onWrite = (line, fake) {
+    final message = fake.sentJson(fake.sent.length - 1);
+    final reply = answer?.call(message) ?? _petReply(message);
+    final id = message['id'] as String;
+    if (reply.containsKey('error')) {
+      final error = reply['error'] as Map<String, dynamic>;
+      fake.emitJson(
+        errorResponse(
+          id,
+          error['code'] as String,
+          message: error['message'] as String,
+        ),
+      );
+    } else {
+      fake.emitJson(okResponse(id, reply));
+    }
+  };
   await tester.pumpWidget(
     MaterialApp(
       theme: buildShellTheme(),
       home: Scaffold(body: PetTab(model: harness.model)),
     ),
   );
+  // One frame for the first build, one for the decoded `pet.preflight` answer's setState.
+  await tester.pump();
   await tester.pump();
   return harness;
 }
 
 Future<void> _flush(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump();
-  await tester.pump();
+  for (var i = 0; i < 5; i++) {
+    await tester.pump();
+  }
 }
 
-/// Saves and returns the `sections` the tab sent.
+/// Saves and returns the `sections` the tab sent. Also answers the checklist re-read the Save starts
+/// (the checklists describe the saved config, so a save re-reads them once).
 Future<Map<String, dynamic>> _save(
   WidgetTester tester,
   AppHarness harness,
 ) async {
-  harness.answerConfigCommands();
+  _answerPetCore(harness);
   await tester.tap(find.byKey(const ValueKey('save-pet')));
   await _flush(tester);
   final apply = harness.lastSentWithCmd('config.apply');
@@ -385,9 +479,7 @@ void main() {
       final harness = await _pumpPet(tester, pet: _machinePet());
       await _tapSwitch(tester, 'pet-row-0-enabled');
 
-      harness.answerConfigCommands(
-        errors: ['a breeding row needs a stack count'],
-      );
+      _answerPetCore(harness, errors: ['a breeding row needs a stack count']);
       await tester.tap(find.byKey(const ValueKey('save-pet')));
       await _flush(tester);
 
@@ -419,5 +511,237 @@ void main() {
     );
     final rateField = tester.widget<TextField>(_field('pet-items-per-minute'));
     expect(rateField.controller?.text, '3');
+  });
+
+  testWidgets(
+    'the checklists are read once on open and render the core lists and lines',
+    (tester) async {
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        answer: (request) => request['cmd'] == 'pet.preflight'
+            ? _preflightAnswer(
+                ready: false,
+                calibration: [
+                  {'ok': true, 'label': 'Pet menu point', 'detail': 'marked'},
+                  {
+                    'ok': false,
+                    'label': 'Boarding bag grid',
+                    'detail': 'not marked',
+                  },
+                ],
+                session: [
+                  {
+                    'ok': true,
+                    'label': 'return slot',
+                    'detail': 'page 2, cell 4',
+                  },
+                  {'ok': false, 'label': 'food cells'},
+                  // INFORMATIONAL: ok:true, but the detail says the core did not check it. The
+                  // shell must render it as information, never as a passed check.
+                  {
+                    'ok': true,
+                    'label': 'board firmware',
+                    'detail': 'not checked by preflight — normal',
+                  },
+                ],
+                // The readiness lines are the CORE's, rendered verbatim — never composed here. The
+                // list is arbitrary: v2's ready line, the new "nothing to feed" line, a fallback.
+                lines: [
+                  'This tab is ready. 2 row(s), reloading every 205 min / 410 min.',
+                  'every row is unticked — nothing to feed',
+                  'no pet icon is queued — the tool will use the return slot instead',
+                ],
+              )
+            : _petReply(request),
+      );
+
+      expect(_preflightCalls(harness), 1);
+      expect(harness.lastSentWithCmd('config.validate'), isNull);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+
+      expect(
+        _text(tester, 'pet-preflight-ready'),
+        'Not ready yet — see the lines below.',
+      );
+      expect(
+        _text(tester, 'pet-preflight-calibration'),
+        '✓ Pet menu point — marked\n✗ Boarding bag grid — not marked',
+      );
+      expect(
+        _text(tester, 'pet-preflight-session'),
+        '✓ return slot — page 2, cell 4\n'
+        '✗ food cells\n'
+        'ℹ board firmware — not checked by preflight — normal',
+        reason: 'ok:true with a "not checked by preflight" detail is INFORMATION, not a passed check',
+      );
+      expect(
+        _text(tester, 'pet-preflight-session'),
+        isNot(contains('✓ board firmware')),
+      );
+      expect(
+        _text(tester, 'pet-preflight-lines'),
+        'This tab is ready. 2 row(s), reloading every 205 min / 410 min.\n'
+        'every row is unticked — nothing to feed\n'
+        'no pet icon is queued — the tool will use the return slot instead',
+        reason:
+            'the readiness lines are verbatim; the shell never composes one',
+      );
+
+      // A rebuild is not a re-read.
+      await tester.pump();
+      expect(_preflightCalls(harness), 1);
+    },
+  );
+
+  testWidgets('Refresh re-reads the checklists; a rebuild does not', (
+    tester,
+  ) async {
+    final harness = await _pumpPet(tester, pet: _machinePet());
+    expect(_preflightCalls(harness), 1);
+    expect(_text(tester, 'pet-preflight-ready'), 'Ready to run.');
+    expect(
+      _text(tester, 'pet-preflight-lines'),
+      'This tab is ready. 2 row(s), reloading every 205 min / 410 min.',
+    );
+
+    await tester.pump();
+    expect(_preflightCalls(harness), 1);
+
+    await _tap(tester, 'pet-preflight-refresh');
+    await _flush(tester);
+    expect(_preflightCalls(harness), 2);
+  });
+
+  testWidgets(
+    'a dirty draft marks the checklists stale and disables the boarding ticks',
+    (tester) async {
+      await _pumpPet(tester, pet: _machinePet());
+      expect(find.byKey(const ValueKey('pet-preflight-stale')), findsNothing);
+
+      // The PORTABLE half feeds the same preflight, so editing it alone marks the checklists stale.
+      // It also blocks the ticks: their core write would flag the dirty portable part as an
+      // external change (the scaffold's reconcile banner) — for the player's own tick.
+      await tester.enterText(_field('pet-items-per-minute'), '5');
+      await tester.pump();
+      expect(find.byKey(const ValueKey('pet-preflight-stale')), findsOneWidget);
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('pet-boarding-tick-1')),
+            )
+            .onChanged,
+        isNull,
+      );
+      expect(find.text('Save the edits first'), findsNWidgets(2));
+
+      await tester.tap(find.byKey(const ValueKey('cancel-pet')));
+      await _flush(tester);
+      expect(find.byKey(const ValueKey('pet-preflight-stale')), findsNothing);
+
+      // A MACHINE-row edit disables the ticks too, with the reason beside each row.
+      await tester.enterText(_field('pet-row-0-stacks'), '3');
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('pet-preflight-stale')), findsOneWidget);
+      expect(
+        _text(tester, 'pet-preflight-stale'),
+        'Based on the saved config — Save to refresh',
+      );
+      final tick = tester.widget<CheckboxListTile>(
+        find.byKey(const ValueKey('pet-boarding-tick-1')),
+      );
+      expect(
+        tick.onChanged,
+        isNull,
+        reason:
+            'the tick is an A1 write; a dirty row draft cannot coexist with it',
+      );
+      expect(find.text('Save the row edits first'), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'a boarding tick sends exactly pet.set_boarding and never config.apply',
+    (tester) async {
+      final harness = await _pumpPet(tester, pet: _machinePet());
+      expect(_preflightCalls(harness), 1);
+      // The fixture's row 2 starts boarding; the tick renders the MIRROR.
+      expect(_tickValue(tester, 2), isTrue);
+
+      await _tap(tester, 'pet-boarding-tick-2');
+      await _flush(tester);
+
+      expect(harness.lastSentWithCmd('pet.set_boarding')!['args'], {
+        'row': 2,
+        'running': false,
+      });
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      expect(harness.lastSentWithCmd('config.validate'), isNull);
+      expect(
+        _preflightCalls(harness),
+        2,
+        reason: 'a successful tick re-reads the checklists',
+      );
+
+      // The core's ONE config.changed is what updates the tick: the tab renders the mirror.
+      final pet = Map<String, dynamic>.of(_machinePet());
+      final slots = (pet['slots'] as List).cast<Map<String, dynamic>>();
+      slots[1] = <String, Object>{...slots[1], 'boarding_running': false};
+      harness.emitConfigChanged(rev: 9, block: 'pet', values: pet);
+      await _flush(tester);
+      expect(_tickValue(tester, 2), isFalse);
+    },
+  );
+
+  testWidgets('a refused boarding tick renders the core line verbatim', (
+    tester,
+  ) async {
+    final harness = await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      answer: (request) => request['cmd'] == 'pet.set_boarding'
+          ? {
+              'error': {
+                'code': 'bad_request',
+                'message': 'pet.set_boarding names row 2, but this config has 2 rows (1..2)',
+              },
+            }
+          : _petReply(request),
+    );
+
+    await _tap(tester, 'pet-boarding-tick-2');
+    await _flush(tester);
+
+    expect(
+      _text(tester, 'pet-boarding-error'),
+      'pet.set_boarding names row 2, but this config has 2 rows (1..2)',
+    );
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+    expect(
+      _preflightCalls(harness),
+      1,
+      reason: 'a refusal changes nothing, so nothing is re-read',
+    );
+  });
+
+  testWidgets('a successful Save re-reads the checklists once', (tester) async {
+    final harness = await _pumpPet(tester, pet: _machinePet());
+    expect(_preflightCalls(harness), 1);
+
+    await _tapSwitch(tester, 'pet-row-0-enabled');
+    await _save(tester, harness);
+
+    expect(
+      _preflightCalls(harness),
+      2,
+      reason:
+          'the checklists describe the saved config, so the save re-reads them',
+    );
+    expect(
+      find.byKey(const ValueKey('pet-preflight-stale')),
+      findsNothing,
+      reason: 'the Save left the draft clean, so the stale caption is gone',
+    );
   });
 }
