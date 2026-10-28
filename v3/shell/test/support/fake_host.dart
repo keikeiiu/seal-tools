@@ -30,6 +30,8 @@ class FakeHost implements HostActions {
     WindowRect? windowRect,
     this.visible = true,
     this.failWindowCalls = false,
+    this.failHide = false,
+    this.failShow = false,
   }) : primaryWorkAreaValue = primaryWorkArea ?? _defaultArea,
        virtualScreenValue = virtualScreen ?? primaryWorkArea ?? _defaultArea,
        currentWindowRect = windowRect ?? _defaultWindow;
@@ -50,6 +52,14 @@ class FakeHost implements HostActions {
 
   /// When true the placement calls throw, exercising the host-failure path.
   bool failWindowCalls;
+
+  /// When true `hideWindow` throws AFTER the call is recorded — the shell's "no host channel" path:
+  /// the window was NOT hidden, the capture is still attempted, and its note is shown.
+  bool failHide;
+
+  /// When true `showWindow` throws AFTER the call is recorded — the "could not be shown again" path;
+  /// the capture/refusal line still stands.
+  bool failShow;
 
   /// The primary monitor's work area `primaryWorkArea()` reports.
   WindowRect primaryWorkAreaValue;
@@ -88,6 +98,9 @@ class FakeHost implements HostActions {
   Future<void> hideWindow() async {
     hideCalls++;
     lifecycle.add('hide');
+    if (failHide) {
+      throw StateError('the host refused hideWindow');
+    }
     visible = false;
   }
 
@@ -95,6 +108,9 @@ class FakeHost implements HostActions {
   Future<void> showWindow() async {
     showCalls++;
     lifecycle.add('show');
+    if (failShow) {
+      throw StateError('the host refused showWindow');
+    }
     visible = true;
   }
 

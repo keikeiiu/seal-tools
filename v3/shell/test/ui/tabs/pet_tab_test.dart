@@ -164,6 +164,13 @@ int _preflightCalls(AppHarness harness) => harness.sentMessages
     .where((message) => message['cmd'] == 'pet.preflight')
     .length;
 
+/// Neither capture path may write config: no validate, no apply — the tab's one Save is the only
+/// writer. Called on success AND refusal, before any Save in the test.
+void _expectNoConfigWrites(AppHarness harness) {
+  expect(harness.lastSentWithCmd('config.validate'), isNull);
+  expect(harness.lastSentWithCmd('config.apply'), isNull);
+}
+
 /// The `data` of one keyed Text.
 String _text(WidgetTester tester, String key) =>
     tester.widget<Text>(find.byKey(ValueKey(key))).data!;
@@ -812,11 +819,7 @@ void main() {
         'page': 2,
         'cell': 35,
       }, reason: 'page and cell are 1-BASED on the wire');
-      expect(
-        harness.lastSentWithCmd('config.apply'),
-        isNull,
-        reason: 'a capture never applies config — only Save writes',
-      );
+      _expectNoConfigWrites(harness);
       expect(find.byKey(const ValueKey('pet-add-preview')), findsOneWidget);
       expect(
         _text(tester, 'pet-add-result'),
@@ -881,7 +884,7 @@ void main() {
         findsNothing,
         reason: 'a refused capture adds nothing to the queue draft',
       );
-      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      _expectNoConfigWrites(harness);
     },
   );
 
@@ -889,7 +892,7 @@ void main() {
     'a core bag_grid refusal is rendered verbatim and shows the shell again',
     (tester) async {
       final host = FakeHost();
-      await _pumpPet(
+      final harness = await _pumpPet(
         tester,
         pet: _machinePet(),
         host: host,
@@ -917,6 +920,7 @@ void main() {
         find.text("The boarding bag grid isn't calibrated — Calibrate Pet."),
         findsOneWidget,
       );
+      _expectNoConfigWrites(harness);
     },
   );
 
@@ -953,6 +957,7 @@ void main() {
         _text(tester, 'pet-food-icon-result'),
         contains('from ITEM2 · cell 4'),
       );
+      _expectNoConfigWrites(harness);
 
       final sections = await _save(tester, harness);
       expect(
@@ -1061,4 +1066,214 @@ void main() {
       expect(find.textContaining('ITEM1 · cell 6'), findsNothing);
     },
   );
+
+  testWidgets('a missing hide channel is noted and the capture still runs', (
+    tester,
+  ) async {
+    final host = FakeHost(failHide: true);
+    final harness = await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'pet.capture_icon') {
+          host.lifecycle.add('capture-sent');
+          return _captureAnswer(request);
+        }
+        return _petReply(request);
+      },
+    );
+
+    await _tap(tester, 'pet-add-cell-0-7');
+    await _tap(tester, 'pet-add-capture');
+    await _flush(tester);
+
+    expect(host.lifecycle, [
+      'hide',
+      'capture-sent',
+      'show',
+    ], reason: 'a failed hide is a note, not a reason to skip the capture');
+    expect(
+      _text(tester, 'pet-add-note'),
+      'the shell could not hide itself — the game has to be in front for a capture',
+    );
+    expect(
+      harness.sentMessages.where(
+        (message) => message['cmd'] == 'pet.capture_icon',
+      ),
+      hasLength(1),
+      reason: 'the command is still sent through a missing host channel',
+    );
+    expect(
+      _text(tester, 'pet-add-result'),
+      contains('Captured 10×10 px'),
+      reason: 'the capture result path is unchanged',
+    );
+    expect(_field('pet-queue-label-2'), findsOneWidget);
+    _expectNoConfigWrites(harness);
+  });
+
+  testWidgets('a missing hide channel on the food path is noted too', (
+    tester,
+  ) async {
+    final host = FakeHost(failHide: true);
+    final harness = await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'pet.capture_icon') {
+          host.lifecycle.add('capture-sent');
+          return _captureAnswer(request);
+        }
+        return _petReply(request);
+      },
+    );
+
+    await _tap(tester, 'pet-food-icon-capture');
+    await _flush(tester);
+
+    expect(host.lifecycle, ['hide', 'capture-sent', 'show']);
+    expect(
+      _text(tester, 'pet-food-icon-note'),
+      'the shell could not hide itself — the game has to be in front for a capture',
+    );
+    expect(
+      _text(tester, 'pet-food-icon-result'),
+      contains('from ITEM2 · cell 4'),
+    );
+    _expectNoConfigWrites(harness);
+  });
+
+  testWidgets('a missing show channel is noted and does not throw', (
+    tester,
+  ) async {
+    final host = FakeHost(failShow: true);
+    final harness = await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'pet.capture_icon') {
+          host.lifecycle.add('capture-sent');
+          return _captureAnswer(request);
+        }
+        return _petReply(request);
+      },
+    );
+
+    await _tap(tester, 'pet-add-cell-0-7');
+    await _tap(tester, 'pet-add-capture');
+    await _flush(tester);
+
+    expect(host.lifecycle, ['hide', 'capture-sent', 'show']);
+    expect(
+      _text(tester, 'pet-add-note'),
+      'the shell could not be shown again — no host channel',
+    );
+    expect(_text(tester, 'pet-add-result'), contains('Captured 10×10 px'));
+    expect(_field('pet-queue-label-2'), findsOneWidget);
+    _expectNoConfigWrites(harness);
+  });
+
+  testWidgets(
+    'a refused capture with a failing show still renders the core line',
+    (tester) async {
+      final host = FakeHost(failShow: true);
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.capture_icon') {
+            host.lifecycle.add('capture-sent');
+            return {
+              'error': {
+                'code': 'game_not_foreground',
+                'message': 'the game is not the foreground window',
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-add-cell-0-7');
+      await _tap(tester, 'pet-add-capture');
+      await _flush(tester);
+
+      expect(host.lifecycle, [
+        'hide',
+        'capture-sent',
+        'show',
+      ], reason: 'the show is still ATTEMPTED when the capture is refused');
+      expect(
+        _text(tester, 'pet-add-result'),
+        'the game is not the foreground window',
+        reason: 'the core refusal is rendered verbatim',
+      );
+      expect(
+        _text(tester, 'pet-add-note'),
+        'the shell could not be shown again — no host channel',
+      );
+      expect(_field('pet-queue-label-2'), findsNothing);
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets('only one capture can be in flight at a time', (tester) async {
+    final host = FakeHost();
+    final harness = await _pumpPet(tester, pet: _machinePet(), host: host);
+    // Swallow the capture reply so the request stays in flight for the assertions below.
+    harness.onWrite = (line, fake) {};
+
+    await _tap(tester, 'pet-add-cell-0-7');
+    await _tap(tester, 'pet-add-capture');
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const ValueKey('pet-add-capture')))
+          .onPressed,
+      isNull,
+      reason: 'the capture button is disabled while one capture is in flight',
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const ValueKey('pet-food-icon-capture')),
+          )
+          .onPressed,
+      isNull,
+      reason: 'a second capture cannot start from the food path either',
+    );
+
+    // A tap on the disabled button starts nothing.
+    await tester.tap(
+      find.byKey(const ValueKey('pet-add-capture')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(
+      harness.sentMessages.where(
+        (message) => message['cmd'] == 'pet.capture_icon',
+      ),
+      hasLength(1),
+      reason: 'exactly one pet.capture_icon is in flight',
+    );
+    expect(find.byKey(const ValueKey('pet-queue-label-2')), findsNothing);
+    _expectNoConfigWrites(harness);
+
+    // Answer the one in-flight request so the test leaves nothing pending; the buttons come back.
+    harness.respondOk(_captureAnswer(harness.lastRequest));
+    await _flush(tester);
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const ValueKey('pet-add-capture')))
+          .onPressed,
+      isNotNull,
+    );
+    expect(_field('pet-queue-label-2'), findsOneWidget);
+  });
 }
