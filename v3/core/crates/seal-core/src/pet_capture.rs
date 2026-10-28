@@ -144,33 +144,21 @@ pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconE
             field: "cell",
         });
     }
-    let centres = BagGrid::centres(Some(&grid));
-    let centre = centres[arguments.cell - 1];
-    let pitch_x = BagGrid::pitch_x(&grid).round() as i32;
-    let pitch_y = BagGrid::pitch_y(&grid).round() as i32;
-    if pitch_x <= 0 || pitch_y <= 0 {
-        return Err(IconError::BadRequest {
-            message: "The boarding bag grid works out to an empty cell — re-drag it on the Calibrate tab."
+    BagGrid::cell_box(Some(&grid), arguments.cell - 1).ok_or_else(|| IconError::BadRequest {
+        message:
+            "The boarding bag grid works out to an empty cell — re-drag it on the Calibrate tab."
                 .to_owned(),
-            field: "bag_grid",
-        });
-    }
-    Ok(Rect::new(
-        centre.x - pitch_x / 2,
-        centre.y - pitch_y / 2,
-        pitch_x,
-        pitch_y,
-    ))
+        field: "bag_grid",
+    })
 }
 
 /// Crop one cell out of a captured client frame and return the protocol result. Kept separate from
 /// the Win32 capture so the byte-level crop is testable on any machine.
 pub fn icon_from_frame(
-    config: &Value,
     arguments: &IconArguments,
+    rect: Rect,
     frame: &Value,
 ) -> Result<Value, IconError> {
-    let rect = geometry(config, arguments)?;
     let (width, height, rgba) = frame_rgba(frame).map_err(IconError::Internal)?;
     let (crop_w, crop_h, cropped) = seal_win::pure::crop_rgba(
         width as u32,
@@ -330,16 +318,13 @@ mod tests {
     #[test]
     fn the_returned_png_is_a_byte_identical_crop_of_the_frame() {
         let frame = frame(80, 80);
-        let answer = icon_from_frame(
-            &config(&[0, 0, 80, 80], &[&[0, 0]]),
-            &IconArguments {
-                kind: IconKind::Food,
-                page: 1,
-                cell: 34,
-            },
-            &frame,
-        )
-        .expect("the crop");
+        let arguments = IconArguments {
+            kind: IconKind::Food,
+            page: 1,
+            cell: 34,
+        };
+        let rect = geometry(&config(&[0, 0, 80, 80], &[&[0, 0]]), &arguments).expect("geometry");
+        let answer = icon_from_frame(&arguments, rect, &frame).expect("the crop");
         assert_eq!(answer["kind"], "food");
         assert_eq!(answer["page"], 1);
         assert_eq!(answer["cell"], 34);
@@ -364,15 +349,13 @@ mod tests {
 
     #[test]
     fn a_cell_outside_the_frame_is_a_bad_grid_not_a_panic() {
-        let answer = icon_from_frame(
-            &config(&[0, 0, 80, 80], &[&[0, 0]]),
-            &IconArguments {
-                kind: IconKind::Queue,
-                page: 1,
-                cell: 64,
-            },
-            &frame(20, 20),
-        );
+        let arguments = IconArguments {
+            kind: IconKind::Queue,
+            page: 1,
+            cell: 64,
+        };
+        let rect = geometry(&config(&[0, 0, 80, 80], &[&[0, 0]]), &arguments).expect("geometry");
+        let answer = icon_from_frame(&arguments, rect, &frame(20, 20));
         assert!(matches!(
             answer,
             Err(IconError::BadRequest {
@@ -380,5 +363,37 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn a_page_beyond_the_marks_is_a_clean_bad_request_naming_page() {
+        let arguments = IconArguments {
+            kind: IconKind::Queue,
+            page: 3,
+            cell: 1,
+        };
+        let answer = geometry(&config(&[0, 0, 80, 80], &[&[100, 100]]), &arguments);
+        assert!(matches!(
+            answer,
+            Err(IconError::BadRequest { field: "page", .. })
+        ));
+    }
+
+    #[test]
+    fn the_shared_cell_box_is_the_run_pitch_box() {
+        let grid = [0, 0, 80, 80];
+        let cell = BagGrid::cell_box(Some(&grid), 33).expect("the shared box");
+        assert_eq!(cell, Rect::new(10, 40, 10, 10));
+        let centre = BagGrid::centres(Some(&grid))[33];
+        let (pitch_x, pitch_y) = BagGrid::pitch(&grid).expect("a valid pitch");
+        assert_eq!(
+            cell,
+            Rect::new(
+                centre.x - pitch_x / 2,
+                centre.y - pitch_y / 2,
+                pitch_x,
+                pitch_y
+            )
+        );
     }
 }

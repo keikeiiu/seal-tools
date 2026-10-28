@@ -1101,8 +1101,8 @@ fn pet_capture_icon(state: &mut CoreState, request: &Request) -> Response {
             Err(line) => return internal(&request.id, &line),
         }
     }
-    let icon = match crate::pet_capture::geometry(&state.config, &arguments) {
-        Ok(icon) => icon,
+    let rect = match crate::pet_capture::geometry(&state.config, &arguments) {
+        Ok(rect) => rect,
         Err(crate::pet_capture::IconError::BadRequest { message, field }) => {
             return bad_request(&request.id, &message, json!({"field": field}));
         }
@@ -1110,7 +1110,6 @@ fn pet_capture_icon(state: &mut CoreState, request: &Request) -> Response {
             return internal(&request.id, &message);
         }
     };
-    let _ = icon;
     let title = match win::configured_title(&state.config) {
         Ok(title) => title,
         Err(error) => return win_error_response(&request.id, error),
@@ -1119,7 +1118,7 @@ fn pet_capture_icon(state: &mut CoreState, request: &Request) -> Response {
         Ok((frame, _display)) => frame,
         Err(error) => return win_error_response(&request.id, error),
     };
-    match crate::pet_capture::icon_from_frame(&state.config, &arguments, &frame) {
+    match crate::pet_capture::icon_from_frame(&arguments, rect, &frame) {
         Ok(result) => Response::ok(&request.id, result),
         Err(crate::pet_capture::IconError::BadRequest { message, field }) => {
             bad_request(&request.id, &message, json!({"field": field}))

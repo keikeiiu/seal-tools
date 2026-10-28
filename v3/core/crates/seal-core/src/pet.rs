@@ -1701,10 +1701,8 @@ impl<S: PetSource> PetTool<S> {
                         return;
                     };
                     if let Some(grid) = self.plan.setup.bag_grid.as_deref()
-                        && let Some((pitch_x, pitch_y)) = pitch(grid)
+                        && let Some(rect) = BagGrid::pitch_box(grid, cell)
                     {
-                        let rect =
-                            Rect::new(cell.x - pitch_x / 2, cell.y - pitch_y / 2, pitch_x, pitch_y);
                         visit.before = self.source.region_capture(rect).ok();
                     }
                     self.queue.push_back(Decision::Place(cell));
@@ -1740,15 +1738,11 @@ impl<S: PetSource> PetTool<S> {
                 if let Some(before) = visit.before.take()
                     && let Some(cell) = visit.food_cell
                     && let Some(grid) = self.plan.setup.bag_grid.clone()
-                    && let Some((pitch_x, pitch_y)) = pitch(&grid)
+                    && let Some(rect) = BagGrid::pitch_box(&grid, cell)
+                    && let Ok(after) = self.source.region_capture(rect)
                 {
-                    let rect =
-                        Rect::new(cell.x - pitch_x / 2, cell.y - pitch_y / 2, pitch_x, pitch_y);
-                    if let Ok(after) = self.source.region_capture(rect) {
-                        moved =
-                            differing_fraction_images(&before, &after, ICON_INSET, ICON_TOLERANCE)
-                                .is_none_or(|changed| changed > BAG_CELL_CHANGED_ABOVE);
-                    }
+                    moved = differing_fraction_images(&before, &after, ICON_INSET, ICON_TOLERANCE)
+                        .is_none_or(|changed| changed > BAG_CELL_CHANGED_ABOVE);
                 }
                 if moved {
                     visit.stage = Stage::FoodDone;

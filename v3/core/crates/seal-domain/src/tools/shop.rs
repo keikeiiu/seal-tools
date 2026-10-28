@@ -24,7 +24,7 @@
 
 use crate::config::BuyPreset;
 use crate::decision::StopReason;
-use crate::geometry::{Point, round_ties_even};
+use crate::geometry::{Point, Rect, round_ties_even};
 use std::collections::BTreeMap;
 
 /// The wait before a dialog step. Generous on purpose: a transaction that outruns the game's
@@ -110,6 +110,33 @@ impl BagGrid {
             }
         }
         centres
+    }
+
+    /// The rounded pitch the run uses for a bag cell: `(pitch_x, pitch_y)`, both positive.
+    pub fn pitch(grid: &[i32]) -> Option<(i32, i32)> {
+        let x = Self::pitch_x(grid).round() as i32;
+        let y = Self::pitch_y(grid).round() as i32;
+        (x > 0 && y > 0).then_some((x, y))
+    }
+
+    /// The bag-cell box around `centre`: the rounded pitch rectangle the run captures and the
+    /// Pet tab previews. The single source of the `centre - pitch/2` rule.
+    pub fn pitch_box(grid: &[i32], centre: Point) -> Option<Rect> {
+        let (pitch_x, pitch_y) = Self::pitch(grid)?;
+        Some(Rect::new(
+            centre.x - pitch_x / 2,
+            centre.y - pitch_y / 2,
+            pitch_x,
+            pitch_y,
+        ))
+    }
+
+    /// The box for zero-based `cell` of the grid. The index is the run's own cell order
+    /// (`BagGrid::centres`).
+    pub fn cell_box(grid: Option<&[i32]>, cell: usize) -> Option<Rect> {
+        let grid = grid.filter(|grid| Self::is_valid_rect(Some(grid)))?;
+        let centre = *Self::centres(Some(grid)).get(cell)?;
+        Self::pitch_box(grid, centre)
     }
 
     /// Where the single calibrated slot is too far from the pitch the whole-grid rectangle implies,
