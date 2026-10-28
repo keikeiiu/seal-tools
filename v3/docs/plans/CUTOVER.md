@@ -117,10 +117,10 @@ verification item stays open.
 
 ## Publishing checklist (player)
 
-**v3.0.0 was superseded before publication.** The player's first live pass found defects that
-v3.0.1 fixes (see `records/RELEASE-v3.0.1.md`). Use the **v3.0.1 fix-release section at the end of this
-file** for the release actually to publish; the checklist below is the original v3.0.0 plan, kept for
-its reasoning.
+**v3.0.0 and v3.0.1 were superseded before publication.** The first live pass found defects fixed in
+v3.0.1, and the second pass corrected the Sell selection to per-run, fixed in v3.0.2 (see
+`records/RELEASE-v3.0.2.md`). Use the **v3.0.2 fix-release section at the end of this file** for the
+release actually to publish; the checklist below is the original v3.0.0 plan, kept for its reasoning.
 
 The artifacts exist locally; publishing is deliberately not performed by the plan's work. When the
 live pass is clean, the release step is mechanical:
@@ -209,3 +209,28 @@ changed.
    `seal_mouse/seal_mouse.ino`.
 6. **do not** move v2 docs into v3, and do not start a second changelog — the release records plus the
    root README table are the homes.
+
+---
+
+## v3.0.2 fix release (2026-10-28) — the one to publish
+
+Supersedes v3.0.0 and v3.0.1. The only change from v3.0.1 is the Sell selection: it is now a per-run
+`tool.start` argument (memory-only UI), because the player clarified the selection changes every sell
+and a saved one can sell the wrong slots. Details and gates: `records/RELEASE-v3.0.2.md`.
+
+1. **Merge and tag**: merge `v3-core` into `main`, `git tag v3.0.2`, push branch + tag (the push is the
+   player's call).
+2. **GitHub release** `v3.0.2` with:
+   - `dist/SealTools-v3.0.2.zip` — 44,838,165 B,
+     SHA-256 `7C8D79600D0DE9349B1DF00E18789A91438AB57A77E2E5EE7CD30364BB6A3084`
+   - `dist/SealTools-v3.0.2-firmware.zip` — 5,254 B,
+     SHA-256 `498E6A4BA1F8552C2BBE8B828AE892B338CC675BA5016CACE0089A3C35CCEF3B`
+   Release body: `v3/docs/records/RELEASE-v3.0.2.md`. Attach exactly as built; do not re-zip.
+3. **Root README**: rewrite for v3.0.2 and add the version-table row:
+   `| v3.0.2 | 2026-10-28 | Rust core + Flutter shell; all eight tools live; 18 calibration marks; per-run logs; replay core; per-run Sell selection. No .NET. Firmware unchanged. |`
+   Keep the v2.16 section as older history and point downloads/firmware at the v3.0.2 assets.
+4. **Archive the plans**: `PLAN-V3-CORE.md` → `v2/docs/archive/`, `PLAN-V3-SHELL.md` and
+   `CUTOVER.md` → `v3/docs/archive/`; `PLAN-V3-CALIBRATION.md` stays a live proposal.
+5. **Post-publish check**: download both v3.0.2 assets, compare SHA-256 with the values above, unzip and
+   launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
+6. **do not** move v2 docs into v3, and do not start a second changelog.

@@ -20,6 +20,11 @@ INSTALL, third-party notices, `pet-data.csv`). **Firmware is byte-identical** (t
 commits since `main`, so no reflash). All three publish audits passed and every payload file
 hash-matches its source.
 
+**Superseded for the Sell selection:** this release persisted the Sell grid selection into
+`buy_sell.sell_slots`; the player then clarified that the selection changes every sell, and v3.0.2
+replaced that with a per-run `tool.start` argument (memory-only UI). Everything else in this record
+still describes v3.0.2's behaviour; v3.0.2 is the release to publish.
+
 ## What the live pass found, and what changed
 
 1. **"Quest cannot select the flow/sequence; hand-in doesn't work with my old config."** Root cause:

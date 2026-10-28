@@ -19,6 +19,30 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-10-28 (25) — the sell selection is per-run, and v3.0.2
+
+The second live pass corrected one design: *"sell selection could be different every sell."* v3.0.1
+had made the Sell grid persist its selection into `buy_sell.sell_slots`, which is worse than v2's
+memory-only behaviour because a stale selection can sell the slots chosen last time — data loss, not
+convenience. The whole seam was re-cut: PROTOCOL now carries the selection as `tool.start`'s `slots`
+argument (validated before the supervisor: sell-only, non-empty array of integers 0..63, precise
+bad_request sentences; used for that run only, never written), the core builds the sell plan from
+those slots and no longer reads the config field at all (a start without slots has no selection and
+gets the tool's own "No slots are selected to sell."), the shell keeps the 8×8 grid as process-memory
+view state on ShellModel with the Sell card's Start sending it, and both languages' guides, INSTALL,
+OPEN and TOOL-FLOWS now say "next run only, not saved" without any fallback claim.
+
+Two gate bugs were caught on the way: the shell test that asserted the app-bar version still expected
+v3.0.0 after the 3.0.1 bump (it now reads the `productVersion` constant), and an unused test local.
+The release was rebuilt as **v3.0.2**: `SealTools-v3.0.2.zip` 44,838,165 B SHA-256
+`7C8D7960…3084`, firmware byte-identical `498E6A4B…EF3B`. Gates: Rust 79 result lines / 0 failed
+(core lib 124, tools 13), clippy 0, fmt clean; Flutter analyze clean, 180/180, format clean; all three
+publish audits PASS; payload hash-match; staged launch with a fresh migrated v2 config started. It
+supersedes v3.0.0/v3.0.1 and awaits the player's second live pass on it (plus the v2 parity worksheet
+for the calibration increments).
+
+---
+
 ## 2026-10-28 (24) — the first live pass, and v3.0.1
 
 The player ran v3.0.0 and reported real defects. The diagnostic that mattered was not a UI bug: their
