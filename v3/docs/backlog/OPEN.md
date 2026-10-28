@@ -68,6 +68,28 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 - **Mini mode / shell layout questions** — the shell has a stub; the ⚑ questions in
   [PLAN-V3-SHELL.md](../plans/PLAN-V3-SHELL.md) still decide the layout.
 
+## 5. Parity gaps from the v2-to-v3 audit (2026-10-28)
+
+The full matrix and evidence live in [records/PARITY-AUDIT-2026-10-28.md](../records/PARITY-AUDIT-2026-10-28.md).
+The gaps still to restore, in the audit's priority order:
+
+- **Pet run-state persistence (safety).** v2 wrote ood_slots_used, per-row oarding_running and the
+  close-guard belief back to local.yaml mid-run; v3 reads but never writes them, so a restart can make
+  the feeder feed used cells again. Needs a protocol ruling for core-initiated run-state writes
+  (PROTOCOL 7 anticipates the emitter) and a Pet-tab boarding surface.
+- **Buy/Sell dry runs** (click nothing; verify targeting) and **Quest Test one loop** - v2's two
+  pre-run safety tests; absent in v3 (need run-argument commands).
+- **Pet tab session surface** - capture/scan food cells, queue pets by icon capture, bank scans, test
+  read, and the Setup-so-far / Ready-to-run checklists (v2's Pet-tab maintenance workflow).
+- **Deletion guards** - the last spammer preset / last quest flow / sequence only-flow guards v2 had.
+- **Spammer card rotation picker**; **Tuner card live detail** (grade/remaining/attempt/attributes -
+  needs a ToolStatus/protocol extension); **Arduino connection diagnostics** (port list, chosen marker,
+  VID/PID/PnP, firmware detail); **Tuner clean-up-captures**; **Spammer advanced raw-key editor**;
+  **Buy row labelled picker** (v2 removed the free field after an off-by-one bought the wrong item);
+  **window placement persistence** (v2 remembered it; saveWindow has no caller).
+- **Calibration plan additions**: the Pet tab's Setup-so-far checklist; loading the saved overlay
+  PNG when a calibrate tab reopens; one decided home for the Gem Move mode.
+
 ## 4. Release inputs
 
 - **DirectML redistribution is RESOLVED and recorded**: Microsoft's license terms for DirectML,
