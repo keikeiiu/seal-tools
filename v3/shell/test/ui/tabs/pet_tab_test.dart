@@ -122,6 +122,54 @@ Map<String, dynamic> _captureAnswer(Map<String, dynamic> request) {
   };
 }
 
+/// A fake `pet.scan_food_page` answer: 1-based pages/cells in CELL order, plus the core's report and
+/// best-effort evidence lines. Overridable so a test can pick the page it scanned.
+Map<String, dynamic> _foodScanAnswer({
+  int page = 1,
+  List<int> cells = const [13, 36],
+  List<String>? report,
+  List<String>? evidence,
+}) => {
+  'page': page,
+  'cells': cells,
+  'report':
+      report ?? ['page $page: ${cells.length} cell(s) — ${cells.join(', ')}'],
+  'evidence': evidence ?? ['logs/reads/scan_page${page}_2026.png'],
+};
+
+/// A fake `pet.scan_queue_page` answer. `index` is the 0-based queue order, `hits[].cell` is 1-based.
+Map<String, dynamic> _queueScanAnswer({
+  int page = 1,
+  List<Map<String, dynamic>>? perEntry,
+  List<Map<String, dynamic>>? claimed,
+  List<String>? deduced,
+  List<String>? evidence,
+}) => {
+  'page': page,
+  'per_entry':
+      perEntry ??
+      [
+        {
+          'index': 0,
+          'label': 'red',
+          'hits': [
+            {'cell': 13, 'score': 0.0, 'runner_up': 1.0},
+          ],
+        },
+        {'index': 1, 'label': 'blue', 'hits': <Map<String, dynamic>>[]},
+      ],
+  'claimed':
+      claimed ??
+      [
+        {
+          'cell': 13,
+          'labels': ['red', 'blue'],
+        },
+      ],
+  'deduced': deduced ?? ['red ×1', 'blue ×0'],
+  'evidence': evidence ?? ['logs/reads/scan_page${page}_2026.png'],
+};
+
 /// The fake core's answers for the commands the Pet tab sends. The tab's RULES are the core's; a test
 /// only ever needs the shape (and can override `pet.preflight` for a checklist case).
 Map<String, dynamic> _petReply(Map<String, dynamic> request) {
@@ -132,6 +180,12 @@ Map<String, dynamic> _petReply(Map<String, dynamic> request) {
       return {'rev': 9, 'block': <String, dynamic>{}};
     case 'pet.capture_icon':
       return _captureAnswer(request);
+    case 'pet.scan_food_page':
+      return _foodScanAnswer(page: _requestPage(request, 1));
+    case 'pet.scan_queue_page':
+      return _queueScanAnswer(page: _requestPage(request, 1));
+    case 'pet.apply_food_scan':
+      return {'rev': 21, 'block': <String, dynamic>{}};
     case 'config.validate':
       return {'errors': <String>[], 'warnings': <String>[]};
     case 'config.apply':
@@ -141,6 +195,16 @@ Map<String, dynamic> _petReply(Map<String, dynamic> request) {
     default:
       return <String, dynamic>{};
   }
+}
+
+/// The `page` arg a fake request carries (the wire is 1-based; tests often just echo it).
+int _requestPage(Map<String, dynamic> request, int fallback) {
+  final args = request['args'];
+  if (args is! Map<String, dynamic>) {
+    return fallback;
+  }
+  final page = args['page'];
+  return page is int ? page : fallback;
 }
 
 /// Installs the standard Save answers (`answerConfigCommands`) PLUS the pet reads the tab issues
@@ -1276,4 +1340,419 @@ void main() {
     );
     expect(_field('pet-queue-label-2'), findsOneWidget);
   });
+
+  testWidgets(
+    'a food scan hides, scans and shows, and renders the cells, report and evidence',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return _foodScanAnswer(
+              page: 2,
+              cells: [13, 36],
+              report: [
+                'page 2: 2 cell(s) — 13, 36',
+                '  cell 13: 0.000 (limit 0.500)',
+                '  runner-up: cell 1 at 1.000',
+              ],
+              evidence: [
+                'logs/reads/scan_page2_1.png',
+                'logs/reads/scan_1.txt',
+              ],
+            );
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-page-1');
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'scan-sent', 'show']);
+      expect(harness.lastSentWithCmd('pet.scan_food_page')!['args'], {
+        'page': 2,
+      });
+      expect(_text(tester, 'pet-scan-food-cells'), 'Found 2 cells: 13, 36');
+      expect(
+        _text(tester, 'pet-scan-food-page-echo'),
+        'Scanned ITEM2 — the page this command was requested for.',
+        reason: 'the requested page is always shown next to the result',
+      );
+      expect(
+        _text(tester, 'pet-scan-food-report'),
+        'page 2: 2 cell(s) — 13, 36\n'
+        '  cell 13: 0.000 (limit 0.500)\n'
+        '  runner-up: cell 1 at 1.000',
+        reason: 'the core report is rendered verbatim',
+      );
+      expect(
+        _text(tester, 'pet-scan-food-evidence'),
+        contains('logs/reads/scan_page2_1.png'),
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-apply-food')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(find.text('Apply 2 cells to the food list'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pet-scan-no-food-icon')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('dirty-pet')),
+        findsNothing,
+        reason: 'a scan is view state — it never edits the draft',
+      );
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'a queue scan renders the hits, claimed conflicts, deduced and evidence',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_queue_page') {
+            host.lifecycle.add('scan-sent');
+            return _queueScanAnswer(
+              page: 2,
+              perEntry: [
+                {
+                  'index': 0,
+                  'label': 'red',
+                  'hits': [
+                    {'cell': 13, 'score': 0.02, 'runner_up': 0.31},
+                  ],
+                },
+                {'index': 1, 'label': 'blue', 'hits': <Map<String, dynamic>>[]},
+              ],
+              claimed: [
+                {
+                  'cell': 13,
+                  'labels': ['red', 'blue'],
+                },
+              ],
+              deduced: ['red ×1', 'blue ×0'],
+              evidence: [
+                'logs/reads/scan_page2_2.png',
+                'logs/reads/scan_2.txt',
+              ],
+            );
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-page-1');
+      await _tap(tester, 'pet-scan-queue-page');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'scan-sent', 'show']);
+      expect(harness.lastSentWithCmd('pet.scan_queue_page')!['args'], {
+        'page': 2,
+      });
+      expect(
+        _text(tester, 'pet-scan-queue-page-echo'),
+        'Scanned ITEM2 — the page this command was requested for.',
+      );
+      expect(
+        _text(tester, 'pet-scan-queue-entries'),
+        '#1 red — cell 13 · score 0.020 · runner-up 0.310\n'
+        '#2 blue — no hit reported on this page',
+      );
+      expect(
+        find.byKey(const ValueKey('pet-scan-queue-caption')),
+        findsOneWidget,
+        reason: 'an empty hit list is not read as "this pet is not in the bag"',
+      );
+      expect(
+        _text(tester, 'pet-scan-queue-claimed'),
+        'cell 13 claimed by red, blue',
+      );
+      expect(_text(tester, 'pet-scan-queue-deduced'), 'red ×1\nblue ×0');
+      expect(
+        _text(tester, 'pet-scan-queue-evidence'),
+        contains('logs/reads/scan_page2_2.png'),
+      );
+      expect(find.byKey(const ValueKey('dirty-pet')), findsNothing);
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'a refused scan renders the core line verbatim and shows the shell again',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return {
+              'error': {
+                'code': 'tool_busy',
+                'message':
+                    'Magic Tuner holds the game — stop it before scanning',
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+
+      expect(host.lifecycle, [
+        'hide',
+        'scan-sent',
+        'show',
+      ], reason: 'a refused scan must never leave the shell hidden');
+      expect(
+        _text(tester, 'pet-scan-food-error'),
+        'Magic Tuner holds the game — stop it before scanning',
+        reason: 'the core refusal is rendered verbatim',
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-food-page')),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'the scan button comes back after the refusal',
+      );
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'applying a food scan asks, sends the 1-based pairs and refreshes the list from the mirror',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return _foodScanAnswer(
+              page: 2,
+              cells: [13, 36],
+              report: ['page 2: 2 cell(s) — 13, 36'],
+            );
+          }
+          if (request['cmd'] == 'pet.apply_food_scan') {
+            host.lifecycle.add('apply-sent');
+            return {'rev': 21, 'block': <String, dynamic>{}};
+          }
+          return _petReply(request);
+        },
+      );
+      await _tap(tester, 'pet-scan-page-1');
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+
+      // The confirmation is required, and Cancel sends nothing.
+      await _tap(tester, 'pet-scan-apply-food');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('REPLACES'), findsOneWidget);
+      expect(find.textContaining('RESETS'), findsOneWidget);
+      expect(
+        find.textContaining('immediately'),
+        findsOneWidget,
+        reason: 'the write takes effect at once, even during a run',
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('ITEM2'),
+        ),
+        findsOneWidget,
+        reason: 'the dialog names the page the scan was requested for',
+      );
+      await tester.tap(find.byKey(const ValueKey('pet-scan-apply-cancel')));
+      await tester.pumpAndSettle();
+      expect(harness.lastSentWithCmd('pet.apply_food_scan'), isNull);
+      expect(host.lifecycle, ['hide', 'scan-sent', 'show']);
+
+      await _tap(tester, 'pet-scan-apply-food');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pet-scan-apply-confirm')));
+      await tester.pumpAndSettle();
+      await _flush(tester);
+
+      expect(harness.lastSentWithCmd('pet.apply_food_scan')!['args'], {
+        'cells': [
+          [2, 13],
+          [2, 36],
+        ],
+      }, reason: '1-BASED page/cell pairs, taken from the scan result');
+      expect(host.lifecycle, ['hide', 'scan-sent', 'show', 'apply-sent']);
+      expect(
+        _text(tester, 'pet-scan-apply-result'),
+        contains('Applied 2 cells (config rev 21)'),
+      );
+      _expectNoConfigWrites(harness);
+
+      // The A1 write's one config.changed re-seeds the clean draft; the food list view follows it.
+      final pet = Map<String, dynamic>.of(_machinePet());
+      pet['food_slots'] = [
+        [1, 12],
+        [1, 35],
+      ];
+      pet['food_slots_used'] = 0;
+      harness.emitConfigChanged(rev: 22, block: 'pet', values: pet);
+      await _flush(tester);
+      expect(
+        _text(tester, 'pet-food-count'),
+        '0 of 64 cells marked on this page · 2 marked overall',
+        reason: 'the food-cells view refreshes from the mirror',
+      );
+    },
+  );
+
+  testWidgets('the apply button is disabled while the draft is dirty', (
+    tester,
+  ) async {
+    final host = FakeHost();
+    await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'pet.scan_food_page') {
+          host.lifecycle.add('scan-sent');
+          return _foodScanAnswer(page: 1, cells: [13, 36]);
+        }
+        return _petReply(request);
+      },
+    );
+    await _tap(tester, 'pet-scan-food-page');
+    await _flush(tester);
+
+    await tester.enterText(_field('pet-row-0-stacks'), '3');
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const ValueKey('pet-scan-apply-food')),
+          )
+          .onPressed,
+      isNull,
+      reason: 'an A1 write beside a dirty draft would banner the player\'s own action',
+    );
+    expect(_text(tester, 'pet-scan-apply-dirty'), 'Save the edits first');
+  });
+
+  testWidgets('an empty food scan leaves Apply disabled', (tester) async {
+    final host = FakeHost();
+    await _pumpPet(
+      tester,
+      pet: _machinePet(),
+      host: host,
+      answer: (request) {
+        if (request['cmd'] == 'pet.scan_food_page') {
+          host.lifecycle.add('scan-sent');
+          return _foodScanAnswer(page: 1, cells: []);
+        }
+        return _petReply(request);
+      },
+    );
+    await _tap(tester, 'pet-scan-food-page');
+    await _flush(tester);
+
+    expect(_text(tester, 'pet-scan-food-cells'), 'Found no food on this page.');
+    final apply = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('pet-scan-apply-food')),
+    );
+    expect(apply.onPressed, isNull);
+    expect(find.text('Apply 0 cells to the food list'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a refused apply renders the core line verbatim and writes nothing',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return _foodScanAnswer(page: 1, cells: [13, 36]);
+          }
+          if (request['cmd'] == 'pet.apply_food_scan') {
+            host.lifecycle.add('apply-sent');
+            return {
+              'error': {
+                'code': 'bad_request',
+                'message': 'pet.apply_food_scan cells[1] is outside 1..64',
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+      await _tap(tester, 'pet-scan-apply-food');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pet-scan-apply-confirm')));
+      await tester.pumpAndSettle();
+      await _flush(tester);
+
+      expect(
+        _text(tester, 'pet-scan-apply-result'),
+        'pet.apply_food_scan cells[1] is outside 1..64',
+        reason: 'the core refusal is rendered verbatim',
+      );
+      _expectNoConfigWrites(harness);
+      expect(
+        _text(tester, 'pet-food-count'),
+        '0 of 64 cells marked on this page · 2 marked overall',
+        reason: 'a refused apply leaves the food list untouched',
+      );
+    },
+  );
+
+  testWidgets(
+    'a missing food icon is captioned but the scan button still sends',
+    (tester) async {
+      final machine = Map<String, dynamic>.of(_machinePet())
+        ..remove('food_icon_png');
+      await _pumpPet(tester, pet: machine);
+
+      expect(
+        find.byKey(const ValueKey('pet-scan-no-food-icon')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Capture food icon'), findsWidgets);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-food-page')),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'the core owns the refusal; the shell only points at the missing icon',
+      );
+    },
+  );
 }

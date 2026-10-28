@@ -529,6 +529,43 @@ class ShellModel extends ChangeNotifier {
     args: {'kind': kind, 'page': page, 'cell': cell},
   );
 
+  /// `pet.scan_food_page {"page":<1-based>}` — READ-ONLY ([PROTOCOL.md] §4): input lease, one
+  /// foreground-gated capture (the shell hides itself and puts the page up), the run's own matcher
+  /// against the configured `pet.food_icon_png`, evidence under `<root>/logs/reads/`. The answer is
+  /// `{page, cells:[1-BASED, CELL order], report:[lines], evidence:[paths]}`; refusals are the core's
+  /// lines, verbatim, and with a missing icon `bad_request` names `food_icon_png`. No config write.
+  Future<CoreActionResult<JsonMap>> scanPetFoodPage({required int page}) =>
+      _coreAction(
+        'pet.scan_food_page',
+        (result) => result,
+        args: {'page': page},
+      );
+
+  /// `pet.scan_queue_page {"page":<1-based>}` — the same READ-ONLY policy for the queued pet icons:
+  /// `{page, per_entry:[{index (0-based), label, hits:[{cell (1-based), score, runner_up}]}],
+  /// claimed:[{cell, labels}], deduced:[lines], evidence:[paths]}`. No queued icons is empty arrays,
+  /// not an error; no config write.
+  Future<CoreActionResult<JsonMap>> scanPetQueuePage({required int page}) =>
+      _coreAction(
+        'pet.scan_queue_page',
+        (result) => result,
+        args: {'page': page},
+      );
+
+  /// `pet.apply_food_scan {"cells":[[1-based page, 1-based cell], ...]}` — THE explicit write the
+  /// food scan feeds ([PROTOCOL.md] §4): one A1 field-precise patch that REPLACES `pet.food_slots`
+  /// and resets `pet.food_slots_used`, then returns `{rev, block}` and emits exactly one
+  /// `config.changed {block:"pet"}` AFTER the response. An EMPTY selection is refused
+  /// (`bad_request` `cells`) so nothing-found cannot clear a live run's cells. A refusal is the
+  /// core's line, verbatim; this is never a `config.apply` and the tab's Save stays the only draft
+  /// writer.
+  Future<CoreActionResult<JsonMap>> applyPetFoodScan(List<List<int>> cells) =>
+      _coreAction(
+        'pet.apply_food_scan',
+        (result) => result,
+        args: {'cells': cells},
+      );
+
   /// `logs.cleanup_captures` — the Tuner tab's "Clean up capture images" housekeeping
   /// ([PROTOCOL.md] §2/§4). The result carries the deleted count and the ROOT-RELATIVE directory; the
   /// core logs per-file failures and still answers ok, so a refusal here is a real protocol problem

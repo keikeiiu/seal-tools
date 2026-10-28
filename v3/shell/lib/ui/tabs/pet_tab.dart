@@ -26,6 +26,15 @@
 /// returned PNG goes into the DRAFT (a queue entry, or `pet.food_icon_png`) with a preview; nothing
 /// is applied until the tab's one Save, and a refusal leaves the draft untouched and renders the
 /// core's line verbatim.
+///
+/// The bag SCANS ("Scan the bag") are READ-ONLY and run the same hidden flow, ONE page per command:
+/// the results are VIEW STATE — the core's 1-based food cells in CELL order, its report lines and
+/// best-effort evidence, and the queue's per-entry hits/claimed/deduced lines — never a draft edit.
+/// Only the explicit, confirmed "Apply N cells" writes: `pet.apply_food_scan` is an A1 field-precise
+/// write that REPLACES the food cells and resets the used count (disabled while the draft is dirty),
+/// and the food list then refreshes from the core's `config.changed`. The core cannot verify the
+/// page actually displayed, so a wrong page yields a plausible result: the requested page and the
+/// report are always shown and the player checks them before applying.
 library;
 
 import 'dart:async';
@@ -181,6 +190,30 @@ class _PetTabState extends State<PetTab>
   CoreActionResult<JsonMap>? _foodCapture;
   String? _queueCaptureNote;
   String? _foodCaptureNote;
+
+  // ── the bag scans (read-only view state, never the draft) ────────────────────────────────
+
+  /// The bag page the Scan-the-bag section reads (0-based view state; the wire is 1-based).
+  int _scanPage = 0;
+
+  /// One hide-window SCAN at a time (the window is hidden for the shot, so it cannot overlap a
+  /// capture either — see [_windowBusy]).
+  bool _scanning = false;
+
+  /// The last scan answers, per kind: `pet.scan_food_page` / `pet.scan_queue_page` results. View
+  /// state only — a scan never touches the draft; a new scan of a kind replaces its own result.
+  CoreActionResult<JsonMap>? _foodScan;
+  CoreActionResult<JsonMap>? _queueScan;
+  String? _foodScanNote;
+  String? _queueScanNote;
+
+  /// The explicit apply of a food scan's cells (never automatic).
+  bool _applying = false;
+  CoreActionResult<JsonMap>? _applyResult;
+
+  /// Both the icon captures and the scans hide the shell and need the game in front: only one such
+  /// window command may be in flight at a time.
+  bool get _windowBusy => _capturing || _scanning || _applying;
 
   @override
   void initState() {
@@ -506,16 +539,14 @@ class _PetTabState extends State<PetTab>
     await waited.future;
   }
 
-  /// hide → one frame → `pet.capture_icon` → show, with the show UNCONDITIONAL — a refused capture
-  /// (or a thrown error) must never leave the shell hidden. A missing host channel is a NOTE, not a
-  /// failure: the request is still sent and its refusal rendered verbatim. The core validates the
-  /// bag grid and the page's tab mark but does NOT click the page, so the caller's instruction is
-  /// "put the page up".
-  Future<({CoreActionResult<JsonMap> result, String? hostNote})> _captureIcon({
-    required String kind,
-    required int page,
-    required int cell,
-  }) async {
+  /// Runs ONE window command with the shell hidden: hide → one frame → [command] → show, the show
+  /// UNCONDITIONAL — a refused capture/scan (or a thrown error) must never leave the shell hidden.
+  /// This is the Calibrate capture flow's pattern, now shared by the icon captures and the bag scans;
+  /// a missing host channel is a NOTE, not a failure (the request is still sent and its refusal
+  /// rendered verbatim). The core validates the bag grid and the page's tab mark but does NOT click
+  /// the page, so every caller's instruction is "put the page up".
+  Future<({CoreActionResult<JsonMap> result, String? hostNote})>
+  _runHiddenWindow(Future<CoreActionResult<JsonMap>> Function() command) async {
     var hostNote = '';
     CoreActionResult<JsonMap>? result;
     try {
@@ -525,7 +556,7 @@ class _PetTabState extends State<PetTab>
         hostNote = 'the shell could not hide itself — the game has to be in front for a capture';
       }
       await _waitOneFrame();
-      result = await model.capturePetIcon(kind: kind, page: page, cell: cell);
+      result = await command();
     } finally {
       try {
         await widget.host.showWindow();
@@ -538,12 +569,21 @@ class _PetTabState extends State<PetTab>
     return (result: result, hostNote: hostNote.isEmpty ? null : hostNote);
   }
 
+  /// hide → one frame → `pet.capture_icon` → show (see [_runHiddenWindow]).
+  Future<({CoreActionResult<JsonMap> result, String? hostNote})> _captureIcon({
+    required String kind,
+    required int page,
+    required int cell,
+  }) => _runHiddenWindow(
+    () => model.capturePetIcon(kind: kind, page: page, cell: cell),
+  );
+
   /// Captures the selected bag cell's icon and appends a queue entry to the DRAFT — nothing is
   /// applied until the tab's Save. The entry carries the Add form's label/species, the core's rect
   /// and the captured PNG; a refusal changes nothing and renders the core's line verbatim.
   Future<void> _captureQueueIcon() async {
     final cell = _addCell;
-    if (_capturing || cell == null || _bagGridRect() == null) {
+    if (_windowBusy || cell == null || _bagGridRect() == null) {
       return;
     }
     setState(() {
@@ -589,7 +629,7 @@ class _PetTabState extends State<PetTab>
   /// food scan matches with. The draft is the only writer until Save; a refusal changes nothing.
   Future<void> _captureFoodIcon() async {
     final source = _foodIconCell;
-    if (_capturing || source == null || _bagGridRect() == null) {
+    if (_windowBusy || source == null || _bagGridRect() == null) {
       return;
     }
     setState(() {
@@ -617,6 +657,167 @@ class _PetTabState extends State<PetTab>
       return;
     }
     _setMachine('food_icon_png', png);
+  }
+
+  // ── the bag scans (READ-ONLY view state + the explicit food apply) ───────────────────────
+
+  /// The scan's cells as the wire's 1-BASED `[[page, cell], ...]` pairs — the scan's echoed page plus
+  /// the core's CELL-order 1-based cells (order preserved; the core stores exactly what it is sent).
+  List<List<int>> _scannedCells(Map<String, dynamic> value) {
+    final page = asNumber(value['page'])?.round() ?? 1;
+    final cells = <List<int>>[];
+    for (final cell in asJsonList(value['cells'])) {
+      final number = asNumber(cell)?.round();
+      if (number != null) {
+        cells.add([page, number]);
+      }
+    }
+    return cells;
+  }
+
+  /// Scans the page for FOOD: hide → `pet.scan_food_page {page}` → show. READ-ONLY: the result is
+  /// VIEW STATE (cells in the core's own 1-based CELL order, its report/evidence lines verbatim),
+  /// never a draft edit; the explicit apply is a separate action the player confirms.
+  Future<void> _scanFoodPage() async {
+    if (_windowBusy) {
+      return;
+    }
+    setState(() {
+      _scanning = true;
+      _foodScan = null;
+      _foodScanNote = null;
+      _applyResult = null;
+    });
+    final outcome = await _runHiddenWindow(
+      () => model.scanPetFoodPage(page: _scanPage + 1),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _scanning = false;
+      _foodScan = outcome.result;
+      _foodScanNote = outcome.hostNote;
+    });
+  }
+
+  /// Scans the page for the QUEUED pets, same hide→scan→show flow and read-only rule; the per-entry
+  /// labels/hit cells/scores/runner-ups, claimed conflicts and deduced lines are the core's, verbatim.
+  Future<void> _scanQueuePage() async {
+    if (_windowBusy) {
+      return;
+    }
+    setState(() {
+      _scanning = true;
+      _queueScan = null;
+      _queueScanNote = null;
+    });
+    final outcome = await _runHiddenWindow(
+      () => model.scanPetQueuePage(page: _scanPage + 1),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _scanning = false;
+      _queueScan = outcome.result;
+      _queueScanNote = outcome.hostNote;
+    });
+  }
+
+  /// The explicit apply: ask (the replace + used-count reset is the player's call), then ONE
+  /// `pet.apply_food_scan` — an A1 write, never a `config.apply`. Disabled while the draft is dirty:
+  /// the emitted `config.changed` beside a dirty part would banner the player's own action. The food
+  /// list itself refreshes from the mirror (the core's event re-seeds the clean draft, and
+  /// [_onMirrorChanged] rebuilds this State); the checklists are re-read because they describe the
+  /// saved config this write changed.
+  Future<void> _applyFoodScan() async {
+    final scan = _foodScan;
+    final value = scan?.value;
+    if (_windowBusy || _draftDirty || value == null) {
+      return;
+    }
+    final cells = _scannedCells(value);
+    if (cells.isEmpty) {
+      return;
+    }
+    final confirmed = await _confirmApply(
+      cells.length,
+      asNumber(value['page'])?.round() ?? 1,
+    );
+    if (!mounted || !confirmed) {
+      return;
+    }
+    setState(() {
+      _applying = true;
+      _applyResult = null;
+    });
+    final result = await model.applyPetFoodScan(cells);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _applying = false;
+      _applyResult = result;
+    });
+    if (result.ok) {
+      await _loadPreflight();
+    }
+  }
+
+  /// The confirmation: the list is REPLACED, the used count RESET, and it takes effect immediately —
+  /// so it is never silent, and it names the page the scan was requested for (the core cannot verify
+  /// the page that was actually displayed) and tells the player to check the report/evidence first.
+  Future<bool> _confirmApply(int count, int page) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Replace the food cells?'),
+        content: Text(
+          'Apply $count cell${count == 1 ? '' : 's'} from the ITEM$page scan? This REPLACES the '
+          'tab\'s food-cell list and RESETS the used-cell count (the run\'s progress), exactly as '
+          'the scan lists them. It applies immediately, even while a run is in progress — check the '
+          'report and evidence first: a wrong page gives a plausible wrong list.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('pet-scan-apply-cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('pet-scan-apply-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Replace the food cells'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  /// The line under the apply button: the core's refusal VERBATIM, or the applied count and the rev
+  /// the A1 write returned.
+  String? _applyText() {
+    final result = _applyResult;
+    if (result == null) {
+      return null;
+    }
+    if (!result.ok) {
+      return result.errorLine;
+    }
+    final value = result.value;
+    final rev = value == null ? null : asNumber(value['rev'])?.round();
+    final scanValue = _foodScan?.value;
+    final count = scanValue == null ? 0 : _scannedCells(scanValue).length;
+    return 'Applied $count cell${count == 1 ? '' : 's'}'
+        '${rev == null ? '' : ' (config rev $rev)'} — the used-cell count was reset.';
+  }
+
+  /// A number the way the core prints its scores: three decimals; an absent one is a dash.
+  String _scoreText(Object? value) {
+    final number = asNumber(value);
+    return number == null ? '—' : number.toStringAsFixed(3);
   }
 
   // ── session readiness: the checklists + the boarding ticks ───────────────────────────────
@@ -939,6 +1140,10 @@ class _PetTabState extends State<PetTab>
           EditorSection(
             title: 'Add a pet by icon',
             children: _addPetEditor(theme),
+          ),
+          EditorSection(
+            title: 'Scan the bag (read-only)',
+            children: _scanSection(theme),
           ),
           EditorSection(
             title: 'Bag food cells',
@@ -1344,7 +1549,7 @@ class _PetTabState extends State<PetTab>
         children: [
           OutlinedButton(
             key: const ValueKey('pet-add-capture'),
-            onPressed: _capturing || _addCell == null
+            onPressed: _windowBusy || _addCell == null
                 ? null
                 : _captureQueueIcon,
             child: Text(_capturing ? 'Capturing…' : 'Capture pet icon'),
@@ -1407,6 +1612,353 @@ class _PetTabState extends State<PetTab>
       ),
     );
   }
+
+  /// The Scan-the-bag section: one page picker for both scans, the two READ-ONLY scan buttons, and
+  /// the last results (view state). The core validates the page's tab mark but does NOT click the
+  /// page — the hint carries that wrong-page caveat.
+  List<Widget> _scanSection(ThemeData theme) {
+    final cells = _foodScan?.value == null
+        ? <List<int>>[]
+        : _scannedCells(_foodScan!.value!);
+    final iconSaved = _hasCrop(_machine()['food_icon_png']);
+    return [
+      Text(
+        'Put the bag page up first: the shell hides for the shot, so the game has to be in front, '
+        'and the core does NOT click or verify the ITEM tab — the page you pick must already be up '
+        '(a wrong page gives a plausible wrong result). Scans only LOOK; the apply below is the only '
+        'write. Evidence files are best-effort and may be missing.',
+        key: const ValueKey('pet-scan-hint'),
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: ShellSpace.sm),
+      Wrap(
+        spacing: ShellSpace.sm,
+        children: [
+          for (var page = 0; page < _bagPages; page++)
+            ChoiceChip(
+              key: ValueKey('pet-scan-page-$page'),
+              label: Text('ITEM${page + 1}'),
+              selected: _scanPage == page,
+              onSelected: (_) => setState(() => _scanPage = page),
+            ),
+        ],
+      ),
+      if (!iconSaved)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            'No food icon is saved yet — use Capture food icon below and Save; the scan matches '
+            'that icon. The button still sends: the core refuses and names the field.',
+            key: const ValueKey('pet-scan-no-food-icon'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      const SizedBox(height: ShellSpace.xs),
+      Wrap(
+        spacing: ShellSpace.sm,
+        runSpacing: ShellSpace.xs,
+        children: [
+          OutlinedButton(
+            key: const ValueKey('pet-scan-food-page'),
+            onPressed: _windowBusy ? null : _scanFoodPage,
+            child: Text(_scanning ? 'Scanning…' : 'Scan this page for food'),
+          ),
+          OutlinedButton(
+            key: const ValueKey('pet-scan-queue-page'),
+            onPressed: _windowBusy ? null : _scanQueuePage,
+            child: Text(_scanning ? 'Scanning…' : 'Scan this page for pets'),
+          ),
+        ],
+      ),
+      ..._foodScanWidgets(theme, cells),
+      ..._queueScanWidgets(theme),
+    ];
+  }
+
+  List<Widget> _foodScanWidgets(ThemeData theme, List<List<int>> cells) {
+    final scan = _foodScan;
+    if (scan == null) {
+      return const [];
+    }
+    final parts = <Widget>[];
+    final value = scan.value;
+    if (!scan.ok || value == null) {
+      parts.add(
+        _scanError(theme, 'pet-scan-food-error', scan, 'The food scan failed.'),
+      );
+    } else {
+      final page = asNumber(value['page'])?.round() ?? 1;
+      parts.add(
+        Text(
+          'Scanned ITEM$page — the page this command was requested for.',
+          key: const ValueKey('pet-scan-food-page-echo'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+      final cellList = asJsonList(value['cells'])
+          .map((cell) => '${asNumber(cell)?.round() ?? cell}')
+          .join(', ');
+      parts.add(
+        Text(
+          cells.isEmpty
+              ? 'Found no food on this page.'
+              : 'Found ${cells.length} cell${cells.length == 1 ? '' : 's'}: $cellList',
+          key: const ValueKey('pet-scan-food-cells'),
+          style: theme.textTheme.bodyMedium,
+        ),
+      );
+      final report = asStringList(value['report']);
+      if (report.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              report.join('\n'),
+              key: const ValueKey('pet-scan-food-report'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        );
+      }
+      final evidence = asStringList(value['evidence']);
+      if (evidence.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              'Evidence (best-effort): ${evidence.join('  ·  ')}',
+              key: const ValueKey('pet-scan-food-evidence'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }
+      parts.add(
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.sm),
+          child: Wrap(
+            spacing: ShellSpace.sm,
+            runSpacing: ShellSpace.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton(
+                key: const ValueKey('pet-scan-apply-food'),
+                onPressed: cells.isEmpty || _draftDirty || _windowBusy
+                    ? null
+                    : _applyFoodScan,
+                child: Text(
+                  'Apply ${cells.length} cell${cells.length == 1 ? '' : 's'} to the food list',
+                ),
+              ),
+              if (_draftDirty)
+                Text(
+                  'Save the edits first',
+                  key: const ValueKey('pet-scan-apply-dirty'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              if (_applying)
+                Text(
+                  'Applying…',
+                  key: const ValueKey('pet-scan-applying'),
+                  style: theme.textTheme.bodySmall,
+                ),
+            ],
+          ),
+        ),
+      );
+      final applyText = _applyText();
+      if (applyText != null) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              applyText,
+              key: const ValueKey('pet-scan-apply-result'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: (_applyResult?.ok ?? false)
+                    ? null
+                    : theme.colorScheme.error,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    if (_foodScanNote != null) {
+      parts.add(_scanNoteText(theme, 'pet-scan-food-note', _foodScanNote!));
+    }
+    return parts;
+  }
+
+  List<Widget> _queueScanWidgets(ThemeData theme) {
+    final scan = _queueScan;
+    if (scan == null) {
+      return const [];
+    }
+    final parts = <Widget>[];
+    final value = scan.value;
+    if (!scan.ok || value == null) {
+      parts.add(
+        _scanError(theme, 'pet-scan-queue-error', scan, 'The pet scan failed.'),
+      );
+    } else {
+      final page = asNumber(value['page'])?.round() ?? 1;
+      parts.add(
+        Text(
+          'Scanned ITEM$page — the page this command was requested for.',
+          key: const ValueKey('pet-scan-queue-page-echo'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+      final lines = <String>[];
+      var hasEmptyHits = false;
+      for (final entry in asJsonList(value['per_entry'])) {
+        final map = asJsonMap(entry);
+        final index = asNumber(map['index'])?.round() ?? 0;
+        final label = asString(map['label']) ?? '(no label)';
+        final hits = asJsonList(map['hits']);
+        if (hits.isEmpty) {
+          hasEmptyHits = true;
+          lines.add('#${index + 1} $label — no hit reported on this page');
+          continue;
+        }
+        for (final hit in hits) {
+          final match = asJsonMap(hit);
+          lines.add(
+            '#${index + 1} $label — cell ${asNumber(match['cell'])?.round() ?? 0} · '
+            'score ${_scoreText(match['score'])} · runner-up ${_scoreText(match['runner_up'])}',
+          );
+        }
+      }
+      parts.add(
+        Text(
+          lines.isEmpty
+              ? 'No queue icons are configured — there is nothing to look for.'
+              : lines.join('\n'),
+          key: const ValueKey('pet-scan-queue-entries'),
+          style: theme.textTheme.bodySmall,
+        ),
+      );
+      if (hasEmptyHits) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              'A pet with no hit may be absent, or its stored icon may not decode — the scan '
+              'report under logs/reads says which. Hits are shown in the core\'s order.',
+              key: const ValueKey('pet-scan-queue-caption'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }
+      final report = asStringList(value['report']);
+      if (report.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              report.join('\n'),
+              key: const ValueKey('pet-scan-queue-report'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        );
+      }
+      final claimedLines = [
+        for (final entry in asJsonList(value['claimed']))
+          'cell ${asNumber(asJsonMap(entry)['cell'])?.round() ?? 0} claimed by '
+              '${asStringList(asJsonMap(entry)['labels']).join(', ')}',
+      ];
+      if (claimedLines.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              claimedLines.join('\n'),
+              key: const ValueKey('pet-scan-queue-claimed'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.tertiary,
+              ),
+            ),
+          ),
+        );
+      }
+      final deduced = asStringList(value['deduced']);
+      if (deduced.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              deduced.join('\n'),
+              key: const ValueKey('pet-scan-queue-deduced'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        );
+      }
+      final evidence = asStringList(value['evidence']);
+      if (evidence.isNotEmpty) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: Text(
+              'Evidence (best-effort): ${evidence.join('  ·  ')}',
+              key: const ValueKey('pet-scan-queue-evidence'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    if (_queueScanNote != null) {
+      parts.add(_scanNoteText(theme, 'pet-scan-queue-note', _queueScanNote!));
+    }
+    return parts;
+  }
+
+  /// The core's line for a refused scan, VERBATIM (never re-worded), under the scan buttons.
+  Widget _scanError(
+    ThemeData theme,
+    String key,
+    CoreActionResult<JsonMap> scan,
+    String fallback,
+  ) => Padding(
+    padding: const EdgeInsets.only(top: ShellSpace.xs),
+    child: Text(
+      scan.errorLine ?? fallback,
+      key: ValueKey(key),
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.error,
+      ),
+    ),
+  );
+
+  /// A host-channel note (the command is still sent and its own line still stands).
+  Widget _scanNoteText(ThemeData theme, String key, String note) => Padding(
+    padding: const EdgeInsets.only(top: ShellSpace.xs),
+    child: Text(
+      note,
+      key: ValueKey(key),
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
 
   /// One row: the two editable fields and the marks/crops the capture session owns.
   Widget _rowEditor(int index, Map<String, dynamic> row) {
@@ -1545,7 +2097,7 @@ class _PetTabState extends State<PetTab>
         children: [
           OutlinedButton(
             key: const ValueKey('pet-food-icon-capture'),
-            onPressed: _capturing || _foodIconCell == null
+            onPressed: _windowBusy || _foodIconCell == null
                 ? null
                 : _captureFoodIcon,
             child: Text(_capturing ? 'Capturing…' : 'Capture food icon'),
