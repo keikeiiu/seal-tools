@@ -439,6 +439,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "keys.parse" => keys_parse(state, &request),
         "keys.names" => keys_names(state, &request),
         "attributes.get" => attributes_get(state, &request),
+        "logs.cleanup_captures" => logs_cleanup_captures(state, &request),
         "calibration.save" => crate::calibration::save(state, &request),
         "calibration.fetch" => crate::calibration::fetch(state, &request),
         "pointer.place" => pointer_command(state, &request, false),
@@ -964,6 +965,23 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
             Error::new("not_running", "nothing is running", json!({})),
         ),
     }
+}
+
+/// `logs.cleanup_captures`: Tuner's "Clean up capture images". The result carries only the
+/// successful count and the ROOT-RELATIVE directory; per-file failures are logged through the normal
+/// log path and do not fail the command (`PROTOCOL.md` §2's logging philosophy). The helper performs
+/// the actual policy — png-only, direct children, no recursion/reparse following.
+fn logs_cleanup_captures(state: &CoreState, request: &Request) -> Response {
+    let (deleted, failures) = state.logs.cleanup_captures();
+    if failures > 0 {
+        state.logs.error_line(&format!(
+            "cleanup_captures: {failures} capture file(s) could not be deleted"
+        ));
+    }
+    Response::ok(
+        &request.id,
+        json!({"deleted": deleted, "dir": "logs/captures"}),
+    )
 }
 
 /// `pointer.place` / `pointer.click`: a calibration pointer action at a client-relative PHYSICAL

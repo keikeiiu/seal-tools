@@ -147,6 +147,72 @@ impl Logs {
         Some(format!("logs/captures/{name}"))
     }
 
+    /// Delete the Tuner capture PNGs directly under `logs/captures` and return
+    /// `(deleted, failures)`. Housekeeping never fails a caller: a missing directory is `(0, 0)`,
+    /// a directory-read failure is logged and `(0, failures)`; each per-file delete failure is
+    /// logged and counted. Only regular files whose extension is `png` are touched — no recursion,
+    /// no non-PNG files, no subdirectories, and symlinks/reparse points are skipped by
+    /// `DirEntry::file_type` (which does not follow them).
+    pub fn cleanup_captures(&self) -> (usize, usize) {
+        let Some(dir) = &self.dir else {
+            return (0, 0);
+        };
+        let captures = dir.join("captures");
+        let entries = match fs::read_dir(&captures) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return (0, 0),
+            Err(error) => {
+                self.error_line(&format!("could not read {}: {error}", captures.display()));
+                return (0, 1);
+            }
+        };
+        let mut deleted = 0;
+        let mut failures = 0;
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    failures += 1;
+                    self.error_line(&format!(
+                        "could not read an entry under {}: {error}",
+                        captures.display()
+                    ));
+                    continue;
+                }
+            };
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let is_png = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+            if !is_png {
+                continue;
+            }
+            match entry.file_type() {
+                Ok(file_type) if file_type.is_file() => {}
+                // A symlink/reparse point, a directory named x.png, or an unreadable type: a
+                // cleanup is not a recursive delete primitive, so it is reported and skipped.
+                Ok(_) => continue,
+                Err(error) => {
+                    failures += 1;
+                    self.error_line(&format!("could not inspect {}: {error}", path.display()));
+                    continue;
+                }
+            }
+            match fs::remove_file(&path) {
+                Ok(()) => deleted += 1,
+                Err(error) => {
+                    failures += 1;
+                    self.error_line(&format!("could not delete capture {name}: {error}"));
+                }
+            }
+        }
+        (deleted, failures)
+    }
+
     /// The whole OCR log line for one completed scan: writes `ocr_log.jsonl`, writes
     /// `ocr_errors.jsonl` when the scan is unconfirmed, and returns the protocol result unchanged
     /// (its five fields; `capture_path` is the relative path or `null`).

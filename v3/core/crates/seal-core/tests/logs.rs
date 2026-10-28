@@ -13,11 +13,11 @@ use std::fs;
 use std::path::Path;
 use std::rc::Rc;
 
-use common::TestDir;
+use common::{Session as ProtocolSession, TestDir, config_root};
 use seal_core::logs::Logs;
 use seal_ocr::modes::{Mode, ModeResult};
 use seal_tools::tool::ToolId;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -704,4 +704,64 @@ fn gem_empty_check_saves_the_crop_and_writes_the_detail_to_gem_log() {
         "{}",
         lines[1]
     );
+}
+
+#[test]
+fn cleanup_captures_deletes_only_direct_regular_pngs() {
+    let root = config_root();
+    let captures = root.path().join("logs/captures");
+    fs::create_dir_all(&captures).unwrap();
+    fs::write(captures.join("a.png"), PNG_BYTES).unwrap();
+    fs::write(captures.join("b.PNG"), PNG_BYTES).unwrap();
+    fs::write(captures.join("keep.txt"), b"keep").unwrap();
+    fs::create_dir_all(captures.join("nested")).unwrap();
+    fs::write(captures.join("nested/keep.png"), PNG_BYTES).unwrap();
+    let locked = captures.join("locked.png");
+    fs::write(&locked, PNG_BYTES).unwrap();
+    // An open handle WITHOUT FILE_SHARE_DELETE makes remove_file fail with a sharing violation,
+    // which is the real Windows "cannot delete" case. A read-only attribute does not stop deletion.
+    #[cfg(windows)]
+    let _held = {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&locked)
+            .unwrap()
+    };
+
+    let mut session = ProtocolSession::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let result = session.result("logs.cleanup_captures", json!({}));
+
+    assert_eq!(result["deleted"], 2, "a.png and b.PNG; the held one failed");
+    assert_eq!(result["dir"], "logs/captures");
+    assert!(!captures.join("a.png").exists());
+    assert!(!captures.join("b.PNG").exists());
+    assert!(captures.join("keep.txt").exists(), "non-png untouched");
+    assert!(
+        captures.join("nested/keep.png").exists(),
+        "subdirectories are never recursed"
+    );
+    assert!(locked.exists(), "the failed file still exists");
+    let error_log = fs::read_to_string(root.path().join("logs/error.log")).unwrap_or_default();
+    assert!(
+        error_log.contains("locked.png") || error_log.contains("could not delete"),
+        "the failed delete is logged: {error_log}"
+    );
+
+    #[cfg(windows)]
+    drop(_held);
+    // Let the test directory clean itself up.
+    let _ = fs::remove_file(&locked);
+}
+
+#[test]
+fn cleanup_captures_with_no_directory_is_zero_not_an_error() {
+    let root = config_root();
+    let mut session = ProtocolSession::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let result = session.result("logs.cleanup_captures", json!({}));
+    assert_eq!(result["deleted"], 0);
+    assert_eq!(result["dir"], "logs/captures");
 }
