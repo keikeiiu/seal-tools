@@ -1,6 +1,6 @@
-/// The Buy/Sell tab: renders the `buy_sell` block, edits its presets and sell cap through the
-/// form's Save, and edits the 64-slot sell selection through its own `Save selection` — which sends
-/// EXACTLY `{buy_sell: {sell_slots: [...]}}` and never the calibrated geometry.
+/// The Buy/Sell tab: the form's `buy_sell` half (presets + sell cap) saves only those fields, and the
+/// 8×8 sell grid is PER-RUN state — toggling updates [ShellModel]'s in-memory selection, never config
+/// (PROTOCOL §12.6: the selection can differ every sell).
 library;
 
 import 'dart:ui' as ui;
@@ -24,6 +24,7 @@ Map<String, dynamic> _buySellBlock() => {
     'potion': {'scroll': 1, 'row': 2, 'count': 3},
     'scroll': {'scroll': 0, 'row': 5, 'count': 1},
   },
+  // A v2-era/v3.0.1 leftover: the tab must NOT treat this as the run selection any more.
   'sell_slots': [0, 1, 2],
   'sell_cap': 20,
 };
@@ -31,6 +32,11 @@ Map<String, dynamic> _buySellBlock() => {
 Finder _field(String key) => find.descendant(
   of: find.byKey(ValueKey(key)),
   matching: find.byType(TextField),
+);
+
+Widget _tab(AppHarness harness) => MaterialApp(
+  theme: buildShellTheme(),
+  home: Scaffold(body: BuySellTab(model: harness.model)),
 );
 
 Future<AppHarness> _pumpBuySell(
@@ -57,12 +63,7 @@ Future<AppHarness> _pumpBuySell(
     await tester.pump();
   }
   await connecting;
-  await tester.pumpWidget(
-    MaterialApp(
-      theme: buildShellTheme(),
-      home: Scaffold(body: BuySellTab(model: harness.model)),
-    ),
-  );
+  await tester.pumpWidget(_tab(harness));
   await tester.pump();
   return harness;
 }
@@ -73,52 +74,17 @@ Future<void> _flush(WidgetTester tester) async {
   await tester.pump();
 }
 
-/// Answers the selection save the way the real core does: a clean validate, then an apply echo of
-/// the EFFECTIVE `buy_sell` block (PROTOCOL §7) — presets and geometry included, not just the
-/// `sell_slots` the request carried.
-void _answerSelectionSave(
-  AppHarness harness, {
-  required List<int> slots,
-  int rev = 8,
-}) {
-  harness.onWrite = (line, fake) {
-    final message = fake.sentJson(fake.sent.length - 1);
-    final id = message['id'] as String;
-    switch (message['cmd']) {
-      case 'config.validate':
-        fake.emitJson(
-          okResponse(id, {'errors': <String>[], 'warnings': <String>[]}),
-        );
-      case 'config.apply':
-        fake.emitJson(
-          okResponse(id, {
-            'rev': rev,
-            'sections': {
-              'buy_sell': {..._buySellBlock(), 'sell_slots': slots},
-            },
-          }),
-        );
-      default:
-        break;
-    }
-  };
-}
-
-/// Taps one bag cell and pumps twice: the toggle notifies the selection draft, whose
-/// `ListenableBuilder` rebuilds on the first frame and settles on the second.
+/// Taps one bag cell and pumps twice: the toggle mutates the model, then `setState` redraws the grid.
 Future<void> _tapCell(WidgetTester tester, int slot) async {
   await tester.tap(find.byKey(ValueKey('sell-cell-$slot')));
   await tester.pump();
   await tester.pump();
 }
 
-/// The selection's Save button, read straight from the tree: disabled while the selection is
-/// clean, enabled once it is dirty.
-FilledButton _saveSelectionButton(WidgetTester tester) {
-  return tester.widget<FilledButton>(
-    find.byKey(const ValueKey('save-sell-selection')),
-  );
-}
+/// True when the shell has sent no config command at all — the toggle is memory-only.
+bool _noConfigCommands(AppHarness harness) => harness.sentMessages.every(
+  (message) => !(message['cmd'] as String? ?? '').startsWith('config.'),
+);
 
 /// The fill colour of one bag cell: the visible difference between selected and unselected.
 Color? _cellColor(WidgetTester tester, int slot) {
@@ -143,17 +109,22 @@ void main() {
   ) async {
     final harness = await _pumpBuySell(tester);
 
-    // The calibrated geometry stays read-only; the sell slot selection is the Sell section's.
+    // The calibrated geometry stays read-only; the sell selection is per-run state, not config.
     expect(
       find.textContaining('Calibrated geometry — read-only'),
       findsOneWidget,
     );
     expect(find.text('[660, 540]'), findsOneWidget);
     expect(find.textContaining('potion'), findsWidgets);
+    expect(find.text('0 of 64 slots selected'), findsOneWidget);
 
     await tester.enterText(_field('buy-count'), '9');
     await tester.pump();
     expect(find.byKey(const ValueKey('dirty-buy_sell')), findsOneWidget);
+
+    // A per-run slot selection does not ride the form's Save either.
+    await _tapCell(tester, 63);
+    expect(find.text('1 of 64 slots selected'), findsOneWidget);
 
     harness.answerConfigCommands();
     await tester.tap(find.byKey(const ValueKey('save-buy_sell')));
@@ -174,7 +145,7 @@ void main() {
     expect(
       block.containsKey('sell_slots'),
       isFalse,
-      reason: 'the selection has its own draft and its own save',
+      reason: 'the selection is a per-run tool.start argument, never config',
     );
     expect(
       block.containsKey('sell_cap'),
@@ -218,144 +189,58 @@ void main() {
   });
 
   testWidgets(
-    'the sell grid renders the configured selection, count and pitch',
+    'the sell grid is per-run: toggling changes memory, never config',
     (tester) async {
-      await _pumpBuySell(tester);
+      final harness = await _pumpBuySell(tester);
 
-      expect(find.text('3 of 64 slots selected'), findsOneWidget);
-      expect(find.byKey(const ValueKey('sell-cell-0')), findsOneWidget);
-      expect(find.byKey(const ValueKey('sell-cell-1')), findsOneWidget);
-      expect(find.byKey(const ValueKey('sell-cell-63')), findsOneWidget);
-      // The pitch comes from the calibrated bag grid (300/8 × 400/8).
+      // A migrated/persisted `sell_slots` leftover is NOT the run selection any more.
+      expect(find.text('0 of 64 slots selected'), findsOneWidget);
+      expect(
+        find.text('This selection is for the next run only — it is not saved.'),
+        findsOneWidget,
+      );
+      // The grid and its header are still there; the save machinery is gone.
+      expect(find.byKey(const ValueKey('sell-grid-pitch')), findsOneWidget);
       expect(find.textContaining('bag pitch 37.5×50.0 px'), findsOneWidget);
-      // Selected cells are visibly distinct from the unselected ones.
-      expect(_cellColor(tester, 0), _scheme(tester).primary);
-      expect(_cellColor(tester, 63), _scheme(tester).surfaceContainerHighest);
-      expect(
-        find.byKey(const ValueKey('sell-grid-not-calibrated')),
-        findsNothing,
-      );
-      // Nothing is dirty yet, so there is nothing to save.
-      expect(_saveSelectionButton(tester).onPressed, isNull);
+      expect(find.byKey(const ValueKey('save-sell-selection')), findsNothing);
       expect(find.byKey(const ValueKey('sell-selection-dirty')), findsNothing);
-    },
-  );
 
-  testWidgets('tapping a cell toggles it and marks the selection dirty', (
-    tester,
-  ) async {
-    await _pumpBuySell(tester);
-
-    // Slot 0 was configured: tapping it deselects it.
-    await _tapCell(tester, 0);
-    expect(find.text('2 of 64 slots selected'), findsOneWidget);
-
-    // Slot 63 was not: tapping it selects it.
-    await _tapCell(tester, 63);
-    expect(find.text('3 of 64 slots selected'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sell-selection-dirty')), findsOneWidget);
-    expect(_saveSelectionButton(tester).onPressed, isNotNull);
-
-    // Discard puts the core's selection back without touching the form's draft.
-    await tester.tap(find.byKey(const ValueKey('discard-sell-selection')));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('3 of 64 slots selected'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sell-selection-dirty')), findsNothing);
-    expect(find.byKey(const ValueKey('dirty-buy_sell')), findsNothing);
-    expect(_cellColor(tester, 0), _scheme(tester).primary);
-    expect(_cellColor(tester, 63), _scheme(tester).surfaceContainerHighest);
-  });
-
-  testWidgets(
-    'Save selection sends exactly buy_sell.sell_slots and re-seeds the draft',
-    (tester) async {
-      final harness = await _pumpBuySell(tester);
       await _tapCell(tester, 0);
+      expect(find.text('1 of 64 slots selected'), findsOneWidget);
+      expect(harness.model.sellSlots, [0]);
       await _tapCell(tester, 63);
-      _answerSelectionSave(harness, slots: [1, 2, 63]);
+      expect(find.text('2 of 64 slots selected'), findsOneWidget);
+      expect(harness.model.sellSlots, [0, 63]);
 
-      await tester.tap(find.byKey(const ValueKey('save-sell-selection')));
-      await _flush(tester);
+      // Selected cells are visibly distinct, and none of this is a config write.
+      expect(_cellColor(tester, 0), _scheme(tester).primary);
+      expect(_cellColor(tester, 63), _scheme(tester).primary);
+      expect(_cellColor(tester, 1), _scheme(tester).surfaceContainerHighest);
+      expect(_noConfigCommands(harness), isTrue);
 
-      // The exact payload: no preset, no cap, no geometry — only the clicked indexes.
-      final apply = harness.lastSentWithCmd('config.apply');
-      expect(apply, isNotNull);
-      final args = apply!['args'] as Map<String, dynamic>;
-      final sections = args['sections'] as Map<String, dynamic>;
-      expect(sections, {
-        'buy_sell': {
-          'sell_slots': [1, 2, 63],
-        },
-      });
-      expect(sections.keys, ['buy_sell']);
-      expect((sections['buy_sell'] as Map<String, dynamic>).keys, [
-        'sell_slots',
-      ]);
-      // The selection save is a normal config save: validate first, then apply (PROTOCOL §7).
-      expect(harness.lastSentWithCmd('config.validate'), isNotNull);
-
-      // The draft re-seeded from the effective block, so the dirty marker is gone and the grid
-      // still shows the configured cells.
-      expect(find.byKey(const ValueKey('sell-selection-dirty')), findsNothing);
-      expect(find.byKey(const ValueKey('sell-selection-ok')), findsOneWidget);
-      expect(find.text('Selection saved — rev 8'), findsOneWidget);
-      expect(find.text('3 of 64 slots selected'), findsOneWidget);
-      expect(find.byKey(const ValueKey('dirty-buy_sell')), findsNothing);
+      // Toggling off removes it again, still without any config command.
+      await _tapCell(tester, 0);
+      expect(find.text('1 of 64 slots selected'), findsOneWidget);
+      expect(harness.model.sellSlots, [63]);
+      expect(_noConfigCommands(harness), isTrue);
     },
   );
 
-  testWidgets(
-    'saving the selection keeps an unsaved form edit and raises no conflict',
-    (tester) async {
-      final harness = await _pumpBuySell(tester);
-      await tester.enterText(_field('buy-count'), '9');
-      await tester.pump();
-      expect(find.byKey(const ValueKey('dirty-buy_sell')), findsOneWidget);
-
-      await _tapCell(tester, 63);
-      _answerSelectionSave(harness, slots: [0, 1, 2, 63]);
-      await tester.tap(find.byKey(const ValueKey('save-sell-selection')));
-      await _flush(tester);
-
-      // The form edit survives the selection's rev bump...
-      expect(find.byKey(const ValueKey('dirty-buy_sell')), findsOneWidget);
-      expect(
-        tester.widget<TextField>(_field('buy-count')).controller?.text,
-        '9',
-      );
-      // ...and the rev bump is not mistaken for an external writer.
-      expect(
-        find.byKey(const ValueKey('external-change-buy_sell')),
-        findsNothing,
-      );
-      expect(find.byKey(const ValueKey('conflict-buy_sell')), findsNothing);
-      expect(find.byKey(const ValueKey('save-ok-buy_sell')), findsNothing);
-      expect(find.byKey(const ValueKey('sell-selection-dirty')), findsNothing);
-    },
-  );
-
-  testWidgets('a refused selection save renders the core line verbatim', (
+  testWidgets('the sell selection survives leaving and re-entering the tab', (
     tester,
   ) async {
     final harness = await _pumpBuySell(tester);
-    await _tapCell(tester, 63);
+    await _tapCell(tester, 5);
+    expect(harness.model.sellSlots, [5]);
 
-    harness.answerConfigCommands(conflict: true);
-    await tester.tap(find.byKey(const ValueKey('save-sell-selection')));
-    await _flush(tester);
+    // Switching tabs destroys the tab's State; the selection lives in the model for the process.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pumpWidget(_tab(harness));
+    await tester.pump();
 
-    expect(find.text('config changed while you were editing'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('sell-selection-error-0')),
-      findsOneWidget,
-    );
-    expect(harness.lastSentWithCmd('config.apply'), isNotNull);
-    // A refusal is not a write: the selection stays dirty, keeps its value, and can be retried.
-    expect(find.byKey(const ValueKey('sell-selection-dirty')), findsOneWidget);
-    expect(find.text('4 of 64 slots selected'), findsOneWidget);
-    expect(_saveSelectionButton(tester).onPressed, isNotNull);
-    expect(find.byKey(const ValueKey('sell-selection-ok')), findsNothing);
+    expect(find.text('1 of 64 slots selected'), findsOneWidget);
+    expect(harness.model.sellSlots, [5]);
   });
 
   testWidgets(
@@ -379,7 +264,6 @@ void main() {
       );
       expect(find.byKey(const ValueKey('sell-grid-count')), findsNothing);
       expect(find.byKey(const ValueKey('sell-cell-0')), findsNothing);
-      expect(find.byKey(const ValueKey('save-sell-selection')), findsNothing);
     },
   );
 

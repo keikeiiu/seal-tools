@@ -1,5 +1,6 @@
-/// Card extras: the Buy card's display-only preset picker/count (the protocol has no run argument, and
-/// `buy_sell` has no active field) and the Quest card's persisted flow/sequence pickers.
+/// Card extras: the Buy card's display-only preset picker/count and the Sell card's per-run slot
+/// selection (both PROTOCOL §12.6 run arguments — nothing persisted) and the Quest card's persisted
+/// flow/sequence pickers.
 library;
 
 import 'dart:ui' as ui;
@@ -227,6 +228,77 @@ void main() {
       await _unmount(tester);
     },
   );
+
+  testWidgets(
+    'a Sell start carries the per-run slot selection exactly, sorted',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(buySell: {'presets': <String, dynamic>{}, 'sell_cap': 10}),
+      );
+
+      // The Buy/Sell tab's grid writes these into the model; the card reads them when Start is pressed.
+      harness.model.toggleSellSlot(7);
+      harness.model.toggleSellSlot(3);
+
+      await tester.tap(find.byKey(const ValueKey('start-sell')));
+      await _flush(tester);
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {
+        'tool': 'sell',
+        'slots': [3, 7],
+      });
+      harness.respondOk(<String, dynamic>{});
+      await _flush(tester);
+
+      // A start does not clear the selection: the player may sell the same slots again.
+      expect(harness.model.sellSlots, [3, 7]);
+      await tester.tap(find.byKey(const ValueKey('start-sell')));
+      await _flush(tester);
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {
+        'tool': 'sell',
+        'slots': [3, 7],
+      });
+      harness.respondOk(<String, dynamic>{});
+      await _flush(tester);
+
+      // A run argument, never a config write.
+      expect(harness.lastSentWithCmd('config.validate'), isNull);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'an empty Sell selection omits the slots key and the core refusal renders',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(buySell: {'presets': <String, dynamic>{}, 'sell_cap': 10}),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('start-sell')));
+      await _flush(tester);
+      final start = harness.lastSentWithCmd('tool.start')!;
+      final args = start['args'] as Map<String, dynamic>;
+      expect(args, {'tool': 'sell'});
+      expect(
+        args.containsKey('slots'),
+        isFalse,
+        reason: 'an empty selection is omitted, never sent as [] — §12.6',
+      );
+
+      harness.respondError(
+        'bad_request',
+        message: 'No slots are selected to sell.',
+      );
+      await _flush(tester);
+      expect(find.text('No slots are selected to sell.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('refusal-sell')), findsOneWidget);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+      await _unmount(tester);
+    },
+  );
+
   testWidgets(
     'a v2-shaped quest config: the flow picker saves exactly the active field',
     (tester) async {

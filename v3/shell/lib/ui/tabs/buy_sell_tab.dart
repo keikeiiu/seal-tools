@@ -1,13 +1,16 @@
-/// The Buy/Sell tab: the `buy_sell` top-level block's editable half — the named buy presets
-/// (item name → scroll/row/count), the sell cap and the bag-slot selection the Sell card sells —
-/// plus the calibrated geometry read-only.
+/// The Buy/Sell tab: the `buy_sell` block's editable half — the named buy presets (item name →
+/// scroll/row/count) and the sell cap — plus the calibrated geometry read-only, and the 8×8 bag-slot
+/// picker for the NEXT Sell run.
 ///
-/// The block mixes both halves: `presets`, `sell_cap` and `sell_slots` are the player's settings,
-/// while `bag_grid`/`bag_slot`/`shop_rows`/`shop_region`/`scroll_point`/`max_button` are machine
-/// calibration (drawn on the Calibrate tab). Two drafts keep the two saves independent: the form's
-/// Save sends the presets + cap, while Save selection sends EXACTLY
-/// `{buy_sell: {sell_slots: [...]}}` — neither can re-send (or blank) the other's fields, and no
-/// draft ever sends the geometry (PROTOCOL §7's field-wise merge keeps it).
+/// The block mixes both halves: `presets` and `sell_cap` are the player's settings (the form's Save
+/// sends exactly those), while `bag_grid`/`bag_slot`/`shop_rows`/`shop_region`/`scroll_point`/
+/// `max_button` are machine calibration (drawn on the Calibrate tab, never sent — PROTOCOL §7's
+/// field-wise merge keeps it).
+///
+/// The slot picker is NOT config: it is the Sell run's per-run selection, held in memory by
+/// [ShellModel] and sent as `tool.start`'s `slots` argument (PROTOCOL §12.6). The selection can
+/// differ every sell, so it must never be written to `local.yaml` — a saved selection can sell the
+/// slots chosen last time, which is data loss rather than convenience.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,11 +20,9 @@ import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
 
-/// The form's Save sends these; the selection has its own draft and its own button.
+/// The fields the form's Save sends. The sell-slot selection is not here: it is per-run state, not
+/// config (see the library doc).
 const Set<String> _editableBuySellKeys = {'presets', 'sell_cap'};
-
-/// The one field the selection's Save sends.
-const Set<String> _selectionKeys = {'sell_slots'};
 
 /// The bag is an 8×8 grid, row-major: index 0 is the top-left slot, 63 the bottom-right
 /// (`BagGrid::SLOT_COUNT`/`centres` in `seal-domain`).
@@ -43,7 +44,7 @@ class _BuySellTabState extends State<BuySellTab>
   ShellModel get model => widget.model;
 
   /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
-  /// banner) must survive the switch.
+  /// banner) must survive the switch. The sell selection is kept by the model, not the tab.
   @override
   bool get wantKeepAlive => true;
 
@@ -54,83 +55,13 @@ class _BuySellTabState extends State<BuySellTab>
     editableKeys: _editableBuySellKeys,
   );
 
-  /// The slot selection is a SEPARATE draft with its own Save: the two actions persist different
-  /// halves of the block, and a form save must not re-send a stale selection (or vice versa).
-  final ConfigDraft _selectionDraft = ConfigDraft(
-    blockName: 'buy_sell',
-    scope: ConfigScope.ownedBlock,
-    editableKeys: _selectionKeys,
-  );
-
   final _newPresetName = TextEditingController();
   String? _selectedPreset;
 
-  bool _selectionSaving = false;
-  ConfigSaveOutcome? _selectionOutcome;
-  int? _seenSelectionRev;
-
-  @override
-  void initState() {
-    super.initState();
-    // The selection draft is deliberately NOT a part of `draftGroup` (its payload would collide
-    // with the form's), so it is seeded and watched here: the tab is kept alive and the core may
-    // write `buy_sell` while it is off-screen.
-    _selectionDraft.seedFromMirror(model.config.config);
-    _seenSelectionRev = model.config.rev;
-    model.config.addListener(_onMirrorChanged);
-  }
-
   @override
   void dispose() {
-    model.config.removeListener(_onMirrorChanged);
-    _selectionDraft.dispose();
     _newPresetName.dispose();
     super.dispose();
-  }
-
-  /// A core-side change while the tab is alive. The selection owns ONE field, so only a change to
-  /// that field is an external edit of the selection: a rev bump from another block — or the form's
-  /// own save, whose echo also names `buy_sell` — must not raise the banner.
-  void _onMirrorChanged() {
-    final rev = model.config.rev;
-    if (_seenSelectionRev == rev) {
-      return;
-    }
-    _seenSelectionRev = rev;
-    if (!_selectionDraft.isDirty) {
-      _selectionDraft.seedFromMirror(model.config.config, force: true);
-      return;
-    }
-    final incoming = _calibrated()['sell_slots'];
-    if (!jsonEquals(incoming, _selectionDraft.baseline['sell_slots'])) {
-      _selectionDraft.markExternalChange();
-    }
-  }
-
-  // ── the shared scaffold's draft lifecycle ─────────────────────────────────────────────────
-
-  /// Cancel is the tab's "discard my edits": a pending selection edit goes too, next to the form's
-  /// own draft.
-  @override
-  void cancel() {
-    super.cancel();
-    setState(() {
-      _selectionDraft.reset();
-      _selectionOutcome = null;
-    });
-  }
-
-  /// The explicit reconcile after a conflict: the reloaded config is the truth for both drafts.
-  @override
-  Future<void> reconcile() async {
-    await super.reconcile();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _selectionDraft.seedFromMirror(model.config.config, force: true);
-      _selectionOutcome = null;
-    });
   }
 
   // ── readers ──────────────────────────────────────────────────────────────────────────────
@@ -179,20 +110,6 @@ class _BuySellTabState extends State<BuySellTab>
     return rect;
   }
 
-  /// The selected bag cells, ascending and filtered to real cells — the same filter
-  /// `sell_slots_to_sell` applies before selling.
-  List<int> _selectedSlots() {
-    final slots = <int>{};
-    for (final value in asJsonList(_selectionDraft.value['sell_slots'])) {
-      final number = asNumber(value);
-      final slot = number?.round();
-      if (slot != null && slot >= 0 && slot < _bagSlots) {
-        slots.add(slot);
-      }
-    }
-    return slots.toList()..sort();
-  }
-
   // ── writers ──────────────────────────────────────────────────────────────────────────────
 
   Map<String, dynamic> _ensureMap(Map<String, dynamic> parent, String key) {
@@ -236,61 +153,10 @@ class _BuySellTabState extends State<BuySellTab>
     block['sell_cap'] = value;
   });
 
-  /// Toggles one bag cell in the selection draft. The list is kept ascending so the save payload is
-  /// deterministic; the core re-sorts highest-index-first at run time, file order is not data.
+  /// Toggles one bag cell in the model's in-memory selection. `setState` is what redraws the grid:
+  /// the model is not a draft and does not notify (nothing else renders the selection).
   void _toggleSlot(int slot) {
-    final selected = _selectedSlots();
-    if (!selected.remove(slot)) {
-      selected.add(slot);
-    }
-    selected.sort();
-    _selectionDraft.edit((block) {
-      // Removing the key means "not stated", like the core's own optional fields: a grid that was
-      // toggled and toggled back must not turn into an unsaved change that writes `[]`.
-      if (selected.isEmpty &&
-          !_selectionDraft.baseline.containsKey('sell_slots')) {
-        block.remove('sell_slots');
-      } else {
-        block['sell_slots'] = selected;
-      }
-    });
-  }
-
-  Future<void> _saveSelection() async {
-    if (_selectionSaving) {
-      return;
-    }
-    final sections = _selectionDraft.payload();
-    setState(() {
-      _selectionSaving = true;
-      _selectionOutcome = null;
-    });
-    final outcome = await model.saveConfig(sections);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _selectionSaving = false;
-      _selectionOutcome = outcome;
-      // Only a WRITE rebases the draft. A refusal (validation line, conflict, protocol error) leaves
-      // the selection exactly as the player left it: dirty, and saveable again.
-      if (!outcome.saved) {
-        return;
-      }
-      final echoed = outcome.result?.sections['buy_sell'];
-      // The apply echo is the EFFECTIVE block (PROTOCOL §7), so it is the new truth for the
-      // selection. An odd echo keeps what was sent, the draft's documented fallback.
-      _selectionDraft.saved(echoed is Map<String, dynamic> ? echoed : null);
-      // The selection save bumped the session rev, which the shared scaffold reads as "the core
-      // changed this block while you were editing it". That is our own write: if the player has
-      // unsaved form edits, re-baseline the form from the same echo and put the edits back, so the
-      // false conflict banner never appears and no unsaved preset/cap edit is lost.
-      if (echoed is Map<String, dynamic> && draft.hasExternalChange) {
-        final unsaved = draft.value;
-        draft.saved(echoed);
-        draft.setValue(unsaved);
-      }
-    });
+    setState(() => model.toggleSellSlot(slot));
   }
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
@@ -308,7 +174,8 @@ class _BuySellTabState extends State<BuySellTab>
       title: 'Buy / Sell',
       description:
           'Buy presets (item name → scroll, row, count), the sell cap, and '
-          'which bag slots the Sell card sells. The geometry is drawn on the '
+          'which bag slots the next Sell run sells — the selection is kept '
+          'for the run and is not saved. The geometry is drawn on the '
           'Calibrate tab and shown read-only here.',
       readOnly: [
         EditorSection(
@@ -471,14 +338,20 @@ class _BuySellTabState extends State<BuySellTab>
               ),
               const SizedBox(height: ShellSpace.md),
               _sellGrid(theme),
-              _selectionResult(theme),
+              const SizedBox(height: ShellSpace.sm),
+              Text(
+                'This selection is for the next run only — it is not saved.',
+                key: const ValueKey('sell-selection-caption'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(height: ShellSpace.xs),
               Text(
                 'Selling is the one irreversible action: the cap is the hard '
-                'per-run ceiling. The core sells the selected slots highest '
-                'index first and applies the cap at run time. The selection is '
-                'saved on this machine with its own button; the cap rides the '
-                'form\'s Save.',
+                'per-run ceiling. Start Sell from its card; the core sells the '
+                'selected slots highest index first and applies the cap at run '
+                'time.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -493,105 +366,52 @@ class _BuySellTabState extends State<BuySellTab>
   /// The 8×8 selector. Every cell is one bag slot; the geometry comes from the calibrated
   /// `bag_grid` exactly as the read-only map did (`w/8, h/8` pitch). Disabled with the core's own
   /// refusal line when the grid is not calibrated, because a Sell run could not run either.
-  Widget _sellGrid(ThemeData theme) => ListenableBuilder(
-    listenable: _selectionDraft,
-    builder: (context, _) {
-      final rect = _bagGridRect();
-      if (rect == null) {
-        return Text(
-          "The bag grid isn't calibrated — save the Bag grid on the "
-          'Calibrate tab.',
-          key: const ValueKey('sell-grid-not-calibrated'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        );
-      }
-      final selected = _selectedSlots().toSet();
-      final pitch =
-          ' · bag pitch ${(rect[2] / _bagColumns).toStringAsFixed(1)}×'
-          '${(rect[3] / _bagColumns).toStringAsFixed(1)} px';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Select the bag slots to sell$pitch',
-            key: const ValueKey('sell-grid-pitch'),
-            style: theme.textTheme.labelLarge,
-          ),
-          const SizedBox(height: ShellSpace.xs),
-          Text(
-            '${selected.length} of $_bagSlots slots selected',
-            key: const ValueKey('sell-grid-count'),
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: ShellSpace.xs),
-          for (var row = 0; row < _bagColumns; row++)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var column = 0; column < _bagColumns; column++)
-                  _sellCell(
-                    theme,
-                    row * _bagColumns + column,
-                    selected.contains(row * _bagColumns + column),
-                  ),
-              ],
-            ),
-          const SizedBox(height: ShellSpace.sm),
+  Widget _sellGrid(ThemeData theme) {
+    final rect = _bagGridRect();
+    if (rect == null) {
+      return Text(
+        "The bag grid isn't calibrated — save the Bag grid on the "
+        'Calibrate tab.',
+        key: const ValueKey('sell-grid-not-calibrated'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    final selected = model.sellSlots.toSet();
+    final pitch =
+        ' · bag pitch ${(rect[2] / _bagColumns).toStringAsFixed(1)}×'
+        '${(rect[3] / _bagColumns).toStringAsFixed(1)} px';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select the bag slots to sell$pitch',
+          key: const ValueKey('sell-grid-pitch'),
+          style: theme.textTheme.labelLarge,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text(
+          '${selected.length} of $_bagSlots slots selected',
+          key: const ValueKey('sell-grid-count'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        for (var row = 0; row < _bagColumns; row++)
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              FilledButton(
-                key: const ValueKey('save-sell-selection'),
-                onPressed: _selectionDraft.isDirty && !_selectionSaving
-                    ? _saveSelection
-                    : null,
-                child: _selectionSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save selection'),
-              ),
-              if (_selectionDraft.isDirty)
-                Padding(
-                  padding: const EdgeInsets.only(left: ShellSpace.md),
-                  child: Text(
-                    'Unsaved selection',
-                    key: const ValueKey('sell-selection-dirty'),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.tertiary,
-                    ),
-                  ),
-                ),
-              if (_selectionDraft.isDirty)
-                TextButton(
-                  key: const ValueKey('discard-sell-selection'),
-                  onPressed: () => setState(() {
-                    _selectionDraft.reset();
-                    _selectionOutcome = null;
-                  }),
-                  child: const Text('Discard selection'),
+              for (var column = 0; column < _bagColumns; column++)
+                _sellCell(
+                  theme,
+                  row * _bagColumns + column,
+                  selected.contains(row * _bagColumns + column),
                 ),
             ],
           ),
-          if (_selectionDraft.hasExternalChange)
-            Padding(
-              padding: const EdgeInsets.only(top: ShellSpace.xs),
-              child: Text(
-                'The core changed this block while you were editing the '
-                'selection.',
-                key: const ValueKey('sell-selection-external-change'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ),
-        ],
-      );
-    },
-  );
+      ],
+    );
+  }
 
   Widget _sellCell(ThemeData theme, int slot, bool selected) {
     return InkWell(
@@ -608,42 +428,6 @@ class _BuySellTabState extends State<BuySellTab>
           border: Border.all(color: theme.colorScheme.outlineVariant),
         ),
       ),
-    );
-  }
-
-  /// The selection's own outcome: the core's lines verbatim, or the rev that was written.
-  Widget _selectionResult(ThemeData theme) {
-    final outcome = _selectionOutcome;
-    if (outcome == null) {
-      return const SizedBox.shrink();
-    }
-    if (outcome.saved) {
-      return Padding(
-        padding: const EdgeInsets.only(top: ShellSpace.xs),
-        child: Text(
-          'Selection saved — rev ${outcome.result?.rev ?? '?'}',
-          key: const ValueKey('sell-selection-ok'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.primary,
-          ),
-        ),
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var index = 0; index < outcome.errorLines.length; index++)
-          Padding(
-            padding: const EdgeInsets.only(top: ShellSpace.xs),
-            child: Text(
-              outcome.errorLines[index],
-              key: ValueKey('sell-selection-error-$index'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

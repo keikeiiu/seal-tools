@@ -36,6 +36,9 @@ import 'version.dart';
 /// a fake. One call per spawn, so a restart gets a fresh transport from the same factory.
 typedef CoreTransportFactory = Future<Transport> Function();
 
+/// The bag is 8×8: a sell selection names bag cells 0..63 (`BagGrid::SLOT_COUNT` in `seal-domain`).
+const int _sellSlotCount = 64;
+
 class ShellModel extends ChangeNotifier {
   ShellModel({
     required this.transportFactory,
@@ -208,8 +211,9 @@ class ShellModel extends ChangeNotifier {
   /// `tool.start {tool}` ([PROTOCOL.md] §4). Returns false when the command was refused; the core's
   /// own line is then on the card ([PROTOCOL.md] §6). The card's phase still changes only when the
   /// core publishes `state`.
-  /// `tool.start {tool}`. [runArgs] are the optional per-run arguments PROTOCOL §12.6 defines; today
-  /// only `buy` accepts them (`preset`, `count`). When omitted the typed client call is used unchanged.
+  /// `tool.start {tool}`. [runArgs] are the optional per-run arguments PROTOCOL §12.6 defines: `buy`
+  /// takes `preset`/`count` and `sell` takes `slots`. When omitted the typed client call is used
+  /// unchanged.
   Future<bool> startTool(ToolId tool, {JsonMap? runArgs}) {
     if (runArgs == null) {
       return _toolCommand(tool, (client) => client.toolStart(tool));
@@ -228,6 +232,32 @@ class ShellModel extends ChangeNotifier {
   /// `tool.stop {tool}`, or none to stop whatever runs ([PROTOCOL.md] §4).
   Future<bool> stopTool([ToolId? tool]) =>
       _toolCommand(tool, (client) => client.toolStop(tool));
+
+  // ── the Sell card's per-run selection (PROTOCOL §12.6) ────────────────────────────────────
+
+  /// The bag cells the NEXT Sell run sells — IN MEMORY for this process only.
+  ///
+  /// The player's correction ("sell selection could be different every sell") made this a per-RUN
+  /// argument rather than config: v2 kept it in memory, and persisting it (v3.0.1 did) risks selling
+  /// the slots picked last time — data loss, not convenience. The model outlives the tabs, so the
+  /// selection survives a tab switch; a restart starts empty. It is deliberately NOT persisted and a
+  /// start never clears it: the player may run the same selection again.
+  final Set<int> _sellSlots = <int>{};
+
+  /// The selection as bag cells, ascending — what the Sell card puts on the wire. (The core dedupes
+  /// and sorts highest-first itself; wire order is not data.)
+  List<int> get sellSlots => _sellSlots.toList()..sort();
+
+  /// Toggles one bag cell. An index outside 0..63 is not a bag cell and is ignored. No notification:
+  /// the Buy/Sell tab is the only UI reader and it rebuilds from its own `setState`.
+  void toggleSellSlot(int slot) {
+    if (slot < 0 || slot >= _sellSlotCount) {
+      return;
+    }
+    if (!_sellSlots.remove(slot)) {
+      _sellSlots.add(slot);
+    }
+  }
 
   /// `ui.window` — the shell's own window geometry, written by the core ([PROTOCOL.md] §4).
   Future<bool> saveWindow(UiWindowArgs args) =>

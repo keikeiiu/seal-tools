@@ -146,20 +146,31 @@ class _CardGridState extends State<CardGrid> {
     }
   }
 
-  /// Start one card. `buy` carries its run choice as the optional §12.6 arguments; every other card
-  /// sends the plain command. Nothing is persisted either way.
+  /// Start one card. `buy` carries its run choice and `sell` the next run's bag-cell selection as the
+  /// optional §12.6 arguments; every other card sends the plain command. Nothing is persisted either
+  /// way. An EMPTY sell selection sends NO `slots` key at all — never `[]`, which PROTOCOL §12.6
+  /// refuses as a shell bug: the core then falls back to a migrated config (or answers its own
+  /// "No slots are selected to sell." line, rendered verbatim like any refusal). A start does not
+  /// clear the selection; the player may sell the same slots again.
   Future<bool> _startTool(ToolId tool) {
-    if (tool != ToolId.buy) {
-      return widget.model.startTool(tool);
+    if (tool == ToolId.buy) {
+      final preset = _resolvedBuyPreset;
+      if (preset == null) {
+        return widget.model.startTool(tool);
+      }
+      return widget.model.startTool(
+        tool,
+        runArgs: {'preset': preset, 'count': _resolvedBuyCount},
+      );
     }
-    final preset = _resolvedBuyPreset;
-    if (preset == null) {
-      return widget.model.startTool(tool);
+    if (tool == ToolId.sell) {
+      final slots = widget.model.sellSlots;
+      if (slots.isEmpty) {
+        return widget.model.startTool(tool);
+      }
+      return widget.model.startTool(tool, runArgs: {'slots': slots});
     }
-    return widget.model.startTool(
-      tool,
-      runArgs: {'preset': preset, 'count': _resolvedBuyCount},
-    );
+    return widget.model.startTool(tool);
   }
 
   @override

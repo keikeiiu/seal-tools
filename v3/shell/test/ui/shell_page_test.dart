@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/app/version.dart';
 import 'package:seal_shell/protocol/protocol.dart';
 import 'package:seal_shell/ui/shell_app.dart';
 import 'package:seal_shell/ui/tool_card.dart';
@@ -85,7 +86,7 @@ void main() {
     (tester) async {
       final harness = await _pumpShell(tester);
 
-      expect(find.text('v3.0.0'), findsOneWidget);
+      expect(find.text('v$productVersion'), findsOneWidget);
       final hello = harness.lastSentWithCmd('hello')!;
       final args = hello['args'] as Map<String, dynamic>;
       expect(
