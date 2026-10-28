@@ -217,7 +217,7 @@ fact, and nothing in §4 is spec-only today.
 |---|---|---|
 | `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"error":null}` — the row object is specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed. A live tool's `message`/`countdown_s`/`rows` come from the tool's own `status()` (the runner publishes it when it changes, before performing the decision it belongs to), so a run's own words reach the card without the tool writing to the bus |
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
-| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`). Sent AFTER that command's response. `config.reload` emits nothing — its answer already carries the whole config |
+| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`), sent AFTER that command's response; or a tool's mid-run RUN-STATE write (`pet`, no request at all), sent immediately after the file write — the shell may receive it while idle. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
 | `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` is produced only by replay drift (§13) — a normal session ends `eof` or `shutdown` |
 
@@ -307,9 +307,17 @@ is not persisted mid-run (v2's pet `ApplySession` half is not carried over).
 - A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
   underneath before saving again.
 - Core-initiated writes emit `config.changed {rev, block, values}` AFTER their own response
-  (`config.apply`, `ui.window`, `calibration.save`) —
-  DESIGN §3). A shell that is not editing that block applies it silently; one that is editing shows
-  the conflict.
+  (`config.apply`, `ui.window`, `calibration.save`) — a shell that is not editing that block applies
+  it silently; one that is editing shows the conflict.
+- **Run-state writes have no request.** The Pet Feeder persists its own machine state mid-run
+  (`pet.food_slots_used`, `pet.slots[i].boarding_running`, and the close-guard pair
+  `pet.close_button_png`/`pet.boarding_window_may_be_open`) through the same single writer; each
+  successful write bumps `rev` and emits `config.changed {rev, block:"pet", values}` immediately,
+  because there is no response to follow. The shell may receive it while idle. Only those fields are
+  touched: the rest of `pet`, the rest of the file and its foreign blocks are preserved; a malformed
+  config or I/O failure writes nothing and logs to `error.log` — persisting state is a safety net, it
+  never fails the run. A shell `config.apply` carrying the pre-write rev gets `conflict` and the
+  current rev; a dirty draft shows the external-change banner.
 - `ui:` is fully core-owned; it is written only through `ui.window`.
 - Hand edits to the file are picked up at startup or by `config.reload`.
 - `config.apply` commits both halves — the owned blocks and the portable projection — in ONE file
