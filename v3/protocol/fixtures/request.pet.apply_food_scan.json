@@ -1,0 +1,21 @@
+{
+  "case": "request.pet.apply_food_scan",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "50",
+    "cmd": "pet.apply_food_scan",
+    "args": {
+      "cells": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          34
+        ]
+      ]
+    }
+  }
+}

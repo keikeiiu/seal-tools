@@ -1,0 +1,12 @@
+{
+  "case": "request.pet.scan_food_page",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "48",
+    "cmd": "pet.scan_food_page",
+    "args": {
+      "page": 1
+    }
+  }
+}

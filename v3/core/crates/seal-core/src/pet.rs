@@ -285,7 +285,7 @@ fn decode_crop(png: &str, what: &str) -> Result<ReferenceCrop, String> {
 
 /// Decode one reference icon (queue entry / food icon) to RGBA8. Same refusal shape as the row
 /// crops: a corrupt icon is a loud failure naming the item, never a silently skipped pet.
-fn decode_icon(png: &str, what: &str) -> Result<PetImage, String> {
+pub(crate) fn decode_icon(png: &str, what: &str) -> Result<PetImage, String> {
     let payload = png.rsplit(',').next().unwrap_or(png).trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload)
@@ -959,8 +959,10 @@ fn best_offset_score(
     (best != f64::MAX).then_some(best)
 }
 
-/// v2 `IconMatch.ScoreAll`: every cell's score, best first, over a calibrated bag grid.
-fn score_all(bag: &PetImage, grid: &[i32], icon: &PetImage) -> Vec<(usize, f64)> {
+/// v2 `IconMatch.ScoreAll` WITHOUT the match-limit filter, best first. The scan commands need
+/// the runner-up (the second-best score, even when it is above the limit) while the run wants only
+/// the hits; both must use this one sweep.
+pub(crate) fn score_all_scores(bag: &PetImage, grid: &[i32], icon: &PetImage) -> Vec<(usize, f64)> {
     let Some((pitch_x, pitch_y)) = pitch(grid) else {
         return Vec::new();
     };
@@ -970,10 +972,17 @@ fn score_all(bag: &PetImage, grid: &[i32], icon: &PetImage) -> Vec<(usize, f64)>
         .filter_map(|(index, centre)| {
             best_offset_score(bag, centre, pitch_x, pitch_y, icon).map(|score| (index, score))
         })
-        .filter(|(_, score)| *score <= MATCH_LIMIT)
         .collect();
     scores.sort_by(|a, b| a.1.total_cmp(&b.1));
     scores
+}
+
+/// v2 `IconMatch.ScoreAll`: every cell's score under the match limit, best first.
+fn score_all(bag: &PetImage, grid: &[i32], icon: &PetImage) -> Vec<(usize, f64)> {
+    score_all_scores(bag, grid, icon)
+        .into_iter()
+        .filter(|(_, score)| *score <= MATCH_LIMIT)
+        .collect()
 }
 
 /// v2 `IconMatch.ScoreCell`: one bag cell's score against an icon, with the sweep's own inset,

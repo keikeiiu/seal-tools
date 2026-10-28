@@ -489,6 +489,9 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "pet.preflight" => pet_preflight(state, &request),
         "pet.set_boarding" => pet_set_boarding(state, &request),
         "pet.capture_icon" => pet_capture_icon(state, &request),
+        "pet.scan_food_page" => pet_scan_page(state, &request, false),
+        "pet.scan_queue_page" => pet_scan_page(state, &request, true),
+        "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -1038,40 +1041,11 @@ fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
             json!({"field": "row"}),
         );
     }
-    let Some(sink) = state.pet_state.as_ref() else {
-        return internal(
-            &request.id,
-            "the pet run-state writer is not attached in this core",
-        );
-    };
     let patch = seal_config::PetRunStatePatch {
         boarding_running: vec![(row, running)],
         ..seal_config::PetRunStatePatch::default()
     };
-    let rev = match sink.persist_rev(&patch) {
-        Ok(rev) => rev,
-        Err(line) => {
-            state.logs.error_line(&format!(
-                "pet.set_boarding could not write run state: {line}"
-            ));
-            return Response::err(&request.id, Error::new("io", &line, json!({})));
-        }
-    };
-    match state.store.load() {
-        Ok(config) => {
-            let block = config.get("pet").cloned().unwrap_or(Value::Null);
-            state.config = config;
-            state.rev = rev;
-            // A command-caused write emits its config.changed AFTER the response, matching
-            // config.apply's ordering; the sink did the write and the revision.
-            state.queue_config_changed("pet");
-            Response::ok(&request.id, json!({"rev": rev, "block": block}))
-        }
-        Err(error) => internal(
-            &request.id,
-            &format!("pet.set_boarding wrote, but the config could not be re-read: {error}"),
-        ),
-    }
+    write_pet_patch(state, request, patch)
 }
 
 /// `pet.capture_icon {kind,page,cell}`: capture the visible bag page and return ONE cropped icon.
@@ -1124,6 +1098,157 @@ fn pet_capture_icon(state: &mut CoreState, request: &Request) -> Response {
             bad_request(&request.id, &message, json!({"field": field}))
         }
         Err(crate::pet_capture::IconError::Internal(message)) => internal(&request.id, &message),
+    }
+}
+
+/// `pet.scan_food_page` / `pet.scan_queue_page`: one page, READ-ONLY. Input lease, one
+/// foreground-gated capture (the shell hides itself and puts the page up), page PNG + report under
+/// `logs/reads/`, and the run's own matcher. Evidence is best-effort and never fails the scan.
+fn pet_scan_page(state: &mut CoreState, request: &Request, queue: bool) -> Response {
+    let page = match crate::pet_scan::page_argument(&request.args) {
+        Ok(page) => page,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(supervisor) = state.supervisor.as_ref() {
+        match supervisor.input_lease() {
+            Ok(Some(line)) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": request.cmd}),
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(line) => return internal(&request.id, &line),
+        }
+    }
+    if let Err(error) = crate::pet_capture::page_grid(&state.config, page) {
+        return icon_error_response(&request.id, error);
+    }
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let frame = match win::capture(&title, None) {
+        Ok((frame, _display)) => frame,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let image = match crate::pet_scan::frame_image(&frame) {
+        Ok(image) => image,
+        Err(message) => return internal(&request.id, &message),
+    };
+    let stamp = crate::logs::read_stamp();
+    let page_name = format!("scan_page{page}_{stamp}.png");
+    let mut evidence = Vec::new();
+    if let Some(data) = frame.get("data").and_then(Value::as_str)
+        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+        && let Some(path) = state.logs.write_read(&page_name, &bytes)
+    {
+        evidence.push(path);
+    }
+
+    let (mut result, report) = if queue {
+        match crate::pet_scan::queue_scan(&state.config, page, &image) {
+            Ok(result) => result,
+            Err(error) => return scan_error_response(&request.id, error),
+        }
+    } else {
+        match crate::pet_scan::food_scan(&state.config, page, &image) {
+            Ok(result) => result,
+            Err(error) => return scan_error_response(&request.id, error),
+        }
+    };
+    let report_name = format!("scan_{stamp}.txt");
+    if let Some(path) = state
+        .logs
+        .write_read(&report_name, report.join("\n").as_bytes())
+    {
+        evidence.push(path);
+    }
+    if let Some(object) = result.as_object_mut() {
+        object.insert("evidence".to_owned(), json!(evidence));
+    }
+    Response::ok(&request.id, result)
+}
+
+fn scan_error_response(id: &str, (message, field): (String, &'static str)) -> Response {
+    if field == "internal" {
+        internal(id, &message)
+    } else {
+        bad_request(id, &message, json!({"field": field}))
+    }
+}
+
+fn icon_error_response(id: &str, error: crate::pet_capture::IconError) -> Response {
+    match error {
+        crate::pet_capture::IconError::BadRequest { message, field } => {
+            bad_request(id, &message, json!({"field": field}))
+        }
+        crate::pet_capture::IconError::Internal(message) => internal(id, &message),
+    }
+}
+
+/// `pet.apply_food_scan`: explicit write of the scan's chosen cells. Replaces `pet.food_slots` with
+/// ZERO-BASED config pairs and resets `food_slots_used`, one A1 field-precise write + one
+/// `config.changed` after the response. Empty is refused (nothing found means nothing written).
+fn pet_apply_food_scan(state: &mut CoreState, request: &Request) -> Response {
+    let cells = match crate::pet_scan::apply_cells(&state.config, &request.args) {
+        Ok(cells) => cells,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    let patch = seal_config::PetRunStatePatch {
+        food_slots: Some(cells),
+        ..seal_config::PetRunStatePatch::default()
+    };
+    write_pet_patch(state, request, patch)
+}
+
+/// The shared A1 command write: validate the sink exists, persist the field patch, refresh the
+/// dispatcher's config/rev, queue the one `config.changed` after the response, and answer
+/// `{rev, block}`. Used by `pet.set_boarding` and `pet.apply_food_scan`.
+fn write_pet_patch(
+    state: &mut CoreState,
+    request: &Request,
+    patch: seal_config::PetRunStatePatch,
+) -> Response {
+    let Some(sink) = state.pet_state.as_ref() else {
+        return internal(
+            &request.id,
+            "the pet run-state writer is not attached in this core",
+        );
+    };
+    let rev = match sink.persist_rev(&patch) {
+        Ok(rev) => rev,
+        Err(line) => {
+            state.logs.error_line(&format!(
+                "{} could not write run state: {line}",
+                request.cmd
+            ));
+            return Response::err(&request.id, Error::new("io", &line, json!({})));
+        }
+    };
+    match state.store.load() {
+        Ok(config) => {
+            let block = config.get("pet").cloned().unwrap_or(Value::Null);
+            state.config = config;
+            state.rev = rev;
+            state.queue_config_changed("pet");
+            Response::ok(&request.id, json!({"rev": rev, "block": block}))
+        }
+        Err(error) => internal(
+            &request.id,
+            &format!(
+                "{} wrote, but the config could not be re-read: {error}",
+                request.cmd
+            ),
+        ),
     }
 }
 

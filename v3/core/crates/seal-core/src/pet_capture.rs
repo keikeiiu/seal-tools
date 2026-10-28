@@ -99,7 +99,9 @@ pub fn arguments(value: &Value) -> Result<IconArguments, (String, &'static str)>
 /// Validate the prerequisites and derive the client-relative PHYSICAL crop rectangle. This is the
 /// only place the page/cell → pixels rule lives; `pet.rs`'s bag-cell check uses the same
 /// `BagGrid::centres` + rounded pitch box.
-pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconError> {
+/// Validate the bag grid and the requested page's 2-point tab mark. The scans and the icon
+/// capture share this prerequisite so a page that cannot be captured is refused the same way.
+pub fn page_grid(config: &Value, page: usize) -> Result<Vec<i32>, IconError> {
     let grid = config
         .pointer("/pet/bag_grid")
         .and_then(Value::as_array)
@@ -125,16 +127,20 @@ pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconE
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let page_index = arguments.page - 1;
+    let page_index = page - 1;
     if page_index >= tabs.len() || tabs[page_index] != 2 {
         return Err(IconError::BadRequest {
             message: format!(
-                "Bag page {} has no 2-point tab mark — save the Bag page tab point for page {} on the Calibrate tab.",
-                arguments.page, arguments.page
+                "Bag page {page} has no 2-point tab mark — save the Bag page tab point for page {page} on the Calibrate tab."
             ),
             field: "page",
         });
     }
+    Ok(grid)
+}
+
+pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconError> {
+    let grid = page_grid(config, arguments.page)?;
     if arguments.cell > BagGrid::SLOT_COUNT {
         return Err(IconError::BadRequest {
             message: format!(

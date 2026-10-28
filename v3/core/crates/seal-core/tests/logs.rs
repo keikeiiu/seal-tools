@@ -765,3 +765,21 @@ fn cleanup_captures_with_no_directory_is_zero_not_an_error() {
     assert_eq!(result["deleted"], 0);
     assert_eq!(result["dir"], "logs/captures");
 }
+
+#[test]
+fn read_evidence_writer_creates_logs_reads_files() {
+    let root = config_root();
+    let logs = Logs::new(root.path());
+    let relative = logs
+        .write_read("scan_page1_20261028_120000.png", b"fake png bytes")
+        .expect("evidence is written");
+    assert_eq!(relative, "logs/reads/scan_page1_20261028_120000.png");
+    assert_eq!(
+        fs::read(
+            root.path()
+                .join("logs/reads/scan_page1_20261028_120000.png")
+        )
+        .unwrap(),
+        b"fake png bytes"
+    );
+}

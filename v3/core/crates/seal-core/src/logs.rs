@@ -213,6 +213,24 @@ impl Logs {
         (deleted, failures)
     }
 
+    /// Writes one scan-evidence file under `logs/reads/` and returns its root-relative path with
+    /// forward slashes. Evidence is best-effort: a missing/unwritable directory is swallowed exactly
+    /// like every other log write, because a scan must never fail over its evidence.
+    pub fn write_read(&self, name: &str, bytes: &[u8]) -> Option<String> {
+        let Some(dir) = &self.dir else {
+            return None;
+        };
+        let name = Path::new(name).file_name()?.to_str()?;
+        let reads = dir.join("reads");
+        if let Err(error) = fs::create_dir_all(&reads) {
+            return self.swallow(&error);
+        }
+        if let Err(error) = fs::write(reads.join(name), bytes) {
+            return self.swallow(&error);
+        }
+        Some(format!("logs/reads/{name}"))
+    }
+
     /// The whole OCR log line for one completed scan: writes `ocr_log.jsonl`, writes
     /// `ocr_errors.jsonl` when the scan is unconfirmed, and returns the protocol result unchanged
     /// (its five fields; `capture_path` is the relative path or `null`).
@@ -330,6 +348,13 @@ fn scan_unconfirmed(mode: Mode, outcome: &ModeResult) -> bool {
 pub fn scan_stamp() -> String {
     let [year, month, day, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}_{millis:03}")
+}
+
+/// v2's bag-scan evidence stamp: `yyyyMMdd_HHmmss`, deliberately the same second-resolution stamp
+/// as `scan_page<N>_<stamp>.png` and `scan_<stamp>.txt` in `logs/reads/`.
+pub fn read_stamp() -> String {
+    let [year, month, day, hour, minute, second, _] = seal_win::clock::local_now();
+    format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}")
 }
 
 fn line_stamp() -> String {

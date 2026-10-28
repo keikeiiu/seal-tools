@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 34 request fixtures.
+/// The 37 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -108,6 +108,12 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.pet.capture_icon.queue', message),
   'request.pet.capture_icon.food': (message) =>
       _request('request.pet.capture_icon.food', message),
+  'request.pet.scan_food_page': (message) =>
+      _request('request.pet.scan_food_page', message),
+  'request.pet.scan_queue_page': (message) =>
+      _request('request.pet.scan_queue_page', message),
+  'request.pet.apply_food_scan': (message) =>
+      _request('request.pet.apply_food_scan', message),
   'request.board.test.click': (message) =>
       _request('request.board.test.click', message),
   'request.board.test.key': (message) =>
@@ -230,7 +236,7 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.window.measure', message),
 };
 
-/// The 35 response fixtures: 22 successes (9 typed, 13 envelope-only) and 13 errors.
+/// The 38 response fixtures: 25 successes (9 typed, 16 envelope-only) and 13 errors.
 final Map<String, FixtureDecoder> responseDecoders = {
   'response.ok.capture': (message) => _ok(
     'response.ok.capture',
@@ -286,6 +292,21 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.pet_capture_icon.food': (message) => _ok(
     'response.ok.pet_capture_icon.food',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_scan_food_page': (message) => _ok(
+    'response.ok.pet_scan_food_page',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_scan_queue_page': (message) => _ok(
+    'response.ok.pet_scan_queue_page',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_apply_food_scan': (message) => _ok(
+    'response.ok.pet_apply_food_scan',
     message,
     EnvelopePayload(_result(message)),
   ),

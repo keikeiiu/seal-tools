@@ -600,3 +600,70 @@ fn a_blocked_pet_set_boarding_write_is_io_logged_and_leaves_the_file_alone() {
         "no late event after the failure: {extra_again:?}"
     );
 }
+
+#[test]
+fn pet_apply_food_scan_replaces_slots_resets_used_and_emits_one_event() {
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    let (response, before) =
+        session.call_note_order("pet.apply_food_scan", json!({"cells": [[1, 1], [1, 5]]}));
+    assert!(before.is_empty(), "the event must NOT precede the response");
+    assert!(response.ok, "the apply succeeds: {:?}", response.error);
+    let result = response.result.expect("a result");
+    assert_eq!(result["rev"], 1);
+    // The protocol is 1-based; local.yaml's pet.food_slots is ZERO-based ([[0,0],[0,4]]).
+    assert_eq!(result["block"]["food_slots"], json!([[0, 0], [0, 4]]));
+    assert_eq!(result["block"]["food_slots_used"], 0);
+    assert_eq!(result["block"]["return_slot"], json!([0, 5]));
+
+    let local = root.read("config/local.yaml");
+    assert!(local.contains("food_slots:"), "{local}");
+    assert!(
+        local.contains("keep: me"),
+        "foreign block preserved: {local}"
+    );
+    assert!(
+        local.contains("return_slot:"),
+        "rest of pet preserved: {local}"
+    );
+
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["rev"], 1);
+    assert_eq!(event["data"]["block"], "pet");
+    assert_eq!(
+        event["data"]["values"]["food_slots"],
+        json!([[0, 0], [0, 4]])
+    );
+
+    // Exactly one event, and the session stays usable.
+    let (next, extra) = session.call_note_order("pet.preflight", json!({}));
+    assert!(next.ok);
+    assert!(extra.is_empty(), "exactly one config.changed: {extra:?}");
+}
+
+#[test]
+fn pet_apply_food_scan_refuses_empty_or_malformed_selections_without_writing() {
+    let root = config_root();
+    root.write("config/local.yaml", PET_LOCAL);
+    let before = root.read("config/local.yaml");
+    let mut session = Session::start(root.path());
+    session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+
+    for args in [
+        json!({"cells": []}),
+        json!({"cells": [[1]]}),
+        json!({"cells": [[2, 1]]}),
+        json!({"cells": [[1, 65]]}),
+        json!({"cells": "nope"}),
+    ] {
+        let response = session.call("pet.apply_food_scan", args);
+        let error = response.error.expect("a bad apply");
+        assert_eq!(error.code, "bad_request");
+        assert_eq!(error.detail["field"], "cells");
+    }
+    assert_eq!(root.read("config/local.yaml"), before, "nothing written");
+}

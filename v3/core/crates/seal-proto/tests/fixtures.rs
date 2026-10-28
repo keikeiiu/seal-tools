@@ -46,6 +46,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "pet.preflight",
     "pet.set_boarding",
     "pet.capture_icon",
+    "pet.scan_food_page",
+    "pet.scan_queue_page",
+    "pet.apply_food_scan",
     "board.test",
     "ui.window",
     "tool.start",
@@ -279,6 +282,24 @@ fn cases() -> Vec<Case> {
             json!({"kind": "food", "page": 1, "cell": 34}),
         ),
         request_case(
+            "request.pet.scan_food_page",
+            "48",
+            "pet.scan_food_page",
+            json!({"page": 1}),
+        ),
+        request_case(
+            "request.pet.scan_queue_page",
+            "49",
+            "pet.scan_queue_page",
+            json!({"page": 1}),
+        ),
+        request_case(
+            "request.pet.apply_food_scan",
+            "50",
+            "pet.apply_food_scan",
+            json!({"cells": [[1, 1], [1, 34]]}),
+        ),
+        request_case(
             "request.board.test.click",
             "11",
             "board.test",
@@ -445,6 +466,32 @@ fn cases() -> Vec<Case> {
                 "rect": [10, 40, 10, 10],
                 "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
             }),
+        ),
+        ok_case(
+            "response.ok.pet_scan_food_page",
+            "48",
+            json!({
+                "page": 1,
+                "cells": [13, 36],
+                "report": ["page 1: 2 cell(s) — 13, 36"],
+                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_20261028_120000.txt"]
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_scan_queue_page",
+            "49",
+            json!({
+                "page": 1,
+                "per_entry": [{"index": 0, "label": "red", "hits": [{"cell": 13, "score": 0.0, "runner_up": 1.0}]}],
+                "claimed": [],
+                "deduced": ["red ×1"],
+                "evidence": ["logs/reads/scan_page1_20261028_120000.png", "logs/reads/scan_20261028_120000.txt"]
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_apply_food_scan",
+            "50",
+            json!({"rev": 1, "block": {"food_slots": [[0, 0], [0, 33]], "food_slots_used": 0}}),
         ),
         ok_case(
             "response.ok.board_details",

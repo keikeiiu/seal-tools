@@ -31,6 +31,9 @@ const LEGACY_FOLDED: &str = "legacy_folded";
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PetRunStatePatch {
     pub food_slots_used: Option<i32>,
+    /// Zero-based `(page, cell)` pairs replacing `pet.food_slots`; when present the writer also
+    /// resets `food_slots_used` to 0 (the set changed, so a carried count would skip/repeat cells).
+    pub food_slots: Option<Vec<(usize, usize)>>,
     /// `(row index, boarding_running)` in the existing `pet.slots` order.
     pub boarding_running: Vec<(usize, bool)>,
     /// `Some(None)` clears a learned crop; `Some(Some(png))` sets it.
@@ -41,6 +44,7 @@ pub struct PetRunStatePatch {
 impl PetRunStatePatch {
     pub fn is_empty(&self) -> bool {
         self.food_slots_used.is_none()
+            && self.food_slots.is_none()
             && self.boarding_running.is_empty()
             && self.close_button_png.is_none()
             && self.boarding_window_may_be_open.is_none()
@@ -332,6 +336,16 @@ impl ConfigStore {
 
             if let Some(used) = patch.food_slots_used {
                 pet.insert("food_slots_used".to_owned(), Value::from(used));
+            }
+            if let Some(cells) = &patch.food_slots {
+                let slots: Vec<Value> = cells
+                    .iter()
+                    .map(|(page, cell)| Value::Array(vec![Value::from(*page), Value::from(*cell)]))
+                    .collect();
+                pet.insert("food_slots".to_owned(), Value::Array(slots));
+                // Replacing the set is exactly the moment the old used-cell count stops meaning
+                // anything (v2's PetScanFood invariant): reset it in the same atomic write.
+                pet.insert("food_slots_used".to_owned(), Value::from(0));
             }
             if !patch.boarding_running.is_empty() {
                 let slots = pet
