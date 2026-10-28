@@ -80,19 +80,19 @@ the deduped, valid selection is compared with the cap and the start is refused b
 placement/size** (restored after `hello` from the machine `ui` block, with debounced `ui.window`
 saves and an off-screen rectangle clamped into the primary work area); the **Spammer card Rotation
 picker**; the **last-preset / last-flow deletion guards**; the **Buy row picker** (1-based labels,
-0-based stored, legacy out-of-range marked); the Tuner's **Clean up capture images** maintenance row
-(confirmed, deletes only `logs/captures` PNGs, works mid-run); and the **Pet Feeder's run-state
-persistence** (`food_slots_used` and per-row `boarding_running` are written mid-run, so a restart no
-longer resumes on stale state). The pin is the portable `settings.ui.always_on_top`; placement is
-independent machine state in `ui` and is not the pin.
+0-based stored, legacy out-of-range marked); the **Arduino connection diagnostics** (read-only
+`board.details` + the rebuilt Connection/ports/firmware card); the Tuner's **Clean up capture images**
+maintenance row (confirmed, deletes only `logs/captures` PNGs, works mid-run); and the **Pet Feeder's
+run-state persistence** (`food_slots_used` and per-row `boarding_running` are written mid-run, so a
+restart no longer resumes on stale state). The pin is the portable `settings.ui.always_on_top`;
+placement is independent machine state in `ui` and is not the pin.
 
 - **Buy/Sell dry runs** (click nothing; verify targeting) and **Quest Test one loop** - v2's two
   pre-run safety tests; absent in v3 (need run-argument commands).
 - **Pet tab session surface** - capture/scan food cells, queue pets by icon capture, bank scans, test
   read, and the Setup-so-far / Ready-to-run checklists (v2's Pet-tab maintenance workflow).
 - **Tuner card live detail** (grade/remaining/attempt/attributes - needs a ToolStatus/protocol
-  extension); **Arduino connection diagnostics** (port list, chosen marker, VID/PID/PnP, firmware
-  detail); **Spammer advanced raw-key editor**.
+  extension); **Spammer advanced raw-key editor**.
 - **Calibration plan additions**: the Pet tab's Setup-so-far checklist; loading the saved overlay
   PNG when a calibrate tab reopens; one decided home for the Gem Move mode.
 

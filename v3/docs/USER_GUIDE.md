@@ -394,10 +394,27 @@ the dictionary from the core.
 
 ### 5.8 Arduino
 
-A board test surface, not a setting: **Refresh probe** asks the core to open the board and report the
-firmware reply; **Click**, **Move** (dx, dy) and **Send key** send one test action each. Use it to
-separate "the board is wrong" from "the app is misconfigured" before blaming a tool. The same probe is
-on the **Setup** tab's actions (**Probe board**).
+The Arduino tab is a read-only connection card plus a test surface. It opens on `board.details`, which
+only enumerates the machine's serial ports — it never opens the board — so reading it is safe even
+while a tool runs.
+
+- **Connection** — the three-state light and verdict for what a Start would do: **Ready — Start will
+  open COM…**, **Start will refuse — the named port is missing** (with the core's own refusal line),
+  or **Start will refuse — no Arduino found** (with the charge-only-cable advice: plug it in, press
+  **Refresh**; the board can light up yet never appear as a port).
+- **Ports this machine has** — the core's chosen-first order: **●** is the port a Start would open,
+  **○** is another port, and a port that matches the configured ID but was not chosen says “matches
+  the expected ID”.
+- **What the launcher looks for** — the VID/PID/baud it matches, and whether `arduino.port` names a
+  port (a named port wins over the ID).
+- **Board firmware** — the cached **protocol level**, not v2's old drag-test OK/Not-OK verdict: “Not
+  checked yet — this is normal.” until a tool has opened the board, then “Protocol level N (checked).”
+  (or “Protocol level N (queried now).” after an explicit query). **Query firmware** is the only
+  action on this tab that opens the port; it is unavailable while a tool is running, with the reason
+  shown (a real probe refusal renders the core's line verbatim).
+- **Refresh** re-reads the read-only details. **Click**, **Move** (dx, dy) and **Send key** are
+  unchanged: each sends one test action through the board. Setup's **Probe board** is still the same
+  explicit open-and-ask.
 
 ### 5.9 Setup
 

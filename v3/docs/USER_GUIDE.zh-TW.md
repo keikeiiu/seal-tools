@@ -340,9 +340,22 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 
 ### 5.8 Arduino
 
-板子測試介面，不是設定：**Refresh probe** 請核心開啟板子並回報韌體回應；**Click**、**Move**（dx、dy）、
-**Send key** 各送出一個測試動作。用它來區分「板子有問題」與「程式設定有問題」，再怪工具之前先試這裡。
-**Setup** 分頁的動作區也有同樣的探測（**Probe board**）。
+Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `board.details`，只列出這台機器的序列埠 —— 不會
+開啟板子 —— 所以即使工具正在執行，讀取也是安全的。
+
+- **Connection** —— 三態指示燈與判定，說明 Start 會怎麼做：**Ready — Start will open COM…**、**Start will
+  refuse — the named port is missing**（附核心自己的拒絕行），或 **Start will refuse — no Arduino
+  found**（附只充電線的建議：插上板子後按 **Refresh**；板子可能亮著卻始終不以連接埠出現）。
+- **Ports this machine has** —— 依核心的 chosen-first 順序：**●** 是 Start 會開啟的埠，**○** 是其他埠；
+  符合設定 ID 但未被選中的埠會標示「matches the expected ID」。
+- **What the launcher looks for** —— 它比對的 VID/PID/baud，以及 `arduino.port` 是否指定了埠（指定埠優先於
+  ID）。
+- **Board firmware** —— 快取的**協定等級**，不是 v2 舊的拖曳測試 OK/Not-OK 判定：尚未有工具開啟板子前顯示
+  「Not checked yet — this is normal.」，之後是「Protocol level N (checked).」（明確查詢後則是
+  「Protocol level N (queried now).」）。**Query firmware** 是這個分頁唯一會開啟板子的動作；工具執行中
+  無法使用，並會顯示原因（真正的 probe 拒絕會原文顯示核心的行）。
+- **Refresh** 會重新讀取唯讀細節。**Click**、**Move**（dx、dy）、**Send key** 不變：各送出一個測試動作。
+  Setup 的 **Probe board** 仍是同一個明確的開啟並詢問。
 
 ### 5.9 Setup
 
