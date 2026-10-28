@@ -45,6 +45,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "board.details",
     "pet.preflight",
     "pet.set_boarding",
+    "pet.capture_icon",
     "board.test",
     "ui.window",
     "tool.start",
@@ -266,6 +267,18 @@ fn cases() -> Vec<Case> {
             json!({"row": 1, "running": true}),
         ),
         request_case(
+            "request.pet.capture_icon.queue",
+            "46",
+            "pet.capture_icon",
+            json!({"kind": "queue", "page": 1, "cell": 34}),
+        ),
+        request_case(
+            "request.pet.capture_icon.food",
+            "47",
+            "pet.capture_icon",
+            json!({"kind": "food", "page": 1, "cell": 34}),
+        ),
+        request_case(
             "request.board.test.click",
             "11",
             "board.test",
@@ -409,6 +422,28 @@ fn cases() -> Vec<Case> {
                     "return_slot": [0, 5],
                     "slots": [{"boarding_running": true}]
                 }
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_capture_icon.queue",
+            "46",
+            json!({
+                "kind": "queue",
+                "page": 1,
+                "cell": 34,
+                "rect": [10, 40, 10, 10],
+                "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_capture_icon.food",
+            "47",
+            json!({
+                "kind": "food",
+                "page": 1,
+                "cell": 34,
+                "rect": [10, 40, 10, 10],
+                "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
             }),
         ),
         ok_case(

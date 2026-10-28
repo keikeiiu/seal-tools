@@ -1,0 +1,14 @@
+{
+  "case": "request.pet.capture_icon.food",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "47",
+    "cmd": "pet.capture_icon",
+    "args": {
+      "kind": "food",
+      "page": 1,
+      "cell": 34
+    }
+  }
+}

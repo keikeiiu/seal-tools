@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 32 request fixtures.
+/// The 34 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -104,6 +104,10 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.pet.preflight', message),
   'request.pet.set_boarding': (message) =>
       _request('request.pet.set_boarding', message),
+  'request.pet.capture_icon.queue': (message) =>
+      _request('request.pet.capture_icon.queue', message),
+  'request.pet.capture_icon.food': (message) =>
+      _request('request.pet.capture_icon.food', message),
   'request.board.test.click': (message) =>
       _request('request.board.test.click', message),
   'request.board.test.key': (message) =>
@@ -226,7 +230,7 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.window.measure', message),
 };
 
-/// The 33 response fixtures: 20 successes (9 typed, 11 envelope-only) and 13 errors.
+/// The 35 response fixtures: 22 successes (9 typed, 13 envelope-only) and 13 errors.
 final Map<String, FixtureDecoder> responseDecoders = {
   'response.ok.capture': (message) => _ok(
     'response.ok.capture',
@@ -272,6 +276,16 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.pet_set_boarding': (message) => _ok(
     'response.ok.pet_set_boarding',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_capture_icon.queue': (message) => _ok(
+    'response.ok.pet_capture_icon.queue',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_capture_icon.food': (message) => _ok(
+    'response.ok.pet_capture_icon.food',
     message,
     EnvelopePayload(_result(message)),
   ),

@@ -488,6 +488,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "board.test" => board_test(state, &request),
         "pet.preflight" => pet_preflight(state, &request),
         "pet.set_boarding" => pet_set_boarding(state, &request),
+        "pet.capture_icon" => pet_capture_icon(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -1070,6 +1071,60 @@ fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
             &request.id,
             &format!("pet.set_boarding wrote, but the config could not be re-read: {error}"),
         ),
+    }
+}
+
+/// `pet.capture_icon {kind,page,cell}`: capture the visible bag page and return ONE cropped icon.
+/// The shell has hidden itself and put the page up; this command never clicks or moves the cursor,
+/// and it opens no board. The input lease is checked first (a foreground tool owns the game), then
+/// the calibrated grid/page-tab prerequisites, then the foreground-gated full-client capture.
+fn pet_capture_icon(state: &mut CoreState, request: &Request) -> Response {
+    let arguments = match crate::pet_capture::arguments(&request.args) {
+        Ok(arguments) => arguments,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(supervisor) = state.supervisor.as_ref() {
+        match supervisor.input_lease() {
+            Ok(Some(line)) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": "pet.capture_icon"}),
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(line) => return internal(&request.id, &line),
+        }
+    }
+    let icon = match crate::pet_capture::geometry(&state.config, &arguments) {
+        Ok(icon) => icon,
+        Err(crate::pet_capture::IconError::BadRequest { message, field }) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+        Err(crate::pet_capture::IconError::Internal(message)) => {
+            return internal(&request.id, &message);
+        }
+    };
+    let _ = icon;
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let frame = match win::capture(&title, None) {
+        Ok((frame, _display)) => frame,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    match crate::pet_capture::icon_from_frame(&state.config, &arguments, &frame) {
+        Ok(result) => Response::ok(&request.id, result),
+        Err(crate::pet_capture::IconError::BadRequest { message, field }) => {
+            bad_request(&request.id, &message, json!({"field": field}))
+        }
+        Err(crate::pet_capture::IconError::Internal(message)) => internal(&request.id, &message),
     }
 }
 
@@ -1666,5 +1721,89 @@ mod tests {
         let result = response.result.expect("a result");
         assert_eq!(result["firmware"], json!({"level": 2, "checked": true}));
         assert!(result["ports"].is_array());
+    }
+
+    #[test]
+    fn pet_capture_icon_bad_arguments_name_kind_page_or_cell() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\\repo"));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        for (args, field) in [
+            (json!({"kind": "pet", "page": 1, "cell": 1}), "kind"),
+            (json!({"kind": "queue", "page": 0, "cell": 1}), "page"),
+            (json!({"kind": "queue", "page": 1, "cell": 65}), "cell"),
+        ] {
+            let response = handle(
+                &mut state,
+                Request::new("capture", "pet.capture_icon", args),
+            );
+            let error = response.error.expect("a bad-argument refusal");
+            assert_eq!(error.code, "bad_request");
+            assert_eq!(error.detail["field"], field);
+        }
+    }
+
+    #[test]
+    fn pet_capture_icon_missing_grid_is_refused_before_any_capture() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\\repo"));
+        state.config = json!({"pet": {"page_tabs": [[10, 10]]}});
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        let response = handle(
+            &mut state,
+            Request::new(
+                "capture",
+                "pet.capture_icon",
+                json!({"kind": "queue", "page": 1, "cell": 1}),
+            ),
+        );
+        let error = response.error.expect("the missing grid is refused");
+        assert_eq!(error.code, "bad_request");
+        assert_eq!(error.detail["field"], "bag_grid");
+    }
+
+    #[test]
+    fn pet_capture_icon_takes_the_input_lease_like_a_pointer_action() {
+        let (release, release_rx) = mpsc::channel();
+        let registry = Arc::new(BlockingRegistry {
+            release: Mutex::new(Some(release_rx)),
+        });
+        let (bus, _events) = event_channel();
+        let supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\\repo"));
+        state.attach_supervisor(supervisor);
+        state.config = json!({"pet": {"bag_grid": [0, 0, 80, 80], "page_tabs": [[10, 10]]}});
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        assert_eq!(
+            state
+                .supervisor
+                .as_ref()
+                .expect("attached")
+                .start_tool(ToolId::Tuner, &Value::Null),
+            StartReply::Started
+        );
+
+        let response = handle(
+            &mut state,
+            Request::new(
+                "capture-lease",
+                "pet.capture_icon",
+                json!({"kind": "queue", "page": 1, "cell": 1}),
+            ),
+        );
+        let error = response.error.expect("the capture is refused while busy");
+        assert_eq!(error.code, "tool_busy");
+        assert_eq!(error.detail["command"], "pet.capture_icon");
+        assert!(error.message.contains("\"tuner\""), "{}", error.message);
+
+        let _ = release.send(());
+        state.shutdown_tools("test");
     }
 }
