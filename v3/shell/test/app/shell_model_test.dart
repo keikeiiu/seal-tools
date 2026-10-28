@@ -346,4 +346,50 @@ void main() {
     expect(harness.model.config.rev, 9);
     expect(harness.model.config.config['tuner'], {'guard_px': 4});
   });
+
+  test('pointer.place sends the client-relative point exactly', () async {
+    final harness = AppHarness();
+    addTearDown(harness.dispose);
+    await harness.connect();
+
+    final placed = harness.model.pointerPlace(120, 340);
+    expect(harness.lastRequest['cmd'], 'pointer.place');
+    expect(harness.lastRequest['args'], {'x': 120, 'y': 340});
+    harness.respondOk();
+    final result = await placed;
+
+    expect(result.ok, isTrue);
+    expect(result.value, isEmpty);
+    // A pointer action is run input, never a config write.
+    expect(harness.lastSentWithCmd('config.validate'), isNull);
+    expect(harness.lastSentWithCmd('config.apply'), isNull);
+  });
+
+  test(
+    'pointer.click sends the point and a refusal keeps the core line',
+    () async {
+      final harness = AppHarness();
+      addTearDown(harness.dispose);
+      await harness.connect();
+
+      final clicked = harness.model.pointerClick(12, 34);
+      expect(harness.lastRequest['cmd'], 'pointer.click');
+      expect(harness.lastRequest['args'], {'x': 12, 'y': 34});
+      harness.respondError(
+        'game_not_foreground',
+        message: 'the game window is not in front',
+      );
+      final result = await clicked;
+
+      expect(result.ok, isFalse);
+      expect(result.error?.code, ErrorCode.gameNotForeground);
+      expect(
+        result.errorLine,
+        'the game window is not in front',
+        reason: 'the core\'s line is stored verbatim, never rewritten',
+      );
+      expect(harness.lastSentWithCmd('config.validate'), isNull);
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+    },
+  );
 }

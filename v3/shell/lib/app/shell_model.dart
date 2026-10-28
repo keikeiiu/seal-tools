@@ -307,6 +307,17 @@ class ShellModel extends ChangeNotifier {
     args: {'kind': 'key', 'key': key},
   );
 
+  /// `pointer.place {x,y}`: closed-loop cursor placement at a CLIENT-relative physical point — the
+  /// Calibrate surfaces' "place the cursor here" action (calibration plan increment 0). The core runs
+  /// the same window/foreground/board guards a tool does (a foreground tool holding the game is
+  /// `tool_busy`), so a refusal is the core's own line, rendered verbatim like every action result.
+  Future<CoreActionResult<JsonMap>> pointerPlace(int x, int y) =>
+      _coreAction('pointer.place', (result) => result, args: {'x': x, 'y': y});
+
+  /// `pointer.click {x,y}`: place, then click — v2's "Place cursor + click" / "Test Click".
+  Future<CoreActionResult<JsonMap>> pointerClick(int x, int y) =>
+      _coreAction('pointer.click', (result) => result, args: {'x': x, 'y': y});
+
   /// `capture`: the game client as PNG plus the `DisplayInfo` measurement. The full client is the
   /// calibration frame; a region is only for the capture command's general use.
   Future<CoreActionResult<CaptureResult>> captureFrame({Rect? region}) =>
