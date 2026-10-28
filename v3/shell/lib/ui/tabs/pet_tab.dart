@@ -3,10 +3,11 @@
 /// the food-load mode and the run's timing/read thresholds — plus the portable `settings.pet`
 /// fallbacks, all saved together in ONE `config.apply`.
 ///
-/// What this tab deliberately does NOT do is capture (PLAN-V3-CALIBRATION ⚑10): a row's rects, the
-/// reference crops, the page-tab points and the queue pet icons come from the live game, so they
-/// arrive through the Calibrate tab or the run and stay READ-ONLY displays here; rows and queue
-/// entries cannot be added or removed until that session exists. The read-only fields ride the save
+/// What this tab deliberately does NOT do is capture the ROWS (PLAN-V3-CALIBRATION ⚑10): a row's
+/// rects, the reference crops, the page-tab points and the queue pet icons come from the live game,
+/// so they arrive through the Calibrate tab or the run and stay READ-ONLY displays here; ROWS still
+/// cannot be added or removed until that session exists. The QUEUE is different: it can be added to
+/// by icon capture and edited/removed here (increment 2). The read-only fields ride the save
 /// verbatim — a list-typed config field replaces wholesale (PROTOCOL §7), so a row's marks, crops and
 /// a queue entry's icon are echoed back exactly and a setup edit can never drop them.
 ///
@@ -17,6 +18,14 @@
 /// `pet.set_boarding` (never the draft, never `config.apply`) and renders the MIRROR the core's
 /// `config.changed` updates; while the rows draft is dirty the tick is disabled, because an A1 write
 /// beside an unsaved draft would leave the two disagreeing.
+///
+/// Icons are CAPTURED, not drawn: "Capture pet icon" / "Capture food icon" ask the core for ONE bag
+/// cell crop (`pet.capture_icon`), so the shell hides itself for the shot and shows again in a
+/// `finally` — the same hide → one frame → command → show flow as the Calibrate tab's capture, and
+/// the core neither clicks the ITEM tab nor moves the cursor: the player puts the page up. The
+/// returned PNG goes into the DRAFT (a queue entry, or `pet.food_icon_png`) with a preview; nothing
+/// is applied until the tab's one Save, and a refusal leaves the draft untouched and renders the
+/// core's line verbatim.
 library;
 
 import 'dart:async';
@@ -25,7 +34,9 @@ import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../../app/pet_preflight.dart';
+import '../../protocol/json.dart';
 import '../theme.dart';
+import 'calibration_widgets.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
 
@@ -38,8 +49,11 @@ const Set<String> _portablePetKeys = {
 
 /// The machine setup fields this tab owns in the top-level `pet` block. The calibration/session
 /// fields (`menu_button`, `feed_icon`, `close_button`, `page_tabs`, `bag_grid`, `bag_slot`, the
-/// `*_png` crops, `boarding_running`, `boarding_window_may_be_open`, `max_button`) have their own
-/// writers (Calibrate / the run) and are displayed, never sent.
+/// `*_png` crops except the food icon, `boarding_running`, `boarding_window_may_be_open`,
+/// `max_button`) have their own writers (Calibrate / the run) and are displayed, never sent.
+///
+/// `food_icon_png` IS sent: "Capture food icon" stores the core's crop in the draft and the tab's one
+/// Save writes it (PLAN-V3-PET-SESSION §3: capture is a config edit, the A1 writer never carries it).
 const Set<String> _machinePetKeys = {
   'slots',
   'queue',
@@ -51,6 +65,7 @@ const Set<String> _machinePetKeys = {
   'wait_after_empty_minutes',
   'feeder_count_left_fraction',
   'feeder_count_min_score',
+  'food_icon_png',
 };
 
 /// The two accepted `food_load_mode` values (`seal-domain`'s `food_load::ALL`). `right_click` lets
@@ -67,9 +82,17 @@ const int _bagSlots = _bagColumns * _bagColumns;
 const int _bagPages = 3;
 
 class PetTab extends StatefulWidget {
-  const PetTab({super.key, required this.model});
+  const PetTab({
+    super.key,
+    required this.model,
+    this.host = const MethodChannelHostActions(),
+  });
 
   final ShellModel model;
+
+  /// The runner host's window seam; tests inject a fake, production uses seal/host. The icon capture
+  /// hides the shell and shows it again through it (the Calibrate capture flow's seam).
+  final HostActions host;
 
   @override
   State<PetTab> createState() => _PetTabState();
@@ -134,17 +157,54 @@ class _PetTabState extends State<PetTab>
   /// write + `config.changed`), not draft state, so the tab must rebuild when the mirror does.
   int? _seenConfigRev;
 
+  /// The Add-a-pet-by-icon form: view state, not config until a capture appends a queue entry.
+  final TextEditingController _addLabel = TextEditingController();
+  final TextEditingController _addSpecies = TextEditingController();
+  int _addPage = 0;
+  int? _addCell;
+
+  /// The food cell whose icon "Capture food icon" crops: the most recently MARKED food cell (v2's
+  /// "click the food, then press this"), as `[page0, cell0]`. View state; null when none is marked.
+  List<int>? _foodIconCell;
+
+  /// One icon capture at a time — the window is hidden and the game must be in front, so a second
+  /// request cannot start while one is in flight.
+  bool _capturing = false;
+
+  /// The last capture answers, kept for the previews/results (the DRAFT carries the stored icon).
+  CoreActionResult<JsonMap>? _queueCapture;
+  CoreActionResult<JsonMap>? _foodCapture;
+  String? _queueCaptureNote;
+  String? _foodCaptureNote;
+
   @override
   void initState() {
     super.initState();
     _seenConfigRev = model.config.rev;
     model.config.addListener(_onMirrorChanged);
+    // The add form starts from the last line already on the queue (v2's seed rule: the first capture
+    // after a restart must not write an entry with no line because a picker reset to "none").
+    for (final entry in _queue().reversed) {
+      final species = asString(entry['species']);
+      if (species != null && species.isNotEmpty) {
+        _addSpecies.text = species;
+        break;
+      }
+    }
+    // The food-icon source starts at the last marked cell, so a restored config can be re-captured
+    // without re-clicking the grid (the mark itself is the selection).
+    final marked = _foodSlots();
+    if (marked.isNotEmpty) {
+      _foodIconCell = marked.last;
+    }
     unawaited(_loadPreflight());
   }
 
   @override
   void dispose() {
     model.config.removeListener(_onMirrorChanged);
+    _addLabel.dispose();
+    _addSpecies.dispose();
     _group.dispose();
     super.dispose();
   }
@@ -312,6 +372,16 @@ class _PetTabState extends State<PetTab>
     });
   });
 
+  void _setQueueField(int index, String field, Object? value) => setState(() {
+    _machineDraft.edit((block) {
+      final queue = asJsonList(block['queue']);
+      if (index < 0 || index >= queue.length) {
+        return;
+      }
+      asJsonMap(queue[index])[field] = value;
+    });
+  });
+
   void _toggleFoodCell(int cell) {
     final slots = _foodSlots();
     final existing = slots.indexWhere(
@@ -319,8 +389,15 @@ class _PetTabState extends State<PetTab>
     );
     if (existing >= 0) {
       slots.removeAt(existing);
+      if (_foodIconCell != null &&
+          _foodIconCell![0] == _foodPage &&
+          _foodIconCell![1] == cell) {
+        _foodIconCell = null;
+      }
     } else {
       slots.add([_foodPage, cell]);
+      // v2's rule: "Capture food icon" takes the cell the player just marked.
+      _foodIconCell = [_foodPage, cell];
     }
     slots.sort((left, right) {
       final byPage = left[0].compareTo(right[0]);
@@ -356,6 +433,168 @@ class _PetTabState extends State<PetTab>
       return;
     }
     _setMachine('return_slot', [page - 1, cell]);
+  }
+
+  // ── icon captures (queue / food) ──────────────────────────────────────────────────────────
+
+  void _setAddPage(int page) => setState(() => _addPage = page);
+
+  void _setAddCell(int cell) => setState(() => _addCell = cell);
+
+  String _addSourceText() {
+    final cell = _addCell;
+    if (cell == null) {
+      return 'No source cell picked yet — click the cell holding the pet.';
+    }
+    final row = cell ~/ _bagColumns + 1;
+    final column = cell % _bagColumns + 1;
+    return 'Source: ITEM${_addPage + 1} · cell ${cell + 1} (row $row, column $column)';
+  }
+
+  String _foodIconSourceText() {
+    final source = _foodIconCell;
+    if (source == null) {
+      return 'Mark a food cell first — the icon is cropped from that cell.';
+    }
+    final row = source[1] ~/ _bagColumns + 1;
+    final column = source[1] % _bagColumns + 1;
+    return 'Food icon source: ITEM${source[0] + 1} · cell ${source[1] + 1} '
+        '(row $row, column $column)';
+  }
+
+  /// One frame for the compositor to apply the hide — but never longer than ~50 ms, because a hidden
+  /// window may stop producing frames on some drivers and the capture must not hang on the lifecycle
+  /// wait. This is the Calibrate capture flow's helper (private there), reproduced so both captures
+  /// share the same behaviour; the flow itself is the same hide → one frame → command → show.
+  Future<void> _waitOneFrame() async {
+    final waited = Completer<void>();
+    final fallback = Timer(const Duration(milliseconds: 50), () {
+      if (!waited.isCompleted) {
+        waited.complete();
+      }
+    });
+    unawaited(
+      WidgetsBinding.instance.endOfFrame.whenComplete(() {
+        fallback.cancel();
+        if (!waited.isCompleted) {
+          waited.complete();
+        }
+      }),
+    );
+    await waited.future;
+  }
+
+  /// hide → one frame → `pet.capture_icon` → show, with the show UNCONDITIONAL — a refused capture
+  /// (or a thrown error) must never leave the shell hidden. A missing host channel is a NOTE, not a
+  /// failure: the request is still sent and its refusal rendered verbatim. The core validates the
+  /// bag grid and the page's tab mark but does NOT click the page, so the caller's instruction is
+  /// "put the page up".
+  Future<({CoreActionResult<JsonMap> result, String? hostNote})> _captureIcon({
+    required String kind,
+    required int page,
+    required int cell,
+  }) async {
+    var hostNote = '';
+    CoreActionResult<JsonMap>? result;
+    try {
+      try {
+        await widget.host.hideWindow();
+      } catch (_) {
+        hostNote = 'the shell could not hide itself — the game has to be in front for a capture';
+      }
+      await _waitOneFrame();
+      result = await model.capturePetIcon(kind: kind, page: page, cell: cell);
+    } finally {
+      try {
+        await widget.host.showWindow();
+      } catch (_) {
+        hostNote = hostNote.isEmpty
+            ? 'the shell could not be shown again — no host channel'
+            : hostNote;
+      }
+    }
+    return (result: result, hostNote: hostNote.isEmpty ? null : hostNote);
+  }
+
+  /// Captures the selected bag cell's icon and appends a queue entry to the DRAFT — nothing is
+  /// applied until the tab's Save. The entry carries the Add form's label/species, the core's rect
+  /// and the captured PNG; a refusal changes nothing and renders the core's line verbatim.
+  Future<void> _captureQueueIcon() async {
+    final cell = _addCell;
+    if (_capturing || cell == null || _bagGridRect() == null) {
+      return;
+    }
+    setState(() {
+      _capturing = true;
+      _queueCapture = null;
+      _queueCaptureNote = null;
+    });
+    final outcome = await _captureIcon(
+      kind: 'queue',
+      page: _addPage + 1,
+      cell: cell + 1,
+    );
+    if (!mounted) {
+      return;
+    }
+    final result = outcome.result;
+    setState(() {
+      _capturing = false;
+      _queueCapture = result;
+      _queueCaptureNote = outcome.hostNote;
+    });
+    final value = result.value;
+    if (!result.ok || value == null) {
+      return;
+    }
+    final label = _addLabel.text.trim();
+    final species = _addSpecies.text.trim();
+    setState(() {
+      _machineDraft.edit((block) {
+        final queue = asJsonList(block['queue']);
+        queue.add({
+          'label': label.isEmpty ? null : label,
+          'species': species.isEmpty ? null : species,
+          'rect': asJsonList(value['rect']),
+          'png': asString(value['png_base64']),
+        });
+      });
+      _addLabel.clear();
+    });
+  }
+
+  /// Captures the selected FOOD cell's icon into the draft's `food_icon_png` — the reference the
+  /// food scan matches with. The draft is the only writer until Save; a refusal changes nothing.
+  Future<void> _captureFoodIcon() async {
+    final source = _foodIconCell;
+    if (_capturing || source == null || _bagGridRect() == null) {
+      return;
+    }
+    setState(() {
+      _capturing = true;
+      _foodCapture = null;
+      _foodCaptureNote = null;
+    });
+    final outcome = await _captureIcon(
+      kind: 'food',
+      page: source[0] + 1,
+      cell: source[1] + 1,
+    );
+    if (!mounted) {
+      return;
+    }
+    final result = outcome.result;
+    setState(() {
+      _capturing = false;
+      _foodCapture = result;
+      _foodCaptureNote = outcome.hostNote;
+    });
+    final value = result.value;
+    final png = value == null ? null : asString(value['png_base64']);
+    if (!result.ok || png == null || png.isEmpty) {
+      return;
+    }
+    _setMachine('food_icon_png', png);
   }
 
   // ── session readiness: the checklists + the boarding ticks ───────────────────────────────
@@ -661,32 +900,22 @@ class _PetTabState extends State<PetTab>
                   style: theme.textTheme.bodySmall,
                 ),
               for (var index = 0; index < queue.length; index++)
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _queueText(queue[index]),
-                        key: ValueKey('pet-queue-entry-$index'),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    OutlinedButton(
-                      key: ValueKey('pet-queue-remove-$index'),
-                      onPressed: () => _removeQueued(index),
-                      child: const Text('Remove'),
-                    ),
-                  ],
-                ),
+                _queueEntryEditor(theme, index, queue[index]),
               const SizedBox(height: ShellSpace.xs),
               Text(
-                'Removing an entry saves the shortened queue. Adding one needs the pet '
-                'capture session (OPEN) — it crops the pet icon from the live bag.',
+                'The icon is the pet\'s identity — the run matches on it, and the label is '
+                'for the log and this list only. Edits and a captured entry save with the '
+                'tab\'s Save.',
                 key: const ValueKey('pet-queue-caption'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
+          ),
+          EditorSection(
+            title: 'Add a pet by icon',
+            children: _addPetEditor(theme),
           ),
           EditorSection(
             title: 'Bag food cells',
@@ -858,6 +1087,304 @@ class _PetTabState extends State<PetTab>
     );
   }
 
+  /// One queued pet: the captured icon (the identity the run matches), an editable label/species
+  /// and Remove. Edits go to the machine draft and ride the tab's one Save — v2 auto-saved each edit;
+  /// v3 keeps everything in the draft until Save, so a half-typed label never reaches the file.
+  Widget _queueEntryEditor(
+    ThemeData theme,
+    int index,
+    Map<String, dynamic> entry,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: ShellSpace.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _iconPreview(
+            theme,
+            asString(entry['png']),
+            key: ValueKey('pet-queue-icon-$index'),
+          ),
+          const SizedBox(width: ShellSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DraftFieldSlot(
+                  slotKey: 'pet-queue-label-$index',
+                  syncToken: _machineDraft.seedRevision,
+                  child: DraftTextField(
+                    key: ValueKey('pet-queue-label-$index'),
+                    label: 'Label ${index + 1} (log and this list only)',
+                    value: asString(entry['label']) ?? '',
+                    width: 340,
+                    onChanged: (value) => _setQueueField(
+                      index,
+                      'label',
+                      value.trim().isEmpty ? null : value,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: ShellSpace.xs),
+                DraftFieldSlot(
+                  slotKey: 'pet-queue-species-$index',
+                  syncToken: _machineDraft.seedRevision,
+                  child: DraftTextField(
+                    key: ValueKey('pet-queue-species-$index'),
+                    label:
+                        'Species ${index + 1} (feeding-table line, optional)',
+                    helper: 'the line turns the panel growth into minutes; leave empty for no estimate',
+                    value: asString(entry['species']) ?? '',
+                    width: 340,
+                    onChanged: (value) => _setQueueField(
+                      index,
+                      'species',
+                      value.trim().isEmpty ? null : value,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton(
+            key: ValueKey('pet-queue-remove-$index'),
+            onPressed: () => _removeQueued(index),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A base64 PNG preview (a captured icon). A bad payload renders a line, never a crash — the shared
+  /// `decodePngBase64` is the same reader the Calibrate capture uses.
+  Widget _iconPreview(
+    ThemeData theme,
+    String? pngBase64, {
+    Key? key,
+    double size = 48,
+  }) {
+    final bytes = pngBase64 == null || pngBase64.isEmpty
+        ? null
+        : decodePngBase64(pngBase64);
+    return Container(
+      key: key,
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: bytes == null
+          ? Center(
+              child: Text(
+                'no icon',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          : Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) => Center(
+                child: Text(
+                  'no icon',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  /// The one-line result under a capture button: the core's refusal VERBATIM, or what the capture
+  /// added/stored. Nothing is applied either way — the draft carries it until Save.
+  String? _captureText(
+    CoreActionResult<JsonMap>? capture, {
+    required String verb,
+  }) {
+    if (capture == null) {
+      return null;
+    }
+    if (!capture.ok) {
+      return capture.errorLine;
+    }
+    final value = capture.value;
+    if (value == null) {
+      return null;
+    }
+    final page = asNumber(value['page'])?.round() ?? 0;
+    final cell = asNumber(value['cell'])?.round() ?? 0;
+    final rect = asJsonList(value['rect']);
+    final size = rect.length == 4 ? '${rect[2]}×${rect[3]} px' : 'the cell box';
+    return 'Captured $size from ITEM$page · cell $cell — $verb';
+  }
+
+  /// v2's queue-add: put the page up, pick the cell holding the pet, capture the icon. The page is
+  /// NOT clicked by the core, so the player switches to it (the hint says so) and the capture is a
+  /// single foreground-gated command; a wrong page produces a plausible wrong crop, which is why the
+  /// captured PNG + echoed page/cell/rect are always shown and nothing is applied before Save.
+  List<Widget> _addPetEditor(ThemeData theme) {
+    final capture = _queueCapture;
+    if (_bagGridRect() == null) {
+      return [
+        Text(
+          "The boarding bag grid isn't calibrated — save the Boarding bag grid and "
+          'Boarding bag slot on the Calibrate tab. The crop is taken at that grid\'s pitch.',
+          key: const ValueKey('pet-add-not-calibrated'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ];
+    }
+    return [
+      Text(
+        'Put the bag page holding the pet on screen: the shell hides for the shot, so the game has '
+        'to be in front, and the core does NOT click the ITEM tab — the page you pick must already '
+        'be up. Check the preview and the echoed page/cell/rect before Save: a wrong page gives a '
+        'plausible wrong crop.',
+        key: const ValueKey('pet-add-hint'),
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: ShellSpace.sm),
+      Wrap(
+        spacing: ShellSpace.sm,
+        runSpacing: ShellSpace.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 260,
+            child: TextField(
+              key: const ValueKey('pet-add-label'),
+              controller: _addLabel,
+              style: theme.textTheme.bodyMedium,
+              decoration: const InputDecoration(
+                labelText: 'Label (log and this list only)',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 300,
+            child: TextField(
+              key: const ValueKey('pet-add-species'),
+              controller: _addSpecies,
+              style: theme.textTheme.bodyMedium,
+              decoration: const InputDecoration(
+                labelText: 'Species (feeding-table line, optional)',
+                helperText: 'turns the panel growth into minutes',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: ShellSpace.xs),
+      Wrap(
+        spacing: ShellSpace.sm,
+        children: [
+          for (var page = 0; page < _bagPages; page++)
+            ChoiceChip(
+              key: ValueKey('pet-add-page-$page'),
+              label: Text('ITEM${page + 1}'),
+              selected: _addPage == page,
+              onSelected: (_) => _setAddPage(page),
+            ),
+        ],
+      ),
+      const SizedBox(height: ShellSpace.xs),
+      Text(
+        _addSourceText(),
+        key: const ValueKey('pet-add-source'),
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: ShellSpace.xs),
+      for (var row = 0; row < _bagColumns; row++)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var column = 0; column < _bagColumns; column++)
+              _sourceCell(theme, row * _bagColumns + column),
+          ],
+        ),
+      const SizedBox(height: ShellSpace.xs),
+      Wrap(
+        spacing: ShellSpace.sm,
+        runSpacing: ShellSpace.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton(
+            key: const ValueKey('pet-add-capture'),
+            onPressed: _capturing || _addCell == null
+                ? null
+                : _captureQueueIcon,
+            child: Text(_capturing ? 'Capturing…' : 'Capture pet icon'),
+          ),
+          _iconPreview(
+            theme,
+            capture?.value == null
+                ? null
+                : asString(capture?.value?['png_base64']),
+            key: const ValueKey('pet-add-preview'),
+          ),
+        ],
+      ),
+      if (capture != null)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            _captureText(
+                  capture,
+                  verb: 'in the draft queue; Save writes it.',
+                ) ??
+                '',
+            key: const ValueKey('pet-add-result'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: capture.ok ? null : theme.colorScheme.error,
+            ),
+          ),
+        ),
+      if (_queueCaptureNote != null)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            _queueCaptureNote!,
+            key: const ValueKey('pet-add-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+    ];
+  }
+
+  /// One selectable bag cell of the Add form's source grid (single selection; the page comes from
+  /// the chips above it).
+  Widget _sourceCell(ThemeData theme, int cell) {
+    final selected = _addCell == cell;
+    return InkWell(
+      key: ValueKey('pet-add-cell-$_addPage-$cell'),
+      onTap: () => _setAddCell(cell),
+      child: Container(
+        width: 20,
+        height: 20,
+        margin: const EdgeInsets.all(1),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.surfaceContainerHighest,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
+    );
+  }
+
   /// One row: the two editable fields and the marks/crops the capture session owns.
   Widget _rowEditor(int index, Map<String, dynamic> row) {
     final enabled = asBool(row['enabled']) ?? true;
@@ -981,6 +1508,58 @@ class _PetTabState extends State<PetTab>
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
+      const SizedBox(height: ShellSpace.sm),
+      Text(
+        _foodIconSourceText(),
+        key: const ValueKey('pet-food-icon-source'),
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: ShellSpace.xs),
+      Wrap(
+        spacing: ShellSpace.sm,
+        runSpacing: ShellSpace.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton(
+            key: const ValueKey('pet-food-icon-capture'),
+            onPressed: _capturing || _foodIconCell == null
+                ? null
+                : _captureFoodIcon,
+            child: Text(_capturing ? 'Capturing…' : 'Capture food icon'),
+          ),
+          _iconPreview(
+            theme,
+            asString(_machineDraft.value['food_icon_png']),
+            key: const ValueKey('pet-food-icon-preview'),
+          ),
+        ],
+      ),
+      if (_foodCapture != null)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            _captureText(
+                  _foodCapture,
+                  verb: 'stored in the draft; Save writes it.',
+                ) ??
+                '',
+            key: const ValueKey('pet-food-icon-result'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: _foodCapture!.ok ? null : theme.colorScheme.error,
+            ),
+          ),
+        ),
+      if (_foodCaptureNote != null)
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            _foodCaptureNote!,
+            key: const ValueKey('pet-food-icon-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
     ];
   }
 
@@ -1000,16 +1579,6 @@ class _PetTabState extends State<PetTab>
         ),
       ),
     );
-  }
-
-  String _queueText(Map<String, dynamic> entry) {
-    final label = asString(entry['label']);
-    final species = asString(entry['species']);
-    final parts = [
-      label == null || label.isEmpty ? '(no label)' : label,
-      species == null || species.isEmpty ? 'species not set' : species,
-    ];
-    return parts.join(' · ');
   }
 }
 

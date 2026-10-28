@@ -105,6 +105,23 @@ Map<String, dynamic> _preflightAnswer({
       ['This tab is ready. 2 row(s), reloading every 205 min / 410 min.'],
 };
 
+/// A real 1×1 PNG (the fixture-style payload): the fake capture answers with it so the previews
+/// decode. The core's real crop is the pitch box; a fake does not need the two to correspond.
+const String _capturedPng =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/// The fake core's answer to `pet.capture_icon`: echo the requested kind/page/cell and a crop box.
+Map<String, dynamic> _captureAnswer(Map<String, dynamic> request) {
+  final args = request['args'] as Map<String, dynamic>;
+  return {
+    'kind': args['kind'],
+    'page': args['page'],
+    'cell': args['cell'],
+    'rect': [10, 40, 10, 10],
+    'png_base64': _capturedPng,
+  };
+}
+
 /// The fake core's answers for the commands the Pet tab sends. The tab's RULES are the core's; a test
 /// only ever needs the shape (and can override `pet.preflight` for a checklist case).
 Map<String, dynamic> _petReply(Map<String, dynamic> request) {
@@ -113,6 +130,8 @@ Map<String, dynamic> _petReply(Map<String, dynamic> request) {
       return _preflightAnswer();
     case 'pet.set_boarding':
       return {'rev': 9, 'block': <String, dynamic>{}};
+    case 'pet.capture_icon':
+      return _captureAnswer(request);
     case 'config.validate':
       return {'errors': <String>[], 'warnings': <String>[]};
     case 'config.apply':
@@ -157,12 +176,13 @@ bool? _tickValue(WidgetTester tester, int row) => tester
 Future<AppHarness> _pumpPet(
   WidgetTester tester, {
   Map<String, dynamic>? pet,
+  FakeHost? host,
   Map<String, dynamic> Function(Map<String, dynamic> request)? answer,
 }) async {
   tester.view.physicalSize = const ui.Size(1600, 3400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  final harness = AppHarness();
+  final harness = AppHarness(host: host);
   addTearDown(harness.model.dispose);
   await tester.pumpWidget(
     const MaterialApp(
@@ -200,7 +220,9 @@ Future<AppHarness> _pumpPet(
   await tester.pumpWidget(
     MaterialApp(
       theme: buildShellTheme(),
-      home: Scaffold(body: PetTab(model: harness.model)),
+      home: Scaffold(
+        body: PetTab(model: harness.model, host: harness.host),
+      ),
     ),
   );
   // One frame for the first build, one for the decoded `pet.preflight` answer's setState.
@@ -359,7 +381,7 @@ void main() {
     tester,
   ) async {
     final harness = await _pumpPet(tester, pet: _machinePet());
-    expect(find.byKey(const ValueKey('pet-queue-entry-1')), findsOneWidget);
+    expect(_field('pet-queue-label-1'), findsOneWidget);
     expect(find.byKey(const ValueKey('pet-queue-caption')), findsOneWidget);
 
     await _tap(tester, 'pet-queue-remove-0');
@@ -742,6 +764,253 @@ void main() {
       find.byKey(const ValueKey('pet-preflight-stale')),
       findsNothing,
       reason: 'the Save left the draft clean, so the stale caption is gone',
+    );
+  });
+
+  testWidgets(
+    'capturing a pet icon hides, captures and shows in order, then drafts the entry',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.capture_icon') {
+            // Records WHEN the command was sent, between the hide and the show.
+            host.lifecycle.add('capture-sent');
+            return _captureAnswer(request);
+          }
+          return _petReply(request);
+        },
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('pet-add-label')),
+        'new pet',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('pet-add-species')),
+        'Knight',
+      );
+      await _tap(tester, 'pet-add-page-1');
+      await _tap(tester, 'pet-add-cell-1-34');
+      expect(
+        _text(tester, 'pet-add-source'),
+        'Source: ITEM2 · cell 35 (row 5, column 3)',
+      );
+      await _tap(tester, 'pet-add-capture');
+      await _flush(tester);
+
+      expect(host.lifecycle, [
+        'hide',
+        'capture-sent',
+        'show',
+      ], reason: 'the shell hides for the shot and is shown again afterwards');
+      expect(harness.lastSentWithCmd('pet.capture_icon')!['args'], {
+        'kind': 'queue',
+        'page': 2,
+        'cell': 35,
+      }, reason: 'page and cell are 1-BASED on the wire');
+      expect(
+        harness.lastSentWithCmd('config.apply'),
+        isNull,
+        reason: 'a capture never applies config — only Save writes',
+      );
+      expect(find.byKey(const ValueKey('pet-add-preview')), findsOneWidget);
+      expect(
+        _text(tester, 'pet-add-result'),
+        contains('Captured 10×10 px from ITEM2 · cell 35'),
+      );
+
+      // DRAFTED: the entry is in the queue list (removable like the others) and the one Save writes
+      // the captured png/rect with the typed label/species.
+      expect(_field('pet-queue-label-2'), findsOneWidget);
+      final sections = await _save(tester, harness);
+      final queue = (sections['pet'] as Map<String, dynamic>)['queue'] as List;
+      expect(queue, hasLength(3));
+      expect(queue[2]['label'], 'new pet');
+      expect(queue[2]['species'], 'Knight');
+      expect(queue[2]['rect'], [10, 40, 10, 10]);
+      expect(queue[2]['png'], _capturedPng);
+
+      // Removable before Save, like any other entry.
+      await _tap(tester, 'pet-queue-remove-2');
+      expect(find.byKey(const ValueKey('pet-queue-label-2')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a refused capture shows the shell again and leaves the draft alone',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.capture_icon') {
+            host.lifecycle.add('capture-sent');
+            return {
+              'error': {
+                'code': 'tool_busy',
+                'message': 'Magic Tuner is running — stop it before capturing',
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-add-cell-0-7');
+      await _tap(tester, 'pet-add-capture');
+      await _flush(tester);
+
+      expect(host.lifecycle, [
+        'hide',
+        'capture-sent',
+        'show',
+      ], reason: 'a refusal must never leave the shell hidden');
+      expect(
+        _text(tester, 'pet-add-result'),
+        'Magic Tuner is running — stop it before capturing',
+        reason: 'the core refusal is rendered verbatim',
+      );
+      expect(
+        find.byKey(const ValueKey('pet-queue-label-2')),
+        findsNothing,
+        reason: 'a refused capture adds nothing to the queue draft',
+      );
+      expect(harness.lastSentWithCmd('config.apply'), isNull);
+    },
+  );
+
+  testWidgets(
+    'a core bag_grid refusal is rendered verbatim and shows the shell again',
+    (tester) async {
+      final host = FakeHost();
+      await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.capture_icon') {
+            host.lifecycle.add('capture-sent');
+            return {
+              'error': {
+                'code': 'bad_request',
+                'message':
+                    "The boarding bag grid isn't calibrated — Calibrate Pet.",
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-add-cell-0-7');
+      await _tap(tester, 'pet-add-capture');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'capture-sent', 'show']);
+      expect(
+        find.text("The boarding bag grid isn't calibrated — Calibrate Pet."),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'capturing a food icon hides, captures and shows, then drafts food_icon_png',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.capture_icon') {
+            host.lifecycle.add('capture-sent');
+            return _captureAnswer(request);
+          }
+          return _petReply(request);
+        },
+      );
+
+      // The source starts at the last restored food mark: food_slots [[1,2],[1,3]] are 0-based, so
+      // page 2 (ITEM2) and cell 4 — and the payload below is 1-based.
+      expect(_text(tester, 'pet-food-icon-source'), contains('ITEM2 · cell 4'));
+      await _tap(tester, 'pet-food-icon-capture');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'capture-sent', 'show']);
+      expect(harness.lastSentWithCmd('pet.capture_icon')!['args'], {
+        'kind': 'food',
+        'page': 2,
+        'cell': 4,
+      });
+      expect(
+        _text(tester, 'pet-food-icon-result'),
+        contains('from ITEM2 · cell 4'),
+      );
+
+      final sections = await _save(tester, harness);
+      expect(
+        (sections['pet'] as Map<String, dynamic>)['food_icon_png'],
+        _capturedPng,
+        reason: 'the captured food icon is the draft field the Save writes',
+      );
+    },
+  );
+
+  testWidgets('capture buttons are absent without a calibrated bag grid', (
+    tester,
+  ) async {
+    final machine = Map<String, dynamic>.of(_machinePet())..remove('bag_grid');
+    final host = FakeHost();
+    final harness = await _pumpPet(tester, pet: machine, host: host);
+
+    expect(
+      find.byKey(const ValueKey('pet-add-not-calibrated')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('pet-add-capture')), findsNothing);
+    expect(find.byKey(const ValueKey('pet-food-icon-capture')), findsNothing);
+    expect(harness.lastSentWithCmd('pet.capture_icon'), isNull);
+    expect(host.hideCalls, 0, reason: 'no capture means no hide/show');
+  });
+
+  testWidgets('Capture food icon needs a marked food cell', (tester) async {
+    final machine = Map<String, dynamic>.of(_machinePet())
+      ..remove('food_slots');
+    await _pumpPet(tester, pet: machine);
+
+    expect(
+      _text(tester, 'pet-food-icon-source'),
+      'Mark a food cell first — the icon is cropped from that cell.',
+    );
+    final button = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('pet-food-icon-capture')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('queue label/species edits ride the one config.apply', (
+    tester,
+  ) async {
+    final harness = await _pumpPet(tester, pet: _machinePet());
+    await tester.enterText(_field('pet-queue-label-0'), 'renamed');
+    await tester.enterText(_field('pet-queue-species-0'), 'Mage');
+    await tester.pump();
+
+    final sections = await _save(tester, harness);
+    final queue = (sections['pet'] as Map<String, dynamic>)['queue'] as List;
+    expect(queue[0]['label'], 'renamed');
+    expect(queue[0]['species'], 'Mage');
+    expect(
+      harness.sentMessages.where((message) => message['cmd'] == 'config.apply'),
+      hasLength(1),
+      reason: 'the tab keeps ONE Save; edits do not apply on their own',
     );
   });
 }

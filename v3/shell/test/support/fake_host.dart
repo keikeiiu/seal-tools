@@ -41,6 +41,10 @@ class FakeHost implements HostActions {
   int hideCalls = 0;
   int showCalls = 0;
 
+  /// The ordered hide/show calls, so a capture test can pin hide → command → show (and that the
+  /// show happens even when the command is refused).
+  final List<String> lifecycle = <String>[];
+
   /// When true `setAlwaysOnTop` throws, exercising the host-failure path.
   bool failAlwaysOnTop;
 
@@ -83,12 +87,14 @@ class FakeHost implements HostActions {
   @override
   Future<void> hideWindow() async {
     hideCalls++;
+    lifecycle.add('hide');
     visible = false;
   }
 
   @override
   Future<void> showWindow() async {
     showCalls++;
+    lifecycle.add('show');
     visible = true;
   }
 

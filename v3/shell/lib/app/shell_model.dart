@@ -512,6 +512,23 @@ class ShellModel extends ChangeNotifier {
     args: {'row': row, 'running': running},
   );
 
+  /// `pet.capture_icon {"kind":"queue"|"food","page":<1-based>,"cell":<1-based>}` — CAPTURE-ONLY:
+  /// the core validates the input lease, the calibrated `pet.bag_grid` and the requested page's
+  /// 2-point tab mark, then crops ONE bag cell at the run's own pitch ([PROTOCOL.md] §4). It neither
+  /// clicks nor moves the cursor, so the requested page must already be up; the SHELL hides itself
+  /// for the shot and shows again in a `finally` (the Pet tab reuses the Calibrate capture pattern).
+  /// The answer is `{kind,page,cell,rect:[x,y,w,h],png_base64}`; refusals are the core's lines,
+  /// rendered verbatim, and no config write happens here — only the tab's Save writes.
+  Future<CoreActionResult<JsonMap>> capturePetIcon({
+    required String kind,
+    required int page,
+    required int cell,
+  }) => _coreAction(
+    'pet.capture_icon',
+    (result) => result,
+    args: {'kind': kind, 'page': page, 'cell': cell},
+  );
+
   /// `logs.cleanup_captures` — the Tuner tab's "Clean up capture images" housekeeping
   /// ([PROTOCOL.md] §2/§4). The result carries the deleted count and the ROOT-RELATIVE directory; the
   /// core logs per-file failures and still answers ok, so a refusal here is a real protocol problem
