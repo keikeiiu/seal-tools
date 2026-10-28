@@ -47,6 +47,11 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
   tool status message, and its final reason: `finished — …`, `stopped — …`, `failed — …`). Text lines
   use `yyyy-MM-dd HH:mm:ss `. A failed log write is swallowed and never fails a command or a run;
   `shutdown` flushes the files.
+  The one exception to "logs are not commands": `logs.cleanup_captures` (§4) exists so the Tuner tab
+  can be told to delete its own capture images. It is explicit, Tuner-only housekeeping that opens no
+  game/board, deletes only direct regular `*.png` files under `logs/captures` (no recursion, never
+  follows links or reparse points), treats a missing directory as success with `deleted: 0`, and logs
+  per-file failures instead of returning them.
 ## 2. Envelope
 
 Every message is one JSON object. `v` is always present and is the protocol version (`1`).
@@ -126,6 +131,7 @@ edits; it never re-serialises the whole file (§7).
 | `tool.start` | `{"tool":"spammer"}`, for `buy` `{"tool":"buy","preset":"大紅","count":3}`, for `sell` `{"tool":"sell","slots":[3,7,12]}` | `{}` |
 | `tool.stop` | `{"tool":"spammer"}` | `{}` |
 | `ocr.scan` | `{"frame_id":"f1","mode":"attributes"}` or `{"region":{...},"mode":"count"}` | `{"lines":[...],"attributes":[[...]],"grade":"G","remaining":null,"capture_path":"logs/captures/..."}` |
+| `logs.cleanup_captures` | `{}` | `{"deleted":N,"dir":"logs/captures"}` — deletes only direct regular `*.png` files under `logs/captures`; a missing directory is `deleted: 0` (success); per-file failures are logged, never returned (§2's one explicit log-housekeeping exception) |
 | `shutdown` | `{}` | `{}` then the process exits |
 
 Notes:
