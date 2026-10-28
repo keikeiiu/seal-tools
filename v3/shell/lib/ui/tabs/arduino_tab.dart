@@ -6,8 +6,9 @@
 /// only action that opens the port — it is the explicit "Query firmware" here, disabled with a
 /// reason while a tool is engaged instead of racing the running loop for the board.
 ///
-/// The core owns the choice rule and its refusal sentence; this file owns the three v2 verdict/advice
-/// lines, so a wrong board reads in the player's words rather than a green light that lies.
+/// The core owns the choice rule and its refusal sentence; this file owns the three v2 verdicts and
+/// only the FALLBACK advice wording — a core-refusal sentence always renders first, so the duplicated
+/// text cannot drift into a different answer than the core's.
 ///
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
@@ -22,6 +23,14 @@ import '../../protocol/protocol.dart';
 import '../theme.dart';
 import '../tool_labels.dart';
 import 'action_result_line.dart';
+
+/// v2's no-board advice, and the FALLBACK only: the core sends the same sentence in
+/// `choice.refusal` for `not_found` (it owns the rule + sentence), so the tab renders the core's
+/// copy first and this text only covers a core that omits it — one source of truth on the wire,
+/// with v2's wording still guaranteed.
+const String _cableAdvice =
+    'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the board '
+    'lights up and never appears as a port.';
 
 class ArduinoTab extends StatefulWidget {
   const ArduinoTab({super.key, required this.model});
@@ -399,10 +408,9 @@ class _ArduinoTabState extends State<ArduinoTab>
       BoardChoiceState.namedMissing =>
         choice.refusal ??
             'arduino.port names a port this machine does not have.',
-      // The cable first, because it is the most common cause and the one the player cannot see.
-      BoardChoiceState.notFound =>
-        'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the '
-            'board lights up and never appears as a port.',
+      // The core's sentence wins when present (it carries v2's cable advice); the fallback keeps
+      // the wording if a core ever omits it.
+      BoardChoiceState.notFound => choice.refusal ?? _cableAdvice,
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

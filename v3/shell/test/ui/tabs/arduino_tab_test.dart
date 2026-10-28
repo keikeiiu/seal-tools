@@ -237,15 +237,18 @@ void main() {
     expect(row, isNot(contains('Start will open this one')));
   });
 
-  testWidgets('no board found renders the charge-only-cable advice', (
-    tester,
-  ) async {
+  testWidgets('a not_found refusal is rendered verbatim', (tester) async {
+    // The core owns the rule AND the sentence (board.rs NOT_FOUND_REFUSAL); the tab must not
+    // substitute its own copy while a refusal is present.
+    const coreRefusal =
+        'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the '
+        'board lights up and never appears as a port. (sent by the core)';
     await _pumpArduino(
       tester,
       answer: (request) => request['cmd'] == 'board.details'
           ? _detailsAnswer(
               state: 'not_found',
-              refusal: 'no board found: the serial port list is empty',
+              refusal: coreRefusal,
               ports: [_port(port: 'COM3')],
             )
           : <String, dynamic>{},
@@ -258,10 +261,50 @@ void main() {
     );
     expect(
       _text(tester, 'arduino-advice'),
-      'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the '
-      'board lights up and never appears as a port.',
+      coreRefusal,
+      reason: 'the core sentence wins over the shell fallback',
     );
     expect(_statusColor(tester), theme.colorScheme.error);
+  });
+
+  testWidgets('not_found without a core refusal falls back to v2 advice', (
+    tester,
+  ) async {
+    await _pumpArduino(
+      tester,
+      answer: (request) => request['cmd'] == 'board.details'
+          ? _detailsAnswer(
+              state: 'not_found',
+              ports: [_port(port: 'COM3')],
+            )
+          : <String, dynamic>{},
+    );
+
+    expect(
+      _text(tester, 'arduino-advice'),
+      'Plug the board in, then press Refresh. A charge-only cable is the usual cause — the '
+      'board lights up and never appears as a port.',
+      reason: 'v2\'s sentence is the fallback only',
+    );
+  });
+
+  testWidgets('an unknown choice state renders the honest no-Arduino verdict', (
+    tester,
+  ) async {
+    // A newer core's additive state decodes to notFound: no throw, and the player sees the
+    // conservative verdict plus the fallback advice rather than a silent blank.
+    await _pumpArduino(
+      tester,
+      answer: (request) => request['cmd'] == 'board.details'
+          ? _detailsAnswer(state: 'some_future_state')
+          : <String, dynamic>{},
+    );
+
+    expect(
+      _text(tester, 'arduino-connection-verdict'),
+      'Start will refuse — no Arduino found',
+    );
+    expect(_text(tester, 'arduino-advice'), contains('charge-only cable'));
   });
 
   testWidgets('no serial ports at all gets the honest line', (tester) async {
