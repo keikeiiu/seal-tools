@@ -130,6 +130,7 @@ edits; it never re-serialises the whole file (§7).
 | `pointer.click` | `{"x":1213,"y":1077}` | `{}` — place, then a bare left click; never clicks after a failed placement |
 | `ui.window` | `{"left":100,"top":100,"width":900,"height":700,"pinned":false}` | `{}` |
 | `pet.preflight` | `{}` | `{"ready":false,"calibration":[{"ok":true,"label":"Pet menu point","detail":"marked"}],"session":[{"ok":true,"label":"return slot","detail":"page 1, cell 6"}],"lines":["no pet icon queued — the tool will use the return slot instead of looking for the pet by icon"]}` — READ-ONLY: no board, window or OCR access; computes the Pet tab's Setup-so-far/Ready-to-run facts and v2's ready lines (ready is true only when no line fires AND calibration is complete); absent marks are facts with `ok:false`, not errors |
+| `pet.capture_icon` | `{"kind":"queue"|"food","page":1,"cell":34}` (page/cell 1-BASED) | `{"kind":"queue","page":1,"cell":34,"rect":[10,40,10,10],"png_base64":"<standard base64 PNG>"}` — CAPTURE-ONLY: validates the input lease, the calibrated `pet.bag_grid` and the page's 2-point tab mark, then one foreground-gated client capture cropped in memory with the run's own BagGrid centre/pitch derivation; never clicks, moves the cursor, opens the board or writes logs. `rect` is client-relative PHYSICAL [x,y,w,h]. Errors: `bad_request` naming `kind`/`page`/`cell`/`bag_grid`, existing `window_not_found`/`game_not_foreground`, `tool_busy` naming the holder (`detail.command`), `internal` for frame/encode bugs. The shell hides itself and puts the requested page up; the core does not click the tab. No OCR/match here (scan increments) |
 | `pet.set_boarding` | `{"row":1,"running":true}` | `{"rev":21,"block":{...merged pet block...}}` — writes exactly `pet.slots[row-1].boarding_running` through the single writer (field-precise, not a whole-block apply), keeps the rest of `pet`/file/foreign blocks, bumps the session revision, emits exactly one `config.changed {block:"pet"}` AFTER the response, and returns the merged block. `row` is 1-based; bad/zero/non-bool `bad_request` naming the field; out-of-range row `bad_request` naming `row`; an I/O failure leaves the file untouched and answers `io` |
 | `tool.start` | `{"tool":"spammer"}`, for `buy` `{"tool":"buy","preset":"大紅","count":3}`, for `sell` `{"tool":"sell","slots":[3,7,12]}` | `{}` |
 | `tool.stop` | `{"tool":"spammer"}` | `{}` |
@@ -217,6 +218,7 @@ Notes:
 `config.reload`, `ui.window`, `window.find`, `window.measure`, `capture`, `board.probe`,
 `board.test`, `board.details`, `pointer.place`/`pointer.click`, `logs.cleanup_captures`,
 `pet.preflight`/`pet.set_boarding`,
+`pet.capture_icon`,
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.
