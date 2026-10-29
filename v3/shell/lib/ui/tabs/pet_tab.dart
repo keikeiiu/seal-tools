@@ -44,6 +44,13 @@ import 'package:flutter/material.dart';
 import '../../app/app.dart';
 import '../../app/pet_preflight.dart';
 import '../../protocol/json.dart';
+import '../components/empty_state.dart';
+import '../components/info_row.dart';
+import '../components/read_only_panel.dart';
+import '../components/shell_prose.dart';
+import '../components/status_banner.dart';
+import '../components/status_chip.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
 import 'calibration_widgets.dart';
 import 'config_tab_scaffold.dart';
@@ -89,6 +96,56 @@ const int _bagSlots = _bagColumns * _bagColumns;
 
 /// The bag's ITEM1–ITEM3 pages; the config stores page indexes 0-based and the UI shows them 1-based.
 const int _bagPages = 3;
+
+/// A number the way the read-only rows print it: no trailing `.0` on whole values.
+String _valueText(num value) => value == value.roundToDouble()
+    ? value.round().toString()
+    : value.toString();
+
+/// A point `[x, y]` the way the read-only panel shows it: `x 3 · y 4`, never a raw array
+/// (PLAN-V3-UI-UX §5 `ReadOnlyPanel`).
+String _pointText(Object? value) {
+  final point = asJsonList(value);
+  if (point.length != 2) {
+    return '—';
+  }
+  final x = asNumber(point[0]);
+  final y = asNumber(point[1]);
+  if (x == null || y == null) {
+    return '—';
+  }
+  return 'x ${_valueText(x)} · y ${_valueText(y)}';
+}
+
+/// A rectangle `[x, y, w, h]` as `x 120 · y 54 · 60×60`; a two-element value is a point.
+String _rectText(Object? value) {
+  final rect = asJsonList(value);
+  if (rect.length != 4) {
+    return _pointText(value);
+  }
+  final x = asNumber(rect[0]);
+  final y = asNumber(rect[1]);
+  final width = asNumber(rect[2]);
+  final height = asNumber(rect[3]);
+  if (x == null || y == null || width == null || height == null) {
+    return '—';
+  }
+  return 'x ${_valueText(x)} · y ${_valueText(y)} · '
+      '${_valueText(width)}×${_valueText(height)}';
+}
+
+/// A list of points (the bag's page-tab points) as `x 10 · y 10 · x 20 · y 10 · …`.
+String _pointsText(Object? value) {
+  final points = asJsonList(value);
+  if (points.isEmpty) {
+    return '—';
+  }
+  return points.map(_pointText).join(' · ');
+}
+
+/// The queue table's icon column and Remove column widths (the demo's compact table row).
+const double _queueIconSize = 32;
+const double _queueRemoveWidth = 88;
 
 class PetTab extends StatefulWidget {
   const PetTab({
@@ -380,9 +437,9 @@ class _PetTabState extends State<PetTab>
     final crop = _hasCrop(row['pet_slot_empty_png'])
         ? 'empty-slot crop saved'
         : 'empty-slot crop not saved';
-    return 'start/end ${readOnlyText(row['toggle_label'])} · '
-        'pet slot ${readOnlyText(row['boarding_pet_slot'])} · '
-        'food strip ${readOnlyText(row['feeder_strip'])} · '
+    return 'start/end ${_rectText(row['toggle_label'])} · '
+        'pet slot ${_rectText(row['boarding_pet_slot'])} · '
+        'food strip ${_rectText(row['feeder_strip'])} · '
         '$crop · boarding ${boarding ? 'running' : 'idle'}';
   }
 
@@ -904,54 +961,112 @@ class _PetTabState extends State<PetTab>
     return '✓';
   }
 
-  /// One checklist list as rendered: the marker, the core's label and its detail. The shell adds no
-  /// wording of its own and infers no rules from labels or counts — `ok` + `detail` are the contract,
-  /// and the core's `lines` are rendered verbatim (untouched) elsewhere.
-  String _checklistText(List<PetChecklistItem> items) {
-    if (items.isEmpty) {
-      return '(no checks)';
-    }
-    return [
-      for (final item in items)
-        '${_checkMarker(item)} ${item.label}'
-            '${item.detail == null || item.detail!.isEmpty ? '' : ' — ${item.detail}'}',
-    ].join('\n');
-  }
-
-  /// The checklists describe the SAVED config, so while ANY part of this tab's draft is dirty they
-  /// are marked stale (a save re-reads them). This is broader than [_rowsDirty]: the portable
-  /// `settings.pet` fields feed the same preflight, not just the machine rows.
-  List<Widget> _preflightSection(ThemeData theme) {
-    final result = _preflight;
-    final stale = _group.isDirty;
-    final value = result?.value;
-    return [
-      Row(
+  /// One checklist item as a row: the passed/failed/informational icon, the core's label and its
+  /// detail. The shell adds no wording and infers no rule from a label or a count — `ok` + `detail`
+  /// are the contract, and the core's own readiness lines are rendered untouched below the lists.
+  Widget _checklistRow(ThemeData theme, String key, PetChecklistItem item) {
+    final (icon, color) = switch (_checkMarker(item)) {
+      '✗' => (Icons.error_outline, theme.colorScheme.error),
+      'ℹ' => (Icons.info_outline, theme.colorScheme.onSurfaceVariant),
+      _ => (Icons.check_circle_outline, theme.shellColors.success),
+    };
+    final detail = item.detail;
+    return Padding(
+      key: ValueKey(key),
+      padding: const EdgeInsets.symmetric(vertical: ShellSpace.xxs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          OutlinedButton(
-            key: const ValueKey('pet-preflight-refresh'),
-            onPressed: _loadingPreflight ? null : _loadPreflight,
-            child: const Text('Refresh checklists'),
-          ),
-          if (value != null) ...[
-            const SizedBox(width: ShellSpace.sm),
-            Expanded(
-              child: Text(
-                value.ready
-                    ? 'Ready to run.'
-                    : 'Not ready yet — see the lines below.',
-                key: const ValueKey('pet-preflight-ready'),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: value.ready ? theme.colorScheme.primary : null,
-                ),
-              ),
+          Icon(icon, size: ShellSize.iconSm, color: color),
+          const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
+          Expanded(
+            child: Wrap(
+              spacing: ShellSpace.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(item.label, style: theme.textTheme.bodyMedium),
+                if (detail != null && detail.isNotEmpty)
+                  Text(
+                    detail,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
-          ],
+          ),
         ],
       ),
+    );
+  }
+
+  /// One of the core's two checklists as a titled group of rows — never one `\n`-joined `Text`
+  /// (PLAN-V3-UI-UX §6 Pet): each item carries its own icon, label and detail.
+  Widget _checklist(
+    ThemeData theme,
+    String title,
+    String groupKey,
+    List<PetChecklistItem> items,
+  ) {
+    return Column(
+      key: ValueKey(groupKey),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: theme.textTheme.labelLarge),
+        if (items.isEmpty)
+          Text('(no checks)', style: theme.textTheme.bodySmall)
+        else
+          for (var index = 0; index < items.length; index++)
+            _checklistRow(theme, '$groupKey-$index', items[index]),
+      ],
+    );
+  }
+
+  /// The readiness state as the page's first block: a [StatusBanner] whose colour IS the core's
+  /// verdict (never an uncoloured sentence), then the core's per-item checklists and its
+  /// ready/refusal lines as individual rows. The lists describe the SAVED config, so while ANY part
+  /// of this tab's draft is dirty they are marked stale (a save re-reads them) — broader than
+  /// [_rowsDirty], because the portable `settings.pet` fields feed the same preflight.
+  Widget _readinessSection(ThemeData theme) {
+    final result = _preflight;
+    final value = result?.value;
+    final stale = _group.isDirty;
+    final refresh = TextButton(
+      key: const ValueKey('pet-preflight-refresh'),
+      onPressed: _loadingPreflight ? null : _loadPreflight,
+      child: const Text('Refresh checklists'),
+    );
+    final Widget banner;
+    if (result == null) {
+      banner = StatusBanner(
+        key: const ValueKey('pet-preflight-pending'),
+        kind: StatusKind.info,
+        title: _loadingPreflight ? 'Reading the pet setup…' : 'Not read yet.',
+        detail: 'The checklists come from the core — read-only, no board and no game access.',
+        action: refresh,
+      );
+    } else if (!result.ok) {
+      banner = StatusBanner(
+        key: const ValueKey('pet-preflight-error'),
+        kind: StatusKind.error,
+        title: 'The core could not check the pet setup.',
+        detail: result.errorLine,
+        action: refresh,
+      );
+    } else {
+      final ready = value?.ready ?? false;
+      banner = StatusBanner(
+        key: const ValueKey('pet-preflight-ready'),
+        kind: ready ? StatusKind.success : StatusKind.warning,
+        title: ready ? 'Ready to run.' : 'Not ready yet — see the lines below.',
+        detail: 'The core mirrors what Start will accept — not an end-to-end run result.',
+        action: refresh,
+      );
+    }
+    final rows = <Widget>[
       if (stale)
         Padding(
-          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          padding: const EdgeInsets.only(top: ShellSpace.sm),
           child: Text(
             'Based on the saved config — Save to refresh',
             key: const ValueKey('pet-preflight-stale'),
@@ -960,49 +1075,136 @@ class _PetTabState extends State<PetTab>
             ),
           ),
         ),
-      if (result == null)
-        Padding(
-          padding: const EdgeInsets.only(top: ShellSpace.xs),
-          child: Text(
-            _loadingPreflight ? 'Reading the pet setup…' : 'Not read yet.',
-            key: const ValueKey('pet-preflight-pending'),
-            style: theme.textTheme.bodySmall,
-          ),
-        )
-      else if (!result.ok)
-        Padding(
-          padding: const EdgeInsets.only(top: ShellSpace.xs),
-          child: Text(
-            result.errorLine ?? 'The core could not check the pet setup.',
-            key: const ValueKey('pet-preflight-error'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.error,
-            ),
-          ),
-        )
-      else if (value != null) ...[
+      if (value != null) ...[
+        const SizedBox(height: ShellSpace.md),
+        _checklist(
+          theme,
+          'Calibration',
+          'pet-preflight-calibration',
+          value.calibration,
+        ),
         const SizedBox(height: ShellSpace.sm),
-        Text('Calibration', style: theme.textTheme.labelLarge),
-        Text(
-          _checklistText(value.calibration),
-          key: const ValueKey('pet-preflight-calibration'),
-          style: theme.textTheme.bodySmall,
+        _checklist(
+          theme,
+          'Setup so far',
+          'pet-preflight-session',
+          value.session,
         ),
-        const SizedBox(height: ShellSpace.xs),
-        Text('Setup so far', style: theme.textTheme.labelLarge),
-        Text(
-          _checklistText(value.session),
-          key: const ValueKey('pet-preflight-session'),
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: ShellSpace.xs),
-        Text(
-          value.lines.isEmpty ? '' : value.lines.join('\n'),
-          key: const ValueKey('pet-preflight-lines'),
-          style: theme.textTheme.bodySmall,
-        ),
+        if (value.lines.isNotEmpty) ...[
+          const SizedBox(height: ShellSpace.md),
+          Column(
+            key: const ValueKey('pet-preflight-lines'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final line in value.lines)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: ShellSpace.xxs),
+                  child: ShellProse(line, style: theme.textTheme.bodySmall),
+                ),
+            ],
+          ),
+        ],
       ],
     ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        banner,
+        if (rows.isNotEmpty) ...[
+          const SizedBox(height: ShellSpace.sm),
+          SurfacePanel(
+            padding: const EdgeInsets.all(ShellSpace.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: rows,
+            ),
+          ),
+        ] else
+          const SizedBox(height: ShellSpace.lg),
+      ],
+    );
+  }
+
+  /// The calibrated marks and reference crops, DEMOTED below the editable form and collapsed
+  /// (PLAN-V3-UI-UX §2.1/§2.5.3): reference data is read once, not the first screenful. Each value
+  /// reads `x 120 · y 54 · 60×60`, never a raw JSON array, and the header states how many marks the
+  /// config carries without opening the panel.
+  Widget _referencePanel(Map<String, dynamic> machine) {
+    final marks = <Object?>[
+      machine['menu_button'],
+      machine['feed_icon'],
+      machine['close_button'],
+      machine['bag_grid'],
+      machine['bag_slot'],
+      machine['page_tabs'],
+      machine['max_button'],
+    ];
+    final configuredMarks = marks
+        .where((mark) => asJsonList(mark).isNotEmpty)
+        .length;
+    final configuredCrops = [
+      if (_hasCrop(machine['close_button_png'])) 'boarding X',
+      if (_hasCrop(machine['food_icon_png'])) 'food icon',
+    ];
+    return ReadOnlyPanel(
+      title: 'Calibrated marks & reference crops',
+      subtitle:
+          'Drawn on the Calibrate tab or learned by the run — read-only here, and never sent '
+          'by this tab\'s Save.',
+      openHint:
+          '$configuredMarks of ${marks.length} marks · '
+          '${configuredCrops.length} of 2 crops',
+      rows: [
+        InfoRow(
+          label: 'Menu (目錄) point',
+          value: _pointText(machine['menu_button']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Pet feed icon point',
+          value: _pointText(machine['feed_icon']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Boarding X point',
+          value: _pointText(machine['close_button']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Boarding bag grid',
+          value: _rectText(machine['bag_grid']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Boarding bag slot',
+          value: _rectText(machine['bag_slot']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Bag page tab points',
+          value: _pointsText(machine['page_tabs']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'MAX button (pet override)',
+          value: _pointText(machine['max_button']),
+          mono: true,
+        ),
+        InfoRow(
+          label: 'Boarding X crop',
+          value: _yesNo(_hasCrop(machine['close_button_png'])),
+        ),
+        InfoRow(
+          label: 'Food icon crop',
+          value: _yesNo(_hasCrop(machine['food_icon_png'])),
+        ),
+        InfoRow(
+          label: 'Food cells used (run reading)',
+          value: readOnlyText(machine['food_slots_used']),
+          mono: true,
+        ),
+      ],
+    );
   }
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
@@ -1022,120 +1224,93 @@ class _PetTabState extends State<PetTab>
       title: 'Pet Feeder',
       description:
           'The feeder\'s setup: rows, queue, bag food cells and the run\'s mode and timings, '
-          'saved together. The calibrated marks and reference crops are drawn on the Calibrate '
-          'tab or learned by the run, and stay read-only here.',
-      readOnly: [
-        EditorSection(
-          title: 'Calibrated marks & crops — read-only (Calibrate tab)',
-          children: [
-            ReadOnlyValue(
-              label: 'Menu (目錄) point',
-              value: readOnlyText(machine['menu_button']),
-            ),
-            ReadOnlyValue(
-              label: 'Pet feed icon point',
-              value: readOnlyText(machine['feed_icon']),
-            ),
-            ReadOnlyValue(
-              label: 'Boarding X point',
-              value: readOnlyText(machine['close_button']),
-            ),
-            ReadOnlyValue(
-              label: 'Boarding bag grid',
-              value: readOnlyText(machine['bag_grid']),
-            ),
-            ReadOnlyValue(
-              label: 'Boarding bag slot',
-              value: readOnlyText(machine['bag_slot']),
-            ),
-            ReadOnlyValue(
-              label: 'Bag page tab points',
-              value: readOnlyText(machine['page_tabs']),
-            ),
-            ReadOnlyValue(
-              label: 'MAX button (pet override)',
-              value: readOnlyText(machine['max_button']),
-            ),
-            ReadOnlyValue(
-              label: 'Boarding X crop',
-              value: _yesNo(_hasCrop(machine['close_button_png'])),
-            ),
-            ReadOnlyValue(
-              label: 'Food icon crop',
-              value: _yesNo(_hasCrop(machine['food_icon_png'])),
-            ),
-            ReadOnlyValue(
-              label: 'Food cells used (run reading)',
-              value: readOnlyText(machine['food_slots_used']),
-            ),
-          ],
-        ),
-      ],
+          'saved together. A row\'s live boarding state is written immediately; the calibrated '
+          'marks and reference crops are drawn on the Calibrate tab and stay read-only here.',
+      readOnly: [_referencePanel(machine)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          EditorSection(
-            title: 'Setup so far & ready to run (from the saved config)',
-            children: _preflightSection(theme),
-          ),
-          EditorSection(
-            title: 'Breeding rows',
-            children: [
-              if (rows.isEmpty)
-                const ReadOnlyValue(
-                  key: ValueKey('pet-no-rows'),
-                  label: 'Rows',
-                  value:
-                      'No breeding rows are configured yet — a migrated v2 config '
-                      'carries them; adding a row needs the pet capture session (OPEN).',
-                ),
-              for (var index = 0; index < rows.length; index++)
-                _rowEditor(index, rows[index]),
-              if (_boardingError != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-                  child: Text(
-                    _boardingError!,
-                    key: const ValueKey('pet-boarding-error'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.error,
+          // The page opens with the core's verdict as a designed state (PLAN-V3-UI-UX §6 Pet),
+          // not one uncoloured sentence — the checklist rows carry the per-item detail.
+          _readinessSection(theme),
+          SurfacePanel(
+            title: 'Boarding rows',
+            description:
+                'A row\'s live boarding state is written the moment you tick it; the '
+                'enabled switch and stack count save with the tab\'s Save.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (rows.isEmpty)
+                  const EmptyState(
+                    key: ValueKey('pet-no-rows'),
+                    icon: Icons.grid_view_outlined,
+                    title: 'No breeding rows configured',
+                    hint:
+                        'A migrated v2 config carries them; adding a row needs the pet '
+                        'capture session (OPEN). The feeder refuses on Start until one exists.',
+                    compact: true,
+                  )
+                else
+                  for (var index = 0; index < rows.length; index++)
+                    _rowCard(theme, index, rows[index]),
+                if (_boardingError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: ShellSpace.xs),
+                    child: Text(
+                      _boardingError!,
+                      key: const ValueKey('pet-boarding-error'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
                     ),
                   ),
+                const SizedBox(height: ShellSpace.xs),
+                ShellProse(
+                  'Rows come from the pet capture session (OPEN): tick one and set its '
+                  'stack count here; its rects and crops are read-only. Rows cannot be '
+                  'added or removed here.',
+                  key: const ValueKey('pet-rows-caption'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              Text(
-                'Rows come from the pet capture session (OPEN): tick one and set its '
-                'stack count here; its rects and crops are read-only. Rows cannot be '
-                'added or removed here.',
-                key: const ValueKey('pet-rows-caption'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          EditorSection(
+          SurfacePanel(
             title: 'Queue',
-            children: [
-              if (queue.isEmpty)
-                Text(
-                  'No pets queued — the return slot is then the fallback the run '
-                  'right-clicks.',
-                  key: const ValueKey('pet-queue-empty'),
-                  style: theme.textTheme.bodySmall,
+            description: 'Pets are boarded in this order when a row frees up.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (queue.isEmpty)
+                  const EmptyState(
+                    key: ValueKey('pet-queue-empty'),
+                    icon: Icons.pets_outlined,
+                    title: 'No pets queued',
+                    hint:
+                        'The return slot is then the fallback the run right-clicks. '
+                        'Add a pet by icon below.',
+                    compact: true,
+                  )
+                else ...[
+                  _queueHeader(theme),
+                  for (var index = 0; index < queue.length; index++)
+                    _queueEntryRow(theme, index, queue[index]),
+                ],
+                const SizedBox(height: ShellSpace.xs),
+                ShellProse(
+                  'The icon is the pet\'s identity — the run matches on it, and the label is '
+                  'for the log and this list only. Edits and a captured entry save with the '
+                  'tab\'s Save.',
+                  key: const ValueKey('pet-queue-caption'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              for (var index = 0; index < queue.length; index++)
-                _queueEntryEditor(theme, index, queue[index]),
-              const SizedBox(height: ShellSpace.xs),
-              Text(
-                'The icon is the pet\'s identity — the run matches on it, and the label is '
-                'for the log and this list only. Edits and a captured entry save with the '
-                'tab\'s Save.',
-                key: const ValueKey('pet-queue-caption'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           EditorSection(
             title: 'Add a pet by icon',
@@ -1195,7 +1370,7 @@ class _PetTabState extends State<PetTab>
                 },
               ),
               const SizedBox(height: ShellSpace.xs),
-              Text(
+              ShellProse(
                 'right_click lets the game choose the box; drag names it, which '
                 'needs the row food strip and a board whose firmware can drag.',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -1315,16 +1490,39 @@ class _PetTabState extends State<PetTab>
     );
   }
 
-  /// One queued pet: the captured icon (the identity the run matches), an editable label/species
-  /// and Remove. Edits go to the machine draft and ride the tab's one Save — v2 auto-saved each edit;
-  /// v3 keeps everything in the draft until Save, so a half-typed label never reaches the file.
-  Widget _queueEntryEditor(
+  /// The queue's table header, so the section reads as one compact table (PLAN-V3-UI-UX §6 Pet:
+  /// "Queue as `InfoRow` table") instead of a stack of full-width fields.
+  Widget _queueHeader(ThemeData theme) {
+    final style = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+      child: Row(
+        children: [
+          const SizedBox(width: _queueIconSize),
+          const SizedBox(width: ShellSpace.sm),
+          Expanded(child: Text('Pet', style: style)),
+          const SizedBox(width: ShellSpace.sm),
+          Expanded(child: Text('Species', style: style)),
+          const SizedBox(width: ShellSpace.xs),
+          const SizedBox(width: _queueRemoveWidth),
+        ],
+      ),
+    );
+  }
+
+  /// One queued pet as a table row: the captured icon (the identity the run matches), the editable
+  /// label/species and Remove. Edits go to the machine draft and ride the tab's one Save — v2
+  /// auto-saved each edit; v3 keeps everything in the draft until Save, so a half-typed label never
+  /// reaches the file.
+  Widget _queueEntryRow(
     ThemeData theme,
     int index,
     Map<String, dynamic> entry,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: ShellSpace.md),
+      padding: const EdgeInsets.only(bottom: ShellSpace.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1332,52 +1530,53 @@ class _PetTabState extends State<PetTab>
             theme,
             asString(entry['png']),
             key: ValueKey('pet-queue-icon-$index'),
+            size: _queueIconSize,
           ),
           const SizedBox(width: ShellSpace.sm),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DraftFieldSlot(
-                  slotKey: 'pet-queue-label-$index',
-                  syncToken: _machineDraft.seedRevision,
-                  child: DraftTextField(
-                    key: ValueKey('pet-queue-label-$index'),
-                    label: 'Label ${index + 1} (log and this list only)',
-                    value: asString(entry['label']) ?? '',
-                    width: 340,
-                    onChanged: (value) => _setQueueField(
-                      index,
-                      'label',
-                      value.trim().isEmpty ? null : value,
-                    ),
-                  ),
+            child: DraftFieldSlot(
+              slotKey: 'pet-queue-label-$index',
+              syncToken: _machineDraft.seedRevision,
+              child: DraftTextField(
+                key: ValueKey('pet-queue-label-$index'),
+                label: 'Label ${index + 1}',
+                value: asString(entry['label']) ?? '',
+                onChanged: (value) => _setQueueField(
+                  index,
+                  'label',
+                  value.trim().isEmpty ? null : value,
                 ),
-                const SizedBox(height: ShellSpace.xs),
-                DraftFieldSlot(
-                  slotKey: 'pet-queue-species-$index',
-                  syncToken: _machineDraft.seedRevision,
-                  child: DraftTextField(
-                    key: ValueKey('pet-queue-species-$index'),
-                    label:
-                        'Species ${index + 1} (feeding-table line, optional)',
-                    helper: 'the line turns the panel growth into minutes; leave empty for no estimate',
-                    value: asString(entry['species']) ?? '',
-                    width: 340,
-                    onChanged: (value) => _setQueueField(
-                      index,
-                      'species',
-                      value.trim().isEmpty ? null : value,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          OutlinedButton(
-            key: ValueKey('pet-queue-remove-$index'),
-            onPressed: () => _removeQueued(index),
-            child: const Text('Remove'),
+          const SizedBox(width: ShellSpace.sm),
+          Expanded(
+            child: DraftFieldSlot(
+              slotKey: 'pet-queue-species-$index',
+              syncToken: _machineDraft.seedRevision,
+              child: DraftTextField(
+                key: ValueKey('pet-queue-species-$index'),
+                label: 'Species (feeding-table line)',
+                value: asString(entry['species']) ?? '',
+                onChanged: (value) => _setQueueField(
+                  index,
+                  'species',
+                  value.trim().isEmpty ? null : value,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: ShellSpace.xs),
+          SizedBox(
+            width: _queueRemoveWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                key: ValueKey('pet-queue-remove-$index'),
+                onPressed: () => _removeQueued(index),
+                child: const Text('Remove'),
+              ),
+            ),
           ),
         ],
       ),
@@ -1459,7 +1658,7 @@ class _PetTabState extends State<PetTab>
     final capture = _queueCapture;
     if (_bagGridRect() == null) {
       return [
-        Text(
+        ShellProse(
           "The boarding bag grid isn't calibrated — save the Boarding bag grid and "
           'Boarding bag slot on the Calibrate tab. The crop is taken at that grid\'s pitch.',
           key: const ValueKey('pet-add-not-calibrated'),
@@ -1470,7 +1669,7 @@ class _PetTabState extends State<PetTab>
       ];
     }
     return [
-      Text(
+      ShellProse(
         'Put the bag page holding the pet on screen: the shell hides for the shot, so the game has '
         'to be in front, and the core does NOT click the ITEM tab — the page you pick must already '
         'be up. Check the preview and the echoed page/cell/rect before Save: a wrong page gives a '
@@ -1622,7 +1821,7 @@ class _PetTabState extends State<PetTab>
         : _scannedCells(_foodScan!.value!);
     final iconSaved = _hasCrop(_machine()['food_icon_png']);
     return [
-      Text(
+      ShellProse(
         'Put the bag page up first: the shell hides for the shot, so the game has to be in front, '
         'and the core does NOT click or verify the ITEM tab — the page you pick must already be up '
         '(a wrong page gives a plausible wrong result). Scans only LOOK; the apply below is the only '
@@ -1646,7 +1845,7 @@ class _PetTabState extends State<PetTab>
       if (!iconSaved)
         Padding(
           padding: const EdgeInsets.only(top: ShellSpace.xs),
-          child: Text(
+          child: ShellProse(
             'No food icon is saved yet — use Capture food icon below and Save; the scan matches '
             'that icon. The button still sends: the core refuses and names the field.',
             key: const ValueKey('pet-scan-no-food-icon'),
@@ -1960,56 +2159,133 @@ class _PetTabState extends State<PetTab>
     ),
   );
 
-  /// One row: the two editable fields and the marks/crops the capture session owns.
-  Widget _rowEditor(int index, Map<String, dynamic> row) {
+  /// One row card. The header IS the row's state — `Row N`, the live chip and the next action —
+  /// then the SAVED fields, then the immediate A1 control separated below with its cue: the tick
+  /// writes through the core at once and is never part of this tab's draft (PLAN-V3-UI-UX §6 Pet).
+  Widget _rowCard(ThemeData theme, int index, Map<String, dynamic> row) {
     final enabled = asBool(row['enabled']) ?? true;
+    final boarding = _boardingRunning(index);
+    // `boarding_window_may_be_open` is a config field the run writes while the boarding window is
+    // open, so a boarding row with the window open is reloading rather than merely waiting. The
+    // shell only renders the core's value; it never derives a schedule of its own.
+    final windowOpen =
+        asBool(_machine()['boarding_window_may_be_open']) ?? false;
+    final Widget chip;
+    if (!enabled) {
+      chip = const StatusChip(kind: StatusKind.muted, label: 'disabled');
+    } else if (boarding && windowOpen) {
+      chip = const StatusChip(kind: StatusKind.warning, label: 'reloading');
+    } else if (boarding) {
+      chip = const StatusChip(kind: StatusKind.success, label: 'boarding');
+    } else {
+      chip = const StatusChip(kind: StatusKind.muted, label: 'idle');
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: ShellSpace.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DraftSwitchField(
-            key: ValueKey('pet-row-$index-enabled'),
-            label: 'Row ${index + 1} enabled',
-            helper: 'a ticked row is fed; an unticked one is ignored',
-            value: enabled,
-            onChanged: (value) => _setRow(index, 'enabled', value),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLowest,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ShellRadius.m),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
-          // v2's per-row "boarding now" tick. It is NOT a draft edit: `pet.set_boarding` writes the
-          // one field through the core (A1) so the run's own mid-run updates cannot clobber it. It
-          // renders the MIRROR, and is disabled while row edits are unsaved (the draft would
-          // disagree with the mirror the core is writing).
-          CheckboxListTile(
-            key: ValueKey('pet-boarding-tick-${index + 1}'),
-            value: _boardingRunning(index),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Boarding now'),
-            subtitle: _draftDirty ? Text(_tickBlockedReason) : null,
-            onChanged: _draftDirty || _settingBoarding
-                ? null
-                : (value) => _setBoarding(index + 1, value ?? false),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(ShellSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('Row ${index + 1}', style: theme.textTheme.titleSmall),
+                  const SizedBox(width: ShellSpace.sm),
+                  chip,
+                  const Spacer(),
+                  if (_draftDirty)
+                    Text(
+                      'next: Save',
+                      key: ValueKey('pet-row-$index-next'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              // Saved fields in one row (the demo's field grid): they ride the tab's ONE Save,
+              // like the rest of this tab's setup.
+              Wrap(
+                spacing: ShellSpace.xl,
+                runSpacing: ShellSpace.xs,
+                crossAxisAlignment: WrapCrossAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 300,
+                    child: DraftSwitchField(
+                      key: ValueKey('pet-row-$index-enabled'),
+                      label: 'Enabled',
+                      helper: 'a ticked row is fed; an unticked one is ignored',
+                      value: enabled,
+                      onChanged: (value) => _setRow(index, 'enabled', value),
+                    ),
+                  ),
+                  DraftFieldSlot(
+                    slotKey: 'pet-row-$index-stacks',
+                    syncToken: _machineDraft.seedRevision,
+                    child: DraftNumberField(
+                      label: 'Stacks per reload',
+                      helper: 'the food strip is divided by it',
+                      integer: true,
+                      value: asNumber(row['stacks']),
+                      width: 220,
+                      onChanged: (value) =>
+                          _setRow(index, 'stacks', value.round()),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Text(
+                _rowMarksText(row),
+                key: ValueKey('pet-row-$index-marks'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Divider(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+              // v2's per-row "boarding now" tick. It is NOT a draft edit: `pet.set_boarding` writes
+              // the one field through the core (A1) so the run's own mid-run updates cannot clobber
+              // it. It renders the MIRROR, and is disabled while anything here is unsaved (the draft
+              // would disagree with the mirror the core is writing).
+              CheckboxListTile(
+                key: ValueKey('pet-boarding-tick-${index + 1}'),
+                value: boarding,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Boarding now'),
+                    const SizedBox(width: ShellSpace.sm),
+                    const StatusChip(
+                      kind: StatusKind.info,
+                      label: 'applies immediately',
+                    ),
+                  ],
+                ),
+                subtitle: _draftDirty ? Text(_tickBlockedReason) : null,
+                onChanged: _draftDirty || _settingBoarding
+                    ? null
+                    : (value) => _setBoarding(index + 1, value ?? false),
+              ),
+            ],
           ),
-          DraftFieldSlot(
-            slotKey: 'pet-row-$index-stacks',
-            syncToken: _machineDraft.seedRevision,
-            child: DraftNumberField(
-              label: 'Stacks per reload',
-              helper: '2 on the free row, 5 on a paid one — the food strip is divided by it',
-              integer: true,
-              value: asNumber(row['stacks']),
-              width: 260,
-              onChanged: (value) => _setRow(index, 'stacks', value.round()),
-            ),
-          ),
-          const SizedBox(height: ShellSpace.xs),
-          ReadOnlyValue(
-            key: ValueKey('pet-row-$index-marks'),
-            label: 'Row ${index + 1} marks — read-only',
-            value: _rowMarksText(row),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2020,7 +2296,7 @@ class _PetTabState extends State<PetTab>
   List<Widget> _foodCellEditor(ThemeData theme, List<int>? bagGrid) {
     if (bagGrid == null) {
       return [
-        Text(
+        ShellProse(
           "The boarding bag's grid isn't calibrated — save the Boarding bag grid "
           'and Boarding bag slot on the Calibrate tab. (Its own, not the shop\'s.)',
           key: const ValueKey('pet-food-not-calibrated'),
@@ -2037,7 +2313,7 @@ class _PetTabState extends State<PetTab>
     };
     final total = slots.length;
     return [
-      Text(
+      ShellProse(
         'The cells holding pet food. A page is the bag\'s ITEM tab the run opens '
         'before clicking a cell.',
         style: theme.textTheme.bodySmall,
@@ -2076,7 +2352,7 @@ class _PetTabState extends State<PetTab>
           ],
         ),
       const SizedBox(height: ShellSpace.xs),
-      Text(
+      ShellProse(
         'A marked page needs its ITEM tab point saved on the Calibrate tab — Start '
         'names the page that is missing one.',
         style: theme.textTheme.bodySmall?.copyWith(

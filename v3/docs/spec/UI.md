@@ -91,41 +91,120 @@ Screen content is capped at **1240 px and centred** on windows wider than that (
   it, its phase/message/refusal render on its card, and it has no config screen. (Its failed release is
   still only in `holdspace.log` — the release has no protocol event.)
 
-## Config surfaces (Phase 2, partly landed)
+## Config surfaces (landed 2026-10-30)
 
-The shared frame is unchanged in structure — header (22/600 title, prose-capped description, one
-dirty/status chip), a scrolling editor, and a save bar — but the pieces the audit found missing are in:
+The shared frame: a `PageHeader` (22/600 title, prose-capped description, one status chip that states
+"Unsaved changes" or "All changes saved"), a scrolling editor, an optional **300 px aside**, and a save
+bar that reports outcomes only (the dirty state is stated once, in the chip). One filled action per
+screen: Save.
 
 - **Section panels.** Every `EditorSection` is a `Material` panel (surfaceContainerLow, 10 px radius,
-  one hairline) with 16 px inside and 16 px between. Panels give each tab the Run screen's structure
-  without a per-tab redesign, and they are the container a `ListTile`-based field needs (a coloured
-  `Container` would assert).
-- **Editable content first.** The scaffold renders the editable child before the `readOnly` block, so
-  calibrated geometry is demoted instead of owning the first screenful (§2.1/§2.5.3).
-- **Save bar reports outcomes only.** The duplicate "Editing"/"No changes" label is gone; the header
-  chip states dirtiness once, and the bar renders save errors/success/warnings.
-- **Buy is its own screen** (`BuySellTab(section: buy)` → rail "Buy"): saved presets only (the `presets`
-  half of `buy_sell`), dirty-gated Save, no geometry block. The run choice stays on the Buy card.
-- **Sell is its own screen** (`BuySellTab(section: sell)` → rail "Sell"): the sell-cap field (the
-  `sell_cap` half, saved) plus the per-run slot picker (never saved; started from the Sell card). The
-  grid is 26 px cells with a 2 px gutter, a **check + inset ring** on selected cells (`Semantics(selected)`),
-  a single count line with Select all / Clear, row shortcuts and the cap status under it; captions are
-  prose-capped. Both screens save disjoint fields, so each keeps one primary action.
-- The combined (`section: both`) layout remains for the widget tests and is not used by the shell.
+  one hairline) with 16 px inside/between. Material, not a coloured `Container`, because `ListTile`
+  fields assert against a decorated background.
+- **Aside.** `ConfigTabScaffold.aside` (300 px, own scroll) carries reference data and context beside
+  the form: Tuner/Gem/Buy/Sell put a collapsed `ReadOnlyPanel` "Calibrated geometry" there plus a short
+  "how this screen saves/run" panel. Nothing reference-shaped leads the form anymore.
+- **Foldable advanced sections.** `FoldableSection` holds diagnostics that are not part of a normal
+  run: Tuner (OCR retries, save captures, capture cleanup), Gem (save empty captures), Quest (cursor
+  guard). Folded by default; the controls keep their keys.
+- **Tuner** (`spammer`-style panels): Grades (plain-text fixed ladder — the audit's "read-only chips
+  look tappable" fixed), Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row
+  delete), Advanced (folded); geometry in the aside.
+- **Spammer**: Presets (editing/active pickers, tonal Add/Rename, outlined Duplicate/Delete; selection
+  actions hidden when the preset list is empty) · Keys & cooldowns (opening, priority key rows) ·
+  Rotation — combos.
+- **Gem**: Grades, Empty result, Movement; calibrated positions/slots/result area in the aside;
+  save-empty-captures folded.
+- **Quest**: Active selection (empty sequence reads as "flow only"), Flows, Sequences; empty lists are
+  `EmptyState` with a next action; cursor guard folded.
+- **Buy / Sell are split screens** (`BuySellTab(section: buy|sell)`): Buy edits/saves the `presets`
+  field; Sell edits/saves `sell_cap` and arms the per-run selection (never saved; run from the card).
+  Both put their calibrated geometry in the aside. The Sell grid is 26 px cells with a 2 px gutter, a
+  check + inset ring and `Semantics(selected)` on armed slots, one count line with Select all / Clear,
+  row shortcuts, prose-capped captions. The combined (`both`) layout remains for the widget tests and is
+  not used by the shell.
+
+## Pet (landed 2026-10-30)
+
+- **Readiness first:** a `StatusBanner` whose kind is the core's verdict (`pet.preflight`: success ready,
+  warning not-ready, error on a refusal, info while reading) with **Refresh checklists** as a text
+  action. Below it, a panel of per-item checklist rows (icon + label + detail) and the core's readiness
+  lines as individual `Text`s — never one `\n`-joined block.
+- **Row cards:** a `SurfacePanel` containing one card per breeding row. The header is the state —
+  `Row N` + `StatusChip` (boarding/reloading/idle/disabled) + "next: Save" while dirty. Saved fields
+  (Enabled, Stacks) group together; the **immediate A1 control** ("Boarding now") is separated below with
+  an "applies immediately" cue, because it writes at once and is not part of the draft. Row marks read
+  `start/end x 10 · y 20 · 100×30` (no raw arrays).
+- **Queue** is a compact table; Add-by-icon / Scan / Food cells / Return slot / Loading / Timing /
+  Feeding keep their behaviour, with prose through `ShellProse` and `EmptyState` for no rows/no queue.
+- **Calibrated marks & reference crops** are demoted into a collapsed `ReadOnlyPanel` showing
+  `x · y · w×h` values and a configured-count summary.
+
+## Calibrate workspace (landed 2026-10-30)
+
+The one-form screen became the demo's workspace. Layout: at **content width ≥ 980** (the default 1280
+window leaves ~1064 px beside the rail, so it shows the workspace) — captures + target tree 250 px ·
+flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the same panels stack in
+one column. Below the columns: the stored-coordinate table and the session-shaped calibrations panel.
+
+- **Capture shelf:** at most four frames (the core's FIFO). Each item: label/time, physical size, that
+  capture's **own `DisplayInfo`**, frame id, and an eviction marker on the oldest; a fifth capture
+  evicts the oldest and a save against an evicted id is refused — the screen says so and never
+  auto-recaptures. The hide → one frame → show flow and its status are unchanged.
+- **Target tree:** all 18 kinds / 35 marks grouped by tool (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1)
+  with saved/partial/not-set dots and counts; named-instance kinds expand their targets (N/G/DG/
+  Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and editor.
+- **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
+  drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
+  unchanged and single.
+- **Editor:** surface + target pickers, shape-aware fields, the result-gem-area empty verdict, stored
+  crop preview, Revert + Save (Save is the only filled action and enables only with a live frame/target/
+  verdict); save refusals render verbatim, including "capture again" for an unknown frame id.
+- **Stored coordinates:** all 35 marks — surface, tool, shape, `x, y` / `x, y · w×h`, artifact, status —
+  filterable by tool. Marks do **not** persist a frame reference; the frame is write-time provenance.
+- **Reference images:** result-gem crop (present/not captured), pet crops marked "run-learned", v2
+  annotated screenshots marked "v2 only" — truthful states, no invented artifacts.
+- **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
+  `StatusBanner` "recalibrate before running a tool" (client-size/screen invalidates every point, scale
+  alone does not; no auto-anchor, no proportional transform).
+- **Session-shaped calibrations:** tooltip offset (two captures), tuner OCR 3-box and pet crops, each
+  stating what it needs with a disabled **Run session** — these need protocol work (Phase 5).
+
+## System surfaces (landed 2026-10-30)
+
+- **Attributes:** search field over a real dictionary table (Name / OCR variants, category counts); zero
+  matches swaps the table for an `EmptyState` with Clear; the per-level/negative/text-fix tables render
+  only while the search is empty (they are not searchable).
+- **Arduino:** a Board panel first — `StatusChip` + verdict + VID/PID/Baud/port as `InfoRow`s; ports as
+  icon + port + description + trailing reason rows (not space-padded strings); firmware and input tests
+  in their own panels; all three test actions are outlined and the cursor-moving Click is separated with
+  a "moves the cursor" warning. No filled action on the page.
+- **Hotkeys:** the accepted-name help appears once above the group; raw stored codes moved into a
+  section-header tooltip; the four fields keep their key-name/parse/save commands.
+- **Setup:** Detect/Measure/Probe are outlined probes under a caption that names the one writing action;
+  **Use detected title** is the single filled action with "applies a config save" under it; the detected-
+  vs-configured mismatch raises a warning banner.
+
+## Crash / connecting surfaces
+
+The crash view is a `StatusBanner` (error) with the one Restart action when recovery is possible, the
+core's failure sentence as its own keyed line, the root as an `InfoRow`, the stderr tail in a monospace
+`SurfacePanel`, and a warning banner (not a restart) for a protocol mismatch. The connecting surface
+keeps its spinner + status text, with the stderr tail only when there is one.
 
 ## Known interim states in this build
 
-- **The shared frame is only partly applied.** Buy/Sell are split and every tab gets section panels, but
-  the per-surface redlines for Spammer, Tuner, Gem, Quest, Pet and the **Calibrate workspace** (capture
-  shelf, target tree, stored-coordinate table, reference gallery) are not built; Calibrate is still the
-  one-form screen. The plan's Phases 3–5 remain.
-- **Named geometry profiles / setup import-export** are not in this pass: one geometry per machine with
-  the warn-and-recalibrate story stands; profiles + import/export are recorded as a future
-  config-root feature in [OPEN.md](../backlog/OPEN.md).
-- Phases 3–5 of the plan (Pet/Calibrate workspace, remaining surfaces, session-shaped calibrations) are
-  **not built**.
-- **Named geometry profiles / setup import-export** are not in this pass: one geometry per machine with
-  the warn-and-recalibrate story stands; profiles + import/export are recorded as a future
-  config-root feature in [OPEN.md](../backlog/OPEN.md).
-- Phases 2–5 of the plan (shared config frame + Buy/Sell split, Pet/Calibrate workspace, remaining
-  surfaces, session-shaped calibrations) are **not built**.
+- **Phase 5 (session-shaped calibrations) is not built**, because it needs core/protocol work: tooltip
+  two-capture hover, tuner three-box derive (withdrawn `tuner_region`), pet capture/crop session, v2's
+  annotated reference screenshots, the Gem movement editor + pointer/cycle tests, Buy/Sell 64-centre/
+  row overlays + test scroll + "Setup so far", and the Setup → Detect surface (the ComparisonCheck rule
+  is ported; no command exists). The workspace lists each with what it needs; it does not fake them.
+- **Frame persistence / calibration rev / Detect**: a saved mark stores mark + artifact + display
+  environment, never the frame; `calibration.save` has no `rev`; there is no batch "fetch all" (the
+  workspace fetches the kinds on open). These are protocol facts, not UI choices.
+- **Named geometry profiles / setup import-export** are still a future config-root feature
+  ([OPEN.md](../backlog/OPEN.md)); the UI warns and recalibrates, it does not switch setups.
+- `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
+  noted for the next primitive pass, not a behaviour gap.
+
+Gates for this build: `flutter analyze` No issues; `flutter test` 270/270; `dart format` clean.

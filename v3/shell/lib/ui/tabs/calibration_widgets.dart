@@ -10,10 +10,11 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
-import '../../protocol/protocol.dart';
+import '../../protocol/protocol.dart' hide Point, Rect, Size;
 import '../theme.dart';
 
 /// Base64 PNG → bytes, or null when the payload is not valid base64 (a bad frame must never crash the
@@ -26,29 +27,41 @@ Uint8List? decodePngBase64(String data) {
   }
 }
 
-/// The captured frame, bounded on screen, with an OPTIONAL gesture overlay: a click sets a point
-/// mark, a drag sets a rect mark. Everything is reported as a client-relative physical-pixel
-/// [CalibrationMark]; the widget maps coordinates and draws the marquee/committed mark, nothing else.
+/// The captured frame on the workspace canvas, with a real zoom control (`fit`, `1:1`, `pan`), an
+/// OPTIONAL gesture overlay (a click sets a point mark, a drag sets a rect) and the selected mark
+/// drawn with its label.
 ///
-/// The typed fields stay authoritative: the tab passes [mark] in (built from its fields) and writes
-/// each gesture's mark back into those fields, so Save always reads the fields, never hidden picture
-/// state. Omit the callbacks for a read-only picture (the Pet/Setup reuse case).
+/// The rendered picture is mapped back to CLIENT-RELATIVE PHYSICAL pixels through
+/// [framePointToMark]/[frameDragToMark] — the one conversion (CALIBRATION §4). The typed fields stay
+/// authoritative: the tab passes [mark] in (built from its fields) and writes each gesture's mark
+/// back into those fields, so Save always reads the fields, never hidden picture state.
+///
+/// Zoom is DISPLAY pixels per FRAME pixel, not `DisplayInfo.scale` (that is the cursor-space
+/// conversion, CALIBRATION §4). Fit is derived from the latest layout and never cached across a size
+/// change. A click in the letterbox is ignored, never clamped into a mark. Omit the callbacks for a
+/// read-only picture (the Pet/Setup reuse case).
 class CalibrationFramePicture extends StatefulWidget {
   const CalibrationFramePicture({
     super.key,
     required this.frame,
     this.maxHeight = 320,
     this.mark,
+    this.markLabel,
     this.clientOrigin = ui.Offset.zero,
     this.onPointMark,
     this.onRectMark,
   });
 
   final Frame frame;
+
+  /// The canvas viewport's height; fit mode contains the frame in `(available width, maxHeight)`.
   final double maxHeight;
 
   /// The mark currently in the typed fields, drawn on the picture.
   final CalibrationMark? mark;
+
+  /// The label drawn on the canvas with the mark (`Bag grid · x 700 · y 400 · 900×500`), or null.
+  final String? markLabel;
 
   /// Screen origin of the client (`display.physical_client`). A full-client capture has the same
   /// origin as the frame, so the offset is zero; a sub-region capture subtracts it.
@@ -67,6 +80,52 @@ class CalibrationFramePicture extends StatefulWidget {
 class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
   ui.Offset? _dragStartLocal;
   ui.Offset? _dragCurrentLocal;
+
+  /// Display px per frame px; null = fit, derived from the latest layout and never cached across a
+  /// size/monitor change (CALIBRATION §4).
+  double? _zoom;
+
+  /// The manual zoom's pan, in display px, applied to the centred picture.
+  ui.Offset _pan = ui.Offset.zero;
+
+  /// While pan mode is on, a left drag moves the view instead of drawing a mark.
+  bool _panMode = false;
+
+  static const double _zoomStep = 1.25;
+  static const double _minZoom = 0.02;
+  static const double _maxZoom = 8;
+
+  void _setFit() {
+    setState(() {
+      _zoom = null;
+      _pan = ui.Offset.zero;
+    });
+  }
+
+  void _setOneToOne() {
+    setState(() {
+      _zoom = 1;
+      _pan = ui.Offset.zero;
+    });
+  }
+
+  void _zoomBy(double factor, double fitScale) {
+    final current = _zoom ?? fitScale;
+    setState(() {
+      _zoom = (current * factor).clamp(_minZoom, _maxZoom).toDouble();
+    });
+  }
+
+  /// Keep the picture reachable: clamp the pan to the overflow when the picture is larger than the
+  /// viewport, and centre it (zero pan) when it is smaller.
+  ui.Offset _clampPan(ui.Size viewport, ui.Size picture, ui.Offset pan) {
+    final limitX = math.max(0.0, (picture.width - viewport.width) / 2);
+    final limitY = math.max(0.0, (picture.height - viewport.height) / 2);
+    return ui.Offset(
+      pan.dx.clamp(-limitX, limitX).toDouble(),
+      pan.dy.clamp(-limitY, limitY).toDouble(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,81 +149,252 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
             ),
           )
         else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final maxWidth = constraints.maxWidth.isFinite
-                  ? math.min(constraints.maxWidth, 720.0)
-                  : 720.0;
-              final box = ui.Size(
-                maxWidth,
-                math.min(widget.maxHeight, boxHeightForWidth(maxWidth, frame)),
-              );
-              final layout = frameContainLayout(
-                box: box,
-                frameWidth: frame.width,
-                frameHeight: frame.height,
-              );
-              final picture = layout.picture;
-              final clientOrigin = widget.clientOrigin;
-              return SizedBox(
-                key: const ValueKey('calibrate-picture-area'),
-                width: box.width,
-                height: box.height,
-                child: Stack(
-                  children: [
-                    Positioned.fromRect(
-                      rect: picture,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                        ),
-                        child: _pictureArea(theme, bytes, picture),
-                      ),
-                    ),
-                    if (widget.mark != null && layout.scale > 0)
-                      Positioned.fromRect(
-                        rect: picture,
-                        child: IgnorePointer(
-                          child: CustomPaint(
-                            painter: _MarkPainter(
-                              mark: widget.mark!,
-                              scale: layout.scale,
-                              frameOrigin: ui.Offset(
-                                frame.origin.x.toDouble(),
-                                frame.origin.y.toDouble(),
-                              ),
-                              clientOrigin: clientOrigin,
-                              marquee: _marqueeLocal,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        const SizedBox(height: ShellSpace.xs),
-        Text(
-          widget.interactive
-              ? 'Marks are client-relative physical px on this frame · '
-                    'click to set a point, drag to set a rect.'
-              : 'Marks are client-relative physical px on this frame.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
+          _buildCanvas(theme, bytes),
       ],
     );
   }
 
-  /// Keep the displayed box at the frame's aspect ratio so the layout has no letterbox at all; the
-  /// mapping helper still handles the general contain case (the widget simply gives it an exact box).
-  double boxHeightForWidth(double width, Frame frame) =>
-      width * frame.height / frame.width;
+  /// The zoom/viewport half of the canvas. Taking the non-null [bytes] as a parameter keeps the
+  /// promotion out of the builder closures (a null decode never reaches here).
+  Widget _buildCanvas(ThemeData theme, Uint8List bytes) {
+    final frame = widget.frame;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportWidth =
+            constraints.maxWidth.isFinite && constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : 720.0;
+        final viewport = ui.Size(viewportWidth, widget.maxHeight);
+        final fitScale = math.min(
+          viewport.width / frame.width,
+          viewport.height / frame.height,
+        );
+        final scale = _zoom ?? fitScale;
+        final pictureSize = ui.Size(frame.width * scale, frame.height * scale);
+        final pan = _clampPan(viewport, pictureSize, _pan);
+        final position = ui.Offset(
+          (viewport.width - pictureSize.width) / 2 + pan.dx,
+          (viewport.height - pictureSize.height) / 2 + pan.dy,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              key: const ValueKey('calibrate-picture-area'),
+              width: viewport.width,
+              height: viewport.height,
+              child: ClipRect(
+                child: Listener(
+                  onPointerSignal: _zoom == null
+                      ? null
+                      : (event) {
+                          if (event is PointerScrollEvent) {
+                            setState(() {
+                              _pan = _clampPan(
+                                viewport,
+                                pictureSize,
+                                _pan - event.scrollDelta,
+                              );
+                            });
+                          }
+                        },
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: position.dx,
+                        top: position.dy,
+                        width: pictureSize.width,
+                        height: pictureSize.height,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: _pictureArea(theme, bytes, pictureSize),
+                        ),
+                      ),
+                      if (widget.mark != null && scale > 0)
+                        Positioned(
+                          left: position.dx,
+                          top: position.dy,
+                          width: pictureSize.width,
+                          height: pictureSize.height,
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _MarkPainter(
+                                mark: widget.mark!,
+                                scale: scale,
+                                frameOrigin: ui.Offset(
+                                  frame.origin.x.toDouble(),
+                                  frame.origin.y.toDouble(),
+                                ),
+                                clientOrigin: widget.clientOrigin,
+                                marquee: _marqueeLocal,
+                                color: theme.colorScheme.primary,
+                                label: widget.markLabel,
+                                labelBackground: theme.colorScheme.primary,
+                                labelForeground: theme.colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (_panMode && widget.interactive)
+                        Positioned.fill(
+                          child: GestureDetector(
+                            key: const ValueKey('calibrate-pan-surface'),
+                            behavior: HitTestBehavior.opaque,
+                            onPanUpdate: (details) => setState(() {
+                              _pan = _clampPan(
+                                viewport,
+                                pictureSize,
+                                _pan + details.delta,
+                              );
+                            }),
+                          ),
+                        ),
+                      Positioned(
+                        right: ShellSpace.sm,
+                        bottom: ShellSpace.sm,
+                        child: _zoomToolbar(
+                          theme,
+                          fitScale: fitScale,
+                          scale: scale,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: ShellSpace.xs),
+            Wrap(
+              spacing: ShellSpace.lg,
+              runSpacing: ShellSpace.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  _panMode
+                      ? 'Pan mode — drag to move the view; turn pan off to '
+                            'draw marks.'
+                      : widget.interactive
+                      ? 'Marks are client-relative physical px on this '
+                            'frame · click to set a point, drag to set a '
+                            'rect.'
+                      : 'Marks are client-relative physical px on this '
+                            'frame.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  '${_zoom == null ? 'fit ' : ''}'
+                  '${(scale * 100).round()}% · 1 display px = '
+                  '${scale > 0 ? (1 / scale).toStringAsFixed(1) : '—'} '
+                  'physical px',
+                  key: const ValueKey('calibrate-zoom-line'),
+                  style: ShellText.mono.copyWith(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// `fit` / `1:1` / zoom in-out / pan — the demo's canvas control. Fit derives from the current
+  /// layout; 1:1 is one display px per frame px; pan moves a view larger than the viewport.
+  Widget _zoomToolbar(
+    ThemeData theme, {
+    required double fitScale,
+    required double scale,
+  }) {
+    final colors = theme.colorScheme;
+    final pct = (scale * 100).round();
+    Widget smallIcon(
+      String key,
+      IconData icon,
+      String tooltip,
+      VoidCallback onPressed,
+    ) => IconButton(
+      key: ValueKey(key),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: ShellSize.iconSm),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+    );
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: const Size(0, 28),
+      padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xs),
+      visualDensity: VisualDensity.compact,
+      textStyle: theme.textTheme.labelSmall,
+    );
+    return Material(
+      color: colors.surfaceContainerHigh.withValues(alpha: 0.92),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ShellRadius.s),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            smallIcon(
+              'calibrate-zoom-out',
+              Icons.remove,
+              'Zoom out',
+              () => _zoomBy(1 / _zoomStep, fitScale),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xs),
+              child: Text(
+                '${_zoom == null ? 'fit ' : ''}$pct%',
+                key: const ValueKey('calibrate-zoom-label'),
+                style: ShellText.mono.copyWith(fontSize: 11),
+              ),
+            ),
+            smallIcon(
+              'calibrate-zoom-in',
+              Icons.add,
+              'Zoom in',
+              () => _zoomBy(_zoomStep, fitScale),
+            ),
+            TextButton(
+              key: const ValueKey('calibrate-zoom-fit'),
+              onPressed: _setFit,
+              style: buttonStyle,
+              child: const Text('Fit'),
+            ),
+            TextButton(
+              key: const ValueKey('calibrate-zoom-one'),
+              onPressed: _setOneToOne,
+              style: buttonStyle,
+              child: const Text('1:1'),
+            ),
+            IconButton(
+              key: const ValueKey('calibrate-zoom-pan'),
+              tooltip: 'Pan the view',
+              isSelected: _panMode,
+              onPressed: () => setState(() => _panMode = !_panMode),
+              icon: const Icon(Icons.pan_tool_outlined, size: ShellSize.iconSm),
+              selectedIcon: const Icon(Icons.pan_tool, size: ShellSize.iconSm),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   ui.Rect? get _marqueeLocal {
     final start = _dragStartLocal;
@@ -175,7 +405,7 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
     return ui.Rect.fromPoints(start, current);
   }
 
-  Widget _pictureArea(ThemeData theme, Uint8List bytes, ui.Rect picture) {
+  Widget _pictureArea(ThemeData theme, Uint8List bytes, ui.Size pictureSize) {
     final image = Image.memory(
       bytes,
       fit: BoxFit.fill,
@@ -202,7 +432,7 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
           : (details) {
               final mark = framePointToMark(
                 local: details.localPosition,
-                box: picture.size,
+                box: pictureSize,
                 frame: frame,
                 clientOrigin: widget.clientOrigin,
               );
@@ -235,7 +465,7 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
               final mark = frameDragToMark(
                 startLocal: start,
                 endLocal: current,
-                box: picture.size,
+                box: pictureSize,
                 frame: frame,
                 clientOrigin: widget.clientOrigin,
               );
@@ -249,7 +479,8 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
 }
 
 /// Paints the committed mark and the in-progress marquee. Coordinates are picture-local pixels: the
-/// client-relative mark is mapped back with the same origin rule the input mapping uses.
+/// client-relative mark is mapped back with the same origin rule the input mapping uses. The mark's
+/// label is drawn on the canvas so the selected surface is readable without reading the fields.
 class _MarkPainter extends CustomPainter {
   _MarkPainter({
     required this.mark,
@@ -258,6 +489,9 @@ class _MarkPainter extends CustomPainter {
     required this.clientOrigin,
     required this.marquee,
     required this.color,
+    this.label,
+    this.labelBackground,
+    this.labelForeground,
   });
 
   final CalibrationMark mark;
@@ -266,6 +500,11 @@ class _MarkPainter extends CustomPainter {
   final ui.Offset clientOrigin;
   final ui.Rect? marquee;
   final Color color;
+
+  /// The mark's label (`Bag grid · x 700 · y 400 · 900×500`), drawn above the shape when it fits.
+  final String? label;
+  final Color? labelBackground;
+  final Color? labelForeground;
 
   ui.Offset get _originDelta => frameOrigin - clientOrigin;
 
@@ -276,6 +515,7 @@ class _MarkPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     final originDelta = _originDelta;
+    final ui.Rect shapeRect;
     if (mark.isRect) {
       final rect = ui.Rect.fromLTWH(
         (mark.x - originDelta.dx) * scale,
@@ -284,6 +524,7 @@ class _MarkPainter extends CustomPainter {
         mark.h * scale,
       );
       canvas.drawRect(rect, stroke);
+      shapeRect = rect;
     } else {
       final center = ui.Offset(
         (mark.x - originDelta.dx) * scale,
@@ -299,6 +540,11 @@ class _MarkPainter extends CustomPainter {
         center + const ui.Offset(0, 8),
         stroke,
       );
+      shapeRect = ui.Rect.fromCenter(center: center, width: 0, height: 0);
+    }
+    final label = this.label;
+    if (label != null && label.isNotEmpty) {
+      _paintLabel(canvas, size, label, shapeRect);
     }
     final marquee = this.marquee;
     if (marquee != null) {
@@ -310,6 +556,40 @@ class _MarkPainter extends CustomPainter {
     }
   }
 
+  void _paintLabel(Canvas canvas, ui.Size size, String text, ui.Rect anchor) {
+    final foreground = labelForeground ?? color;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: math.max(120.0, size.width - 4));
+    final top = anchor.top - painter.height - 6 < 0
+        ? anchor.top + 2
+        : anchor.top - painter.height - 6;
+    final left = anchor.left
+        .clamp(0.0, math.max(0.0, size.width - painter.width - 8))
+        .toDouble();
+    final background = ui.Rect.fromLTWH(
+      left,
+      top,
+      painter.width + 8,
+      painter.height + 2,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(background, const Radius.circular(4)),
+      Paint()..color = labelBackground ?? color,
+    );
+    painter.paint(canvas, ui.Offset(left + 4, top + 1));
+  }
+
   @override
   bool shouldRepaint(covariant _MarkPainter oldDelegate) =>
       oldDelegate.mark != mark ||
@@ -317,7 +597,10 @@ class _MarkPainter extends CustomPainter {
       oldDelegate.frameOrigin != frameOrigin ||
       oldDelegate.clientOrigin != clientOrigin ||
       oldDelegate.marquee != marquee ||
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.label != label ||
+      oldDelegate.labelBackground != labelBackground ||
+      oldDelegate.labelForeground != labelForeground;
 }
 
 /// A stored crop artifact (base64 PNG from `calibration.fetch`).

@@ -8,6 +8,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/ui/components/status_banner.dart';
+import 'package:seal_shell/ui/components/status_chip.dart';
 import 'package:seal_shell/ui/tabs/pet_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -239,6 +241,32 @@ void _expectNoConfigWrites(AppHarness harness) {
 String _text(WidgetTester tester, String key) =>
     tester.widget<Text>(find.byKey(ValueKey(key))).data!;
 
+/// The readiness banner: its kind IS the core's verdict, its title the sentence the tab states.
+StatusBanner _banner(WidgetTester tester, String key) =>
+    tester.widget<StatusBanner>(find.byKey(ValueKey(key)));
+
+/// One checklist row's label and detail as rendered (the ✓/✗/ℹ marker is an icon, not text).
+String _checklistRowText(WidgetTester tester, String key) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((text) => text.data ?? '')
+    .join(' — ');
+
+/// A keyed column of one-line Texts, joined the way the old single `\n`-joined Text read.
+String _linesText(WidgetTester tester, String key) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((text) => text.data ?? '')
+    .join('\n');
+
 /// One row's boarding tick state (the widget renders the MIRROR).
 bool? _tickValue(WidgetTester tester, int row) => tester
     .widget<CheckboxListTile>(find.byKey(ValueKey('pet-boarding-tick-$row')))
@@ -398,7 +426,10 @@ void main() {
     (tester) async {
       final harness = await _pumpPet(tester, pet: _machinePet());
 
-      expect(find.textContaining('start/end [10, 20, 100, 30]'), findsWidgets);
+      expect(
+        find.textContaining('start/end x 10 · y 20 · 100×30'),
+        findsWidgets,
+      );
       expect(find.textContaining('empty-slot crop saved'), findsOneWidget);
       expect(find.textContaining('boarding running'), findsOneWidget);
       expect(find.byKey(const ValueKey('pet-rows-caption')), findsOneWidget);
@@ -653,27 +684,52 @@ void main() {
       expect(harness.lastSentWithCmd('config.validate'), isNull);
       expect(harness.lastSentWithCmd('config.apply'), isNull);
 
+      final banner = _banner(tester, 'pet-preflight-ready');
       expect(
-        _text(tester, 'pet-preflight-ready'),
-        'Not ready yet — see the lines below.',
+        banner.kind,
+        StatusKind.warning,
+        reason: 'the verdict colour IS the core\'s readiness result',
+      );
+      expect(banner.title, 'Not ready yet — see the lines below.');
+      expect(
+        _checklistRowText(tester, 'pet-preflight-calibration-0'),
+        'Pet menu point — marked',
       );
       expect(
-        _text(tester, 'pet-preflight-calibration'),
-        '✓ Pet menu point — marked\n✗ Boarding bag grid — not marked',
+        _checklistRowText(tester, 'pet-preflight-calibration-1'),
+        'Boarding bag grid — not marked',
       );
       expect(
-        _text(tester, 'pet-preflight-session'),
-        '✓ return slot — page 2, cell 4\n'
-        '✗ food cells\n'
-        'ℹ board firmware — not checked by preflight — normal',
+        _checklistRowText(tester, 'pet-preflight-session-0'),
+        'return slot — page 2, cell 4',
+      );
+      expect(
+        _checklistRowText(tester, 'pet-preflight-session-1'),
+        'food cells',
+      );
+      expect(
+        _checklistRowText(tester, 'pet-preflight-session-2'),
+        'board firmware — not checked by preflight — normal',
+      );
+      // INFORMATIONAL: ok:true with a "not checked by preflight" detail renders the ℹ icon, never
+      // the passed-check icon.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('pet-preflight-session-2')),
+          matching: find.byIcon(Icons.info_outline),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('pet-preflight-session-2')),
+          matching: find.byIcon(Icons.check_circle_outline),
+        ),
+        findsNothing,
         reason: 'ok:true with a "not checked by preflight" detail is INFORMATION, not a passed check',
       );
       expect(
-        _text(tester, 'pet-preflight-session'),
-        isNot(contains('✓ board firmware')),
-      );
-      expect(
-        _text(tester, 'pet-preflight-lines'),
+        _linesText(tester, 'pet-preflight-lines'),
         'This tab is ready. 2 row(s), reloading every 205 min / 410 min.\n'
         'every row is unticked — nothing to feed\n'
         'no pet icon is queued — the tool will use the return slot instead',
@@ -692,9 +748,11 @@ void main() {
   ) async {
     final harness = await _pumpPet(tester, pet: _machinePet());
     expect(_preflightCalls(harness), 1);
-    expect(_text(tester, 'pet-preflight-ready'), 'Ready to run.');
+    final banner = _banner(tester, 'pet-preflight-ready');
+    expect(banner.kind, StatusKind.success);
+    expect(banner.title, 'Ready to run.');
     expect(
-      _text(tester, 'pet-preflight-lines'),
+      _linesText(tester, 'pet-preflight-lines'),
       'This tab is ready. 2 row(s), reloading every 205 min / 410 min.',
     );
 
@@ -1566,6 +1624,11 @@ void main() {
       await _tap(tester, 'pet-scan-page-1');
       await _tap(tester, 'pet-scan-food-page');
       await _flush(tester);
+      expect(
+        _preflightCalls(harness),
+        1,
+        reason: 'the open read is the only checklist read so far',
+      );
 
       // The confirmation is required, and Cancel sends nothing.
       await _tap(tester, 'pet-scan-apply-food');
@@ -1573,9 +1636,14 @@ void main() {
       expect(find.textContaining('REPLACES'), findsOneWidget);
       expect(find.textContaining('RESETS'), findsOneWidget);
       expect(
-        find.textContaining('immediately'),
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('immediately'),
+        ),
         findsOneWidget,
-        reason: 'the write takes effect at once, even during a run',
+        reason:
+            'the write takes effect at once, even during a run (the tab also carries the '
+            '"applies immediately" cue per row, hence the dialog scope)',
       );
       expect(
         find.descendant(
@@ -1606,6 +1674,11 @@ void main() {
       expect(
         _text(tester, 'pet-scan-apply-result'),
         contains('Applied 2 cells (config rev 21)'),
+      );
+      expect(
+        _preflightCalls(harness),
+        2,
+        reason: 'a successful A1 write changed the saved config: exactly one checklist re-read',
       );
       _expectNoConfigWrites(harness);
 
@@ -1712,6 +1785,11 @@ void main() {
       );
       await _tap(tester, 'pet-scan-food-page');
       await _flush(tester);
+      expect(
+        _preflightCalls(harness),
+        1,
+        reason: 'the open read is the only checklist read so far',
+      );
       await _tap(tester, 'pet-scan-apply-food');
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('pet-scan-apply-confirm')));
@@ -1722,6 +1800,12 @@ void main() {
         _text(tester, 'pet-scan-apply-result'),
         'pet.apply_food_scan cells[1] is outside 1..64',
         reason: 'the core refusal is rendered verbatim',
+      );
+      expect(
+        _preflightCalls(harness),
+        1,
+        reason:
+            'a refused apply changes nothing, so there is no checklist re-read',
       );
       _expectNoConfigWrites(harness);
       expect(
@@ -1753,6 +1837,212 @@ void main() {
         isNotNull,
         reason: 'the core owns the refusal; the shell only points at the missing icon',
       );
+    },
+  );
+
+  testWidgets(
+    'a food scan with a missing hide channel is noted, sent and rendered',
+    (tester) async {
+      final host = FakeHost(failHide: true);
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return _foodScanAnswer(page: 1, cells: [13, 36]);
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+
+      expect(host.lifecycle, [
+        'hide',
+        'scan-sent',
+        'show',
+      ], reason: 'a failed hide is a note, not a reason to skip the scan');
+      expect(
+        _text(tester, 'pet-scan-food-note'),
+        'the shell could not hide itself — the game has to be in front for a capture',
+      );
+      expect(
+        harness.sentMessages.where(
+          (message) => message['cmd'] == 'pet.scan_food_page',
+        ),
+        hasLength(1),
+        reason: 'the command is still sent through a missing host channel',
+      );
+      expect(
+        _text(tester, 'pet-scan-food-cells'),
+        'Found 2 cells: 13, 36',
+        reason: 'the scan result path is unchanged',
+      );
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'a food scan with a missing show channel is noted and still renders',
+    (tester) async {
+      final host = FakeHost(failShow: true);
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.scan_food_page') {
+            host.lifecycle.add('scan-sent');
+            return _foodScanAnswer(page: 1, cells: [13, 36]);
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-food-page');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'scan-sent', 'show']);
+      expect(
+        host.showCalls,
+        1,
+        reason: 'the show is attempted and does not throw',
+      );
+      expect(
+        _text(tester, 'pet-scan-food-note'),
+        'the shell could not be shown again — no host channel',
+      );
+      expect(_text(tester, 'pet-scan-food-cells'), 'Found 2 cells: 13, 36');
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'only one window command can be in flight across captures and scans',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(tester, pet: _machinePet(), host: host);
+      // A source cell so the capture button would be ENABLED when the window is free.
+      await _tap(tester, 'pet-add-cell-0-7');
+      // Withhold the next window command's reply so it stays in flight.
+      harness.onWrite = (line, fake) {};
+
+      // 1) A SCAN in flight disables both capture buttons and starts no capture.
+      await _tap(tester, 'pet-scan-food-page');
+      await tester.pump();
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-add-capture')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'a scan holds the window, so a capture cannot start',
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-food-icon-capture')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-food-page')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'the scan buttons are single-flight too',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('pet-add-capture')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(
+        harness.sentMessages.where(
+          (message) => message['cmd'] == 'pet.capture_icon',
+        ),
+        isEmpty,
+        reason:
+            'a second window command is not sent while the scan is in flight',
+      );
+      expect(
+        harness.sentMessages.where(
+          (message) => message['cmd'] == 'pet.scan_food_page',
+        ),
+        hasLength(1),
+      );
+
+      // Answer the scan; the window is free again.
+      harness.respondOk(_foodScanAnswer(page: 1));
+      await _flush(tester);
+
+      // 2) A CAPTURE in flight disables both scan buttons and starts no scan.
+      await _tap(tester, 'pet-add-capture');
+      await tester.pump();
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-food-page')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'a capture holds the window, so a scan cannot start',
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-queue-page')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('pet-scan-queue-page')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(
+        harness.sentMessages.where(
+          (message) => message['cmd'] == 'pet.capture_icon',
+        ),
+        hasLength(1),
+        reason: 'exactly one capture is in flight',
+      );
+      expect(
+        harness.sentMessages.where(
+          (message) => message['cmd'] == 'pet.scan_queue_page',
+        ),
+        isEmpty,
+        reason: 'a second window command is not sent while the capture is in flight',
+      );
+
+      // Answer the capture so the test leaves nothing pending; the window is free again.
+      harness.respondOk(_captureAnswer(harness.lastRequest));
+      await _flush(tester);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-scan-food-page')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-add-capture')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      _expectNoConfigWrites(harness);
     },
   );
 }
