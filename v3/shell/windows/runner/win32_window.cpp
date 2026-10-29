@@ -1,5 +1,6 @@
 #include "win32_window.h"
 
+#include <cmath>
 #include <dwmapi.h>
 #include <flutter_windows.h>
 
@@ -179,6 +180,26 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_GETMINMAXINFO: {
+      // The shell's minimum logical size (PLAN-V3-UI-UX §3: the rail plus the widest rigid row).
+      // MINMAXINFO is expressed in physical pixels for a DPI-aware window, so scale by the current
+      // monitor DPI; the plan asks the runner to enforce this because the layout itself must not
+      // shrink below the rail + content.
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      constexpr double kMinWidth = 1120.0;
+      constexpr double kMinHeight = 680.0;
+      UINT dpi = ::GetDpiForWindow(hwnd);
+      if (dpi == 0) {
+        dpi = 96;
+      }
+      const double scale = static_cast<double>(dpi) / 96.0;
+      info->ptMinTrackSize.x =
+          static_cast<LONG>(std::lround(kMinWidth * scale));
+      info->ptMinTrackSize.y =
+          static_cast<LONG>(std::lround(kMinHeight * scale));
+      return 0;
+    }
+
     case WM_DESTROY:
       window_handle_ = nullptr;
       Destroy();

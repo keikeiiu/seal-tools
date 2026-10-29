@@ -1,15 +1,14 @@
-/// The card grid: one card per PLAN-V3-SHELL §6 tool (seven — Hold Space has no card), in plan order.
+/// The Cards ("Run") screen: the running tools as full cards above, the idle tools as one-line tiles
+/// below, Hold Space included ([PLAN-V3-UI-UX.md] §6 "Cards", D2).
 ///
 /// Every card's facts come from the model; this widget only projects them, plus ONE shared ticker for
-/// the displayed next-action countdown. The ticker lives here rather than in each card so seven cards
-/// cannot drift or leak seven timers: it runs only while at least one published row carries
+/// the displayed next-action countdown. The ticker runs only while at least one published row carries
 /// `next_action_in_seconds`, increments each card's display-only elapsed seconds once per second, and
 /// is cancelled when the page leaves. A new `state` event for a tool resets that tool's elapsed count
 /// (the snapshot object identity changes), so the core's published value stays the baseline. Rows
-/// without `next_action_in_seconds` never show a countdown. Hold Space's report is attached to the
-/// Spammer card because TOOL-FLOWS gives holdspace no card of its own.
+/// without `next_action_in_seconds` never show a countdown.
 ///
-/// [PLAN-V3-SHELL.md]: ../../../docs/plans/PLAN-V3-SHELL.md
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
 import 'dart:async';
@@ -19,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../app/app.dart';
 import '../protocol/protocol.dart';
 import 'card_extras.dart';
+import 'components/empty_state.dart';
 import 'theme.dart';
 import 'tool_card.dart';
 import 'tool_labels.dart';
@@ -67,8 +67,6 @@ class _CardGridState extends State<CardGrid> {
     _timer?.cancel();
     super.dispose();
   }
-
-  // ── Buy card run choice (PROTOCOL §12.6) ─────────────────────────────────────────────────────
 
   Map<String, dynamic> get _buyPresets =>
       asJsonMap(asJsonMap(widget.model.config.config['buy_sell'])['presets']);
@@ -173,47 +171,118 @@ class _CardGridState extends State<CardGrid> {
     return widget.model.startTool(tool);
   }
 
+  Widget? _extras(ToolId tool) => switch (tool) {
+    ToolId.buy => BuyCardExtras(
+      presets: _buyPresets,
+      preset: _resolvedBuyPreset,
+      count: _resolvedBuyCount,
+      onPresetChanged: _onBuyPresetChanged,
+      onCountChanged: _onBuyCountChanged,
+    ),
+    ToolId.spammer => SpammerCardExtras(model: widget.model),
+    ToolId.quest => QuestCardExtras(model: widget.model),
+    _ => null,
+  };
+
+  Widget _card(ToolId tool) {
+    return ToolCard(
+      tool: tool,
+      snapshot: widget.model.tools.snapshot(tool),
+      finished: widget.model.tools.finished(tool),
+      refusal: widget.model.tools.refusal(tool),
+      pending: widget.model.tools.isPending(tool),
+      ready: widget.model.isReady,
+      elapsedTicks: _elapsed[tool] ?? 0,
+      extras: _extras(tool),
+      onStart: () => unawaited(_startTool(tool)),
+      onStop: () => unawaited(widget.model.stopTool(tool)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(ShellSpace.lg),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 460,
-        mainAxisExtent: 360,
-        crossAxisSpacing: ShellSpace.md,
-        mainAxisSpacing: ShellSpace.md,
-      ),
-      itemCount: cardToolIds.length,
-      itemBuilder: (context, index) {
-        final tool = cardToolIds[index];
-        return ToolCard(
-          tool: tool,
-          snapshot: widget.model.tools.snapshot(tool),
-          finished: widget.model.tools.finished(tool),
-          refusal: widget.model.tools.refusal(tool),
-          pending: widget.model.tools.isPending(tool),
-          ready: widget.model.isReady,
-          elapsedTicks: _elapsed[tool] ?? 0,
-          extras: switch (tool) {
-            ToolId.buy => BuyCardExtras(
-              presets: _buyPresets,
-              preset: _resolvedBuyPreset,
-              count: _resolvedBuyCount,
-              onPresetChanged: _onBuyPresetChanged,
-              onCountChanged: _onBuyCountChanged,
+    final theme = Theme.of(context);
+    final running = <ToolId>[
+      for (final tool in cardToolIds)
+        if ((widget.model.tools.snapshot(tool)?.phase ?? ToolPhase.idle) !=
+            ToolPhase.idle)
+          tool,
+    ];
+    final idle = <ToolId>[
+      for (final tool in cardToolIds)
+        if (!running.contains(tool)) tool,
+    ];
+
+    Widget sectionTitle(String title, String meta) => Padding(
+      padding: const EdgeInsets.only(bottom: ShellSpace.sm),
+      child: Row(
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          const SizedBox(width: ShellSpace.sm),
+          Text(
+            meta,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            ToolId.spammer => SpammerCardExtras(model: widget.model),
-            ToolId.quest => QuestCardExtras(model: widget.model),
-            _ => null,
-          },
-          holdSpaceLine: tool == ToolId.spammer
-              ? holdSpaceReport(
-                  widget.model.tools.snapshot(ToolId.holdspace),
-                  widget.model.tools.refusal(ToolId.holdspace),
-                )
-              : null,
-          onStart: () => unawaited(_startTool(tool)),
-          onStop: () => unawaited(widget.model.stopTool(tool)),
+          ),
+        ],
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const padding = ShellSpace.lg;
+        const gap = ShellSpace.md;
+        final width = constraints.maxWidth - padding * 2;
+        final runningColumns = constraints.maxWidth >= 1000 ? 2 : 1;
+        final idleColumns = constraints.maxWidth >= 1100
+            ? 3
+            : (constraints.maxWidth >= 700 ? 2 : 1);
+        final runningWidth =
+            (width - gap * (runningColumns - 1)) / runningColumns;
+        final idleWidth = (width - gap * (idleColumns - 1)) / idleColumns;
+
+        return ListView(
+          key: const ValueKey('cards-list'),
+          padding: const EdgeInsets.all(padding),
+          children: [
+            if (running.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: ShellSpace.lg),
+                child: EmptyState(
+                  key: ValueKey('cards-empty'),
+                  icon: Icons.play_circle_outline,
+                  title: 'No runs yet',
+                  hint:
+                      'Pick a tool below and press Start. Only one tool runs at a '
+                      'time, and the running tool stays in front.',
+                ),
+              )
+            else ...[
+              sectionTitle(
+                'Running now',
+                '${running.length} tool${running.length == 1 ? '' : 's'} · one at a time',
+              ),
+              Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final tool in running)
+                    SizedBox(width: runningWidth, child: _card(tool)),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xl),
+            ],
+            sectionTitle('Available tools', '${idle.length} idle'),
+            Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final tool in idle)
+                  SizedBox(width: idleWidth, child: _card(tool)),
+              ],
+            ),
+          ],
         );
       },
     );

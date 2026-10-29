@@ -57,17 +57,20 @@ F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這�
 
 ## 2. 視窗
 
-視窗開啟時最上方是 **Cards**，下面是一排分頁，底部是**狀態列**。核心停止或無法啟動時，整個頁面會變成
+視窗開啟時停在 **Cards** 畫面。左側是**導覽列**，分成三組 —— **RUN**（Cards）、**TOOLS**（Skill
+Spammer、Magic Tuner、Gem Composer、Buy、Sell、Quest Hand-in、Pet Feeder）與 **SYSTEM**（Attributes、
+Arduino、Hotkeys、Setup、Calibrate）—— 底部是**狀態列**。核心停止或無法啟動時，整個頁面會變成
 **當機畫面（crash view）**。
 
-- **標題列 / App bar：** `Seal Tools v3`、右側的 **Hold Space** 切換鈕、**always-on-top 釘選鈕**
-  （`Keep Seal Tools on top`），以及小小的產品版本 `v3.0.0`。（殼層↔核心的協定用戶端身分是另一個
-  工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）
-- **分頁列：** `Cards`、`Spammer`、`Tuner`、`Gem`、`Buy/Sell`、`Quest`、`Pet`、`Attributes`、`Arduino`、
-  `Hotkeys`、`Setup`、`Calibrate` —— Cards 頁面加上十一個分頁。
-- **狀態列：** `core <版本> · rev <n>`、核心正在使用的 **root** 資料夾，以及 **Logs** 按鈕。
-- **當機畫面：** 核心沒在跑時取代整個頁面。它會顯示失敗原因、root、核心的 **stderr 尾端**，以及
-  **Restart core** 按鈕（協定版本不合時除外：那需要換成一對相符的執行檔，不是重啟）。
+- **頂端列：** `Seal Tools`、**核心狀態 chip**（`core ready · rev <n>`）、**Logs** 按鈕、
+  **always-on-top 釘選鈕**（`Keep Seal Tools on top`）與小小的產品版本。（殼層↔核心的協定用戶端身分
+  是另一個工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）現在**沒有 Hold Space 切換鈕**：Hold Space
+  是 Cards 畫面上的一張卡片（見 2.3）。
+- **導覽列：** 每個畫面一列，依用途分組；**Cards** 上有執行中工具數量的徽章。導覽列取代了原本的十二個
+  分頁；執行中的工具不會移動導覽列。
+- **狀態列：** 左邊是 `core <版本> · rev <n>` 與核心正在使用的 **root** 資料夾，右邊是 `Ctrl+L logs`
+  提示。
+
 
 **Always-on-top 釘選鈕。** 釘選亮起時，殼層視窗會保持在遊戲與其他視窗上方；按一下會立即套用，並儲存
 可攜設定 `settings.ui.always_on_top`，所以下次啟動會維持相同狀態。它是設定偏好，不屬於 Calibrate 的
@@ -85,24 +88,24 @@ F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這�
 關閉）；最大化的視窗會以它的幾何位置重開 —— 最大化狀態本身不會被記住；混合 DPI 的多螢幕設定會讓 clamp
 只是近似。
 
-### 2.1 Logs 面板
+### 2.1 Logs 抽屜
 
-狀態列的 **Logs (N)** 會打開即時日誌面板，開啟時按鈕顯示 **Hide logs**。面板顯示核心發布的 `log` 行
-（工具訊息、值得顯示的拒絕、警告）；`N` 是目前保留的行數。這是即時檢視；持久的分次執行檔案在
-`<root>/logs/` —— 見第 7 節。
+頂端列的 **Logs (N)**（或 **Ctrl+L**）會在內容底部打開日誌抽屜；再按一次（或再按 Ctrl+L）關閉。它顯示
+核心發布的 `log` 行（工具訊息、值得顯示的拒絕、警告），每行有等級徽章，並有 **All / Errors** 篩選。
+`N` 是目前保留的行數。這是即時檢視；持久的分次執行檔案在 `<root>/logs/` —— 見第 7 節。
 
-### 2.2 Cards 頁面
+### 2.2 Cards 畫面
 
-Cards 頁面是七張卡片的格狀排列 —— Skill Spammer、Magic Tuner、Buy、Sell、Gem Composer、Quest
-Hand-in、Pet Feeder —— 再加上 App bar 裡的 Hold Space 切換鈕（Hold Space 是第八個工具，但刻意沒有卡片：
-Skill Spammer 卡片顯示它的狀態，完整的軌跡在 `holdspace.log`）。第 4 節說明每張卡片的執行。
+Cards 畫面先回答「現在在跑什麼、健不健康？」。執行中的工具以**完整卡片**顯示在上方 —— 成功色強調、
+階段 chip、核心訊息、資料列與 Stop 按鈕 —— 其餘工具是**單列 idle 磚**，附一個 outlined **Start**（共
+八個工具，包含 Hold Space；第 4 節說明每張卡片的執行）。沒有工具在跑時會顯示空狀態橫幅，下一步就是
+下方的磚。卡片的階段只在核心發布 `state` 時改變：Start 會顯示進行中標籤，不會樂觀地改階段。
 
 ### 2.3 Hold Space
 
-App bar 的切換鈕會**按住空白鍵**，讓遊戲撿起物品，放開時鬆開。它沒有卡片，因為它沒有可排程的執行：
-按 **Hold Space**，遊玩，按 **Release Space**。即時的 Hold Space 狀態顯示在 **Skill Spammer** 卡片上。
-釋放失敗**只記在 `holdspace.log`**：釋放發生在執行結束時，而且沒有協定事件，所以卡片無法顯示它。
-若需要檢查釋放，請讀那個檔案；裡面屬於領域的訊息會要你在遊戲中按一下空白鍵。
+Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），因為它就跟其他工具一樣是一次執行：在卡片上
+按 **Start** 會**按住空白鍵**讓遊戲撿起物品，按 **Stop** 放開。它沒有設定畫面。即時狀態、階段與拒絕訊息
+都在它的卡片上；釋放失敗**仍只記在 `holdspace.log`**，因為放開發生在執行結束時，而且沒有協定事件。
 
 ---
 
@@ -516,7 +519,7 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 7.1 即時日誌面板
 
-狀態列的 **Logs (N)** 顯示核心執行時發布的日誌行。它是用來*觀看*執行，不是持久紀錄。
+頂端列的 **Logs (N)**（或 **Ctrl+L**）顯示核心執行時發布的日誌行。它是用來*觀看*執行，不是持久紀錄。
 
 ### 7.2 分次執行檔案：`<root>/logs/`
 

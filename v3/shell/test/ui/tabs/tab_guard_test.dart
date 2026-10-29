@@ -99,7 +99,13 @@ Future<void> _flush(WidgetTester tester) async {
 }
 
 Future<void> _openTab(WidgetTester tester, String label) async {
-  await tester.tap(find.text(label));
+  // PLAN-V3-UI-UX D1 replaced the tab strip with the rail; the guard tests still name the tool.
+  final key = switch (label) {
+    'Spammer' => 'rail-spammer',
+    'Tuner' => 'rail-tuner',
+    _ => throw ArgumentError.value(label, 'label', 'no rail destination'),
+  };
+  await tester.tap(find.byKey(ValueKey(key)));
   await tester.pumpAndSettle();
 }
 

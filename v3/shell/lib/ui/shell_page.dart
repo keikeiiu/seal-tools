@@ -1,22 +1,31 @@
-/// The shell window: chrome, the card grid, the log panel and the status strip.
+/// The shell window: rail, top bar, content, logs drawer and status strip (D1 of
+/// [PLAN-V3-UI-UX.md] §0/§3).
 ///
 /// One `ListenableBuilder` at the root renders the whole shell from the one model
-/// ([PLAN-V3-SHELL.md] §5 — no InheritedNotifier is needed until a tab needs scoping). The window's
+/// ([PLAN-V3-SHELL.md] §5 — no InheritedNotifier is needed until a destination needs scoping). The
+/// rail is navigation only: it selects a destination; it decides nothing about the core. The window's
 /// chrome (Mica, minimum size) belongs to the Windows runner's C++, not here.
 ///
+/// Destinations are built lazily and then kept alive in an `IndexedStack`, matching the old
+/// `TabBarView` + `AutomaticKeepAliveClientMixin` behaviour: opening a tab for the first time builds
+/// it, and walking away does not lose its draft.
+///
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 /// [PLAN-V3-SHELL.md]: ../../../docs/plans/PLAN-V3-SHELL.md
 library;
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/app.dart';
 import '../protocol/protocol.dart';
 import 'card_grid.dart';
+import 'components/log_drawer.dart';
+import 'components/nav_rail.dart';
+import 'components/status_chip.dart';
 import 'crash_view.dart';
-import 'hold_space_toggle.dart';
-import 'log_panel.dart';
 import 'status_strip.dart';
 import 'tabs/arduino_tab.dart';
 import 'tabs/attributes_tab.dart';
@@ -25,11 +34,12 @@ import 'tabs/calibrate_tab.dart';
 import 'tabs/gem_tab.dart';
 import 'tabs/hotkeys_tab.dart';
 import 'tabs/pet_tab.dart';
-import 'tabs/setup_tab.dart';
 import 'tabs/quest_tab.dart';
+import 'tabs/setup_tab.dart';
 import 'tabs/spammer_tab.dart';
 import 'tabs/tuner_tab.dart';
 import 'theme.dart';
+import 'tool_labels.dart';
 
 class ShellPage extends StatefulWidget {
   const ShellPage({super.key, required this.model});
@@ -41,14 +51,28 @@ class ShellPage extends StatefulWidget {
 }
 
 class _ShellPageState extends State<ShellPage> {
+  int _selected = 0;
   bool _logsVisible = false;
+
+  /// Destinations built at least once; the rest stay placeholders so opening a tab is lazy.
+  final Set<int> _visited = {0};
+
+  void _select(int index) {
+    if (index == _selected) {
+      return;
+    }
+    setState(() {
+      _selected = index;
+      _visited.add(index);
+    });
+  }
+
+  void _toggleLogs() => setState(() => _logsVisible = !_logsVisible);
 
   /// The pin applies to the window and saves the preference; a refused save is shown with the
   /// core's own line and the model has already put the window back on the saved value.
   Future<void> _toggleAlwaysOnTop() async {
-    final outcome = await widget.model.setAlwaysOnTop(
-      !widget.model.alwaysOnTop,
-    );
+    final outcome = await widget.model.setAlwaysOnTop(!widget.model.alwaysOnTop);
     if (!mounted) {
       return;
     }
@@ -65,6 +89,24 @@ class _ShellPageState extends State<ShellPage> {
     );
   }
 
+  List<Widget> get _pages => [
+    CardGrid(model: widget.model),
+    SpammerTab(model: widget.model),
+    TunerTab(model: widget.model),
+    GemTab(model: widget.model),
+    // Phase 2 splits Buy (saved presets) and Sell (per-run selection) into two screens; until then
+    // both rail rows open the one Buy/Sell tab (PLAN-V3-UI-UX §7 Phase 2).
+    BuySellTab(model: widget.model),
+    BuySellTab(model: widget.model),
+    QuestTab(model: widget.model),
+    PetTab(model: widget.model),
+    AttributesTab(model: widget.model),
+    ArduinoTab(model: widget.model),
+    HotkeysTab(model: widget.model),
+    SetupTab(model: widget.model),
+    CalibrateTab(model: widget.model),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -72,113 +114,161 @@ class _ShellPageState extends State<ShellPage> {
       builder: (context, _) {
         final model = widget.model;
         final connection = model.connection;
-        final holdSpace = model.tools.snapshot(ToolId.holdspace);
-        final holdSpaceEngaged =
-            (holdSpace?.phase ?? ToolPhase.idle) != ToolPhase.idle;
-
         final ready = connection.status == ConnectionStatus.ready;
-        return DefaultTabController(
-          length: 12,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Seal Tools v3'),
-              toolbarHeight: 48,
-              elevation: 0,
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-              actions: [
-                HoldSpaceToggle(
-                  snapshot: holdSpace,
-                  pending: model.tools.isPending(ToolId.holdspace),
-                  ready: model.isReady,
-                  onToggle: () => unawaited(
-                    holdSpaceEngaged
-                        ? model.stopTool(ToolId.holdspace)
-                        : model.startTool(ToolId.holdspace),
-                  ),
-                ),
-                IconButton(
-                  key: const ValueKey('app-bar-always-on-top'),
-                  tooltip: 'Keep Seal Tools on top',
-                  isSelected: model.alwaysOnTop,
-                  icon: const Icon(Icons.push_pin_outlined),
-                  selectedIcon: const Icon(Icons.push_pin),
-                  onPressed: ready
-                      ? () => unawaited(_toggleAlwaysOnTop())
-                      : null,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: ShellSpace.md,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'v$productVersion',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ),
-                ),
-              ],
-              bottom: ready
-                  ? const TabBar(
-                      isScrollable: true,
-                      tabs: [
-                        Tab(text: 'Cards'),
-                        Tab(text: 'Spammer'),
-                        Tab(text: 'Tuner'),
-                        Tab(text: 'Gem'),
-                        Tab(text: 'Buy/Sell'),
-                        Tab(text: 'Quest'),
-                        Tab(text: 'Pet'),
-                        Tab(text: 'Attributes'),
-                        Tab(text: 'Arduino'),
-                        Tab(text: 'Hotkeys'),
-                        Tab(text: 'Setup'),
-                        Tab(text: 'Calibrate'),
-                      ],
-                    )
-                  : null,
-            ),
+
+        if (!ready) {
+          return Scaffold(
             body: switch (connection.status) {
               ConnectionStatus.failed => CrashView(model: model),
-              ConnectionStatus.ready => Column(
-                children: [
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        CardGrid(model: model),
-                        SpammerTab(model: model),
-                        TunerTab(model: model),
-                        GemTab(model: model),
-                        BuySellTab(model: model),
-                        QuestTab(model: model),
-                        PetTab(model: model),
-                        AttributesTab(model: model),
-                        ArduinoTab(model: model),
-                        HotkeysTab(model: model),
-                        SetupTab(model: model),
-                        CalibrateTab(model: model),
-                      ],
-                    ),
-                  ),
-                  if (_logsVisible) LogPanel(entries: model.logs.entries),
-                  StatusStrip(
-                    model: model,
-                    logsVisible: _logsVisible,
-                    onToggleLogs: () =>
-                        setState(() => _logsVisible = !_logsVisible),
-                  ),
-                ],
-              ),
-              ConnectionStatus.idle ||
-              ConnectionStatus.starting ||
-              ConnectionStatus.handshaking => _ConnectingView(
+              _ => _ConnectingView(
                 status: connection.status,
                 stderrTail: model.logs.stderrTail,
               ),
             },
+          );
+        }
+
+        final pages = _pages;
+        return Scaffold(
+          body: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+                  _toggleLogs,
+            },
+            child: Focus(
+              autofocus: true,
+              child: Column(
+                children: [
+                  _TopBar(
+                    model: model,
+                    logsVisible: _logsVisible,
+                    onToggleLogs: _toggleLogs,
+                    onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
+                  ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        ShellRail(
+                          selected: _selected,
+                          onSelect: _select,
+                          runningCount: cardRunningCount(model),
+                        ),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: IndexedStack(
+                                  index: _selected,
+                                  children: [
+                                    for (var index = 0;
+                                        index < pages.length;
+                                        index++)
+                                      _visited.contains(index)
+                                          ? pages[index]
+                                          : const SizedBox.shrink(),
+                                  ],
+                                ),
+                              ),
+                              if (_logsVisible)
+                                LogDrawer(
+                                  entries: model.logs.entries,
+                                  onClose: _toggleLogs,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  StatusStrip(model: model),
+                ],
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+/// The number of tools currently engaged, for the Cards badge (Hold Space included).
+int cardRunningCount(ShellModel model) => cardToolIds
+    .where(
+      (tool) =>
+          (model.tools.snapshot(tool)?.phase ?? ToolPhase.idle) != ToolPhase.idle,
+    )
+    .length;
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.model,
+    required this.logsVisible,
+    required this.onToggleLogs,
+    required this.onTogglePin,
+  });
+
+  final ShellModel model;
+  final bool logsVisible;
+  final VoidCallback onToggleLogs;
+  final VoidCallback onTogglePin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ready = model.isReady;
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      child: SizedBox(
+        height: 48,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
+          child: Row(
+            children: [
+              Icon(
+                Icons.waves,
+                size: ShellSize.iconMd,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              Text('Seal Tools', style: theme.textTheme.titleSmall),
+              const SizedBox(width: ShellSpace.lg),
+              StatusChip(
+                key: const ValueKey('top-core-chip'),
+                kind: ready ? StatusKind.success : StatusKind.warning,
+                label:
+                    'core ${ready ? 'ready' : 'working'} · rev ${model.config.rev}',
+              ),
+              const Spacer(),
+              TextButton.icon(
+                key: const ValueKey('logs-toggle'),
+                onPressed: onToggleLogs,
+                icon: Icon(
+                  logsVisible ? Icons.close : Icons.menu,
+                  size: ShellSize.iconMd,
+                ),
+                label: Text('Logs ${model.logs.entries.length}'),
+              ),
+              IconButton(
+                key: const ValueKey('app-bar-always-on-top'),
+                tooltip: 'Keep Seal Tools on top',
+                isSelected: model.alwaysOnTop,
+                icon: const Icon(Icons.push_pin_outlined),
+                selectedIcon: const Icon(Icons.push_pin),
+                onPressed: ready ? onTogglePin : null,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: ShellSpace.xs),
+                child: Text(
+                  'v$productVersion',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -205,18 +295,22 @@ class _ConnectingView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(
-            width: 28,
-            height: 28,
+            width: ShellSize.iconLg,
+            height: ShellSize.iconLg,
             child: CircularProgressIndicator(strokeWidth: 3),
           ),
           const SizedBox(height: ShellSpace.md),
           Text(message, style: theme.textTheme.bodyMedium),
           if (stderrTail.isNotEmpty) ...[
             const SizedBox(height: ShellSpace.sm),
-            Text(
-              stderrTail.last,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+            SizedBox(
+              width: ShellWidth.prose,
+              child: Text(
+                stderrTail.last,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ),
           ],

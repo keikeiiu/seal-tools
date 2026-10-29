@@ -1,17 +1,19 @@
-/// Labels and formatting for the card grid — pure Dart (no widgets), so this file's rules are
-/// testable and the card itself stays a rendering of them.
+/// Labels and formatting for the card grid — pure Dart (no widgets, except the icon lookup), so this
+/// file's rules are testable and the card itself stays a rendering of them.
 ///
-/// The card ORDER is PLAN-V3-SHELL §6's: spammer, tuner, buy, sell, gem, quest, pet. Hold Space has
-/// NO card ([PROTOCOL.md] §9, TOOL-FLOWS "Hold Space"): its state and release-failure lines are the
-/// Spammer card's surface, and the chrome owns the toggle.
+/// The card ORDER is PLAN-V3-SHELL §6's seven tools, with **Hold Space eighth** ([PLAN-V3-UI-UX.md]
+/// D2: it is its own card now, at the same level as the other tools, and has no config screen).
 ///
 /// [PLAN-V3-SHELL.md]: ../../../docs/plans/PLAN-V3-SHELL.md
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
 
+import 'package:flutter/material.dart';
+
 import '../protocol/protocol.dart';
 
-/// The seven cards, in the plan's order.
+/// The eight cards, in the plan's order (Hold Space last).
 const List<ToolId> cardToolIds = [
   ToolId.spammer,
   ToolId.tuner,
@@ -20,6 +22,7 @@ const List<ToolId> cardToolIds = [
   ToolId.gem,
   ToolId.quest,
   ToolId.pet,
+  ToolId.holdspace,
 ];
 
 /// The player-facing name of a tool. The core names ids, the shell names cards.
@@ -32,6 +35,18 @@ String toolDisplayName(ToolId tool) => switch (tool) {
   ToolId.gem => 'Gem Composer',
   ToolId.quest => 'Quest Hand-in',
   ToolId.pet => 'Pet Feeder',
+};
+
+/// The icon a card/rail row shows for a tool (presentation only; the core names ids).
+IconData toolIcon(ToolId tool) => switch (tool) {
+  ToolId.spammer => Icons.bolt_outlined,
+  ToolId.holdspace => Icons.space_bar,
+  ToolId.buy => Icons.shopping_cart_outlined,
+  ToolId.sell => Icons.sell_outlined,
+  ToolId.tuner => Icons.tune,
+  ToolId.gem => Icons.diamond_outlined,
+  ToolId.quest => Icons.assignment_turned_in_outlined,
+  ToolId.pet => Icons.pets_outlined,
 };
 
 /// The lifecycle word the card shows; a tool with no published snapshot is idle (PLAN §6's

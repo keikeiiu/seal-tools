@@ -381,6 +381,15 @@ they are not re-guessed in Phase 0 because the layout is not supposed to move ye
 `.scratch/ui-audit/shots/phase0-{1280,960}-*.png` (all 12 surfaces) against the original
 `shots/*.png`.
 
+
+Phase 1 landed 2026-10-29: the 216 px rail (RUN/TOOLS/SYSTEM), the top bar without the Hold Space
+toggle, the status strip and the 238 px Ctrl+L logs drawer; running tools as full cards above
+content-sized idle tiles (eight tools, Hold Space included as its own card); an empty-first-run state and
+the in-flight Start label; the 1120×680 minimum enforced by `WM_GETMINMAXINFO` in
+`windows/runner/win32_window.cpp` (the plan said `main.cpp`; Win32 requires the handler in the window
+class, so the constant lives there). Buy and Sell rail rows both open the existing Buy/Sell tab until
+Phase 2 splits them. Renders: `.scratch/ui-audit/shots/phase1-*.png`.
+
 ## 8. Verification for each phase
 
 - `flutter analyze` and `flutter test` from `v3/shell/` (the existing 142-test suite is the regression
@@ -450,3 +459,13 @@ must not pretend to fix them.
 | Detect / CalibrationCheck surface | rule ported and tested; no command/UI (CALIBRATION §6) | Display mismatch banner uses the stored fields the shell has | protocol path for the comparison |
 | Gem movement editor, Buy/Sell overlays, setup-so-far | v2 calibration surfaces not ported | Noted as Phase 5 | each is a designer/session feature |
 | `calibration.save` has no `rev` | last write wins; `conflict` exists only for `config.apply` | No conflict UI for calibrate; `config.changed` refreshes the mirror | optional rev guard |
+
+### 9.1 Answers (2026-10-29, taken before Phase 0)
+
+All eight were answered: **14 sp body / 12.5 sp meta with compact controls** kept; **Start always
+visible** on idle tiles; **bottom logs drawer**; **keep the blue M3 seed**; **fit + 1:1 + pan** on the
+Calibrate canvas; **one geometry per machine + warn/recalibrate** now, with named profiles and setup
+import/export recorded as a future config-root feature (OPEN §5) rather than a UI-only change;
+**frame-mark workspace now, session-shaped calibrations in Phase 5**; and **Sell keeps v2 behaviour**:
+the Sell screen arms the per-run slots and the **run starts from the Sell card**, not a primary button
+on the screen (this overrides Q8's recommendation; Phase 2 must implement it that way).

@@ -24,7 +24,7 @@ runs the v2 firmware keeps working. The firmware zip is there for a new board, n
 1. [What v3 is](#1-what-v3-is)
 2. [The window](#2-the-window)
 3. [First run: configure, then calibrate](#3-first-run-configure-then-calibrate)
-4. [The cards: seven tools and what a run is](#4-the-cards-seven-tools-and-what-a-run-is)
+4. [The cards: eight tools and what a run is](#4-the-cards-eight-tools-and-what-a-run-is)
 5. [The tool tabs](#5-the-tool-tabs)
 6. [Calibration: the 18 marks](#6-calibration-the-18-marks)
 7. [Logs and files](#7-logs-and-files)
@@ -62,20 +62,21 @@ measured first, because the anti-cheat may block it.
 
 ## 2. The window
 
-The window opens showing **Cards** at the top and a row of tabs. Along the bottom is the **status
-strip**. When the core stops or cannot start, the whole page becomes the **crash view**.
+The window opens on the **Cards** screen. A **left rail** holds the navigation in three groups —
+**RUN** (Cards), **TOOLS** (Skill Spammer, Magic Tuner, Gem Composer, Buy, Sell, Quest Hand-in, Pet
+Feeder) and **SYSTEM** (Attributes, Arduino, Hotkeys, Setup, Calibrate) — and the **status strip** runs
+along the bottom. When the core stops or cannot start, the whole page becomes the **crash view**.
 
-- **Title bar / app bar:** `Seal Tools v3`, the **Hold Space** toggle on the right, the **always-on-top
-  pin** (`Keep Seal Tools on top`), and the small product version `v3.0.0`. (The shell↔core protocol
-  client identity is a separate engineering value documented in `PROTOCOL.md`; it does not follow the
-  product version.)
-- **The tab strip:** `Cards`, `Spammer`, `Tuner`, `Gem`, `Buy/Sell`, `Quest`, `Pet`, `Attributes`,
-  `Arduino`, `Hotkeys`, `Setup`, `Calibrate` — the Cards page plus eleven tabs.
-- **The status strip:** `core <version> · rev <n>`, the **root** folder the core is using, and the
-  **Logs** button.
-- **The crash view:** shown instead of the page when the core is not running. It prints the failure,
-  the root, and the core's **stderr tail**, with a **Restart core** button (except for a protocol
-  version mismatch, which needs a matched pair of binaries, not a restart).
+- **Top bar:** `Seal Tools`, the **core status chip** (`core ready · rev <n>`), the **Logs** button, the
+  **always-on-top pin** (`Keep Seal Tools on top`) and the small product version. (The shell↔core
+  protocol client identity is a separate engineering value documented in `PROTOCOL.md`; it does not
+  follow the product version.) There is **no Hold Space toggle any more**: Hold Space is a card on the
+  Cards screen (section 2.3).
+- **The rail:** one row per screen, grouped by job, with a badge on **Cards** counting the running
+  tools. The rail replaced the twelve-tab strip; a running tool never moves the rail.
+- **The status strip:** `core <version> · rev <n>` and the **root** folder the core is using on the
+  left, and the `Ctrl+L logs` hint on the right.
+
 
 **The always-on-top pin.** A filled pin keeps the shell window above the game and other windows;
 pressing it applies immediately and saves the portable setting `settings.ui.always_on_top`, so the
@@ -98,28 +99,29 @@ second before closing can be lost (move or resize, then pause a moment before cl
 window reopens at its geometry — the maximized state itself is not remembered; and mixed-DPI
 multi-monitor setups make that clamp approximate.
 
-### 2.1 The Logs panel
+### 2.1 The Logs drawer
 
-**Logs (N)** in the status strip opens the live log panel and reads **Hide logs** while it is open.
-The panel shows the `log` lines the core publishes (tool messages, refusals worth surfacing, warnings);
-`N` is how many lines it holds. This is the live view. The durable per-run files are in
-`<root>/logs/` — see section 7.
+**Logs (N)** in the top bar (or **Ctrl+L**) opens the logs drawer along the bottom of the content;
+press either again to close it. It shows the `log` lines the core publishes (tool messages, refusals
+worth surfacing, warnings) with a level badge per line and an **All / Errors** filter. `N` is how many
+lines it holds. This is the live view; the durable per-run files are in `<root>/logs/` — see section 7.
 
-### 2.2 The Cards page
+### 2.2 The Cards screen
 
-The Cards page is a grid of seven cards — Skill Spammer, Magic Tuner, Buy, Sell, Gem Composer, Quest
-Hand-in, Pet Feeder — plus the Hold Space toggle in the app bar (Hold Space is the eighth tool but has
-no card by design: the Skill Spammer card shows its state, and its complete trail is in
-`holdspace.log`). Section 4 explains a run on each card.
+The Cards screen answers "what is running and is it healthy?" first. Running tools appear as **full
+cards** above — a success accent, a phase chip, the core's message, the row table and a Stop button —
+and everything else is a **one-line idle tile** with an outlined **Start** (there are eight tools,
+including Hold Space; section 4 explains a run on each). When nothing runs, an empty-state banner says
+so and the tiles are the next action. A card's phase moves only when the core publishes `state`: a
+Start shows an in-flight label, never an optimistic phase.
 
 ### 2.3 Hold Space
 
-The toggle in the app bar holds the **spacebar** down so the game picks items up, and lifts it when you
-release the toggle. It is not a card because it has no run to schedule: press **Hold Space**, play, press
-**Release Space**. The live Hold Space state is reported on the **Skill Spammer** card. A failed
-release is recorded **only in `holdspace.log`**: the release happens as the run ends and has no protocol
-event, so the card cannot show it. If a release ever needs checking, read that file; the domain's line
-there tells you to tap the spacebar once in game.
+Hold Space is its own card now (it used to be a top-bar toggle) because it is a run like any other:
+press **Start** on its card to hold the **spacebar** down so the game picks items up, and **Stop** to
+release it. It has no configuration screen. Its live state, phase and refusal line are on its card; a
+failed release is still recorded **only in `holdspace.log`**, because the release happens as the run
+ends and has no protocol event.
 
 ---
 
@@ -177,7 +179,7 @@ section 8.
 
 ---
 
-## 4. The cards: seven tools and what a run is
+## 4. The cards: eight tools and what a run is
 
 Each card shows the tool's **name**, its **phase** (`idle`, `starting`, `running`, `stopping`), the
 core's **message** for the current step, the **rows** the tool publishes (name / status / detail / next
@@ -611,7 +613,7 @@ deliberately offers no fake one.
 
 ### 7.1 The live log panel
 
-The **Logs (N)** button in the status strip shows the lines the core publishes while it runs. It is for
+The **Logs (N)** button in the top bar (or **Ctrl+L**) shows the lines the core publishes while it runs. It is for
 *watching* a run; it is not the durable record.
 
 ### 7.2 Per-run files: `<root>/logs/`

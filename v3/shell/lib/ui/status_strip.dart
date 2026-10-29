@@ -1,9 +1,11 @@
-/// The bottom status strip ([PLAN-V3-SHELL.md] §6): core identity, rev, root, and the log toggle.
+/// The bottom status strip: core identity on the left, the logs shortcut hint on the right
+/// ([PLAN-V3-UI-UX.md] §6 Chrome).
 ///
 /// It reads the model only. The root path is the core's from `hello` — the shell renders it and
-/// never rewrites files under it ([DESIGN.md] §4).
+/// never rewrites files under it ([DESIGN.md] §4). The logs drawer itself is toggled from the top
+/// bar or Ctrl+L; the strip only advertises the shortcut.
 ///
-/// [PLAN-V3-SHELL.md]: ../../../docs/plans/PLAN-V3-SHELL.md
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 /// [DESIGN.md]: ../../../docs/spec/DESIGN.md
 library;
 
@@ -13,16 +15,9 @@ import '../app/app.dart';
 import 'theme.dart';
 
 class StatusStrip extends StatelessWidget {
-  const StatusStrip({
-    super.key,
-    required this.model,
-    required this.logsVisible,
-    required this.onToggleLogs,
-  });
+  const StatusStrip({super.key, required this.model});
 
   final ShellModel model;
-  final bool logsVisible;
-  final VoidCallback onToggleLogs;
 
   @override
   Widget build(BuildContext context) {
@@ -35,13 +30,13 @@ class StatusStrip extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: ShellSpace.md,
-          vertical: ShellSpace.xs,
+          vertical: ShellSpace.xxs,
         ),
         child: Row(
           children: [
             Icon(
               Icons.check_circle_outline,
-              size: 14,
+              size: ShellSize.iconSm,
               color: theme.colorScheme.primary,
             ),
             const SizedBox(width: ShellSpace.xs),
@@ -61,17 +56,11 @@ class StatusStrip extends StatelessWidget {
                 ),
               ),
             ),
-            TextButton(
-              key: const ValueKey('logs-toggle'),
-              onPressed: onToggleLogs,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: ShellSpace.sm),
-              ),
-              child: Text(
-                logsVisible
-                    ? 'Hide logs'
-                    : 'Logs (${model.logs.entries.length})',
+            Text(
+              'Ctrl+L logs',
+              key: const ValueKey('logs-hint'),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],

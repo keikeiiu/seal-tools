@@ -105,6 +105,10 @@ independent machine state in `ui` and is not the pin.
 - **Arduino PnP device id in the connection card** - dropped for now by decision 7: v2 showed it
   only as a tooltip, `serialport` does not expose it, and SetupAPI/WMI would be a new dependency for
   no decision. Ask if it is wanted.
+- **Named geometry profiles + setup import/export** - a future config-root feature, not a UI patch
+  (PLAN-V3-UI-UX §9 Q6, answered 2026-10-29): one geometry per machine with the warn-and-recalibrate
+  story stands for now; named profiles and importing/exporting a setup need a core/config-root
+  concept before the shell can offer them.
 
 ## 4. Release inputs
 

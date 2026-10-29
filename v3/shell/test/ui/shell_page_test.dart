@@ -57,13 +57,38 @@ Future<void> _flush(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'seven cards, Hold Space in the chrome only, status strip filled',
+    'eight cards including Hold Space, the rail groups and the status strip',
     (tester) async {
       final harness = await _pumpShell(tester);
 
-      expect(find.byType(ToolCard), findsNWidgets(7));
-      expect(find.byKey(const ValueKey('card-holdspace')), findsNothing);
-      expect(find.byKey(const ValueKey('holdspace-toggle')), findsOneWidget);
+      // D2: Hold Space is its own card now; the top-bar toggle is gone.
+      expect(find.byType(ToolCard), findsNWidgets(8));
+      expect(find.byKey(const ValueKey('card-holdspace')), findsOneWidget);
+      expect(find.byKey(const ValueKey('holdspace-toggle')), findsNothing);
+
+      // D1: the rail has the three groups and every destination.
+      for (final key in const [
+        'cards',
+        'spammer',
+        'tuner',
+        'gem',
+        'buy',
+        'sell',
+        'quest',
+        'pet',
+        'attributes',
+        'arduino',
+        'hotkeys',
+        'setup',
+        'calibrate',
+      ]) {
+        expect(
+          find.byKey(ValueKey('rail-$key')),
+          findsOneWidget,
+          reason: 'the rail is the navigation now (PLAN-V3-UI-UX D1)',
+        );
+      }
+
       expect(
         tester.widget<Text>(find.byKey(const ValueKey('status-core'))).data,
         'core 0.1.0 · rev 7',
@@ -73,15 +98,15 @@ void main() {
         contains(r'root C:\SealTools'),
       );
 
-      // The chrome toggle sends the command and reflects the CORE's phase, not a local flip.
-      await tester.tap(find.byKey(const ValueKey('holdspace-toggle')));
+      // The Hold Space CARD is the only place its state is started (D2), and the phase still comes
+      // from the core: tapping Start sends the command, not a local flip.
+      await tester.tap(find.byKey(const ValueKey('start-holdspace')));
       await tester.pump();
       expect(harness.lastRequest['cmd'], 'tool.start');
       expect(harness.lastRequest['args'], {'tool': 'holdspace'});
       harness.respondOk();
       await _flush(tester);
       expect(find.text('Hold Space'), findsOneWidget);
-      expect(find.text('Release Space'), findsNothing);
     },
   );
 
@@ -134,18 +159,19 @@ void main() {
       expect(find.text('row 1'), findsOneWidget);
       expect(find.text('boarding'), findsOneWidget);
       expect(find.text('in 30m'), findsOneWidget);
+      // An idle tool is a one-line tile now: no phase chip, no rows table.
+      expect(find.byKey(const ValueKey('rows-empty-tuner')), findsNothing);
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('card-tuner')),
-          matching: find.byKey(const ValueKey('rows-empty-tuner')),
-        ),
-        findsOneWidget,
+        tester
+            .widget<OutlinedButton>(find.byKey(const ValueKey('start-tuner')))
+            .onPressed,
+        isNotNull,
       );
     },
   );
 
   testWidgets(
-    'Start sends tool.start and the phase stays as the core published it',
+    'Start sends tool.start and the card never flips phase optimistically',
     (tester) async {
       final harness = await _pumpShell(tester);
 
@@ -154,28 +180,17 @@ void main() {
 
       expect(harness.lastRequest['cmd'], 'tool.start');
       expect(harness.lastRequest['args'], {'tool': 'tuner'});
-      // No state event yet: no optimistic phase move, and the button is disabled while in flight.
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('card-tuner')),
-          matching: find.text('idle'),
-        ),
-        findsOneWidget,
-      );
+      // No state event yet: the tile shows the in-flight label and stays idle (no running chip).
+      expect(find.text('Starting…'), findsOneWidget);
+      expect(find.text('running'), findsNothing);
 
       harness.respondOk();
       await _flush(tester);
 
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('card-tuner')),
-          matching: find.text('idle'),
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('running'), findsNothing);
       expect(
         tester
-            .widget<FilledButton>(find.byKey(const ValueKey('start-tuner')))
+            .widget<OutlinedButton>(find.byKey(const ValueKey('start-tuner')))
             .onPressed,
         isNotNull,
       );

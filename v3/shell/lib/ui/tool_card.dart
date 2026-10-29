@@ -1,12 +1,14 @@
-/// One tool card: the `ToolSnapshot` the core published, the pinned row lines, and Start/Stop.
+/// One tool card on the Cards screen: a full **running** card (the subject of the screen) or a
+/// one-line **idle tile** with an outlined Start ([PLAN-V3-UI-UX.md] §6 "Cards").
 ///
 /// The card renders; it decides nothing. Enabled states are UI convenience derived from the
 /// core-published phase and the model's in-flight flag; a Start does NOT optimistically change the
 /// card — the phase moves only when the core publishes `state` ([PLAN-V3-SHELL.md] §5).
 ///
 /// The card must render `rows: []` without assuming non-empty: that means "no rows to show", never
-/// "not known yet" ([PROTOCOL.md] §5), and the empty state is its own small line.
+/// "not known yet" ([PROTOCOL.md] §5). Idle tiles show no rows table at all.
 ///
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 /// [PLAN-V3-SHELL.md]: ../../../docs/plans/PLAN-V3-SHELL.md
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
@@ -14,6 +16,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../protocol/protocol.dart';
+import 'components/status_chip.dart';
 import 'theme.dart';
 import 'tool_labels.dart';
 
@@ -28,7 +31,6 @@ class ToolCard extends StatelessWidget {
     required this.ready,
     required this.onStart,
     required this.onStop,
-    this.holdSpaceLine,
     this.elapsedTicks = 0,
     this.extras,
   });
@@ -44,7 +46,7 @@ class ToolCard extends StatelessWidget {
   /// The core's line for the last refused command, shown verbatim.
   final String? refusal;
 
-  /// A start/stop is in flight (shell convenience): both buttons are disabled.
+  /// A start/stop is in flight (shell convenience): the action is disabled and labelled pending.
   final bool pending;
 
   /// The core connection is ready; commands are possible.
@@ -53,10 +55,8 @@ class ToolCard extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onStop;
 
-  /// The Spammer card's Hold Space report (TOOL-FLOWS: holdspace has no card of its own).
-  final String? holdSpaceLine;
-
-  /// Card-specific config controls (Buy picker, Quest pickers) rendered above the buttons.
+  /// Card-specific config controls (Buy picker, Quest pickers, Spammer rotation) shown on the idle
+  /// tile; per-run choices stay on the card ([PLAN-V3-UI-UX.md] D3/§6).
   final Widget? extras;
 
   /// Whole seconds elapsed since this tool's last `state` event, driven by the grid's ONE ticker.
@@ -65,18 +65,83 @@ class ToolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final phase = snapshot?.phase ?? ToolPhase.idle;
-    final engaged = phase != ToolPhase.idle;
-    final canStart = ready && !pending && !engaged;
-    final canStop = ready && !pending && engaged;
-    final countdown = countdownLabel(snapshot);
-    final error = snapshot?.error;
-    final holdSpace = holdSpaceLine;
+    if (phase == ToolPhase.idle) {
+      return _IdleTile(
+        tool: tool,
+        snapshot: snapshot,
+        finished: finished,
+        refusal: refusal,
+        pending: pending,
+        ready: ready,
+        onStart: onStart,
+        extras: extras,
+      );
+    }
+    return _RunningCard(
+      tool: tool,
+      snapshot: snapshot!,
+      finished: finished,
+      refusal: refusal,
+      pending: pending,
+      ready: ready,
+      onStop: onStop,
+      elapsedTicks: elapsedTicks,
+    );
+  }
+}
 
+/// The core's phase word for the chip, and the semantic kind it paints with.
+(String, StatusKind) _phaseChip(ToolPhase phase) => switch (phase) {
+  ToolPhase.running => ('running', StatusKind.success),
+  ToolPhase.starting => ('starting', StatusKind.info),
+  ToolPhase.stopping => ('stopping', StatusKind.warning),
+  ToolPhase.idle => ('idle', StatusKind.muted),
+};
+
+String _idleLine(ToolId tool, ToolSnapshot? snapshot) {
+  if (tool == ToolId.holdspace) {
+    return 'Off · spacebar auto-pickup';
+  }
+  final message = snapshot?.message.trim() ?? '';
+  return message.isEmpty ? 'Idle — ready to start' : message;
+}
+
+String _runningLine(ToolId tool, ToolSnapshot snapshot) {
+  final message = snapshot.message.trim();
+  if (message.isNotEmpty) {
+    return message;
+  }
+  return tool == ToolId.holdspace ? 'Holding the spacebar' : 'Running';
+}
+
+class _IdleTile extends StatelessWidget {
+  const _IdleTile({
+    required this.tool,
+    required this.snapshot,
+    required this.finished,
+    required this.refusal,
+    required this.pending,
+    required this.ready,
+    required this.onStart,
+    this.extras,
+  });
+
+  final ToolId tool;
+  final ToolSnapshot? snapshot;
+  final ToolFinished? finished;
+  final String? refusal;
+  final bool pending;
+  final bool ready;
+  final VoidCallback onStart;
+  final Widget? extras;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final error = snapshot?.error;
     return Card(
       key: ValueKey('card-${tool.wire}'),
-      margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(ShellSpace.md),
         child: Column(
@@ -84,126 +149,222 @@ class ToolCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    toolDisplayName(tool),
-                    style: theme.textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                _PhaseChip(phase: phase, engaged: engaged),
-              ],
-            ),
-            const SizedBox(height: ShellSpace.xs),
-            Text(
-              snapshot?.message ?? 'No state published yet',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium,
-            ),
-            if (countdown != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                countdown,
-                key: ValueKey('countdown-${tool.wire}'),
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-            if (error != null) ...[
-              const SizedBox(height: 2),
-              Tooltip(
-                message: error,
-                child: Text(
-                  error,
-                  key: ValueKey('error-${tool.wire}'),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: ShellSpace.xs),
-            Expanded(
-              child: _RowsView(
-                tool: tool,
-                snapshot: snapshot,
-                elapsedTicks: elapsedTicks,
-              ),
-            ),
-            if (extras != null) ...[
-              const SizedBox(height: ShellSpace.xs),
-              extras!,
-            ],
-            if (holdSpace != null)
-              Tooltip(
-                message: 'Hold Space: $holdSpace',
-                child: Text(
-                  'Hold Space: $holdSpace',
-                  key: const ValueKey('holdspace-report'),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            if (finished != null)
-              Tooltip(
-                message: finished!.message,
-                child: Text(
-                  finished!.message,
-                  key: ValueKey('finished-${tool.wire}'),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.tertiary,
-                  ),
-                ),
-              ),
-            if (refusal != null)
-              Tooltip(
-                message: refusal!,
-                child: Text(
-                  refusal!,
-                  key: ValueKey('refusal-${tool.wire}'),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-              ),
-            const SizedBox(height: ShellSpace.sm),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    key: ValueKey('start-${tool.wire}'),
-                    onPressed: canStart ? onStart : null,
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: ShellSpace.sm,
-                      ),
-                    ),
-                    child: const Text('Start'),
-                  ),
+                Icon(
+                  toolIcon(tool),
+                  size: ShellSize.iconMd,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: ShellSpace.sm),
                 Expanded(
-                  child: OutlinedButton(
-                    key: ValueKey('stop-${tool.wire}'),
-                    onPressed: canStop ? onStop : null,
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: ShellSpace.sm,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        toolDisplayName(tool),
+                        style: theme.textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    child: const Text('Stop'),
+                      const SizedBox(height: ShellSpace.xxs),
+                      Text(
+                        _idleLine(tool, snapshot),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(width: ShellSpace.sm),
+                if (extras == null)
+                  _StartButton(
+                    tool: tool,
+                    pending: pending,
+                    ready: ready,
+                    onStart: onStart,
+                  ),
               ],
+            ),
+            if (extras != null) ...[
+              const SizedBox(height: ShellSpace.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(child: extras!),
+                  const SizedBox(width: ShellSpace.sm),
+                  _StartButton(
+                    tool: tool,
+                    pending: pending,
+                    ready: ready,
+                    onStart: onStart,
+                  ),
+                ],
+              ),
+            ],
+            if (error != null)
+              _CardLine(
+                textKey: ValueKey('error-${tool.wire}'),
+                text: error,
+                color: theme.colorScheme.error,
+              ),
+            if (finished != null)
+              _CardLine(
+                textKey: ValueKey('finished-${tool.wire}'),
+                text: finished!.message,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            if (refusal != null)
+              _CardLine(
+                textKey: ValueKey('refusal-${tool.wire}'),
+                text: refusal!,
+                color: theme.colorScheme.error,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StartButton extends StatelessWidget {
+  const _StartButton({
+    required this.tool,
+    required this.pending,
+    required this.ready,
+    required this.onStart,
+  });
+
+  final ToolId tool;
+  final bool pending;
+  final bool ready;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      key: ValueKey('start-${tool.wire}'),
+      onPressed: ready && !pending ? onStart : null,
+      child: pending
+          ? const _PendingLabel(label: 'Starting…')
+          : const Text('Start'),
+    );
+  }
+}
+
+class _RunningCard extends StatelessWidget {
+  const _RunningCard({
+    required this.tool,
+    required this.snapshot,
+    required this.finished,
+    required this.refusal,
+    required this.pending,
+    required this.ready,
+    required this.onStop,
+    required this.elapsedTicks,
+  });
+
+  final ToolId tool;
+  final ToolSnapshot snapshot;
+  final ToolFinished? finished;
+  final String? refusal;
+  final bool pending;
+  final bool ready;
+  final VoidCallback onStop;
+  final int elapsedTicks;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = context.shellColors;
+    final (phaseWord, kind) = _phaseChip(snapshot.phase);
+    final countdown = countdownLabel(snapshot);
+    final error = snapshot.error;
+    return Card(
+      key: ValueKey('card-${tool.wire}'),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(ShellRadius.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(height: 3, color: colors.success),
+            Padding(
+              padding: const EdgeInsets.all(ShellSpace.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          toolDisplayName(tool),
+                          style: theme.textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      StatusChip(kind: kind, label: phaseWord),
+                    ],
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
+                  Text(
+                    _runningLine(tool, snapshot),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  if (countdown != null) ...[
+                    const SizedBox(height: ShellSpace.xxs),
+                    Text(
+                      countdown,
+                      key: ValueKey('countdown-${tool.wire}'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (error != null)
+                    _CardLine(
+                      textKey: ValueKey('error-${tool.wire}'),
+                      text: error,
+                      color: theme.colorScheme.error,
+                    ),
+                  const SizedBox(height: ShellSpace.sm),
+                  _RowsView(
+                    tool: tool,
+                    snapshot: snapshot,
+                    elapsedTicks: elapsedTicks,
+                  ),
+                  if (finished != null)
+                    _CardLine(
+                      textKey: ValueKey('finished-${tool.wire}'),
+                      text: finished!.message,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  if (refusal != null)
+                    _CardLine(
+                      textKey: ValueKey('refusal-${tool.wire}'),
+                      text: refusal!,
+                      color: theme.colorScheme.error,
+                    ),
+                  const SizedBox(height: ShellSpace.sm),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      FilledButton(
+                        key: ValueKey('stop-${tool.wire}'),
+                        onPressed: ready && !pending ? onStop : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.errorContainer,
+                          foregroundColor: theme.colorScheme.onErrorContainer,
+                        ),
+                        child: pending
+                            ? const _PendingLabel(label: 'Stopping…')
+                            : const Text('Stop'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -212,39 +373,53 @@ class ToolCard extends StatelessWidget {
   }
 }
 
-class _PhaseChip extends StatelessWidget {
-  const _PhaseChip({required this.phase, required this.engaged});
+class _PendingLabel extends StatelessWidget {
+  const _PendingLabel({required this.label});
 
-  final ToolPhase phase;
-  final bool engaged;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final background = switch (phase) {
-      ToolPhase.running => theme.colorScheme.primaryContainer,
-      ToolPhase.starting ||
-      ToolPhase.stopping => theme.colorScheme.tertiaryContainer,
-      ToolPhase.idle => theme.colorScheme.surfaceContainerHighest,
-    };
-    final foreground = switch (phase) {
-      ToolPhase.running => theme.colorScheme.onPrimaryContainer,
-      ToolPhase.starting ||
-      ToolPhase.stopping => theme.colorScheme.onTertiaryContainer,
-      ToolPhase.idle => theme.colorScheme.onSurfaceVariant,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: ShellSpace.sm,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: const BorderRadius.all(Radius.circular(999)),
-      ),
-      child: Text(
-        engaged ? phase.wire : 'idle',
-        style: theme.textTheme.labelSmall?.copyWith(color: foreground),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: ShellSpace.sm),
+        Text(label),
+      ],
+    );
+  }
+}
+
+class _CardLine extends StatelessWidget {
+  const _CardLine({
+    this.textKey,
+    required this.text,
+    required this.color,
+  });
+
+  final Key? textKey;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(color: color);
+    return Padding(
+      padding: const EdgeInsets.only(top: ShellSpace.xxs),
+      child: Tooltip(
+        message: text,
+        child: Text(
+          text,
+          key: textKey,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
       ),
     );
   }
@@ -260,7 +435,7 @@ class _RowsView extends StatelessWidget {
   });
 
   final ToolId tool;
-  final ToolSnapshot? snapshot;
+  final ToolSnapshot snapshot;
 
   /// Display-only elapsed seconds since the latest state event; the published value is the baseline.
   final int elapsedTicks;
@@ -268,7 +443,7 @@ class _RowsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final rows = snapshot?.rows ?? const <ToolRow>[];
+    final rows = snapshot.rows;
     if (rows.isEmpty) {
       return Align(
         alignment: Alignment.topLeft,
@@ -282,53 +457,81 @@ class _RowsView extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: rows.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 2),
-      itemBuilder: (context, index) {
-        final row = rows[index];
-        return Row(
-          key: ValueKey('row-${tool.wire}-$index'),
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final headerStyle = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      letterSpacing: 0.6,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Expanded(
-              flex: 2,
-              child: Text(
-                row.name,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                row.status,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-            if (row.detail != null)
-              Expanded(
-                flex: 3,
-                child: Text(
-                  row.detail!,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            if (row.nextActionInSeconds != null)
-              Text(
-                formatNextAction(row.nextActionInSeconds! - elapsedTicks),
-                style: theme.textTheme.labelSmall,
-              ),
+            Expanded(flex: 2, child: Text('ROW', style: headerStyle)),
+            Expanded(flex: 3, child: Text('STATUS', style: headerStyle)),
+            Expanded(flex: 3, child: Text('DETAIL', style: headerStyle)),
+            Text('NEXT', style: headerStyle),
           ],
-        );
-      },
+        ),
+        const SizedBox(height: ShellSpace.xxs),
+        for (var index = 0; index < rows.length; index++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: ShellSpace.xxs),
+            child: _RowLine(
+              key: ValueKey('row-${tool.wire}-$index'),
+              row: rows[index],
+              elapsedTicks: elapsedTicks,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _RowLine extends StatelessWidget {
+  const _RowLine({
+    super.key,
+    required this.row,
+    required this.elapsedTicks,
+  });
+
+  final ToolRow row;
+  final int elapsedTicks;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = context.shellColors;
+    final base = theme.textTheme.bodySmall;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Text(row.name, overflow: TextOverflow.ellipsis, style: base),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(
+            row.status,
+            overflow: TextOverflow.ellipsis,
+            style: base?.copyWith(color: colors.success),
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(
+            row.detail ?? '',
+            overflow: TextOverflow.ellipsis,
+            style: base?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Text(
+          row.nextActionInSeconds == null
+              ? ''
+              : formatNextAction(row.nextActionInSeconds! - elapsedTicks),
+          style: theme.textTheme.labelSmall,
+        ),
+      ],
     );
   }
 }
