@@ -35,11 +35,7 @@ class ShellProse extends StatelessWidget {
         );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Text(
-        text,
-        style: resolved,
-        semanticsLabel: semanticLabel,
-      ),
+      child: Text(text, style: resolved, semanticsLabel: semanticLabel),
     );
   }
 }

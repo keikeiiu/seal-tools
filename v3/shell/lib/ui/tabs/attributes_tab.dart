@@ -5,13 +5,24 @@
 /// The payload is decoded app-locally ([AttributesResult]): it is not a wire type, so no `lib/protocol`
 /// change exists or is needed. The search field filters client-side over names and OCR forms only — it
 /// is a view, not a rule.
+///
+/// Presentation follows [PLAN-V3-UI-UX.md] §6 "Attributes": a search field over a dictionary table, an
+/// [EmptyState] for zero matches with a Clear action, and the unfiltered reference tables hidden while
+/// a query is active (they are not searchable, so leaving them up made the filter look half-applied).
+///
+/// [PLAN-V3-UI-UX.md]: ../../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/empty_state.dart';
+import '../components/info_row.dart';
+import '../components/shell_prose.dart';
+import '../components/status_banner.dart';
+import '../components/status_chip.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
-import 'fields.dart';
 
 class AttributesTab extends StatefulWidget {
   const AttributesTab({super.key, required this.model});
@@ -74,6 +85,12 @@ class _AttributesTabState extends State<AttributesTab>
     });
   }
 
+  /// Clears the view filter without touching the core: the dictionary itself is read-only data.
+  void _clearSearch() {
+    _search.clear();
+    setState(() => _query = '');
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
@@ -91,19 +108,17 @@ class _AttributesTabState extends State<AttributesTab>
             ShellSpace.sm,
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Attributes', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 2),
-                    Text(
+                    Text('Attributes', style: theme.textTheme.headlineSmall),
+                    const SizedBox(height: ShellSpace.xxs),
+                    const ShellProse(
                       'The dictionary the core loaded for the active client — read-only. '
                       'The tuner\'s filter rules match the names shown here.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
                     ),
                   ],
                 ),
@@ -111,7 +126,7 @@ class _AttributesTabState extends State<AttributesTab>
               OutlinedButton(
                 key: const ValueKey('attributes-refresh'),
                 onPressed: _loading ? null : _refresh,
-                child: const Text('Refresh'),
+                child: Text(_loading ? 'Reading…' : 'Refresh'),
               ),
             ],
           ),
@@ -130,7 +145,17 @@ class _AttributesTabState extends State<AttributesTab>
     if (_loading && result == null) {
       return const Padding(
         padding: EdgeInsets.only(top: ShellSpace.md),
-        child: Text('Loading dictionary…'),
+        child: Row(
+          children: [
+            SizedBox(
+              width: ShellSize.iconMd,
+              height: ShellSize.iconMd,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: ShellSpace.sm),
+            Text('Loading dictionary…'),
+          ],
+        ),
       );
     }
     if (result == null) {
@@ -139,12 +164,11 @@ class _AttributesTabState extends State<AttributesTab>
     if (!result.ok) {
       return Padding(
         padding: const EdgeInsets.only(top: ShellSpace.md),
-        child: Text(
-          result.errorLine ?? 'the dictionary could not be read',
+        child: StatusBanner(
           key: const ValueKey('attributes-error'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.error,
-          ),
+          kind: StatusKind.error,
+          title: 'The dictionary could not be read',
+          detail: result.errorLine ?? 'the dictionary could not be read',
         ),
       );
     }
@@ -153,31 +177,36 @@ class _AttributesTabState extends State<AttributesTab>
     if (!value.hasVariant) {
       return Padding(
         padding: const EdgeInsets.only(top: ShellSpace.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ReadOnlyValue(label: 'Client variant', value: '—'),
-            ReadOnlyValue(label: 'Dictionary file', value: '—'),
-            const SizedBox(height: ShellSpace.sm),
-            Text(
-              'No client resolved — the core has no active variant, so no attribute '
-              'dictionary is loaded.',
-              key: const ValueKey('attributes-no-variant'),
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
+        child: SurfacePanel(
+          title: 'Dictionary',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const InfoRow(label: 'Client variant', value: '—'),
+              const InfoRow(label: 'Dictionary file', value: '—'),
+              const SizedBox(height: ShellSpace.md),
+              Text(
+                'No client resolved — the core has no active variant, so no attribute '
+                'dictionary is loaded.',
+                key: const ValueKey('attributes-no-variant'),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
         ),
       );
     }
 
     final dictionary = value.attributes;
     final groups = dictionary.byCategory;
+    final query = _query.trim();
+    final filtering = query.isNotEmpty;
     final filtered = <({String category, List<AttributeDef> entries})>[];
     for (final group in groups) {
       final entries = group.entries
-          .where((attribute) => attribute.matches(_query))
+          .where((attribute) => attribute.matches(query))
           .toList();
-      if (entries.isNotEmpty || _query.trim().isEmpty) {
+      if (entries.isNotEmpty || !filtering) {
         filtered.add((category: group.category, entries: entries));
       }
     }
@@ -185,124 +214,162 @@ class _AttributesTabState extends State<AttributesTab>
       0,
       (sum, group) => sum + group.entries.length,
     );
+    final total = dictionary.attributes.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ReadOnlyValue(label: 'Client variant', value: value.variant ?? '—'),
-        ReadOnlyValue(label: 'Dictionary file', value: value.dictionary ?? '—'),
-        const SizedBox(height: ShellSpace.md),
-        SizedBox(
-          width: 320,
-          child: TextField(
-            key: const ValueKey('attributes-search'),
-            controller: _search,
-            decoration: const InputDecoration(
-              labelText: 'Search names and OCR forms',
-              isDense: true,
-              border: OutlineInputBorder(),
+        SurfacePanel(
+          title: 'Dictionary',
+          trailing: Text(
+            '$shown of $total attributes',
+            key: const ValueKey('attributes-count'),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            onChanged: (value) => setState(() => _query = value),
           ),
-        ),
-        const SizedBox(height: ShellSpace.xs),
-        Text(
-          '$shown of ${dictionary.attributes.length} attributes',
-          key: const ValueKey('attributes-count'),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: ShellSpace.md),
-        for (final group in filtered)
-          Padding(
-            padding: const EdgeInsets.only(bottom: ShellSpace.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${group.category} (${group.entries.length})',
-                  key: ValueKey('attribute-category-${group.category}'),
-                  style: theme.textTheme.titleSmall,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InfoRow(label: 'Client variant', value: value.variant ?? '—'),
+              InfoRow(label: 'Dictionary file', value: value.dictionary ?? '—'),
+              const SizedBox(height: ShellSpace.md),
+              TextField(
+                key: const ValueKey('attributes-search'),
+                controller: _search,
+                decoration: InputDecoration(
+                  labelText: 'Search names and OCR forms',
+                  prefixIcon: const Icon(Icons.search, size: ShellSize.iconMd),
+                  suffixIcon: filtering
+                      ? IconButton(
+                          key: const ValueKey('attributes-search-clear'),
+                          tooltip: 'Clear search',
+                          iconSize: ShellSize.iconMd,
+                          onPressed: _clearSearch,
+                          icon: const Icon(Icons.close),
+                        )
+                      : null,
+                ),
+                onChanged: (value) => setState(() => _query = value),
+              ),
+              const SizedBox(height: ShellSpace.md),
+              if (filtering && shown == 0)
+                EmptyState(
+                  icon: Icons.search_off,
+                  title: 'No names match \'$query\'',
+                  hint:
+                      'Clear the search to show all $total names and their OCR forms.',
+                  action: OutlinedButton(
+                    key: const ValueKey('attributes-clear-search'),
+                    onPressed: _clearSearch,
+                    child: const Text('Clear search'),
+                  ),
+                )
+              else ...[
+                // One header line makes the two columns read as a table rather than as loose text.
+                Row(
+                  children: [
+                    SizedBox(
+                      width: ShellWidth.fieldLg,
+                      child: Text(
+                        'Name',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'OCR variants',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: ShellSpace.xs),
-                for (final attribute in group.entries)
+                for (final group in filtered) ...[
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: ShellWidth.fieldLg,
-                          child: Text(
-                            attribute.name,
-                            key: ValueKey('attribute-${attribute.name}'),
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            attribute.variants.join(' · '),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
+                    padding: const EdgeInsets.only(top: ShellSpace.md),
+                    child: Text(
+                      '${group.category} (${group.entries.length})',
+                      key: ValueKey('attribute-category-${group.category}'),
+                      style: theme.textTheme.titleSmall,
                     ),
                   ),
+                  const SizedBox(height: ShellSpace.xxs),
+                  for (final attribute in group.entries)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: ShellSpace.xxs),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: ShellWidth.fieldLg,
+                            child: Text(
+                              attribute.name,
+                              key: ValueKey('attribute-${attribute.name}'),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              attribute.variants.join(' · '),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ],
-            ),
+            ],
           ),
-        _readOnlyList(theme, 'Per-level stat names', dictionary.perLevelStats),
-        _readOnlyList(
-          theme,
-          'Negative attribute markers',
-          dictionary.negativeMarkers,
         ),
-        for (final entry in dictionary.textFixes.entries)
-          _fixTable(theme, entry.key, entry.value),
+        // The per-level/negative/text-fix tables are reference data, not searchable entries: a
+        // filter that showed them unfiltered made the search look half-applied (§6 "Attributes").
+        if (!filtering) _referenceTables(theme, dictionary),
         const SizedBox(height: ShellSpace.lg),
       ],
     );
   }
 
-  Widget _readOnlyList(ThemeData theme, String title, List<String> values) {
-    if (values.isEmpty) {
+  /// The tables that are NOT filtered by the search, rendered only while the search is empty.
+  Widget _referenceTables(ThemeData theme, AttributesDictionary dictionary) {
+    final rows = <Widget>[
+      if (dictionary.perLevelStats.isNotEmpty)
+        InfoRow(
+          label: 'Per-level stat names',
+          value: dictionary.perLevelStats.join(' · '),
+        ),
+      if (dictionary.negativeMarkers.isNotEmpty)
+        InfoRow(
+          label: 'Negative markers',
+          value: dictionary.negativeMarkers.join(' · '),
+        ),
+      for (final entry in dictionary.textFixes.entries)
+        if (entry.value.isNotEmpty)
+          InfoRow(
+            label: 'Text fixes — ${entry.key}',
+            value: entry.value
+                .map((fix) => '${fix.from} → ${fix.to}')
+                .join(' · '),
+          ),
+    ];
+    if (rows.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ShellSpace.md),
+    return SurfacePanel(
+      title: 'Reference tables',
+      description:
+          'Shown while the search is empty — these are not attribute names and the '
+          'search does not filter them.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.titleSmall),
-          const SizedBox(height: ShellSpace.xs),
-          Text(values.join(' · '), style: theme.textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
-
-  Widget _fixTable(ThemeData theme, String name, List<TextFixEntry> fixes) {
-    if (fixes.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ShellSpace.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Text fixes — $name', style: theme.textTheme.titleSmall),
-          const SizedBox(height: ShellSpace.xs),
-          for (final fix in fixes)
-            Text(
-              '${fix.from} → ${fix.to}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'Consolas',
-              ),
-            ),
-        ],
+        children: rows,
       ),
     );
   }

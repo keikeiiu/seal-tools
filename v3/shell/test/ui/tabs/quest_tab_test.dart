@@ -74,6 +74,10 @@ Future<AppHarness> _pumpQuest(
     ),
   );
   await tester.pump();
+  // The cursor guard is the collapsed Advanced section (§6 "Config tabs"): open it before the
+  // guard field is asserted on or edited.
+  await tester.tap(find.byKey(const ValueKey('fold-toggle-Advanced')));
+  await tester.pump();
   return harness;
 }
 

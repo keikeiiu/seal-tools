@@ -69,6 +69,12 @@ Future<AppHarness> _pumpGem(WidgetTester tester) async {
     ),
   );
   await tester.pump();
+  // The calibrated geometry is the collapsed reference panel in the aside (§6 "Config tabs"):
+  // open it before asserting on the stored rows.
+  await tester.tap(
+    find.byKey(const ValueKey('readonly-toggle-Calibrated geometry')),
+  );
+  await tester.pump();
   return harness;
 }
 

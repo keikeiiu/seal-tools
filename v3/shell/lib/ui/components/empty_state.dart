@@ -33,7 +33,11 @@ class EmptyState extends StatelessWidget {
     final content = compact
         ? Row(
             children: [
-              Icon(icon, size: ShellSize.iconMd, color: colors.onSurfaceVariant),
+              Icon(
+                icon,
+                size: ShellSize.iconMd,
+                color: colors.onSurfaceVariant,
+              ),
               const SizedBox(width: ShellSpace.sm),
               Expanded(
                 child: Text(
@@ -60,7 +64,9 @@ class EmptyState extends StatelessWidget {
                     color: colors.onSurfaceVariant,
                   ),
                   const SizedBox(width: ShellSpace.sm),
-                  Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
+                  Expanded(
+                    child: Text(title, style: theme.textTheme.titleSmall),
+                  ),
                 ],
               ),
               const SizedBox(height: ShellSpace.xs),

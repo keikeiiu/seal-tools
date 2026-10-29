@@ -222,6 +222,14 @@ class _HotkeysTabState extends State<HotkeysTab>
               .join(' · ');
   }
 
+  /// The raw VK codes are debug data: the names are what the tab edits, so the codes live in a
+  /// tooltip on the section header instead of taking a line of the frame (§6 "Hotkeys").
+  String get _storedCodesTooltip {
+    final codes = _storedCodes;
+    return 'Stored codes (debug): '
+        '${codes.isEmpty ? '— (none stored)' : _storedCodesLine}';
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
@@ -231,13 +239,45 @@ class _HotkeysTabState extends State<HotkeysTab>
       description:
           'The keys that start, quit, advance the grade and pause. The config stores codes; the '
           'core translates the names you type and names the code it holds.',
-      readOnly: [ReadOnlyValue(label: 'Stored codes', value: _storedCodesLine)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           EditorSection(
             title: 'Keys',
+            trailing: Tooltip(
+              key: const ValueKey('hotkey-stored-codes'),
+              message: _storedCodesTooltip,
+              child: Icon(
+                Icons.info_outline,
+                size: ShellSize.iconMd,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
             children: [
+              // The accepted-name help appears ONCE, above the group: repeating it under all four
+              // fields made the help outmass the inputs (§2.5.3).
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.keyboard_outlined,
+                    size: ShellSize.iconMd,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: ShellSpace.sm),
+                  Expanded(
+                    child: Text(
+                      'Accepted names: F1–F24, Esc, CapsLock, Space, Tab, Enter, or a single '
+                      'letter/digit. The core names what it stores; a hand-edited code shows as '
+                      'its raw value.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.md),
               for (final field in hotkeyFields)
                 Padding(
                   padding: const EdgeInsets.only(bottom: ShellSpace.sm),
@@ -245,13 +285,12 @@ class _HotkeysTabState extends State<HotkeysTab>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
-                        width: 280,
+                        width: ShellWidth.fieldLg,
                         child: TextField(
                           key: ValueKey('hotkey-$field'),
                           controller: _controllers[field],
                           decoration: InputDecoration(
                             labelText: hotkeyLabels[field] ?? field,
-                            helperText: 'F1–24, Esc, CapsLock, Space, Tab, Enter, or one key',
                             isDense: true,
                             border: const OutlineInputBorder(),
                           ),

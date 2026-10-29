@@ -12,6 +12,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/empty_state.dart';
+import '../components/shell_prose.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -45,6 +47,12 @@ class _SpammerTabState extends State<SpammerTab>
   final _newPresetName = TextEditingController();
   final _renamePresetName = TextEditingController();
   final _newKeyName = TextEditingController();
+
+  /// The empty-state actions point at these fields: the next action for a missing preset/key is to
+  /// name it, and the name field lives beside the empty state.
+  final _newPresetFocus = FocusNode();
+  final _newKeyFocus = FocusNode();
+
   String? _editingPreset;
   String? _presetNote;
 
@@ -53,6 +61,8 @@ class _SpammerTabState extends State<SpammerTab>
     _newPresetName.dispose();
     _renamePresetName.dispose();
     _newKeyName.dispose();
+    _newPresetFocus.dispose();
+    _newKeyFocus.dispose();
     super.dispose();
   }
 
@@ -473,7 +483,7 @@ class _SpammerTabState extends State<SpammerTab>
             children: [
               Text(
                 'Combo ${comboIndex + 1}',
-                style: theme.textTheme.titleSmall,
+                style: theme.textTheme.labelLarge,
               ),
               const SizedBox(width: ShellSpace.md),
               DraftFieldSlot(
@@ -482,7 +492,7 @@ class _SpammerTabState extends State<SpammerTab>
                 child: DraftNumberField(
                   label: 'Gap (s)',
                   value: asNumber(asJsonMap(combo)['gap']),
-                  width: 150,
+                  width: ShellWidth.fieldSm,
                   onChanged: (value) => _setComboGap(preset, comboIndex, value),
                 ),
               ),
@@ -506,7 +516,7 @@ class _SpammerTabState extends State<SpammerTab>
                     child: DraftTextField(
                       label: 'Key ${keyIndex + 1}',
                       value: asString(keys[keyIndex]) ?? '',
-                      width: 180,
+                      width: ShellWidth.fieldMd,
                       onChanged: (value) =>
                           _setComboKey(preset, comboIndex, keyIndex, value),
                     ),
@@ -517,7 +527,10 @@ class _SpammerTabState extends State<SpammerTab>
                     onPressed: keyIndex == 0
                         ? null
                         : () => _moveComboKey(preset, comboIndex, keyIndex, -1),
-                    icon: const Icon(Icons.arrow_upward, size: 18),
+                    icon: const Icon(
+                      Icons.arrow_upward,
+                      size: ShellSize.iconMd,
+                    ),
                   ),
                   IconButton(
                     key: ValueKey('combo-$comboIndex-key-$keyIndex-down'),
@@ -525,14 +538,17 @@ class _SpammerTabState extends State<SpammerTab>
                     onPressed: keyIndex == keys.length - 1
                         ? null
                         : () => _moveComboKey(preset, comboIndex, keyIndex, 1),
-                    icon: const Icon(Icons.arrow_downward, size: 18),
+                    icon: const Icon(
+                      Icons.arrow_downward,
+                      size: ShellSize.iconMd,
+                    ),
                   ),
                   IconButton(
                     key: ValueKey('combo-$comboIndex-key-$keyIndex-remove'),
                     tooltip: 'Remove key',
                     onPressed: () =>
                         _removeComboKey(preset, comboIndex, keyIndex),
-                    icon: const Icon(Icons.close, size: 18),
+                    icon: const Icon(Icons.close, size: ShellSize.iconMd),
                   ),
                 ],
               ),
@@ -542,7 +558,7 @@ class _SpammerTabState extends State<SpammerTab>
             child: TextButton.icon(
               key: ValueKey('combo-$comboIndex-add-key'),
               onPressed: () => _addComboKey(preset, comboIndex),
-              icon: const Icon(Icons.add, size: 16),
+              icon: const Icon(Icons.add, size: ShellSize.iconSm),
               label: const Text('Add combo key'),
             ),
           ),
@@ -553,6 +569,18 @@ class _SpammerTabState extends State<SpammerTab>
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
 
+  /// A UI-owned refusal/notice line (the core's own lines stay in the shared Save frame).
+  Widget _noteLine(ThemeData theme, String text, Key key) => Padding(
+    padding: const EdgeInsets.only(top: ShellSpace.xs),
+    child: ShellProse(
+      text,
+      key: key,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.error,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
@@ -561,6 +589,7 @@ class _SpammerTabState extends State<SpammerTab>
     final keys = preset == null ? const <String>[] : _keysFor(preset);
     final combos = preset == null ? const <dynamic>[] : _combosFor(preset);
     final theme = Theme.of(context);
+    final comboProblem = _comboProblem();
 
     return buildConfigTab(
       title: 'Skill Spammer',
@@ -572,44 +601,84 @@ class _SpammerTabState extends State<SpammerTab>
         children: [
           EditorSection(
             title: 'Presets',
+            // The row actions only apply to a selected preset, so they are absent (not disabled)
+            // while the block has none.
+            trailing: preset == null
+                ? null
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        key: const ValueKey('duplicate-preset'),
+                        onPressed: _duplicatePreset,
+                        child: const Text('Duplicate preset'),
+                      ),
+                      const SizedBox(width: ShellSpace.sm),
+                      // Destructive: outlined, never a filled primary.
+                      OutlinedButton(
+                        key: const ValueKey('delete-preset'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.colorScheme.error,
+                        ),
+                        onPressed: () => _deletePreset(preset),
+                        child: const Text('Delete preset'),
+                      ),
+                    ],
+                  ),
             children: [
-              Row(
-                children: [
-                  DraftDropdownField(
-                    label: 'Editing preset',
-                    value: preset,
-                    options: names,
-                    width: 260,
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _editingPreset = value);
-                      }
-                    },
+              if (preset != null)
+                Wrap(
+                  spacing: ShellSpace.md,
+                  runSpacing: ShellSpace.sm,
+                  children: [
+                    DraftDropdownField(
+                      label: 'Editing preset',
+                      value: preset,
+                      options: names,
+                      width: ShellWidth.picker,
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _editingPreset = value);
+                        }
+                      },
+                    ),
+                    DraftDropdownField(
+                      key: const ValueKey('active-preset'),
+                      label: 'Active preset (runs)',
+                      value: _activePreset(),
+                      options: names,
+                      width: ShellWidth.picker,
+                      onChanged: _setActive,
+                    ),
+                  ],
+                )
+              else
+                EmptyState(
+                  key: const ValueKey('spammer-empty'),
+                  icon: Icons.queue_music,
+                  title: 'No presets yet',
+                  hint:
+                      'Name a preset below and add it, then give it the keys it rotates '
+                      'in priority order.',
+                  action: TextButton.icon(
+                    key: const ValueKey('spammer-empty-add'),
+                    onPressed: _newPresetFocus.requestFocus,
+                    icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                    label: const Text('Add a preset'),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  OutlinedButton(
-                    key: const ValueKey('delete-preset'),
-                    onPressed: preset == null
-                        ? null
-                        : () => _deletePreset(preset),
-                    child: const Text('Delete preset'),
-                  ),
-                  const SizedBox(width: ShellSpace.sm),
-                  OutlinedButton(
-                    key: const ValueKey('duplicate-preset'),
-                    onPressed: preset == null ? null : _duplicatePreset,
-                    child: const Text('Duplicate preset'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              Row(
+                ),
+              const SizedBox(height: ShellSpace.md),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
-                    width: 260,
+                    width: ShellWidth.picker,
                     child: TextField(
                       key: const ValueKey('new-preset-name'),
                       controller: _newPresetName,
+                      focusNode: _newPresetFocus,
                       decoration: const InputDecoration(
                         labelText: 'New preset name',
                         isDense: true,
@@ -617,71 +686,62 @@ class _SpammerTabState extends State<SpammerTab>
                       ),
                     ),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton(
+                  FilledButton.tonal(
                     key: const ValueKey('add-preset'),
                     onPressed: _addPreset,
                     child: const Text('Add preset'),
                   ),
                 ],
               ),
-              const SizedBox(height: ShellSpace.sm),
-              Row(
-                children: [
-                  SizedBox(
-                    width: 260,
-                    child: TextField(
-                      key: const ValueKey('rename-preset-name'),
-                      controller: _renamePresetName,
-                      decoration: const InputDecoration(
-                        labelText: 'Rename preset to',
-                        isDense: true,
-                        border: OutlineInputBorder(),
+              if (preset != null) ...[
+                const SizedBox(height: ShellSpace.sm),
+                Wrap(
+                  spacing: ShellSpace.sm,
+                  runSpacing: ShellSpace.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: ShellWidth.picker,
+                      child: TextField(
+                        key: const ValueKey('rename-preset-name'),
+                        controller: _renamePresetName,
+                        decoration: const InputDecoration(
+                          labelText: 'Rename preset to',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton.tonal(
-                    key: const ValueKey('rename-preset'),
-                    onPressed: preset == null ? null : _renamePreset,
-                    child: const Text('Rename preset'),
-                  ),
-                ],
-              ),
-              if (_presetNote != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: ShellSpace.xs),
-                  child: Text(
-                    _presetNote!,
-                    key: const ValueKey('spammer-preset-note'),
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: Theme.of(context).colorScheme.error),
-                  ),
+                    FilledButton.tonal(
+                      key: const ValueKey('rename-preset'),
+                      onPressed: _renamePreset,
+                      child: const Text('Rename preset'),
+                    ),
+                  ],
                 ),
-              const SizedBox(height: ShellSpace.sm),
-              DraftDropdownField(
-                key: const ValueKey('active-preset'),
-                label: 'Active preset (runs)',
-                value: _activePreset(),
-                options: names,
-                width: 260,
-                onChanged: _setActive,
-              ),
+              ],
+              if (_presetNote != null)
+                _noteLine(
+                  theme,
+                  _presetNote!,
+                  const ValueKey('spammer-preset-note'),
+                ),
             ],
           ),
-          if (preset == null)
-            const Padding(
-              key: ValueKey('spammer-empty'),
-              padding: EdgeInsets.only(bottom: ShellSpace.lg),
-              child: Text(
-                'No presets yet — add one, then add its keys in priority order.',
-              ),
-            )
-          else ...[
+          if (preset != null) ...[
             EditorSection(
-              title: 'Opening — $preset',
+              title: 'Keys & cooldowns',
               children: [
-                Row(
+                const ShellProse(
+                  'The opening plays before the rotation. Then each key fires in priority order, '
+                  'waiting its own cooldown (Seconds). A leading * is the fast tap.',
+                ),
+                const SizedBox(height: ShellSpace.md),
+                Text('Opening — $preset', style: theme.textTheme.labelLarge),
+                const SizedBox(height: ShellSpace.xs),
+                Wrap(
+                  spacing: ShellSpace.md,
+                  runSpacing: ShellSpace.sm,
                   children: [
                     DraftFieldSlot(
                       slotKey: 'lead-in',
@@ -694,7 +754,6 @@ class _SpammerTabState extends State<SpammerTab>
                             _setOpening(preset, 'lead_in', value),
                       ),
                     ),
-                    const SizedBox(width: ShellSpace.md),
                     DraftFieldSlot(
                       slotKey: 'startup-step',
                       syncToken: draft.seedRevision,
@@ -708,15 +767,33 @@ class _SpammerTabState extends State<SpammerTab>
                     ),
                   ],
                 ),
-              ],
-            ),
-            EditorSection(
-              title: 'Keys — $preset (priority order)',
-              children: [
+                const SizedBox(height: ShellSpace.md),
+                Text(
+                  'Keys — $preset (priority order)',
+                  style: theme.textTheme.labelLarge,
+                ),
+                const SizedBox(height: ShellSpace.xs),
+                if (keys.isEmpty)
+                  EmptyState(
+                    key: const ValueKey('spammer-no-keys'),
+                    icon: Icons.keyboard_outlined,
+                    title: 'No keys yet',
+                    hint: 'Add the keys this preset rotates, in the order they should fire.',
+                    compact: true,
+                    action: TextButton.icon(
+                      key: const ValueKey('spammer-empty-add-key'),
+                      onPressed: _newKeyFocus.requestFocus,
+                      icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                      label: const Text('Add a key'),
+                    ),
+                  ),
                 for (var index = 0; index < keys.length; index++)
                   Padding(
                     padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-                    child: Row(
+                    child: Wrap(
+                      spacing: ShellSpace.sm,
+                      runSpacing: ShellSpace.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         DraftFieldSlot(
                           slotKey: 'key-name-$index',
@@ -724,19 +801,18 @@ class _SpammerTabState extends State<SpammerTab>
                           child: DraftTextField(
                             label: 'Key ${index + 1}',
                             value: keys[index],
-                            width: 180,
+                            width: ShellWidth.fieldMd,
                             onChanged: (value) =>
                                 _renameKey(preset, keys[index], value),
                           ),
                         ),
-                        const SizedBox(width: ShellSpace.sm),
                         DraftFieldSlot(
                           slotKey: 'key-seconds-$index',
                           syncToken: draft.seedRevision,
                           child: DraftNumberField(
                             label: 'Seconds',
                             value: _secondsFor(preset, keys[index]),
-                            width: 130,
+                            width: ShellWidth.fieldSm,
                             onChanged: (value) =>
                                 _setSeconds(preset, keys[index], value),
                           ),
@@ -747,7 +823,10 @@ class _SpammerTabState extends State<SpammerTab>
                           onPressed: index == 0
                               ? null
                               : () => _moveKey(preset, index, -1),
-                          icon: const Icon(Icons.arrow_upward, size: 18),
+                          icon: const Icon(
+                            Icons.arrow_upward,
+                            size: ShellSize.iconMd,
+                          ),
                         ),
                         IconButton(
                           key: ValueKey('key-down-$index'),
@@ -755,25 +834,32 @@ class _SpammerTabState extends State<SpammerTab>
                           onPressed: index == keys.length - 1
                               ? null
                               : () => _moveKey(preset, index, 1),
-                          icon: const Icon(Icons.arrow_downward, size: 18),
+                          icon: const Icon(
+                            Icons.arrow_downward,
+                            size: ShellSize.iconMd,
+                          ),
                         ),
                         IconButton(
                           key: ValueKey('key-remove-$index'),
                           tooltip: 'Remove',
                           onPressed: () => _removeKey(preset, keys[index]),
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const Icon(Icons.close, size: ShellSize.iconMd),
                         ),
                       ],
                     ),
                   ),
                 const SizedBox(height: ShellSpace.sm),
-                Row(
+                Wrap(
+                  spacing: ShellSpace.sm,
+                  runSpacing: ShellSpace.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     SizedBox(
-                      width: 180,
+                      width: ShellWidth.fieldMd,
                       child: TextField(
                         key: const ValueKey('new-key-name'),
                         controller: _newKeyName,
+                        focusNode: _newKeyFocus,
                         decoration: const InputDecoration(
                           labelText: 'New key',
                           isDense: true,
@@ -781,19 +867,24 @@ class _SpammerTabState extends State<SpammerTab>
                         ),
                       ),
                     ),
-                    const SizedBox(width: ShellSpace.sm),
-                    FilledButton(
+                    TextButton.icon(
                       key: const ValueKey('add-key'),
                       onPressed: () => _addKey(preset),
-                      child: const Text('Add key'),
+                      icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                      label: const Text('Add key'),
                     ),
                   ],
                 ),
               ],
             ),
             EditorSection(
-              title: 'Combos — $preset',
+              title: 'Rotation — combos',
               children: [
+                const ShellProse(
+                  'Combos send several keys together and must go out atomically; Gap (s) is the '
+                  'pause between their steps. A combo needs at least two keys.',
+                ),
+                const SizedBox(height: ShellSpace.md),
                 for (
                   var comboIndex = 0;
                   comboIndex < combos.length;
@@ -809,16 +900,11 @@ class _SpammerTabState extends State<SpammerTab>
                     ),
                   ],
                 ),
-                if (_comboProblem() != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: ShellSpace.xs),
-                    child: Text(
-                      _comboProblem()!,
-                      key: const ValueKey('spammer-combo-note'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
+                if (comboProblem != null)
+                  _noteLine(
+                    theme,
+                    comboProblem,
+                    const ValueKey('spammer-combo-note'),
                   ),
               ],
             ),

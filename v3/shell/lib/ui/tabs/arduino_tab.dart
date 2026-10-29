@@ -10,7 +10,13 @@
 /// only the FALLBACK advice wording — a core-refusal sentence always renders first, so the duplicated
 /// text cannot drift into a different answer than the core's.
 ///
+/// Presentation follows [PLAN-V3-UI-UX.md] §6 "Arduino": the board card (a state chip + `InfoRow`
+/// details) comes first, every enumerated port is a real row (icon + port + description + trailing
+/// reason) instead of one space-padded string, and the test actions are outlined — with the
+/// cursor-moving click separated and labelled, never a second filled primary.
+///
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
+/// [PLAN-V3-UI-UX.md]: ../../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
 import 'dart:async';
@@ -20,6 +26,10 @@ import 'package:flutter/material.dart';
 import '../../app/app.dart';
 import '../../app/arduino_details.dart';
 import '../../protocol/protocol.dart';
+import '../components/info_row.dart';
+import '../components/shell_prose.dart';
+import '../components/status_chip.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
 import '../tool_labels.dart';
 import 'action_result_line.dart';
@@ -194,20 +204,18 @@ class _ArduinoTabState extends State<ArduinoTab>
             ShellSpace.sm,
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Arduino', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 2),
-                    Text(
-                      'What a Start would do with the board, the ports this machine has, and the '
-                      'input tests. Clicks and moves act on the real cursor; the core\'s refusals '
-                      'are shown verbatim.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    Text('Arduino', style: theme.textTheme.headlineSmall),
+                    const SizedBox(height: ShellSpace.xxs),
+                    const ShellProse(
+                      'What a Start would do with the board, the ports this machine has, and '
+                      'the input tests. Clicks and moves act on the real cursor; the core\'s '
+                      'refusals are shown verbatim.',
                     ),
                   ],
                 ),
@@ -215,7 +223,7 @@ class _ArduinoTabState extends State<ArduinoTab>
               OutlinedButton.icon(
                 key: const ValueKey('arduino-refresh-details'),
                 onPressed: _loadingDetails ? null : _loadDetails,
-                icon: const Icon(Icons.refresh, size: 18),
+                icon: const Icon(Icons.refresh, size: ShellSize.iconMd),
                 label: const Text('Refresh'),
               ),
             ],
@@ -227,131 +235,14 @@ class _ArduinoTabState extends State<ArduinoTab>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionTitle(theme, 'Connection'),
-                _connection(theme),
-                const SizedBox(height: ShellSpace.md),
-                _sectionTitle(theme, 'Ports this machine has'),
-                _ports(theme),
-                const SizedBox(height: ShellSpace.md),
-                _sectionTitle(theme, 'What the launcher looks for'),
-                _lookingFor(theme),
-                const SizedBox(height: ShellSpace.md),
-                _sectionTitle(theme, 'Board firmware'),
-                _firmware(theme, engaged),
+                _boardPanel(theme),
+                _portsPanel(theme),
+                _firmwarePanel(theme, engaged),
+                _testsPanel(theme),
                 const SizedBox(height: ShellSpace.lg),
-                Wrap(
-                  spacing: ShellSpace.lg,
-                  runSpacing: ShellSpace.lg,
-                  crossAxisAlignment: WrapCrossAlignment.start,
-                  children: [
-                    _testBox(
-                      theme,
-                      'Click',
-                      'Left-click once at the current cursor position.',
-                      [
-                        FilledButton(
-                          key: const ValueKey('arduino-click'),
-                          onPressed: _runClick,
-                          child: const Text('Left click'),
-                        ),
-                        ActionResultLine(
-                          key: const ValueKey('arduino-click-result'),
-                          label: 'Click',
-                          line: _successOrError(_click),
-                          isError: _click != null && !_click!.ok,
-                        ),
-                      ],
-                    ),
-                    _testBox(
-                      theme,
-                      'Move',
-                      'Raw HID counts — never scaled, never rounded.',
-                      [
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 120,
-                              child: TextField(
-                                key: const ValueKey('arduino-move-dx'),
-                                controller: _dx,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'dx',
-                                  isDense: true,
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: ShellSpace.sm),
-                            SizedBox(
-                              width: 120,
-                              child: TextField(
-                                key: const ValueKey('arduino-move-dy'),
-                                controller: _dy,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'dy',
-                                  isDense: true,
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: ShellSpace.sm),
-                        FilledButton(
-                          key: const ValueKey('arduino-move'),
-                          onPressed: _runMove,
-                          child: const Text('Move'),
-                        ),
-                        ActionResultLine(
-                          key: const ValueKey('arduino-move-result'),
-                          label: 'Move',
-                          line: _successOrError(_move),
-                          isError: _move != null && !_move!.ok,
-                        ),
-                      ],
-                    ),
-                    _testBox(
-                      theme,
-                      'Key',
-                      'One character, Enter, or F1–F12 — the core refuses anything it cannot send.',
-                      [
-                        SizedBox(
-                          width: ShellWidth.labelColumn,
-                          child: TextField(
-                            key: const ValueKey('arduino-key-input'),
-                            controller: _key,
-                            decoration: const InputDecoration(
-                              labelText: 'Key',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: ShellSpace.sm),
-                        FilledButton(
-                          key: const ValueKey('arduino-send-key'),
-                          onPressed: _runKey,
-                          child: const Text('Send key'),
-                        ),
-                        ActionResultLine(
-                          key: const ValueKey('arduino-key-result'),
-                          label: 'Key',
-                          line: _successOrError(_keyResult),
-                          isError: _keyResult != null && !_keyResult!.ok,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: ShellSpace.lg),
-                Text(
+                const ShellProse(
                   'The board\'s own grammar is the contract: the shell sends intent, the core '
                   'opens the port, places the cursor closed-loop, and reports its refusals.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
                 ),
                 const SizedBox(height: ShellSpace.lg),
               ],
@@ -362,15 +253,18 @@ class _ArduinoTabState extends State<ArduinoTab>
     );
   }
 
-  Widget _sectionTitle(ThemeData theme, String title) => Padding(
-    padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-    child: Text(title, style: theme.textTheme.titleSmall),
-  );
-
-  /// v2's three-state light + verdict + advice. The light answers "what would Start do?", which is
-  /// why `named_missing` is red even when another board matches the IDs: Start would refuse it.
-  Widget _connection(ThemeData theme) {
+  /// The board card, FIRST (§6 "Arduino"): one state chip answers "will Start accept this board?",
+  /// the verdict is the v2 sentence, and the launch data is a set of label/value rows instead of the
+  /// old space-padded three-line string.
+  Widget _boardPanel(ThemeData theme) {
     final result = _details;
+    return SurfacePanel(title: 'Board', child: _connection(theme, result));
+  }
+
+  Widget _connection(
+    ThemeData theme,
+    CoreActionResult<BoardDetailsResult>? result,
+  ) {
     if (result == null) {
       return Text(
         _loadingDetails ? 'Reading the serial ports…' : 'Not read yet.',
@@ -388,18 +282,21 @@ class _ArduinoTabState extends State<ArduinoTab>
     }
     final details = result.value!;
     final choice = details.choice;
-    final outcome = switch (choice.state) {
+    final (kind, stateWord, verdict) = switch (choice.state) {
       BoardChoiceState.ready => (
-        light: theme.shellColors.success,
-        verdict: 'Ready — Start will open ${choice.port ?? 'a port'}',
+        StatusKind.success,
+        'Ready',
+        'Ready — Start will open ${choice.port ?? 'a port'}',
       ),
       BoardChoiceState.namedMissing => (
-        light: theme.colorScheme.error,
-        verdict: 'Start will refuse — the named port is missing',
+        StatusKind.error,
+        'Will refuse',
+        'Start will refuse — the named port is missing',
       ),
       BoardChoiceState.notFound => (
-        light: theme.colorScheme.error,
-        verdict: 'Start will refuse — no Arduino found',
+        StatusKind.error,
+        'Will refuse',
+        'Start will refuse — no Arduino found',
       ),
     };
     final advice = switch (choice.state) {
@@ -412,24 +309,22 @@ class _ArduinoTabState extends State<ArduinoTab>
       // the wording if a core ever omits it.
       BoardChoiceState.notFound => choice.refusal ?? _cableAdvice,
     };
+    final expected = details.expected;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
+            StatusChip(
               key: const ValueKey('arduino-connection-status'),
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: outcome.light,
-                shape: BoxShape.circle,
-              ),
+              kind: kind,
+              label: stateWord,
             ),
             const SizedBox(width: ShellSpace.sm),
             Expanded(
               child: Text(
-                outcome.verdict,
+                verdict,
                 key: const ValueKey('arduino-connection-verdict'),
                 style: theme.textTheme.bodyMedium,
               ),
@@ -439,80 +334,124 @@ class _ArduinoTabState extends State<ArduinoTab>
         if (advice != null)
           Padding(
             padding: const EdgeInsets.only(top: ShellSpace.xs),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+              child: Text(
+                advice,
+                key: const ValueKey('arduino-advice'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: ShellSpace.md),
+        // The DATA the launcher decides from: rows, not space-padded columns (the audit's §4.7
+        // finding — proportional type never lines the old pseudo-columns up).
+        KeyedSubtree(
+          key: const ValueKey('arduino-looking-for'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InfoRow(label: 'VID', value: '0x${expected.vid}'),
+              InfoRow(
+                label: 'PID',
+                value: expected.pids.map((pid) => '0x$pid').join(' / '),
+              ),
+              InfoRow(label: 'Baud', value: '${details.baud}'),
+              InfoRow(
+                label: 'arduino.port',
+                value: expected.hasPortOverride
+                    ? '${expected.port} — a named port wins over the IDs above'
+                    : 'not set — the board is found by the IDs above',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Every enumerated port, chosen first (the core's order), as a row: icon, port, description,
+  /// trailing reason. The reason can no longer end up on its own line under a long description.
+  Widget _portsPanel(ThemeData theme) {
+    final details = _details?.value;
+    final ports = details == null ? const <BoardPort>[] : details.ports;
+    return SurfacePanel(
+      title: 'Ports this machine has',
+      child: ports.isEmpty
+          ? Text(
+              'This machine reports no serial ports at all.',
+              key: const ValueKey('arduino-ports-empty'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [for (final port in ports) _portRow(theme, port)],
+            ),
+    );
+  }
+
+  Widget _portRow(ThemeData theme, BoardPort port) {
+    final reason = port.chosen
+        ? 'Start will open this one'
+        : (port.matchesIds
+              ? 'matches the expected ID'
+              : 'does not match the expected IDs');
+    final reasonColor = port.chosen
+        ? theme.shellColors.success
+        : theme.colorScheme.onSurfaceVariant;
+    final description = port.description;
+    return Padding(
+      key: ValueKey('arduino-port-row-${port.port}'),
+      padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+      child: Row(
+        children: [
+          Icon(
+            port.chosen
+                ? Icons.radio_button_checked
+                : Icons.radio_button_unchecked,
+            size: ShellSize.iconMd,
+            color: reasonColor,
+          ),
+          const SizedBox(width: ShellSpace.sm),
+          SizedBox(
+            width: ShellWidth.fieldSm,
             child: Text(
-              advice,
-              key: const ValueKey('arduino-advice'),
+              port.port,
+              style: ShellText.mono.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+          const SizedBox(width: ShellSpace.md),
+          Expanded(
+            child: Text(
+              description ?? '—',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-      ],
-    );
-  }
-
-  /// Every enumerated port, chosen first (the core's order), with v2's bullets and reasons.
-  Widget _ports(ThemeData theme) {
-    final details = _details?.value;
-    final ports = details == null ? const <BoardPort>[] : details.ports;
-    if (ports.isEmpty) {
-      return Text(
-        'This machine reports no serial ports at all.',
-        key: const ValueKey('arduino-ports-empty'),
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [for (final port in ports) _portRow(theme, port)],
-    );
-  }
-
-  Widget _portRow(ThemeData theme, BoardPort port) {
-    final marker = port.chosen ? '●' : '○';
-    final reason = port.chosen
-        ? '— Start will open this one'
-        : (port.matchesIds ? '— matches the expected ID' : null);
-    final description = port.description;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Text(
-        '$marker  ${port.port}'
-        '${description == null ? '' : '   $description'}'
-        '${reason == null ? '' : '     $reason'}',
-        key: ValueKey('arduino-port-row-${port.port}'),
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: port.chosen
-              ? theme.shellColors.success
-              : theme.colorScheme.onSurfaceVariant,
-        ),
+          const SizedBox(width: ShellSpace.md),
+          Text(
+            reason,
+            key: ValueKey('arduino-port-reason-${port.port}'),
+            style: theme.textTheme.labelSmall?.copyWith(color: reasonColor),
+          ),
+        ],
       ),
-    );
-  }
-
-  /// The DATA the launcher decides from, printed because it explains everything above (v2's card).
-  Widget _lookingFor(ThemeData theme) {
-    final details = _details?.value;
-    if (details == null) {
-      return const SizedBox.shrink();
-    }
-    final expected = details.expected;
-    final pids = expected.pids.map((pid) => '0x$pid').join(' / ');
-    final port = expected.hasPortOverride
-        ? 'arduino.port: ${expected.port} — a named port wins over the ID above'
-        : 'arduino.port: not set — the board is found by the ID above';
-    return Text(
-      'VID 0x${expected.vid}    PID $pids\nbaud ${details.baud}\n$port',
-      key: const ValueKey('arduino-looking-for'),
-      style: theme.textTheme.bodySmall,
     );
   }
 
   /// The CACHED level: "not checked yet" is normal (v2's wording), and the explicit Query firmware
   /// action is the only thing here that opens the port.
-  Widget _firmware(ThemeData theme, ({ToolId tool, String name})? engaged) {
+  Widget _firmwarePanel(
+    ThemeData theme,
+    ({ToolId tool, String name})? engaged,
+  ) {
     final level = _probeLevel ?? _details?.value?.firmware?.level;
     final queried = _probeLevel != null;
     final headline = level == null
@@ -524,56 +463,222 @@ class _ArduinoTabState extends State<ArduinoTab>
         ? 'The board is read the first time a tool opens it; Query firmware asks now.'
         : "Reported by the board's V reply.";
     final blocked = engaged != null || _queryingFirmware;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          headline,
-          key: const ValueKey('arduino-firmware'),
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          detail,
-          key: const ValueKey('arduino-firmware-detail'),
+    return SurfacePanel(
+      title: 'Board firmware',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            headline,
+            key: const ValueKey('arduino-firmware'),
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: ShellSpace.xxs),
+          Text(
+            detail,
+            key: const ValueKey('arduino-firmware-detail'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: ShellSpace.sm),
+          Wrap(
+            spacing: ShellSpace.sm,
+            runSpacing: ShellSpace.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton(
+                key: const ValueKey('arduino-query-firmware'),
+                onPressed: blocked ? null : _queryFirmware,
+                child: Text(_queryingFirmware ? 'Querying…' : 'Query firmware'),
+              ),
+              if (engaged != null)
+                Text(
+                  'The board is busy while ${engaged.name} is running — stop the run before '
+                  'querying the firmware.',
+                  key: const ValueKey('arduino-query-busy'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          if (_probe != null) ...[
+            const SizedBox(height: ShellSpace.xs),
+            ActionResultLine(
+              key: const ValueKey('arduino-probe-result'),
+              label: 'Probe',
+              line: _probe!.ok
+                  ? probeSummary(_probe!.value!)
+                  : _probe!.errorLine,
+              isError: !_probe!.ok,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The three `board.test` actions. They are outlined, never filled: the page has no primary action
+  /// because nothing here saves (§2.8). The click is separated and labelled because it moves the real
+  /// cursor; the move and the key send are visibly ordinary.
+  Widget _testsPanel(ThemeData theme) {
+    return SurfacePanel(
+      title: 'Input tests',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ShellProse(
+            'These act through the board on the real machine. Nothing is saved; each test '
+            'runs only when you press it.',
+          ),
+          const SizedBox(height: ShellSpace.md),
+          _testLead(
+            theme,
+            title: 'Click',
+            description: 'Left-click once at the current cursor position.',
+            cursorMoving: true,
+          ),
+          const SizedBox(height: ShellSpace.sm),
+          OutlinedButton(
+            key: const ValueKey('arduino-click'),
+            onPressed: _runClick,
+            child: const Text('Left click'),
+          ),
+          ActionResultLine(
+            key: const ValueKey('arduino-click-result'),
+            label: 'Click',
+            line: _successOrError(_click),
+            isError: _click != null && !_click!.ok,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: ShellSpace.md),
+            child: Divider(height: 1),
+          ),
+          _testLead(
+            theme,
+            title: 'Move',
+            description: 'Raw HID counts — never scaled, never rounded.',
+          ),
+          const SizedBox(height: ShellSpace.sm),
+          Row(
+            children: [
+              SizedBox(
+                width: ShellWidth.fieldSm,
+                child: TextField(
+                  key: const ValueKey('arduino-move-dx'),
+                  controller: _dx,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'dx',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              SizedBox(
+                width: ShellWidth.fieldSm,
+                child: TextField(
+                  key: const ValueKey('arduino-move-dy'),
+                  controller: _dy,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'dy',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: ShellSpace.md),
+              OutlinedButton(
+                key: const ValueKey('arduino-move'),
+                onPressed: _runMove,
+                child: const Text('Move'),
+              ),
+            ],
+          ),
+          ActionResultLine(
+            key: const ValueKey('arduino-move-result'),
+            label: 'Move',
+            line: _successOrError(_move),
+            isError: _move != null && !_move!.ok,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: ShellSpace.md),
+            child: Divider(height: 1),
+          ),
+          _testLead(
+            theme,
+            title: 'Key',
+            description: 'One character, Enter, or F1–F12 — the core refuses anything it cannot send.',
+          ),
+          const SizedBox(height: ShellSpace.sm),
+          Row(
+            children: [
+              SizedBox(
+                width: ShellWidth.labelColumn,
+                child: TextField(
+                  key: const ValueKey('arduino-key-input'),
+                  controller: _key,
+                  decoration: const InputDecoration(
+                    labelText: 'Key',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: ShellSpace.md),
+              OutlinedButton(
+                key: const ValueKey('arduino-send-key'),
+                onPressed: _runKey,
+                child: const Text('Send key'),
+              ),
+            ],
+          ),
+          ActionResultLine(
+            key: const ValueKey('arduino-key-result'),
+            label: 'Key',
+            line: _successOrError(_keyResult),
+            isError: _keyResult != null && !_keyResult!.ok,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _testLead(
+    ThemeData theme, {
+    required String title,
+    required String description,
+    bool cursorMoving = false,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          if (cursorMoving) ...[
+            const SizedBox(width: ShellSpace.sm),
+            const StatusChip(
+              kind: StatusKind.warning,
+              label: 'moves the cursor',
+            ),
+          ],
+        ],
+      ),
+      const SizedBox(height: ShellSpace.xxs),
+      ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+        child: Text(
+          description,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: ShellSpace.sm),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            OutlinedButton(
-              key: const ValueKey('arduino-query-firmware'),
-              onPressed: blocked ? null : _queryFirmware,
-              child: Text(_queryingFirmware ? 'Querying…' : 'Query firmware'),
-            ),
-            if (engaged != null)
-              Text(
-                'The board is busy while ${engaged.name} is running — stop the run before '
-                'querying the firmware.',
-                key: const ValueKey('arduino-query-busy'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-          ],
-        ),
-        if (_probe != null) ...[
-          const SizedBox(height: ShellSpace.xs),
-          ActionResultLine(
-            key: const ValueKey('arduino-probe-result'),
-            label: 'Probe',
-            line: _probe!.ok ? probeSummary(_probe!.value!) : _probe!.errorLine,
-            isError: !_probe!.ok,
-          ),
-        ],
-      ],
-    );
-  }
+      ),
+    ],
+  );
 
   /// The core answers `{}` on success (no text of its own); a refusal carries its line.
   String? _successOrError(CoreActionResult<Map<String, dynamic>>? result) {
@@ -582,28 +687,4 @@ class _ArduinoTabState extends State<ArduinoTab>
     }
     return result.ok ? 'sent' : result.errorLine;
   }
-
-  Widget _testBox(
-    ThemeData theme,
-    String title,
-    String description,
-    List<Widget> children,
-  ) => SizedBox(
-    width: 320,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: theme.textTheme.titleSmall),
-        const SizedBox(height: 2),
-        Text(
-          description,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: ShellSpace.sm),
-        ...children,
-      ],
-    ),
-  );
 }

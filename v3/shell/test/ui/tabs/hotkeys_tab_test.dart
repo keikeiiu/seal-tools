@@ -152,7 +152,12 @@ void main() {
       tester.widget<TextField>(_field('hotkey-pause')).controller?.text,
       'CapsLock',
     );
-    expect(find.textContaining('start=123'), findsWidgets);
+    // The raw stored codes are debug data now: they live in the section-header tooltip, not on the
+    // frame, where the names are the point of the tab.
+    final codesHelp = tester.widget<Tooltip>(
+      find.byKey(const ValueKey('hotkey-stored-codes')),
+    );
+    expect(codesHelp.message, contains('start=123'));
   });
 
   testWidgets('a bad name renders the domain line verbatim and blocks apply', (

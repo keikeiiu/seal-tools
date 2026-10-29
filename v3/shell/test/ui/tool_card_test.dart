@@ -59,68 +59,67 @@ ToolCard _card({
 );
 
 void main() {
-  testWidgets('a running card shows the phase chip, message, headers and rows', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _host(
-        _card(
-          snapshot: _snapshot(
-            phase: ToolPhase.running,
-            message: 'fishing for a red gem',
-            countdown: 60,
-            rows: [
-              ToolRow(
-                name: 'row 1',
-                status: 'boarding',
-                detail: '藍天 · 3/min',
-                nextActionInSeconds: 1800,
-              ),
-              ToolRow(name: 'row 2', status: 'waiting for a reload'),
-            ],
+  testWidgets(
+    'a running card shows the phase chip, message, headers and rows',
+    (tester) async {
+      await tester.pumpWidget(
+        _host(
+          _card(
+            snapshot: _snapshot(
+              phase: ToolPhase.running,
+              message: 'fishing for a red gem',
+              countdown: 60,
+              rows: [
+                ToolRow(
+                  name: 'row 1',
+                  status: 'boarding',
+                  detail: '藍天 · 3/min',
+                  nextActionInSeconds: 1800,
+                ),
+                ToolRow(name: 'row 2', status: 'waiting for a reload'),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Magic Tuner'), findsOneWidget);
-    expect(find.text('running'), findsOneWidget);
-    expect(find.text('fishing for a red gem'), findsOneWidget);
-    expect(find.text('next action in 1 m'), findsOneWidget);
+      expect(find.text('Magic Tuner'), findsOneWidget);
+      expect(find.text('running'), findsOneWidget);
+      expect(find.text('fishing for a red gem'), findsOneWidget);
+      expect(find.text('next action in 1 m'), findsOneWidget);
 
-    // The table has labels, and the four row fields render from the snapshot.
-    expect(find.text('ROW'), findsOneWidget);
-    expect(find.text('STATUS'), findsOneWidget);
-    expect(find.text('DETAIL'), findsOneWidget);
-    expect(find.text('NEXT'), findsOneWidget);
-    expect(find.text('row 1'), findsOneWidget);
-    expect(find.text('boarding'), findsOneWidget);
-    expect(find.text('藍天 · 3/min'), findsOneWidget);
-    expect(find.text('in 30 m'), findsOneWidget);
-    expect(find.text('row 2'), findsOneWidget);
-    expect(find.text('waiting for a reload'), findsOneWidget);
+      // The table has labels, and the four row fields render from the snapshot.
+      expect(find.text('ROW'), findsOneWidget);
+      expect(find.text('STATUS'), findsOneWidget);
+      expect(find.text('DETAIL'), findsOneWidget);
+      expect(find.text('NEXT'), findsOneWidget);
+      expect(find.text('row 1'), findsOneWidget);
+      expect(find.text('boarding'), findsOneWidget);
+      expect(find.text('藍天 · 3/min'), findsOneWidget);
+      expect(find.text('in 30 m'), findsOneWidget);
+      expect(find.text('row 2'), findsOneWidget);
+      expect(find.text('waiting for a reload'), findsOneWidget);
 
-    // Running: Stop is the one action; there is no Start on a running card.
-    expect(find.byKey(const ValueKey('start-tuner')), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('stop-tuner')))
-          .onPressed,
-      isNotNull,
-    );
+      // Running: Stop is the one action; there is no Start on a running card.
+      expect(find.byKey(const ValueKey('start-tuner')), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('stop-tuner')))
+            .onPressed,
+        isNotNull,
+      );
 
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(seconds: 2));
-  });
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 2));
+    },
+  );
 
   testWidgets('an idle tool is a one-line tile with an outlined Start', (
     tester,
   ) async {
     await tester.pumpWidget(
       _host(
-        _card(
-          snapshot: _snapshot(message: 'Ready — target DG · 5 retries'),
-        ),
+        _card(snapshot: _snapshot(message: 'Ready — target DG · 5 retries')),
       ),
     );
 
@@ -138,69 +137,67 @@ void main() {
     );
   });
 
-  testWidgets('Start and Stop call back; pending disables and labels the action', (
-    tester,
-  ) async {
-    var starts = 0;
-    var stops = 0;
-    await tester.pumpWidget(
-      _host(_card(onStart: () => starts++, onStop: () => stops++)),
-    );
+  testWidgets(
+    'Start and Stop call back; pending disables and labels the action',
+    (tester) async {
+      var starts = 0;
+      var stops = 0;
+      await tester.pumpWidget(
+        _host(_card(onStart: () => starts++, onStop: () => stops++)),
+      );
 
-    await tester.tap(find.byKey(const ValueKey('start-tuner')));
-    expect(starts, 1);
+      await tester.tap(find.byKey(const ValueKey('start-tuner')));
+      expect(starts, 1);
 
-    // An in-flight START is shown on the idle tile: the verb becomes a labelled spinner and the
-    // button is disabled, but the phase chip does not appear (the core has not published one).
-    await tester.pumpWidget(
-      _host(_card(pending: true, onStart: () => starts++)),
-    );
-    expect(find.text('Starting…'), findsOneWidget);
-    expect(
-      tester
-          .widget<OutlinedButton>(find.byKey(const ValueKey('start-tuner')))
-          .onPressed,
-      isNull,
-    );
+      // An in-flight START is shown on the idle tile: the verb becomes a labelled spinner and the
+      // button is disabled, but the phase chip does not appear (the core has not published one).
+      await tester.pumpWidget(
+        _host(_card(pending: true, onStart: () => starts++)),
+      );
+      expect(find.text('Starting…'), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(find.byKey(const ValueKey('start-tuner')))
+            .onPressed,
+        isNull,
+      );
 
-    // A running tool's Stop carries the same in-flight rule.
-    await tester.pumpWidget(
-      _host(
-        _card(
-          snapshot: _snapshot(phase: ToolPhase.running),
-          pending: true,
-          onStart: () => starts++,
-          onStop: () => stops++,
+      // A running tool's Stop carries the same in-flight rule.
+      await tester.pumpWidget(
+        _host(
+          _card(
+            snapshot: _snapshot(phase: ToolPhase.running),
+            pending: true,
+            onStart: () => starts++,
+            onStop: () => stops++,
+          ),
         ),
-      ),
-    );
-    expect(find.text('Stopping…'), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('stop-tuner')))
-          .onPressed,
-      isNull,
-      reason: 'a command is already in flight',
-    );
-  });
+      );
+      expect(find.text('Stopping…'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('stop-tuner')))
+            .onPressed,
+        isNull,
+        reason: 'a command is already in flight',
+      );
+    },
+  );
 
   testWidgets('the in-flight Start label replaces the verb, never the phase', (
     tester,
   ) async {
     await tester.pumpWidget(
-      _host(
-        _card(
-          pending: true,
-          snapshot: _snapshot(phase: ToolPhase.idle),
-        ),
-      ),
+      _host(_card(pending: true, snapshot: _snapshot(phase: ToolPhase.idle))),
     );
     expect(find.text('Starting…'), findsOneWidget);
     // The tile is still idle: the core has not published a phase.
     expect(find.text('running'), findsNothing);
   });
 
-  testWidgets('a refusal line renders verbatim on the idle tile', (tester) async {
+  testWidgets('a refusal line renders verbatim on the idle tile', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _host(
         _card(

@@ -21,7 +21,10 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/info_row.dart';
+import '../components/read_only_panel.dart';
 import '../components/shell_prose.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -260,6 +263,64 @@ class _BuySellTabState extends State<BuySellTab>
     final showBuy = section != BuySellSection.sell;
     final showSell = section != BuySellSection.buy;
 
+    // The split screens put the calibrated geometry and the run contract in the aside; the combined
+    // (test-only) layout keeps its trailing read-only block so its finders do not move.
+    final aside = section == BuySellSection.both
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ReadOnlyPanel(
+                title: 'Calibrated geometry',
+                subtitle: 'Drawn on the Calibrate screen',
+                openHint: 'read-only',
+                rows: [
+                  InfoRow(
+                    label: 'Bag grid',
+                    value: readOnlyText(calibrated['bag_grid']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Bag slot',
+                    value: readOnlyText(calibrated['bag_slot']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Shop region',
+                    value: readOnlyText(calibrated['shop_region']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Shop rows',
+                    value: readOnlyText(calibrated['shop_rows']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Scroll point',
+                    value: readOnlyText(calibrated['scroll_point']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'MAX button',
+                    value: readOnlyText(calibrated['max_button']),
+                    mono: true,
+                  ),
+                ],
+              ),
+              SurfacePanel(
+                title: 'How the run uses it',
+                description: section == BuySellSection.buy
+                    ? 'The Buy card picks one preset saved here and sends the '
+                          'count with tool.start. Nothing on this screen is '
+                          'per-run.'
+                    : 'The Sell card sells exactly the slots armed here. The core '
+                          'sells the highest selected index first and applies the '
+                          'cap at run time.',
+                child: const SizedBox.shrink(),
+              ),
+            ],
+          );
+
     return buildConfigTab(
       title: switch (section) {
         BuySellSection.both => 'Buy / Sell',
@@ -313,6 +374,7 @@ class _BuySellTabState extends State<BuySellTab>
             ],
           ),
       ],
+      aside: aside,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

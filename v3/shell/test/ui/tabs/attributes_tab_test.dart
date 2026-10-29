@@ -129,6 +129,41 @@ void main() {
     },
   );
 
+  testWidgets(
+    'zero matches hide the tables and show the EmptyState with Clear',
+    (tester) async {
+      await _pumpAttributes(tester, answer: _attributesAnswer());
+
+      await tester.enterText(
+        find.byKey(const ValueKey('attributes-search')),
+        'NOT_A_NAME',
+      );
+      await tester.pump();
+
+      expect(find.text('0 of 3 attributes'), findsOneWidget);
+      expect(find.text("No names match 'NOT_A_NAME'"), findsOneWidget);
+      // The tables are hidden while a query is active: an empty result must not look half-filtered.
+      expect(find.text('attack (1)'), findsNothing);
+      expect(find.text('STAT-Y'), findsNothing);
+      expect(find.text('MARK-X'), findsNothing);
+      expect(find.text('攻 → 攻'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('attributes-clear-search')));
+      await tester.pump();
+
+      expect(find.text('3 of 3 attributes'), findsOneWidget);
+      expect(find.text('attack (1)'), findsOneWidget);
+      expect(find.text('STAT-Y'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('attributes-search')))
+            .controller
+            ?.text,
+        '',
+      );
+    },
+  );
+
   testWidgets('variant null renders the explicit no-client line', (
     tester,
   ) async {

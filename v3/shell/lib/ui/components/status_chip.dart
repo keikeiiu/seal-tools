@@ -14,11 +14,7 @@ import '../theme.dart';
 enum StatusKind { success, warning, error, info, muted }
 
 class StatusChip extends StatelessWidget {
-  const StatusChip({
-    super.key,
-    required this.kind,
-    required this.label,
-  });
+  const StatusChip({super.key, required this.kind, required this.label});
 
   final StatusKind kind;
   final String label;
@@ -72,9 +68,15 @@ class StatusChip extends StatelessWidget {
             decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
           ),
           const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(color: foreground),
+          // A chip may be placed in a narrow slot (a 250 px column, a 340 px aside); the label
+          // shrinks with an ellipsis instead of overflowing its row.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(color: foreground),
+            ),
           ),
         ],
       ),

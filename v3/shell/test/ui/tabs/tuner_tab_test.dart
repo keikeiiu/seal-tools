@@ -111,6 +111,18 @@ Future<AppHarness> _pumpTuner(
   for (var i = 0; i < 8; i++) {
     await tester.pump();
   }
+  // The redesigned tab folds diagnostics and demotes calibrated geometry: open both once here so a
+  // test can reach the controls it asserts (the panels start collapsed for the player).
+  for (final key in const [
+    'fold-toggle-Advanced options',
+    'readonly-toggle-Calibrated geometry',
+  ]) {
+    final toggle = find.byKey(ValueKey(key));
+    await tester.ensureVisible(toggle);
+    await tester.pump();
+    await tester.tap(toggle);
+    await tester.pump();
+  }
   return harness;
 }
 
@@ -150,7 +162,7 @@ void main() {
       '5',
     );
     expect(find.textContaining('left 1140, top 840'), findsOneWidget);
-    expect(find.textContaining('read-only this wave'), findsOneWidget);
+    expect(find.text('Calibrated geometry'), findsOneWidget);
 
     await tester.enterText(_field('max-retries'), '7');
     await tester.pump();

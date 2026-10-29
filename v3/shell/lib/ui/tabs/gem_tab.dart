@@ -13,6 +13,11 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/foldable_section.dart';
+import '../components/info_row.dart';
+import '../components/read_only_panel.dart';
+import '../components/shell_prose.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -84,9 +89,14 @@ class _GemTabState extends State<GemTab>
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
 
+  /// One read-only geometry row; the value is the stored array (or a dash when unset).
+  InfoRow _geometryRow(String label, Object? value) =>
+      InfoRow(label: label, value: readOnlyText(value), mono: true);
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    final theme = Theme.of(context);
     final grades = _grades();
     final calibrated = _calibrated();
     final positions = asJsonMap(calibrated['grade_positions']);
@@ -96,33 +106,40 @@ class _GemTabState extends State<GemTab>
     return buildConfigTab(
       title: 'Gem Composer',
       description:
-          'The gem grades and behaviour. Saves go through the `settings:` overlay; the calibrated '
-          'positions and slots stay read-only until the calibration surfaces land.',
-      readOnly: [
-        EditorSection(
-          title: 'Calibrated positions — read-only this wave',
-          children: [
-            if (positionsKeys.isEmpty)
-              const ReadOnlyValue(label: 'Grade positions', value: '—'),
-            for (final name in positionsKeys)
-              ReadOnlyValue(
-                label: 'Grade $name',
-                value: readOnlyText(positions[name]),
-              ),
-            if (resourceSlots.isEmpty)
-              const ReadOnlyValue(label: 'Resource slots', value: '—'),
-            for (var index = 0; index < resourceSlots.length; index++)
-              ReadOnlyValue(
-                label: 'Resource slot ${index + 1}',
-                value: readOnlyText(resourceSlots[index]),
-              ),
-            ReadOnlyValue(
-              label: 'Result gem area',
-              value: readOnlyText(calibrated['result_gem_area']),
+          'The composer\'s grades and behaviour. Saves go through the `settings:` overlay; the '
+          'fixed grade ladder and the calibrated geometry are shown, not sent.',
+      aside: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ReadOnlyPanel(
+            title: 'Calibrated geometry',
+            subtitle: 'read-only this wave — draw them in Calibrate',
+            openHint: 'read-only',
+            rows: [
+              if (positionsKeys.isEmpty)
+                const InfoRow(label: 'Grade positions', value: '—', mono: true),
+              for (final name in positionsKeys)
+                _geometryRow('Grade $name', positions[name]),
+              if (resourceSlots.isEmpty)
+                const InfoRow(label: 'Resource slots', value: '—', mono: true),
+              for (var index = 0; index < resourceSlots.length; index++)
+                _geometryRow(
+                  'Resource slot ${index + 1}',
+                  resourceSlots[index],
+                ),
+              _geometryRow('Result gem area', calibrated['result_gem_area']),
+            ],
+          ),
+          const SurfacePanel(
+            title: 'How saving works',
+            child: ShellProse(
+              'Save writes only the portable half — the grade ladder is fixed and the '
+              'positions and slots are calibration. The core merges field-wise and remains '
+              'the only writer.',
             ),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -130,10 +147,10 @@ class _GemTabState extends State<GemTab>
             title: 'Grades',
             children: [
               Text(
-                'Fixed grades (read-only):',
+                'Fixed grade ladder (read-only):',
                 key: const ValueKey('gem-grades-caption'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: ShellSpace.xs),
@@ -158,11 +175,21 @@ class _GemTabState extends State<GemTab>
                 width: ShellWidth.fieldLg,
                 onChanged: (value) => _setPortable('start_grade', value),
               ),
+              const SizedBox(height: ShellSpace.xs),
+              const ShellProse(
+                'The run starts at this grade and advances up the ladder as grades complete.',
+              ),
             ],
           ),
           EditorSection(
             title: 'Empty result',
             children: [
+              const ShellProse(
+                'After Empty streak consecutive unreadable results the run acts on Empty mode: '
+                'stop, advance a grade, or advance after clearing the resource slots first. '
+                'Colored gap min is the colour-composition fallback threshold (0–255).',
+              ),
+              const SizedBox(height: ShellSpace.md),
               Wrap(
                 spacing: ShellSpace.md,
                 runSpacing: ShellSpace.sm,
@@ -172,7 +199,7 @@ class _GemTabState extends State<GemTab>
                     label: 'Empty mode',
                     value: asString(draft.value['empty_mode']),
                     options: _emptyModes,
-                    width: 230,
+                    width: ShellWidth.picker,
                     onChanged: (value) => _setPortable('empty_mode', value),
                   ),
                   DraftFieldSlot(
@@ -182,7 +209,7 @@ class _GemTabState extends State<GemTab>
                       label: 'Empty streak',
                       integer: true,
                       value: asNumber(draft.value['empty_streak']),
-                      width: 150,
+                      width: ShellWidth.fieldSm,
                       onChanged: (value) => _setPortable('empty_streak', value),
                     ),
                   ),
@@ -200,13 +227,6 @@ class _GemTabState extends State<GemTab>
                   ),
                 ],
               ),
-              DraftSwitchField(
-                key: const ValueKey('gem-save-empty-captures'),
-                label: 'Save empty captures',
-                value: asBool(draft.value['save_empty_captures']) ?? false,
-                onChanged: (value) =>
-                    _setPortable('save_empty_captures', value),
-              ),
             ],
           ),
           EditorSection(
@@ -219,6 +239,28 @@ class _GemTabState extends State<GemTab>
                 options: _moveModes,
                 width: ShellWidth.fieldLg,
                 onChanged: (value) => _setPortable('move_mode', value),
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              const ShellProse(
+                'tuned sends hand-tuned relative moves (turn off Enhance pointer precision); '
+                'arduino places the cursor on each route\'s calibrated destination point.',
+              ),
+            ],
+          ),
+          FoldableSection(
+            title: 'Advanced',
+            description: 'Empty-check diagnostics',
+            children: [
+              DraftSwitchField(
+                key: const ValueKey('gem-save-empty-captures'),
+                label: 'Save empty captures',
+                value: asBool(draft.value['save_empty_captures']) ?? false,
+                onChanged: (value) =>
+                    _setPortable('save_empty_captures', value),
+              ),
+              const ShellProse(
+                'Writes each empty-check crop under logs/captures and one detail line to '
+                'gem.log. Debug only.',
               ),
             ],
           ),

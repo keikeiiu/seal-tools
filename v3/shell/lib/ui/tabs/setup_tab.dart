@@ -12,12 +12,24 @@
 /// No other rule lives here: the variant's order (resolve → validate → LOAD the dictionary → write)
 /// and its refusals are the core's, and every action result/refusal is rendered verbatim
 /// ([PROTOCOL.md] §4/§7).
+///
+/// Presentation follows [PLAN-V3-UI-UX.md] §6 "Setup": the three probes render as outlined read-only
+/// actions, **Use detected title** is the single filled action because it is the only one that writes
+/// config, and the caption beside it says so. A detected title that differs from the configured one is
+/// a warning banner, not an automatic write.
+///
+/// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
+/// [PLAN-V3-UI-UX.md]: ../../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../../protocol/protocol.dart';
+import '../components/info_row.dart';
+import '../components/shell_prose.dart';
+import '../components/status_banner.dart';
+import '../components/status_chip.dart';
 import '../theme.dart';
 import 'action_result_line.dart';
 import 'config_tab_scaffold.dart';
@@ -87,10 +99,14 @@ class _SetupTabState extends State<SetupTab>
   Map<String, dynamic> _merged(String block) =>
       asJsonMap(model.config.config[block]);
 
-  String get _configuredTitle {
-    final title = asString(_merged('window')['title']);
-    return title == null || title.isEmpty ? '— (no title configured)' : title;
-  }
+  /// The configured title as stored (empty when nothing is configured), for the read-only row and
+  /// the detected-vs-configured comparison.
+  String get _configuredTitleValue =>
+      asString(_merged('window')['title'])?.trim() ?? '';
+
+  String get _configuredTitle => _configuredTitleValue.isEmpty
+      ? '— (no title configured)'
+      : _configuredTitleValue;
 
   /// The title the last `window.find` actually detected, or null when there is none to offer.
   String? get _detectedTitle {
@@ -183,6 +199,12 @@ class _SetupTabState extends State<SetupTab>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    final theme = Theme.of(context);
+    final detectedTitle = _detectedTitle;
+    // A mismatch is advisory: the player may still want to keep the configured title, so this can
+    // never write anything itself (only Use detected title saves, on a press).
+    final titleMismatch =
+        detectedTitle != null && detectedTitle != _configuredTitleValue;
     return buildConfigTab(
       title: 'Setup',
       description:
@@ -192,7 +214,7 @@ class _SetupTabState extends State<SetupTab>
         EditorSection(
           title: 'Configured now — read-only',
           children: [
-            ReadOnlyValue(
+            InfoRow(
               label: 'Active variant',
               value: '$_activeVariant · dictionary $_dictionaryName',
             ),
@@ -205,31 +227,26 @@ class _SetupTabState extends State<SetupTab>
           EditorSection(
             title: 'Window and client',
             children: [
-              ReadOnlyValue(
+              KeyedSubtree(
                 key: const ValueKey('setup-window-title'),
-                label: 'Game window title',
-                value: _configuredTitle,
-              ),
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: 220,
-                  bottom: ShellSpace.sm,
-                ),
-                child: Text(
-                  'The title identifies the game window, so it is read-only here: '
-                  'Find window detects it, then Use detected title saves it.',
-                  key: const ValueKey('setup-title-caption'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                child: InfoRow(
+                  label: 'Game window title',
+                  value: _configuredTitle,
                 ),
               ),
+              const SizedBox(height: ShellSpace.xs),
+              ShellProse(
+                'The title identifies the game window, so it is read-only here: Find window '
+                'detects it, then Use detected title saves it.',
+                key: const ValueKey('setup-title-caption'),
+              ),
+              const SizedBox(height: ShellSpace.md),
               DraftDropdownField(
                 key: const ValueKey('setup-variant'),
                 label: 'Client variant',
                 value: asString(_gameDraft.value['variant']),
                 options: _variantNames(),
-                width: 260,
+                width: ShellWidth.picker,
                 onChanged: (value) => _set(_gameDraft, 'variant', value),
               ),
             ],
@@ -260,7 +277,7 @@ class _SetupTabState extends State<SetupTab>
                       label: 'Baud',
                       integer: true,
                       value: asNumber(_arduinoSettingsDraft.value['baud']),
-                      width: 150,
+                      width: ShellWidth.fieldSm,
                       onChanged: (value) =>
                           _set(_arduinoSettingsDraft, 'baud', value),
                     ),
@@ -271,7 +288,7 @@ class _SetupTabState extends State<SetupTab>
                     child: DraftTextField(
                       label: 'PID list (comma separated)',
                       value: _pidText,
-                      width: 260,
+                      width: ShellWidth.fieldLg,
                       onChanged: _setPid,
                     ),
                   ),
@@ -282,9 +299,10 @@ class _SetupTabState extends State<SetupTab>
                 slotKey: 'setup-arduino-port',
                 syncToken: _arduinoPortDraft.seedRevision,
                 child: DraftTextField(
-                  label: 'COM port override (empty = find by IDs)',
+                  label: 'COM port override',
+                  helper: 'Empty finds the board by the IDs above.',
                   value: asString(_arduinoPortDraft.value['port']) ?? '',
-                  width: 320,
+                  width: ShellWidth.picker,
                   onChanged: (value) => _set(
                     _arduinoPortDraft,
                     'port',
@@ -295,8 +313,13 @@ class _SetupTabState extends State<SetupTab>
             ],
           ),
           EditorSection(
-            title: 'Actions — served by the core',
+            title: 'Probes and the one save',
             children: [
+              const ShellProse(
+                'Find window, Measure and Probe board only read — they write nothing. Use '
+                'detected title is the only action here that applies a config save.',
+              ),
+              const SizedBox(height: ShellSpace.md),
               Wrap(
                 spacing: ShellSpace.sm,
                 runSpacing: ShellSpace.sm,
@@ -316,17 +339,46 @@ class _SetupTabState extends State<SetupTab>
                     onPressed: model.isReady ? _runProbe : null,
                     child: const Text('Probe board'),
                   ),
-                  OutlinedButton(
+                ],
+              ),
+              const SizedBox(height: ShellSpace.md),
+              Row(
+                children: [
+                  FilledButton.icon(
                     key: const ValueKey('setup-use-detected-title'),
                     onPressed:
                         model.isReady && !saving && _detectedTitle != null
                         ? _useDetectedTitle
                         : null,
-                    child: const Text('Use detected title'),
+                    icon: const Icon(Icons.title, size: ShellSize.iconMd),
+                    label: const Text('Use detected title'),
+                  ),
+                  const SizedBox(width: ShellSpace.md),
+                  Flexible(
+                    child: Text(
+                      'Applies a config save — the three probes above do not.',
+                      key: const ValueKey('setup-use-detected-caption'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: ShellSpace.sm),
+              if (titleMismatch)
+                Padding(
+                  padding: const EdgeInsets.only(top: ShellSpace.md),
+                  child: StatusBanner(
+                    key: const ValueKey('setup-title-mismatch'),
+                    kind: StatusKind.warning,
+                    title: 'The detected title differs from the configured one',
+                    detail:
+                        'Configured "$_configuredTitleValue" · detected "$detectedTitle". '
+                        'Use detected title replaces the configured value with the detected '
+                        'one, as a config save.',
+                  ),
+                ),
+              const SizedBox(height: ShellSpace.md),
               ActionResultLine(
                 key: const ValueKey('setup-find-result'),
                 label: 'Find',

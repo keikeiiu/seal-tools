@@ -215,7 +215,9 @@ class _RailRow extends StatelessWidget {
                 Icon(
                   destination.icon,
                   size: ShellSize.iconMd,
-                  color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                  color: selected
+                      ? colors.onPrimaryContainer
+                      : colors.onSurfaceVariant,
                 ),
                 const SizedBox(width: ShellSpace.sm),
                 Expanded(

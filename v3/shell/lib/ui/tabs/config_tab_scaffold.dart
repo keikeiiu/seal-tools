@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../../protocol/protocol.dart';
-import '../components/shell_prose.dart';
+import '../components/page_header.dart';
+import '../components/status_chip.dart';
 import '../theme.dart';
 
 /// State shared by every tab: the draft, the in-flight flag, the last outcome and the three actions.
@@ -114,6 +115,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
     required String description,
     required Widget child,
     List<Widget> readOnly = const [],
+    Widget? aside,
   }) => ListenableBuilder(
     listenable: draftGroup,
     builder: (context, _) => ConfigTabScaffold(
@@ -126,6 +128,7 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
       onCancel: cancel,
       onReconcile: reconcile,
       readOnly: readOnly,
+      aside: aside,
       externalChange: draftGroup.hasExternalChange,
       externalChangeRev: model.config.rev,
       child: child,
@@ -146,6 +149,7 @@ class ConfigTabScaffold extends StatelessWidget {
     required this.onReconcile,
     required this.child,
     this.readOnly = const [],
+    this.aside,
     this.externalChange = false,
     this.externalChangeRev,
   });
@@ -163,6 +167,10 @@ class ConfigTabScaffold extends StatelessWidget {
   /// Extra lines under the editor header (e.g. a warning that a card field is read-only this wave).
   final List<Widget> readOnly;
 
+  /// Optional right column at [ShellWidth.aside]: reference data or context that should stay beside
+  /// the form instead of scrolling away (the demo's geometry/last-run cards).
+  final Widget? aside;
+
   /// The core changed this block while the draft was dirty (marked while the tab may have been
   /// off-screen). The banner waits for the explicit reconcile.
   final bool externalChange;
@@ -172,7 +180,7 @@ class ConfigTabScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final asideWidget = aside;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -183,48 +191,59 @@ class ConfigTabScaffold extends StatelessWidget {
             ShellSpace.lg,
             ShellSpace.sm,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.headlineSmall),
-                    const SizedBox(height: 2),
-                    ShellProse(description),
-                  ],
-                ),
-              ),
-              if (group.isDirty)
-                Padding(
-                  padding: const EdgeInsets.only(left: ShellSpace.md),
-                  child: Text(
-                    'Unsaved changes',
+          child: PageHeader(
+            title: title,
+            subtitle: description,
+            trailing: group.isDirty
+                ? KeyedSubtree(
                     key: ValueKey('dirty-${group.label}'),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: context.shellColors.warning,
+                    child: const StatusChip(
+                      kind: StatusKind.warning,
+                      label: 'Unsaved changes',
                     ),
+                  )
+                : const StatusChip(
+                    kind: StatusKind.muted,
+                    label: 'All changes saved',
                   ),
-                ),
-            ],
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            // The bottom inset keeps the last line clear of the save bar instead of clipping it at
-            // the scroll viewport edge.
-            padding: const EdgeInsets.fromLTRB(
-              ShellSpace.lg,
-              0,
-              ShellSpace.lg,
-              ShellSpace.sm,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              // Editable content first; calibrated/reference data is demoted below it
-              // (§2.1/§2.5.3 of the design audit).
-              children: [child, ...readOnly],
-            ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  // The bottom inset keeps the last line clear of the save bar instead of clipping
+                  // it at the scroll viewport edge.
+                  padding: const EdgeInsets.fromLTRB(
+                    ShellSpace.lg,
+                    0,
+                    ShellSpace.lg,
+                    ShellSpace.sm,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    // Editable content first; calibrated/reference data is demoted below it
+                    // (§2.1/§2.5.3 of the design audit).
+                    children: [child, ...readOnly],
+                  ),
+                ),
+              ),
+              if (asideWidget != null)
+                SizedBox(
+                  width: ShellWidth.aside,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      0,
+                      0,
+                      ShellSpace.lg,
+                      ShellSpace.sm,
+                    ),
+                    child: asideWidget,
+                  ),
+                ),
+            ],
           ),
         ),
         _SaveBar(

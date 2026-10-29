@@ -106,6 +106,7 @@ abstract final class ShellWidth {
   static const double picker = 240;
   static const double labelColumn = 160;
   static const double rail = 216;
+  static const double aside = 300;
 }
 
 /// Radii: one for controls, one for panels, one for cards/dialogs; `chip` (999) for pills only.

@@ -270,17 +270,18 @@ void main() {
       };
 
       final use = find.byKey(const ValueKey('setup-use-detected-title'));
-      expect(tester.widget<OutlinedButton>(use).onPressed, isNull);
+      // The only action that writes config is the screen's single filled action now (§2.8).
+      expect(tester.widget<FilledButton>(use).onPressed, isNull);
 
       // A find that detected no title must not enable the save.
       await tester.tap(find.byKey(const ValueKey('setup-find-window')));
       await _flush(tester);
-      expect(tester.widget<OutlinedButton>(use).onPressed, isNull);
+      expect(tester.widget<FilledButton>(use).onPressed, isNull);
 
       detected = 'DETECTED_TITLE';
       await tester.tap(find.byKey(const ValueKey('setup-find-window')));
       await _flush(tester);
-      expect(tester.widget<OutlinedButton>(use).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(use).onPressed, isNotNull);
 
       harness.answerConfigCommands();
       await tester.tap(use);

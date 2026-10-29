@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/protocol/protocol.dart';
+import 'package:seal_shell/ui/components/status_chip.dart';
 import 'package:seal_shell/ui/tabs/arduino_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -143,14 +144,27 @@ String _resultText(WidgetTester tester, String key) => tester
     )
     .data!;
 
-/// The connection light's fill.
-Color? _statusColor(WidgetTester tester) {
-  final container = tester.widget<Container>(
-    find.byKey(const ValueKey('arduino-connection-status')),
-  );
-  final decoration = container.decoration;
-  return decoration is BoxDecoration ? decoration.color : null;
-}
+/// The texts inside one keyed port row, joined (the row is now icon + Texts, not one padded string).
+String _portRowText(WidgetTester tester, String port) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey('arduino-port-row-$port')),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((text) => text.data)
+    .join(' ');
+
+/// Whether one keyed block renders [text] somewhere inside it (InfoRow label/value pairs).
+bool _blockHasText(WidgetTester tester, String key, String text) => find
+    .descendant(of: find.byKey(ValueKey(key)), matching: find.text(text))
+    .evaluate()
+    .isNotEmpty;
+
+/// The board state chip's kind: the compact state is a StatusChip now, not a raw coloured dot.
+StatusKind _statusKind(WidgetTester tester) => tester
+    .widget<StatusChip>(find.byKey(const ValueKey('arduino-connection-status')))
+    .kind;
 
 Future<void> _flush(WidgetTester tester) async {
   await tester.pump();
@@ -192,20 +206,27 @@ void main() {
       _text(tester, 'arduino-connection-verdict'),
       'Ready — Start will open COM5',
     );
-    expect(_statusColor(tester), ShellColors.dark.success);
+    expect(_statusKind(tester), StatusKind.success);
     expect(
       find.byKey(const ValueKey('arduino-advice')),
       findsNothing,
       reason: 'a ready Start has nothing to advise',
     );
+    // The launcher data is a set of label/value rows now, not one space-padded string.
+    expect(_blockHasText(tester, 'arduino-looking-for', 'VID'), isTrue);
+    expect(_blockHasText(tester, 'arduino-looking-for', '0x2341'), isTrue);
     expect(
-      _text(tester, 'arduino-looking-for'),
-      contains('VID 0x2341    PID 0x8036 / 0x8037'),
+      _blockHasText(tester, 'arduino-looking-for', '0x8036 / 0x8037'),
+      isTrue,
     );
-    expect(_text(tester, 'arduino-looking-for'), contains('baud 115200'));
+    expect(_blockHasText(tester, 'arduino-looking-for', '115200'), isTrue);
     expect(
-      _text(tester, 'arduino-looking-for'),
-      contains('arduino.port: not set — the board is found by the ID above'),
+      _blockHasText(
+        tester,
+        'arduino-looking-for',
+        'not set — the board is found by the IDs above',
+      ),
+      isTrue,
     );
   });
 
@@ -223,18 +244,26 @@ void main() {
           : <String, dynamic>{},
     );
 
-    final theme = Theme.of(tester.element(find.byType(ArduinoTab)));
     expect(
       _text(tester, 'arduino-connection-verdict'),
       'Start will refuse — the named port is missing',
     );
     expect(_text(tester, 'arduino-advice'), refusal);
-    expect(_statusColor(tester), theme.colorScheme.error);
+    expect(_statusKind(tester), StatusKind.error);
     // The present board is NOT marked as chosen: Start would refuse it, because COM9 was named.
-    final row = _text(tester, 'arduino-port-row-COM5');
-    expect(row, startsWith('○'));
-    expect(row, contains('matches the expected ID'));
-    expect(row, isNot(contains('Start will open this one')));
+    final row = find.byKey(const ValueKey('arduino-port-row-COM5'));
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byIcon(Icons.radio_button_unchecked),
+      ),
+      findsOneWidget,
+    );
+    expect(_portRowText(tester, 'COM5'), contains('matches the expected ID'));
+    expect(
+      _portRowText(tester, 'COM5'),
+      isNot(contains('Start will open this one')),
+    );
   });
 
   testWidgets('a not_found refusal is rendered verbatim', (tester) async {
@@ -254,7 +283,6 @@ void main() {
           : <String, dynamic>{},
     );
 
-    final theme = Theme.of(tester.element(find.byType(ArduinoTab)));
     expect(
       _text(tester, 'arduino-connection-verdict'),
       'Start will refuse — no Arduino found',
@@ -264,7 +292,7 @@ void main() {
       coreRefusal,
       reason: 'the core sentence wins over the shell fallback',
     );
-    expect(_statusColor(tester), theme.colorScheme.error);
+    expect(_statusKind(tester), StatusKind.error);
   });
 
   testWidgets('not_found without a core refusal falls back to v2 advice', (
@@ -345,13 +373,27 @@ void main() {
           : <String, dynamic>{},
     );
 
-    final chosen = _text(tester, 'arduino-port-row-COM5');
-    expect(chosen, startsWith('●'));
+    // The chosen port carries the filled radio icon and the trailing reason; the other match the
+    // hollow icon and its own reason.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('arduino-port-row-COM5')),
+        matching: find.byIcon(Icons.radio_button_checked),
+      ),
+      findsOneWidget,
+    );
+    final chosen = _portRowText(tester, 'COM5');
     expect(chosen, contains('Arduino Leonardo'));
     expect(chosen, contains('Start will open this one'));
 
-    final other = _text(tester, 'arduino-port-row-COM3');
-    expect(other, startsWith('○'));
+    final other = _portRowText(tester, 'COM3');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('arduino-port-row-COM3')),
+        matching: find.byIcon(Icons.radio_button_unchecked),
+      ),
+      findsOneWidget,
+    );
     expect(other, contains('matches the expected ID'));
 
     // First row in the list is the chosen one.

@@ -18,6 +18,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/foldable_section.dart';
+import '../components/info_row.dart';
+import '../components/read_only_panel.dart';
+import '../components/surface_panel.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -361,25 +365,40 @@ class _TunerTabState extends State<TunerTab>
       description:
           'The tuner\'s portable settings. Saves go through the `settings:` overlay; the core '
           'merges field-wise and remains the only writer.',
-      readOnly: [
-        EditorSection(
-          title: 'Calibrated geometry — read-only this wave',
-          children: [
-            ReadOnlyValue(
-              label: 'OCR region',
-              value: _regionText(ocr['region']),
-            ),
-            ReadOnlyValue(
-              label: 'Grade area',
-              value: readOnlyText(ocr['grade_area']),
-            ),
-            ReadOnlyValue(
-              label: 'Spring point',
-              value: readOnlyText(calibrated['spring_point']),
-            ),
-          ],
-        ),
-      ],
+      aside: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ReadOnlyPanel(
+            title: 'Calibrated geometry',
+            subtitle: 'Drawn on the Calibrate screen',
+            openHint: 'read-only',
+            rows: [
+              InfoRow(
+                label: 'OCR region',
+                value: _regionText(ocr['region']),
+                mono: true,
+              ),
+              InfoRow(
+                label: 'Grade area',
+                value: readOnlyText(ocr['grade_area']),
+                mono: true,
+              ),
+              InfoRow(
+                label: 'Spring point',
+                value: readOnlyText(calibrated['spring_point']),
+                mono: true,
+              ),
+            ],
+          ),
+          const SurfacePanel(
+            title: 'How saving works',
+            description:
+                'Save validates, then applies the portable fields; the core merges '
+                'field-wise and remains the only writer. Calibration is not edited here.',
+            child: SizedBox.shrink(),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -398,12 +417,22 @@ class _TunerTabState extends State<TunerTab>
                 spacing: ShellSpace.xs,
                 runSpacing: ShellSpace.xs,
                 children: [
-                  for (final grade in order)
-                    Chip(
-                      key: ValueKey('grade-order-$grade'),
-                      label: Text(grade),
-                      visualDensity: VisualDensity.compact,
+                  for (var index = 0; index < order.length; index++) ...[
+                    if (index > 0)
+                      Text(
+                        '·',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    Text(
+                      order[index],
+                      key: ValueKey('grade-order-${order[index]}'),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                     ),
+                  ],
                 ],
               ),
               const SizedBox(height: ShellSpace.md),
@@ -442,17 +471,6 @@ class _TunerTabState extends State<TunerTab>
                     ),
                   ),
                   DraftFieldSlot(
-                    slotKey: 'ocr-retries',
-                    syncToken: draft.seedRevision,
-                    child: DraftNumberField(
-                      label: 'OCR retries',
-                      integer: true,
-                      value: asNumber(draft.value['ocr_retries']),
-                      width: 150,
-                      onChanged: (value) => _setPortable('ocr_retries', value),
-                    ),
-                  ),
-                  DraftFieldSlot(
                     slotKey: 'click-enter-delay',
                     syncToken: draft.seedRevision,
                     child: DraftNumberField(
@@ -475,58 +493,6 @@ class _TunerTabState extends State<TunerTab>
                   ),
                 ],
               ),
-              DraftSwitchField(
-                key: const ValueKey('save-captures'),
-                label: 'Save captures',
-                value: asBool(draft.value['save_captures']) ?? false,
-                onChanged: (value) => _setPortable('save_captures', value),
-              ),
-              const SizedBox(height: ShellSpace.md),
-              Row(
-                children: [
-                  OutlinedButton(
-                    key: const ValueKey('tuner-cleanup-captures'),
-                    // Housekeeping only: never disabled for a RUNNING tool (it opens no game or
-                    // board — PROTOCOL §2's one log-housekeeping exception) — only while its own
-                    // request is in flight.
-                    onPressed: _cleaningCaptures
-                        ? null
-                        : _confirmCaptureCleanup,
-                    child: const Text('Clean up capture images'),
-                  ),
-                  if (_cleaningCaptures) ...[
-                    const SizedBox(width: ShellSpace.sm),
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Text(
-                'Deletes the saved OCR capture PNGs under the root\'s '
-                'logs/captures. It removes image files only; the rest of the '
-                'log stays.',
-                key: const ValueKey('tuner-cleanup-caption'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (_cleanupResult != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: ShellSpace.xs),
-                  child: Text(
-                    _cleanupResult!,
-                    key: const ValueKey('tuner-cleanup-result'),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: _cleanupFailed
-                          ? Theme.of(context).colorScheme.error
-                          : null,
-                    ),
-                  ),
-                ),
             ],
           ),
           EditorSection(
@@ -650,6 +616,78 @@ class _TunerTabState extends State<TunerTab>
                     _setRule('override_rules', index, field, value),
                 onNameOptions: _nameOptions,
               ),
+            ],
+          ),
+          FoldableSection(
+            title: 'Advanced options',
+            description:
+                'Diagnostics and capture recording. Nothing here changes how a '
+                'normal run behaves.',
+            children: [
+              DraftFieldSlot(
+                slotKey: 'ocr-retries',
+                syncToken: draft.seedRevision,
+                child: DraftNumberField(
+                  label: 'OCR retries',
+                  integer: true,
+                  value: asNumber(draft.value['ocr_retries']),
+                  width: 150,
+                  onChanged: (value) => _setPortable('ocr_retries', value),
+                ),
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              DraftSwitchField(
+                key: const ValueKey('save-captures'),
+                label: 'Save captures',
+                value: asBool(draft.value['save_captures']) ?? false,
+                onChanged: (value) => _setPortable('save_captures', value),
+              ),
+              const SizedBox(height: ShellSpace.md),
+              Row(
+                children: [
+                  OutlinedButton(
+                    key: const ValueKey('tuner-cleanup-captures'),
+                    // Housekeeping only: never disabled for a RUNNING tool (it opens no game or
+                    // board — PROTOCOL §2's one log-housekeeping exception) — only while its own
+                    // request is in flight.
+                    onPressed: _cleaningCaptures
+                        ? null
+                        : _confirmCaptureCleanup,
+                    child: const Text('Clean up capture images'),
+                  ),
+                  if (_cleaningCaptures) ...[
+                    const SizedBox(width: ShellSpace.sm),
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Text(
+                'Deletes the saved OCR capture PNGs under the root\'s '
+                'logs/captures. It removes image files only; the rest of the '
+                'log stays.',
+                key: const ValueKey('tuner-cleanup-caption'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (_cleanupResult != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: ShellSpace.xs),
+                  child: Text(
+                    _cleanupResult!,
+                    key: const ValueKey('tuner-cleanup-result'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _cleanupFailed
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                  ),
+                ),
             ],
           ),
         ],
@@ -783,7 +821,7 @@ class _RuleList extends StatelessWidget {
               onChanged: attributeNames.isEmpty ? null : onNewRulePick,
             ),
             const SizedBox(width: ShellSpace.sm),
-            FilledButton(
+            FilledButton.tonal(
               key: ValueKey('$listKey-add'),
               onPressed: _canAdd ? onAdd : null,
               child: Text('Add $title'),

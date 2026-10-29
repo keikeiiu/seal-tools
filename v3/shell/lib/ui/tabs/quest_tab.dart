@@ -10,6 +10,9 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/empty_state.dart';
+import '../components/foldable_section.dart';
+import '../components/shell_prose.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -59,6 +62,11 @@ class _QuestTabState extends State<QuestTab>
 
   final _newFlow = TextEditingController();
   final _newSequence = TextEditingController();
+
+  /// The empty states' next action is to name the thing: these focus the name fields beside them.
+  final _newFlowFocus = FocusNode();
+  final _newSequenceFocus = FocusNode();
+
   String? _selectedFlow;
   String? _selectedSequence;
 
@@ -74,6 +82,8 @@ class _QuestTabState extends State<QuestTab>
   void dispose() {
     _newFlow.dispose();
     _newSequence.dispose();
+    _newFlowFocus.dispose();
+    _newSequenceFocus.dispose();
     super.dispose();
   }
 
@@ -366,9 +376,22 @@ class _QuestTabState extends State<QuestTab>
 
   // ── UI ───────────────────────────────────────────────────────────────────────────────────
 
+  /// A UI-owned refusal/notice line (the core's own lines stay in the shared Save frame).
+  Widget _noteLine(ThemeData theme, String text, Key key) => Padding(
+    padding: const EdgeInsets.only(top: ShellSpace.xs),
+    child: ShellProse(
+      text,
+      key: key,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.error,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    final theme = Theme.of(context);
     final flows = _flowNames();
     final flow = _currentFlow();
     final sequences = _sequenceNames();
@@ -387,11 +410,18 @@ class _QuestTabState extends State<QuestTab>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           EditorSection(
-            title: 'Active',
+            title: 'Active selection',
             children: [
+              const ShellProse(
+                'The run replays the active flow, or the active sequence when one is set — '
+                'leave Active sequence empty for a single flow. These are the same fields the '
+                'Quest card\'s pickers edit.',
+              ),
+              const SizedBox(height: ShellSpace.md),
               Wrap(
                 spacing: ShellSpace.md,
                 runSpacing: ShellSpace.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   DraftDropdownField(
                     key: const ValueKey('quest-active-flow'),
@@ -403,27 +433,16 @@ class _QuestTabState extends State<QuestTab>
                   ),
                   DraftDropdownField(
                     key: const ValueKey('quest-active-sequence'),
-                    label: 'Active sequence (empty = flow only)',
+                    label: 'Active sequence',
                     value: _activeSequence(),
                     options: sequences,
-                    width: 300,
+                    width: ShellWidth.picker,
                     onChanged: _setActiveSequence,
                   ),
                   OutlinedButton(
                     key: const ValueKey('quest-clear-sequence'),
                     onPressed: () => _setActiveSequence(''),
                     child: const Text('Single flow only'),
-                  ),
-                  DraftFieldSlot(
-                    slotKey: 'quest-guard',
-                    syncToken: draft.seedRevision,
-                    child: DraftNumberField(
-                      label: 'Cursor guard px',
-                      integer: true,
-                      value: asNumber(draft.value['guard_px']),
-                      width: 180,
-                      onChanged: _setGuard,
-                    ),
                   ),
                 ],
               ),
@@ -432,41 +451,67 @@ class _QuestTabState extends State<QuestTab>
           EditorSection(
             title: 'Flows',
             children: [
-              Row(
-                children: [
-                  DraftDropdownField(
-                    key: const ValueKey('quest-flow-picker'),
-                    label: 'Editing flow',
-                    value: flow,
-                    options: flows,
-                    width: ShellWidth.picker,
-                    onChanged: (value) {
-                      if (value != null) {
-                        // A refusal about the previously edited flow is stale once another is picked
-                        // (v2's SelectionReport rule); a successful note was already cleared.
-                        setState(() {
-                          _selectedFlow = value;
-                          _questNote = null;
-                        });
-                      }
-                    },
+              if (flow != null)
+                Wrap(
+                  spacing: ShellSpace.sm,
+                  runSpacing: ShellSpace.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    DraftDropdownField(
+                      key: const ValueKey('quest-flow-picker'),
+                      label: 'Editing flow',
+                      value: flow,
+                      options: flows,
+                      width: ShellWidth.picker,
+                      onChanged: (value) {
+                        if (value != null) {
+                          // A refusal about the previously edited flow is stale once another is picked
+                          // (v2's SelectionReport rule); a successful note was already cleared.
+                          setState(() {
+                            _selectedFlow = value;
+                            _questNote = null;
+                          });
+                        }
+                      },
+                    ),
+                    // Destructive: outlined, never a filled primary.
+                    OutlinedButton(
+                      key: const ValueKey('quest-delete-flow'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                      onPressed: () => _deleteFlow(flow),
+                      child: const Text('Delete flow'),
+                    ),
+                  ],
+                )
+              else
+                EmptyState(
+                  key: const ValueKey('quest-no-flow'),
+                  icon: Icons.list_alt,
+                  title: 'No flows yet',
+                  hint:
+                      'Add a flow, then give it its steps. A run replays the flow at the '
+                      'quest NPC.',
+                  action: TextButton.icon(
+                    key: const ValueKey('quest-empty-add-flow'),
+                    onPressed: _newFlowFocus.requestFocus,
+                    icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                    label: const Text('Add a flow'),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  OutlinedButton(
-                    key: const ValueKey('quest-delete-flow'),
-                    onPressed: flow == null ? null : () => _deleteFlow(flow),
-                    child: const Text('Delete flow'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              Row(
+                ),
+              const SizedBox(height: ShellSpace.md),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: ShellWidth.picker,
                     child: TextField(
                       key: const ValueKey('quest-new-flow'),
                       controller: _newFlow,
+                      focusNode: _newFlowFocus,
                       decoration: const InputDecoration(
                         labelText: 'New flow name',
                         isDense: true,
@@ -474,8 +519,7 @@ class _QuestTabState extends State<QuestTab>
                       ),
                     ),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton(
+                  FilledButton.tonal(
                     key: const ValueKey('quest-add-flow'),
                     onPressed: _addFlow,
                     child: const Text('Add flow'),
@@ -483,23 +527,9 @@ class _QuestTabState extends State<QuestTab>
                 ],
               ),
               if (_questNote != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: ShellSpace.xs),
-                  child: Text(
-                    _questNote!,
-                    key: const ValueKey('quest-note'),
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: Theme.of(context).colorScheme.error),
-                  ),
-                ),
-              if (flow == null)
-                const Padding(
-                  key: ValueKey('quest-no-flow'),
-                  padding: EdgeInsets.only(top: ShellSpace.sm),
-                  child: Text('No flows yet — add one, then add its steps.'),
-                )
-              else ...[
-                const SizedBox(height: ShellSpace.sm),
+                _noteLine(theme, _questNote!, const ValueKey('quest-note')),
+              if (flow != null) ...[
+                const SizedBox(height: ShellSpace.md),
                 Wrap(
                   spacing: ShellSpace.md,
                   runSpacing: ShellSpace.sm,
@@ -510,7 +540,7 @@ class _QuestTabState extends State<QuestTab>
                       child: DraftNumberField(
                         label: 'Initial wait (s)',
                         value: asNumber(_flow(flow)['initial_wait_seconds']),
-                        width: 180,
+                        width: ShellWidth.fieldMd,
                         onChanged: (value) =>
                             _setFlowField(flow, 'initial_wait_seconds', value),
                       ),
@@ -530,14 +560,14 @@ class _QuestTabState extends State<QuestTab>
                   ],
                 ),
                 const SizedBox(height: ShellSpace.sm),
-                Text(
-                  'Steps — $flow',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
+                Text('Steps — $flow', style: theme.textTheme.labelLarge),
                 for (var index = 0; index < steps.length; index++)
                   Padding(
                     padding: const EdgeInsets.only(top: ShellSpace.xs),
-                    child: Row(
+                    child: Wrap(
+                      spacing: ShellSpace.sm,
+                      runSpacing: ShellSpace.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         DraftDropdownField(
                           key: ValueKey('quest-step-action-$index'),
@@ -548,8 +578,7 @@ class _QuestTabState extends State<QuestTab>
                           onChanged: (value) =>
                               _setStepField(flow, index, 'action', value),
                         ),
-                        if (asString(steps[index]['action']) == 'key') ...[
-                          const SizedBox(width: ShellSpace.sm),
+                        if (asString(steps[index]['action']) == 'key')
                           DraftFieldSlot(
                             slotKey: 'quest-step-value-$index',
                             syncToken: draft.seedRevision,
@@ -557,7 +586,7 @@ class _QuestTabState extends State<QuestTab>
                               label: 'Key value',
                               helper: 'used by action=key',
                               value: asString(steps[index]['value']) ?? '',
-                              width: 150,
+                              width: ShellWidth.fieldSm,
                               onChanged: (value) => _setStepField(
                                 flow,
                                 index,
@@ -566,15 +595,13 @@ class _QuestTabState extends State<QuestTab>
                               ),
                             ),
                           ),
-                        ],
-                        const SizedBox(width: ShellSpace.sm),
                         DraftFieldSlot(
                           slotKey: 'quest-step-delay-$index',
                           syncToken: draft.seedRevision,
                           child: DraftNumberField(
                             label: 'Delay (s)',
                             value: asNumber(steps[index]['delay_seconds']),
-                            width: 150,
+                            width: ShellWidth.fieldSm,
                             onChanged: (value) => _setStepField(
                               flow,
                               index,
@@ -589,7 +616,10 @@ class _QuestTabState extends State<QuestTab>
                           onPressed: index == 0
                               ? null
                               : () => _moveStep(flow, index, -1),
-                          icon: const Icon(Icons.arrow_upward, size: 18),
+                          icon: const Icon(
+                            Icons.arrow_upward,
+                            size: ShellSize.iconMd,
+                          ),
                         ),
                         IconButton(
                           key: ValueKey('quest-step-down-$index'),
@@ -597,22 +627,26 @@ class _QuestTabState extends State<QuestTab>
                           onPressed: index == steps.length - 1
                               ? null
                               : () => _moveStep(flow, index, 1),
-                          icon: const Icon(Icons.arrow_downward, size: 18),
+                          icon: const Icon(
+                            Icons.arrow_downward,
+                            size: ShellSize.iconMd,
+                          ),
                         ),
                         IconButton(
                           key: ValueKey('quest-step-remove-$index'),
                           tooltip: 'Remove step',
                           onPressed: () => _removeStep(flow, index),
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const Icon(Icons.close, size: ShellSize.iconMd),
                         ),
                       ],
                     ),
                   ),
                 const SizedBox(height: ShellSpace.sm),
-                OutlinedButton(
+                TextButton.icon(
                   key: const ValueKey('quest-add-step'),
                   onPressed: () => _addStep(flow),
-                  child: const Text('Add step'),
+                  icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                  label: const Text('Add step'),
                 ),
               ],
             ],
@@ -620,38 +654,62 @@ class _QuestTabState extends State<QuestTab>
           EditorSection(
             title: 'Sequences',
             children: [
-              Row(
-                children: [
-                  DraftDropdownField(
-                    key: const ValueKey('quest-sequence-picker'),
-                    label: 'Editing sequence',
-                    value: sequence,
-                    options: sequences,
-                    width: 260,
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedSequence = value);
-                      }
-                    },
+              if (sequence != null)
+                Wrap(
+                  spacing: ShellSpace.sm,
+                  runSpacing: ShellSpace.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    DraftDropdownField(
+                      key: const ValueKey('quest-sequence-picker'),
+                      label: 'Editing sequence',
+                      value: sequence,
+                      options: sequences,
+                      width: ShellWidth.picker,
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedSequence = value);
+                        }
+                      },
+                    ),
+                    // Destructive: outlined, never a filled primary.
+                    OutlinedButton(
+                      key: const ValueKey('quest-delete-sequence'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                      onPressed: () => _deleteSequence(sequence),
+                      child: const Text('Delete sequence'),
+                    ),
+                  ],
+                )
+              else
+                EmptyState(
+                  key: const ValueKey('quest-no-sequence'),
+                  icon: Icons.repeat,
+                  title: 'No sequences',
+                  hint:
+                      'A sequence runs several flows in a row. Without one the active '
+                      'flow runs on its own.',
+                  action: TextButton.icon(
+                    key: const ValueKey('quest-empty-add-sequence'),
+                    onPressed: _newSequenceFocus.requestFocus,
+                    icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                    label: const Text('Add a sequence'),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  OutlinedButton(
-                    key: const ValueKey('quest-delete-sequence'),
-                    onPressed: sequence == null
-                        ? null
-                        : () => _deleteSequence(sequence),
-                    child: const Text('Delete sequence'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              Row(
+                ),
+              const SizedBox(height: ShellSpace.md),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
-                    width: 260,
+                    width: ShellWidth.picker,
                     child: TextField(
                       key: const ValueKey('quest-new-sequence'),
                       controller: _newSequence,
+                      focusNode: _newSequenceFocus,
                       decoration: const InputDecoration(
                         labelText: 'New sequence name',
                         isDense: true,
@@ -659,24 +717,15 @@ class _QuestTabState extends State<QuestTab>
                       ),
                     ),
                   ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton(
+                  FilledButton.tonal(
                     key: const ValueKey('quest-add-sequence'),
                     onPressed: _addSequence,
                     child: const Text('Add sequence'),
                   ),
                 ],
               ),
-              if (sequence == null)
-                const Padding(
-                  key: ValueKey('quest-no-sequence'),
-                  padding: EdgeInsets.only(top: ShellSpace.sm),
-                  child: Text(
-                    'No sequences — the active flow runs on its own.',
-                  ),
-                )
-              else ...[
-                const SizedBox(height: ShellSpace.sm),
+              if (sequence != null) ...[
+                const SizedBox(height: ShellSpace.md),
                 Wrap(
                   spacing: ShellSpace.md,
                   runSpacing: ShellSpace.sm,
@@ -689,7 +738,7 @@ class _QuestTabState extends State<QuestTab>
                         value: asNumber(
                           _sequence(sequence)['initial_wait_seconds'],
                         ),
-                        width: 180,
+                        width: ShellWidth.fieldMd,
                         onChanged: (value) => _setSequenceField(
                           sequence,
                           'initial_wait_seconds',
@@ -704,7 +753,7 @@ class _QuestTabState extends State<QuestTab>
                         label: 'Master loops',
                         integer: true,
                         value: asNumber(_sequence(sequence)['loops']),
-                        width: 150,
+                        width: ShellWidth.fieldSm,
                         onChanged: (value) =>
                             _setSequenceField(sequence, 'loops', value),
                       ),
@@ -712,14 +761,14 @@ class _QuestTabState extends State<QuestTab>
                   ],
                 ),
                 const SizedBox(height: ShellSpace.sm),
-                Text(
-                  'Entries — $sequence',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
+                Text('Entries — $sequence', style: theme.textTheme.labelLarge),
                 for (var index = 0; index < entries.length; index++)
                   Padding(
                     padding: const EdgeInsets.only(top: ShellSpace.xs),
-                    child: Row(
+                    child: Wrap(
+                      spacing: ShellSpace.sm,
+                      runSpacing: ShellSpace.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         DraftDropdownField(
                           key: ValueKey('quest-entry-flow-$index'),
@@ -730,7 +779,6 @@ class _QuestTabState extends State<QuestTab>
                           onChanged: (value) =>
                               _setEntryField(sequence, index, 'preset', value),
                         ),
-                        const SizedBox(width: ShellSpace.sm),
                         DraftFieldSlot(
                           slotKey: 'quest-entry-times-$index',
                           syncToken: draft.seedRevision,
@@ -738,7 +786,7 @@ class _QuestTabState extends State<QuestTab>
                             label: 'Times',
                             integer: true,
                             value: asNumber(entries[index]['times']),
-                            width: 120,
+                            width: ShellWidth.fieldSm,
                             onChanged: (value) =>
                                 _setEntryField(sequence, index, 'times', value),
                           ),
@@ -747,18 +795,42 @@ class _QuestTabState extends State<QuestTab>
                           key: ValueKey('quest-entry-remove-$index'),
                           tooltip: 'Remove entry',
                           onPressed: () => _removeEntry(sequence, index),
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const Icon(Icons.close, size: ShellSize.iconMd),
                         ),
                       ],
                     ),
                   ),
                 const SizedBox(height: ShellSpace.sm),
-                OutlinedButton(
+                TextButton.icon(
                   key: const ValueKey('quest-add-entry'),
                   onPressed: () => _addEntry(sequence),
-                  child: const Text('Add entry'),
+                  icon: const Icon(Icons.add, size: ShellSize.iconSm),
+                  label: const Text('Add entry'),
                 ),
               ],
+            ],
+          ),
+          FoldableSection(
+            title: 'Advanced',
+            description: 'Cursor guard',
+            children: [
+              const ShellProse(
+                'The run anchors on where you leave the cursor during the positioning '
+                'countdown, and stops when the cursor moves more than this many pixels from it '
+                '(the larger of the horizontal and vertical move). 0 stops on any movement.',
+              ),
+              const SizedBox(height: ShellSpace.md),
+              DraftFieldSlot(
+                slotKey: 'quest-guard',
+                syncToken: draft.seedRevision,
+                child: DraftNumberField(
+                  label: 'Cursor guard px',
+                  integer: true,
+                  value: asNumber(draft.value['guard_px']),
+                  width: ShellWidth.fieldMd,
+                  onChanged: _setGuard,
+                ),
+              ),
             ],
           ),
         ],
