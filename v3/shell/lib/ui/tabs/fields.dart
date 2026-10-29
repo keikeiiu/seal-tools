@@ -7,25 +7,61 @@ import 'package:flutter/material.dart';
 import '../../app/app.dart';
 import '../theme.dart';
 
-/// A titled group of fields.
+/// A titled group of fields, drawn as a panel so a config tab has the same card structure the Run
+/// screen has ([PLAN-V3-UI-UX.md] §5 `SectionPanel`, §6 "Config tabs").
+///
+/// Panels are the container, not decoration: they make the group boundary visible with one surface
+/// change and a hairline instead of another divider, and they give every tab the same rhythm (16 px
+/// inside, 16 px between) without each tab inventing it.
 class EditorSection extends StatelessWidget {
-  const EditorSection({super.key, required this.title, required this.children});
+  const EditorSection({
+    super.key,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
 
   final String title;
   final List<Widget> children;
 
+  /// An optional right-aligned action on the section header (e.g. "Add item").
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Material (not a coloured Container): SwitchListTile/ListTile fields paint their ink on the
+    // nearest Material, and a DecoratedBox background makes the framework assert that the ink is
+    // invisible. The Material's shape draws the same 1 px panel edge.
     return Padding(
       padding: const EdgeInsets.only(bottom: ShellSpace.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.titleSmall),
-          const SizedBox(height: ShellSpace.sm),
-          ...children,
-        ],
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ShellRadius.m),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(ShellSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(title, style: theme.textTheme.titleSmall),
+                  ),
+                  ?trailing,
+                ],
+              ),
+              const SizedBox(height: ShellSpace.md),
+              ...children,
+            ],
+          ),
+        ),
       ),
     );
   }

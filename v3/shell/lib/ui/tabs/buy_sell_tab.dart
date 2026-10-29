@@ -21,6 +21,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../components/shell_prose.dart';
 import '../theme.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -34,10 +35,22 @@ const Set<String> _editableBuySellKeys = {'presets', 'sell_cap'};
 const int _bagColumns = 8;
 const int _bagSlots = _bagColumns * _bagColumns;
 
+/// Which half of the `buy_sell` block a [BuySellTab] presents.
+///
+/// Phase 2 of [PLAN-V3-UI-UX.md] splits the old combined tab into two screens: Buy owns the saved
+/// presets, Sell owns the per-run slot selection (and the saved cap). [both] keeps the pre-split
+/// layout for the widget tests and is not used by the shell.
+enum BuySellSection { both, buy, sell }
+
 class BuySellTab extends StatefulWidget {
-  const BuySellTab({super.key, required this.model});
+  const BuySellTab({
+    super.key,
+    required this.model,
+    this.section = BuySellSection.both,
+  });
 
   final ShellModel model;
+  final BuySellSection section;
 
   @override
   State<BuySellTab> createState() => _BuySellTabState();
@@ -53,11 +66,19 @@ class _BuySellTabState extends State<BuySellTab>
   @override
   bool get wantKeepAlive => true;
 
+  /// The two screens save disjoint fields of one block: Buy writes `presets`, Sell writes `sell_cap`.
+  /// The combined (test) layout keeps both.
+  Set<String> get _editableKeys => switch (widget.section) {
+    BuySellSection.both => _editableBuySellKeys,
+    BuySellSection.buy => const {'presets'},
+    BuySellSection.sell => const {'sell_cap'},
+  };
+
   @override
-  final ConfigDraft draft = ConfigDraft(
+  late final ConfigDraft draft = ConfigDraft(
     blockName: 'buy_sell',
     scope: ConfigScope.ownedBlock,
-    editableKeys: _editableBuySellKeys,
+    editableKeys: _editableKeys,
   );
 
   final _newPresetName = TextEditingController();
@@ -235,186 +256,209 @@ class _BuySellTabState extends State<BuySellTab>
     final calibrated = _calibrated();
     final values = preset == null ? const <String, dynamic>{} : _preset(preset);
 
+    final section = widget.section;
+    final showBuy = section != BuySellSection.sell;
+    final showSell = section != BuySellSection.buy;
+
     return buildConfigTab(
-      title: 'Buy / Sell',
-      description:
+      title: switch (section) {
+        BuySellSection.both => 'Buy / Sell',
+        BuySellSection.buy => 'Buy',
+        BuySellSection.sell => 'Sell',
+      },
+      description: switch (section) {
+        BuySellSection.both =>
           'Buy presets (item name → scroll, row, count), the sell cap, and '
-          'which bag slots the next Sell run sells — the selection is kept '
-          'for the run and is not saved. The geometry is drawn on the '
-          'Calibrate tab and shown read-only here.',
+              'which bag slots the next Sell run sells — the selection is kept '
+              'for the run and is not saved. The geometry is drawn on the '
+              'Calibrate tab and shown read-only here.',
+        BuySellSection.buy =>
+          'Saved buy presets: item, shop row, scroll notches and the usual '
+              'count. The run choice — which preset and how many — is picked on '
+              'the Buy card. Geometry is drawn on the Calibrate screen.',
+        BuySellSection.sell =>
+          'Arms the bag slots for the next sell run. The cap is saved with this '
+              'screen; the slot selection is never saved and the run starts from '
+              'the Sell card. Geometry is drawn on the Calibrate screen.',
+      },
       readOnly: [
-        EditorSection(
-          title: 'Calibrated geometry — read-only (Calibrate tab)',
-          children: [
-            ReadOnlyValue(
-              label: 'Bag grid [x, y, w, h]',
-              value: readOnlyText(calibrated['bag_grid']),
-            ),
-            ReadOnlyValue(
-              label: 'Bag slot [x, y, w, h]',
-              value: readOnlyText(calibrated['bag_slot']),
-            ),
-            ReadOnlyValue(
-              label: 'Shop region [x, y, w, h]',
-              value: readOnlyText(calibrated['shop_region']),
-            ),
-            ReadOnlyValue(
-              label: 'Shop rows',
-              value: readOnlyText(calibrated['shop_rows']),
-            ),
-            ReadOnlyValue(
-              label: 'Focus / scroll point',
-              value: readOnlyText(calibrated['scroll_point']),
-            ),
-            ReadOnlyValue(
-              label: 'MAX button',
-              value: readOnlyText(calibrated['max_button']),
-            ),
-          ],
-        ),
+        if (section == BuySellSection.both)
+          EditorSection(
+            title: 'Calibrated geometry — read-only (Calibrate tab)',
+            children: [
+              ReadOnlyValue(
+                label: 'Bag grid [x, y, w, h]',
+                value: readOnlyText(calibrated['bag_grid']),
+              ),
+              ReadOnlyValue(
+                label: 'Bag slot [x, y, w, h]',
+                value: readOnlyText(calibrated['bag_slot']),
+              ),
+              ReadOnlyValue(
+                label: 'Shop region [x, y, w, h]',
+                value: readOnlyText(calibrated['shop_region']),
+              ),
+              ReadOnlyValue(
+                label: 'Shop rows',
+                value: readOnlyText(calibrated['shop_rows']),
+              ),
+              ReadOnlyValue(
+                label: 'Focus / scroll point',
+                value: readOnlyText(calibrated['scroll_point']),
+              ),
+              ReadOnlyValue(
+                label: 'MAX button',
+                value: readOnlyText(calibrated['max_button']),
+              ),
+            ],
+          ),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          EditorSection(
-            title: 'Buy presets',
-            children: [
-              Row(
-                children: [
-                  DraftDropdownField(
-                    key: const ValueKey('buy-preset-picker'),
-                    label: 'Item (preset)',
-                    value: preset,
-                    options: names,
-                    width: ShellWidth.picker,
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedPreset = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(width: ShellSpace.sm),
-                  OutlinedButton(
-                    key: const ValueKey('delete-buy-preset'),
-                    onPressed: preset == null
-                        ? null
-                        : () => _deletePreset(preset),
-                    child: const Text('Delete item'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              Row(
-                children: [
-                  SizedBox(
-                    width: ShellWidth.picker,
-                    child: TextField(
-                      key: const ValueKey('new-buy-preset'),
-                      controller: _newPresetName,
-                      decoration: const InputDecoration(
-                        labelText: 'New item name',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: ShellSpace.sm),
-                  FilledButton(
-                    key: const ValueKey('add-buy-preset'),
-                    onPressed: _addPreset,
-                    child: const Text('Add item'),
-                  ),
-                ],
-              ),
-              if (preset == null)
-                const Padding(
-                  key: ValueKey('buy-sell-empty'),
-                  padding: EdgeInsets.only(top: ShellSpace.sm),
-                  child: Text(
-                    'No buy presets yet — add the item names the player buys.',
-                  ),
-                )
-              else ...[
-                const SizedBox(height: ShellSpace.sm),
-                Text(
-                  'Preset: $preset',
-                  key: const ValueKey('buy-selected-preset'),
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-                const SizedBox(height: ShellSpace.xs),
-                Wrap(
-                  spacing: ShellSpace.md,
-                  runSpacing: ShellSpace.sm,
+          if (showBuy)
+            EditorSection(
+              title: 'Buy presets',
+              children: [
+                Row(
                   children: [
-                    DraftFieldSlot(
-                      slotKey: 'buy-scroll',
-                      syncToken: draft.seedRevision,
-                      child: DraftNumberField(
-                        label: 'Scroll notches',
-                        integer: true,
-                        value: asNumber(values['scroll']),
-                        width: ShellWidth.labelColumn,
-                        onChanged: (value) =>
-                            _setPresetField(preset, 'scroll', value),
-                      ),
+                    DraftDropdownField(
+                      key: const ValueKey('buy-preset-picker'),
+                      label: 'Item (preset)',
+                      value: preset,
+                      options: names,
+                      width: ShellWidth.picker,
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedPreset = value);
+                        }
+                      },
                     ),
-                    _rowPicker(preset, values),
-                    DraftFieldSlot(
-                      slotKey: 'buy-count',
-                      syncToken: draft.seedRevision,
-                      child: DraftNumberField(
-                        label: 'Count per run',
-                        integer: true,
-                        value: asNumber(values['count']),
-                        width: 150,
-                        onChanged: (value) =>
-                            _setPresetField(preset, 'count', value),
-                      ),
+                    const SizedBox(width: ShellSpace.sm),
+                    OutlinedButton(
+                      key: const ValueKey('delete-buy-preset'),
+                      onPressed: preset == null
+                          ? null
+                          : () => _deletePreset(preset),
+                      child: const Text('Delete item'),
                     ),
                   ],
                 ),
-                _rowWarning(values),
+                const SizedBox(height: ShellSpace.sm),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: ShellWidth.picker,
+                      child: TextField(
+                        key: const ValueKey('new-buy-preset'),
+                        controller: _newPresetName,
+                        decoration: const InputDecoration(
+                          labelText: 'New item name',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: ShellSpace.sm),
+                    FilledButton(
+                      key: const ValueKey('add-buy-preset'),
+                      onPressed: _addPreset,
+                      child: const Text('Add item'),
+                    ),
+                  ],
+                ),
+                if (preset == null)
+                  const Padding(
+                    key: ValueKey('buy-sell-empty'),
+                    padding: EdgeInsets.only(top: ShellSpace.sm),
+                    child: Text(
+                      'No buy presets yet — add the item names the player buys.',
+                    ),
+                  )
+                else ...[
+                  const SizedBox(height: ShellSpace.sm),
+                  Text(
+                    'Preset: $preset',
+                    key: const ValueKey('buy-selected-preset'),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
+                  Wrap(
+                    spacing: ShellSpace.md,
+                    runSpacing: ShellSpace.sm,
+                    children: [
+                      DraftFieldSlot(
+                        slotKey: 'buy-scroll',
+                        syncToken: draft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Scroll notches',
+                          integer: true,
+                          value: asNumber(values['scroll']),
+                          width: ShellWidth.labelColumn,
+                          onChanged: (value) =>
+                              _setPresetField(preset, 'scroll', value),
+                        ),
+                      ),
+                      _rowPicker(preset, values),
+                      DraftFieldSlot(
+                        slotKey: 'buy-count',
+                        syncToken: draft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Count per run',
+                          integer: true,
+                          value: asNumber(values['count']),
+                          width: 150,
+                          onChanged: (value) =>
+                              _setPresetField(preset, 'count', value),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _rowWarning(values),
+                ],
               ],
-            ],
-          ),
-          EditorSection(
-            title: 'Sell',
-            children: [
-              DraftFieldSlot(
-                slotKey: 'sell-cap',
-                syncToken: draft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Max slots per run (sell cap)',
-                  integer: true,
-                  value: asNumber(draft.value['sell_cap']),
-                  width: ShellWidth.picker,
-                  onChanged: _setSellCap,
+            ),
+          if (showSell)
+            EditorSection(
+              title: section == BuySellSection.both
+                  ? 'Sell'
+                  : 'Selection & cap',
+              children: [
+                DraftFieldSlot(
+                  slotKey: 'sell-cap',
+                  syncToken: draft.seedRevision,
+                  child: DraftNumberField(
+                    label: 'Max slots per run (sell cap)',
+                    integer: true,
+                    value: asNumber(draft.value['sell_cap']),
+                    width: ShellWidth.picker,
+                    onChanged: _setSellCap,
+                  ),
                 ),
-              ),
-              const SizedBox(height: ShellSpace.md),
-              _sellGrid(theme),
-              const SizedBox(height: ShellSpace.xs),
-              _selectionStatus(theme),
-              const SizedBox(height: ShellSpace.sm),
-              Text(
-                'This selection is for the next run only — it is not saved.',
-                key: const ValueKey('sell-selection-caption'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: ShellSpace.md),
+                _sellGrid(theme),
+                const SizedBox(height: ShellSpace.xs),
+                _selectionStatus(theme),
+                const SizedBox(height: ShellSpace.sm),
+                ShellProse(
+                  'This selection is for the next run only — it is not saved.',
+                  key: const ValueKey('sell-selection-caption'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Text(
-                'Selling is the one irreversible action: the cap is the hard '
-                'per-run ceiling. Start Sell from its card; the core sells the '
-                'selected slots highest index first and applies the cap at run '
-                'time.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: ShellSpace.xs),
+                ShellProse(
+                  'Selling removes items from the game: the cap is the hard '
+                  'per-run ceiling. Start Sell from its card; the core sells '
+                  'the highest selected slot first and applies the cap at run '
+                  'time.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
@@ -520,24 +564,33 @@ class _BuySellTabState extends State<BuySellTab>
           key: const ValueKey('sell-grid-pitch'),
           style: theme.textTheme.labelLarge,
         ),
-        const SizedBox(height: ShellSpace.xs),
-        Text(
-          '${selected.length} of $_bagSlots slots selected',
-          key: const ValueKey('sell-grid-count'),
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: ShellSpace.xs),
+        const SizedBox(height: ShellSpace.sm),
         Row(
           children: [
-            OutlinedButton(
+            Text(
+              '${selected.length} of $_bagSlots slots selected',
+              key: const ValueKey('sell-grid-count'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
               key: const ValueKey('sell-select-all'),
               onPressed: _selectAll,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 28),
+              ),
               child: const Text('Select all'),
             ),
-            const SizedBox(width: ShellSpace.sm),
-            OutlinedButton(
+            TextButton(
               key: const ValueKey('sell-clear'),
               onPressed: _clearSelection,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 28),
+              ),
               child: const Text('Clear'),
             ),
           ],
@@ -570,10 +623,13 @@ class _BuySellTabState extends State<BuySellTab>
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xs),
         visualDensity: VisualDensity.compact,
-        minimumSize: const Size(0, 20),
+        minimumSize: const Size(48, 24),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      child: Text('row ${row + 1}', style: const TextStyle(fontSize: 10)),
+      child: Text(
+        'row ${row + 1}',
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
     ),
   );
 
@@ -597,30 +653,45 @@ class _BuySellTabState extends State<BuySellTab>
     } else {
       text = '$count slot(s) selected (cap $cap).';
     }
-    return Text(
-      text,
-      key: const ValueKey('sell-selection-status'),
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: over ? theme.colorScheme.error : null,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+      child: Text(
+        text,
+        key: const ValueKey('sell-selection-status'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: over ? theme.colorScheme.error : null,
+        ),
       ),
     );
   }
 
   Widget _sellCell(ThemeData theme, int slot, bool selected) {
+    final colors = theme.colorScheme;
     return InkWell(
       key: ValueKey('sell-cell-$slot'),
       onTap: () => _toggleSlot(slot),
-      child: Tooltip(
-        message: 'Bag slot ${slot + 1}',
-        child: Container(
-          width: 20,
-          height: 20,
-          margin: const EdgeInsets.all(1),
-          decoration: BoxDecoration(
-            color: selected
-                ? theme.colorScheme.primary
-                : theme.colorScheme.surfaceContainerHighest,
-            border: Border.all(color: theme.colorScheme.outlineVariant),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: 'Bag slot ${slot + 1}',
+        child: Tooltip(
+          message: 'Bag slot ${slot + 1}',
+          child: Container(
+            width: 26,
+            height: 26,
+            margin: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: selected ? colors.primary : colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(ShellRadius.s - 2),
+              border: Border.all(
+                color: selected ? colors.primary : colors.outlineVariant,
+              ),
+            ),
+            alignment: Alignment.center,
+            // Colour is reinforcement, not the only channel: the selected cell carries a check.
+            child: selected
+                ? Icon(Icons.check, size: 13, color: colors.onPrimary)
+                : null,
           ),
         ),
       ),

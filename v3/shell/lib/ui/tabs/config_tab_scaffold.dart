@@ -211,10 +211,19 @@ class ConfigTabScaffold extends StatelessWidget {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
+            // The bottom inset keeps the last line clear of the save bar instead of clipping it at
+            // the scroll viewport edge.
+            padding: const EdgeInsets.fromLTRB(
+              ShellSpace.lg,
+              0,
+              ShellSpace.lg,
+              ShellSpace.sm,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [...readOnly, child],
+              // Editable content first; calibrated/reference data is demoted below it
+              // (§2.1/§2.5.3 of the design audit).
+              children: [child, ...readOnly],
             ),
           ),
         ),
@@ -324,12 +333,8 @@ class _SaveBar extends StatelessWidget {
             const SizedBox(height: ShellSpace.xs),
             Row(
               children: [
-                Text(
-                  group.isDirty ? 'Editing' : 'No changes',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                // The dirty state is stated once, in the header chip. The bar reports outcomes only
+                // (the error/saved lines above), so it no longer repeats "Editing"/"No changes".
                 const Spacer(),
                 TextButton(
                   key: ValueKey('cancel-${group.label}'),
