@@ -398,7 +398,7 @@ class _QuestTabState extends State<QuestTab>
                     label: 'Active flow',
                     value: _activeFlow(),
                     options: flows,
-                    width: 240,
+                    width: ShellWidth.picker,
                     onChanged: _setActiveFlow,
                   ),
                   DraftDropdownField(
@@ -439,7 +439,7 @@ class _QuestTabState extends State<QuestTab>
                     label: 'Editing flow',
                     value: flow,
                     options: flows,
-                    width: 240,
+                    width: ShellWidth.picker,
                     onChanged: (value) {
                       if (value != null) {
                         // A refusal about the previously edited flow is stale once another is picked
@@ -463,7 +463,7 @@ class _QuestTabState extends State<QuestTab>
               Row(
                 children: [
                   SizedBox(
-                    width: 240,
+                    width: ShellWidth.picker,
                     child: TextField(
                       key: const ValueKey('quest-new-flow'),
                       controller: _newFlow,
@@ -522,7 +522,7 @@ class _QuestTabState extends State<QuestTab>
                         label: 'Loops',
                         integer: true,
                         value: asNumber(_flow(flow)['loops']),
-                        width: 140,
+                        width: ShellWidth.fieldSm,
                         onChanged: (value) =>
                             _setFlowField(flow, 'loops', value),
                       ),
@@ -544,7 +544,7 @@ class _QuestTabState extends State<QuestTab>
                           label: 'Action',
                           value: asString(steps[index]['action']),
                           options: _questActions,
-                          width: 170,
+                          width: ShellWidth.fieldMd,
                           onChanged: (value) =>
                               _setStepField(flow, index, 'action', value),
                         ),
@@ -726,7 +726,7 @@ class _QuestTabState extends State<QuestTab>
                           label: 'Flow',
                           value: asString(entries[index]['preset']),
                           options: flows,
-                          width: 220,
+                          width: ShellWidth.fieldLg,
                           onChanged: (value) =>
                               _setEntryField(sequence, index, 'preset', value),
                         ),

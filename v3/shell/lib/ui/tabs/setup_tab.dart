@@ -248,7 +248,7 @@ class _SetupTabState extends State<SetupTab>
                       label: 'VID (decimal)',
                       integer: true,
                       value: asNumber(_arduinoSettingsDraft.value['vid']),
-                      width: 160,
+                      width: ShellWidth.labelColumn,
                       onChanged: (value) =>
                           _set(_arduinoSettingsDraft, 'vid', value),
                     ),

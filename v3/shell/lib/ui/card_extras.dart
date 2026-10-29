@@ -84,7 +84,7 @@ class BuyCardExtras extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 170,
+          width: ShellWidth.fieldMd,
           child: _cardDropdown(
             key: const ValueKey('buy-card-preset'),
             label: 'Buy item',
@@ -216,7 +216,7 @@ class _SpammerCardExtrasState extends State<SpammerCardExtras> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 170,
+          width: ShellWidth.fieldMd,
           child: _cardDropdown(
             key: const ValueKey('spammer-card-preset'),
             label: 'Rotation',

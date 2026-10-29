@@ -658,7 +658,7 @@ class _CalibrateTabState extends State<CalibrateTab>
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           SizedBox(
-                            width: 220,
+                            width: ShellWidth.fieldLg,
                             child: InputDecorator(
                               decoration: const InputDecoration(
                                 labelText: 'Target instance',

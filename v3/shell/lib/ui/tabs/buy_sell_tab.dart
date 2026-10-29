@@ -286,7 +286,7 @@ class _BuySellTabState extends State<BuySellTab>
                     label: 'Item (preset)',
                     value: preset,
                     options: names,
-                    width: 240,
+                    width: ShellWidth.picker,
                     onChanged: (value) {
                       if (value != null) {
                         setState(() => _selectedPreset = value);
@@ -307,7 +307,7 @@ class _BuySellTabState extends State<BuySellTab>
               Row(
                 children: [
                   SizedBox(
-                    width: 240,
+                    width: ShellWidth.picker,
                     child: TextField(
                       key: const ValueKey('new-buy-preset'),
                       controller: _newPresetName,
@@ -353,7 +353,7 @@ class _BuySellTabState extends State<BuySellTab>
                         label: 'Scroll notches',
                         integer: true,
                         value: asNumber(values['scroll']),
-                        width: 160,
+                        width: ShellWidth.labelColumn,
                         onChanged: (value) =>
                             _setPresetField(preset, 'scroll', value),
                       ),
@@ -387,7 +387,7 @@ class _BuySellTabState extends State<BuySellTab>
                   label: 'Max slots per run (sell cap)',
                   integer: true,
                   value: asNumber(draft.value['sell_cap']),
-                  width: 240,
+                  width: ShellWidth.picker,
                   onChanged: _setSellCap,
                 ),
               ),
@@ -433,7 +433,7 @@ class _BuySellTabState extends State<BuySellTab>
       label: 'Row',
       value: stored == null ? null : _rowLabel(stored, rows: rows),
       options: options,
-      width: 220,
+      width: ShellWidth.fieldLg,
       onChanged: (label) {
         if (label == null) {
           return;

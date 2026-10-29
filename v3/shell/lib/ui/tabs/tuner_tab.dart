@@ -412,7 +412,7 @@ class _TunerTabState extends State<TunerTab>
                 label: 'Target grade',
                 value: _targetGrade() ?? _noTargetGrade,
                 options: [_noTargetGrade, ...order],
-                width: 220,
+                width: ShellWidth.fieldLg,
                 onChanged: (value) {
                   if (value == null || value == _noTargetGrade) {
                     _setTargetGrade(null);
@@ -570,7 +570,7 @@ class _TunerTabState extends State<TunerTab>
                       label: 'Recenter max',
                       integer: true,
                       value: asNumber(draft.value['recenter_max']),
-                      width: 140,
+                      width: ShellWidth.fieldSm,
                       onChanged: (value) => _setPortable('recenter_max', value),
                     ),
                   ),
@@ -597,7 +597,7 @@ class _TunerTabState extends State<TunerTab>
                     label: 'Match mode',
                     value: _matchMode(),
                     options: _matchModes,
-                    width: 170,
+                    width: ShellWidth.fieldMd,
                     onChanged: (value) =>
                         _setFilter((filter) => filter['match_mode'] = value),
                   ),
@@ -606,7 +606,7 @@ class _TunerTabState extends State<TunerTab>
                     label: 'Require grade',
                     value: _requireGrade(),
                     options: order,
-                    width: 170,
+                    width: ShellWidth.fieldMd,
                     onChanged: (value) => _setFilter((filter) {
                       if (value == null) {
                         filter.remove('require_grade');

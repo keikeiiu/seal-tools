@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../../protocol/protocol.dart';
+import '../components/shell_prose.dart';
 import '../theme.dart';
 
 /// State shared by every tab: the draft, the in-flight flag, the last outcome and the three actions.
@@ -188,14 +189,9 @@ class ConfigTabScaffold extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: theme.textTheme.titleLarge),
+                    Text(title, style: theme.textTheme.headlineSmall),
                     const SizedBox(height: 2),
-                    Text(
-                      description,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                    ShellProse(description),
                   ],
                 ),
               ),
@@ -206,7 +202,7 @@ class ConfigTabScaffold extends StatelessWidget {
                     'Unsaved changes',
                     key: ValueKey('dirty-${group.label}'),
                     style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.tertiary,
+                      color: context.shellColors.warning,
                     ),
                   ),
                 ),

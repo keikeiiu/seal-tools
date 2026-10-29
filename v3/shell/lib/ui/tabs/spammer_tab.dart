@@ -689,7 +689,7 @@ class _SpammerTabState extends State<SpammerTab>
                       child: DraftNumberField(
                         label: 'Lead-in (s)',
                         value: _opening(preset, 'lead_in'),
-                        width: 160,
+                        width: ShellWidth.labelColumn,
                         onChanged: (value) =>
                             _setOpening(preset, 'lead_in', value),
                       ),
@@ -701,7 +701,7 @@ class _SpammerTabState extends State<SpammerTab>
                       child: DraftNumberField(
                         label: 'Opening step (s)',
                         value: _opening(preset, 'step'),
-                        width: 160,
+                        width: ShellWidth.labelColumn,
                         onChanged: (value) =>
                             _setOpening(preset, 'step', value),
                       ),

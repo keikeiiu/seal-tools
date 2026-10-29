@@ -1173,7 +1173,7 @@ class _PetTabState extends State<PetTab>
                   helper: 'both values are needed — the pair saves together',
                   integer: true,
                   value: _returnCell,
-                  width: 220,
+                  width: ShellWidth.fieldLg,
                   onChanged: _setReturnCell,
                 ),
               ),
@@ -1187,7 +1187,7 @@ class _PetTabState extends State<PetTab>
                 label: 'Food load mode',
                 value: _foodLoadMode,
                 options: _foodLoadModes,
-                width: 240,
+                width: ShellWidth.picker,
                 onChanged: (value) {
                   if (value != null) {
                     _setMachine('food_load_mode', value);
@@ -1223,7 +1223,7 @@ class _PetTabState extends State<PetTab>
                   helper: 'core default 1200',
                   integer: true,
                   value: asNumber(_machineDraft.value['action_wait_ms']),
-                  width: 220,
+                  width: ShellWidth.fieldLg,
                   onChanged: (value) =>
                       _setMachine('action_wait_ms', value.round()),
                 ),
@@ -1239,7 +1239,7 @@ class _PetTabState extends State<PetTab>
                   value: asNumber(
                     _machineDraft.value['wait_after_empty_minutes'],
                   ),
-                  width: 240,
+                  width: ShellWidth.picker,
                   onChanged: (value) =>
                       _setMachine('wait_after_empty_minutes', value.round()),
                 ),

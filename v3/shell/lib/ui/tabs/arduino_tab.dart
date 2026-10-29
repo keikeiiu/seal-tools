@@ -318,7 +318,7 @@ class _ArduinoTabState extends State<ArduinoTab>
                       'One character, Enter, or F1–F12 — the core refuses anything it cannot send.',
                       [
                         SizedBox(
-                          width: 160,
+                          width: ShellWidth.labelColumn,
                           child: TextField(
                             key: const ValueKey('arduino-key-input'),
                             controller: _key,
@@ -390,7 +390,7 @@ class _ArduinoTabState extends State<ArduinoTab>
     final choice = details.choice;
     final outcome = switch (choice.state) {
       BoardChoiceState.ready => (
-        light: Colors.green,
+        light: theme.shellColors.success,
         verdict: 'Ready — Start will open ${choice.port ?? 'a port'}',
       ),
       BoardChoiceState.namedMissing => (
@@ -485,7 +485,7 @@ class _ArduinoTabState extends State<ArduinoTab>
         key: ValueKey('arduino-port-row-${port.port}'),
         style: theme.textTheme.bodySmall?.copyWith(
           color: port.chosen
-              ? Colors.green
+              ? theme.shellColors.success
               : theme.colorScheme.onSurfaceVariant,
         ),
       ),

@@ -333,7 +333,7 @@ class ReadOnlyValue extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 220,
+            width: ShellWidth.fieldLg,
             child: Text(label, style: theme.textTheme.bodySmall),
           ),
           Expanded(

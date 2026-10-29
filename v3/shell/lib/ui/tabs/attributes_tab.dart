@@ -233,7 +233,7 @@ class _AttributesTabState extends State<AttributesTab>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(
-                          width: 220,
+                          width: ShellWidth.fieldLg,
                           child: Text(
                             attribute.name,
                             key: ValueKey('attribute-${attribute.name}'),

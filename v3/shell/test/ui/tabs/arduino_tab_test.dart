@@ -192,7 +192,7 @@ void main() {
       _text(tester, 'arduino-connection-verdict'),
       'Ready — Start will open COM5',
     );
-    expect(_statusColor(tester), Colors.green);
+    expect(_statusColor(tester), ShellColors.dark.success);
     expect(
       find.byKey(const ValueKey('arduino-advice')),
       findsNothing,
