@@ -15,11 +15,7 @@ import '../app/app.dart';
 import 'theme.dart';
 
 class StatusStrip extends StatelessWidget {
-  const StatusStrip({
-    super.key,
-    required this.model,
-    this.logsVisible = false,
-  });
+  const StatusStrip({super.key, required this.model, this.logsVisible = false});
 
   final ShellModel model;
   final bool logsVisible;
@@ -32,11 +28,16 @@ class StatusStrip extends StatelessWidget {
     final root = config.root.isEmpty ? 'root ?' : 'root ${config.root}';
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: ShellSpace.md,
-          vertical: ShellSpace.xxs,
+      child: Container(
+        height: ShellSize.statusStripHeight,
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+          ),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
         child: Row(
           children: [
             Container(

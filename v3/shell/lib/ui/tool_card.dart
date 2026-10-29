@@ -136,8 +136,11 @@ String _runningLine(ToolId tool, ToolSnapshot snapshot) {
 }
 
 /// The demo's scope word on a running card: the pet loop is the resident process, the rest act on the
-/// foreground game window. Presentation only.
-String _scopeLabel(ToolId tool) => tool == ToolId.pet ? 'resident' : 'foreground';
+/// foreground game window. Presentation only; Hold Space acts through the board, not the foreground
+/// window, so it carries no scope word.
+String? _scopeLabel(ToolId tool) => tool == ToolId.holdspace
+    ? null
+    : (tool == ToolId.pet ? 'resident' : 'foreground');
 
 class _IdleTile extends StatelessWidget {
   const _IdleTile({
@@ -177,77 +180,83 @@ class _IdleTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           ShellSpace.md + ShellSpace.xxs,
+          ShellSpace.md,
           ShellSpace.sm + ShellSpace.xxs,
-          ShellSpace.sm + ShellSpace.xxs,
-          ShellSpace.sm + ShellSpace.xxs,
+          ShellSpace.md,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(ShellRadius.s + 3),
-                  ),
-                  child: Icon(
-                    toolIcon(tool),
-                    size: ShellSize.iconMd,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: ShellSpace.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        toolDisplayName(tool),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontSize: 13.5,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: ShellSpace.xxs),
-                      Text(
-                        summary,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onOptions != null)
-                  IconButton(
-                    key: ValueKey('options-${tool.wire}'),
-                    tooltip: optionsOpen ? 'Hide options' : 'Run options',
-                    visualDensity: VisualDensity.compact,
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(30, 30),
-                      padding: EdgeInsets.zero,
+            ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: ShellSize.idleTileMinHeight - ShellSpace.md * 2,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(ShellRadius.s + 3),
                     ),
-                    onPressed: onOptions,
-                    icon: Icon(
-                      optionsOpen ? Icons.expand_less : Icons.tune,
+                    child: Icon(
+                      toolIcon(tool),
                       size: ShellSize.iconMd,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                const SizedBox(width: ShellSpace.xs),
-                _StartButton(
-                  tool: tool,
-                  pending: pending,
-                  ready: ready,
-                  onStart: onStart,
-                ),
-              ],
+                  const SizedBox(width: ShellSpace.sm),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          toolDisplayName(tool),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontSize: 13.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: ShellSpace.xxs),
+                        Text(
+                          summary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onOptions != null)
+                    IconButton(
+                      key: ValueKey('options-${tool.wire}'),
+                      tooltip: optionsOpen ? 'Hide options' : 'Run options',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(32, 32),
+                        padding: EdgeInsets.zero,
+                      ),
+                      onPressed: onOptions,
+                      icon: Icon(
+                        optionsOpen ? Icons.expand_less : Icons.tune,
+                        size: ShellSize.iconMd,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  const SizedBox(width: ShellSpace.sm),
+                  _StartButton(
+                    tool: tool,
+                    pending: pending,
+                    ready: ready,
+                    onStart: onStart,
+                  ),
+                ],
+              ),
             ),
             if (optionsOpen && extras != null) ...[
               const SizedBox(height: ShellSpace.sm),
@@ -337,6 +346,7 @@ class _RunningCard extends StatelessWidget {
     final (phaseWord, kind) = _phaseChip(snapshot.phase);
     final countdown = countdownLabel(snapshot);
     final error = snapshot.error;
+    final scope = _scopeLabel(tool);
     return Card(
       key: ValueKey('card-${tool.wire}'),
       child: ClipRRect(
@@ -357,7 +367,7 @@ class _RunningCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
                           toolDisplayName(tool),
                           style: theme.textTheme.titleMedium,
@@ -366,13 +376,15 @@ class _RunningCard extends StatelessWidget {
                       ),
                       const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
                       StatusChip(kind: kind, label: phaseWord),
-                      const Spacer(),
-                      Text(
-                        _scopeLabel(tool),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      if (scope != null) ...[
+                        const SizedBox(width: ShellSpace.sm),
+                        Text(
+                          scope,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: ShellSpace.xs),
@@ -488,11 +500,7 @@ class _PendingLabel extends StatelessWidget {
 }
 
 class _CardLine extends StatelessWidget {
-  const _CardLine({
-    this.textKey,
-    required this.text,
-    required this.color,
-  });
+  const _CardLine({this.textKey, required this.text, required this.color});
 
   final Key? textKey;
   final String text;
@@ -598,11 +606,7 @@ class _RowsView extends StatelessWidget {
 }
 
 class _RowLine extends StatelessWidget {
-  const _RowLine({
-    super.key,
-    required this.row,
-    required this.elapsedTicks,
-  });
+  const _RowLine({super.key, required this.row, required this.elapsedTicks});
 
   final ToolRow row;
   final int elapsedTicks;
@@ -610,7 +614,6 @@ class _RowLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = context.shellColors;
     final base = theme.textTheme.bodySmall?.copyWith(fontSize: 12.5);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -624,7 +627,7 @@ class _RowLine extends StatelessWidget {
           child: Text(
             row.status,
             overflow: TextOverflow.ellipsis,
-            style: base?.copyWith(color: colors.success),
+            style: base?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ),
         Expanded(

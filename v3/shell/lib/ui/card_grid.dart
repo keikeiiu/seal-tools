@@ -16,6 +16,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -214,13 +215,17 @@ class _CardGridState extends State<CardGrid> {
             : 'Ready · rotation "$active"';
       case ToolId.tuner:
         final grade = asString(asJsonMap(_config['tuner'])['target_grade']);
-        return grade == null ? 'Ready · idle' : 'Ready · target $grade';
+        return grade == null
+            ? 'Ready · no target grade'
+            : 'Ready · target $grade';
       case ToolId.gem:
         final grades = asJsonMap(_config['gem'])['grades'];
         final names = grades is List
             ? grades.whereType<String>().toList()
             : const <String>[];
-        return names.isEmpty ? 'Ready · idle' : 'Ready · ${names.join(' → ')}';
+        return names.isEmpty
+            ? 'Ready · no grades configured'
+            : 'Ready · ${names.join(' > ')}';
       case ToolId.buy:
         final preset = _resolvedBuyPreset;
         return preset == null
@@ -242,10 +247,18 @@ class _CardGridState extends State<CardGrid> {
             ? 'Ready · no flow selected'
             : 'Ready · flow "$name"';
       case ToolId.pet:
-        final rows = asJsonMap(asJsonMap(_config['pet'])['rows']);
-        return rows.isEmpty
-            ? 'Ready · no rows configured'
-            : 'Ready · ${rows.length} rows';
+        // The machine block stores the breeding rows under `slots` (v3 CONFIG.md), not `rows`.
+        final slots = asJsonList(asJsonMap(_config['pet'])['slots']);
+        if (slots.isEmpty) {
+          return 'Ready · no rows configured';
+        }
+        final enabled = slots
+            .where((entry) => asJsonMap(entry)['enabled'] == true)
+            .length;
+        final rowWord = slots.length == 1 ? 'row' : 'rows';
+        return enabled == slots.length
+            ? 'Ready · ${slots.length} $rowWord'
+            : 'Ready · $enabled of ${slots.length} $rowWord enabled';
       case ToolId.holdspace:
         return 'Off · spacebar auto-pickup';
     }
@@ -297,7 +310,7 @@ class _CardGridState extends State<CardGrid> {
             title,
             style: theme.textTheme.titleSmall?.copyWith(
               fontSize: 13,
-              color: theme.colorScheme.onSurface,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: ShellSpace.sm),
@@ -314,24 +327,27 @@ class _CardGridState extends State<CardGrid> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const horizontal = ShellSpace.xl;
+        // Wide windows cap the reading/scanning width and centre it; without this the running cards
+        // stretch to ~900 px on a 1920 display. 1240 matches the demo's content column.
+        const contentMax = 1240.0;
+        final viewport = constraints.maxWidth;
+        final content = math.min(viewport, contentMax);
+        final side = (viewport - content) / 2 + ShellSpace.xl;
+        final width = content - ShellSpace.xl * 2;
         const runningGap = ShellSpace.md;
         const tileGap = 14.0;
-        final width = constraints.maxWidth - horizontal * 2;
         final runningColumns = width >= 680 ? 2 : 1;
-        final idleColumns = width >= 1140
-            ? 3
-            : (width >= 640 ? 2 : 1);
+        final idleColumns = width >= 1140 ? 3 : (width >= 640 ? 2 : 1);
         final runningWidth =
             (width - runningGap * (runningColumns - 1)) / runningColumns;
         final idleWidth = (width - tileGap * (idleColumns - 1)) / idleColumns;
 
         return ListView(
           key: const ValueKey('cards-list'),
-          padding: const EdgeInsets.fromLTRB(
-            horizontal,
+          padding: EdgeInsets.fromLTRB(
+            side,
             ShellSpace.lg,
-            horizontal,
+            side,
             ShellSpace.xl,
           ),
           children: [
@@ -342,9 +358,7 @@ class _CardGridState extends State<CardGrid> {
                   'else waits its turn and stays out of the way.',
               trailing: StatusChip(
                 kind: running.isEmpty ? StatusKind.muted : StatusKind.success,
-                label: running.isEmpty
-                    ? 'Idle'
-                    : '${running.length} running',
+                label: running.isEmpty ? 'Idle' : '${running.length} running',
               ),
             ),
             const SizedBox(height: ShellSpace.xl),

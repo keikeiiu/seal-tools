@@ -79,7 +79,9 @@ class _ShellPageState extends State<ShellPage> {
   /// The pin applies to the window and saves the preference; a refused save is shown with the
   /// core's own line and the model has already put the window back on the saved value.
   Future<void> _toggleAlwaysOnTop() async {
-    final outcome = await widget.model.setAlwaysOnTop(!widget.model.alwaysOnTop);
+    final outcome = await widget.model.setAlwaysOnTop(
+      !widget.model.alwaysOnTop,
+    );
     if (!mounted) {
       return;
     }
@@ -101,10 +103,9 @@ class _ShellPageState extends State<ShellPage> {
     SpammerTab(model: widget.model),
     TunerTab(model: widget.model),
     GemTab(model: widget.model),
-    // Phase 2 splits Buy (saved presets) and Sell (per-run selection) into two screens; until then
-    // both rail rows open the one Buy/Sell tab (PLAN-V3-UI-UX §7 Phase 2).
-    BuySellTab(model: widget.model),
-    BuySellTab(model: widget.model),
+    // Buy and Sell are separate screens (D3): each edits its own half of the `buy_sell` block.
+    BuySellTab(model: widget.model, section: BuySellSection.buy),
+    BuySellTab(model: widget.model, section: BuySellSection.sell),
     QuestTab(model: widget.model),
     PetTab(model: widget.model),
     AttributesTab(model: widget.model),
@@ -168,9 +169,11 @@ class _ShellPageState extends State<ShellPage> {
                                 child: IndexedStack(
                                   index: _selected,
                                   children: [
-                                    for (var index = 0;
-                                        index < pages.length;
-                                        index++)
+                                    for (
+                                      var index = 0;
+                                      index < pages.length;
+                                      index++
+                                    )
                                       _visited.contains(index)
                                           ? pages[index]
                                           : const SizedBox.shrink(),
@@ -203,7 +206,8 @@ class _ShellPageState extends State<ShellPage> {
 int cardRunningCount(ShellModel model) => cardToolIds
     .where(
       (tool) =>
-          (model.tools.snapshot(tool)?.phase ?? ToolPhase.idle) != ToolPhase.idle,
+          (model.tools.snapshot(tool)?.phase ?? ToolPhase.idle) !=
+          ToolPhase.idle,
     )
     .length;
 
@@ -232,14 +236,8 @@ class _TopBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
           child: Row(
             children: [
-              Icon(
-                Icons.waves,
-                size: ShellSize.iconMd,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: ShellSpace.sm),
-              Text('Seal Tools', style: theme.textTheme.titleSmall),
-              const SizedBox(width: ShellSpace.lg),
+              // The window title ("Seal Tools v3") is the native Win32 caption, so the bar starts
+              // with the core's state instead of repeating the product name.
               _CoreStatus(model: model),
               const Spacer(),
               TextButton.icon(
@@ -261,7 +259,7 @@ class _TopBar extends StatelessWidget {
                   ),
                 ),
                 icon: Icon(
-                  logsVisible ? Icons.close : Icons.menu,
+                  logsVisible ? Icons.close : Icons.subject,
                   size: ShellSize.iconSm,
                 ),
                 label: Text(
@@ -330,7 +328,7 @@ class _CoreStatus extends StatelessWidget {
           parts.join(' · '),
           style: theme.textTheme.bodySmall?.copyWith(
             fontSize: 12.5,
-            color: theme.colorScheme.onSurface,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ],

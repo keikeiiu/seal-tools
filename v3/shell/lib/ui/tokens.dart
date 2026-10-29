@@ -122,6 +122,7 @@ abstract final class ShellSize {
   static const double minWindowWidth = 1120;
   static const double minWindowHeight = 680;
   static const double idleTileMinHeight = 66;
+  static const double statusStripHeight = 28;
   static const double iconSm = 14;
   static const double iconMd = 18;
   static const double iconLg = 28;
@@ -146,6 +147,5 @@ extension ShellColorsContext on BuildContext {
 
 /// The same lookup when a builder only received a [ThemeData] (e.g. a row helper).
 extension ShellColorsTheme on ThemeData {
-  ShellColors get shellColors =>
-      extension<ShellColors>() ?? ShellColors.dark;
+  ShellColors get shellColors => extension<ShellColors>() ?? ShellColors.dark;
 }

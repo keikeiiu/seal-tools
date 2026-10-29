@@ -42,50 +42,47 @@ class _LogDrawerState extends State<LogDrawer> {
       key: const ValueKey('log-panel'),
       height: 238,
       width: double.infinity,
-      color: colors.surfaceContainerLowest,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        border: Border(
+          top: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.7)),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: ShellSpace.md,
-              vertical: ShellSpace.xs,
-            ),
-            child: Row(
-              children: [
-                Text('Logs', style: theme.textTheme.titleSmall),
-                const SizedBox(width: ShellSpace.md),
-                _FilterButton(
-                  key: const ValueKey('log-filter-all'),
-                  label: 'All',
-                  selected: _filter == _LogFilter.all,
-                  onTap: () => setState(() => _filter = _LogFilter.all),
-                ),
-                const SizedBox(width: ShellSpace.xs),
-                _FilterButton(
-                  key: const ValueKey('log-filter-errors'),
-                  label: 'Errors',
-                  selected: _filter == _LogFilter.errors,
-                  onTap: () => setState(() => _filter = _LogFilter.errors),
-                ),
-                const Spacer(),
-                Text(
-                  'Ctrl+L closes',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+          SizedBox(
+            height: 40,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
+              child: Row(
+                children: [
+                  Text('Logs', style: theme.textTheme.titleSmall),
+                  const SizedBox(width: ShellSpace.md),
+                  _FilterButton(
+                    key: const ValueKey('log-filter-all'),
+                    label: 'All',
+                    selected: _filter == _LogFilter.all,
+                    onTap: () => setState(() => _filter = _LogFilter.all),
                   ),
-                ),
-                if (widget.onClose != null) ...[
-                  const SizedBox(width: ShellSpace.sm),
-                  IconButton(
-                    key: const ValueKey('log-close'),
-                    tooltip: 'Close logs',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: ShellSize.iconMd),
-                    onPressed: widget.onClose,
+                  const SizedBox(width: ShellSpace.xs),
+                  _FilterButton(
+                    key: const ValueKey('log-filter-errors'),
+                    label: 'Errors',
+                    selected: _filter == _LogFilter.errors,
+                    onTap: () => setState(() => _filter = _LogFilter.errors),
                   ),
+                  const Spacer(),
+                  if (widget.onClose != null)
+                    IconButton(
+                      key: const ValueKey('log-close'),
+                      tooltip: 'Close logs',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.close, size: ShellSize.iconMd),
+                      onPressed: widget.onClose,
+                    ),
                 ],
-              ],
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -101,11 +98,14 @@ class _LogDrawerState extends State<LogDrawer> {
                       ),
                     ),
                   )
+                // Newest first at the TOP: the model appends (oldest → newest), so the builder
+                // walks backwards and the list is not reversed.
                 : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: ShellSpace.md,
-                      vertical: ShellSpace.xs,
+                    padding: const EdgeInsets.fromLTRB(
+                      ShellSpace.md,
+                      ShellSpace.xs,
+                      ShellSpace.md,
+                      ShellSpace.sm,
                     ),
                     itemCount: entries.length,
                     itemBuilder: (context, index) {
@@ -171,14 +171,21 @@ class _LogLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = context.shellColors;
-    final level = entry.level ?? (entry.origin == LogOrigin.stderr ? 'error' : 'info');
+    final level =
+        entry.level ??
+        (entry.origin == LogOrigin.stderr
+            ? 'error'
+            : (entry.origin == LogOrigin.shell ? 'note' : 'info'));
     final origin = switch (entry.origin) {
       LogOrigin.core => '',
       LogOrigin.stderr => 'stderr',
       LogOrigin.shell => 'shell',
     };
     final (background, foreground) = switch (level) {
-      'error' => (theme.colorScheme.errorContainer, theme.colorScheme.onErrorContainer),
+      'error' => (
+        theme.colorScheme.errorContainer,
+        theme.colorScheme.onErrorContainer,
+      ),
       'warn' => (colors.warningContainer, colors.onWarningContainer),
       _ => (
         theme.colorScheme.surfaceContainerHighest,
@@ -190,29 +197,34 @@ class _LogLine extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 42,
-            padding: const EdgeInsets.symmetric(vertical: 1),
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(ShellRadius.s),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              level,
-              style: theme.textTheme.labelSmall?.copyWith(color: foreground),
-            ),
-          ),
-          if (origin.isNotEmpty) ...[
-            const SizedBox(width: ShellSpace.xs),
-            Text(
-              origin,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          SizedBox(
+            width: 44,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(ShellRadius.s),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                level,
+                style: theme.textTheme.labelSmall?.copyWith(color: foreground),
               ),
             ),
-          ],
-          const SizedBox(width: ShellSpace.sm),
+          ),
+          const SizedBox(width: ShellSpace.xs),
+          SizedBox(
+            width: 42,
+            child: origin.isEmpty
+                ? null
+                : Text(
+                    origin,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: ShellSpace.xs),
           Expanded(
             child: Text(
               entry.text,
