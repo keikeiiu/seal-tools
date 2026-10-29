@@ -69,7 +69,7 @@ void main() {
     await _flush(tester);
 
     expect(find.text('Starting in 5...'), findsOneWidget);
-    expect(find.textContaining('next action in 5s'), findsOneWidget);
+    expect(find.textContaining('next action in 5 s'), findsOneWidget);
     expect(find.text('OCR'), findsOneWidget);
     expect(find.text('attempt 2'), findsOneWidget);
     expect(find.byKey(const ValueKey('row-tuner-0')), findsOneWidget);
@@ -86,7 +86,7 @@ void main() {
 
     expect(find.text('Starting in 5...'), findsNothing);
     expect(find.text('OCR: attempt 3'), findsOneWidget);
-    expect(find.textContaining('next action in 2s'), findsOneWidget);
+    expect(find.textContaining('next action in 2 s'), findsOneWidget);
     expect(find.byKey(const ValueKey('row-tuner-1')), findsNothing);
     expect(find.byKey(const ValueKey('row-tuner-0')), findsOneWidget);
     expect(harness.lastSentWithCmd('config.reload'), isNull);

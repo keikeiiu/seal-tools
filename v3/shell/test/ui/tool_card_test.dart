@@ -86,7 +86,7 @@ void main() {
     expect(find.text('Magic Tuner'), findsOneWidget);
     expect(find.text('running'), findsOneWidget);
     expect(find.text('fishing for a red gem'), findsOneWidget);
-    expect(find.text('next action in 1m'), findsOneWidget);
+    expect(find.text('next action in 1 m'), findsOneWidget);
 
     // The table has labels, and the four row fields render from the snapshot.
     expect(find.text('ROW'), findsOneWidget);
@@ -96,7 +96,7 @@ void main() {
     expect(find.text('row 1'), findsOneWidget);
     expect(find.text('boarding'), findsOneWidget);
     expect(find.text('藍天 · 3/min'), findsOneWidget);
-    expect(find.text('in 30m'), findsOneWidget);
+    expect(find.text('in 30 m'), findsOneWidget);
     expect(find.text('row 2'), findsOneWidget);
     expect(find.text('waiting for a reload'), findsOneWidget);
 

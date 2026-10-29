@@ -15,9 +15,14 @@ import '../app/app.dart';
 import 'theme.dart';
 
 class StatusStrip extends StatelessWidget {
-  const StatusStrip({super.key, required this.model});
+  const StatusStrip({
+    super.key,
+    required this.model,
+    this.logsVisible = false,
+  });
 
   final ShellModel model;
+  final bool logsVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -34,12 +39,15 @@ class StatusStrip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: ShellSize.iconSm,
-              color: theme.colorScheme.primary,
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: context.shellColors.success,
+                shape: BoxShape.circle,
+              ),
             ),
-            const SizedBox(width: ShellSpace.xs),
+            const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
             Text(
               'core ${connection.coreVersion ?? '?'} · rev ${config.rev}',
               key: const ValueKey('status-core'),
@@ -57,7 +65,7 @@ class StatusStrip extends StatelessWidget {
               ),
             ),
             Text(
-              'Ctrl+L logs',
+              logsVisible ? 'Ctrl+L logs · Esc close' : 'Ctrl+L logs',
               key: const ValueKey('logs-hint'),
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

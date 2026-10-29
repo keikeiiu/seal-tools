@@ -90,6 +90,9 @@ ThemeData buildShellTheme() {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(ShellRadius.l),
+        // The demo's cards separate from the page with a hairline, not a shadow: on a dark UI a
+        // border reads as structure while a shadow reads as haze.
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(

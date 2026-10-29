@@ -5,6 +5,10 @@
 /// core-published phase and the model's in-flight flag; a Start does NOT optimistically change the
 /// card — the phase moves only when the core publishes `state` ([PLAN-V3-SHELL.md] §5).
 ///
+/// The tile face stays one line like the demo. Cards with per-run/saved choices (Buy, Quest, Spammer)
+/// put them behind the small options button and reveal them inside the card, so the default state is
+/// still "icon + name + one-line state + Start".
+///
 /// The card must render `rows: []` without assuming non-empty: that means "no rows to show", never
 /// "not known yet" ([PROTOCOL.md] §5). Idle tiles show no rows table at all.
 ///
@@ -15,7 +19,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../protocol/protocol.dart';
+import '../protocol/protocol.dart' hide Size;
 import 'components/status_chip.dart';
 import 'theme.dart';
 import 'tool_labels.dart';
@@ -33,6 +37,9 @@ class ToolCard extends StatelessWidget {
     required this.onStop,
     this.elapsedTicks = 0,
     this.extras,
+    this.idleSummary,
+    this.onOptions,
+    this.optionsOpen = false,
   });
 
   final ToolId tool;
@@ -55,9 +62,19 @@ class ToolCard extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onStop;
 
-  /// Card-specific config controls (Buy picker, Quest pickers, Spammer rotation) shown on the idle
-  /// tile; per-run choices stay on the card ([PLAN-V3-UI-UX.md] D3/§6).
+  /// Card-specific config controls (Buy run choice, Quest flow, Spammer rotation). They are revealed
+  /// inside the tile by the options button, so the collapsed tile stays one line.
   final Widget? extras;
+
+  /// The shell's own one-line idle summary (e.g. `Ready · preset "potion" · 3 per run`). The core's
+  /// `state` message is still shown when this is null.
+  final String? idleSummary;
+
+  /// Toggles [optionsOpen]; null means this tool has no options and shows no button.
+  final VoidCallback? onOptions;
+
+  /// Whether [extras] are revealed under the tile row.
+  final bool optionsOpen;
 
   /// Whole seconds elapsed since this tool's last `state` event, driven by the grid's ONE ticker.
   /// Only the DISPLAYED countdown uses it: rows without `next_action_in_seconds` are untouched.
@@ -76,6 +93,9 @@ class ToolCard extends StatelessWidget {
         ready: ready,
         onStart: onStart,
         extras: extras,
+        idleSummary: idleSummary,
+        onOptions: onOptions,
+        optionsOpen: optionsOpen,
       );
     }
     return _RunningCard(
@@ -104,7 +124,7 @@ String _idleLine(ToolId tool, ToolSnapshot? snapshot) {
     return 'Off · spacebar auto-pickup';
   }
   final message = snapshot?.message.trim() ?? '';
-  return message.isEmpty ? 'Idle — ready to start' : message;
+  return message.isEmpty ? 'Ready' : message;
 }
 
 String _runningLine(ToolId tool, ToolSnapshot snapshot) {
@@ -114,6 +134,10 @@ String _runningLine(ToolId tool, ToolSnapshot snapshot) {
   }
   return tool == ToolId.holdspace ? 'Holding the spacebar' : 'Running';
 }
+
+/// The demo's scope word on a running card: the pet loop is the resident process, the rest act on the
+/// foreground game window. Presentation only.
+String _scopeLabel(ToolId tool) => tool == ToolId.pet ? 'resident' : 'foreground';
 
 class _IdleTile extends StatelessWidget {
   const _IdleTile({
@@ -125,6 +149,9 @@ class _IdleTile extends StatelessWidget {
     required this.ready,
     required this.onStart,
     this.extras,
+    this.idleSummary,
+    this.onOptions,
+    this.optionsOpen = false,
   });
 
   final ToolId tool;
@@ -135,24 +162,42 @@ class _IdleTile extends StatelessWidget {
   final bool ready;
   final VoidCallback onStart;
   final Widget? extras;
+  final String? idleSummary;
+  final VoidCallback? onOptions;
+  final bool optionsOpen;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final error = snapshot?.error;
+    final summary = idleSummary ?? _idleLine(tool, snapshot);
     return Card(
       key: ValueKey('card-${tool.wire}'),
+      color: theme.colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(ShellSpace.md),
+        padding: const EdgeInsets.fromLTRB(
+          ShellSpace.md + ShellSpace.xxs,
+          ShellSpace.sm + ShellSpace.xxs,
+          ShellSpace.sm + ShellSpace.xxs,
+          ShellSpace.sm + ShellSpace.xxs,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  toolIcon(tool),
-                  size: ShellSize.iconMd,
-                  color: theme.colorScheme.onSurfaceVariant,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(ShellRadius.s + 3),
+                  ),
+                  child: Icon(
+                    toolIcon(tool),
+                    size: ShellSize.iconMd,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(width: ShellSpace.sm),
                 Expanded(
@@ -161,46 +206,52 @@ class _IdleTile extends StatelessWidget {
                     children: [
                       Text(
                         toolDisplayName(tool),
-                        style: theme.textTheme.titleSmall,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 13.5,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: ShellSpace.xxs),
                       Text(
-                        _idleLine(tool, snapshot),
+                        summary,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: ShellSpace.sm),
-                if (extras == null)
-                  _StartButton(
-                    tool: tool,
-                    pending: pending,
-                    ready: ready,
-                    onStart: onStart,
+                if (onOptions != null)
+                  IconButton(
+                    key: ValueKey('options-${tool.wire}'),
+                    tooltip: optionsOpen ? 'Hide options' : 'Run options',
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(30, 30),
+                      padding: EdgeInsets.zero,
+                    ),
+                    onPressed: onOptions,
+                    icon: Icon(
+                      optionsOpen ? Icons.expand_less : Icons.tune,
+                      size: ShellSize.iconMd,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
+                const SizedBox(width: ShellSpace.xs),
+                _StartButton(
+                  tool: tool,
+                  pending: pending,
+                  ready: ready,
+                  onStart: onStart,
+                ),
               ],
             ),
-            if (extras != null) ...[
+            if (optionsOpen && extras != null) ...[
               const SizedBox(height: ShellSpace.sm),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(child: extras!),
-                  const SizedBox(width: ShellSpace.sm),
-                  _StartButton(
-                    tool: tool,
-                    pending: pending,
-                    ready: ready,
-                    onStart: onStart,
-                  ),
-                ],
-              ),
+              extras!,
             ],
             if (error != null)
               _CardLine(
@@ -242,9 +293,15 @@ class _StartButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return OutlinedButton(
       key: ValueKey('start-${tool.wire}'),
       onPressed: ready && !pending ? onStart : null,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 30),
+        padding: const EdgeInsets.symmetric(horizontal: ShellSpace.md),
+        textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 12),
+      ),
       child: pending
           ? const _PendingLabel(label: 'Starting…')
           : const Text('Start'),
@@ -289,20 +346,33 @@ class _RunningCard extends StatelessWidget {
           children: [
             Container(height: 3, color: colors.success),
             Padding(
-              padding: const EdgeInsets.all(ShellSpace.md),
+              padding: const EdgeInsets.fromLTRB(
+                ShellSpace.md + ShellSpace.xxs,
+                ShellSpace.md,
+                ShellSpace.md + ShellSpace.xxs,
+                ShellSpace.sm,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Expanded(
+                      Flexible(
                         child: Text(
                           toolDisplayName(tool),
                           style: theme.textTheme.titleMedium,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
                       StatusChip(kind: kind, label: phaseWord),
+                      const Spacer(),
+                      Text(
+                        _scopeLabel(tool),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: ShellSpace.xs),
@@ -310,14 +380,15 @@ class _RunningCard extends StatelessWidget {
                     _runningLine(tool, snapshot),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13.5),
                   ),
                   if (countdown != null) ...[
                     const SizedBox(height: ShellSpace.xxs),
                     Text(
                       countdown,
                       key: ValueKey('countdown-${tool.wire}'),
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      style: ShellText.mono.copyWith(
+                        fontSize: 12,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -346,22 +417,43 @@ class _RunningCard extends StatelessWidget {
                       text: refusal!,
                       color: theme.colorScheme.error,
                     ),
-                  const SizedBox(height: ShellSpace.sm),
-                  Row(
-                    children: [
-                      const Spacer(),
-                      FilledButton(
-                        key: ValueKey('stop-${tool.wire}'),
-                        onPressed: ready && !pending ? onStop : null,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.errorContainer,
-                          foregroundColor: theme.colorScheme.onErrorContainer,
-                        ),
-                        child: pending
-                            ? const _PendingLabel(label: 'Stopping…')
-                            : const Text('Stop'),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                ShellSpace.md + ShellSpace.xxs,
+                0,
+                ShellSpace.md + ShellSpace.xxs,
+                ShellSpace.md,
+              ),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  FilledButton(
+                    key: ValueKey('stop-${tool.wire}'),
+                    onPressed: ready && !pending ? onStop : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: theme.colorScheme.errorContainer,
+                      foregroundColor: theme.colorScheme.onErrorContainer,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: ShellSpace.md,
                       ),
-                    ],
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontSize: 12,
+                      ),
+                    ),
+                    child: pending
+                        ? const _PendingLabel(label: 'Stopping…')
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.stop, size: 14),
+                              const SizedBox(width: ShellSpace.xs),
+                              Text('Stop'),
+                            ],
+                          ),
                   ),
                 ],
               ),
@@ -384,11 +476,11 @@ class _PendingLabel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(
-          width: 14,
-          height: 14,
+          width: 13,
+          height: 13,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        const SizedBox(width: ShellSpace.sm),
+        const SizedBox(width: ShellSpace.xs),
         Text(label),
       ],
     );
@@ -410,7 +502,7 @@ class _CardLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(color: color);
     return Padding(
-      padding: const EdgeInsets.only(top: ShellSpace.xxs),
+      padding: const EdgeInsets.only(top: ShellSpace.xs),
       child: Tooltip(
         message: text,
         child: Text(
@@ -459,30 +551,48 @@ class _RowsView extends StatelessWidget {
 
     final headerStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
-      letterSpacing: 0.6,
+      letterSpacing: 0.7,
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(flex: 2, child: Text('ROW', style: headerStyle)),
-            Expanded(flex: 3, child: Text('STATUS', style: headerStyle)),
-            Expanded(flex: 3, child: Text('DETAIL', style: headerStyle)),
-            Text('NEXT', style: headerStyle),
-          ],
+    final border = BorderSide(
+      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+    );
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+          ),
         ),
-        const SizedBox(height: ShellSpace.xxs),
-        for (var index = 0; index < rows.length; index++)
+      ),
+      padding: const EdgeInsets.only(top: ShellSpace.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Padding(
             padding: const EdgeInsets.only(bottom: ShellSpace.xxs),
-            child: _RowLine(
-              key: ValueKey('row-${tool.wire}-$index'),
-              row: rows[index],
-              elapsedTicks: elapsedTicks,
+            child: Row(
+              children: [
+                Expanded(flex: 2, child: Text('ROW', style: headerStyle)),
+                Expanded(flex: 3, child: Text('STATUS', style: headerStyle)),
+                Expanded(flex: 3, child: Text('DETAIL', style: headerStyle)),
+                Text('NEXT', style: headerStyle),
+              ],
             ),
           ),
-      ],
+          for (var index = 0; index < rows.length; index++)
+            Container(
+              decoration: index == 0
+                  ? null
+                  : BoxDecoration(border: Border(top: border)),
+              padding: const EdgeInsets.symmetric(vertical: ShellSpace.xs),
+              child: _RowLine(
+                key: ValueKey('row-${tool.wire}-$index'),
+                row: rows[index],
+                elapsedTicks: elapsedTicks,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -501,7 +611,7 @@ class _RowLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = context.shellColors;
-    final base = theme.textTheme.bodySmall;
+    final base = theme.textTheme.bodySmall?.copyWith(fontSize: 12.5);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -529,7 +639,10 @@ class _RowLine extends StatelessWidget {
           row.nextActionInSeconds == null
               ? ''
               : formatNextAction(row.nextActionInSeconds! - elapsedTicks),
-          style: theme.textTheme.labelSmall,
+          style: ShellText.mono.copyWith(
+            fontSize: 11.5,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );

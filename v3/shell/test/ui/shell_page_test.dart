@@ -158,7 +158,7 @@ void main() {
       expect(find.text('row 2: looking'), findsOneWidget);
       expect(find.text('row 1'), findsOneWidget);
       expect(find.text('boarding'), findsOneWidget);
-      expect(find.text('in 30m'), findsOneWidget);
+      expect(find.text('in 30 m'), findsOneWidget);
       // An idle tool is a one-line tile now: no phase chip, no rows table.
       expect(find.byKey(const ValueKey('rows-empty-tuner')), findsNothing);
       expect(

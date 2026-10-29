@@ -63,12 +63,12 @@ void main() {
       ],
     );
     await _flush(tester);
-    expect(find.text('in 5s'), findsOneWidget);
+    expect(find.text('in 5 s'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('in 4s'), findsOneWidget);
+    expect(find.text('in 4 s'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('in 3s'), findsOneWidget);
+    expect(find.text('in 3 s'), findsOneWidget);
 
     // A fresh state event re-publishes the baseline: the display restarts from it.
     harness.emitState(
@@ -83,7 +83,7 @@ void main() {
       ],
     );
     await _flush(tester);
-    expect(find.text('in 5s'), findsOneWidget);
+    expect(find.text('in 5 s'), findsOneWidget);
 
     // A row without the field gets no countdown at all.
     harness.emitState(

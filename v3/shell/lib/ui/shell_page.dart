@@ -20,11 +20,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app.dart';
-import '../protocol/protocol.dart';
+import '../protocol/protocol.dart' hide Size;
 import 'card_grid.dart';
 import 'components/log_drawer.dart';
 import 'components/nav_rail.dart';
-import 'components/status_chip.dart';
 import 'crash_view.dart';
 import 'status_strip.dart';
 import 'tabs/arduino_tab.dart';
@@ -68,6 +67,14 @@ class _ShellPageState extends State<ShellPage> {
   }
 
   void _toggleLogs() => setState(() => _logsVisible = !_logsVisible);
+
+  /// Esc is the demo's close key for the logs drawer; it must not steal Esc from the rest of the
+  /// shell, so it only acts when the drawer is open (a closed drawer swallows nothing).
+  void _closeLogs() {
+    if (_logsVisible) {
+      setState(() => _logsVisible = false);
+    }
+  }
 
   /// The pin applies to the window and saves the preference; a refused save is shown with the
   /// core's own line and the model has already put the window back on the saved value.
@@ -134,6 +141,7 @@ class _ShellPageState extends State<ShellPage> {
             bindings: {
               const SingleActivator(LogicalKeyboardKey.keyL, control: true):
                   _toggleLogs,
+              const SingleActivator(LogicalKeyboardKey.escape): _closeLogs,
             },
             child: Focus(
               autofocus: true,
@@ -180,7 +188,7 @@ class _ShellPageState extends State<ShellPage> {
                       ],
                     ),
                   ),
-                  StatusStrip(model: model),
+                  StatusStrip(model: model, logsVisible: _logsVisible),
                 ],
               ),
             ),
@@ -232,21 +240,34 @@ class _TopBar extends StatelessWidget {
               const SizedBox(width: ShellSpace.sm),
               Text('Seal Tools', style: theme.textTheme.titleSmall),
               const SizedBox(width: ShellSpace.lg),
-              StatusChip(
-                key: const ValueKey('top-core-chip'),
-                kind: ready ? StatusKind.success : StatusKind.warning,
-                label:
-                    'core ${ready ? 'ready' : 'working'} · rev ${model.config.rev}',
-              ),
+              _CoreStatus(model: model),
               const Spacer(),
               TextButton.icon(
                 key: const ValueKey('logs-toggle'),
                 onPressed: onToggleLogs,
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.onSurfaceVariant,
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.sm + ShellSpace.xxs,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(ShellRadius.s),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
                 icon: Icon(
                   logsVisible ? Icons.close : Icons.menu,
-                  size: ShellSize.iconMd,
+                  size: ShellSize.iconSm,
                 ),
-                label: Text('Logs ${model.logs.entries.length}'),
+                label: Text(
+                  'Logs ${model.logs.entries.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(fontSize: 11.5),
+                ),
               ),
               IconButton(
                 key: const ValueKey('app-bar-always-on-top'),
@@ -269,6 +290,50 @@ class _TopBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The demo's top-bar core status: a success dot plus one line (`core ready · rev 7 · TW_LIVE`).
+/// The dot is decorative; the words carry the meaning, and the state still comes from the connection.
+class _CoreStatus extends StatelessWidget {
+  const _CoreStatus({required this.model});
+
+  final ShellModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = asString(asJsonMap(model.config.config['window'])['title']);
+    final ready = model.isReady;
+    final parts = <String>[
+      'core ${ready ? 'ready' : 'working'}',
+      'rev ${model.config.rev}',
+      if (title != null && title.isNotEmpty) title,
+    ];
+    return Row(
+      key: const ValueKey('top-core-chip'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: ready
+                ? context.shellColors.success
+                : context.shellColors.warning,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: ShellSpace.xs + ShellSpace.xxs),
+        Text(
+          parts.join(' · '),
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 12.5,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ],
     );
   }
 }

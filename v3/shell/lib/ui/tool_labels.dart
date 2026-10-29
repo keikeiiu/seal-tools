@@ -66,11 +66,11 @@ String formatNextAction(double? seconds) {
   }
   final whole = seconds.round();
   if (whole < 60) {
-    return 'in ${whole}s';
+    return 'in $whole s';
   }
   final minutes = whole ~/ 60;
   final rest = whole % 60;
-  return rest == 0 ? 'in ${minutes}m' : 'in ${minutes}m ${rest}s';
+  return rest == 0 ? 'in $minutes m' : 'in $minutes m $rest s';
 }
 
 /// The `countdown_s` value, or null when the core did not publish one.

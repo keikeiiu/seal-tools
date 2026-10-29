@@ -67,8 +67,8 @@ The window opens on the **Cards** screen. A **left rail** holds the navigation i
 Feeder) and **SYSTEM** (Attributes, Arduino, Hotkeys, Setup, Calibrate) — and the **status strip** runs
 along the bottom. When the core stops or cannot start, the whole page becomes the **crash view**.
 
-- **Top bar:** `Seal Tools`, the **core status chip** (`core ready · rev <n>`), the **Logs** button, the
-  **always-on-top pin** (`Keep Seal Tools on top`) and the small product version. (The shell↔core
+- **Top bar:** `Seal Tools`, the **core status line** (`core ready · rev <n> · <window title>`), the
+  **Logs** button, the **always-on-top pin** (`Keep Seal Tools on top`) and the small product version. (The shell↔core
   protocol client identity is a separate engineering value documented in `PROTOCOL.md`; it does not
   follow the product version.) There is **no Hold Space toggle any more**: Hold Space is a card on the
   Cards screen (section 2.3).
@@ -102,18 +102,21 @@ multi-monitor setups make that clamp approximate.
 ### 2.1 The Logs drawer
 
 **Logs (N)** in the top bar (or **Ctrl+L**) opens the logs drawer along the bottom of the content;
-press either again to close it. It shows the `log` lines the core publishes (tool messages, refusals
+press either again to close it, or press **Esc**. It shows the `log` lines the core publishes (tool messages, refusals
 worth surfacing, warnings) with a level badge per line and an **All / Errors** filter. `N` is how many
 lines it holds. This is the live view; the durable per-run files are in `<root>/logs/` — see section 7.
 
 ### 2.2 The Cards screen
 
-The Cards screen answers "what is running and is it healthy?" first. Running tools appear as **full
-cards** above — a success accent, a phase chip, the core's message, the row table and a Stop button —
-and everything else is a **one-line idle tile** with an outlined **Start** (there are eight tools,
-including Hold Space; section 4 explains a run on each). When nothing runs, an empty-state banner says
-so and the tiles are the next action. A card's phase moves only when the core publishes `state`: a
-Start shows an in-flight label, never an optimistic phase.
+The Cards screen opens with a **Run** header (the running count sits on the right) and answers "what
+is running and is it healthy?" first. Running tools appear as **full cards** above — a success accent,
+a phase chip, the core's message, the row table and a Stop button. Everything else is a **one-line
+idle tile** with an icon, a short "Ready · …" summary of what Start would do, and an outlined **Start**
+(there are eight tools, including Hold Space; section 4 explains a run on each). Tiles with per-run or
+saved choices (Buy, Quest, Spammer) also show a small **tune** button: it opens those choices inside
+the card, so the collapsed tile stays one line. When nothing runs, a banner shows the next step — "No
+runs yet" on a fresh start, "Everything is idle" otherwise. A card's phase moves only when the core
+publishes `state`: a Start shows an in-flight label, never an optimistic phase.
 
 ### 2.3 Hold Space
 

@@ -46,29 +46,36 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
   Selecting builds the destination lazily and keeps it alive in an `IndexedStack`, so drafts survive
   navigation exactly as they did with the old kept-alive tabs. **Hold Space has no rail row** — it has
   nothing to configure.
-- **Top bar (48 px):** `Seal Tools`, a core status chip (`core ready · rev <n>`), **Logs (N)**, the
-  always-on-top pin (`app-bar-always-on-top`) and the product version. **There is no Hold Space toggle.**
+- **Top bar (48 px):** `Seal Tools`, a compact core status line (`core ready · rev <n> · <window
+  title>`; a success dot, not a pill), the outlined **Logs (N)** button, the always-on-top pin
+  (`app-bar-always-on-top`) and the product version. **There is no Hold Space toggle.**
 - **Status strip:** core version/rev and the core's root on the left, `Ctrl+L logs` on the right. It
   advertises the shortcut; the drawer is opened from the top bar or Ctrl+L.
 - **Logs drawer (`LogDrawer`):** 238 px along the bottom of the content, a level badge per line
   (info/warn/error; stderr is treated as error), origin shown for stderr/shell lines, an
-  **All / Errors** filter and a close button. Monospace body. Ctrl+L toggles it.
+  **All / Errors** filter and a close button. Monospace body. Ctrl+L toggles it; **Esc closes it**
+  (the status strip advertises both while open).
 
 ## Cards screen
 
-The screen answers "what is running, and is it healthy?" before configuration. It has two sections:
+The screen opens with a **Run** page header (22/600 title, prose-capped subtitle, a running-count
+status chip on the right) and answers "what is running, and is it healthy?" before configuration. It
+has two sections:
 
 - **Running now** — one full card per engaged tool: 3 px success accent, title 16/600, a
-  `StatusChip` (running/starting/stopping), the core's one-line message, its countdown, the core's rows
-  as a table with `ROW / STATUS / DETAIL / NEXT` labels, the finished/refusal lines verbatim, and
-  **Stop** as the one action (error-container button).
-- **Available tools** — one-line tiles: tool icon, name, one-line state (Hold Space says
-  "Off · spacebar auto-pickup"; a tool whose snapshot message exists shows it), optional card-specific
-  settings (Buy's per-run picker, Quest target, Spammer rotation) and an outlined **Start**. Start is
-  always visible (the eight recommendations taken with this plan).
-- When nothing runs, an **empty state** ("No runs yet") with the next action replaces the running
-  section; the tiles follow. There is no fixed card height: the running cards are content-sized and the
-  tiles wrap 3/2/1 columns by width.
+  `StatusChip` (running/starting/stopping), a `foreground`/`resident` scope word, the core's
+  one-line message, its countdown in mono, the core's rows as a table with `ROW / STATUS / DETAIL /
+  NEXT` headers, the finished/refusal lines verbatim, and **Stop** as the one action (error-container
+  button).
+- **Available tools** — one-line tiles: a 34 px icon well, the name, a "Ready · …" summary computed
+  from the same config/run state Start reads (preset/count, armed slots, active rotation, target
+  grade…), and an outlined **Start**. Buy/Quest/Spammer additionally show a small **tune** button that
+  reveals their choices inside the card (`options-<tool>`); collapsed tiles stay one line. Start is
+  always visible. Hold Space's tile says "Off · spacebar auto-pickup" and has no options.
+- When nothing runs, a banner replaces the running section: **No runs yet** while no tool has ever
+  published a `state`, **Everything is idle** once they have. There is no fixed card height: running
+  cards are content-sized and tiles wrap 3/2/1 columns by width (3 only when the content is wide enough
+  for the demo's ~380 px tiles).
 - **In-flight:** a Start/Stop disables and labels itself ("Starting…"/"Stopping…") with a spinner until
   the core's next `state` arrives. The card's phase never moves optimistically.
 - **Hold Space is a card** at the same level as the other tools: Start holds the spacebar, Stop releases

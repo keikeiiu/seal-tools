@@ -159,7 +159,14 @@ class ShellRail extends StatelessWidget {
     }
     return Container(
       width: ShellWidth.rail,
-      color: theme.colorScheme.surfaceContainerLow,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(
+          right: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+      ),
       child: ListView(
         key: const ValueKey('shell-rail'),
         padding: const EdgeInsets.symmetric(

@@ -64,6 +64,17 @@ Future<AppHarness> _pumpCards(
   }
   await connecting;
   await tester.pump();
+  // PLAN-V3-UI-UX demo parity: the tile face is one line and its options live behind the tune button.
+  // These tests are about the controls themselves, so reveal them once here.
+  for (final tool in const ['buy', 'spammer', 'quest']) {
+    final options = find.byKey(ValueKey('options-$tool'));
+    if (options.evaluate().isEmpty) {
+      continue;
+    }
+    await tester.ensureVisible(options);
+    await tester.tap(options);
+    await tester.pump();
+  }
   return harness;
 }
 

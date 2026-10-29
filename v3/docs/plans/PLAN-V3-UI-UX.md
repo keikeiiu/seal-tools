@@ -390,6 +390,16 @@ the in-flight Start label; the 1120×680 minimum enforced by `WM_GETMINMAXINFO` 
 class, so the constant lives there). Buy and Sell rail rows both open the existing Buy/Sell tab until
 Phase 2 splits them. Renders: `.scratch/ui-audit/shots/phase1-*.png`.
 
+Demo-parity follow-up (same day, after the first player pass): the Run screen now carries the demo's
+page header (title + prose subtitle + running-count chip); the top bar's core status is the demo's
+compact dot + line (`core ready · rev 7 · TW_LIVE`); running cards have the demo's bordered surface,
+scope word, mono countdown and separated danger footer; idle tiles match the demo anatomy (34 px icon
+well, name, one-line Ready summary, outlined Start) and their Buy/Quest/Spammer options moved behind a
+small tune button so the tile face stays one line; the table headers are upper-case and countdowns are
+spaced (`in 30 m`); Ctrl+L opens the logs drawer and Esc closes it. Refreshing the page from the demo's
+header was **not** built: the Cards screen is event-driven (there is no pull command), so a Refresh
+button would be a lie.
+
 ## 8. Verification for each phase
 
 - `flutter analyze` and `flutter test` from `v3/shell/` (the existing 142-test suite is the regression

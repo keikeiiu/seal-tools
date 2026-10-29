@@ -62,7 +62,7 @@ Spammer、Magic Tuner、Gem Composer、Buy、Sell、Quest Hand-in、Pet Feeder�
 Arduino、Hotkeys、Setup、Calibrate）—— 底部是**狀態列**。核心停止或無法啟動時，整個頁面會變成
 **當機畫面（crash view）**。
 
-- **頂端列：** `Seal Tools`、**核心狀態 chip**（`core ready · rev <n>`）、**Logs** 按鈕、
+- **頂端列：** `Seal Tools`、**核心狀態列**（`core ready · rev <n> · <視窗標題>`）、**Logs** 按鈕、
   **always-on-top 釘選鈕**（`Keep Seal Tools on top`）與小小的產品版本。（殼層↔核心的協定用戶端身分
   是另一個工程值，記在 `PROTOCOL.md`；它不跟著產品版本走。）現在**沒有 Hold Space 切換鈕**：Hold Space
   是 Cards 畫面上的一張卡片（見 2.3）。
@@ -90,16 +90,19 @@ Arduino、Hotkeys、Setup、Calibrate）—— 底部是**狀態列**。核心�
 
 ### 2.1 Logs 抽屜
 
-頂端列的 **Logs (N)**（或 **Ctrl+L**）會在內容底部打開日誌抽屜；再按一次（或再按 Ctrl+L）關閉。它顯示
+頂端列的 **Logs (N)**（或 **Ctrl+L**）會在內容底部打開日誌抽屜；再按一次（或再按 Ctrl+L）關閉，也可以按 **Esc**。它顯示
 核心發布的 `log` 行（工具訊息、值得顯示的拒絕、警告），每行有等級徽章，並有 **All / Errors** 篩選。
 `N` 是目前保留的行數。這是即時檢視；持久的分次執行檔案在 `<root>/logs/` —— 見第 7 節。
 
 ### 2.2 Cards 畫面
 
-Cards 畫面先回答「現在在跑什麼、健不健康？」。執行中的工具以**完整卡片**顯示在上方 —— 成功色強調、
-階段 chip、核心訊息、資料列與 Stop 按鈕 —— 其餘工具是**單列 idle 磚**，附一個 outlined **Start**（共
-八個工具，包含 Hold Space；第 4 節說明每張卡片的執行）。沒有工具在跑時會顯示空狀態橫幅，下一步就是
-下方的磚。卡片的階段只在核心發布 `state` 時改變：Start 會顯示進行中標籤，不會樂觀地改階段。
+Cards 畫面先是 **Run** 標頭（右側顯示執行中的數量），並優先回答「現在在跑什麼、健不健康？」。執行中
+的工具以**完整卡片**顯示在上方 —— 成功色強調、階段 chip、核心訊息、資料列與 Stop 按鈕。其餘工具是
+**單列 idle 磚**：圖示、一句「Ready · …」摘要（說明 Start 會做什麼）與 outlined **Start**（共八個工具，
+包含 Hold Space；第 4 節說明每張卡片的執行）。有單次執行或已存選擇的磚（Buy、Quest、Spammer）還有一個
+小小的 **tune** 按鈕：它會在卡片內打開那些選項，所以收起的磚仍保持單列。沒有工具在跑時會顯示橫幅提示
+下一步 —— 全新啟動是「No runs yet」，其他情況是「Everything is idle」。卡片的階段只在核心發布 `state`
+時改變：Start 會顯示進行中標籤，不會樂觀地改階段。
 
 ### 2.3 Hold Space
 
