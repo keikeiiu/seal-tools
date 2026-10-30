@@ -132,22 +132,20 @@ independent machine state in `ui` and is not the pin.
 
 The v3 shell UI is finished to the approved design ([spec/UI.md](../spec/UI.md)), including the
 narrow (960 px) layout. What is left is **backend** — the Rust core / protocol / config work behind
-disabled or absent affordances. **P1** = the shipped UI has a dead-ended or absent affordance;
+disabled or absent affordances — plus the small shell wiring a shipped core contract still asks for
+(those rows say so explicitly). **P1** = the shipped UI has a dead-ended or absent affordance;
 **P2** = it works today but the protocol fact is fragile, duplicated, or re-derived shell-side.
 Where a row says "plan", the shape is already written in
 [PLAN-V3-CALIBRATION §5.2](../plans/PLAN-V3-CALIBRATION.md) or
 [PLAN-V3-PET-SESSION §4–§6](../plans/PLAN-V3-PET-SESSION.md); do not reinvent it here. The Calibrate
 "Run session" panel (`v3/shell/lib/ui/tabs/calibration/session_panel.dart`) and its locked tree rows
-are the visible scoreboard for G01–G03; the Cards/Pet/Tuner asides are the scoreboard for G10–G12.
+are the visible scoreboard for G01–G03.
 
 | ID | Waiting UI surface | Backend contract needed | Acceptance (observable) | Pri |
 |---|---|---|---|---|
 | G01 | Calibrate · tooltip offset session (disabled **Run session**, locked tree row) | `calibration.tooltip.hover_capture` / `.save` / `.test` (plan §5.2): core owns the hover capture under the input lease, derives the offset/size, writes the existing `tooltip` block + environment | hover capture returns the placed point and a frame; save writes offset/size/delay exactly; an unset `tooltip` prerequisite is `bad_request` naming the field; live hover reads both the pet and a food panel | P1 |
 | G02 | Calibrate · tuner three-box session (disabled Run session; `tuner_region` refused) | `calibration.tuner.check` / `.save` (plan §5.2): three boxes → derived `region`/bands/`row_height` + OCR read + `calib_tuner.png` | a v2 config replay derives the same numbers and bands; save round-trips; the artifact decodes with three drawn rects; live Check OCR first (no capture), then drag and save | P1 |
 | G03 | Calibrate · pet crops/rows session (disabled Run session) | `calibration.pet.preview` / `.save` / `.test_read` (plan §5.2): boxes/count regions/ETA + per-row crops + `calib_pet.png`; writes only the calibration half | v2 replay gives the same boxes/regions/ETA with siblings preserved; test read returns per-slot `text@score` + count; live full read on four rows | P1 |
-| G10 | Cards · Tuner live detail (card shows only message/countdown today) | **core contract shipped 2026-10-30**: additive `state.detail` list `[{label?,value}]` (decided shape, PLAN-V3-STATUS-DETAIL §5) through `ToolStatus`/`ToolSnapshot` → event, Tuner publishes Grade/Remaining/Attempt/attributes/Filter; fixtures `event.state.detail`; **shell rendering is the frontend session's next step** | old fixtures still decode; the Tuner card shows grade + attempt + matched attribute while running (after shell rendering) | P1 |
-| G11 | Tuner · "Last run" aside (demo detail, absent today) | **core contract shipped 2026-10-30**: additive `tool.finished.summary` (Tuner grade/attempts/captures_saved/stopped_by) + `ended_at` UTC ISO-8601; no persistence (decided); fixture `event.tool.finished.summary`; **the aside rendering is the frontend session's step** | a fake event renders the panel (after shell rendering); a real tuner run fills it; the last finish stays until replaced | P1 |
-| G12 | Cards + Pet · per-row next action and schedule wording ("next action in 30 m" today) | **core contract shipped 2026-10-30**: additive `rows[].next_action` word (`feed`/`reload`/`check`), seconds kept; the Pet feeder sets it per row; no separate `state.schedule` field — the pet schedule line already rides `message` (PLAN-V3-STATUS-DETAIL §1.3 rejected a duplicate); fixture `event.state` pins it; **shell wording is the frontend session's step** | cards read "Next feed in 30 m" (after shell rendering); old fixtures decode | P1 |
 | G14 | Pet · feedable sweep + queue rebuild (absent) | `pet.scan_feeding_page` + `pet.scan_apply_queue` (plan §4/§6) | scripted panels classify correctly (a failed read is never `finished`); harvest returns icons for feedable cells only; an empty queue replace is refused; live one-page sweep | P1 |
 | G16 | Gem · movement editor (Movement section is a mode dropdown only) | `calibration.gem.moves.save` (plan §5.2): validates counts, writes only `gem.movements` | v2 movements round-trip; a malformed count is refused naming the route; one save touches only `gem.movements` | P1 |
 | G17 | Gem · route / cycle pointer tests (no actions) | `calibration.gem.test_route` + `calibration.gem.cycle {confirm:true}` (plan §5.2) | the route sends the exact tuned/arduino steps; cycle refuses without `confirm` then performs 21 steps; live both routes + cycle | P1 |
@@ -162,14 +160,14 @@ are the visible scoreboard for G01–G03; the Cards/Pet/Tuner asides are the sco
 | G09 | Calibrate/Setup · canonical Detect (shell re-derives the comparison) | **core contract shipped 2026-10-30**: `calibration.check {}` → live/stored/differences/matches/note, using the ported domain comparison; closed game is a result, not an error; fixture `response.ok.calibration_check`; **the Setup/Calibrate surfaces deleting their comparison copy and rendering it are the frontend session's steps** | one command yields nothing-stored / game-closed / matches / differs (core unit tests); surface rendering after frontend | P2 |
 | G18 | Gem · check-result diagnostic (absent) | `calibration.gem.check_result` (plan §5.2) | a known crop's verdict/distance match v2 within tolerance; no reference reads `no_reference`; fixture pins the fields | P2 |
 | G22 | Pet · ITEM page-up lease (PROTOCOL says the shell puts the page up; no UI code clicks) | either wire the existing `pointer.click` + the calibrated page-tab mark before capture/scan (UI-only), or add a session command holding the input lease; PROTOCOL §4's wording is fixed to today's truth | the requested page is clicked, or the command refuses when it cannot be verified; the wrong-page caveat disappears | P2 |
-| G25 | Tuner · OCR fidelity (gates G10/G11 acceptance) | no protocol change: fill `ocr.scan`'s `grade`/`remaining`, add v2's grade-colour fallback and the retry/last-retry capture (`tuner.ocr_retries` is currently unused) | archived/v2-recorded tuner frames produce the same grade, remaining and attributes as v2; the retry path is exercised | P2 |
+| G25 | Tuner · OCR fidelity (gates the Tuner live-detail/Last-run acceptance) | no protocol change: fill `ocr.scan`'s `grade`/`remaining`, add v2's grade-colour fallback and the retry/last-retry capture (`tuner.ocr_retries` is currently unused) | archived/v2-recorded tuner frames produce the same grade, remaining and attributes as v2; the retry path is exercised | P2 |
 
-**Counts:** 13 P1 and 9 P2. The three highest-leverage commands are the three session writers that
+**Counts:** 9 P1 and 9 P2. The additive status-detail set (G10–G12: `state.detail`, `rows[].next_action`,
+`tool.finished.summary`/`ended_at`) shipped core-side and was rendered shell-side on 2026-10-30, so it
+has left this list; G06–G09's core contracts are shipped and their rows now ask only for the shell
+wiring. The three highest-leverage remaining commands are the three session writers that
 clear the whole disabled Calibrate panel — `calibration.pet.save` (+ preview/test_read),
-`calibration.tuner.check`/`save`, and `calibration.tooltip.hover_capture`/`save`/`test`. The cheapest
-cross-cutting win is the additive `state.details` + `rows[].next_action` + `tool.finished.summary`/
-`ended_at` set: it unblocks three surfaces (Tuner live detail, Last run, Pet per-row countdown) with
-optional `v:1` fields and no config schema change.
+`calibration.tuner.check`/`save`, and `calibration.tooltip.hover_capture`/`save`/`test`.
 
 ### Decisions that gate rows (player/Lead, not engineering tasks yet)
 
