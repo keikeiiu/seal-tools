@@ -1,0 +1,73 @@
+{
+  "case": "response.ok.calibration_fetch_all",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "53",
+    "ok": true,
+    "result": {
+      "rev": 10,
+      "calibration": {
+        "dpi_scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": [
+          1920,
+          1080
+        ],
+        "client_size": [
+          1200,
+          600
+        ],
+        "measured_at": "2026-10-30T12:00:00Z"
+      },
+      "marks": [
+        {
+          "kind": "bag_grid",
+          "target": null,
+          "mark": [
+            12,
+            47,
+            300,
+            200
+          ],
+          "artifact": null
+        },
+        {
+          "kind": "pet_toggle",
+          "target": "1",
+          "mark": [
+            100,
+            100,
+            20,
+            20
+          ],
+          "artifact": null
+        },
+        {
+          "kind": "result_gem_area",
+          "target": null,
+          "mark": [
+            610,
+            800,
+            220,
+            60
+          ],
+          "artifact": {
+            "file": "calib_gem_result.png",
+            "png_base64": "iVBORw0KGgo="
+          }
+        }
+      ],
+      "withdrawn": [
+        {
+          "name": "focus_point",
+          "reason": "replaced by scroll_point"
+        },
+        {
+          "name": "tuner_region",
+          "reason": "the three-box session is not built yet"
+        }
+      ]
+    }
+  }
+}

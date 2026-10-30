@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 38 request fixtures.
+/// The 42 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -126,6 +126,14 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.fetch', message),
   'request.calibration.save': (message) =>
       _request('request.calibration.save', message),
+  'request.calibration.save.with_rev': (message) =>
+      _request('request.calibration.save.with_rev', message),
+  'request.calibration.fetch_all': (message) =>
+      _request('request.calibration.fetch_all', message),
+  'request.calibration.kinds': (message) =>
+      _request('request.calibration.kinds', message),
+  'request.calibration.check': (message) =>
+      _request('request.calibration.check', message),
   'request.calibration.fetch.targeted': (message) =>
       _request('request.calibration.fetch.targeted', message),
   'request.calibration.save.empty': (message) =>
@@ -334,6 +342,21 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.calibration_fetch': (message) => _ok(
     'response.ok.calibration_fetch',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_fetch_all': (message) => _ok(
+    'response.ok.calibration_fetch_all',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_kinds': (message) => _ok(
+    'response.ok.calibration_kinds',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.calibration_check': (message) => _ok(
+    'response.ok.calibration_check',
     message,
     EnvelopePayload(_result(message)),
   ),

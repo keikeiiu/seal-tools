@@ -14,7 +14,10 @@
       ],
       "derived": {},
       "artifact": null,
-      "target": "N"
+      "target": "N",
+      "calibration": {
+        "measured_at": "2026-10-30T12:00:00Z"
+      }
     }
   }
 }

@@ -21,7 +21,8 @@
 //!   a mark that references a missing crop is not.
 
 use base64::Engine as _;
-use seal_domain::geometry::Rect;
+use seal_domain::config::CalibrationInfo;
+use seal_domain::geometry::{DisplayInfo, Rect};
 use seal_domain::tools::gem::analyze_composition;
 use seal_proto::{Error, Request, Response};
 use serde_json::{Map, Value, json};
@@ -589,6 +590,26 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
             json!({"kinds": supported()}),
         );
     };
+    // G06: optional compare-and-set. Absent keeps the legacy last-write-wins path; present and
+    // stale is refused BEFORE validation, artifacts or the first write, carrying the current rev and
+    // the block the save would have touched (the config.apply conflict shape).
+    if let Some(rev) = match args.get("rev") {
+        None => None,
+        Some(value) => match value.as_u64() {
+            Some(rev) => Some(rev),
+            None => {
+                return fail(
+                    &request.id,
+                    "calibration.save's \"rev\" must be a non-negative integer",
+                    json!({"kind": kind_name}),
+                );
+            }
+        },
+    } && rev != state.rev
+    {
+        return calibration_conflict(state, &request.id, def);
+    }
+
     let empty = match empty_argument(def, args) {
         Ok(empty) => empty,
         Err(message) => return fail(&request.id, message, json!({"kind": kind_name})),
@@ -777,15 +798,13 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         _ => json!({}),
     };
 
-    // The marks and the environment travel in ONE local.yaml write.
+    // The marks and the environment travel in ONE local.yaml write. `measured_at` is stamped on
+    // EVERY calibration save (G07) — the mark was measured now even when the shell sent no display
+    // environment — and the block as written is echoed back so the shell never re-derives it.
     let mark_for_write = mark.clone();
     let display = args.get("display").cloned();
-    let environment = json!({
-        "dpi_scale": display.as_ref().and_then(|d| d.get("dpi_scale")).cloned(),
-        "monitor_dpi": display.as_ref().and_then(|d| d.get("monitor_dpi")).cloned(),
-        "screen": display.as_ref().and_then(|d| d.get("screen")).cloned(),
-        "client_size": [frame_width, frame_height],
-    });
+    let measured_at = crate::events::utc_now_rfc3339();
+    let mut calibration_echo = Value::Null;
     if let Err(error) = state.store.update_local(|local| {
         if let Some(target) = &target {
             set_instance_mark(local, def, target, mark_for_write);
@@ -795,28 +814,34 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         if !signature.is_null() {
             set_path(local, &["gem", "empty_signature"], signature.clone());
         }
-        if display.is_some() {
-            if !local.get("calibration").is_some_and(Value::is_object) {
-                set_path(local, &["calibration"], json!({}));
-            }
-            let mut calibration = local
-                .get("calibration")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
+        if !local.get("calibration").is_some_and(Value::is_object) {
+            set_path(local, &["calibration"], json!({}));
+        }
+        if let Some(display) = &display {
+            let environment = json!({
+                "dpi_scale": display.get("dpi_scale"),
+                "monitor_dpi": display.get("monitor_dpi"),
+                "screen": display.get("screen"),
+            });
             for (key, value) in environment.as_object().into_iter().flatten() {
                 if !value.is_null() {
-                    set_path(&mut calibration, &[key], value.clone());
+                    set_path(local, &["calibration", key], value.clone());
                 }
             }
             set_path(
-                &mut calibration,
-                &["client_size"],
+                local,
+                &["calibration", "client_size"],
                 json!([frame_width, frame_height]),
             );
-            set_path(local, &["calibration"], calibration);
         }
+        set_path(local, &["calibration", "measured_at"], json!(measured_at));
+        calibration_echo = local.get("calibration").cloned().unwrap_or(Value::Null);
     }) {
         return io_fail(&request.id, error.to_string());
+    }
+    // Keep the in-memory merged view identical to the file for later commands/conflicts.
+    if let Some(object) = state.config.as_object_mut() {
+        object.insert("calibration".to_owned(), calibration_echo.clone());
     }
 
     // The merged view the shell reads stays the merge: apply the same mark to the in-memory config
@@ -843,6 +868,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         "mark": mark,
         "derived": derived,
         "artifact": artifact,
+        "calibration": calibration_echo,
     });
     if let Some(target) = &target {
         result["target"] = json!(target.echo);
@@ -921,6 +947,241 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
     Response::ok(&request.id, result)
 }
 
+/// A stale `calibration.save`: refuse without writing, carrying the current rev and the block the
+/// save would have touched (the `config.apply` conflict shape, G06).
+fn calibration_conflict(state: &CoreState, id: &str, def: &KindDef) -> Response {
+    let block = def.path[0];
+    let mut sections = Map::new();
+    sections.insert(
+        block.to_owned(),
+        state.config.get(block).cloned().unwrap_or(Value::Null),
+    );
+    Response::err(
+        id,
+        Error::new(
+            "conflict",
+            "calibration changed while you were editing",
+            json!({"rev": state.rev, "sections": sections, "kind": def.name}),
+        ),
+    )
+}
+
+/// `calibration.kinds {}`: the core-owned catalog of every calibratable mark, so the shell stops
+/// copying the table and a new kind appears without a shell edit (G08).
+pub fn kinds(request: &Request) -> Response {
+    Response::ok(&request.id, catalog())
+}
+
+pub(crate) fn catalog() -> Value {
+    let kinds = KINDS
+        .iter()
+        .map(|def| {
+            json!({
+                "name": def.name,
+                "shape": match def.shape {
+                    Shape::Rect => "rect",
+                    Shape::Point => "point",
+                },
+                "block": def.path[0],
+                "path": def.path,
+                "artifact": def.artifact,
+                "targets": match def.targets {
+                    Targets::None => "none",
+                    Targets::PageTab => "page_tab",
+                    Targets::PetRow => "pet_row",
+                    Targets::GemGrade => "gem_grade",
+                    Targets::GemResource => "gem_resource",
+                },
+                "row_key": def.row_key,
+            })
+        })
+        .collect::<Vec<Value>>();
+    json!({"kinds": kinds, "withdrawn": withdrawn_catalog()})
+}
+
+fn withdrawn_catalog() -> Value {
+    let mut entries = Vec::new();
+    for name in ["focus_point", "tuner_region"] {
+        if let Some(reason) = withdrawn_line(name) {
+            entries.push(json!({"name": name, "reason": reason}));
+        }
+    }
+    Value::Array(entries)
+}
+
+/// `calibration.fetch_all {}`: every stored mark plus the environment block in ONE local read, so
+/// opening the workspace is one request rather than ~35 fetches (G08). Artifacts stay per-kind (only
+/// one kind has one today) and are read best-effort like `fetch` does.
+pub fn fetch_all(state: &CoreState, request: &Request) -> Response {
+    let local = match state.store.load_local() {
+        Ok(local) => local,
+        Err(error) => return io_fail(&request.id, error.to_string()),
+    };
+    let calibration = match local.get("calibration").cloned() {
+        Some(value) if value.is_object() => value,
+        _ => Value::Null,
+    };
+    let mut marks = Vec::new();
+    for def in KINDS {
+        let mut targets = target_echoes(def, &state.config);
+        if targets.is_empty() {
+            targets.push(String::new());
+        }
+        for echo in targets {
+            let targeted = !echo.is_empty();
+            let mark = if targeted {
+                instance_value_for_echo(&local, def, &echo)
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            } else {
+                get_path(&local, def.path).cloned().unwrap_or(Value::Null)
+            };
+            let artifact = match def.artifact {
+                Some(name) => match artifact_json(state, name) {
+                    Ok(value) => value,
+                    Err(message) => return io_fail(&request.id, message),
+                },
+                None => Value::Null,
+            };
+            marks.push(json!({
+                "kind": def.name,
+                "target": if targeted { Value::String(echo) } else { Value::Null },
+                "mark": mark,
+                "artifact": artifact,
+            }));
+        }
+    }
+    Response::ok(
+        &request.id,
+        json!({
+            "rev": state.rev,
+            "calibration": calibration,
+            "marks": marks,
+            "withdrawn": withdrawn_catalog(),
+        }),
+    )
+}
+
+/// The instances a targeted kind carries in the CURRENT merged config, on the wire's own form.
+fn target_echoes(def: &KindDef, config: &Value) -> Vec<String> {
+    match def.targets {
+        Targets::None => Vec::new(),
+        Targets::PageTab => (1..=carried_len(config, def))
+            .map(|index| format!("ITEM{index}"))
+            .collect(),
+        Targets::PetRow | Targets::GemResource => (1..=carried_len(config, def))
+            .map(|index| index.to_string())
+            .collect(),
+        Targets::GemGrade => config
+            .get("gem")
+            .and_then(|gem| gem.get("grade_positions"))
+            .and_then(Value::as_object)
+            .map(|positions| positions.keys().cloned().collect())
+            .unwrap_or_default(),
+    }
+}
+
+/// One named instance's stored mark, addressed by its WIRE echo (`ITEM2`, `"3"`, `N`).
+fn instance_value_for_echo<'a>(root: &'a Value, def: &KindDef, echo: &str) -> Option<&'a Value> {
+    let container = instance_container(root, def)?;
+    match def.targets {
+        Targets::GemGrade => container.get(echo),
+        Targets::PetRow => {
+            let index = echo.parse::<usize>().ok()? - 1;
+            let row = container.get(index)?;
+            row.get(def.row_key?)
+        }
+        _ => {
+            let index = echo
+                .strip_prefix("ITEM")
+                .unwrap_or(echo)
+                .parse::<usize>()
+                .ok()?
+                - 1;
+            container.get(index)
+        }
+    }
+}
+
+fn artifact_json(state: &CoreState, name: &str) -> Result<Value, String> {
+    let path = state.store.path_of(name);
+    if !path.is_file() {
+        return Ok(Value::Null);
+    }
+    match std::fs::read(&path) {
+        Ok(bytes) => Ok(json!({
+            "file": name,
+            "png_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        })),
+        Err(error) => Err(format!("cannot read {}: {error}", path.display())),
+    }
+}
+
+/// `calibration.check {}`: one canonical Detect answer (G09). The rule is the domain's
+/// [`seal_domain::calibration::differences`]; this function only measures the live side and shapes
+/// the answer. A closed game is NOT an error — `live: null` and a note say why, and `matches` stays
+/// null because nothing was compared.
+pub fn check(state: &CoreState, request: &Request) -> Response {
+    let local = match state.store.load_local() {
+        Ok(local) => local,
+        Err(error) => return io_fail(&request.id, error.to_string()),
+    };
+    let stored = match local.get("calibration").cloned() {
+        Some(value) if value.is_object() => Some(value),
+        _ => None,
+    };
+    let title = match crate::win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return crate::dispatch::win_error_response(&request.id, error),
+    };
+    let (live, note) = match crate::win::measure(&title) {
+        Ok(value) => (value.get("display").cloned(), None),
+        Err(crate::win::CommandError::NotFound { .. }) => (None, Some("game window not open")),
+        Err(error) => return crate::dispatch::win_error_response(&request.id, error),
+    };
+    Response::ok(
+        &request.id,
+        check_answer(stored.as_ref(), live.as_ref(), note),
+    )
+}
+
+/// The Detect answer, pure and testable: stored/live/differences/matches/note. `matches` is null
+/// unless BOTH sides exist (nothing stored = nothing to match; game closed = nothing compared).
+pub(crate) fn check_answer(
+    stored: Option<&Value>,
+    live: Option<&Value>,
+    note: Option<&str>,
+) -> Value {
+    let stored_view = stored.filter(|value| value.is_object()).map(|value| {
+        json!({
+            "scale": value.get("dpi_scale").cloned().unwrap_or(Value::Null),
+            "monitor_dpi": value.get("monitor_dpi").cloned().unwrap_or(Value::Null),
+            "screen": value.get("screen").cloned().unwrap_or(Value::Null),
+            "client_size": value.get("client_size").cloned().unwrap_or(Value::Null),
+            "measured_at": value.get("measured_at").cloned().unwrap_or(Value::Null),
+        })
+    });
+    let stored_info =
+        stored.and_then(|value| serde_json::from_value::<CalibrationInfo>(value.clone()).ok());
+    let live_info =
+        live.and_then(|value| serde_json::from_value::<DisplayInfo>(value.clone()).ok());
+    let differences = match (&stored_info, &live_info) {
+        (Some(stored), Some(live)) => seal_domain::calibration::differences(stored, live),
+        _ => Vec::new(),
+    };
+    let matches = match (&stored_info, &live_info) {
+        (Some(_), Some(_)) => Some(differences.is_empty()),
+        _ => None,
+    };
+    json!({
+        "live": live,
+        "stored": stored_view,
+        "differences": differences,
+        "matches": matches,
+        "note": note,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -962,5 +1223,85 @@ mod tests {
         let derived = json!({"pitch": {"w": rect.w as f64 / 8.0, "h": rect.h as f64 / 8.0}});
         assert_eq!(derived["pitch"]["w"], json!(100.0));
         assert_eq!(derived["pitch"]["h"], json!(75.0));
+    }
+
+    /// `CalibrationCheck` input on 1920×1080 at 1.5×: physical client 1200×600, logical 800×400.
+    fn live_display() -> Value {
+        let display = DisplayInfo::from_rects(
+            Rect::new(10, 20, 1200, 600),
+            Rect::new(10, 20, 1200, 600),
+            Rect::new(10, 20, 800, 400),
+            seal_domain::geometry::Size::new(1920, 1080),
+        );
+        serde_json::to_value(display).expect("DisplayInfo serialises")
+    }
+
+    #[test]
+    fn check_matches_when_the_stored_environment_matches_the_live_one() {
+        let live = live_display();
+        let stored = json!({
+            "dpi_scale": 1.5,
+            "monitor_dpi": 144,
+            "screen": [1920, 1080],
+            "client_size": [1200, 600],
+            "measured_at": "2026-10-30T12:00:00Z",
+        });
+        let answer = check_answer(Some(&stored), Some(&live), None);
+        assert_eq!(answer["matches"], true);
+        assert_eq!(answer["differences"], json!([]));
+        assert_eq!(answer["live"]["scale"], 1.5);
+        assert_eq!(answer["stored"]["scale"], 1.5);
+        assert_eq!(answer["stored"]["measured_at"], "2026-10-30T12:00:00Z");
+    }
+
+    #[test]
+    fn check_lists_every_moved_field_in_v2s_order() {
+        let live = live_display();
+        let stored = json!({
+            "dpi_scale": 1.25,
+            "screen": [2560, 1440],
+            "client_size": [1000, 600],
+        });
+        let answer = check_answer(Some(&stored), Some(&live), None);
+        assert_eq!(answer["matches"], false);
+        let differences = answer["differences"].as_array().expect("an array");
+        assert_eq!(differences.len(), 3, "{differences:?}");
+        assert!(differences[0].as_str().unwrap().starts_with("scale "));
+        assert!(differences[1].as_str().unwrap().starts_with("client "));
+        assert!(differences[2].as_str().unwrap().starts_with("screen "));
+    }
+
+    #[test]
+    fn check_is_not_an_error_without_a_stored_calibration_or_a_live_one() {
+        let live = live_display();
+        let nothing_stored = check_answer(None, Some(&live), None);
+        assert!(nothing_stored["stored"].is_null());
+        assert!(nothing_stored["matches"].is_null());
+        assert_eq!(nothing_stored["differences"], json!([]));
+
+        let game_closed = check_answer(
+            Some(&json!({"dpi_scale": 1.5})),
+            None,
+            Some("game window not open"),
+        );
+        assert!(game_closed["live"].is_null());
+        assert!(game_closed["matches"].is_null());
+        assert_eq!(game_closed["note"], "game window not open");
+    }
+
+    #[test]
+    fn the_catalog_names_every_kind_and_every_withdrawal() {
+        let catalog = catalog();
+        let kinds = catalog["kinds"].as_array().expect("kinds array");
+        assert_eq!(kinds.len(), KINDS.len());
+        assert!(kinds.iter().any(|kind| kind["name"] == "bag_grid"));
+        assert!(kinds.iter().any(|kind| kind["targets"] == "pet_row"));
+        let withdrawn = catalog["withdrawn"].as_array().expect("withdrawn array");
+        assert!(
+            withdrawn
+                .iter()
+                .any(|entry| entry["name"] == "tuner_region"),
+            "{withdrawn:?}"
+        );
     }
 }

@@ -20,7 +20,10 @@
           "h": 25.0
         }
       },
-      "artifact": null
+      "artifact": null,
+      "calibration": {
+        "measured_at": "2026-10-30T12:00:00Z"
+      }
     }
   }
 }

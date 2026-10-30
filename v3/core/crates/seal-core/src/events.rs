@@ -188,7 +188,7 @@ pub fn tool_finished_event(tool: ToolId, reason: &StopReason, summary: Option<&V
 /// `std` exposes UTC without a calendar dependency; the conversion is Howard Hinnant's
 /// days-to-civil algorithm, the same one `seal-win` uses for its non-Windows fallback. Seconds
 /// resolution: the timestamp names the finish, not a frame.
-fn utc_now_rfc3339() -> String {
+pub(crate) fn utc_now_rfc3339() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let seconds = SystemTime::now()

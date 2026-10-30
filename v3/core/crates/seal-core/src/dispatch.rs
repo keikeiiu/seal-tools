@@ -481,6 +481,9 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "logs.cleanup_captures" => logs_cleanup_captures(state, &request),
         "calibration.save" => crate::calibration::save(state, &request),
         "calibration.fetch" => crate::calibration::fetch(state, &request),
+        "calibration.fetch_all" => crate::calibration::fetch_all(state, &request),
+        "calibration.kinds" => crate::calibration::kinds(&request),
+        "calibration.check" => crate::calibration::check(state, &request),
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),
@@ -1646,7 +1649,7 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
 
 /// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` 禮6). The Win32 detail
 /// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
-fn win_error_response(id: &str, error: win::CommandError) -> Response {
+pub(crate) fn win_error_response(id: &str, error: win::CommandError) -> Response {
     let line = error.line();
     match error {
         win::CommandError::MissingTitle => bad_request(id, &line, json!({"section": "window"})),

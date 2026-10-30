@@ -1102,3 +1102,154 @@ fn the_target_field_rules_are_pinned() {
         assert!(kinds.iter().any(|value| value == kind), "missing {kind}");
     }
 }
+
+// ── G06/G07/G08: compare-and-set, environment echo, one-open fetch ───────────────────────────
+
+#[test]
+fn a_stale_rev_is_refused_without_writing_and_answers_the_current_block() {
+    let (_dir, mut state, frame_id) = harness(800, 600);
+    let mark = json!({"kind": "bag_grid", "region": {"x": 0, "y": 0, "w": 800, "h": 600}});
+    let first = save(&mut state, &frame_id, mark.clone());
+    let rev = first["rev"].as_u64().expect("a revision");
+
+    // A save from a shell that has not seen the first write.
+    let error = save_error(
+        &mut state,
+        &frame_id,
+        json!({
+            "kind": "bag_grid",
+            "rev": rev - 1,
+            "region": {"x": 10, "y": 10, "w": 400, "h": 300},
+        }),
+    );
+    assert_eq!(error.code, "conflict");
+    assert_eq!(error.detail["rev"], rev, "the current revision travels");
+    assert_eq!(
+        error.detail["sections"]["buy_sell"]["bag_grid"], first["mark"],
+        "the conflict carries the block the save would have touched (config.apply shape)"
+    );
+    assert_eq!(
+        fetch(&mut state, json!({"kind": "bag_grid"}))["mark"],
+        first["mark"],
+        "a refused save writes nothing"
+    );
+
+    // The current rev is accepted, and the following write bumps it.
+    let second = save(
+        &mut state,
+        &frame_id,
+        json!({
+            "kind": "bag_grid",
+            "rev": rev,
+            "region": {"x": 10, "y": 10, "w": 400, "h": 300},
+        }),
+    );
+    assert!(second["rev"].as_u64().unwrap() > rev);
+}
+
+#[test]
+fn save_stamps_measured_at_and_echoes_the_written_calibration_block() {
+    let (dir, mut state, frame_id) = harness(800, 600);
+
+    let saved = save(
+        &mut state,
+        &frame_id,
+        json!({
+            "kind": "scroll_point",
+            "point": {"x": 50, "y": 60},
+            "display": {"dpi_scale": 1.5, "monitor_dpi": 144, "screen": {"w": 1920, "h": 1080}},
+        }),
+    );
+    let calibration = saved["calibration"].clone();
+    assert_eq!(calibration["dpi_scale"], 1.5);
+    assert_eq!(calibration["monitor_dpi"], 144);
+    assert_eq!(calibration["screen"], json!({"w": 1920, "h": 1080}));
+    assert_eq!(calibration["client_size"], json!([800, 600]));
+    let measured_at = calibration["measured_at"]
+        .as_str()
+        .expect("measured_at is stamped");
+    assert_eq!(measured_at.len(), 20, "{measured_at}");
+    assert!(measured_at.ends_with('Z'), "{measured_at}");
+    assert!(
+        dir.read("config/local.yaml").contains("measured_at"),
+        "the stamp reached local.yaml"
+    );
+
+    // A save without a display still measures NOW: the mark was taken at this moment.
+    let legacy = save(
+        &mut state,
+        &frame_id,
+        json!({"kind": "scroll_point", "point": {"x": 70, "y": 80}}),
+    );
+    assert!(
+        legacy["calibration"]["measured_at"].is_string(),
+        "every calibration save is stamped: {legacy}"
+    );
+    assert_eq!(
+        legacy["calibration"]["dpi_scale"], 1.5,
+        "the earlier measured environment is preserved when no display is sent"
+    );
+}
+
+#[test]
+fn fetch_all_answers_every_mark_and_the_catalog_is_core_owned() {
+    let (_dir, mut state, _frame_id) = targeted_state();
+
+    let response = handle(
+        &mut state,
+        Request::new("open", "calibration.fetch_all", json!({})),
+    );
+    assert!(response.ok, "fetch_all failed: {:?}", response.error);
+    let result = response.result.expect("a result");
+    let marks = result["marks"].as_array().expect("a marks array");
+    let find = |kind: &str, target: Option<&str>| {
+        marks.iter().find(|entry| {
+            entry["kind"] == kind
+                && match target {
+                    Some(target) => entry["target"] == target,
+                    None => entry["target"].is_null(),
+                }
+        })
+    };
+    assert!(find("bag_grid", None).is_some(), "the untargeted mark");
+    assert!(
+        find("pet_toggle", Some("1")).is_some(),
+        "every configured pet row"
+    );
+    assert!(
+        find("pet_toggle", Some("4")).is_some(),
+        "four pet rows configured"
+    );
+    assert!(
+        find("pet_page_tab", Some("ITEM2")).is_some(),
+        "page tabs use the wire names"
+    );
+    assert!(
+        find("gem_grade", Some("N")).is_some(),
+        "gem grades use the configured keys"
+    );
+    assert_eq!(
+        find("pet_toggle", Some("1")).unwrap()["mark"],
+        json!([100, 100, 20, 20])
+    );
+
+    let response = handle(
+        &mut state,
+        Request::new("catalog", "calibration.kinds", json!({})),
+    );
+    assert!(response.ok, "kinds failed: {:?}", response.error);
+    let catalog = response.result.expect("a catalog");
+    let kinds = catalog["kinds"].as_array().expect("kinds");
+    assert_eq!(kinds.len(), 18, "the core's table is the one source");
+    assert!(
+        kinds.iter().any(|kind| kind["targets"] == "page_tab"),
+        "the shell can discover named-instance rules"
+    );
+    let withdrawn = catalog["withdrawn"].as_array().expect("withdrawn");
+    assert!(
+        withdrawn
+            .iter()
+            .any(|entry| entry["name"] == "tuner_region"),
+        "withdrawn kinds travel with their reason"
+    );
+}

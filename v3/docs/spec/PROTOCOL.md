@@ -126,8 +126,11 @@ edits; it never re-serialises the whole file (§7).
 | `window.find` | `{}` | `{"found":true,"title":"Seal Online ..."}` |
 | `window.measure` | `{}` | `{"display":{...}}` |
 | `capture` | `{"region":{"x":..,"y":..,"w":..,"h":..}}` | `{"frame":{...},"display":{...}}` |
-| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"frame_id":"f1","kind":"scroll_point","point":{...}}`; `{"frame_id":"f1","kind":"result_gem_area","region":{...},"empty":true}`; a named instance carries `target`, e.g. `{"kind":"gem_grade","point":{...},"target":"N"}`; optional `display` writes the environment. **Every save needs the `frame_id` of a live capture** — the core keeps the last four frames; an evicted id is `bad_request: unknown frame_id` and the shell must capture again (it never re-captures automatically) | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null}` (a targeted save echoes `"target"`) |
+| `calibration.save` | `{"frame_id":"f1","kind":"bag_grid","region":{...}}` or `{"frame_id":"f1","kind":"scroll_point","point":{...}}`; `{"frame_id":"f1","kind":"result_gem_area","region":{...},"empty":true}`; a named instance carries `target`, e.g. `{"kind":"gem_grade","point":{...},"target":"N"}`; optional `display` writes the environment; optional `rev` is a compare-and-set (G06: a stale rev is `conflict` with the current `rev` + the touched block in the `config.apply` shape, and nothing is written or consumed). **Every save needs the `frame_id` of a live capture** — the core keeps the last four frames; an evicted id is `bad_request: unknown frame_id` and the shell must capture again (it never re-captures automatically) | `{"rev":10,"kind":"bag_grid","mark":[...],"derived":{"pitch":{...}},"artifact":{...}\|null,"calibration":{...}}` (a targeted save echoes `"target"`; `calibration` is the environment block as written, always including `measured_at` as ISO-8601 UTC — G07) |
 | `calibration.fetch` | `{"kind":"bag_grid"}`; a named instance needs the same `target`, e.g. `{"kind":"pet_toggle","target":"2"}` | `{"kind":"bag_grid","mark":[...],"artifact":{"file":..,"png_base64":..}\|null,"rev":10}` (a targeted fetch echoes `"target"`) |
+| `calibration.fetch_all` | `{}` | `{"rev":10,"calibration":{...}\|null,"marks":[{"kind":"bag_grid","target":null,"mark":[...],"artifact":null},{"kind":"pet_toggle","target":"1","mark":[...],"artifact":null},…],"withdrawn":[{"name":"tuner_region","reason":"…"}]}` — READ-ONLY: every stored mark (one entry per configured named instance) and the environment block from ONE local read, so opening the workspace is one request not ~35 fetches (G08). Artifacts travel like `fetch` (best-effort, base64) |
+| `calibration.kinds` | `{}` | `{"kinds":[{"name":"bag_grid","shape":"rect","block":"buy_sell","path":["buy_sell","bag_grid"],"artifact":null,"targets":"none","row_key":null},…],"withdrawn":[{"name":"focus_point","reason":"…"}]}` — the core-owned catalog (G08); `targets` is `none`/`page_tab`/`pet_row`/`gem_grade`/`gem_resource`, and a new core kind appears with no shell edit |
+| `calibration.check` | `{}` | `{"live":{DisplayInfo}\|null,"stored":{"scale":1.5,"monitor_dpi":144,"screen":[1920,1080],"client_size":[1200,600],"measured_at":"…"}\|null,"differences":["scale 1.5 → 1.25",…],"matches":true\|false\|null,"note":"game window not open"\|null}` — canonical Detect (G09). The differences are `seal-domain::calibration`'s; a closed game is a RESULT (`live:null`, note), not an error; `matches` is null unless both sides exist. Nothing stored is `stored:null`, not a difference |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -232,7 +235,8 @@ Notes:
 `pet.preflight`/`pet.set_boarding`,
 `pet.capture_icon`,
 `pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`,
-`keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`, `ocr.scan`,
+`keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
+`calibration.fetch_all`/`calibration.kinds`/`calibration.check`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.
 
@@ -544,6 +548,16 @@ LANDED as §12.8, not left as a silent omission.
    rather than being half-faked behind a different command. They steer only through the board's
    closed-loop placement — v3 forbids `SetCursorPos` (CALIBRATION.md §2).
 
+
+10. **`calibration.save` gains an OPTIONAL `rev`, a `calibration` echo and three read-only commands
+    (additive `v:1`).** `rev` is compare-and-set only when present: a stale value answers
+    `conflict` with the current revision and the touched block (`config.apply`'s shape) before any
+    validation, artifact or write, so a legacy caller keeps last-write-wins. Every save now stamps
+    `calibration.measured_at` (ISO-8601 UTC) and echoes the environment block as written.
+    `calibration.fetch_all` and `calibration.kinds` are read-only conveniences over the existing
+    table and `local.yaml`; `calibration.check` uses the already-ported
+    `seal-domain::calibration` comparison and its missing-window case is a result, not an error.
+    None of this changes an existing command's required arguments or result fields.
 ## 13. Replay mode (development)
 
 `seal-core --replay <script.json>` serves the SAME stdio protocol from a script instead of from the

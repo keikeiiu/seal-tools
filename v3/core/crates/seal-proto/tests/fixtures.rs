@@ -38,6 +38,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "capture",
     "calibration.save",
     "calibration.fetch",
+    "calibration.fetch_all",
+    "calibration.kinds",
+    "calibration.check",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -224,6 +227,35 @@ fn cases() -> Vec<Case> {
             "9",
             "calibration.fetch",
             json!({"kind": "bag_grid"}),
+        ),
+        request_case(
+            "request.calibration.save.with_rev",
+            "52",
+            "calibration.save",
+            json!({
+                "frame_id": "f1",
+                "kind": "bag_grid",
+                "rev": 10,
+                "region": {"x": 12, "y": 47, "w": 300, "h": 200},
+            }),
+        ),
+        request_case(
+            "request.calibration.fetch_all",
+            "53",
+            "calibration.fetch_all",
+            json!({}),
+        ),
+        request_case(
+            "request.calibration.kinds",
+            "54",
+            "calibration.kinds",
+            json!({}),
+        ),
+        request_case(
+            "request.calibration.check",
+            "55",
+            "calibration.check",
+            json!({}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -539,6 +571,7 @@ fn cases() -> Vec<Case> {
                 "mark": [12, 47, 300, 200],
                 "derived": {"pitch": {"w": 37.5, "h": 25.0}},
                 "artifact": null,
+                "calibration": {"measured_at": "2026-10-30T12:00:00Z"},
             }),
         ),
         ok_case(
@@ -551,6 +584,7 @@ fn cases() -> Vec<Case> {
                 "derived": {},
                 "artifact": null,
                 "target": "N",
+                "calibration": {"measured_at": "2026-10-30T12:00:00Z"},
             }),
         ),
         ok_case(
@@ -562,6 +596,7 @@ fn cases() -> Vec<Case> {
                 "mark": [610, 800, 220, 60],
                 "derived": {},
                 "artifact": null,
+                "calibration": {"measured_at": "2026-10-30T12:00:00Z"},
             }),
         ),
         ok_case(
@@ -713,6 +748,74 @@ fn cases() -> Vec<Case> {
             "internal",
             "internal error",
             json!({}),
+        ),
+        ok_case(
+            "response.ok.calibration_kinds",
+            "54",
+            json!({
+                "kinds": [
+                    {"name": "bag_grid", "shape": "rect", "block": "buy_sell",
+                     "path": ["buy_sell", "bag_grid"], "artifact": null,
+                     "targets": "none", "row_key": null},
+                    {"name": "pet_toggle", "shape": "rect", "block": "pet",
+                     "path": ["pet", "slots"], "artifact": null,
+                     "targets": "pet_row", "row_key": "toggle_label"},
+                    {"name": "result_gem_area", "shape": "rect", "block": "gem",
+                     "path": ["gem", "result_gem_area"], "artifact": "calib_gem_result.png",
+                     "targets": "none", "row_key": null}
+                ],
+                "withdrawn": [
+                    {"name": "tuner_region", "reason": "the three-box session is not built yet"}
+                ]
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_fetch_all",
+            "53",
+            json!({
+                "rev": 10,
+                "calibration": {
+                    "dpi_scale": 1.5,
+                    "monitor_dpi": 144,
+                    "screen": [1920, 1080],
+                    "client_size": [1200, 600],
+                    "measured_at": "2026-10-30T12:00:00Z"
+                },
+                "marks": [
+                    {"kind": "bag_grid", "target": null, "mark": [12, 47, 300, 200], "artifact": null},
+                    {"kind": "pet_toggle", "target": "1", "mark": [100, 100, 20, 20], "artifact": null},
+                    {"kind": "result_gem_area", "target": null, "mark": [610, 800, 220, 60],
+                     "artifact": {"file": "calib_gem_result.png", "png_base64": "iVBORw0KGgo="}}
+                ],
+                "withdrawn": [
+                    {"name": "focus_point", "reason": "replaced by scroll_point"},
+                    {"name": "tuner_region", "reason": "the three-box session is not built yet"}
+                ]
+            }),
+        ),
+        ok_case(
+            "response.ok.calibration_check",
+            "55",
+            json!({
+                "live": {
+                    "scale": 1.5,
+                    "monitor_dpi": 144,
+                    "screen": {"w": 1920, "h": 1080},
+                    "frame": {"x": 0, "y": 0, "w": 1200, "h": 640},
+                    "physical_client": {"x": 10, "y": 20, "w": 1200, "h": 600},
+                    "logical_client": {"x": 10, "y": 20, "w": 800, "h": 400}
+                },
+                "stored": {
+                    "scale": 1.5,
+                    "monitor_dpi": 144,
+                    "screen": [1920, 1080],
+                    "client_size": [1200, 600],
+                    "measured_at": "2026-10-30T12:00:00Z"
+                },
+                "differences": [],
+                "matches": true,
+                "note": null
+            }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────
         event_case(
