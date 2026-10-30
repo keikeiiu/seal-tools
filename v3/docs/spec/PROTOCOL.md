@@ -269,7 +269,7 @@ the publish:
   "message": "row 2: looking",
   "countdown_s": null,
   "rows": [
-    {"name": "row 1", "status": "boarding", "detail": "藍天 · 3/min", "next_action_in_seconds": 1800.0},
+    {"name": "row 1", "status": "boarding", "detail": "藍天 · 3/min", "next_action_in_seconds": 1800.0, "next_action": "reload"},
     {"name": "row 2", "status": "waiting for a reload", "detail": null, "next_action_in_seconds": null}
   ],
   "detail": [
@@ -286,9 +286,11 @@ the publish:
 | `status` | string | no | The short state word the card shows — `boarding`, `waiting for a reload`, `given up` (v2 `Status`) |
 | `detail` | string | yes | What the row is doing when there is more to say — the pet boarded, its rate — absent when the card needs only the status word (v2 `Detail`) |
 | `next_action_in_seconds` | number | yes | Seconds from THIS publish until the row next needs attention; `null` when never again (v2 `NextAt`, an absolute `DateTime?`, made relative so the shell counts down without sharing the core's clock) |
+| `next_action` | string | yes | What that moment means: `feed`, `reload` or `check`; `null` when the core does not know the kind. Additive in `v:1` (an older core omits it); the shell renders `Next feed in 30 m`, never guesses the word from the status. The pet feeder sets it per row: a boarding row's next moment is its food `reload`, a row waiting for a reload is `feed`, a given-up row is a `check` |
 
 Before the first publish — and for any tool with no rows — `rows` is `[]`. An empty list means
-"no rows to show", never "not known yet": the shell draws the card without row entries. The
+"no rows to show", never "not known yet": the shell draws the card without row entries. The next
+action word is additive: a missing field (older core) renders exactly like `null`. The
 pinned fixtures are `event.state` (two rows), `event.state.empty` (`rows: []`) and
 `event.state.detail` (Tuner facts).
 

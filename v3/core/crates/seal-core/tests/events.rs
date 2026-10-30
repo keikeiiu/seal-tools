@@ -15,7 +15,7 @@ use seal_core::events::{
 };
 use seal_domain::decision::{StopKind, StopReason};
 use seal_proto::Response;
-use seal_tools::tool::{ToolDetail, ToolId, ToolPhase, ToolRow, ToolSnapshot};
+use seal_tools::tool::{ToolDetail, ToolId, ToolNextAction, ToolPhase, ToolRow, ToolSnapshot};
 use serde_json::{Value, json};
 
 /// A `Write` that appends to shared memory, so a test can read exactly what the writer wrote.
@@ -50,7 +50,9 @@ fn a_state_event_is_the_snapshots_fields() {
         .message("row 2: looking")
         .countdown_s(Some(12.5))
         .rows(vec![
-            ToolRow::new("row 1", "boarding").detail(Some("藍天 · 3/min")),
+            ToolRow::new("row 1", "boarding")
+                .detail(Some("藍天 · 3/min"))
+                .next_action(Some(ToolNextAction::Reload)),
             ToolRow::new("row 2", "waiting for a reload").next_action_in_seconds(Some(30.0)),
         ])
         .detail(vec![
@@ -75,13 +77,15 @@ fn a_state_event_is_the_snapshots_fields() {
                     "name": "row 1",
                     "status": "boarding",
                     "detail": "藍天 · 3/min",
-                    "next_action_in_seconds": null
+                    "next_action_in_seconds": null,
+                    "next_action": "reload"
                 },
                 {
                     "name": "row 2",
                     "status": "waiting for a reload",
                     "detail": null,
-                    "next_action_in_seconds": 30.0
+                    "next_action_in_seconds": 30.0,
+                    "next_action": null
                 }
             ],
             "detail": [

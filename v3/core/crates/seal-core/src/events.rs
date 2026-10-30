@@ -150,6 +150,7 @@ fn row_data(row: &ToolRow) -> Value {
         "status": row.status,
         "detail": row.detail,
         "next_action_in_seconds": row.next_action_in_seconds,
+        "next_action": row.next_action.map(|action| action.as_str()),
     })
 }
 

@@ -290,6 +290,31 @@ enum ToolStopKind {
   }
 }
 
+/// What a row's next moment means ([PROTOCOL.md] §5 `rows[].next_action`): the pet feeder's reload or
+/// next feed, or a check. The core names the word; the shell renders it ("Next feed in 30 m").
+enum ToolNextAction {
+  feed('feed'),
+  reload('reload'),
+  check('check');
+
+  const ToolNextAction(this.wire);
+
+  final String wire;
+
+  static ToolNextAction parse(String wire) {
+    for (final action in values) {
+      if (action.wire == wire) {
+        return action;
+      }
+    }
+    throw ProtocolDecodeException(
+      'unknown next_action',
+      expected: 'feed|reload|check',
+      found: wire,
+    );
+  }
+}
+
 /// One row of a tool's standing plan — the pinned shape of [PROTOCOL.md] §5's `state.rows`.
 class ToolRow implements WirePayload {
   const ToolRow({
@@ -297,6 +322,7 @@ class ToolRow implements WirePayload {
     required this.status,
     this.detail,
     this.nextActionInSeconds,
+    this.nextAction,
   });
 
   /// The row's label on the card.
@@ -311,8 +337,12 @@ class ToolRow implements WirePayload {
   /// Seconds from the publish until this row next needs attention; null when never again.
   final double? nextActionInSeconds;
 
+  /// The kind of action the time leads to, when the core knows it.
+  final ToolNextAction? nextAction;
+
   factory ToolRow.fromJson(Object? value, String path) {
     final map = decodeMap(value, path);
+    final nextAction = map['next_action'];
     return ToolRow(
       name: decodeString(map['name'], '$path.name'),
       status: decodeString(map['status'], '$path.status'),
@@ -321,6 +351,9 @@ class ToolRow implements WirePayload {
         map['next_action_in_seconds'],
         '$path.next_action_in_seconds',
       ),
+      nextAction: nextAction == null
+          ? null
+          : ToolNextAction.parse(decodeString(nextAction, '$path.next_action')),
     );
   }
 
@@ -330,6 +363,7 @@ class ToolRow implements WirePayload {
     'status': status,
     'detail': detail,
     'next_action_in_seconds': nextActionInSeconds,
+    'next_action': nextAction?.wire,
   };
 }
 

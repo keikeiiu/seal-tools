@@ -106,6 +106,29 @@ impl fmt::Display for ToolPhase {
     }
 }
 
+/// What a row's `next_action_in_seconds` leads to, when the row knows the KIND of action and not just
+/// its time ([PROTOCOL.md] §5): the pet feeder's reload vs the next feed, or a check. The word is the
+/// core's — the shell only renders "Next feed in 30 m" from it ([PLAN-V3-UI-UX.md] cards/Pet).
+///
+/// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
+/// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolNextAction {
+    Feed,
+    Reload,
+    Check,
+}
+
+impl ToolNextAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Feed => "feed",
+            Self::Reload => "reload",
+            Self::Check => "check",
+        }
+    }
+}
+
 /// One row of a tool's standing plan — the pet feeder's four breeding rows, the gem composer's
 /// grades. v2's `ToolRowState`, with its `DateTime? NextAt` expressed as seconds from the publish
 /// (`countdown_s`), because the crate has no clock/calendar dependency and the reader only needs to
@@ -119,6 +142,9 @@ pub struct ToolRow {
     pub detail: Option<String>,
     /// When this row next needs attention, in seconds from the publish; `None` when never again.
     pub next_action_in_seconds: Option<f64>,
+    /// The kind of action the time leads to (`feed`/`reload`/`check`), when the core knows it; additive
+    /// `v:1`, so an older core's missing field is `None`.
+    pub next_action: Option<ToolNextAction>,
 }
 
 impl ToolRow {
@@ -128,6 +154,7 @@ impl ToolRow {
             status: status.into(),
             detail: None,
             next_action_in_seconds: None,
+            next_action: None,
         }
     }
 
@@ -138,6 +165,11 @@ impl ToolRow {
 
     pub fn next_action_in_seconds(mut self, seconds: Option<f64>) -> Self {
         self.next_action_in_seconds = seconds;
+        self
+    }
+
+    pub fn next_action(mut self, action: Option<ToolNextAction>) -> Self {
+        self.next_action = action;
         self
     }
 }

@@ -64,7 +64,7 @@ use seal_domain::tools::pet::{
 use seal_domain::tools::shop::BagGrid;
 use seal_tools::game::GamePort;
 use seal_tools::runner::{Tool, ToolStatus};
-use seal_tools::tool::{ToolId, ToolRow};
+use seal_tools::tool::{ToolId, ToolNextAction, ToolRow};
 use serde_json::Value;
 
 /// v2 `IconMatch.DefaultInset` (`v2/SealTools.Core/IconMatch.cs:24`): the border inset of the
@@ -459,8 +459,8 @@ pub fn initial_card(plan: &PetPlan) -> PetCard {
     build_card(&views)
 }
 
-/// `PetCard` → the runner's standing rows (`ToolStatus.rows`). The shell already renders
-/// `ToolRow { name, status, detail, next_action_in_seconds }`.
+/// `PetCard` → the runner's standing rows (`ToolStatus.rows`). The shell renders
+/// `ToolRow { name, status, detail, next_action_in_seconds, next_action }`.
 pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
     card.rows
         .iter()
@@ -468,6 +468,14 @@ pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
             let mut tool_row = ToolRow::new(row.name.clone(), row.status.clone());
             tool_row.detail = row.detail.clone();
             tool_row.next_action_in_seconds = row.next_minutes.map(|minutes| minutes * 60.0);
+            // What the next moment MEANS, from the row's own state: a boarding row's next moment is
+            // its food reload; a row that is waiting for a reload is waiting to be fed/boarded. A row
+            // given up on only wants a look. Display wording only — the shell never derives it.
+            tool_row.next_action = Some(match row.status.as_str() {
+                "boarding" => ToolNextAction::Reload,
+                "waiting for a reload" => ToolNextAction::Feed,
+                _ => ToolNextAction::Check,
+            });
             tool_row
         })
         .collect()
@@ -2235,6 +2243,11 @@ mod tests {
         assert_eq!(rows[1].status, "waiting for a reload");
         assert_eq!(rows[0].detail, None);
         assert_eq!(rows[0].next_action_in_seconds, None);
+        assert_eq!(
+            rows[0].next_action,
+            Some(ToolNextAction::Feed),
+            "a row waiting for a reload is fed at its next moment"
+        );
         assert!(
             opening_message(&[plan.rows[0].name.clone()])
                 .contains("Row 1: opening the boarding window")
