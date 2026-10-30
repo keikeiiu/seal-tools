@@ -141,6 +141,11 @@ screen: Save.
   Feeding keep their behaviour, with prose through `ShellProse` and `EmptyState` for no rows/no queue.
 - **Calibrated marks & reference crops** are demoted into a collapsed `ReadOnlyPanel` showing
   `x · y · w×h` values and a configured-count summary.
+- **Diagnostics:** the Scan-the-bag section also carries **Test read one pet panel**
+  (`pet.test_read_panel`, OPEN §6 G13 now shipped): pick the ITEM page at the top of the section and the
+  1-based bag cell, press once, and the tab renders the core's `region`, raw OCR `lines`, its own parsed
+  `panel.line` (or "Not a pet panel"), the `numbers` it saw and the best-effort evidence path. It only
+  hovers — no click, no config write — and states that the game must be in front with the page up.
 
 ## Calibrate workspace (landed 2026-10-30)
 

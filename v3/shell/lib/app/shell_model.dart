@@ -552,6 +552,22 @@ class ShellModel extends ChangeNotifier {
         args: {'page': page},
       );
 
+  /// `pet.test_read_panel {"page":<1-based>,"cell":<1-based>,"delay_ms":<optional>}` — the
+  /// READ-ONLY panel diagnostic ([PROTOCOL.md] §4, OPEN §6 G13): hovers the cell (never clicks),
+  /// captures the calibrated tooltip region and returns `{region, lines, panel|null, numbers,
+  /// evidence|null}`. The panel is the core parser's own `line`; the shell renders it verbatim and
+  /// never re-derives growth/EXP. A refusal names the unset `tooltip`/`bag_grid` field or the busy
+  /// holder's line; no config write.
+  Future<CoreActionResult<JsonMap>> testReadPetPanel({
+    required int page,
+    required int cell,
+    int? delayMs,
+  }) => _coreAction(
+    'pet.test_read_panel',
+    (result) => result,
+    args: {'page': page, 'cell': cell, 'delay_ms': ?delayMs},
+  );
+
   /// `pet.apply_food_scan {"cells":[[1-based page, 1-based cell], ...]}` — THE explicit write the
   /// food scan feeds ([PROTOCOL.md] §4): one A1 field-precise patch that REPLACES `pet.food_slots`
   /// and resets `pet.food_slots_used`, then returns `{rev, block}` and emits exactly one

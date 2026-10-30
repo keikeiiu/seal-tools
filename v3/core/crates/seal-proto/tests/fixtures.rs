@@ -48,6 +48,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "pet.capture_icon",
     "pet.scan_food_page",
     "pet.scan_queue_page",
+    "pet.test_read_panel",
     "pet.apply_food_scan",
     "board.test",
     "ui.window",
@@ -294,6 +295,12 @@ fn cases() -> Vec<Case> {
             json!({"page": 1}),
         ),
         request_case(
+            "request.pet.test_read_panel",
+            "51",
+            "pet.test_read_panel",
+            json!({"page": 1, "cell": 34, "delay_ms": 700}),
+        ),
+        request_case(
             "request.pet.apply_food_scan",
             "50",
             "pet.apply_food_scan",
@@ -492,6 +499,17 @@ fn cases() -> Vec<Case> {
             "response.ok.pet_apply_food_scan",
             "50",
             json!({"rev": 1, "block": {"food_slots": [[0, 0], [0, 33]], "food_slots_used": 0}}),
+        ),
+        ok_case(
+            "response.ok.pet_test_read_panel",
+            "51",
+            json!({
+                "region": {"x": 33, "y": 88, "width": 120, "height": 80},
+                "lines": ["(6階) 真蔚藍鳳凰 +7 [52.18%]"],
+                "panel": {"growth": 7, "exp": 52.18, "line": "stage 6, +7, 52.18%"},
+                "numbers": ["6", "7", "52.18"],
+                "evidence": "logs/reads/petpanel_20261030_120000.png"
+            }),
         ),
         ok_case(
             "response.ok.board_details",

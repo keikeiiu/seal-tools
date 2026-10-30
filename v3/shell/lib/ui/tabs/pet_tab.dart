@@ -268,9 +268,21 @@ class _PetTabState extends State<PetTab>
   bool _applying = false;
   CoreActionResult<JsonMap>? _applyResult;
 
-  /// Both the icon captures and the scans hide the shell and need the game in front: only one such
-  /// window command may be in flight at a time.
-  bool get _windowBusy => _capturing || _scanning || _applying;
+  // ── the panel test read (read-only diagnostic, OPEN §6 G13) ────────────────────────────
+
+  /// The 1-based bag cell whose tooltip is read; the page is [_scanPage] (same ITEM page picker).
+  int _panelCell = 1;
+
+  /// One hide-window panel read at a time (the window is hidden for it, like the scans).
+  bool _panelReading = false;
+
+  /// The last `pet.test_read_panel` answer and the host-channel note beside it.
+  CoreActionResult<JsonMap>? _panelRead;
+  String? _panelReadNote;
+
+  /// Both the icon captures, the scans and the panel read hide the shell and need the game in front:
+  /// only one such window command may be in flight at a time.
+  bool get _windowBusy => _capturing || _scanning || _applying || _panelReading;
 
   @override
   void initState() {
@@ -779,6 +791,32 @@ class _PetTabState extends State<PetTab>
       _scanning = false;
       _queueScan = outcome.result;
       _queueScanNote = outcome.hostNote;
+    });
+  }
+
+  /// The panel test read: hide → `pet.test_read_panel {page,cell}` → show. READ-ONLY diagnostic
+  /// (OPEN §6 G13): the core hovers the cell (never a click), captures the calibrated tooltip
+  /// region and returns the region, raw OCR lines, its own parsed line and the numbers it saw. The
+  /// result is view state only; nothing about the draft or the run changes.
+  Future<void> _testReadPanel() async {
+    if (_windowBusy) {
+      return;
+    }
+    setState(() {
+      _panelReading = true;
+      _panelRead = null;
+      _panelReadNote = null;
+    });
+    final outcome = await _runHiddenWindow(
+      () => model.testReadPetPanel(page: _scanPage + 1, cell: _panelCell),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _panelReading = false;
+      _panelRead = outcome.result;
+      _panelReadNote = outcome.hostNote;
     });
   }
 
@@ -1873,7 +1911,168 @@ class _PetTabState extends State<PetTab>
       ),
       ..._foodScanWidgets(theme, cells),
       ..._queueScanWidgets(theme),
+      ..._panelSection(theme),
     ];
+  }
+
+  /// The panel test read ([PROTOCOL.md] §4 `pet.test_read_panel`, OPEN §6 G13): pick the bag cell
+  /// whose pet tooltip to read, press once. The game must already be in front and the chosen ITEM
+  /// page up — the core hovers, it does not click the page tab or a focus point. Everything shown is
+  /// the core's answer: the raw lines, its parsed line (or null), the numbers it saw and the saved
+  /// evidence image.
+  List<Widget> _panelSection(ThemeData theme) {
+    final read = _panelRead;
+    return [
+      const SizedBox(height: ShellSpace.md),
+      const Divider(),
+      const SizedBox(height: ShellSpace.sm),
+      Text('Test read one pet panel', style: theme.textTheme.titleSmall),
+      const SizedBox(height: ShellSpace.xxs),
+      ShellProse(
+        'Hover the bag cell holding a pet and read its tooltip panel (growth and EXP). The core '
+        'only hovers — it never clicks — so put the game in front with the ITEM page up first. '
+        'Read-only: nothing is saved.',
+        key: const ValueKey('pet-test-panel-hint'),
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: ShellSpace.xs),
+      Wrap(
+        spacing: ShellSpace.sm,
+        runSpacing: ShellSpace.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: ShellWidth.fieldSm,
+            child: TextFormField(
+              key: const ValueKey('pet-test-panel-cell'),
+              initialValue: '$_panelCell',
+              decoration: const InputDecoration(
+                labelText: 'Bag slot (1–64)',
+                isDense: true,
+              ),
+              keyboardType: TextInputType.number,
+              onChanged: (text) {
+                final cell = int.tryParse(text.trim());
+                if (cell == null || cell < 1 || cell > 64) {
+                  return;
+                }
+                setState(() => _panelCell = cell);
+              },
+            ),
+          ),
+          OutlinedButton(
+            key: const ValueKey('pet-test-panel-read'),
+            onPressed: _windowBusy ? null : _testReadPanel,
+            child: Text(_panelReading ? 'Reading…' : 'Test read panel'),
+          ),
+        ],
+      ),
+      ..._panelReadWidgets(theme, read),
+    ];
+  }
+
+  List<Widget> _panelReadWidgets(
+    ThemeData theme,
+    CoreActionResult<JsonMap>? read,
+  ) {
+    if (read == null) {
+      return const [];
+    }
+    final parts = <Widget>[];
+    final value = read.value;
+    if (!read.ok || value == null) {
+      parts.add(
+        _scanError(
+          theme,
+          'pet-test-panel-error',
+          read,
+          'The panel read failed.',
+        ),
+      );
+    } else {
+      final region = asJsonMap(value['region']);
+      parts.add(
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            'Read region: x ${asNumber(region['x'])?.round() ?? '?'} · '
+            'y ${asNumber(region['y'])?.round() ?? '?'} · '
+            '${asNumber(region['width'])?.round() ?? '?'}×'
+            '${asNumber(region['height'])?.round() ?? '?'}',
+            key: const ValueKey('pet-test-panel-region'),
+            style: ShellText.mono.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+      final lines = asStringList(value['lines']);
+      parts.add(
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            lines.isEmpty
+                ? 'Read NOTHING — the saved image is the exact region the OCR was given, so a '
+                      'wrong region and a pet that is not in that cell can be told apart by '
+                      'looking at it.'
+                : lines.join('\n'),
+            key: const ValueKey('pet-test-panel-lines'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      );
+      final panel = value['panel'];
+      final parsed = panel == null ? null : asString(asJsonMap(panel)['line']);
+      parts.add(
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xs),
+          child: Text(
+            parsed == null
+                ? 'Not a pet panel — no growth + EXP pair in it.'
+                : 'Parsed: $parsed',
+            key: const ValueKey('pet-test-panel-parsed'),
+            style: parsed == null
+                ? theme.textTheme.bodyMedium
+                : theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.shellColors.success,
+                  ),
+          ),
+        ),
+      );
+      final numbers = asStringList(value['numbers']);
+      parts.add(
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xxs),
+          child: Text(
+            'Numbers seen: '
+            '${numbers.isEmpty ? '(nothing read)' : numbers.join(', ')}',
+            key: const ValueKey('pet-test-panel-numbers'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+      final evidence = asString(value['evidence']);
+      if (evidence != null) {
+        parts.add(
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xxs),
+            child: Text(
+              'Evidence (best-effort): $evidence',
+              key: const ValueKey('pet-test-panel-evidence'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    if (_panelReadNote != null) {
+      parts.add(_scanNoteText(theme, 'pet-test-panel-note', _panelReadNote!));
+    }
+    return parts;
   }
 
   List<Widget> _foodScanWidgets(ThemeData theme, List<List<int>> cells) {

@@ -492,6 +492,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "pet.scan_food_page" => pet_scan_page(state, &request, false),
         "pet.scan_queue_page" => pet_scan_page(state, &request, true),
         "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
+        "pet.test_read_panel" => pet_test_read_panel(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(
@@ -1204,6 +1205,139 @@ fn icon_error_response(id: &str, error: crate::pet_capture::IconError) -> Respon
             bad_request(id, &message, json!({"field": field}))
         }
         crate::pet_capture::IconError::Internal(message) => internal(id, &message),
+    }
+}
+
+/// `pet.test_read_panel {page,cell,delay_ms}`: hover the cell (board closed-loop placement, never a
+/// click), settle for the bounded delay, capture the configured tooltip box and OCR it. The panel
+/// parser is the same domain `PetPanel::parse` the run uses; a partial OCR is returned as raw lines
+/// plus nulls, never invented numbers. No config write.
+fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
+    let arguments = match crate::pet_panel::arguments(&request.args) {
+        Ok(arguments) => arguments,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(supervisor) = state.supervisor.as_ref() {
+        match supervisor.input_lease() {
+            Ok(Some(line)) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": "pet.test_read_panel"}),
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(line) => return internal(&request.id, &line),
+        }
+    }
+    let geometry = match crate::pet_panel::geometry(&state.config, &arguments) {
+        Ok(geometry) => geometry,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(response) = ensure_panel_ocr(state, &request.id) {
+        return response;
+    }
+    // Hover ONLY: the board's closed-loop placement, no click command anywhere on this path.
+    if let Err(failure) = crate::pointer::system_perform(&state.config, geometry.centre, false) {
+        return match failure {
+            crate::pointer::PointerFailure::Window(error) => win_error_response(&request.id, error),
+            crate::pointer::PointerFailure::Board(error) => {
+                board_error_response(&request.id, error)
+            }
+            crate::pointer::PointerFailure::Effects(line) => Response::err(
+                &request.id,
+                Error::new("board_unavailable", &line, json!({})),
+            ),
+        };
+    }
+    std::thread::sleep(std::time::Duration::from_millis(arguments.delay_ms));
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let frame = match win::capture(&title, Some(geometry.region)) {
+        Ok((frame, _display)) => frame,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let (width, height, rgba) = match frame_rgba(&frame) {
+        Ok(image) => image,
+        Err(message) => return internal(&request.id, &message),
+    };
+    let lines = {
+        let pipeline = state.ocr.as_mut().expect("the OCR preflight loaded it");
+        match pipeline.scan_rgba(width, height, &rgba) {
+            Ok(scan) => scan
+                .items
+                .into_iter()
+                .map(|item| item.text)
+                .collect::<Vec<String>>(),
+            Err(error) => return internal(&request.id, &error.message),
+        }
+    };
+    let mut result = crate::pet_panel::panel_result(&lines);
+    if let Some(object) = result.as_object_mut() {
+        object.insert(
+            "region".to_owned(),
+            json!({
+                "x": geometry.region.x,
+                "y": geometry.region.y,
+                "width": geometry.region.w,
+                "height": geometry.region.h,
+            }),
+        );
+        // The diagnostic saves the exact region the OCR was given, under the command's own name
+        // (best-effort, like the scans' evidence): a wrong region and a pet that is not in the cell
+        // can then be told apart by looking at the image. A failed write is `evidence: null`, not a
+        // failed read.
+        let evidence = frame
+            .get("data")
+            .and_then(Value::as_str)
+            .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
+            .and_then(|png| {
+                state
+                    .logs
+                    .write_read(&format!("petpanel_{}.png", crate::logs::read_stamp()), &png)
+            });
+        object.insert(
+            "evidence".to_owned(),
+            evidence.map_or(Value::Null, Value::String),
+        );
+    }
+    Response::ok(&request.id, result)
+}
+
+/// Load the shared OCR pipeline for the panel diagnostic, if it is not cached yet. Failing here is
+/// the existing `ocr_unavailable`; no hover or capture happens first. `Some(response)` means the
+/// diagnostic is over before it touched the game.
+fn ensure_panel_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
+    if state.ocr.is_some() {
+        return None;
+    }
+    let geometry = ocr_geometry(&state.config);
+    match seal_ocr::pipeline::OcrPipeline::load_for_root(
+        &state.root,
+        &state.attributes,
+        geometry.row_height,
+    ) {
+        Ok(pipeline) => {
+            state.ocr = Some(pipeline);
+            None
+        }
+        Err(error) => Some(Response::err(
+            id,
+            Error::new(
+                "ocr_unavailable",
+                "the OCR models are not available",
+                json!({"reason": error.reason, "message": error.message}),
+            ),
+        )),
     }
 }
 

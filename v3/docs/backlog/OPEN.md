@@ -96,9 +96,9 @@ independent machine state in `ui` and is not the pin.
 - **Buy/Sell dry runs** (click nothing; verify targeting) and **Quest Test one loop** - v2's two
   pre-run safety tests; absent in v3 (need run-argument commands).
 - **Pet tab session surface (increment 4+, per
-  [PLAN-V3-PET-SESSION](../plans/PLAN-V3-PET-SESSION.md))** - the panel test read and the feedable
-  sweep/queue rebuild (the setup-so-far/ready-to-run checklists, boarding ticks, queue add/edit by icon
-  capture, food-icon capture and the per-page bag scans + explicit food apply are restored). A
+  [PLAN-V3-PET-SESSION](../plans/PLAN-V3-PET-SESSION.md))** - the feedable sweep/queue rebuild (the
+  setup-so-far/ready-to-run checklists, boarding ticks, queue add/edit by icon capture, food-icon
+  capture, the per-page bag scans + explicit food apply and the panel test read are restored). A
   scan-derived queue rebuild remains later.
 - **Tuner card live detail** (grade/remaining/attempt/attributes - needs a ToolStatus/protocol
   extension); **Spammer advanced raw-key editor**.
@@ -148,7 +148,6 @@ are the visible scoreboard for G01–G03; the Cards/Pet/Tuner asides are the sco
 | G10 | Cards · Tuner live detail (card shows only message/countdown today) | additive `state.details` object in `ToolStatus`/`ToolSnapshot` (tuner: grade/remaining/attempt/attributes); additive `v:1` | old fixtures still decode; the Tuner card shows grade + attempt + matched attribute while running | P1 |
 | G11 | Tuner · "Last run" aside (demo detail, absent today) | additive `tool.finished.summary` + `ended_at` (per-tool; tuner grade/attempts/captures_saved/stopped_by); no persistence required unless §3 decides it | a fake event renders the panel; a real tuner run fills it; the last finish stays until replaced | P1 |
 | G12 | Cards + Pet · per-row next action and schedule wording ("next action in 30 m" today) | additive `rows[].next_action` word (`feed`/`reload`/`check`) + optional `state.schedule` line; keep the seconds field | cards read "Next feed in 30 m"; the Pet rows join the live segment to the configured row card; old fixtures decode | P1 |
-| G13 | Pet · panel test read (an uncommitted `pet.test_read_panel` already exists in the core tree) | finish the contract already in PLAN-V3-PET-SESSION §4: PROTOCOL §4 row, golden fixture, a `ShellModel` method, and the Pet-tab button/result pane | fake frame/OCR proves region = centre + tooltip offset; a refusal names the unset tooltip field; live read of one pet's growth/EXP | P1 |
 | G14 | Pet · feedable sweep + queue rebuild (absent) | `pet.scan_feeding_page` + `pet.scan_apply_queue` (plan §4/§6) | scripted panels classify correctly (a failed read is never `finished`); harvest returns icons for feedable cells only; an empty queue replace is refused; live one-page sweep | P1 |
 | G16 | Gem · movement editor (Movement section is a mode dropdown only) | `calibration.gem.moves.save` (plan §5.2): validates counts, writes only `gem.movements` | v2 movements round-trip; a malformed count is refused naming the route; one save touches only `gem.movements` | P1 |
 | G17 | Gem · route / cycle pointer tests (no actions) | `calibration.gem.test_route` + `calibration.gem.cycle {confirm:true}` (plan §5.2) | the route sends the exact tuned/arduino steps; cycle refuses without `confirm` then performs 21 steps; live both routes + cycle | P1 |

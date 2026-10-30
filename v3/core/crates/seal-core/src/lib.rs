@@ -14,6 +14,7 @@ pub mod holdspace;
 pub mod logs;
 pub mod pet;
 pub mod pet_capture;
+pub mod pet_panel;
 pub mod pet_scan;
 pub mod pet_session;
 pub mod pet_state;

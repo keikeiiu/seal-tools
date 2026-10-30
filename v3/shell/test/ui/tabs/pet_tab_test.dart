@@ -172,6 +172,22 @@ Map<String, dynamic> _queueScanAnswer({
   'evidence': evidence ?? ['logs/reads/scan_page${page}_2026.png'],
 };
 
+/// A fake `pet.test_read_panel` answer: the region, raw lines, the core's own parsed line, the
+/// numbers it saw and the best-effort evidence path.
+Map<String, dynamic> _panelReadAnswer({
+  Map<String, dynamic>? region,
+  List<String>? lines,
+  Map<String, dynamic>? panel,
+  List<String>? numbers,
+  String? evidence,
+}) => {
+  'region': region ?? {'x': 33, 'y': 88, 'width': 120, 'height': 80},
+  'lines': lines ?? ['(6階) 真蔚藍鳳凰 +7 [52.18%]'],
+  'panel': panel ?? {'growth': 7, 'exp': 52.18, 'line': 'stage 6, +7, 52.18%'},
+  'numbers': numbers ?? ['6', '7', '52.18'],
+  'evidence': evidence ?? 'logs/reads/petpanel_2026.png',
+};
+
 /// The fake core's answers for the commands the Pet tab sends. The tab's RULES are the core's; a test
 /// only ever needs the shape (and can override `pet.preflight` for a checklist case).
 Map<String, dynamic> _petReply(Map<String, dynamic> request) {
@@ -186,6 +202,8 @@ Map<String, dynamic> _petReply(Map<String, dynamic> request) {
       return _foodScanAnswer(page: _requestPage(request, 1));
     case 'pet.scan_queue_page':
       return _queueScanAnswer(page: _requestPage(request, 1));
+    case 'pet.test_read_panel':
+      return _panelReadAnswer();
     case 'pet.apply_food_scan':
       return {'rev': 21, 'block': <String, dynamic>{}};
     case 'config.validate':
@@ -555,7 +573,7 @@ void main() {
     await tester.enterText(_field('pet-return-cell'), '7');
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('pet-food-load-mode')));
+    await _tap(tester, 'pet-food-load-mode');
     await tester.pumpAndSettle();
     await tester.tap(find.text('drag').last);
     await tester.pumpAndSettle();
@@ -1592,6 +1610,138 @@ void main() {
             .onPressed,
         isNotNull,
         reason: 'the scan button comes back after the refusal',
+      );
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'the panel test read sends the chosen page/cell and renders the core answer verbatim',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.test_read_panel') {
+            host.lifecycle.add('panel-sent');
+            return _panelReadAnswer();
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-scan-page-1');
+      await tester.enterText(_field('pet-test-panel-cell'), '34');
+      await _tap(tester, 'pet-test-panel-read');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'panel-sent', 'show']);
+      expect(harness.lastSentWithCmd('pet.test_read_panel')!['args'], {
+        'page': 2,
+        'cell': 34,
+      });
+      expect(
+        _text(tester, 'pet-test-panel-region'),
+        'Read region: x 33 · y 88 · 120×80',
+      );
+      expect(
+        _text(tester, 'pet-test-panel-lines'),
+        '(6階) 真蔚藍鳳凰 +7 [52.18%]',
+        reason: 'the raw OCR lines are shown untouched',
+      );
+      expect(
+        _text(tester, 'pet-test-panel-parsed'),
+        'Parsed: stage 6, +7, 52.18%',
+        reason: 'the core parser\'s own line, never re-derived by the shell',
+      );
+      expect(
+        _text(tester, 'pet-test-panel-numbers'),
+        'Numbers seen: 6, 7, 52.18',
+      );
+      expect(
+        _text(tester, 'pet-test-panel-evidence'),
+        contains('logs/reads/petpanel_2026.png'),
+      );
+      expect(find.byKey(const ValueKey('dirty-pet')), findsNothing);
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'a partial panel says so and still shows the lines/numbers the OCR read',
+    (tester) async {
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        answer: (request) {
+          if (request['cmd'] == 'pet.test_read_panel') {
+            return {
+              'region': {'x': 33, 'y': 88, 'width': 120, 'height': 80},
+              'lines': ['(6階) 真蔚藍鳳凰 +7'],
+              'panel': null,
+              'numbers': ['6', '7'],
+              'evidence': null,
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-test-panel-read');
+      await _flush(tester);
+
+      expect(
+        _text(tester, 'pet-test-panel-parsed'),
+        'Not a pet panel — no growth + EXP pair in it.',
+      );
+      expect(_text(tester, 'pet-test-panel-numbers'), 'Numbers seen: 6, 7');
+      _expectNoConfigWrites(harness);
+    },
+  );
+
+  testWidgets(
+    'a refused panel read names the unset tooltip field and shows the shell again',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpPet(
+        tester,
+        pet: _machinePet(),
+        host: host,
+        answer: (request) {
+          if (request['cmd'] == 'pet.test_read_panel') {
+            host.lifecycle.add('panel-sent');
+            return {
+              'error': {
+                'code': 'bad_request',
+                'message':
+                    "The tooltip/panel region isn't calibrated — save the tooltip "
+                    'offset and size.',
+                'detail': {'field': 'tooltip'},
+              },
+            };
+          }
+          return _petReply(request);
+        },
+      );
+
+      await _tap(tester, 'pet-test-panel-read');
+      await _flush(tester);
+
+      expect(host.lifecycle, ['hide', 'panel-sent', 'show']);
+      expect(
+        _text(tester, 'pet-test-panel-error'),
+        "The tooltip/panel region isn't calibrated — save the tooltip offset and size.",
+        reason: 'the core refusal is rendered verbatim',
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('pet-test-panel-read')),
+            )
+            .onPressed,
+        isNotNull,
       );
       _expectNoConfigWrites(harness);
     },
