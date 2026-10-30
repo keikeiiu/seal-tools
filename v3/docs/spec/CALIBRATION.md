@@ -211,8 +211,10 @@ pixel size while the world view expands), so a proportional transform would plac
 ## 6. CalibrationCheck and the Detect flow
 
 The CalibrationCheck arithmetic answers one question: does the display environment still match the one
-this calibration was measured in? (The rule is ported and tested; the Setup surface that would show it
-— a Detect action — is not built yet.) The rule is a stored field **carries a value AND it moved**:
+this calibration was measured in? (The rule is ported and tested, and the Calibrate workspace shows the
+stored-vs-live environment mismatch for a capture — but it re-derives the comparison shell-side because
+there is no canonical Detect command yet: OPEN §6 G09.) The rule is a stored field **carries a value
+AND it moved**:
 
 - A field the stored calibration does not carry is NOT a difference — an install that has never been
   calibrated has nothing to be wrong about, and the surface says "nothing stored yet" separately.
@@ -268,7 +270,7 @@ session is a plan), and the invented quest-step row was removed. Still open:
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |
 | `config.changed` for calibration writes | LANDED: a save now queues `config.changed {rev, block, values}` for the block it marks, after its response (PROTOCOL §5), so a shell keeping a mirror updates without refetching | PROTOCOL §5 |
 | Frame→offset exactness at other scales | step-1 spike; if it is not exact, `DisplayInfo` grows a field | PROTOCOL §11.2 |
-| Detect surface / Detect flow | the shell's Setup canvas + a protocol path for the comparison result; the CalibrationCheck ARITHMETIC is ported, the surface is not built | OPEN |
+| Detect surface / Detect flow | a canonical `calibration.check` command that returns the comparison, and the Setup/Calibrate surface that renders it. The arithmetic is ported and the Calibrate workspace already warns by re-deriving the stored-vs-live mismatch for a capture; the shell-side copy should be deleted when the command lands | OPEN §6 G09 |
 | The boundary a measurement must match | `CalibrationCheck` is ported and tested in the domain; `calibration.save`'s optional `display` argument now records the environment it compares, but no Detect command consumes the comparison yet | this file §6 |
 ## 8. Portability and migration
 

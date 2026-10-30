@@ -199,12 +199,16 @@ failures to the protocol's `io` error with `detail.path`, and ownership/shape fa
 
 **The revision on top is a session counter, not stored state.** `seal-core`'s dispatcher
 ([dispatch.rs](../../core/crates/seal-core/src/dispatch.rs)) starts `rev` at `0`, returns it from
-`hello`, and bumps it on every successful write — `config.apply`, `ui.window` — and on
+`hello`, and bumps it on every successful write — `config.apply`, `ui.window`, `calibration.save`,
+and the Pet run-state writes (`pet.set_boarding`, `pet.apply_food_scan`) — and on
 `config.reload`, which is a change the shell must see even though no file was written. A refused
 call never consumes a revision. `config.apply` with a stale `rev` is refused as `conflict`, carrying
 the current `rev` and the current value of each block the shell asked to write, so it can reconcile.
-Startup migrations (seed, fold, adoption) happen before the session begins and do not consume a
-revision. The command shapes are [PROTOCOL.md](PROTOCOL.md) §4's; the merge semantics are its §7.
+(`calibration.save` has no `rev` argument yet, so a stale calibration save is last-write-wins —
+OPEN §6 G06.) Startup migrations (seed, fold, adoption) happen before the session begins and do not
+consume a revision. `calibration.measured_at` is in the typed calibration block but no v3 write
+stamps it yet (OPEN §6 G07); it stays readable for v2 migration. The command shapes are
+[PROTOCOL.md](PROTOCOL.md) §4's; the merge semantics are its §7.
 
 **What is not in this crate.** Authoring/validation rules (they live in
 `seal-domain/src/authoring/`), the typed model and its hand-edited-YAML repairs

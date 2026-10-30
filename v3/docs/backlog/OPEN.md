@@ -61,10 +61,12 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
 - **The pet's capture session** — reference crops, new row/queue entries and food-cell re-marking from
   the live bag (the close-X crop is learned by the run); the Pet tab edits the setup the config already
   carries, not the captures.
-- **The environment-check (Detect) surface** — `CalibrationCheck` is ported and tested in the domain
-  and `calibration.save`'s optional `display` argument records the environment, but there is no shell
-  canvas and no protocol path that SHOWS the comparison; today the player recalibrates manually after
-  an environment change.
+- **The environment-check (Detect) surface** — `CalibrationCheck` is ported and tested in the domain,
+  and the Calibrate workspace already shows the stored-vs-live environment mismatch for a capture (it
+  re-derives the comparison shell-side; `window.measure` supplies the live side). There is no
+  canonical protocol command that returns the comparison, and Setup has no Detect surface; until then
+  an environment change is handled by the workspace's warning plus a manual recalibration (the ledger
+  row is §6 G09).
 - **Mini mode / shell layout questions** — the shell has a stub; the ⚑ questions in
   [PLAN-V3-SHELL.md](../plans/PLAN-V3-SHELL.md) still decide the layout.
 
@@ -100,8 +102,8 @@ independent machine state in `ui` and is not the pin.
   scan-derived queue rebuild remains later.
 - **Tuner card live detail** (grade/remaining/attempt/attributes - needs a ToolStatus/protocol
   extension); **Spammer advanced raw-key editor**.
-- **Calibration plan additions**: loading the saved overlay PNG when a calibrate tab reopens; one
-  decided home for the Gem Move mode.
+- **Calibration plan additions**: loading the saved overlay PNG when a calibrate tab reopens (the Gem
+  Move mode home is decided and shipped — the Gem tab; its movement-editor backend work is §6 G16).
 - **Arduino PnP device id in the connection card** - dropped for now by decision 7: v2 showed it
   only as a tooltip, `serialport` does not expose it, and SetupAPI/WMI would be a new dependency for
   no decision. Ask if it is wanted.
@@ -125,3 +127,65 @@ independent machine state in `ui` and is not the pin.
 - **What remains is not a release INPUT**: the player's live acceptance pass (the repo rule: a tool is
   done when it has run) and the publishing steps (merge/tag/GitHub release/root README) listed in
   [CUTOVER.md](../plans/CUTOVER.md)'s publishing checklist.
+
+## 6. Backend work the finished UI needs
+
+The v3 shell UI is finished to the approved design ([spec/UI.md](../spec/UI.md)), including the
+narrow (960 px) layout. What is left is **backend** — the Rust core / protocol / config work behind
+disabled or absent affordances. **P1** = the shipped UI has a dead-ended or absent affordance;
+**P2** = it works today but the protocol fact is fragile, duplicated, or re-derived shell-side.
+Where a row says "plan", the shape is already written in
+[PLAN-V3-CALIBRATION §5.2](../plans/PLAN-V3-CALIBRATION.md) or
+[PLAN-V3-PET-SESSION §4–§6](../plans/PLAN-V3-PET-SESSION.md); do not reinvent it here. The Calibrate
+"Run session" panel (`v3/shell/lib/ui/tabs/calibration/session_panel.dart`) and its locked tree rows
+are the visible scoreboard for G01–G03; the Cards/Pet/Tuner asides are the scoreboard for G10–G12.
+
+| ID | Waiting UI surface | Backend contract needed | Acceptance (observable) | Pri |
+|---|---|---|---|---|
+| G01 | Calibrate · tooltip offset session (disabled **Run session**, locked tree row) | `calibration.tooltip.hover_capture` / `.save` / `.test` (plan §5.2): core owns the hover capture under the input lease, derives the offset/size, writes the existing `tooltip` block + environment | hover capture returns the placed point and a frame; save writes offset/size/delay exactly; an unset `tooltip` prerequisite is `bad_request` naming the field; live hover reads both the pet and a food panel | P1 |
+| G02 | Calibrate · tuner three-box session (disabled Run session; `tuner_region` refused) | `calibration.tuner.check` / `.save` (plan §5.2): three boxes → derived `region`/bands/`row_height` + OCR read + `calib_tuner.png` | a v2 config replay derives the same numbers and bands; save round-trips; the artifact decodes with three drawn rects; live Check OCR first (no capture), then drag and save | P1 |
+| G03 | Calibrate · pet crops/rows session (disabled Run session) | `calibration.pet.preview` / `.save` / `.test_read` (plan §5.2): boxes/count regions/ETA + per-row crops + `calib_pet.png`; writes only the calibration half | v2 replay gives the same boxes/regions/ETA with siblings preserved; test read returns per-slot `text@score` + count; live full read on four rows | P1 |
+| G10 | Cards · Tuner live detail (card shows only message/countdown today) | additive `state.details` object in `ToolStatus`/`ToolSnapshot` (tuner: grade/remaining/attempt/attributes); additive `v:1` | old fixtures still decode; the Tuner card shows grade + attempt + matched attribute while running | P1 |
+| G11 | Tuner · "Last run" aside (demo detail, absent today) | additive `tool.finished.summary` + `ended_at` (per-tool; tuner grade/attempts/captures_saved/stopped_by); no persistence required unless §3 decides it | a fake event renders the panel; a real tuner run fills it; the last finish stays until replaced | P1 |
+| G12 | Cards + Pet · per-row next action and schedule wording ("next action in 30 m" today) | additive `rows[].next_action` word (`feed`/`reload`/`check`) + optional `state.schedule` line; keep the seconds field | cards read "Next feed in 30 m"; the Pet rows join the live segment to the configured row card; old fixtures decode | P1 |
+| G13 | Pet · panel test read (an uncommitted `pet.test_read_panel` already exists in the core tree) | finish the contract already in PLAN-V3-PET-SESSION §4: PROTOCOL §4 row, golden fixture, a `ShellModel` method, and the Pet-tab button/result pane | fake frame/OCR proves region = centre + tooltip offset; a refusal names the unset tooltip field; live read of one pet's growth/EXP | P1 |
+| G14 | Pet · feedable sweep + queue rebuild (absent) | `pet.scan_feeding_page` + `pet.scan_apply_queue` (plan §4/§6) | scripted panels classify correctly (a failed read is never `finished`); harvest returns icons for feedable cells only; an empty queue replace is refused; live one-page sweep | P1 |
+| G16 | Gem · movement editor (Movement section is a mode dropdown only) | `calibration.gem.moves.save` (plan §5.2): validates counts, writes only `gem.movements` | v2 movements round-trip; a malformed count is refused naming the route; one save touches only `gem.movements` | P1 |
+| G17 | Gem · route / cycle pointer tests (no actions) | `calibration.gem.test_route` + `calibration.gem.cycle {confirm:true}` (plan §5.2) | the route sends the exact tuned/arduino steps; cycle refuses without `confirm` then performs 21 steps; live both routes + cycle | P1 |
+| G19 | Buy/Sell · overlays + test scroll + Setup-so-far (aside is a read-only mark list) | `calibration.buysell.preview`, `calibration.shop.test_scroll`, and `buy_sell.preflight` (modelled on `pet.preflight`); preview/scroll shapes are plan §5.2 | preview equals v2's 64 centres; test scroll clicks the focus point first and refuses >400; preflight returns ok/-- per mark + a ready verdict | P1 |
+| G20 | Buy/Sell · dry runs (absent) | `tool.start {..., "dry_run":true}` (or `buy_sell.dry_run`): validates like a run, moves the cursor, never clicks | fake effects show placements/scrolls with zero clicks; wrong-tool arguments are `bad_request`; a normal start is unchanged | P1 |
+| G21 | Quest · Test one loop (absent) | `tool.start {"tool":"quest","test":true}` (or `quest.test_loop`) | exactly one loop then `tool.finished`; a normal start is unchanged; a non-quest tool refuses the argument | P1 |
+| G04 | Calibrate · reference gallery + saved overlay on reopen (v2-only / not-captured states today) | core draws the annotated rects into artifacts (decided) and `calibration.fetch` returns them for artifact-bearing kinds; reopening a surface loads the saved overlay | tuner/gem save writes a natural-size annotated PNG; fetch echoes it; the gallery says present after a restart; bytes are stable | P2 |
+| G05 | Calibrate · derived canvas overlays (only the selected mark is drawn) | `calibration.buysell.preview` / `calibration.pet.preview` (plan §5.2) returns the 64 centres, row dots, slot boxes — never shell arithmetic | a fixture draft returns the exact v2 geometry; a bad draft returns `problem`; the canvas renders the answer | P2 |
+| G06 | Calibrate · save compare-and-set (last-write-wins today) | optional `rev` on `calibration.save`; a stale rev → `conflict` with the current rev + block (the `config.apply` shape) | a stale save is refused writing nothing; the shell shows the current rev and refreshes; interleaved-writer test | P2 |
+| G07 | Calibrate · environment echo + `measured_at` (shell re-derives it today) | the save result echoes the written `calibration` block and stamps ISO-8601 `calibration.measured_at` (field exists, never written) | the save result carries the environment incl. `measured_at`; the shell stops re-deriving it; golden fixture pins it | P2 |
+| G08 | Calibrate · open latency + copied kind table (35 fetches on open) | `calibration.fetch_all` and a core-owned `calibration.kinds` catalog | adding a core kind appears with no shell edit; one request replaces 35; golden fixture for both | P2 |
+| G09 | Calibrate/Setup · canonical Detect (shell re-derives the comparison) | `calibration.check {}` → live + stored + differences (plan §5.2); the shell deletes its comparison copy | one command yields nothing-stored / game-closed / matches / differs; the Setup surface renders it; shell-side arithmetic deleted | P2 |
+| G18 | Gem · check-result diagnostic (absent) | `calibration.gem.check_result` (plan §5.2) | a known crop's verdict/distance match v2 within tolerance; no reference reads `no_reference`; fixture pins the fields | P2 |
+| G22 | Pet · ITEM page-up lease (PROTOCOL says the shell puts the page up; no UI code clicks) | either wire the existing `pointer.click` + the calibrated page-tab mark before capture/scan (UI-only), or add a session command holding the input lease; PROTOCOL §4's wording is fixed to today's truth | the requested page is clicked, or the command refuses when it cannot be verified; the wrong-page caveat disappears | P2 |
+| G25 | Tuner · OCR fidelity (gates G10/G11 acceptance) | no protocol change: fill `ocr.scan`'s `grade`/`remaining`, add v2's grade-colour fallback and the retry/last-retry capture (`tuner.ocr_retries` is currently unused) | archived/v2-recorded tuner frames produce the same grade, remaining and attributes as v2; the retry path is exercised | P2 |
+
+**Counts:** 13 P1 and 9 P2. The three highest-leverage commands are the three session writers that
+clear the whole disabled Calibrate panel — `calibration.pet.save` (+ preview/test_read),
+`calibration.tuner.check`/`save`, and `calibration.tooltip.hover_capture`/`save`/`test`. The cheapest
+cross-cutting win is the additive `state.details` + `rows[].next_action` + `tool.finished.summary`/
+`ended_at` set: it unblocks three surfaces (Tuner live detail, Last run, Pet per-row countdown) with
+optional `v:1` fields and no config schema change.
+
+### Decisions that gate rows (player/Lead, not engineering tasks yet)
+
+- **Named geometry profiles vs one geometry + recalibrate**, and **setup import/export**: a config-root
+  concept before any UI (§5; PLAN-V3-UI-UX §9 Q6).
+- **Frame/capture persistence beyond the core's in-memory four-frame FIFO**, and whether a saved mark
+  should persist frame provenance (today it deliberately stores mark + artifact + environment, never
+  the frame).
+- **Pet sweep protocol**: per-page blocking commands vs a background job/cancel channel (decided:
+  blocking until the live pass, PLAN-V3-PET-SESSION §10).
+- **Global hotkeys poller** (§1's measurement), **PNG-vs-BGRA frame payload** (PROTOCOL §11 item 3),
+  **Arduino PnP id** (§5), **Tuner save-clears-spring-point parity** (PLAN-V3-CALIBRATION §10).
+- **Player-run acceptance gates**: the live watch per stage, the OCR parity recordings (tuner
+  full-region only today) and the v2-oracle worksheet (§1) gate G02/G03/G25's *acceptance*, not their
+  implementation.
+
+The UI-only leftovers are not on this list: copy-as-YAML (clipboard), narrow-width aside stacking, the
+Calibrate header alignment and the 1280/960 render sweep are finished in the shell (`spec/UI.md`).
