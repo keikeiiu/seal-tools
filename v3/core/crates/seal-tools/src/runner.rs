@@ -58,6 +58,9 @@ pub struct ToolStatus {
     pub countdown_s: Option<f64>,
     /// Standing rows (the pet feeder's four rows today).
     pub rows: Vec<crate::tool::ToolRow>,
+    /// Labelled facts for the running card (`Grade: DG`, `Attempt: 7`, attribute lines). Empty when
+    /// there is nothing to show; additive `state.detail` in `v:1` (PLAN-V3-STATUS-DETAIL §1.3).
+    pub detail: Vec<crate::tool::ToolDetail>,
 }
 
 impl ToolStatus {
@@ -73,6 +76,11 @@ impl ToolStatus {
 
     pub fn rows(mut self, rows: Vec<crate::tool::ToolRow>) -> Self {
         self.rows = rows;
+        self
+    }
+
+    pub fn detail(mut self, detail: Vec<crate::tool::ToolDetail>) -> Self {
+        self.detail = detail;
         self
     }
 }
@@ -241,7 +249,8 @@ pub fn run(
                     .running(ToolPhase::Running)
                     .message(status.message)
                     .countdown_s(status.countdown_s)
-                    .rows(status.rows),
+                    .rows(status.rows)
+                    .detail(status.detail),
             );
         }
         match decision {

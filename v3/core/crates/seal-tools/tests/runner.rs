@@ -108,11 +108,13 @@ impl Tool for StatusTool {
                 message: "Attempt 1".to_owned(),
                 countdown_s: Some(3.0),
                 rows: Vec::new(),
+                detail: Vec::new(),
             },
             _ => ToolStatus {
                 message: "filter disabled".to_owned(),
                 countdown_s: None,
                 rows: Vec::new(),
+                detail: Vec::new(),
             },
         }
     }

@@ -553,6 +553,7 @@ impl<S: GemSource + Send> Tool for GemTool<S> {
             message: self.message(),
             countdown_s: None,
             rows,
+            detail: Vec::new(),
         }
     }
 

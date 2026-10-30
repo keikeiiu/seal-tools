@@ -207,6 +207,7 @@ impl<S: QuestSource + Send> Tool for QuestTool<S> {
             message: self.message.clone(),
             countdown_s: None,
             rows: Vec::new(),
+            detail: Vec::new(),
         }
     }
 

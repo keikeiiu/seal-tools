@@ -333,6 +333,26 @@ class ToolRow implements WirePayload {
   };
 }
 
+/// One labelled fact on a running card ([PROTOCOL.md] §5 `state.detail`). The core owns both the
+/// label and the rendered value; a null label is v2's label-less `name=value` attribute line.
+class ToolDetail implements WirePayload {
+  const ToolDetail({this.label, required this.value});
+
+  final String? label;
+  final String value;
+
+  factory ToolDetail.fromJson(Object? value, String path) {
+    final map = decodeMap(value, path);
+    return ToolDetail(
+      label: decodeNullableString(map['label'], '$path.label'),
+      value: decodeString(map['value'], '$path.value'),
+    );
+  }
+
+  @override
+  JsonMap toJson() => {'label': label, 'value': value};
+}
+
 /// Everything the `state` event carries ([PROTOCOL.md] §5) — exactly the fields of the core's
 /// immutable snapshot, so the card renders one value rather than assembling one.
 class ToolSnapshot implements WirePayload {
@@ -343,6 +363,7 @@ class ToolSnapshot implements WirePayload {
     required this.message,
     this.countdownSeconds,
     this.rows = const [],
+    this.detail = const [],
     this.error,
   });
 
@@ -359,6 +380,9 @@ class ToolSnapshot implements WirePayload {
   /// The row lines; `[]` means "no rows to show", never "not known yet".
   final List<ToolRow> rows;
 
+  /// The running card's labelled facts; `[]` means "no detail to show".
+  final List<ToolDetail> detail;
+
   /// A failure worth keeping on the card.
   final String? error;
 
@@ -369,6 +393,9 @@ class ToolSnapshot implements WirePayload {
     message: decodeString(map['message'], 'message'),
     countdownSeconds: decodeNullableDouble(map['countdown_s'], 'countdown_s'),
     rows: decodeList(map['rows'], 'rows', ToolRow.fromJson),
+    detail: map['detail'] == null
+        ? const []
+        : decodeList(map['detail'], 'detail', ToolDetail.fromJson),
     error: decodeNullableString(map['error'], 'error'),
   );
 
@@ -380,6 +407,7 @@ class ToolSnapshot implements WirePayload {
     'message': message,
     'countdown_s': countdownSeconds,
     'rows': [for (final row in rows) row.toJson()],
+    'detail': [for (final line in detail) line.toJson()],
     'error': error,
   };
 }

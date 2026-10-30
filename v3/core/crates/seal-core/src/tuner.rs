@@ -30,7 +30,7 @@ use seal_domain::tools::tuner::{
     TunerSettings, after_recenter, mouse_guard_step, spring_step,
 };
 use seal_tools::runner::{Tool, ToolStatus};
-use seal_tools::tool::ToolId;
+use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
 
 /// v2's loop tick (`SealTuner.cs` `SleepCheck(0.05)`), used while nothing is due.
@@ -193,9 +193,12 @@ pub struct TunerTool<S: TunerSource> {
     recenter_count: i32,
     pending_click_delay: f64,
     pending_ocr_delay: f64,
-    /// The filter line from the last read (`filter.disabled` when off). v2 shows it on the card, so it
-    /// is the part of the run the player reads between attempts.
+    /// The filter line from the last read (`filter.disabled` when off). v2 shows it as the card's
+    /// `Filter:` fact, so it is the part of the run the player reads between attempts.
     filter_line: String,
+    /// The last OCR read's facts (grade/remaining/attributes), kept for the card's `detail` lines.
+    /// `TunerRun::decide` consumes a read, so this is the only place the card can still see it.
+    last_read: Option<TunerRead>,
 }
 
 impl<S: TunerSource> TunerTool<S> {
@@ -216,6 +219,7 @@ impl<S: TunerSource> TunerTool<S> {
             pending_click_delay: timings.0,
             pending_ocr_delay: timings.1,
             filter_line: String::new(),
+            last_read: None,
         }
     }
 
@@ -224,6 +228,40 @@ impl<S: TunerSource> TunerTool<S> {
         self.pending_click_delay = click_enter_delay;
         self.pending_ocr_delay = ocr_delay;
         self
+    }
+
+    /// The card's `detail` lines in v2's `FormatStatus` order: Grade, Remaining, Attempt, the
+    /// label-less `name=value` attribute lines, then Filter (v2's wording; the shell adds nothing).
+    fn card_detail(&self) -> Vec<ToolDetail> {
+        let mut detail = Vec::new();
+        if let Some(read) = &self.last_read {
+            if let Some(grade) = &read.grade {
+                detail.push(ToolDetail::labeled("Grade", grade.clone()));
+            }
+            if let Some(remaining) = read.remaining {
+                detail.push(ToolDetail::labeled("Remaining", remaining.to_string()));
+            }
+        }
+        if self.run.attempt() > 0 || self.last_read.is_some() {
+            // v2 numbers the first attempt 1 while TunerRun counts retries, so a read that happened
+            // is at least attempt 1 on the card.
+            detail.push(ToolDetail::labeled(
+                "Attempt",
+                self.run.attempt().max(1).to_string(),
+            ));
+        }
+        if let Some(read) = &self.last_read {
+            for attribute in &read.attributes {
+                detail.push(ToolDetail::plain(match attribute.value {
+                    Some(value) => format!("{}={}", attribute.name, value),
+                    None => attribute.name.clone(),
+                }));
+            }
+        }
+        if !self.filter_line.is_empty() {
+            detail.push(ToolDetail::labeled("Filter", self.filter_line.clone()));
+        }
+        detail
     }
 
     fn logical_spring(&self) -> Option<Point> {
@@ -254,19 +292,18 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
                 message: format!("Starting in {:.0}...", remaining.ceil()),
                 countdown_s: Some(remaining),
                 rows: Vec::new(),
+                detail: Vec::new(),
             };
         }
-        if !self.filter_line.is_empty() {
-            return ToolStatus {
-                message: self.filter_line.clone(),
-                countdown_s: None,
-                rows: Vec::new(),
-            };
-        }
+        // The facts v2 printed below its card: Grade, Remaining, Attempt, one line per matched
+        // attribute, then Filter. `message` keeps only the last EVENT (v2's warning line), so a fact
+        // is never said twice (PLAN-V3-STATUS-DETAIL §5 ⚑2); no warning path exists yet, so it is
+        // empty between reads.
         ToolStatus {
-            message: format!("Attempt {}", self.run.attempt().max(1)),
+            message: String::new(),
             countdown_s: None,
             rows: Vec::new(),
+            detail: self.card_detail(),
         }
     }
 
@@ -353,6 +390,8 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
                             return Decision::Stop(seal_domain::decision::StopReason::error(line));
                         }
                     };
+                    // The decision half consumes the read; keep the facts for the card's detail.
+                    self.last_read = Some(read.clone());
                     let outcome = self.run.decide(&read);
                     self.filter_line = outcome.filter_status.clone();
                     match outcome.decision {
@@ -636,7 +675,35 @@ mod tests {
         tool.decide();
         tool.decide();
         tool.decide();
-        assert_eq!(tool.status().message, "disabled");
+        let status = tool.status();
+        assert_eq!(
+            status.message, "",
+            "Grade/Attempt/Filter are detail now, not the message (no fact twice)"
+        );
+        assert!(
+            status.detail.contains(&ToolDetail::labeled("Grade", "DG")),
+            "{:?}",
+            status.detail
+        );
+        assert!(
+            status
+                .detail
+                .contains(&ToolDetail::labeled("Remaining", "10")),
+            "{:?}",
+            status.detail
+        );
+        assert!(
+            status.detail.contains(&ToolDetail::labeled("Attempt", "1")),
+            "{:?}",
+            status.detail
+        );
+        assert!(
+            status
+                .detail
+                .contains(&ToolDetail::labeled("Filter", "disabled")),
+            "{:?}",
+            status.detail
+        );
     }
 
     #[test]

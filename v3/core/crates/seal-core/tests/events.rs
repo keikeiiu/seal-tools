@@ -15,7 +15,7 @@ use seal_core::events::{
 };
 use seal_domain::decision::{StopKind, StopReason};
 use seal_proto::Response;
-use seal_tools::tool::{ToolId, ToolPhase, ToolRow, ToolSnapshot};
+use seal_tools::tool::{ToolDetail, ToolId, ToolPhase, ToolRow, ToolSnapshot};
 use serde_json::{Value, json};
 
 /// A `Write` that appends to shared memory, so a test can read exactly what the writer wrote.
@@ -53,6 +53,10 @@ fn a_state_event_is_the_snapshots_fields() {
             ToolRow::new("row 1", "boarding").detail(Some("藍天 · 3/min")),
             ToolRow::new("row 2", "waiting for a reload").next_action_in_seconds(Some(30.0)),
         ])
+        .detail(vec![
+            ToolDetail::labeled("Grade", "DG"),
+            ToolDetail::plain("attack speed=+10"),
+        ])
         .error(None);
 
     let event = state_event(&snapshot);
@@ -79,6 +83,10 @@ fn a_state_event_is_the_snapshots_fields() {
                     "detail": null,
                     "next_action_in_seconds": 30.0
                 }
+            ],
+            "detail": [
+                {"label": "Grade", "value": "DG"},
+                {"label": null, "value": "attack speed=+10"}
             ],
             "error": null
         })

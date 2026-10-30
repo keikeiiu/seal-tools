@@ -416,6 +416,13 @@ final Map<String, FixtureDecoder> eventDecoders = {
     message,
     StateEvent(ToolSnapshot.fromJson(decodeMap(message['data'], 'data'))),
   ),
+  // The detail list is additive `v:1`; the typed ToolSnapshot gains it when the shell renders it
+  // (frontend session), but the fixture must decode through the existing state event already.
+  'event.state.detail': (message) => _event(
+    'event.state.detail',
+    message,
+    StateEvent(ToolSnapshot.fromJson(decodeMap(message['data'], 'data'))),
+  ),
   'event.tool.finished': (message) => _event(
     'event.tool.finished',
     message,

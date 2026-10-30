@@ -738,6 +738,29 @@ fn cases() -> Vec<Case> {
                         "next_action_in_seconds": null
                     }
                 ],
+                "detail": [],
+                "error": null
+            }),
+        ),
+        // One running tool's labelled facts (PLAN-V3-STATUS-DETAIL §1.3): a labelled fact, a
+        // label-less attribute line and the filter word. `[]` is "no detail", exactly like `rows`.
+        event_case(
+            "event.state.detail",
+            "state",
+            json!({
+                "tool": "tuner",
+                "running": true,
+                "phase": "running",
+                "message": "",
+                "countdown_s": null,
+                "rows": [],
+                "detail": [
+                    {"label": "Grade", "value": "DG"},
+                    {"label": "Remaining", "value": "10"},
+                    {"label": "Attempt", "value": "7"},
+                    {"label": null, "value": "attack speed=+10"},
+                    {"label": "Filter", "value": "disabled"}
+                ],
                 "error": null
             }),
         ),
@@ -754,6 +777,7 @@ fn cases() -> Vec<Case> {
                 "message": "",
                 "countdown_s": null,
                 "rows": [],
+                "detail": [],
                 "error": null
             }),
         ),

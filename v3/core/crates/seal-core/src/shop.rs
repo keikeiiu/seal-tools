@@ -165,6 +165,7 @@ impl Tool for ShopTool {
             message: self.message.clone(),
             countdown_s: None,
             rows: Vec::new(),
+            detail: Vec::new(),
         }
     }
 

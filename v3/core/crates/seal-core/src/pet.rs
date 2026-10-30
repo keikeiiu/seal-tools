@@ -480,6 +480,7 @@ pub fn status(card: &PetCard, next_label: &str) -> seal_tools::runner::ToolStatu
         message: card.schedule_line(next_label),
         countdown_s: None,
         rows: tool_rows(card),
+        detail: Vec::new(),
     }
 }
 
@@ -1935,6 +1936,7 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
             message: self.message.clone(),
             countdown_s: self.countdown_s,
             rows: tool_rows(&card),
+            detail: Vec::new(),
         }
     }
 

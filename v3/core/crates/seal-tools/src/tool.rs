@@ -142,6 +142,38 @@ impl ToolRow {
     }
 }
 
+/// One labelled fact on a running card ([PROTOCOL.md] §5 `state.detail`).
+///
+/// Decided in PLAN-V3-STATUS-DETAIL §5: the core owns both the label and the rendered value (v2's
+/// wording ported into the decision halves), a label-less entry is v2's `· name=value` attribute
+/// line, and the shell only lays out `label: value` — "no widget keeps a rule". `[]` means "no
+/// detail to show", exactly like `rows`.
+///
+/// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDetail {
+    /// The core's label (`Grade`, `Remaining`, `Attempt`, `Filter`), or `None` for an attribute line.
+    pub label: Option<String>,
+    /// The core's rendered value; the shell adds no punctuation.
+    pub value: String,
+}
+
+impl ToolDetail {
+    pub fn labeled(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            label: Some(label.into()),
+            value: value.into(),
+        }
+    }
+
+    pub fn plain(value: impl Into<String>) -> Self {
+        Self {
+            label: None,
+            value: value.into(),
+        }
+    }
+}
+
 /// Everything `PROTOCOL.md` §5's `state` event carries, as one immutable value. Built by replacing
 /// whole fields (builder methods consume and return), never by mutating a published instance.
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +189,9 @@ pub struct ToolSnapshot {
     /// v2's `NextActionAt` as seconds remaining at the publish: the card counts down from this.
     pub countdown_s: Option<f64>,
     pub rows: Vec<ToolRow>,
+    /// The running card's labelled facts (`Grade: DG`, `Attempt: 7`, `· attack speed=+10`). Empty when
+    /// the tool has no detail to show; additive in `v:1`, so an old core's missing field is `[]`.
+    pub detail: Vec<ToolDetail>,
     /// A failure worth keeping on the card; `message` may describe what was happening at the time.
     pub error: Option<String>,
 }
@@ -171,6 +206,7 @@ impl ToolSnapshot {
             message: String::new(),
             countdown_s: None,
             rows: Vec::new(),
+            detail: Vec::new(),
             error: None,
         }
     }
@@ -194,6 +230,11 @@ impl ToolSnapshot {
 
     pub fn rows(mut self, rows: Vec<ToolRow>) -> Self {
         self.rows = rows;
+        self
+    }
+
+    pub fn detail(mut self, detail: Vec<ToolDetail>) -> Self {
+        self.detail = detail;
         self
     }
 

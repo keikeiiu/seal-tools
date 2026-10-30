@@ -15,7 +15,7 @@ use std::thread::{self, JoinHandle};
 
 use seal_domain::decision::{StopKind, StopReason};
 use seal_proto::{Event, Response};
-use seal_tools::tool::{ToolId, ToolRow, ToolSnapshot};
+use seal_tools::tool::{ToolDetail, ToolId, ToolRow, ToolSnapshot};
 use serde_json::{Value, json};
 
 /// One line for the writer: a protocol response or an unsolicited event. They share a channel so the
@@ -139,6 +139,7 @@ pub fn state_data(snapshot: &ToolSnapshot) -> Value {
         "message": snapshot.message,
         "countdown_s": snapshot.countdown_s,
         "rows": snapshot.rows.iter().map(row_data).collect::<Vec<Value>>(),
+        "detail": snapshot.detail.iter().map(detail_data).collect::<Vec<Value>>(),
         "error": snapshot.error,
     })
 }
@@ -149,6 +150,13 @@ fn row_data(row: &ToolRow) -> Value {
         "status": row.status,
         "detail": row.detail,
         "next_action_in_seconds": row.next_action_in_seconds,
+    })
+}
+
+fn detail_data(detail: &ToolDetail) -> Value {
+    json!({
+        "label": detail.label,
+        "value": detail.value,
     })
 }
 

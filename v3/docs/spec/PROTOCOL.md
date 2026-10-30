@@ -240,7 +240,7 @@ is the current fact, and nothing in §4 is spec-only today.
 
 | event | data | when |
 |---|---|---|
-| `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"error":null}` — the row object is specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed. A live tool's `message`/`countdown_s`/`rows` come from the tool's own `status()` (the runner publishes it when it changes, before performing the decision it belongs to), so a run's own words reach the card without the tool writing to the bus |
+| `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"detail":[<detail>, ...],"error":null}` — the row/detail objects are specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed. A live tool's `message`/`countdown_s`/`rows` come from the tool's own `status()` (the runner publishes it when it changes, before performing the decision it belongs to), so a run's own words reach the card without the tool writing to the bus |
 | `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
 | `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`), sent AFTER that command's response; or a tool's mid-run RUN-STATE write (`pet`, no request at all), sent immediately after the file write — the shell may receive it while idle. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
@@ -272,6 +272,10 @@ the publish:
     {"name": "row 1", "status": "boarding", "detail": "藍天 · 3/min", "next_action_in_seconds": 1800.0},
     {"name": "row 2", "status": "waiting for a reload", "detail": null, "next_action_in_seconds": null}
   ],
+  "detail": [
+    {"label": "Grade", "value": "DG"},
+    {"label": null, "value": "attack speed=+10"}
+  ],
   "error": null
 }
 ```
@@ -285,7 +289,34 @@ the publish:
 
 Before the first publish — and for any tool with no rows — `rows` is `[]`. An empty list means
 "no rows to show", never "not known yet": the shell draws the card without row entries. The
-pinned fixtures are `event.state` (two rows) and `event.state.empty` (`rows: []`).
+pinned fixtures are `event.state` (two rows), `event.state.empty` (`rows: []`) and
+`event.state.detail` (Tuner facts).
+
+### `state`'s `detail`
+
+`detail` is the running card's labelled facts — the v2 `FormatStatus` lines that are not rows: the
+Tuner's Grade/Remaining/Attempt, one label-less line per matched attribute (`attack speed=+10`), the
+Filter word. Decided in PLAN-V3-STATUS-DETAIL §5: the core owns both the label and the rendered value
+(ported v2 wording), the shell only lays out `label: value` and adds no punctuation.
+
+```json
+"detail": [
+  {"label": "Grade", "value": "DG"},
+  {"label": "Attempt", "value": "7"},
+  {"label": null, "value": "attack speed=+10"},
+  {"label": "Filter", "value": "disabled"}
+]
+```
+
+| field | type | nullable | meaning |
+|---|---|---|---|
+| `label` | string | yes | The core's label (`Grade`, `Remaining`, `Attempt`, `Filter`); null marks a label-less attribute line |
+| `value` | string | no | The core's rendered value, CJK allowed |
+
+Absent or `[]` means "no detail to show", exactly like `rows`. It is additive in `v:1`: an older
+core's missing field decodes to `[]`, so the pair stays compatible with no `bad_version`. No tool
+other than the Tuner publishes detail yet; the trigger for publishing is the whole status changing
+(the runner's usual dedupe).
 
 `phase` in this payload is the **lifecycle** phase (`idle`/`starting`/`running`/`stopping`); a
 tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not in `phase`.
