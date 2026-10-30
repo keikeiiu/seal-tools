@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 42 request fixtures.
+/// The 45 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -134,6 +134,12 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.kinds', message),
   'request.calibration.check': (message) =>
       _request('request.calibration.check', message),
+  'request.calibration.tooltip.hover_capture': (message) =>
+      _request('request.calibration.tooltip.hover_capture', message),
+  'request.calibration.tooltip.save': (message) =>
+      _request('request.calibration.tooltip.save', message),
+  'request.calibration.tooltip.test': (message) =>
+      _request('request.calibration.tooltip.test', message),
   'request.calibration.fetch.targeted': (message) =>
       _request('request.calibration.fetch.targeted', message),
   'request.calibration.save.empty': (message) =>
@@ -357,6 +363,21 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.calibration_check': (message) => _ok(
     'response.ok.calibration_check',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.tooltip_save': (message) => _ok(
+    'response.ok.tooltip_save',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.tooltip_hover_capture': (message) => _ok(
+    'response.ok.tooltip_hover_capture',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.tooltip_test': (message) => _ok(
+    'response.ok.tooltip_test',
     message,
     EnvelopePayload(_result(message)),
   ),

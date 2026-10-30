@@ -484,6 +484,11 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "calibration.fetch_all" => crate::calibration::fetch_all(state, &request),
         "calibration.kinds" => crate::calibration::kinds(&request),
         "calibration.check" => crate::calibration::check(state, &request),
+        "calibration.tooltip.hover_capture" => {
+            crate::tooltip_session::hover_capture(state, &request)
+        }
+        "calibration.tooltip.save" => crate::tooltip_session::save(state, &request),
+        "calibration.tooltip.test" => crate::tooltip_session::test(state, &request),
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),
@@ -1244,7 +1249,7 @@ fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
             return bad_request(&request.id, &message, json!({"field": field}));
         }
     };
-    if let Some(response) = ensure_panel_ocr(state, &request.id) {
+    if let Some(response) = ensure_ocr(state, &request.id) {
         return response;
     }
     // Hover ONLY: the board's closed-loop placement, no click command anywhere on this path.
@@ -1319,7 +1324,7 @@ fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
 /// Load the shared OCR pipeline for the panel diagnostic, if it is not cached yet. Failing here is
 /// the existing `ocr_unavailable`; no hover or capture happens first. `Some(response)` means the
 /// diagnostic is over before it touched the game.
-fn ensure_panel_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
+pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
     if state.ocr.is_some() {
         return None;
     }
@@ -1588,7 +1593,7 @@ fn board_test(state: &CoreState, request: &Request) -> Response {
 
 /// A board failure: no usable port is `board_unavailable` (the shell shows the line), a malformed
 /// request is `bad_request` before any port is touched.
-fn board_error_response(id: &str, error: board::BoardFailure) -> Response {
+pub(crate) fn board_error_response(id: &str, error: board::BoardFailure) -> Response {
     match error {
         board::BoardFailure::Unavailable(line) => {
             Response::err(id, Error::new("board_unavailable", &line, json!({})))

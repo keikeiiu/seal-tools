@@ -41,6 +41,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.fetch_all",
     "calibration.kinds",
     "calibration.check",
+    "calibration.tooltip.hover_capture",
+    "calibration.tooltip.save",
+    "calibration.tooltip.test",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -256,6 +259,30 @@ fn cases() -> Vec<Case> {
             "55",
             "calibration.check",
             json!({}),
+        ),
+        request_case(
+            "request.calibration.tooltip.hover_capture",
+            "56",
+            "calibration.tooltip.hover_capture",
+            json!({"point": {"x": 120, "y": 240}, "hover_delay_ms": 700}),
+        ),
+        request_case(
+            "request.calibration.tooltip.save",
+            "57",
+            "calibration.tooltip.save",
+            json!({
+                "offset_x": -8,
+                "offset_y": -6,
+                "width": 320,
+                "height": 210,
+                "hover_delay_ms": 900,
+            }),
+        ),
+        request_case(
+            "request.calibration.tooltip.test",
+            "58",
+            "calibration.tooltip.test",
+            json!({"point": {"x": 120, "y": 240}, "hover_delay_ms": 700, "debug": true}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -815,6 +842,55 @@ fn cases() -> Vec<Case> {
                 "differences": [],
                 "matches": true,
                 "note": null
+            }),
+        ),
+        ok_case(
+            "response.ok.tooltip_save",
+            "57",
+            json!({
+                "rev": 18,
+                "block": {
+                    "offset_x": -8,
+                    "offset_y": -6,
+                    "width": 320,
+                    "height": 210,
+                    "hover_delay_ms": 900
+                }
+            }),
+        ),
+        ok_case(
+            "response.ok.tooltip_hover_capture",
+            "56",
+            json!({
+                "frame": {
+                    "format": "png",
+                    "width": 1200,
+                    "height": 600,
+                    "origin": {"x": 10, "y": 20},
+                    "data": "iVBORw0KGgo=",
+                    "frame_id": "f5"
+                },
+                "display": {
+                    "scale": 1.5,
+                    "monitor_dpi": 144,
+                    "screen": {"w": 1920, "h": 1080},
+                    "frame": {"x": 0, "y": 0, "w": 1200, "h": 640},
+                    "physical_client": {"x": 10, "y": 20, "w": 1200, "h": 600},
+                    "logical_client": {"x": 10, "y": 20, "w": 800, "h": 400}
+                },
+                "placed": {"x": 120, "y": 240},
+                "line": "Placed the cursor at (120, 240) and captured the panel."
+            }),
+        ),
+        ok_case(
+            "response.ok.tooltip_test",
+            "58",
+            json!({
+                "lines": [
+                    {"text": "(6階) 真蔚藍鳳凰 +7 [52.18%]", "score": 0.93}
+                ],
+                "region": {"x": 112, "y": 234, "width": 320, "height": 210},
+                "debug_path": "logs/reads/tooltip_20261030_120000.png"
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────

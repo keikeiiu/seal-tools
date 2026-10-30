@@ -1,0 +1,24 @@
+{
+  "case": "response.ok.tooltip_test",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "58",
+    "ok": true,
+    "result": {
+      "lines": [
+        {
+          "text": "(6階) 真蔚藍鳳凰 +7 [52.18%]",
+          "score": 0.93
+        }
+      ],
+      "region": {
+        "x": 112,
+        "y": 234,
+        "width": 320,
+        "height": 210
+      },
+      "debug_path": "logs/reads/tooltip_20261030_120000.png"
+    }
+  }
+}

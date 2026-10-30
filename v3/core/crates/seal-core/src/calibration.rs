@@ -566,6 +566,11 @@ fn four_numbers(value: &Value) -> Option<[i32; 4]> {
     Some(numbers)
 }
 
+/// Write the tooltip block through the one local writer (the `calibration.tooltip.save` command).
+pub(crate) fn set_tooltip_block(local: &mut Value, block: Value) {
+    set_path(local, &["tooltip"], block);
+}
+
 /// Run `calibration.save`.
 pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let args = &request.args;

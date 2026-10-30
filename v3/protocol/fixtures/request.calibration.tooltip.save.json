@@ -1,0 +1,16 @@
+{
+  "case": "request.calibration.tooltip.save",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "57",
+    "cmd": "calibration.tooltip.save",
+    "args": {
+      "offset_x": -8,
+      "offset_y": -6,
+      "width": 320,
+      "height": 210,
+      "hover_delay_ms": 900
+    }
+  }
+}

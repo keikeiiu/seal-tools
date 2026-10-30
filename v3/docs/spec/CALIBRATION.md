@@ -263,7 +263,7 @@ session is a plan), and the invented quest-step row was removed. Still open:
 
 | Not built yet | What it needs | Pointer |
 |---|---|---|
-| The tooltip offset + shape | needs v2's two-capture hover session — a frame mark cannot express "park the cursor, hover, then box the panel" — so it stays hand-edited until that session exists | OPEN; this file §1 |
+| The tooltip offset + shape | CLOSED in the core: `calibration.tooltip.hover_capture`/`.save`/`.test` implement v2's pointer-anchored session (G01); the Calibrate Tooltip surface that drives them is the frontend session's step | OPEN §6 G01 (shell only) |
 | The pet's crops/cells and the sell-slot selection | live-screen SESSION features, not frame marks: the pet's reference crops are captured from the running game on the Pet tab (the close-X crop is learned by the run), and the sell slots are a bag-cell editor. The calibration protocol deliberately does not grow kinds for them | OPEN; PROTOCOL §12.8 |
 | The tuner's three-box session | v2 dragged grade area + attribute band + remaining band and DERIVED `region`, the bands and `row_height`; a session-shaped calibration (several marks, or several commands with a documented order) is the only way to keep that derivation. Until then the tuner OCR geometry is hand-edited and `tuner_region` is refused | OPEN; `startup.rs`'s load rules |
 | The full reference screenshots (`calib_tuner.png`, `calib_gem.png`) | only the result-gem CROP exists as an artifact; the drawn-over screenshots are v2 conveniences no tool reads | this file §5 |

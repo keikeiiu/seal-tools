@@ -27,6 +27,7 @@ pub mod shop;
 pub mod spammer;
 pub mod startup;
 pub mod supervisor;
+pub mod tooltip_session;
 pub mod tuner;
 pub mod validate;
 pub mod win;

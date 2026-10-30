@@ -1253,3 +1253,115 @@ fn fetch_all_answers_every_mark_and_the_catalog_is_core_owned() {
         "withdrawn kinds travel with their reason"
     );
 }
+
+// ── G01: the tooltip hover-panel session ──────────────────────────────────────────────────────
+
+#[test]
+fn tooltip_save_writes_the_one_block_and_answers_it() {
+    let (dir, mut state, _frame_id) = harness(800, 600);
+    let response = handle(
+        &mut state,
+        Request::new(
+            "tooltip",
+            "calibration.tooltip.save",
+            json!({
+                "offset_x": -8,
+                "offset_y": -6,
+                "width": 320,
+                "height": 210,
+                "hover_delay_ms": 900,
+            }),
+        ),
+    );
+    assert!(response.ok, "tooltip save failed: {:?}", response.error);
+    let result = response.result.expect("a result");
+    assert_eq!(
+        result["block"],
+        json!({
+            "offset_x": -8,
+            "offset_y": -6,
+            "width": 320,
+            "height": 210,
+            "hover_delay_ms": 900,
+        })
+    );
+    assert!(result["rev"].as_u64().unwrap() > 0);
+    assert_eq!(
+        state.config["tooltip"]["width"], 320,
+        "the merged view carries the saved block"
+    );
+    let local = dir.read("config/local.yaml");
+    assert!(local.contains("tooltip"), "{local}");
+    assert!(local.contains("offset_x"), "{local}");
+    assert!(local.contains("hover_delay_ms"), "{local}");
+}
+
+#[test]
+fn tooltip_save_refuses_a_box_below_20_px_and_writes_nothing() {
+    let (_dir, mut state, _frame_id) = harness(800, 600);
+    let response = handle(
+        &mut state,
+        Request::new(
+            "tooltip",
+            "calibration.tooltip.save",
+            json!({"offset_x": 0, "offset_y": 0, "width": 10, "height": 210}),
+        ),
+    );
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "width");
+    assert!(
+        error.message.contains("too small"),
+        "the line explains the minimum: {}",
+        error.message
+    );
+    assert!(
+        state.config.pointer("/tooltip/width").is_none(),
+        "the refusal wrote no block"
+    );
+}
+
+#[test]
+fn tooltip_hover_capture_without_a_focus_point_is_refused_before_the_game() {
+    let (_dir, mut state, _frame_id) = harness(800, 600);
+    let response = handle(
+        &mut state,
+        Request::new(
+            "hover",
+            "calibration.tooltip.hover_capture",
+            json!({"point": {"x": 100, "y": 200}}),
+        ),
+    );
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "scroll_point");
+    assert!(
+        error.message.contains("focus point"),
+        "the line names the missing prerequisite: {}",
+        error.message
+    );
+}
+
+#[test]
+fn tooltip_test_without_a_saved_panel_names_the_tooltip_field() {
+    let (_dir, mut state, _frame_id) = harness(800, 600);
+    let response = handle(
+        &mut state,
+        Request::new(
+            "test",
+            "calibration.tooltip.test",
+            json!({"point": {"x": 100, "y": 200}}),
+        ),
+    );
+    assert!(!response.ok);
+    let error = response.error.expect("a refusal");
+    assert_eq!(error.code, "bad_request");
+    assert_eq!(error.detail["field"], "tooltip");
+    assert!(
+        error.message.contains("isn't calibrated"),
+        "the line says what to do: {}",
+        error.message
+    );
+}

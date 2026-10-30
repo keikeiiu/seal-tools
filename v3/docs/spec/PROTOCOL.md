@@ -131,6 +131,9 @@ edits; it never re-serialises the whole file (§7).
 | `calibration.fetch_all` | `{}` | `{"rev":10,"calibration":{...}\|null,"marks":[{"kind":"bag_grid","target":null,"mark":[...],"artifact":null},{"kind":"pet_toggle","target":"1","mark":[...],"artifact":null},…],"withdrawn":[{"name":"tuner_region","reason":"…"}]}` — READ-ONLY: every stored mark (one entry per configured named instance) and the environment block from ONE local read, so opening the workspace is one request not ~35 fetches (G08). Artifacts travel like `fetch` (best-effort, base64) |
 | `calibration.kinds` | `{}` | `{"kinds":[{"name":"bag_grid","shape":"rect","block":"buy_sell","path":["buy_sell","bag_grid"],"artifact":null,"targets":"none","row_key":null},…],"withdrawn":[{"name":"focus_point","reason":"…"}]}` — the core-owned catalog (G08); `targets` is `none`/`page_tab`/`pet_row`/`gem_grade`/`gem_resource`, and a new core kind appears with no shell edit |
 | `calibration.check` | `{}` | `{"live":{DisplayInfo}\|null,"stored":{"scale":1.5,"monitor_dpi":144,"screen":[1920,1080],"client_size":[1200,600],"measured_at":"…"}\|null,"differences":["scale 1.5 → 1.25",…],"matches":true\|false\|null,"note":"game window not open"\|null}` — canonical Detect (G09). The differences are `seal-domain::calibration`'s; a closed game is a RESULT (`live:null`, note), not an error; `matches` is null unless both sides exist. Nothing stored is `stored:null`, not a difference |
+| `calibration.tooltip.hover_capture` | `{"point":{"x":120,"y":240},"hover_delay_ms":700}` — client-relative PHYSICAL point; delay optional | `{"frame":{…,"frame_id":"f5"},"display":{…},"placed":{"x":120,"y":240},"line":"…"}` — places the cursor (closed loop), clicks the inert buy/sell `scroll_point` for focus, hovers the point WITHOUT clicking it, waits `hover_delay_ms` (config default 700), captures the full client and caches the frame for the next save (G01). Input lease → `tool_busy`; missing focus point → `bad_request` field `scroll_point`; window/foreground errors as usual. The shell hides itself around the command. |
+| `calibration.tooltip.save` | `{"offset_x":-8,"offset_y":-6,"width":320,"height":210,"hover_delay_ms":900}` — offset fields required; width/height must be ≥20; delay 0..10000, default the current config | `{"rev":18,"block":{"offset_x":-8,"offset_y":-6,"width":320,"height":210,"hover_delay_ms":900}}` — writes the ONE `tooltip` block through the single writer, keeps the rest of the file/foreign blocks, bumps the revision and emits exactly one `config.changed {block:"tooltip"}` AFTER the response. A box under 20×20 is `bad_request` field `width`; offsets are the panel's left/top minus the hover point. |
+| `calibration.tooltip.test` | `{"point":{"x":120,"y":240},"hover_delay_ms":700,"debug":true}` — point required; delay/debug optional (debug default true) | `{"lines":[{"text":"…","score":0.93},…],"region":{"x":112,"y":234,"width":320,"height":210},"debug_path":"logs/reads/tooltip_…png"\|null}` — hovers like `hover_capture`, OCRs the configured region (point + offset/size) and returns the recognised lines with confidence. READ-ONLY. Unset `tooltip` is `bad_request` field `tooltip`; input lease/window/OCR errors as usual. The debug PNG is best-effort and shows exactly the region OCR was given. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -236,7 +239,8 @@ Notes:
 `pet.capture_icon`,
 `pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`,
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
-`calibration.fetch_all`/`calibration.kinds`/`calibration.check`, `ocr.scan`,
+`calibration.fetch_all`/`calibration.kinds`/`calibration.check`/
+`calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.
 
@@ -246,7 +250,7 @@ is the current fact, and nothing in §4 is spec-only today.
 |---|---|---|
 | `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"detail":[<detail>, ...],"error":null}` — the row/detail objects are specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed. A live tool's `message`/`countdown_s`/`rows` come from the tool's own `status()` (the runner publishes it when it changes, before performing the decision it belongs to), so a run's own words reach the card without the tool writing to the bus |
 | `tool.finished` | `{"tool":"tuner","reason":"done"|"cancelled"|"error"|"guard","message":"Reached DG after 7 attempts","summary":{...}\|null,"ended_at":"2026-10-30T12:34:56Z"}` | a run ends; the message is the one v2 writes to its log; `summary`/`ended_at` are specified below |
-| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`), sent AFTER that command's response; or a tool's mid-run RUN-STATE write (`pet`, no request at all), sent immediately after the file write — the shell may receive it while idle. `config.reload` emits nothing — its answer already carries the whole config |
+| `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`), `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`) and `calibration.tooltip.save` (`tooltip`), sent AFTER that command's response; or a tool's mid-run RUN-STATE write (`pet`, no request at all), sent immediately after the file write — the shell may receive it while idle. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
 | `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` is produced only by replay drift (§13) — a normal session ends `eof` or `shutdown` |
 
@@ -558,6 +562,16 @@ LANDED as §12.8, not left as a silent omission.
     table and `local.yaml`; `calibration.check` uses the already-ported
     `seal-domain::calibration` comparison and its missing-window case is a result, not an error.
     None of this changes an existing command's required arguments or result fields.
+
+11. **The tooltip calibration is a three-command SESSION over the pointer, not a frame mark (G01).**
+    A panel is anchored to the pointer, so its offset from the pointer is universal; a single rect
+    cannot express "park the cursor, hover, wait, then box the panel". `hover_capture` therefore
+    performs the place/click-focus/hover/capture under the same input-lease snapshot the tools use
+    (never a click on the hovered item: the focus click lands on the buy/sell `scroll_point`, an inert
+    place), returns the cached frame, and `save` writes only the `tooltip` block. `test` is the
+    read-only companion that runs the same hover and OCRs the configured region. The shell hides/
+    shows around the capture commands exactly as for `capture`; the offset is computed by the CORE
+    from the point it placed, never from a client-side cursor read.
 ## 13. Replay mode (development)
 
 `seal-core --replay <script.json>` serves the SAME stdio protocol from a script instead of from the
