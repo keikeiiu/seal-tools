@@ -745,7 +745,10 @@ class _RuleList extends StatelessWidget {
         for (var index = 0; index < rules.length; index++)
           Padding(
             padding: const EdgeInsets.only(top: ShellSpace.xs),
-            child: Row(
+            child: Wrap(
+              spacing: ShellSpace.sm,
+              runSpacing: ShellSpace.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _NameDropdown(
                   dropdownKey: ValueKey('$listKey-name-$index'),
@@ -757,7 +760,6 @@ class _RuleList extends StatelessWidget {
                       ? null
                       : (value) => onField(index, 'name', value),
                 ),
-                const SizedBox(width: ShellSpace.sm),
                 DraftFieldSlot(
                   slotKey: '$listKey-count-$index',
                   syncToken: syncToken,
@@ -769,7 +771,6 @@ class _RuleList extends StatelessWidget {
                     onChanged: (value) => onField(index, 'count', value),
                   ),
                 ),
-                const SizedBox(width: ShellSpace.sm),
                 DraftFieldSlot(
                   slotKey: '$listKey-min-$index',
                   syncToken: syncToken,
@@ -785,7 +786,6 @@ class _RuleList extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: ShellSpace.sm),
                 DraftFieldSlot(
                   slotKey: '$listKey-max-$index',
                   syncToken: syncToken,

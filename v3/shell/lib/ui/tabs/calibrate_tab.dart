@@ -728,8 +728,8 @@ class _CalibrateTabState extends State<CalibrateTab>
                 '${capture.displayLabel} · screen '
                 '${capture.display.screen.w}×${capture.display.screen.h}',
           );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Calibrate', style: theme.textTheme.headlineSmall),
         const SizedBox(height: ShellSpace.xs),
@@ -744,14 +744,26 @@ class _CalibrateTabState extends State<CalibrateTab>
             style: TextStyle(fontSize: 14, height: 1.5),
           ),
         ),
-        const SizedBox(height: ShellSpace.md),
+      ],
+    );
+    final actions = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (displayChip != null || matchChip != null) ...[
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: ShellSpace.sm,
+            runSpacing: ShellSpace.sm,
+            children: [?displayChip, ?matchChip],
+          ),
+          const SizedBox(height: ShellSpace.sm),
+        ],
         Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           spacing: ShellSpace.sm,
           runSpacing: ShellSpace.sm,
-          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            ?displayChip,
-            ?matchChip,
             OutlinedButton.icon(
               key: const ValueKey('calibrate-refresh'),
               onPressed: _loadingStored ? null : _loadStoredAll,
@@ -763,6 +775,30 @@ class _CalibrateTabState extends State<CalibrateTab>
         ),
       ],
     );
+    // Demo header: title + prose left, display chips/actions right when there is room; stacked at a
+    // window narrow enough that side-by-side would squeeze the prose.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              heading,
+              const SizedBox(height: ShellSpace.md),
+              actions,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: heading),
+            const SizedBox(width: ShellSpace.lg),
+            actions,
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildDisplayEnvironment(
@@ -772,11 +808,18 @@ class _CalibrateTabState extends State<CalibrateTab>
     if (capture == null) {
       return Padding(
         padding: const EdgeInsets.only(bottom: ShellSpace.md),
-        child: Text(
-          'Display environment: measured with each capture. Nothing captured yet.',
-          key: const ValueKey('calibrate-display-empty'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        // Align loosens the stretched column so the prose measure applies to the state line too.
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+            child: Text(
+              'Display environment: measured with each capture. Nothing captured yet.',
+              key: const ValueKey('calibrate-display-empty'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ),
       );

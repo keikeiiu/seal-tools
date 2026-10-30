@@ -1422,4 +1422,58 @@ void main() {
       reason: 'a missing host channel is a note, never a failed capture',
     );
   });
+
+  testWidgets('Copy as YAML copies the saved marks and writes nothing', (
+    tester,
+  ) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+            mark:
+                (request['args'] as Map<String, dynamic>)['kind'] == 'bag_grid'
+                ? const [10, 20, 30, 40]
+                : null,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+    final copy = find.byKey(const ValueKey('calibrate-copy-yaml'));
+    await tester.ensureVisible(copy);
+    await tester.pump();
+    await tester.tap(copy);
+    await _flush(tester);
+
+    expect(copied, isNotNull);
+    expect(copied, contains("'bag_grid':"));
+    expect(copied, contains('  x: 10'));
+    expect(copied, contains('  w: 30'));
+    expect(
+      harness.sentMessages.where(
+        (message) => message['cmd'] == 'calibration.save',
+      ),
+      isEmpty,
+      reason: 'copying is a read of values already on screen, not a save',
+    );
+  });
 }

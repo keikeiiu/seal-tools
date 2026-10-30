@@ -209,41 +209,57 @@ class ConfigTabScaffold extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  // The bottom inset keeps the last line clear of the save bar instead of clipping
-                  // it at the scroll viewport edge.
-                  padding: const EdgeInsets.fromLTRB(
-                    ShellSpace.lg,
-                    0,
-                    ShellSpace.lg,
-                    ShellSpace.sm,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    // Editable content first; calibrated/reference data is demoted below it
-                    // (§2.1/§2.5.3 of the design audit).
-                    children: [child, ...readOnly],
-                  ),
+          // Wide content: form + 300 px aside side by side. Narrow (a 960 window beside the rail):
+          // the aside stacks below the form instead of squeezing every row into ~380 px.
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stackAside =
+                  asideWidget == null || constraints.maxWidth < 900;
+              final scroll = SingleChildScrollView(
+                // The bottom inset keeps the last line clear of the save bar instead of clipping
+                // it at the scroll viewport edge.
+                padding: const EdgeInsets.fromLTRB(
+                  ShellSpace.lg,
+                  0,
+                  ShellSpace.lg,
+                  ShellSpace.sm,
                 ),
-              ),
-              if (asideWidget != null)
-                SizedBox(
-                  width: ShellWidth.aside,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(
-                      0,
-                      0,
-                      ShellSpace.lg,
-                      ShellSpace.sm,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  // Editable content first; calibrated/reference data is demoted below it
+                  // (§2.1/§2.5.3 of the design audit).
+                  children: [
+                    child,
+                    ...readOnly,
+                    if (stackAside && asideWidget != null) ...[
+                      const SizedBox(height: ShellSpace.lg),
+                      asideWidget,
+                    ],
+                  ],
+                ),
+              );
+              if (stackAside) {
+                return scroll;
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: scroll),
+                  SizedBox(
+                    width: ShellWidth.aside,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        0,
+                        0,
+                        ShellSpace.lg,
+                        ShellSpace.sm,
+                      ),
+                      child: asideWidget,
                     ),
-                    child: asideWidget,
                   ),
-                ),
-            ],
+                ],
+              );
+            },
           ),
         ),
         _SaveBar(

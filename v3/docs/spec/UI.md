@@ -103,7 +103,9 @@ screen: Save.
   fields assert against a decorated background.
 - **Aside.** `ConfigTabScaffold.aside` (300 px, own scroll) carries reference data and context beside
   the form: Tuner/Gem/Buy/Sell put a collapsed `ReadOnlyPanel` "Calibrated geometry" there plus a short
-  "how this screen saves/run" panel. Nothing reference-shaped leads the form anymore.
+  "how this screen saves/run" panel. Nothing reference-shaped leads the form anymore. Below ~900 px of
+  content width (a 960 window beside the rail) the aside stacks below the form instead of squeezing
+  every row; Tuner rule rows wrap the same way.
 - **Foldable advanced sections.** `FoldableSection` holds diagnostics that are not part of a normal
   run: Tuner (OCR retries, save captures, capture cleanup), Gem (save empty captures), Quest (cursor
   guard). Folded by default; the controls keep their keys.
@@ -146,6 +148,8 @@ The one-form screen became the demo's workspace. Layout: at **content width ≥ 
 window leaves ~1064 px beside the rail, so it shows the workspace) — captures + target tree 250 px ·
 flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the same panels stack in
 one column. Below the columns: the stored-coordinate table and the session-shaped calibrations panel.
+The page header keeps the display/match chips and the Refresh/Capture actions on the right at wide
+widths and stacks them under the prose when the window is narrow.
 
 - **Capture shelf:** at most four frames (the core's FIFO). Each item: label/time, physical size, that
   capture's **own `DisplayInfo`**, frame id, and an eviction marker on the oldest; a fifth capture
@@ -162,6 +166,8 @@ one column. Below the columns: the stored-coordinate table and the session-shape
   verdict); save refusals render verbatim, including "capture again" for an unknown frame id.
 - **Stored coordinates:** all 35 marks — surface, tool, shape, `x, y` / `x, y · w×h`, artifact, status —
   filterable by tool. Marks do **not** persist a frame reference; the frame is write-time provenance.
+  **Copy as YAML** copies the saved marks as a small YAML document to the clipboard (a read of values
+  already on screen; it writes nothing and is not a config import).
 - **Reference images:** result-gem crop (present/not captured), pet crops marked "run-learned", v2
   annotated screenshots marked "v2 only" — truthful states, no invented artifacts.
 - **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
@@ -199,12 +205,15 @@ keeps its spinner + status text, with the stderr tail only when there is one.
   annotated reference screenshots, the Gem movement editor + pointer/cycle tests, Buy/Sell 64-centre/
   row overlays + test scroll + "Setup so far", and the Setup → Detect surface (the ComparisonCheck rule
   is ported; no command exists). The workspace lists each with what it needs; it does not fake them.
+  **The backend ledger for every one of these is [OPEN.md §6](../backlog/OPEN.md#6-backend-work-the-finished-ui-needs).**
 - **Frame persistence / calibration rev / Detect**: a saved mark stores mark + artifact + display
   environment, never the frame; `calibration.save` has no `rev`; there is no batch "fetch all" (the
-  workspace fetches the kinds on open). These are protocol facts, not UI choices.
+  workspace fetches the kinds on open). These are protocol facts, not UI choices (OPEN §6 G04–G09).
 - **Named geometry profiles / setup import-export** are still a future config-root feature
   ([OPEN.md](../backlog/OPEN.md)); the UI warns and recalibrates, it does not switch setups.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 270/270; `dart format` clean.
+Gates for this build: `flutter analyze` No issues; `flutter test` 271/271; `dart format` clean. Every
+destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
+(`.scratch/ui-audit/shots/final-*.png`) with no layout overflow.

@@ -11,6 +11,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/app.dart';
 import '../../components/surface_panel.dart';
@@ -85,9 +86,23 @@ class StoredMarksTablePanel extends StatelessWidget {
               ),
             ),
           ),
-          const Tooltip(
-            message: 'Copying the stored marks as YAML is not built yet.',
-            child: TextButton(onPressed: null, child: Text('Copy as YAML')),
+          TextButton.icon(
+            key: const ValueKey('calibrate-copy-yaml'),
+            onPressed: saved == 0
+                ? null
+                : () async {
+                    // Copying is a read of data the screen already has; it writes nothing and is
+                    // not a config import. All saved marks are copied, not just the filtered view.
+                    final messenger = ScaffoldMessenger.of(context);
+                    await Clipboard.setData(
+                      ClipboardData(text: _storedMarksYaml(stored)),
+                    );
+                    messenger.showSnackBar(
+                      SnackBar(content: Text('Copied $saved mark(s) as YAML')),
+                    );
+                  },
+            icon: const Icon(Icons.copy_all_outlined, size: ShellSize.iconSm),
+            label: const Text('Copy as YAML'),
           ),
         ],
       ),
@@ -288,4 +303,29 @@ class _MarkTable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The stored marks as a small YAML document the player can paste into an issue or keep beside a
+/// backup of `local.yaml`. Values stay integers in client-relative physical px; point kinds have no
+/// w/h because the wire form is `[x, y]` (PROTOCOL §12.7).
+String _storedMarksYaml(Map<String, CalibrationFetchResult> stored) {
+  final buffer = StringBuffer()
+    ..writeln('# seal-tools calibration marks (client-relative physical px)')
+    ..writeln('# source: calibration.fetch; local.yaml is the source of truth');
+  for (final slot in calibrationMarkSlots()) {
+    final mark = stored[slot.key]?.mark;
+    if (mark == null) {
+      continue;
+    }
+    buffer
+      ..writeln("'${slot.key}':")
+      ..writeln('  x: ${mark.x}')
+      ..writeln('  y: ${mark.y}');
+    if (mark.isRect) {
+      buffer
+        ..writeln('  w: ${mark.w}')
+        ..writeln('  h: ${mark.h}');
+    }
+  }
+  return buffer.toString();
 }
