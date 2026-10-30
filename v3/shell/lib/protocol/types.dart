@@ -446,29 +446,45 @@ class ToolSnapshot implements WirePayload {
   };
 }
 
-/// The `tool.finished` payload ([PROTOCOL.md] §5); `message` is the exact line the card shows.
+/// The `tool.finished` payload ([PROTOCOL.md] §5); `message` is the exact line the card shows, and
+/// `summary`/`endedAt` are the additive G11 end-of-run facts (null for a tool with nothing to add).
 class ToolFinished implements WirePayload {
   const ToolFinished({
     required this.tool,
     required this.reason,
     required this.message,
+    this.summary,
+    this.endedAt,
   });
 
   final ToolId tool;
   final ToolStopKind reason;
   final String message;
 
-  factory ToolFinished.fromJson(JsonMap map) => ToolFinished(
-    tool: ToolId.parse(decodeString(map['tool'], 'tool')),
-    reason: ToolStopKind.parse(decodeString(map['reason'], 'reason')),
-    message: decodeString(map['message'], 'message'),
-  );
+  /// The tool's own end-of-run facts (Tuner: grade/attempts/captures_saved/stopped_by), or null.
+  final JsonMap? summary;
+
+  /// The core's UTC finish instant in ISO-8601; null in an older core's event.
+  final String? endedAt;
+
+  factory ToolFinished.fromJson(JsonMap map) {
+    final summary = map['summary'];
+    return ToolFinished(
+      tool: ToolId.parse(decodeString(map['tool'], 'tool')),
+      reason: ToolStopKind.parse(decodeString(map['reason'], 'reason')),
+      message: decodeString(map['message'], 'message'),
+      summary: summary == null ? null : decodeMap(summary, 'summary'),
+      endedAt: decodeNullableString(map['ended_at'], 'ended_at'),
+    );
+  }
 
   @override
   JsonMap toJson() => {
     'tool': tool.wire,
     'reason': reason.wire,
     'message': message,
+    'summary': summary,
+    'ended_at': endedAt,
   };
 }
 

@@ -241,7 +241,7 @@ is the current fact, and nothing in §4 is spec-only today.
 | event | data | when |
 |---|---|---|
 | `state` | `{"tool":"pet","running":true,"phase":"running","message":"row 2: looking","countdown_s":null,"rows":[<row>, ...],"detail":[<detail>, ...],"error":null}` — the row/detail objects are specified below | whenever the published state changes — the whole 750 ms-poll surface, pushed. A live tool's `message`/`countdown_s`/`rows` come from the tool's own `status()` (the runner publishes it when it changes, before performing the decision it belongs to), so a run's own words reach the card without the tool writing to the bus |
-| `tool.finished` | `{"tool":"pet","reason":"done"|"cancelled"|"error"|"guard","message":"DONE — 4 row(s)"}` | a run ends; the message is the one v2 writes to its log |
+| `tool.finished` | `{"tool":"tuner","reason":"done"|"cancelled"|"error"|"guard","message":"Reached DG after 7 attempts","summary":{...}\|null,"ended_at":"2026-10-30T12:34:56Z"}` | a run ends; the message is the one v2 writes to its log; `summary`/`ended_at` are specified below |
 | `config.changed` | `{"rev":11,"block":"pet","values":{...}}` | the core wrote a block the UI displays: `config.apply` (one event per written block, `settings` fans out to its inner blocks), `ui.window` (`ui`) and `calibration.save` (`buy_sell`/`gem`/`tuner`/`pet`), sent AFTER that command's response; or a tool's mid-run RUN-STATE write (`pet`, no request at all), sent immediately after the file write — the shell may receive it while idle. `config.reload` emits nothing — its answer already carries the whole config |
 | `log` | `{"level":"info"|"warn"|"error","line":"..."}` | a line the UI may show in its status/log surface |
 | `core.stopping` | `{"reason":"eof"|"shutdown"|"fatal"}` | last event before exit; `fatal` is produced only by replay drift (§13) — a normal session ends `eof` or `shutdown` |
@@ -322,6 +322,34 @@ other than the Tuner publishes detail yet; the trigger for publishing is the who
 
 `phase` in this payload is the **lifecycle** phase (`idle`/`starting`/`running`/`stopping`); a
 tool-specific sub-phase, if one is ever needed, travels in `message`/`rows`, not in `phase`.
+
+### `tool.finished`'s `summary` and `ended_at`
+
+Two additive `v:1` fields on the event (G11), so the Tuner's "Last run" aside can show what the run
+achieved and when it ended:
+
+```json
+{
+  "event": "tool.finished",
+  "data": {
+    "tool": "tuner",
+    "reason": "done",
+    "message": "Reached DG after 7 attempts",
+    "summary": {"grade": "DG", "attempts": 7, "captures_saved": 0, "stopped_by": "done"},
+    "ended_at": "2026-10-30T12:34:56Z"
+  }
+}
+```
+
+| field | type | nullable | meaning |
+|---|---|---|---|
+| `summary` | object | yes | The tool's own end-of-run facts, built before the tool is dropped; `null` when the tool has nothing to add (every tool except the Tuner today). The fields inside are the tool's; the Tuner publishes `grade` (string or null), `attempts` (integer, first attempt = 1), `captures_saved` (integer; v3's tuner saves none, so 0 rather than a guess) and `stopped_by` (the same word as `reason`) |
+| `ended_at` | string | no | The core's UTC finish instant in ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`); the shell renders it and never timestamps from its own clock |
+
+Both are additive: an older core's missing `summary` decodes as null and a missing `ended_at` as null
+in the shell's typed model; the reason/message are unchanged. The summary is published once per run,
+in the same event that ends it; it is not persisted (a last finish lives only as long as the shell
+keeps it, which is the decided scope).
 
 ## 6. Errors
 

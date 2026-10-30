@@ -110,14 +110,31 @@ fn a_finished_event_carries_the_protocol_reason_words() {
 
     for (kind, word) in cases {
         let reason = StopReason::new(kind, "DONE — 4 row(s)");
-        let event = tool_finished_event(ToolId::Pet, &reason);
+        let summary = json!({
+            "grade": "DG",
+            "attempts": 7,
+            "captures_saved": 0,
+            "stopped_by": word,
+        });
+        let event = tool_finished_event(ToolId::Pet, &reason, Some(&summary));
 
         assert_eq!(event.event, "tool.finished");
-        assert_eq!(
-            event.data,
-            json!({"tool": "pet", "reason": word, "message": "DONE — 4 row(s)"})
-        );
+        assert_eq!(event.data["tool"], "pet");
+        assert_eq!(event.data["reason"], word);
+        assert_eq!(event.data["message"], "DONE — 4 row(s)");
+        assert_eq!(event.data["summary"], summary);
+        let ended_at = event.data["ended_at"]
+            .as_str()
+            .expect("ended_at is an ISO-8601 string");
+        assert_eq!(ended_at.len(), 20, "{ended_at}");
+        assert!(ended_at.ends_with('Z'), "{ended_at}");
+        assert_eq!(&ended_at[4..5], "-");
+        assert_eq!(&ended_at[10..11], "T");
     }
+
+    // A tool with nothing to add publishes an explicit null summary, never a missing field.
+    let event = tool_finished_event(ToolId::Pet, &StopReason::done("DONE"), None);
+    assert!(event.data["summary"].is_null());
 }
 
 #[test]

@@ -125,8 +125,13 @@ enum WorkerEvent {
         tool: ToolId,
         snapshot: Arc<ToolSnapshot>,
     },
-    /// The worker's LAST act. Handling this is where `finished` runs.
-    Done { tool: ToolId, reason: StopReason },
+    /// The worker's LAST act. Handling this is where `finished` runs. `summary` is the tool's own
+    /// end-of-run facts (G11), built before the tool is dropped; the event builder adds `ended_at`.
+    Done {
+        tool: ToolId,
+        reason: StopReason,
+        summary: Option<Value>,
+    },
 }
 
 enum Incoming {
@@ -583,7 +588,11 @@ fn handle_worker(
                 plumbing.bus.emit(events::state_event(&snapshot));
             }
         }
-        WorkerEvent::Done { tool, reason } => {
+        WorkerEvent::Done {
+            tool,
+            reason,
+            summary,
+        } => {
             // THE EXIT PATH: the final snapshot, tool.finished, the slot and the game all settle
             // here, in one place, from the worker's own last message.
             let finish = arbiter.finished(tool, reason.clone());
@@ -595,7 +604,7 @@ fn handle_worker(
             }
             plumbing
                 .bus
-                .emit(events::tool_finished_event(tool, &reason));
+                .emit(events::tool_finished_event(tool, &reason, summary.as_ref()));
             handle_game_release(finish.game, pending, workers, plumbing);
         }
     }
@@ -638,6 +647,7 @@ fn worker_loop(
             let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
                 tool,
                 reason: StopReason::error(line),
+                summary: None,
             }));
             return;
         }
@@ -649,6 +659,7 @@ fn worker_loop(
         let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
             tool,
             reason: StopReason::cancelled(STOPPED_MESSAGE),
+            summary: None,
         }));
         return;
     }
@@ -671,7 +682,13 @@ fn worker_loop(
     let mut effects = effects;
     let reason = runner::run(&mut logged, &handle, &RealClock, &mut *effects);
     logs.tool_finished(tool, &reason);
-    let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done { tool, reason }));
+    // The tool is about to be dropped: its last facts must be captured while it still exists.
+    let summary = logged.summary(&reason);
+    let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
+        tool,
+        reason,
+        summary,
+    }));
 }
 
 /// Wraps one session tool so the worker's `<tool>.log` gets the tool's OWN status words: one line per
@@ -709,5 +726,9 @@ impl Tool for LoggedTool {
             *self.last_message.borrow_mut() = status.message.clone();
         }
         status
+    }
+
+    fn summary(&self, reason: &StopReason) -> Option<Value> {
+        self.inner.summary(reason)
     }
 }

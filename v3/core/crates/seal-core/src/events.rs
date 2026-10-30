@@ -161,18 +161,63 @@ fn detail_data(detail: &ToolDetail) -> Value {
     })
 }
 
-/// A `tool.finished` event: the tool, the protocol's reason word, and the message the player reads
-/// (`PROTOCOL.md` §5). The reason is the same [`StopReason`] the final snapshot is published from,
-/// so the two cannot disagree.
-pub fn tool_finished_event(tool: ToolId, reason: &StopReason) -> Event {
+/// A `tool.finished` event: the tool, the protocol's reason word, the message the player reads, the
+/// tool's own end-of-run summary ([`crate::supervisor::WorkerEvent::Done`]) and `ended_at`
+/// (`PROTOCOL.md` §5). The reason is the same [`StopReason`] the final snapshot is published from, so
+/// the two cannot disagree.
+///
+/// `summary` is additive `v:1` (G11): a tool that has nothing to add publishes `null`, and an older
+/// core's missing fields are null. `ended_at` is the core's UTC clock at the moment the event is
+/// built (the summary says WHAT the run did; this says WHEN) — the shell renders it and never invents
+/// a timestamp from its own clock.
+pub fn tool_finished_event(tool: ToolId, reason: &StopReason, summary: Option<&Value>) -> Event {
     Event::new(
         "tool.finished",
         json!({
             "tool": tool.as_str(),
             "reason": stop_kind_name(reason.kind),
             "message": reason.message,
+            "summary": summary,
+            "ended_at": utc_now_rfc3339(),
         }),
     )
+}
+
+/// The current UTC instant in `PROTOCOL.md`'s ISO-8601 form (`2026-10-30T19:05:00Z`).
+///
+/// `std` exposes UTC without a calendar dependency; the conversion is Howard Hinnant's
+/// days-to-civil algorithm, the same one `seal-win` uses for its non-Windows fallback. Seconds
+/// resolution: the timestamp names the finish, not a frame.
+fn utc_now_rfc3339() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let days = i64::try_from(seconds / 86_400).unwrap_or(0);
+    let of_day = seconds % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        of_day / 3_600,
+        (of_day % 3_600) / 60,
+        of_day % 60
+    )
+}
+
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    (year + i64::from(month <= 2), month, day)
 }
 
 /// An informational `log` line (`PROTOCOL.md` §5). v3 defines no level enum in the spec beyond the

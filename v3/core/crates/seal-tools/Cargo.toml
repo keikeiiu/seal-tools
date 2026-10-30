@@ -6,3 +6,4 @@ publish.workspace = true
 
 [dependencies]
 seal-domain = { path = "../seal-domain" }
+serde_json.workspace = true

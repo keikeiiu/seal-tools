@@ -430,6 +430,13 @@ final Map<String, FixtureDecoder> eventDecoders = {
       ToolFinished.fromJson(decodeMap(message['data'], 'data')),
     ),
   ),
+  'event.tool.finished.summary': (message) => _event(
+    'event.tool.finished.summary',
+    message,
+    ToolFinishedEvent(
+      ToolFinished.fromJson(decodeMap(message['data'], 'data')),
+    ),
+  ),
 };
 
 /// The decoders for one fixture kind.

@@ -46,6 +46,14 @@ pub trait Tool {
     fn status(&self) -> ToolStatus {
         ToolStatus::default()
     }
+
+    /// The run's LAST facts for `tool.finished.summary` (G11), built by the tool because only it can
+    /// say what the run achieved — e.g. the Tuner's final grade/attempts/captures and which stop
+    /// reason ended it. `None` (the default) publishes `"summary": null`; `ended_at` is added by the
+    /// event builder, so a tool never carries a clock.
+    fn summary(&self, _reason: &StopReason) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 /// What a tool wants its card to say between decisions. Compared by value by the runner, so a tool

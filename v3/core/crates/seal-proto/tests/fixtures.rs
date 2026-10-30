@@ -786,7 +786,31 @@ fn cases() -> Vec<Case> {
         event_case(
             "event.tool.finished",
             "tool.finished",
-            json!({"tool": "pet", "reason": "done", "message": "DONE — 4 row(s)"}),
+            json!({
+                "tool": "pet",
+                "reason": "done",
+                "message": "DONE — 4 row(s)",
+                "summary": null,
+                "ended_at": "2026-10-30T12:00:00Z"
+            }),
+        ),
+        // The per-tool end-of-run facts (G11): the Tuner's last grade/attempts/captures and which
+        // stop reason ended it, plus the core's UTC finish instant. Additive v:1.
+        event_case(
+            "event.tool.finished.summary",
+            "tool.finished",
+            json!({
+                "tool": "tuner",
+                "reason": "done",
+                "message": "Reached DG after 7 attempts",
+                "summary": {
+                    "grade": "DG",
+                    "attempts": 7,
+                    "captures_saved": 0,
+                    "stopped_by": "done"
+                },
+                "ended_at": "2026-10-30T12:34:56Z"
+            }),
         ),
         event_case(
             "event.config.changed",

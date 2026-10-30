@@ -23,7 +23,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 use seal_domain::config::FilterConfig;
-use seal_domain::decision::Decision;
+use seal_domain::decision::{Decision, StopKind, StopReason};
 use seal_domain::geometry::{DisplayInfo, Point, Rect};
 use seal_domain::tools::tuner::{
     MouseGuardStep, START_COUNTDOWN, SpringMode, SpringStep, TunerDecision, TunerRead, TunerRun,
@@ -31,7 +31,7 @@ use seal_domain::tools::tuner::{
 };
 use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::{ToolDetail, ToolId};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// v2's loop tick (`SealTuner.cs` `SleepCheck(0.05)`), used while nothing is due.
 pub const TICK_SECONDS: f64 = 0.05;
@@ -305,6 +305,24 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
             rows: Vec::new(),
             detail: self.card_detail(),
         }
+    }
+
+    /// `tool.finished.summary` (G11): the last read's grade, the attempt count, captures saved by
+    /// this run (v3's tuner never saves per-attempt captures, so this is 0 rather than a guess) and
+    /// which protocol stop reason ended it (v2's "stopped by", in the wire's own word).
+    fn summary(&self, reason: &StopReason) -> Option<Value> {
+        let stopped_by = match reason.kind {
+            StopKind::Done => "done",
+            StopKind::Cancelled => "cancelled",
+            StopKind::Error => "error",
+            StopKind::Guard => "guard",
+        };
+        Some(json!({
+            "grade": self.last_read.as_ref().and_then(|read| read.grade.clone()),
+            "attempts": if self.last_read.is_some() { self.run.attempt().max(1) } else { 0 },
+            "captures_saved": 0,
+            "stopped_by": stopped_by,
+        }))
     }
 
     fn decide(&mut self) -> Decision {
@@ -704,6 +722,15 @@ mod tests {
             "{:?}",
             status.detail
         );
+
+        // G11: the run's last facts survive the stop reason and are built before the tool is dropped.
+        let summary = tool
+            .summary(&StopReason::done("Reached DG"))
+            .expect("the tuner publishes a summary");
+        assert_eq!(summary["grade"], "DG");
+        assert_eq!(summary["attempts"], 1);
+        assert_eq!(summary["captures_saved"], 0);
+        assert_eq!(summary["stopped_by"], "done");
     }
 
     #[test]

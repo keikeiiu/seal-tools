@@ -323,13 +323,19 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
     assert_eq!(last_state.data["message"], "DONE — 1 click");
     assert_eq!(last_state.data["running"], false);
     let finished = seen.last().expect("finished");
-    assert_eq!(
-        finished.data,
-        serde_json::json!({
-            "tool": "tuner",
-            "reason": "done",
-            "message": "DONE — 1 click",
-        })
+    assert_eq!(finished.data["tool"], "tuner");
+    assert_eq!(finished.data["reason"], "done");
+    assert_eq!(finished.data["message"], "DONE — 1 click");
+    assert!(
+        finished.data["summary"].is_null(),
+        "the fake tuner tool publishes no summary"
+    );
+    assert!(
+        finished.data["ended_at"]
+            .as_str()
+            .is_some_and(|stamp| stamp.ends_with('Z')),
+        "ended_at is the core's ISO-8601 UTC stamp: {:?}",
+        finished.data["ended_at"]
     );
 
     supervisor.shutdown("test");

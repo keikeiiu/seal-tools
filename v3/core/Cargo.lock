@@ -673,6 +673,7 @@ name = "seal-tools"
 version = "0.1.0"
 dependencies = [
  "seal-domain",
+ "serde_json",
 ]
 
 [[package]]
