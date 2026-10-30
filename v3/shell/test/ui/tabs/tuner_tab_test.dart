@@ -507,4 +507,29 @@ void main() {
       reason: 'housekeeping opens no game or board, so a run must not gate it',
     );
   });
+
+  testWidgets('a finished run fills the Last run aside (G11)', (tester) async {
+    final harness = await _pumpTuner(tester);
+    expect(find.byKey(const ValueKey('tuner-last-run')), findsNothing);
+
+    harness.emitToolFinished(
+      tool: ToolId.tuner,
+      message: 'Reached DG after 7 attempts',
+      summary: {
+        'grade': 'DG',
+        'attempts': 7,
+        'captures_saved': 0,
+        'stopped_by': 'done',
+      },
+      endedAt: '2026-10-30T12:34:56Z',
+    );
+    await _flush(tester);
+
+    expect(find.byKey(const ValueKey('tuner-last-run')), findsOneWidget);
+    expect(find.text('Reached DG after 7 attempts'), findsWidgets);
+    expect(find.text('DG'), findsWidgets);
+    expect(find.text('Grade'), findsWidgets);
+    expect(find.text('Attempts'), findsWidgets);
+    expect(find.text('Captures saved'), findsWidgets);
+  });
 }

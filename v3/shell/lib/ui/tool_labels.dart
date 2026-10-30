@@ -73,14 +73,54 @@ String formatNextAction(double? seconds) {
   return rest == 0 ? 'in $minutes m' : 'in $minutes m $rest s';
 }
 
-/// The `countdown_s` value, or null when the core did not publish one.
-String? countdownLabel(ToolSnapshot? snapshot) {
+/// The `countdown_s` value, or null when the core did not publish one. [elapsedSeconds] is the
+/// display-only time since the snapshot arrived (the grid's one ticker), so the line ticks instead of
+/// freezing until the next core event.
+String? countdownLabel(ToolSnapshot? snapshot, {int elapsedSeconds = 0}) {
   final seconds = snapshot?.countdownSeconds;
   if (seconds == null) {
     return null;
   }
-  final formatted = formatNextAction(seconds);
+  final formatted = formatNextAction(seconds - elapsedSeconds);
   return formatted == 'now' ? 'due now' : 'next action $formatted';
+}
+
+/// The row's next moment in the core's own word (PROTOCOL §5 `rows[].next_action`) plus the published
+/// seconds, e.g. `feed in 30 m` / `reload now`. Without a word this is just the time, as before.
+String toolNextActionLabel(ToolRow row, {int elapsedSeconds = 0}) {
+  final seconds = row.nextActionInSeconds;
+  if (seconds == null) {
+    return '';
+  }
+  final time = formatNextAction(seconds - elapsedSeconds);
+  final word = row.nextAction?.wire;
+  if (word == null) {
+    return time;
+  }
+  return time == 'now' ? '$word now' : '$word $time';
+}
+
+/// The core's UTC ISO-8601 `ended_at` as a local clock time; `yyyy-MM-dd HH:mm` when it is not today.
+/// Presentation only — the value stays the core's instant. Null when absent/unparseable.
+String? formatFinishedStamp(String? iso, {DateTime? now}) {
+  if (iso == null) {
+    return null;
+  }
+  final parsed = DateTime.tryParse(iso);
+  if (parsed == null) {
+    return null;
+  }
+  final local = parsed.toLocal();
+  final today = now ?? DateTime.now();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final time = '${two(local.hour)}:${two(local.minute)}';
+  final sameDay =
+      local.year == today.year &&
+      local.month == today.month &&
+      local.day == today.day;
+  return sameDay
+      ? time
+      : '${local.year}-${two(local.month)}-${two(local.day)} $time';
 }
 
 /// A one-line Hold Space report for the Spammer card (TOOL-FLOWS: its reporting lives there).

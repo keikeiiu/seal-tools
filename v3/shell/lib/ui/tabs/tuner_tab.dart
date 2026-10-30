@@ -18,11 +18,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../protocol/protocol.dart';
 import '../components/foldable_section.dart';
 import '../components/info_row.dart';
 import '../components/read_only_panel.dart';
 import '../components/surface_panel.dart';
 import '../theme.dart';
+import '../tool_labels.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
 
@@ -97,7 +99,22 @@ class _TunerTabState extends State<TunerTab>
   @override
   void initState() {
     super.initState();
+    // The Last-run aside renders a `tool.finished` event, so the tab must rebuild when the tools
+    // model publishes one (the config mirror alone does not move).
+    model.tools.addListener(_onToolsChanged);
     unawaited(_loadAttributes());
+  }
+
+  @override
+  void dispose() {
+    model.tools.removeListener(_onToolsChanged);
+    super.dispose();
+  }
+
+  void _onToolsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   // ── readers ──────────────────────────────────────────────────────────────────────────────
@@ -390,6 +407,9 @@ class _TunerTabState extends State<TunerTab>
               ),
             ],
           ),
+          // The demo's Last-run panel (G11): the core publishes the structured summary + UTC finish
+          // instant on `tool.finished`; the shell only formats it. Absent until a run has finished.
+          _LastRunPanel(finished: model.tools.finished(ToolId.tuner)),
           const SurfacePanel(
             title: 'How saving works',
             description:
@@ -891,6 +911,49 @@ class _NameDropdown extends StatelessWidget {
             onChanged: onChanged,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The demo's "Last run" aside (OPEN §6 G11): the core's structured `tool.finished` summary (grade /
+/// attempts / captures saved / stop reason) plus its UTC `ended_at`, rendered as read-only rows. The
+/// panel is absent until a run has finished, so it never invents a placeholder run.
+class _LastRunPanel extends StatelessWidget {
+  const _LastRunPanel({required this.finished});
+
+  final ToolFinished? finished;
+
+  @override
+  Widget build(BuildContext context) {
+    final run = finished;
+    if (run == null) {
+      return const SizedBox.shrink();
+    }
+    final summary = run.summary;
+    String value(String key) {
+      final raw = summary?[key];
+      if (raw == null) {
+        return '—';
+      }
+      final text = '$raw';
+      return text.isEmpty ? '—' : text;
+    }
+
+    final ended = formatFinishedStamp(run.endedAt);
+    return SurfacePanel(
+      key: const ValueKey('tuner-last-run'),
+      title: 'Last run',
+      description: run.message,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InfoRow(label: 'Grade', value: value('grade')),
+          InfoRow(label: 'Attempts', value: value('attempts')),
+          InfoRow(label: 'Captures saved', value: value('captures_saved')),
+          InfoRow(label: 'Stopped by', value: value('stopped_by')),
+          if (ended != null) InfoRow(label: 'Finished', value: ended),
+        ],
       ),
     );
   }

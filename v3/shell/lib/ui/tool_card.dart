@@ -344,7 +344,7 @@ class _RunningCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = context.shellColors;
     final (phaseWord, kind) = _phaseChip(snapshot.phase);
-    final countdown = countdownLabel(snapshot);
+    final countdown = countdownLabel(snapshot, elapsedSeconds: elapsedTicks);
     final error = snapshot.error;
     final scope = _scopeLabel(tool);
     return Card(
@@ -412,7 +412,10 @@ class _RunningCard extends StatelessWidget {
                       color: theme.colorScheme.error,
                     ),
                   const SizedBox(height: ShellSpace.sm),
-                  _RowsView(
+                  // Rows and the card's own detail share ONE scrollable body, so a six-line Tuner
+                  // detail scrolls inside the card instead of growing the grid (PLAN-V3-STATUS-
+                  // DETAIL §1.5).
+                  _BodyView(
                     tool: tool,
                     snapshot: snapshot,
                     elapsedTicks: elapsedTicks,
@@ -525,10 +528,13 @@ class _CardLine extends StatelessWidget {
   }
 }
 
-/// The pinned row lines ([PROTOCOL.md] §5): name / status / detail / next_action_in_seconds.
-/// A `rows: []` snapshot renders one quiet line instead of an empty gap.
-class _RowsView extends StatelessWidget {
-  const _RowsView({
+/// The card body: the pinned row table and the additive `detail` list share ONE scrollable viewport
+/// ([PLAN-V3-STATUS-DETAIL.md] §1.5), so a taller detail scrolls instead of clipping or resizing the
+/// grid. An empty body keeps the one quiet line.
+///
+/// [PLAN-V3-STATUS-DETAIL.md]: ../../../docs/plans/PLAN-V3-STATUS-DETAIL.md
+class _BodyView extends StatelessWidget {
+  const _BodyView({
     required this.tool,
     required this.snapshot,
     this.elapsedTicks = 0,
@@ -544,7 +550,8 @@ class _RowsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final rows = snapshot.rows;
-    if (rows.isEmpty) {
+    final detail = snapshot.detail;
+    if (rows.isEmpty && detail.isEmpty) {
       return Align(
         alignment: Alignment.topLeft,
         child: Text(
@@ -556,7 +563,48 @@ class _RowsView extends StatelessWidget {
         ),
       );
     }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: _bodyMaxHeight),
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (rows.isNotEmpty)
+                _RowsTable(tool: tool, rows: rows, elapsedTicks: elapsedTicks),
+              if (detail.isNotEmpty)
+                _DetailView(
+                  tool: tool,
+                  detail: detail,
+                  separated: rows.isNotEmpty,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
+/// The scroll viewport inside a running card (a 6-line detail stays readable without growing it).
+const double _bodyMaxHeight = 168;
+
+/// The pinned row lines ([PROTOCOL.md] §5): name / status / detail / next action. The NEXT column
+/// uses the core's own next-action word when it published one ("feed in 30 m").
+class _RowsTable extends StatelessWidget {
+  const _RowsTable({
+    required this.tool,
+    required this.rows,
+    this.elapsedTicks = 0,
+  });
+
+  final ToolId tool;
+  final List<ToolRow> rows;
+  final int elapsedTicks;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final headerStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
       letterSpacing: 0.7,
@@ -639,15 +687,100 @@ class _RowLine extends StatelessWidget {
           ),
         ),
         Text(
-          row.nextActionInSeconds == null
-              ? ''
-              : formatNextAction(row.nextActionInSeconds! - elapsedTicks),
+          toolNextActionLabel(row, elapsedSeconds: elapsedTicks),
           style: ShellText.mono.copyWith(
             fontSize: 11.5,
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The additive `detail` list ([PROTOCOL.md] §5): `label: value` lines, label-less entries rendered as
+/// the core's own line (v2's `· name=value` attributes). The shell keeps no per-tool rule here.
+class _DetailView extends StatelessWidget {
+  const _DetailView({
+    required this.tool,
+    required this.detail,
+    required this.separated,
+  });
+
+  final ToolId tool;
+  final List<ToolDetail> detail;
+
+  /// Whether the rows table precedes it (then a hairline keeps the two blocks apart).
+  final bool separated;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      key: ValueKey('detail-${tool.wire}'),
+      decoration: separated
+          ? BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.5,
+                  ),
+                ),
+              ),
+            )
+          : null,
+      padding: EdgeInsets.only(top: separated ? ShellSpace.xs : 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var index = 0; index < detail.length; index++)
+            _DetailLine(
+              key: ValueKey('detail-${tool.wire}-$index'),
+              detail: detail[index],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailLine extends StatelessWidget {
+  const _DetailLine({super.key, required this.detail});
+
+  final ToolDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(fontSize: 12.5);
+    final label = detail.label;
+    if (label == null) {
+      // v2's label-less attribute line — nothing to prefix, the core already wrote it.
+      return Padding(
+        padding: const EdgeInsets.only(top: ShellSpace.xxs),
+        child: Text(
+          detail.value,
+          style: style?.copyWith(color: theme.colorScheme.onSurface),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: ShellSpace.xxs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: style?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          Expanded(
+            child: Text(
+              detail.value,
+              style: style?.copyWith(color: theme.colorScheme.onSurface),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

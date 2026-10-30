@@ -186,6 +186,7 @@ class AppHarness {
     String message = 'running',
     double? countdown,
     List<Map<String, dynamic>> rows = const [],
+    List<Map<String, dynamic>> detail = const [],
     String? error,
   }) {
     emitEvent('state', {
@@ -195,6 +196,7 @@ class AppHarness {
       'message': message,
       'countdown_s': countdown,
       'rows': rows,
+      'detail': detail,
       'error': error,
     });
   }
@@ -203,11 +205,15 @@ class AppHarness {
     required ToolId tool,
     ToolStopKind reason = ToolStopKind.done,
     String message = 'run finished',
+    Map<String, dynamic>? summary,
+    String? endedAt,
   }) {
     emitEvent('tool.finished', {
       'tool': tool.wire,
       'reason': reason.wire,
       'message': message,
+      'summary': ?summary,
+      'ended_at': ?endedAt,
     });
   }
 
@@ -250,11 +256,13 @@ class AppHarness {
     required String status,
     String? detail,
     double? nextActionInSeconds,
+    String? nextAction,
   }) => {
     'name': name,
     'status': status,
     'detail': detail,
     'next_action_in_seconds': nextActionInSeconds,
+    'next_action': ?nextAction,
   };
 
   Future<void> dispose() async {

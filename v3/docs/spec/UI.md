@@ -76,9 +76,14 @@ Screen content is capped at **1240 px and centred** on windows wider than that (
 - **Running now** — one full card per engaged tool: 3 px success accent, title 16/600, a
   `StatusChip` (running/starting/stopping), a `foreground`/`resident` scope word (Hold Space has none —
   it acts through the board, not the foreground window), the core's one-line message, its countdown in
-  mono, the core's rows as a table with `ROW / STATUS / DETAIL / NEXT` headers (status is plain
-  `onSurfaceVariant`, not a success colour — the protocol has no per-row OK flag), the finished/refusal
-  lines verbatim, and **Stop** as the one action (error-container button). The title takes the available
+  mono (ticking from the grid's ONE ticker), then **one scrollable body (max 168 px)** shared by:
+  the core's rows as a table with `ROW / STATUS / DETAIL / NEXT` headers (status is plain
+  `onSurfaceVariant`, not a success colour — the protocol has no per-row OK flag; the NEXT cell uses the
+  core's own `next_action` word when it published one, e.g. `feed in 30 m`), and below a hairline the
+  additive **`detail` list** — `label: value` lines (label `onSurfaceVariant`, value `onSurface`) plus
+  label-less attribute lines rendered exactly as the core wrote them. A body with no rows and no detail
+  keeps the one quiet "No rows to show" line. The finished/refusal lines are verbatim, and **Stop** is
+  the one action (error-container button). The title takes the available
   width with `Expanded`, so it no longer truncates against the chip's and scope word's fixed widths.
 - **Available tools** — one-line tiles (min height 66): a 34 px icon well, the name, a "Ready · …"
   summary computed from the same config/run state Start reads (preset/count, armed slots, active
@@ -116,7 +121,10 @@ screen: Save.
   guard). Folded by default; the controls keep their keys.
 - **Tuner** (`spammer`-style panels): Grades (plain-text fixed ladder — the audit's "read-only chips
   look tappable" fixed), Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row
-  delete), Advanced (folded); geometry in the aside.
+  delete), Advanced (folded); geometry in the aside. The aside also carries the demo's **Last run**
+  panel once a run has finished: the core's `tool.finished` `summary` (Grade, Attempts, Captures saved,
+  Stopped by) plus the local `ended_at`; the panel is absent before the first finish and never invents
+  a placeholder run.
 - **Spammer**: Presets (editing/active pickers, tonal Add/Rename, outlined Duplicate/Delete; selection
   actions hidden when the preset list is empty) · Keys & cooldowns (opening, priority key rows) ·
   Rotation — combos.
@@ -138,7 +146,10 @@ screen: Save.
   action. Below it, a panel of per-item checklist rows (icon + label + detail) and the core's readiness
   lines as individual `Text`s — never one `\n`-joined block.
 - **Row cards:** a `SurfacePanel` containing one card per breeding row. The header is the state —
-  `Row N` + `StatusChip` (boarding/reloading/idle/disabled) + "next: Save" while dirty. Saved fields
+  `Row N` + `StatusChip` (boarding/reloading/idle/disabled) + "next: Save" while dirty. When the feeder
+  is running, the card also renders the core's live row under the header
+  (`Live · <status> · next <word> <time>`), joining the saved setup to what the run is doing; the saved
+  fields stay the config. Saved fields
   (Enabled, Stacks) group together; the **immediate A1 control** ("Boarding now") is separated below with
   an "applies immediately" cue, because it writes at once and is not part of the draft. Row marks read
   `start/end x 10 · y 20 · 100×30` (no raw arrays).

@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/protocol/protocol.dart';
 import 'package:seal_shell/ui/components/status_banner.dart';
 import 'package:seal_shell/ui/components/status_chip.dart';
 import 'package:seal_shell/ui/tabs/pet_tab.dart';
@@ -2195,4 +2196,37 @@ void main() {
       _expectNoConfigWrites(harness);
     },
   );
+
+  testWidgets('row cards join the live pet row and its next action (G12)', (
+    tester,
+  ) async {
+    final harness = await _pumpPet(tester, pet: _machinePet());
+    harness.emitState(
+      tool: ToolId.pet,
+      message: 'Resident · row 2: looking',
+      rows: [
+        AppHarness.row(
+          name: 'Row 1',
+          status: 'Boarding',
+          detail: 'blue · 3/min',
+          nextActionInSeconds: 1800,
+          nextAction: 'feed',
+        ),
+        AppHarness.row(
+          name: 'Row 2',
+          status: 'Reloading',
+          detail: 'food 38 / 50',
+          nextActionInSeconds: 720,
+          nextAction: 'reload',
+        ),
+      ],
+    );
+    await _flush(tester);
+
+    expect(find.byKey(const ValueKey('pet-row-0-live')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pet-row-1-live')), findsOneWidget);
+    expect(find.textContaining('Live · Boarding'), findsWidgets);
+    expect(find.textContaining('next feed in 30 m'), findsWidgets);
+    expect(find.textContaining('next reload in 12 m'), findsWidgets);
+  });
 }

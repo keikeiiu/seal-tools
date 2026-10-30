@@ -43,7 +43,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../../app/pet_preflight.dart';
-import '../../protocol/json.dart';
+import '../../protocol/protocol.dart';
 import '../components/empty_state.dart';
 import '../components/info_row.dart';
 import '../components/read_only_panel.dart';
@@ -52,6 +52,7 @@ import '../components/status_banner.dart';
 import '../components/status_chip.dart';
 import '../components/surface_panel.dart';
 import '../theme.dart';
+import '../tool_labels.dart';
 import 'calibration_widgets.dart';
 import 'config_tab_scaffold.dart';
 import 'fields.dart';
@@ -289,6 +290,8 @@ class _PetTabState extends State<PetTab>
     super.initState();
     _seenConfigRev = model.config.rev;
     model.config.addListener(_onMirrorChanged);
+    // G12: the row cards show the live row beside the saved setup, so a `state` event must rebuild.
+    model.tools.addListener(_onToolsChanged);
     // The add form starts from the last line already on the queue (v2's seed rule: the first capture
     // after a restart must not write an entry with no line because a picker reset to "none").
     for (final entry in _queue().reversed) {
@@ -305,10 +308,17 @@ class _PetTabState extends State<PetTab>
   @override
   void dispose() {
     model.config.removeListener(_onMirrorChanged);
+    model.tools.removeListener(_onToolsChanged);
     _addLabel.dispose();
     _addSpecies.dispose();
     _group.dispose();
     super.dispose();
+  }
+
+  void _onToolsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _onMirrorChanged() {
@@ -2369,6 +2379,16 @@ class _PetTabState extends State<PetTab>
     // shell only renders the core's value; it never derives a schedule of its own.
     final windowOpen =
         asBool(_machine()['boarding_window_may_be_open']) ?? false;
+    // G12: join the live row (core `state` rows, same order as the slots) to this configured row so
+    // the saved setup and what the run is doing read together. Nothing is derived: the words are the
+    // core's (`status`, `next_action`) and the seconds are its published baseline.
+    final liveSnapshot = model.tools.snapshot(ToolId.pet);
+    final liveRow =
+        liveSnapshot != null &&
+            liveSnapshot.phase != ToolPhase.idle &&
+            index < liveSnapshot.rows.length
+        ? liveSnapshot.rows[index]
+        : null;
     final Widget chip;
     if (!enabled) {
       chip = const StatusChip(kind: StatusKind.muted, label: 'disabled');
@@ -2411,6 +2431,17 @@ class _PetTabState extends State<PetTab>
                     ),
                 ],
               ),
+              if (liveRow != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: ShellSpace.xxs),
+                  child: Text(
+                    _liveRowLine(liveRow),
+                    key: ValueKey('pet-row-$index-live'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               const SizedBox(height: ShellSpace.xs),
               // Saved fields in one row (the demo's field grid): they ride the tab's ONE Save,
               // like the rest of this tab's setup.
@@ -2656,4 +2687,13 @@ class _PetDraftGroup extends ConfigDraftGroup {
     }
     return sections;
   }
+}
+
+/// The Pet row card's live line (G12): the core's live status plus its own next-action word/time.
+/// Presentation only — the shell joins the live row to the configured row; it derives neither.
+String _liveRowLine(ToolRow row) {
+  final next = toolNextActionLabel(row);
+  return next.isEmpty
+      ? 'Live · ${row.status}'
+      : 'Live · ${row.status} · next $next';
 }

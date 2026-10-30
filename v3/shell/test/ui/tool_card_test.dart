@@ -16,6 +16,7 @@ ToolSnapshot _snapshot({
   String message = 'idle',
   double? countdown,
   List<ToolRow> rows = const [],
+  List<ToolDetail> detail = const [],
   String? error,
 }) => ToolSnapshot(
   tool: tool,
@@ -24,17 +25,19 @@ ToolSnapshot _snapshot({
   message: message,
   countdownSeconds: countdown,
   rows: rows,
+  detail: detail,
   error: error,
 );
 
-Widget _host(Widget card, {double height = 420}) => MaterialApp(
-  theme: buildShellTheme(),
-  home: Scaffold(
-    body: Center(
-      child: SizedBox(width: 560, height: height, child: card),
-    ),
-  ),
-);
+Widget _host(Widget card, {double width = 560, double height = 420}) =>
+    MaterialApp(
+      theme: buildShellTheme(),
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(width: width, height: height, child: card),
+        ),
+      ),
+    );
 
 ToolCard _card({
   ToolId tool = ToolId.tuner,
@@ -43,6 +46,7 @@ ToolCard _card({
   String? refusal,
   bool pending = false,
   bool ready = true,
+  int elapsedTicks = 0,
   VoidCallback? onStart,
   VoidCallback? onStop,
   Widget? extras,
@@ -53,6 +57,7 @@ ToolCard _card({
   refusal: refusal,
   pending: pending,
   ready: ready,
+  elapsedTicks: elapsedTicks,
   extras: extras,
   onStart: onStart ?? () {},
   onStop: onStop ?? () {},
@@ -232,5 +237,132 @@ void main() {
     expect(find.text('Hold Space'), findsOneWidget);
     expect(find.text('Off · spacebar auto-pickup'), findsOneWidget);
     expect(find.byKey(const ValueKey('start-holdspace')), findsOneWidget);
+  });
+
+  testWidgets('a running card renders the core detail list (G10)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        _card(
+          snapshot: _snapshot(
+            phase: ToolPhase.running,
+            message: '',
+            detail: const [
+              ToolDetail(label: 'Grade', value: 'DG'),
+              ToolDetail(value: 'attack speed=+10'),
+              ToolDetail(label: 'Filter', value: 'disabled'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('detail-tuner')), findsOneWidget);
+    expect(find.text('Grade: '), findsOneWidget);
+    expect(find.text('DG'), findsOneWidget);
+    // A label-less entry is v2's attribute line, rendered as the core wrote it.
+    expect(find.text('attack speed=+10'), findsOneWidget);
+    expect(find.text('Filter: '), findsOneWidget);
+    expect(find.text('disabled'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rows-empty-tuner')), findsNothing);
+  });
+
+  testWidgets('a card with no rows and no detail keeps the quiet line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        _card(
+          snapshot: _snapshot(
+            phase: ToolPhase.running,
+            message: 'nothing to show yet',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('rows-empty-tuner')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tuner')), findsNothing);
+  });
+
+  testWidgets('the NEXT column uses the core next-action word (G12)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        _card(
+          snapshot: _snapshot(
+            phase: ToolPhase.running,
+            message: 'feeding',
+            rows: const [
+              ToolRow(
+                name: 'Row 1',
+                status: 'Boarding',
+                detail: 'blue · 3/min',
+                nextActionInSeconds: 1800,
+                nextAction: ToolNextAction.feed,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('feed in 30 m'), findsOneWidget);
+  });
+
+  testWidgets('the card countdown ticks with the grid ticker (G10/G12)', (
+    tester,
+  ) async {
+    Widget card(int elapsed) => _host(
+      _card(
+        snapshot: _snapshot(
+          phase: ToolPhase.running,
+          message: 'waiting',
+          countdown: 60,
+        ),
+        elapsedTicks: elapsed,
+      ),
+    );
+
+    await tester.pumpWidget(card(0));
+    expect(find.text('next action in 1 m'), findsOneWidget);
+
+    await tester.pumpWidget(card(30));
+    expect(find.text('next action in 30 s'), findsOneWidget);
+  });
+
+  testWidgets('a long detail scrolls inside the 360 px card (G10)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        _card(
+          snapshot: _snapshot(
+            phase: ToolPhase.running,
+            message: '',
+            detail: [
+              for (final label in const [
+                'Grade',
+                'Remaining',
+                'Attempt',
+                'Filter',
+                'Cycle',
+                'Current',
+              ])
+                ToolDetail(label: label, value: '$label value'),
+            ],
+          ),
+        ),
+        width: 360,
+        height: 320,
+      ),
+    );
+
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    // All lines are in the tree; the viewport scrolls instead of growing the card.
+    expect(find.text('Grade value'), findsOneWidget);
+    expect(find.text('Current value'), findsOneWidget);
   });
 }
