@@ -74,3 +74,10 @@ the repository's `Cargo.lock`/`Cargo.toml` metadata. No third-party Rust code is
 
 Material Icons and the Cupertino icon font ship inside the Flutter assets and are covered by Flutter's
 NOTICES file above.
+
+The shell additionally bundles **Roboto** — the design's declared typeface (`PLAN-V3-UI-UX §4.2`),
+which Windows does not ship, so it cannot be resolved from the OS. The four TTFs in
+`v3/shell/assets/fonts/` are unmodified copies from the Flutter SDK. Roboto is Copyright 2011 Google
+Inc., licensed under the Apache License 2.0; the full licence text ships with the app at
+`assets/fonts/LICENSE-Roboto.txt` (and in this repository at
+[`v3/shell/assets/fonts/LICENSE-Roboto.txt`](../shell/assets/fonts/LICENSE-Roboto.txt)).

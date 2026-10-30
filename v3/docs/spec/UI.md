@@ -23,6 +23,11 @@ builds the `ThemeData`).
   `titleMedium` 16/600 (card/dialog), `titleSmall` 14/600 (section), `labelLarge` 13/600,
   `bodyMedium` 14/400 (body/prose), `bodySmall` 12.5/400 (meta — never prose alone), `labelSmall`
   11/600 (chips/strip), plus `ShellText.mono` (Consolas 12.5) for coordinates, counts and logs.
+  The typeface is **Roboto bundled with the shell** (`assets/fonts/`, weights 400/500/700 + italic):
+  Windows does not ship Roboto, so naming it without the asset silently fell back to a system font and
+  the shipped pixels differed from the approved renders (this was true until the 2026-10-30 real-build
+  check; `flutter build windows` output now lists the faces in `FontManifest.json`). Mono stays
+  Consolas, a standard Windows font.
   `ShellProse` caps prose at `ShellWidth.prose` (620 ≈ 60 characters at 14 px); data, tables and fields
   keep full width. `VisualDensity.compact` stays.
 - **Space/size/radius.** `ShellSpace` 2/4/8/12/16/24; `ShellWidth` prose 620, fieldSm/Md/Lg
