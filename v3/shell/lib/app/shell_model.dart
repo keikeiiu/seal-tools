@@ -664,6 +664,11 @@ class ShellModel extends ChangeNotifier {
     },
   );
 
+  /// `calibration.check {}`: the core's canonical comparison of the stored calibration with this PC
+  /// (G09). READ-ONLY: the game being closed is a result with a note, never an error.
+  Future<CoreActionResult<JsonMap>> calibrationCheck() =>
+      _coreAction('calibration.check', (result) => result);
+
   /// `calibration.fetch`: the stored mark (null = not calibrated yet) and, for artifact kinds, the
   /// stored crop as base64 PNG.
   Future<CoreActionResult<CalibrationFetchResult>> calibrationFetch(

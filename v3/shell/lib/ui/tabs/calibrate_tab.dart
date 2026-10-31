@@ -34,6 +34,7 @@ import '../theme.dart';
 import 'action_result_line.dart';
 import 'calibration/calibration_catalog.dart';
 import 'calibration/capture_shelf.dart';
+import 'calibration/detect_panel.dart';
 import 'calibration/reference_gallery.dart';
 import 'calibration/session_panel.dart';
 import 'calibration/stored_marks_table.dart';
@@ -619,6 +620,8 @@ class _CalibrateTabState extends State<CalibrateTab>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildDisplayEnvironment(theme, capture),
+                const SizedBox(height: ShellSpace.md),
+                DetectPanel(model: widget.model),
                 _buildExternalChangeBanner(),
                 LayoutBuilder(
                   builder: (context, constraints) {

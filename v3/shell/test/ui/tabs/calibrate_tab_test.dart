@@ -1476,4 +1476,70 @@ void main() {
       reason: 'copying is a read of values already on screen, not a save',
     );
   });
+
+  testWidgets('Detect renders the core check verdict and differences', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.check' => {
+          'result': {
+            'live': _displayJson(),
+            'stored': {
+              'scale': 1.25,
+              'monitor_dpi': 120,
+              'screen': {'w': 2560, 'h': 1440},
+              'client_size': {'w': 1910, 'h': 1193},
+              'measured_at': '2026-10-31T12:00:00',
+            },
+            'differences': ['scale 1.5 → 1.25'],
+            'matches': false,
+            'note': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    expect(find.byKey(const ValueKey('detect-panel')), findsOneWidget);
+    expect(find.text('scale 1.5 → 1.25'), findsOneWidget);
+    expect(find.textContaining('differs in 1'), findsOneWidget);
+    expect(find.textContaining('saved scale 1.25'), findsOneWidget);
+  });
+
+  testWidgets('Detect says the game is closed instead of failing', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': {'scale': 1.5, 'measured_at': '2026-10-31T12:00:00'},
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    expect(find.text('game window not open'), findsOneWidget);
+    expect(find.byKey(const ValueKey('detect-error')), findsNothing);
+  });
 }
