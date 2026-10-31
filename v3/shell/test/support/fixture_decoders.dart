@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 50 request fixtures.
+/// The 51 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -150,6 +150,8 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.pet.save', message),
   'request.calibration.pet.test_read': (message) =>
       _request('request.calibration.pet.test_read', message),
+  'request.calibration.gem.moves.save': (message) =>
+      _request('request.calibration.gem.moves.save', message),
   'request.calibration.fetch.targeted': (message) =>
       _request('request.calibration.fetch.targeted', message),
   'request.calibration.save.empty': (message) =>
@@ -407,6 +409,11 @@ final Map<String, FixtureDecoder> responseDecoders = {
       _ok('response.ok.pet_save', message, EnvelopePayload(_result(message))),
   'response.ok.pet_test_read': (message) => _ok(
     'response.ok.pet_test_read',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.gem_moves_save': (message) => _ok(
+    'response.ok.gem_moves_save',
     message,
     EnvelopePayload(_result(message)),
   ),

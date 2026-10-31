@@ -1,0 +1,30 @@
+{
+  "case": "response.ok.gem_moves_save",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "64",
+    "ok": true,
+    "result": {
+      "rev": 15,
+      "block": {
+        "movements": {
+          "register_combine": [
+            18,
+            -4
+          ],
+          "radio_to_register": {
+            "N": [
+              10,
+              20
+            ],
+            "G": [
+              -5,
+              6
+            ]
+          }
+        }
+      }
+    }
+  }
+}

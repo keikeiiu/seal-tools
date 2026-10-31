@@ -49,6 +49,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.pet.preview",
     "calibration.pet.save",
     "calibration.pet.test_read",
+    "calibration.gem.moves.save",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -361,6 +362,15 @@ fn cases() -> Vec<Case> {
                 "feeder_count_left_fraction": 0.4,
                 "feeder_count_min_score": 0.75
             }),
+        ),
+        request_case(
+            "request.calibration.gem.moves.save",
+            "64",
+            "calibration.gem.moves.save",
+            json!({"movements": {
+                "register_combine": [18, -4],
+                "radio_to_register": {"N": [10, 20], "G": [-5, 6]}
+            }}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -1100,6 +1110,17 @@ fn cases() -> Vec<Case> {
                     "eta_region": [96, 360, 188, 48]
                 }],
                 "hidden_ms": 420
+            }),
+        ),
+        ok_case(
+            "response.ok.gem_moves_save",
+            "64",
+            json!({
+                "rev": 15,
+                "block": {"movements": {
+                    "register_combine": [18, -4],
+                    "radio_to_register": {"N": [10, 20], "G": [-5, 6]}
+                }}
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────
