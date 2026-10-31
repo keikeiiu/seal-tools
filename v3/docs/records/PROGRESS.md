@@ -19,6 +19,51 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-01 (30) — the mini running bar ships: 360 × 96, borderless, one-click Stop
+
+Landed in `2b4c8b2` (shell + runner + tests + USER_GUIDE/spec). The player's requested shape was
+"minimal while a tool runs": essential buttons/information only, one click to stop, able to sit beside
+the game without covering its information. The design demo
+(`.scratch/ui-audit/ui-demo-mini.html`, variant A, eight ⚑ decisions approved by the player) was built
+first; the shipping implementation is the 360 × 96 **borderless, always-on-top bar** in
+`lib/ui/mini_mode.dart` plus the model/runner plumbing, with no core or protocol change (all bar
+values are existing `state` / `tool.finished` facts).
+
+- **Ranked content.** Row 1 tool + phase chip + resident-pet badge + expand; row 2 the core's action
+  line, the compact countdown, and exactly ONE primary action: **Stop** while a run is active,
+  **Full window** when it is finished/error/core-lost. Rail, tabs, header, save bar, logs, detail rows
+  and the native caption are deliberately absent. Footprint is 34,560 px² = 2.7 % of a 1440 × 900
+  screen (the full shell is 58.8 %; the earlier WIP card was 340 × 420).
+- **Model** (`shell_model.dart`): a foreground run collapses (Pet excluded — it is the resident
+  feeder), the bar STAYS on Finished/Error until "Full window", and "Full window" suppresses
+  re-collapse for the rest of that run (it collapses again on the next start). A manual top-bar
+  action (`app-bar-mini`) collapses a running foreground tool. Position is session-remembered,
+  clamped to the work area, and snaps to a 16 px edge inset after a drag. When Pet runs alongside the
+  foreground tool the bar shows a paw badge and Stop only stops the foreground run.
+- **Shell** (`shell_page.dart`): while the bar is shown the full shell stays mounted offstage inside a
+  full-size `OverflowBox` under one `GlobalKey`ed subtree, so the current tab and its draft survive
+  the collapse and are still there on expand; the bar itself listens to the model.
+- **Runner** (`flutter_window.cpp`, `win32_window.{h,cpp}`): `setMiniChrome` saves style/EX style,
+  applies `WS_POPUP` (no caption/thick/min/max/system menu) + `WS_EX_NOACTIVATE` + DWM round corners,
+  lowers the minimum size to 360 × 96, and restores the saved chrome, rect and pin on expand. The
+  minimum-size guard now accepts the bar's 96 px height (it was 160). Drag is a Flutter pan through
+  the existing `setWindowRect` (clamped), not a native caption strip.
+- **Real-build verification (the part a widget test cannot prove).** At 150 % scaling the window was
+  540 × 144 physical = 360 × 96 logical, `has_caption=False`, `has_thickframe=False`,
+  `ex_noactivate=True`, `ex_topmost=True`, docked 16 px from the right edge. A real mouse click on
+  Stop sent `tool.stop` (the button showed Stopping…) while the foreground window stayed the game/browser
+  — `WS_EX_NOACTIVATE` does not swallow clicks. Expanding restored 1920 × 1080 (1280 × 720 logical)
+  with the caption back and no NOACTIVATE. Captures: `.scratch/ui-audit/mini-real-*.png`.
+- **Cost/teaching.** The bar's first render exposed two things worth keeping: the shared
+  `countdownLabel` says "next action in 11 s" (too wide for 360 px — the bar strips the prefix to
+  "in 11 s"), and the 88 px Stop button could not hold a spinner + "Stopping…" (it widens to 112 px
+  while busy). The original mini card's 340 × 420 geometry and log tail were replaced rather than
+  parameterised; the auto-collapse model and runner min-size/top-most channel were reused.
+
+Gates: shell `flutter analyze` No issues, `flutter test` 303/303 (new model + widget tests for the
+collapse/stay-finished/suppress/remember/Stop/resident-pet paths), `dart format` clean. Spec truth:
+[UI.md §Mini running window](../spec/UI.md#mini-running-window-landed-2026-11-01).
+
 ## 2026-10-28 (29) — the Pet tab can scan the bag again (v3.0.6)
 
 The last automatic half of v2's Pet-tab maintenance workflow: the bag scans, and the explicit write they
