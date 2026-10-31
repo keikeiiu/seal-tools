@@ -284,8 +284,8 @@ Coordinates are machine-specific, and the doc that used to carry this reasoning 
   because the marks die — recalibrate when the client size/window/screen changes, and whenever a mark
   no longer lands where you saved it. A proportional transform is deliberately NOT applied, because
   the game UI does not scale linearly (this file §5).
-- **A v2 install becomes a v3 install by copying, not converting:** `config/local.yaml` and the
-  calibration artifacts beside it (`calib_gem_result.png`, any other `calib_*.png`) go into the v3
-  folder's `config/`. The file formats are unchanged; the marks mean the same physical offsets.
+- **A v2 install becomes a v3 install by copying, then a one-time split:** copy
+  `config/local.yaml` and `calib_gem_result.png` beside it. On the first launch of this
+  version the core backs the folder up and migrates the file into `setup/` + `machine/` + `artifacts/` (CONFIG.md §4); the values do not change.
 - **A new PC, or a moved game window, starts with calibration** — the marks are physical
   client-relative offsets, and the first-run flow is in the guide (INSTALL/USER_GUIDE).

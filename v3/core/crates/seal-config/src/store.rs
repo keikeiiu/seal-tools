@@ -422,13 +422,16 @@ impl ConfigStore {
             if before_object.get(key) == Some(value) {
                 continue;
             }
+            let before_value = before_object.get(key);
             if key == SETTINGS {
-                if let Some(settings) = value.as_object() {
-                    sections.insert(key.clone(), Value::Object(settings.clone()));
+                if let Some(settings) = changed_fields(before_value, value) {
+                    sections.insert(key.clone(), settings);
                 }
                 continue;
             }
-            sections.insert(key.clone(), value.clone());
+            if let Some(changed) = changed_fields(before_value, value) {
+                sections.insert(key.clone(), changed);
+            }
         }
         for key in before_object.keys() {
             if !after_object.contains_key(key) {
@@ -1162,6 +1165,33 @@ fn fold_projection(legacy: &Value, base: &Value) -> Map<String, Value> {
         }
     }
     carried
+}
+
+/// Only the fields that actually changed between two versions of a block. The writer routes
+/// field-by-field, so this is what keeps a preset save from rewriting an untouched sibling file
+/// (the whole block would route to every file that owns any of its fields).
+fn changed_fields(before: Option<&Value>, after: &Value) -> Option<Value> {
+    match (before, after) {
+        (Some(Value::Object(before_object)), Value::Object(after_object)) => {
+            let mut changed = Map::new();
+            for (key, value) in after_object {
+                if before_object.get(key) == Some(value) {
+                    continue;
+                }
+                let before_field = before_object.get(key);
+                let field = match (before_field, value) {
+                    (Some(Value::Object(_)), Value::Object(_)) => {
+                        changed_fields(before_field, value).unwrap_or_else(|| value.clone())
+                    }
+                    _ => value.clone(),
+                };
+                changed.insert(key.clone(), field);
+            }
+            (!changed.is_empty()).then(|| Value::Object(changed))
+        }
+        (Some(before), after) if before == after => None,
+        (_, after) => Some(after.clone()),
+    }
 }
 
 /// Recursive field-wise overlay: objects merge, everything else replaces, and `null` means "not

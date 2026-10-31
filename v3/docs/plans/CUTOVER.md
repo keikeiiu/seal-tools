@@ -348,3 +348,22 @@ list and resets the used count through the A1 writer, effective immediately). De
 5. **Post-publish check**: download both v3.0.6 assets, compare SHA-256 with the values above, unzip and
    launch the app once, and confirm the firmware zip holds only `seal_mouse/seal_mouse.ino`.
 6. **do not** move v2 docs into v3, and do not start a second changelog.
+
+---
+
+## Portable config layout packaging (2026-10-31)
+
+The class x domain config layout (PLAN-PORTABLE-SETUP) changes what a release may contain. The zip
+still ships only program files, the shipped templates, the OCR dictionaries, the OCR models, the
+feeding table and the guides; `config/README.md` is now shipped too.
+
+- **Never shipped:** `config/local.yaml` (legacy) and every portable-layout player-state path -
+  `config/setup/`, `config/machine/`, `config/artifacts/`, `config/user.yaml`, `config/meta.yaml`,
+  `config/.migration-backup-*` and `config/.seal-txn/`.
+- `publish.ps1` refuses those paths in its global deny, the stage audit requires exactly the
+  allow-listed config files, and `-Selftest` plants each forbidden path and requires the refusal.
+- Replacing the exe/templates never touches the player-state tree; a shipped install with a legacy
+  `local.yaml` migrates itself once on first launch (backup folder + `meta.yaml` marker last).
+- The player-facing copy/backup rules are in the shipped `config/README.md`; the layer is
+  `docs/spec/CONFIG.md`.
+

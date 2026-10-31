@@ -220,54 +220,57 @@ Starting a second tool while one runs is refused by design; the Pet Feeder is th
 
 ## Migrating from v2
 
-The formats are unchanged: **migration is a copy, there is no converter.** Keep your v2 folder until the
-v3 side is verified.
+The values are unchanged: **migration is a copy plus a one-time split, there is no converter.** Keep
+your v2 folder until the v3 side is verified.
 
-1. Unzip v3.0 somewhere and run it once so the folder exists (it will create a seed `local.yaml` — that
-   seed is replaced in step 2).
-2. Close Seal Tools. Then copy into `SealTools-v3.0\config\`:
-   - `local.yaml` — your machine's state: calibration, presets, pet rows, quest flows and so on.
-   - `calib_gem_result.png` — **the only calibration image v3 consumes** (the result-gem crop for the
+1. Unzip v3.0 somewhere and run it once so the folder exists, then close it. (The first run may create
+   a seed `config/local.yaml`; step 2 replaces it.)
+2. Copy into `SealTools-v3.0\config\`:
+   - `local.yaml` - your machine's state: calibration, presets, pet rows, quest flows and so on.
+   - `calib_gem_result.png` - **the only calibration image v3 consumes** (the result-gem crop for the
      empty test). Other `calib_*.png` files beside it are v2's drawn-over screenshots: copying them is
      harmless history, but no v3 tool reads them.
    - Your attribute files if you edited or grew them: `attributes.yaml` (TW) and/or
      `attributes.us.yaml` (US). Do **not** copy `attributes.us.yaml.example`.
    - Optionally `defaults.yaml`, **only if your v2 folder predates v2.16 and you had edited portable
-     settings in its template**. The core reads it once as the legacy template and folds your changed
-     leaves into `local.yaml` (the shipped `defaults.yaml.example` stays the base). A newer v2 install
-     already carries those values inside `local.yaml`, so leave it there; if you never edited the
-     template, skip it.
-3. Start `SealTools.exe`, open **Setup**, and confirm the title/variant and **Probe board**; open
-   **Calibrate → Refresh stored** and confirm your marks are there (the same machine and display keep
-   them valid). Nothing needs reflashing — the firmware is unchanged.
-4. Keep the v2 folder until a run has gone as expected in v3; then delete it, or keep it as a backup.
-
-If you move to a **different machine or display**, copy the same files but recalibrate: the stored marks
-are physical client-relative offsets.
-
----
+     settings in its template**. It is the legacy layer folded into `local.yaml`; a newer v2 install
+     already carries those values inside `local.yaml`.
+3. Start `SealTools.exe`. On the first launch the core migrates `config/local.yaml` into the new
+   layout: it backs the whole folder up to `config/.migration-backup-<stamp>/`, writes `setup/`
+   (what travels), `machine/` (this PC's measurements), `artifacts/` (reference crops), `user.yaml`
+   (your own extra blocks) and `meta.yaml`, verifies the result, and only then retires `local.yaml`.
+   This is one-time and automatic; a second launch does nothing. **If anything looks wrong, close the
+   app and restore the backup folder** - it is the complete pre-migration tree.
+4. Open **Setup**, confirm the title/variant and **Probe board**; open **Calibrate -> Refresh stored**
+   and confirm your marks are there (the same machine and display keep them valid). Nothing needs
+   reflashing - the firmware is unchanged.
+5. Keep the v2 folder and `config/.migration-backup-<stamp>/` until a run has gone as expected; then
+   delete them, or keep them as a backup.
 
 ## Updating
 
 1. Close Seal Tools.
-2. Back up `config/local.yaml`, `config/attributes*.yaml` and `config/calib_gem_result.png` (plus any older
-   `calib_*.png` you want to keep; v3 reads only the result crop) if you want a safety copy.
-3. Unzip the new release. You can replace the program files in the existing folder or use a fresh folder
-   and copy your `config/` files across.
-4. Start it. **The zip never contains `local.yaml`**, so an update cannot overwrite your settings; the
-   only files it replaces are program files and the shipped templates/dictionaries. If a release changes
-   a default, the core's once-only fold carries your old stated values into `local.yaml` (see the
-   repository's `v3/docs/spec/CONFIG.md`).
+2. Back up `config/setup/` and `config/user.yaml` if you want a safety copy of what travels; also copy
+   `config/artifacts/` if you want the reference crops. **Do not copy `config/machine/` to another PC**;
+   recalibrating there is safer than stale coordinates. (On a pre-migration install the single
+   `config/local.yaml` plus `calib_*.png` is the equivalent copy.)
+3. Unzip the new release. You can replace the program files in the existing folder or use a fresh
+   folder and copy your `config/setup/` (and `user.yaml`/`artifacts/`) across.
+4. Start it. **The zip never contains `setup/`, `machine/`, `artifacts/`, `user.yaml`, `meta.yaml` or a
+   real `local.yaml`**, so an update cannot overwrite your settings; the only files it replaces are
+   program files and the shipped templates/dictionaries. A release that changes a default updates the
+   template; a value you saved in `setup/` still wins (see `v3/docs/spec/CONFIG.md`).
 5. There is no auto-update and no installer: replacing files is the whole update.
+
 
 ## Uninstalling
 
 Close Seal Tools and delete its folder. Nothing was installed: no registry keys, no services, no
-Program Files data, no user-profile data outside the folder. The Arduino keeps its firmware — flashing
-is independent of the app — and your `config/local.yaml` leaves with the folder, so copy it out first if
-you want to keep your calibration.
+Program Files data, no user-profile data outside the folder. The Arduino keeps its firmware - flashing
+is independent of the app. Your player state leaves with the folder, so copy out `config/setup/` and
+`config/user.yaml` first if you want to keep your setup; `config/machine/` and `config/artifacts/` are
+regenerated by calibrating.
 
----
 
 ## Troubleshooting
 

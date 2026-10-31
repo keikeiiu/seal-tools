@@ -153,7 +153,7 @@ once it reaches the setting, the run advances (or clears the resource slots firs
 - `All grades done (last was {grade}) — composer stopped.`
 - `{what}: unknown route '{route_key}'.` · `No route Resource3 → {other}.`
 - `{what}: '{destination}' isn't calibrated yet — save the Grade point '{destination}' on the Calibrate tab.`
-- `{what} isn't saved yet — the tuned movements are hand-edited in gem.movements in config/local.yaml (the movement editor is not built in v3.0).`
+- `{what} isn't saved yet — the tuned movements are hand-edited as `gem.movements` in `config/machine/gem.yaml` (or `config/local.yaml` on a legacy tree; the movement editor is not built in v3.0).`
 - `Grade position '{grade}' isn't calibrated yet — save the Grade point '{grade}' on the Calibrate tab.`
 - `Game window not found (or minimized) — open and restore the game first.`
 - `Couldn't move the cursor onto the {grade} button — {detail}. Stopped instead of clicking blind.`

@@ -390,40 +390,48 @@ keeps it, which is the decided scope).
 
 ## 7. Config merge semantics
 
-`local.yaml` is machine state the CORE alone writes and merges. The only writers are `config.apply`
-(the owned blocks plus the portable `settings:` projection), `ui.window` (`ui`) and
-`calibration.save` (the block it marks, plus its binary artifact); tool run state lives in memory and
-is not persisted mid-run (v2's pet `ApplySession` half is not carried over).
+The config is machine state the CORE alone writes and merges. Two on-disk modes exist behind the
+same protocol (CONFIG.md §1–§4): the legacy single `local.yaml` and the portable
+`config/setup/` + `config/machine/` tree. The shell never sees the difference: it sends and receives
+the same blocks, and `hello` answers one merged config.
 
 - The shell holds a working copy of the blocks it is allowed to edit and sends **only those**
-  blocks: `config.apply {rev, sections}`. Never the whole file, never a whole block it does not
-  own.
+  blocks: `config.apply {rev, sections}`. Never a whole file, never a whole block it does not own.
 - The core re-runs the authoritative rules (`seal-domain`), merges **field-wise** into the
-  current block — so a session half it wrote a second ago survives the tab's static half — writes
-  atomically with the existing header/foreign-block rules, bumps `rev`, and returns the merged
-  sections.
-- `config.apply` may carry `"settings"` — the portable half (§4). Owned blocks replace; `settings`
-  overlays field-wise into the file's `settings:` block, and one `rev` covers both halves. The
-  result echoes the effective sections for the requested names, not the whole file (§12.2).
+  current block — so a session half it wrote a second ago survives the tab's static half — bumps
+  `rev`, and returns the merged sections.
+- **Writes are routed in the portable layout.** Each changed FIELD goes to the file that owns it:
+  `settings:` sections to the matching `setup/` file, machine blocks to `machine/`, and split blocks
+  field-wise (`buy_sell.presets` setup vs `buy_sell.bag_grid` machine). One file is one atomic
+  temp+fsync+rename; the Setup and Pet card saves span two files and commit through the write-ahead
+  transaction, so a crash rolls both back. An unowned path is refused before anything is written.
+  `user.yaml` and `meta.yaml` are never written by `config.apply`.
+- `config.apply` may carry `"settings"` — the portable half (§4). In the legacy mode it overlays
+  the file's `settings:` block; in the portable mode it routes to `setup/`. The result echoes the
+  effective sections for the requested names, not the whole file (§12.2).
 - A stale `rev` is refused with `conflict`; the shell reconciles and tells the player what changed
   underneath before saving again.
 - Core-initiated writes emit `config.changed {rev, block, values}` AFTER their own response
-  (`config.apply`, `ui.window`, `calibration.save`) — a shell that is not editing that block applies
-  it silently; one that is editing shows the conflict.
+  (`config.apply`, `ui.window`, `calibration.save`, the calibration sessions) — a shell that is not
+  editing that block applies it silently; one that is editing shows the conflict.
 - **Run-state writes have no request.** The Pet Feeder persists its own machine state mid-run
   (`pet.food_slots_used`, `pet.slots[i].boarding_running`, and the close-guard pair
-  `pet.close_button_png`/`pet.boarding_window_may_be_open`) through the same single writer; each
+  `pet.close_button_png`/`pet.boarding_window_may_be_open`) through the same writer and routing; each
   successful write bumps `rev` and emits `config.changed {rev, block:"pet", values}` immediately,
   because there is no response to follow. The shell may receive it while idle. Only those fields are
-  touched: the rest of `pet`, the rest of the file and its foreign blocks are preserved; a malformed
-  config or I/O failure writes nothing and logs to `error.log` — persisting state is a safety net, it
-  never fails the run. A shell `config.apply` carrying the pre-write rev gets `conflict` and the
-  current rev; a dirty draft shows the external-change banner.
+  touched: the rest of `pet`, the rest of the tree and any foreign/notes file are preserved; a
+  malformed config or I/O failure writes nothing and logs to `error.log` — persisting state is a
+  safety net, it never fails the run. A shell `config.apply` carrying the pre-write rev gets
+  `conflict` and the current rev; a dirty draft shows the external-change banner.
 - `ui:` is fully core-owned; it is written only through `ui.window`.
-- Hand edits to the file are picked up at startup or by `config.reload`.
-- `config.apply` commits both halves — the owned blocks and the portable projection — in ONE file
-  update, so a failed apply writes nothing and consumes no `rev` (seal-config's composed writer,
-  `46df1ee`).
+- `calib_tuner.png`/`calib_pet.png`, the reference crops under `config/artifacts/`, and the four
+  extracted pet crops are files, but the protocol still carries images as base64: a crop saved in
+  config is referenced by `artifacts/<name>.png` and resolved to base64 by the reader, so a client
+  that only speaks the wire needs no change.
+- Hand edits to the files are picked up at startup or by `config.reload`.
+- In the portable layout a single `config.apply` may touch two files (a split block or a
+  Setup/Pet card save); the transaction makes that one revision and one failure mode. In the legacy
+  layout it is still ONE `local.yaml` update.
 
 ## 8. Images and the frame cache
 

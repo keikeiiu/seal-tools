@@ -1,81 +1,78 @@
-# v3 config — the dev tree and the shipped install tree
+# Your Seal Tools config folder
 
-The core takes a **root** whose `config/` subdirectory holds its files:
+This folder is the core's state. The core takes a **root** whose `config/` subdirectory holds these
+files (`seal-core.exe --root <folder>`); a packaged install has the exe and `seal-core.exe` at the
+top of the folder, beside `config/`.
 
-```powershell
-seal-core.exe --root <repo>/v3
-```
+## The split: what travels, what does not
 
-The root is the directory *containing* `config/` (a packaged install has the shell exe and
-`seal-core.exe` at the top of the folder, beside `config/`).
+A file holds one **class** (does it travel?) for one **tool**. The short version:
 
-## The two trees
+| folder / file | copy to another PC? | what it is |
+|---|---|---|
+| `setup/` | **YES** | everything you configured: window title, game variant, board IDs, hotkeys, tuner/gem behaviour, spammer rotations, quest flows, buy presets, pet preferences |
+| `config/user.yaml` | yes, if you want your notes to travel | your own extra blocks/notes; the core never reads or writes it |
+| `machine/` | **NO** | this PC's measurements: calibration environment, OCR geometry, gem/buy/pet marks, tooltip offset, window placement, COM port override |
+| `artifacts/` | **NO** | reference crops and learned icons (`pet_*.png`); recapture by calibrating |
+| `meta.yaml` | **NO** | the core's bookkeeping (migration/layout markers), not hand-edited |
+| `defaults.yaml.example` | — | the shipped base every portable key falls back to |
+| `attributes*.yaml` | — | OCR dictionaries shipped with the release |
 
-This directory is the **development/install config tree**: committed defaults, dictionaries, the
-seed template, and a gitignored `local.yaml` this machine has written. The packaged install tree is
-the same shape, built by `v3/publish.ps1`, with one rule: **the only files it carries are templates
-and release-maintained dictionaries — never a real `local.yaml`**.
+To move your setup to another PC: close the app and copy the `setup/` folder (and optionally
+`user.yaml`). Do **not** copy `machine/` or `artifacts/` — a stale coordinate or display
+measurement is worse than calibrating again. A fresh PC calibrates normally.
 
-| file | dev tree | shipped install | written by |
-|---|---|---|---|
-| `defaults.yaml` | committed source base | — (published under the template name) | nobody |
-| `defaults.yaml.example` | — | committed `defaults.yaml`, renamed on staging | nobody |
-| `local.yaml` | gitignored machine state | **never shipped** | the core (all saves) |
-| `local.yaml.example` | committed seed | committed seed | nobody |
-| `attributes.yaml` (TW dictionary) | committed | committed | release-maintained by hand |
-| `attributes.us.yaml` | committed dev copy (empty today) | — (published under the template name) | the player grows it in place |
-| `attributes.us.yaml.example` | — | committed `attributes.us.yaml`, renamed on staging | nobody |
+To back up everything precious: copy `setup/` and `user.yaml`. `machine/` needs no backup because
+calibrating regenerates it.
 
-## Shipped-base precedence (`defaults.yaml.example` vs `defaults.yaml`)
+## First run, upgrades, and the one-time migration
 
-The core's load rule, in one line:
+- A fresh install starts from the shipped templates. Tools refuse with their own calibration line
+  until you calibrate; nothing is silently seeded with another PC's coordinates.
+- An older install with a single `config/local.yaml` is migrated automatically on the first launch
+  of this version: the whole `config/` folder is copied to
+  `config/.migration-backup-<stamp>/`, the old file is split into `setup/` and `machine/`, inline
+  crop images are written to `artifacts/`, foreign blocks move to `user.yaml`, and only then is the
+  old `local.yaml` retired. The backup folder is your rollback; delete it once you are happy.
+- Replacing the exe/templates with a newer release never touches `setup/`, `machine/`, `artifacts/`
+  or `user.yaml`. A release zip carries only the templates, the dictionaries and the docs.
+- Downgrading is one-way: an older core does not understand this folder. To roll back, restore the
+  `.migration-backup-*` folder and the older exe.
 
-1. **`config/defaults.yaml.example` is the base when it exists.** That is what a released install
-   ships, so extracting an update replaces the *template* and never the player's own file.
-2. Otherwise the tracked **`config/defaults.yaml`** is the base. That is a git checkout/dev tree.
-3. If both exist, `defaults.yaml` beside the template is the **legacy layer**: it is read once, its
-   differing portable values are folded into `local.yaml`'s `settings:` block, and it is then kept
-   as the rollback copy (never written, moved or deleted). This is v2's migration path.
+## Files the core may add
 
-The publish script stages the tracked `defaults.yaml` as `config/defaults.yaml.example`, so a fresh
-install reads the template and an upgrade cannot overwrite anything the player saved.
+| file | meaning |
+|---|---|
+| `meta.yaml` | layout and one-time migration markers; the core writes it, do not hand-edit |
+| `.migration-backup-<stamp>/` | the pre-migration copy; safe to delete after a successful launch |
+| `.seal-txn/` | a short-lived write journal while a two-file save is in flight; never edit or back it up |
+| `local.yaml` | the OLD single-file layout. A development checkout and a pre-migration tree still use it; it is retired by the migration |
 
-## First run, and what a fresh install starts with
+## Hand-editing
 
-`config/local.yaml` is seeded **only when absent**, from `config/local.yaml.example`, through the
-same atomic writer as every other save. The seed is deliberately uncalibrated: the calibrator writes
-`buy_sell`/`gem`/`tuner`/`pet`/`tooltip`/`quest` and the shell writes `ui`, so every tool refuses
-with its own calibration line until the player calibrates it. A v2 install migrates by copying
-`local.yaml` and the `calib_*.png` crops into this directory — the formats are unchanged.
+The files are YAML and readable. A save rewrites the file it changes: **comments inside a data
+file are lost**, but keys the core does not read are **kept**, and a save never touches a file whose
+values did not change. Keep prose here or in `user.yaml`; the core does not read this README.
+`schema_version: 1` is reserved and rewritten on every save; a newer version is refused loudly
+rather than guessed at.
 
-Missing files are loud, not silent: no `local.yaml` and no seed is a boot refusal; a variant's
-missing dictionary is refused unless an `<name>.example` template can seed it.
+## Dev checkout
 
-## `docs/pet-data.csv`
-
-The pet feeder reads `<root>/docs/pet-data.csv` (the feeding table used to estimate pet-minutes).
-The released file is copied **verbatim** from `v2/docs/pet-data.csv`; it is data, not config, and the
-copy lives at `v3/docs/pet-data.csv`. Without it the feeder still schedules from the time line /
-counts / configured cycle, but the pet-minutes estimate is unavailable.
-
-## What is never shipped
-
-`config/local.yaml`, `config/local.yaml.backup-*`, `config/local.yaml.corrupt-backup`, the OCR
-`models/` download cache, `logs/`, `.scratch/`, and any `calib_*.png` the player saved. A public
-payload is audited as an **allow-list** by `v3/publish.ps1 -Release`, so a future copy line fails at
-publish time instead of shipping the player's state.
-
-## Packaging and docs
-
-`v3/publish.ps1` (`-Verify`, `-Stage`, `-Release`) builds and packages the v3 payload; run
-`.\v3\publish.ps1 -Verify` from the repo root to see which release inputs are still missing. The
-packaged `docs/` carries `USER_GUIDE.md`, `USER_GUIDE.zh-TW.md` and `INSTALL.md` once written (see
-`v3/docs/plans/CUTOVER.md`).
-
-## Dev bootstrap
-
-The dev tree carries `v3/config/local.yaml` (gitignored). To recreate it from the committed seed:
+This committed folder is the development tree: it has `defaults.yaml` (base) and
+`local.yaml.example` (the first-run seed); `local.yaml` is gitignored machine state. Recreate a dev
+`local.yaml` with:
 
 ```powershell
 Copy-Item v3\config\local.yaml.example v3\config\local.yaml
 ```
+
+A development checkout does NOT auto-migrate (it has no `defaults.yaml.example`); the live
+single-file path stays in use there. The packaged install ships the template and migrates on first
+launch.
+
+## Packaging
+
+`v3/publish.ps1` stages only the allow-listed release files (templates, dictionaries, docs, models,
+exes) and audits the result: `local.yaml`, `setup/`, `machine/`, `artifacts/`, `user.yaml`,
+`meta.yaml`, `.migration-backup-*`, `.seal-txn/`, `logs/` and `calib_*.png` are never shipped.
+Run `.\v3\publish.ps1 -Verify` from the repo root to see missing release inputs.

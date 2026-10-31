@@ -520,6 +520,24 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ## 7. 日誌與檔案
 
+### 您的設定，以及如何搬到另一台電腦
+
+設定依「屬於您」或「屬於這台電腦」分開放：
+
+- `config/setup/` 是**您的設定**（視窗/版本/開發板 ID、快捷鍵、Tuner 與 Gem 行為、Spammer
+  輪替、Quest 流程、購買預設、寵物偏好）。要把設定帶到另一台電腦，請**複製這個資料夾**
+  （若有筆記，也複製 `config/user.yaml`）。
+- `config/machine/` 是**這台電腦量測出來的資料**（校準、OCR 幾何、各標記、tooltip 位移、
+  視窗位置、COM 埠覆寫）。請勿複製到另一台電腦，在該機重新校準即可。
+- `config/artifacts/` 存放小型參考截圖，重新校準即可重建。
+- `config/meta.yaml` 是核心的內部記帳，請不要手動修改。
+
+舊版安裝只有一個 `config/local.yaml`。此版本第一次啟動會自動備份並拆成上述資料夾（請見
+INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` 與
+`config/user.yaml` 即可；`config/machine/` 不必備份，重新校準就會重建。細節請看
+`config/README.md` 與 `docs/spec/CONFIG.md`。
+
+
 ### 7.1 即時日誌面板
 
 頂端列的 **Logs (N)**（或 **Ctrl+L**）顯示核心執行時發布的日誌行。它是用來*觀看*執行，不是持久紀錄。

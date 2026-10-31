@@ -355,6 +355,17 @@ Why it is **not** the recommended store (reasons, in the player's terms):
   checkout without the templates keeps the legacy path. Newer-schema files are refused by the live
   loader. The docs rewrite (CONFIG.md file map, PROTOCOL §7 routing, INSTALL/CUTOVER/user guides)
   and acceptance remain.
+- **Increment 7 (docs) landed:** `spec/CONFIG.md` rewritten as the two-live-mode file map
+  (portable layout + legacy fallback, load order, routing, transaction, migration, artifacts, API);
+  `spec/PROTOCOL.md` §7 now states the routing rules; the shipped `config/README.md` is the player
+  copy/backup/upgrade guide; INSTALL's v2-migration/updating/uninstall sections, both USER_GUIDEs,
+  CALIBRATION/TOOL-FLOWS references and CUTOVER's packaging section were updated in the same unit.
+- **Increment 8 (acceptance) landed as automated tests:** copied `setup/` reproduces the portable
+  half with no calibration; replacing the template writes nothing in the player tree and new
+  defaults arrive for untouched keys; saving one preset changes exactly the owning file; a two-file
+  save leaves no journal; and a protocol-level test shows `hello` serving the portable tree and
+  `config.apply` writing the owning files. The live player pass (one real run on the migrated tree)
+  is the remaining player action, as recorded for every inventory that needs the game.
 - **Increment 7 (packaging guard) landed:** `publish.ps1` refuses `config/setup/*`,
   `config/machine/*`, `config/artifacts/*`, `config/user.yaml`, `config/meta.yaml`, the migration
   backup folders and the `.seal-txn` journal as player state; `config/README.md` is now a shipped
