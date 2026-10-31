@@ -1786,7 +1786,8 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
         ConfigError::Read { path, .. }
         | ConfigError::Parse { path, .. }
         | ConfigError::Serialize { path, .. }
-        | ConfigError::Write { path, .. } => Some(path.as_path()),
+        | ConfigError::Write { path, .. }
+        | ConfigError::SchemaTooNew { path, .. } => Some(path.as_path()),
         ConfigError::SectionNotOwned(_) => None,
     }
 }

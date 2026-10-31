@@ -25,6 +25,13 @@ pub enum ConfigError {
     /// A caller tried to write a top-level block the application does not own. Writing one would
     /// serialise over the foreign-block text the writer carries through verbatim.
     SectionNotOwned(String),
+    /// A data file states a newer `schema_version` than this core understands. Refused without
+    /// touching the file: guessing could drop a field a newer build wrote.
+    SchemaTooNew {
+        path: PathBuf,
+        found: u64,
+        supported: u8,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -42,6 +49,16 @@ impl fmt::Display for ConfigError {
             Self::SectionNotOwned(name) => write!(
                 f,
                 "section \"{name}\" is not owned by the app, so a save cannot rewrite it"
+            ),
+            Self::SchemaTooNew {
+                path,
+                found,
+                supported,
+            } => write!(
+                f,
+                "{} states schema_version {found}, but this core understands at most {supported}; \
+                 it was written by a newer build and was not changed",
+                path.display()
             ),
         }
     }

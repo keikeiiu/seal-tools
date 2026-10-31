@@ -25,6 +25,7 @@
 //!   list, and `null` in YAML is how v2's writer spells "unset", so it is treated as silence.
 
 pub mod error;
+pub mod file;
 pub mod foreign;
 pub mod registry;
 pub mod store;

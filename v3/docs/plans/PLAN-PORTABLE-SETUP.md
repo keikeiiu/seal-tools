@@ -346,6 +346,12 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 1 landed:** `seal-config::file` is the per-file format layer — a file is a YAML
+  mapping with the reserved `schema_version` (stripped on read, rewritten on save, a newer version
+  refused loudly writing nothing), a class/domain header, unknown keys kept because the whole
+  mapping is written, and temp + `fsync` + rename atomic saves. The old single-file store is still
+  the live path; `tests/file_layer.rs` pins the layer, so the loader switch (increment 2) can rely
+  on it.
 - The player can still reject or amend any of the ⚑ answers before the loader switch; nothing in
   increments 0–1 writes the new tree.
 
