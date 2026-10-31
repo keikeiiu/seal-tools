@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 use crate::OWNED_LOCAL_BLOCKS;
 use crate::error::ConfigError;
 use crate::yaml;
+use crate::{file, registry};
 
 const DEFAULTS: &str = "defaults.yaml";
 const DEFAULTS_TEMPLATE: &str = "defaults.yaml.example";
@@ -25,6 +26,7 @@ const LOCAL_EXAMPLE: &str = "local.yaml.example";
 const ATTRIBUTES: &str = "attributes.yaml";
 const SETTINGS: &str = "settings";
 const LEGACY_FOLDED: &str = "legacy_folded";
+const META: &str = "meta.yaml";
 
 /// The machine-side pet RUN state a live feeder may update mid-run. This is deliberately not a
 /// whole `pet` block: a field the run does not own can never be touched by this writer.
@@ -104,6 +106,27 @@ impl ConfigStore {
     /// A fresh install seeds `local.yaml` from `local.yaml.example` first, through the same atomic
     /// writer as every other save.
     pub fn load(&self) -> Result<Value, ConfigError> {
+        // A SHIPPED install (it carries the template) with a legacy local.yaml is migrated on the
+        // next boot: the migration backs the folder up and writes the LAST marker, so this is the
+        // one-time switch. A development checkout has only defaults.yaml and stays on the legacy
+        // path, which is what keeps the repo's own tree from being rewritten.
+        // The shipped install is recognisable by BOTH templates: the zip stages defaults.yaml as
+        // defaults.yaml.example and always carries local.yaml.example. Requiring both keeps a test
+        // fixture or a bare checkout from being migrated behind the owner's back.
+        if self.path_of(DEFAULTS_TEMPLATE).is_file()
+            && self.path_of(LOCAL_EXAMPLE).is_file()
+            && self.path_of(LOCAL).is_file()
+            && !self.is_new_layout()
+        {
+            let base = self.read_yaml(DEFAULTS_TEMPLATE)?;
+            crate::migrate::migrate(&self.dir, &base)?;
+        }
+        // The portable layout (PLAN-PORTABLE-SETUP) is the live path once `meta.yaml` says the tree
+        // was migrated. A dev tree without it keeps the legacy single-file path below.
+        if self.is_new_layout() {
+            let base = self.load_base_template()?;
+            return Ok(crate::layout::load(&self.dir, &base)?.config);
+        }
         // THE BASE. An install that has taken an update has the shipped template — the zip carries
         // the defaults as config/defaults.yaml.example precisely so that extracting an update
         // cannot cover the player's own defaults.yaml — and reads that. A checkout has only the
@@ -208,6 +231,9 @@ impl ConfigStore {
     /// Parses `local.yaml` on its own — the overlay, not the merged config. `Value::Null` for an
     /// empty or comment-only document, exactly as the file reads.
     pub fn load_local(&self) -> Result<Value, ConfigError> {
+        if self.is_new_layout() {
+            return self.new_layout_view();
+        }
         let path = self.path_of(LOCAL);
         if !path.is_file() {
             return Err(ConfigError::MissingFile(path));
@@ -267,6 +293,9 @@ impl ConfigStore {
         F: FnOnce(&mut Value) -> Result<(), ConfigError>,
     {
         let _gate = lock_save_gate();
+        if self.is_new_layout() {
+            return self.update_new_layout(mutate);
+        }
         let path = self.path_of(LOCAL);
         let existing = if path.is_file() {
             self.read_text(&path)?
@@ -307,6 +336,112 @@ impl ConfigStore {
         text.push_str(&body);
         text.push_str(&foreign);
         self.write_atomically(&path, &text)
+    }
+
+    /// True when the config folder is the class × domain tree (a migrated install). The marker is
+    /// `meta.yaml`'s `layout_version`; its presence is the switch the migration writes LAST.
+    fn is_new_layout(&self) -> bool {
+        self.path_of(META).is_file()
+    }
+
+    /// The shipped base for the new layout: the template when an install carries one, else the
+    /// tracked defaults (a checkout). The merged read itself is `layout::load`.
+    fn load_base_template(&self) -> Result<Value, ConfigError> {
+        let name = if self.path_of(DEFAULTS_TEMPLATE).is_file() {
+            DEFAULTS_TEMPLATE
+        } else {
+            DEFAULTS
+        };
+        self.read_yaml(name)
+    }
+
+    /// The new tree seen through the OLD overlay shape (`settings:` + machine blocks). Every
+    /// `update_local` closure in the core speaks this shape; presenting it here is what lets the
+    /// writer switch to per-file routing without rewriting dozens of call sites.
+    fn new_layout_view(&self) -> Result<Value, ConfigError> {
+        let mut view = Map::new();
+        let mut settings = Map::new();
+        for def in registry::portable_files() {
+            let Some(content) = file::read(&self.dir, def)? else {
+                continue;
+            };
+            if let Some(blocks) = content.as_object() {
+                for (key, value) in blocks {
+                    match settings.get_mut(key) {
+                        Some(slot) => merge_overlay(slot, value),
+                        None => {
+                            settings.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(meta_def) = registry::FILES.iter().find(|def| def.path == META)
+            && let Some(meta) = file::read(&self.dir, meta_def)?
+            && let Some(folded) = meta.get(LEGACY_FOLDED)
+        {
+            settings.insert(LEGACY_FOLDED.to_owned(), folded.clone());
+        }
+        if !settings.is_empty() {
+            view.insert(SETTINGS.to_owned(), Value::Object(settings));
+        }
+        for def in registry::machine_files() {
+            let Some(content) = file::read(&self.dir, def)? else {
+                continue;
+            };
+            let Value::Object(blocks) = content else {
+                continue;
+            };
+            for (key, value) in blocks {
+                match view.get_mut(&key) {
+                    Some(slot) => merge_overlay(slot, &value),
+                    None => {
+                        view.insert(key, value);
+                    }
+                }
+            }
+        }
+        Ok(Value::Object(view))
+    }
+
+    /// Read the old overlay shape, run the caller's mutation, and route only the CHANGED owned
+    /// blocks back to their files (one atomic write per file, or the two-file transaction). A
+    /// top-level block removal is not expressible through the field-wise writer and is refused
+    /// rather than silently left behind.
+    fn update_new_layout<F>(&self, mutate: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut Value) -> Result<(), ConfigError>,
+    {
+        let before = self.new_layout_view()?;
+        let mut after = before.clone();
+        mutate(&mut after)?;
+        let before_object = before.as_object().cloned().unwrap_or_default();
+        let after_object = after.as_object().cloned().unwrap_or_default();
+        let mut sections = Map::new();
+        for (key, value) in &after_object {
+            if before_object.get(key) == Some(value) {
+                continue;
+            }
+            if key == SETTINGS {
+                if let Some(settings) = value.as_object() {
+                    sections.insert(key.clone(), Value::Object(settings.clone()));
+                }
+                continue;
+            }
+            sections.insert(key.clone(), value.clone());
+        }
+        for key in before_object.keys() {
+            if !after_object.contains_key(key) {
+                return Err(ConfigError::SectionNotOwned(format!(
+                    "removal of top-level block {key} through the portable writer"
+                )));
+            }
+        }
+        if sections.is_empty() {
+            return Ok(());
+        }
+        crate::layout::write_sections(&self.dir, &sections)?;
+        Ok(())
     }
 
     /// Persist one pet run-state update through the same gate/read-modify-write as every other

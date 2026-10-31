@@ -346,6 +346,15 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 7 (live-path switch) landed:** `ConfigStore` now detects a migrated tree by
+  `meta.yaml` and reads it through `layout::load`; `load_local`, `update_local`,
+  `update_local_checked` and `persist_pet_run_state` present the old overlay shape to their existing
+  call sites, diff the changed blocks and route them through `write_sections` (single-file atomic or
+  the two-file transaction). A shipped install (`defaults.yaml.example` + `local.yaml.example`) with
+  a legacy `local.yaml` is migrated on the next load — the one-time switch — while a development
+  checkout without the templates keeps the legacy path. Newer-schema files are refused by the live
+  loader. The docs rewrite (CONFIG.md file map, PROTOCOL §7 routing, INSTALL/CUTOVER/user guides)
+  and acceptance remain.
 - **Increment 7 (packaging guard) landed:** `publish.ps1` refuses `config/setup/*`,
   `config/machine/*`, `config/artifacts/*`, `config/user.yaml`, `config/meta.yaml`, the migration
   backup folders and the `.seal-txn` journal as player state; `config/README.md` is now a shipped
