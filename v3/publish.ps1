@@ -137,6 +137,18 @@ function Test-DenyRelative([string]$relative) {
     # The one release template whose name starts with local.yaml is shipped on purpose; it is still
     # allow-listed only at config/local.yaml.example, so an asset copy elsewhere is refused.
     if ($relative -eq 'config/local.yaml.example') { return $null }
+    # The portable layout (PLAN-PORTABLE-SETUP): setup/, machine/ and artifacts/ are PLAYER STATE and
+    # never ship; user.yaml/meta.yaml are the player's notes and the machine's bookkeeping; the
+    # migration backup and the transaction journal are never part of a release.
+    if ($relative -like 'config/setup/*' -or
+        $relative -like 'config/machine/*' -or
+        $relative -like 'config/artifacts/*' -or
+        $relative -like 'config/.migration-backup-*' -or
+        $relative -like 'config/.seal-txn*' -or
+        $relative -eq 'config/user.yaml' -or
+        $relative -eq 'config/meta.yaml') {
+        return 'portable-layout player state'
+    }
     $name = $segments[$segments.Count - 1]
     if ($name -eq 'local.yaml' -or
         $name -like 'local.yaml.*' -or
@@ -203,6 +215,7 @@ function Test-AllowedStageRelative([string]$relative) {
         'native_assets.json'
     )
     $allowedConfig = @(
+        'config/README.md',
         'config/defaults.yaml.example',
         'config/local.yaml.example',
         'config/attributes.yaml',
@@ -233,6 +246,7 @@ function Get-StageAuditProblems([string]$stageDir) {
         'models/ch_PP-OCRv4_det_infer.onnx',
         'models/ch_PP-OCRv4_rec_infer.onnx',
         'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
+        'config/README.md',
         'config/defaults.yaml.example',
         'config/local.yaml.example',
         'config/attributes.yaml',
@@ -661,6 +675,7 @@ function Invoke-Stage {
     # The shipped config is templates + release-maintained dictionaries only. A real local.yaml is
     # never copied (the core seeds it from local.yaml.example on first run).
     foreach ($pair in @(
+        @{ Source = 'README.md'; Destination = 'config\README.md' },
         @{ Source = 'defaults.yaml'; Destination = 'config\defaults.yaml.example' },
         @{ Source = 'local.yaml.example'; Destination = 'config\local.yaml.example' },
         @{ Source = 'attributes.yaml'; Destination = 'config\attributes.yaml' },
@@ -735,7 +750,14 @@ function Invoke-Selftest {
             'data/local.yaml',
             'data/logs/tool.log',
             'data/calib_gem_result.png',
-            'data/.env'
+            'data/.env',
+            'config/setup/common.yaml',
+            'config/machine/pet.yaml',
+            'config/artifacts/pet_close_button.png',
+            'config/user.yaml',
+            'config/meta.yaml',
+            'config/.migration-backup-deadbeef/local.yaml',
+            'config/.seal-txn/txn-1/journal.json'
         )
         foreach ($relative in $forbidden) {
             $path = Join-Path $stage $relative.Replace('/', '\')
@@ -781,6 +803,7 @@ function Invoke-Selftest {
             'models/ch_PP-OCRv4_det_infer.onnx',
             'models/ch_PP-OCRv4_rec_infer.onnx',
             'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
+            'config/README.md',
             'config/defaults.yaml.example',
             'config/local.yaml.example',
             'config/attributes.yaml',

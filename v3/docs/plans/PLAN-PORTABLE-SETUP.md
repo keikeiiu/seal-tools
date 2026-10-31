@@ -346,6 +346,12 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 7 (packaging guard) landed:** `publish.ps1` refuses `config/setup/*`,
+  `config/machine/*`, `config/artifacts/*`, `config/user.yaml`, `config/meta.yaml`, the migration
+  backup folders and the `.seal-txn` journal as player state; `config/README.md` is now a shipped
+  file (allow-listed, required by the stage audit and copied beside the templates). The packaging
+  selftest plants each new path and requires a refusal. The docs rewrite itself (CONFIG.md file map,
+  PROTOCOL §7 routing, INSTALL/CUTOVER/user guides) rides the live-path switch and remains open.
 - **Increment 6 landed:** the migration extracts the four inline crop groups into
   `config/artifacts/*.png` and leaves small `artifacts/<name>.png` references in `machine/pet.yaml`
   (`pet.close_button_png`, `food_icon_png`, `slots[].pet_slot_empty_png`, `queue[].png`); a crop
