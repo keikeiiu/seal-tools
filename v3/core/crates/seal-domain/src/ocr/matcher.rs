@@ -4,7 +4,7 @@
 //! The dictionary comes from `attributes.yaml`; nothing here is hardcoded. Two behaviours look like
 //! bugs to a reader who does not know why they are there, and both are deliberate:
 //!
-//! - **An unreadable value still satisfies a bounded rule** ([`value_ok`]). For a rare attribute the
+//! - **An unreadable value still satisfies a bounded rule** (`value_ok`). For a rare attribute the
 //!   NAME match is the signal, and disqualifying a roll over a number the OCR failed to read would
 //!   mean missing one that should have stopped the run. The bounds apply whenever a value WAS read.
 //! - **An overflowing digit run is "no value", not an exception.** The captures are unbounded digit

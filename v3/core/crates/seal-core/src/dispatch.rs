@@ -10,7 +10,7 @@
 //! ([`crate::validate`]) before it writes ??no widget keeps a rule. The file semantics themselves
 //! live in [`seal_config::ConfigStore`] ??this module only speaks protocol to them.
 //!
-//! The tool commands ([`tool_start`], [`tool_stop`]) are thin: they validate the id against
+//! The tool commands (`tool_start`, `tool_stop`) are thin: they validate the id against
 //! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` 禮1 item 7) and translate the
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 

@@ -20,7 +20,7 @@
 //!   caller's, not the driver's.
 //! - **Port sharing with the game's anti-cheat** and surviving a device unplugged mid-run.
 //!
-//! The fake lives in [`fake`]: it records writes verbatim and scripts reads, so every test in this
+//! The fake lives in `fake`: it records writes verbatim and scripts reads, so every test in this
 //! crate (and in consumers) is single-threaded and pays no serial time.
 
 use std::collections::VecDeque;

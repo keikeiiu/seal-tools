@@ -298,7 +298,7 @@ fn is_under(prefix: &str, path: &str) -> bool {
 }
 
 /// The most specific file owning `path`, or `None` when no file claims it. Model paths use the
-/// `settings.` spelling of the OLD overlay; callers that walk [`seal_domain`] should use
+/// `settings.` spelling of the OLD overlay; callers that walk `seal_domain` should use
 /// [`owner_of_model`], which strips that prefix before lookup.
 pub fn owner_of(path: &str) -> Option<&'static FileDef> {
     let mut best: Option<(&'static FileDef, usize)> = None;

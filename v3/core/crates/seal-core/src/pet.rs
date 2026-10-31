@@ -1,6 +1,6 @@
 //! The pet feeder — the LAST live tool: the resident feeder's plan, card surface, read seam and loop.
 //!
-//! The decision content is `seal-domain`'s ([`PetSetup::ready`], [`schedule_for`], [`consider_veto`],
+//! The decision content is `seal-domain`'s (`PetSetup::ready`, [`schedule_for`], [`consider_veto`],
 //! [`fold_back`], [`build_card`], [`visit_opening_message`], [`reload_step_message`],
 //! [`food_load::complaint`] …); nothing here re-implements one. The I/O is [`PetSource`], scripted in
 //! every test: no window, no board, no OCR models. The production [`PetReadSource`] is

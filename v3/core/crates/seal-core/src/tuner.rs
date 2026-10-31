@@ -6,7 +6,7 @@
 //! - **The read is a seam.** [`TunerSource`] is one scan plus a cursor read; the production source is
 //!   `win::capture` + `seal-ocr`'s pipeline, and the tests script it. The DECISION half is
 //!   `seal-domain`'s [`TunerRun`] and is not repeated here: this module only turns one
-//!   [`TunerOutcome`] into the next few `Decision`s and holds the loop's state.
+//!   `TunerOutcome` into the next few `Decision`s and holds the loop's state.
 //! - **The command stream is v2's exactly** (`SealTuner.cs:104-160`): countdown, then one
 //!   attempt = (HID spring placement once) `C` click, wait `click_enter_delay`, `E` Enter, wait
 //!   `ocr_delay`, one read, decide. `Retry` loops; a `Stop` reason ends the run.
@@ -15,7 +15,7 @@
 //!   domain function with that comment rather than a rule invented here.
 //!
 //! One recorded simplification: a FAILED recentre placement surfaces as the effects' placement line,
-//! not v2's composed "cursor wouldn't re-centre — <detail>". The stop still happens and still names
+//! not v2's composed "cursor wouldn't re-centre — `<detail>`". The stop still happens and still names
 //! the cursor; only the wording differs, because the runner performs effects and the tool cannot see
 //! their failure. Recorded in `OPEN.md`.
 

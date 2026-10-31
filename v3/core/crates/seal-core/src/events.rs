@@ -162,7 +162,7 @@ fn detail_data(detail: &ToolDetail) -> Value {
 }
 
 /// A `tool.finished` event: the tool, the protocol's reason word, the message the player reads, the
-/// tool's own end-of-run summary ([`crate::supervisor::WorkerEvent::Done`]) and `ended_at`
+/// tool's own end-of-run summary (the supervisor's `WorkerEvent::Done`) and `ended_at`
 /// (`PROTOCOL.md` §5). The reason is the same [`StopReason`] the final snapshot is published from, so
 /// the two cannot disagree.
 ///

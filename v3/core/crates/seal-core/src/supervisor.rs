@@ -21,7 +21,7 @@
 //!
 //! The arbiter is the complete state machine (the resident feeder armed without the game, a
 //! foreground start deferred behind it, the spammer preemptible). What it lacked was a way for a
-//! running worker to talk to it. [`SupervisorPort`] is that capability: `request` is a
+//! running worker to talk to it. `SupervisorPort` is that capability: `request` is a
 //! `RequestGame` command whose reply is stashed HERE (never blocking the supervisor thread) and
 //! satisfied when the arbiter's `release_game`/`finished` reports the waiter granted; `release` is a
 //! `ReleaseGame` command; `should_stand_down` answers for the spammer. A `Preempt` cancels the holder

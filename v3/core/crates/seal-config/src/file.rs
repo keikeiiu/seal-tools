@@ -96,7 +96,7 @@ pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigE
     write_text(&path, &text)
 }
 
-/// Serialise one data file exactly as [`write`] will: header, reserved `schema_version`, then the
+/// Serialise one data file exactly as `write` will: header, reserved `schema_version`, then the
 /// caller's mapping. The two-file transaction needs the bytes WITHOUT writing, so the format lives
 /// here once for both paths.
 pub fn encode(file: &FileDef, content: &Value) -> Result<String, ConfigError> {

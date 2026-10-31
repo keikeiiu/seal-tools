@@ -11,7 +11,7 @@
 //!
 //! The command stream is v2's: guard → send → wait the step's own `delay_seconds`, per step; passes
 //! repeat inside master loops; a guard trip composes v2's "Stopped on loop N of M." / "Stopped during
-//! <flow> p/t of master loop m/M." lines. A failed send ends the run with the effects' own sentence.
+//! `<flow>` p/t of master loop m/M." lines. A failed send ends the run with the effects' own sentence.
 //! A failed placement never applies: the quest sends only bare C/R/E/K, so it never moves the cursor.
 
 use std::collections::VecDeque;
