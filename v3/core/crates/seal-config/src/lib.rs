@@ -33,7 +33,7 @@ pub mod store;
 pub mod yaml;
 
 pub use error::ConfigError;
-pub use layout::{Loaded, load as load_layout};
+pub use layout::{ChangeSummary, Loaded, load as load_layout, write_sections};
 pub use registry::{Class, Domain, FILES, FileDef, SCHEMA_VERSION};
 pub use store::{ConfigStore, PetRunStatePatch};
 

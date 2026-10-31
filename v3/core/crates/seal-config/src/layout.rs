@@ -144,6 +144,162 @@ fn json_object() -> Value {
     Value::Object(Map::new())
 }
 
+/// What one routed save wrote: the files that changed, in registry order. Increment 3 has no
+/// two-file transaction yet — a caller saving the Setup/Pet cards will get both files written
+/// sequentially — but the routing itself is the contract every later increment tests against.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChangeSummary {
+    pub files: Vec<&'static str>,
+}
+
+impl ChangeSummary {
+    pub fn changed(&self, path: &str) -> bool {
+        self.files.contains(&path)
+    }
+}
+
+/// Route a `config.apply`-shaped payload (block name → block value) to the files that own each
+/// field, one atomic write per file. `settings` is the OLD portable overlay spelling: its sections
+/// route to `setup/` files at the top level, and `legacy_folded` routes to `meta.yaml`.
+///
+/// A path no registry entry owns is refused with [`ConfigError::SectionNotOwned`] before ANY file is
+/// written, so routing cannot half-apply a save. Fields inside one block may route to different
+/// files (`buy_sell.presets` setup, `buy_sell.bag_grid` machine); a field with no specific owner
+/// falls back to its block's owner, which is how `calibration`/`spammer`/`quest` route wholesale.
+pub fn write_sections(
+    root: &Path,
+    sections: &Map<String, Value>,
+) -> Result<ChangeSummary, ConfigError> {
+    let mut groups: std::collections::BTreeMap<&'static str, Value> =
+        std::collections::BTreeMap::new();
+    // Validate and route into per-file fragments first. A failure leaves the tree untouched.
+    for (block, value) in sections {
+        if block == "settings" {
+            route_settings(block, value, &mut groups)?;
+        } else {
+            route_block(block, value, &mut groups)?;
+        }
+    }
+    let mut files = Vec::new();
+    for (path, fragment) in &groups {
+        let def = registry::FILES
+            .iter()
+            .find(|def| def.path == *path)
+            .expect("a routed path came from the registry");
+        let mut content = match file::read(root, def)? {
+            Some(content) => content,
+            None => Value::Object(Map::new()),
+        };
+        merge_overlay(&mut content, fragment);
+        file::write(root, def, &content)?;
+        files.push(def.path);
+    }
+    files.sort_unstable();
+    Ok(ChangeSummary { files })
+}
+
+fn route_settings(
+    block: &str,
+    value: &Value,
+    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+) -> Result<(), ConfigError> {
+    let Some(sections) = value.as_object() else {
+        return Err(ConfigError::SectionNotOwned(block.to_owned()));
+    };
+    for (section, section_value) in sections {
+        if section == "legacy_folded" {
+            // `meta.yaml` holds the fold marker at its top level, not under a `meta:` block.
+            let meta = groups
+                .entry("meta.yaml")
+                .or_insert_with(|| Value::Object(Map::new()));
+            if let Some(meta) = meta.as_object_mut() {
+                meta.insert("legacy_folded".to_owned(), section_value.clone());
+            }
+            continue;
+        }
+        let Some(fields) = section_value.as_object() else {
+            route_field(section, section, section_value.clone(), groups)?;
+            continue;
+        };
+        for (field, field_value) in fields {
+            let canonical = format!("{section}.{field}");
+            route_canonical(&canonical, section, field, field_value.clone(), groups)?;
+        }
+    }
+    Ok(())
+}
+
+fn route_block(
+    block: &str,
+    value: &Value,
+    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+) -> Result<(), ConfigError> {
+    let Some(fields) = value.as_object() else {
+        route_field(block, block, value.clone(), groups)?;
+        return Ok(());
+    };
+    if fields.is_empty() {
+        // An empty section writes nothing; it states no values.
+        return Ok(());
+    }
+    for (field, field_value) in fields {
+        let canonical = format!("{block}.{field}");
+        route_canonical(&canonical, block, field, field_value.clone(), groups)?;
+    }
+    Ok(())
+}
+
+/// Resolve the owner of a canonical path, preferring the most specific registry claim and falling
+/// back to the block's own owner (a whole-block file such as `machine/display.yaml`).
+fn route_canonical(
+    canonical: &str,
+    block: &str,
+    field: &str,
+    value: Value,
+    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+) -> Result<(), ConfigError> {
+    let owner = registry::owner_of(canonical).or_else(|| registry::owner_of(block));
+    let Some(owner) = owner else {
+        return Err(ConfigError::SectionNotOwned(canonical.to_owned()));
+    };
+    insert_fragment(groups, owner.path, block, field, value);
+    Ok(())
+}
+
+fn route_field(
+    block: &str,
+    field: &str,
+    value: Value,
+    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+) -> Result<(), ConfigError> {
+    let Some(owner) = registry::owner_of(block) else {
+        return Err(ConfigError::SectionNotOwned(block.to_owned()));
+    };
+    insert_fragment(groups, owner.path, block, field, value);
+    Ok(())
+}
+
+fn insert_fragment(
+    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+    path: &'static str,
+    block: &str,
+    field: &str,
+    value: Value,
+) {
+    let fragment = groups
+        .entry(path)
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(fragment) = fragment.as_object_mut() else {
+        return;
+    };
+    let block_value = fragment
+        .entry(block.to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Some(block_value) = block_value.as_object_mut() {
+        block_value.insert(field.to_owned(), value);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
