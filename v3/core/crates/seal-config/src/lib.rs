@@ -30,12 +30,14 @@ pub mod foreign;
 pub mod layout;
 pub mod registry;
 pub mod store;
+pub mod transaction;
 pub mod yaml;
 
 pub use error::ConfigError;
 pub use layout::{ChangeSummary, Loaded, load as load_layout, write_sections};
 pub use registry::{Class, Domain, FILES, FileDef, SCHEMA_VERSION};
 pub use store::{ConfigStore, PetRunStatePatch};
+pub use transaction::{PendingWrite, recover};
 
 /// The top-level blocks of `local.yaml` this application owns and rewrites, ported verbatim from
 /// `ConfigLoader.OwnedLocalBlocks`. Every other top-level block is foreign: carried through a save

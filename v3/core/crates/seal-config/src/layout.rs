@@ -39,6 +39,7 @@ pub struct Loaded {
 /// keeps owning which template is current (the old store's template/adoption rules are unchanged
 /// until the migration increment).
 pub fn load(root: &Path, base: &Value) -> Result<Loaded, ConfigError> {
+    crate::transaction::recover(root)?;
     let mut config = base.clone();
     if !config.is_object() {
         config = Value::Object(Map::new());
@@ -180,7 +181,10 @@ pub fn write_sections(
             route_block(block, value, &mut groups)?;
         }
     }
-    let mut files = Vec::new();
+    if groups.is_empty() {
+        return Ok(ChangeSummary::default());
+    }
+    let mut writes = Vec::with_capacity(groups.len());
     for (path, fragment) in &groups {
         let def = registry::FILES
             .iter()
@@ -191,11 +195,18 @@ pub fn write_sections(
             None => Value::Object(Map::new()),
         };
         merge_overlay(&mut content, fragment);
-        file::write(root, def, &content)?;
-        files.push(def.path);
+        writes.push(crate::transaction::PendingWrite { file: def, content });
     }
-    files.sort_unstable();
-    Ok(ChangeSummary { files })
+    // One file is one atomic write. Two files (the Setup/Pet card saves) go through the journal so a
+    // crash between the renames restores BOTH files rather than leaving a half-applied save.
+    if writes.len() == 1 {
+        file::write(root, writes[0].file, &writes[0].content)?;
+    } else {
+        crate::transaction::commit(root, &writes)?;
+    }
+    Ok(ChangeSummary {
+        files: writes.iter().map(|write| write.file.path).collect(),
+    })
 }
 
 fn route_settings(

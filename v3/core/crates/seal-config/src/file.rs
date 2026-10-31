@@ -92,6 +92,15 @@ pub fn read(root: &Path, file: &FileDef) -> Result<Option<Value>, ConfigError> {
 /// replaced by the current one.
 pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigError> {
     let path = path_of(root, file);
+    let text = encode(file, content)?;
+    write_text(&path, &text)
+}
+
+/// Serialise one data file exactly as [`write`] will: header, reserved `schema_version`, then the
+/// caller's mapping. The two-file transaction needs the bytes WITHOUT writing, so the format lives
+/// here once for both paths.
+pub fn encode(file: &FileDef, content: &Value) -> Result<String, ConfigError> {
+    let path = path_of(Path::new(""), file);
     let Some(mapping) = content.as_object() else {
         return Err(ConfigError::Serialize {
             path,
@@ -105,19 +114,20 @@ pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigE
             data.insert(key.clone(), value.clone());
         }
     }
-    let body = yaml::to_string(&Value::Object(data)).map_err(|message| ConfigError::Serialize {
-        path: path.clone(),
-        message,
-    })?;
-    let text = format!("{}{body}", header(file));
+    let body = yaml::to_string(&Value::Object(data))
+        .map_err(|message| ConfigError::Serialize { path, message })?;
+    Ok(format!("{}{body}", header(file)))
+}
 
+/// Replace `path` with `text` atomically: temp file in the same directory, `sync_all`, rename.
+pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| ConfigError::Write {
             path: parent.to_path_buf(),
             source,
         })?;
     }
-    let temp = temp_path(&path);
+    let temp = temp_path(path);
     let result = (|| -> std::io::Result<()> {
         let mut output = OpenOptions::new()
             .write(true)
@@ -126,11 +136,44 @@ pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigE
         output.write_all(text.as_bytes())?;
         output.sync_all()?;
         drop(output);
-        fs::rename(&temp, &path)
+        fs::rename(&temp, path)
     })();
     if let Err(source) = result {
         let _ = fs::remove_file(&temp);
-        return Err(ConfigError::Write { path, source });
+        return Err(ConfigError::Write {
+            path: path.to_path_buf(),
+            source,
+        });
+    }
+    Ok(())
+}
+
+/// Replace `path` with raw `bytes` atomically. Rollback restores a file byte for byte, so this is
+/// the byte-level twin of [`write_text`] (used by the two-file transaction's recovery).
+pub(crate) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| ConfigError::Write {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let temp = temp_path(path);
+    let result = (|| -> std::io::Result<()> {
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        output.write_all(bytes)?;
+        output.sync_all()?;
+        drop(output);
+        fs::rename(&temp, path)
+    })();
+    if let Err(source) = result {
+        let _ = fs::remove_file(&temp);
+        return Err(ConfigError::Write {
+            path: path.to_path_buf(),
+            source,
+        });
     }
     Ok(())
 }

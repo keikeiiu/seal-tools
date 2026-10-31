@@ -346,6 +346,12 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 4 landed:** `seal-config::transaction` commits the two-file Saves as one unit through
+  a write-ahead journal (`.seal-txn/`): backups + fsynced temps + journal first, renames second,
+  cleanup last. Recovery always ROLLS BACK an unfinished journal, is idempotent, and runs before a
+  layout load or the next save; a target that did not exist before is removed again. A one-file
+  save still uses the plain atomic writer. The live store is still `local.yaml`; increment 5 adds
+  the one-time migration before the switch.
 - **Increment 3 landed:** `seal-config::layout::write_sections` routes a `config.apply`-shaped payload
   field by field to the file that owns it (old `settings:` sections to `setup/`, `legacy_folded` to
   `meta.yaml`, whole-block fallbacks for `calibration`/`spammer`/`quest`), one atomic per-file write,
