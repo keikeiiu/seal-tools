@@ -130,6 +130,15 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
     let mut failure = None;
     for (index, write) in writes.iter().enumerate() {
         let target = write.path(root);
+        if let Some(parent) = target.parent()
+            && let Err(source) = fs::create_dir_all(parent)
+        {
+            failure = Some(ConfigError::Write {
+                path: parent.to_path_buf(),
+                source,
+            });
+            break;
+        }
         if let Err(source) = fs::rename(directory.join(format!("{index}.tmp")), &target) {
             failure = Some(ConfigError::Write {
                 path: target,

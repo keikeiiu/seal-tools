@@ -346,6 +346,14 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 5 landed:** `seal-config::migrate` performs the one-time split of today's
+  `local.yaml` — whole-`config/` backup under `.migration-backup-<stamp>/`, owned blocks through the
+  increment-3 routing (machine vs portable vs the calibration environment), foreign blocks moved to
+  `user.yaml`, the new tree loaded and verified, the old file retired, and `meta.yaml` markers
+  written last so a crash before them makes the retry run again. A `meta.yaml` with
+  `layout_version` is a no-op; a crash after retirement but before the marker is recognised and only
+  tagged. Base64 crops stay inline until increment 6; the live store is still `local.yaml` until the
+  switch lands with the packaging/acceptance increments.
 - **Increment 4 landed:** `seal-config::transaction` commits the two-file Saves as one unit through
   a write-ahead journal (`.seal-txn/`): backups + fsynced temps + journal first, renames second,
   cleanup last. Recovery always ROLLS BACK an unfinished journal, is idempotent, and runs before a

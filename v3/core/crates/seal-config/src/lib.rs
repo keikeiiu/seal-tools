@@ -28,6 +28,7 @@ pub mod error;
 pub mod file;
 pub mod foreign;
 pub mod layout;
+pub mod migrate;
 pub mod registry;
 pub mod store;
 pub mod transaction;
@@ -35,6 +36,7 @@ pub mod yaml;
 
 pub use error::ConfigError;
 pub use layout::{ChangeSummary, Loaded, load as load_layout, write_sections};
+pub use migrate::{MigrationReport, migrate};
 pub use registry::{Class, Domain, FILES, FileDef, SCHEMA_VERSION};
 pub use store::{ConfigStore, PetRunStatePatch};
 pub use transaction::{PendingWrite, recover};
