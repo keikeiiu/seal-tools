@@ -65,6 +65,8 @@ const REQUEST_COMMANDS: &[&str] = &[
     "pet.capture_icon",
     "pet.scan_food_page",
     "pet.scan_queue_page",
+    "pet.scan_feeding_page",
+    "pet.scan_apply_queue",
     "pet.test_read_panel",
     "pet.apply_food_scan",
     "board.test",
@@ -450,6 +452,18 @@ fn cases() -> Vec<Case> {
             "70",
             "pet.select_page",
             json!({"page": 1}),
+        ),
+        request_case(
+            "request.pet.scan_feeding_page",
+            "72",
+            "pet.scan_feeding_page",
+            json!({"page": 1, "harvest": true}),
+        ),
+        request_case(
+            "request.pet.scan_apply_queue",
+            "73",
+            "pet.scan_apply_queue",
+            json!({"queue": [{"label": "page 1, cell 7", "png": "iVBORw0KGgo=", "rect": [10, 20, 30, 40]}]}),
         ),
         request_case(
             "request.pet.set_boarding",
@@ -1221,6 +1235,28 @@ fn cases() -> Vec<Case> {
                 ],
                 "session": [{"ok": true, "label": "ready", "detail": "yes"}],
                 "lines": []
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_scan_feeding_page",
+            "72",
+            json!({
+                "page": 1,
+                "cells": [
+                    {"cell": 6, "label": "page 1, cell 7", "status": "feedable", "growth": 7, "exp": 52.0, "line": "stage 6, +7, 52%", "match": 0.02, "crop_png_base64": "iVBORw0KGgo="},
+                    {"cell": 8, "label": "page 1, cell 9", "status": "unknown", "growth": null, "exp": null, "line": null, "match": 0.03}
+                ],
+                "summary": "1 feedable, 0 finished, 1 unread",
+                "report": ["cell 7: feedable - stage 6, +7, 52%"],
+                "evidence": ["logs/reads/pet_feed_page1_20261101_000000_000.png"]
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_scan_apply_queue",
+            "73",
+            json!({
+                "rev": 3,
+                "block": {"queue": [{"label": "page 1, cell 7", "png": "iVBORw0KGgo=", "rect": [10, 20, 30, 40]}]}
             }),
         ),
         ok_case(

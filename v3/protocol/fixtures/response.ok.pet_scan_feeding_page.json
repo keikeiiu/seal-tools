@@ -1,0 +1,40 @@
+{
+  "case": "response.ok.pet_scan_feeding_page",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "72",
+    "ok": true,
+    "result": {
+      "page": 1,
+      "cells": [
+        {
+          "cell": 6,
+          "label": "page 1, cell 7",
+          "status": "feedable",
+          "growth": 7,
+          "exp": 52.0,
+          "line": "stage 6, +7, 52%",
+          "match": 0.02,
+          "crop_png_base64": "iVBORw0KGgo="
+        },
+        {
+          "cell": 8,
+          "label": "page 1, cell 9",
+          "status": "unknown",
+          "growth": null,
+          "exp": null,
+          "line": null,
+          "match": 0.03
+        }
+      ],
+      "summary": "1 feedable, 0 finished, 1 unread",
+      "report": [
+        "cell 7: feedable - stage 6, +7, 52%"
+      ],
+      "evidence": [
+        "logs/reads/pet_feed_page1_20261101_000000_000.png"
+      ]
+    }
+  }
+}

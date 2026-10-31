@@ -1,0 +1,23 @@
+{
+  "case": "request.pet.scan_apply_queue",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "73",
+    "cmd": "pet.scan_apply_queue",
+    "args": {
+      "queue": [
+        {
+          "label": "page 1, cell 7",
+          "png": "iVBORw0KGgo=",
+          "rect": [
+            10,
+            20,
+            30,
+            40
+          ]
+        }
+      ]
+    }
+  }
+}

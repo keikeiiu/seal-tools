@@ -517,3 +517,186 @@ mod tests {
         assert_ne!(txt1, txt2, "same-second page reports must not overwrite");
     }
 }
+
+// ── G14: the feedable sweep's one-page result and the queue rebuild ────────────────────────────
+
+/// `pet.scan_feeding_page {page, harvest?}` arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeedingArguments {
+    pub page: usize,
+    pub harvest: bool,
+}
+
+pub fn feeding_arguments(args: &Value) -> Result<FeedingArguments, (String, &'static str)> {
+    let page = page_argument(args)?;
+    let harvest = match args.get("harvest") {
+        None => false,
+        Some(value) => value.as_bool().ok_or_else(|| {
+            (
+                "pet.scan_feeding_page's \"harvest\" must be a boolean".to_owned(),
+                "harvest",
+            )
+        })?,
+    };
+    Ok(FeedingArguments { page, harvest })
+}
+
+/// One swept cell's protocol object. `status` is v2's three-way classification: a panel that did
+/// not read is `unknown` — NEVER `finished`, because a failed read must not hide a pet the run still
+/// has to feed.
+pub fn feeding_cell(
+    cell: usize,
+    label: &str,
+    match_score: Option<f64>,
+    panel: Option<&seal_domain::ocr::PetPanel>,
+    crop_png_base64: Option<String>,
+) -> Value {
+    let (status, growth, exp, line) = match panel {
+        Some(panel) if panel.is_finished() => (
+            "finished",
+            Some(panel.growth),
+            Some(panel.exp),
+            Some(panel.describe()),
+        ),
+        Some(panel) => (
+            "feedable",
+            Some(panel.growth),
+            Some(panel.exp),
+            Some(panel.describe()),
+        ),
+        None => ("unknown", None, None, None),
+    };
+    let mut value = json!({
+        "cell": cell,
+        "label": label,
+        "status": status,
+        "growth": growth,
+        "exp": exp,
+        "line": line,
+        "match": match_score,
+    });
+    if let Some(crop) = crop_png_base64 {
+        value["crop_png_base64"] = Value::String(crop);
+    }
+    value
+}
+
+pub fn feeding_summary(cells: &[Value]) -> String {
+    let count = |status: &str| {
+        cells
+            .iter()
+            .filter(|cell| cell.get("status").and_then(Value::as_str) == Some(status))
+            .count()
+    };
+    format!(
+        "{} feedable, {} finished, {} unread",
+        count("feedable"),
+        count("finished"),
+        count("unknown")
+    )
+}
+
+/// `pet.scan_apply_queue {queue:[{label,png,rect?,species?}]}`: validate the replacement queue. An
+/// EMPTY queue is refused — the same "never clear on nothing" rule the scan side follows, because
+/// replacing a hand-built queue with nothing is one edit away and is the worst outcome here.
+pub fn queue_apply_arguments(args: &Value) -> Result<Vec<Value>, (String, &'static str)> {
+    let Some(entries) = args.get("queue").and_then(Value::as_array) else {
+        return Err((
+            "pet.scan_apply_queue needs \"queue\": an array of icons, or the queue is left alone"
+                .to_owned(),
+            "queue",
+        ));
+    };
+    if entries.is_empty() {
+        return Err((
+            "pet.scan_apply_queue's \"queue\" is empty; the existing queue was left exactly as it was"
+                .to_owned(),
+            "queue",
+        ));
+    }
+    let mut out = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(object) = entry.as_object() else {
+            return Err((
+                format!("queued icon {} must be an object", index + 1),
+                "queue",
+            ));
+        };
+        let Some(png) = object
+            .get("png")
+            .and_then(Value::as_str)
+            .filter(|png| !png.trim().is_empty())
+        else {
+            return Err((
+                format!("queued icon {} has no png crop", index + 1),
+                "queue",
+            ));
+        };
+        // Decode now: a corrupt crop in a queue replacement must be a cheap refusal, not a run that
+        // starts and cannot match anything.
+        if decode_icon(png, &format!("Queued icon {}'s png", index + 1)).is_err() {
+            return Err((
+                format!("queued icon {}'s png is not a decodable image", index + 1),
+                "queue",
+            ));
+        }
+        let label = object
+            .get("label")
+            .and_then(Value::as_str)
+            .filter(|label| !label.trim().is_empty())
+            .map_or_else(|| format!("page cell {}", index + 1), str::to_owned);
+        let mut item = json!({"label": label, "png": png});
+        if let Some(rect) = object.get("rect").and_then(Value::as_array) {
+            if rect.len() != 4 || rect.iter().any(|value| value.as_i64().is_none()) {
+                return Err((
+                    format!("queued icon {}'s rect must be [x, y, w, h]", index + 1),
+                    "queue",
+                ));
+            }
+            item["rect"] = Value::Array(rect.clone());
+        }
+        if let Some(species) = object
+            .get("species")
+            .and_then(Value::as_str)
+            .filter(|species| !species.trim().is_empty())
+        {
+            item["species"] = Value::String(species.to_owned());
+        }
+        out.push(item);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod g14_tests {
+    use super::*;
+    use seal_domain::ocr::PetPanel;
+
+    fn panel(finished: bool) -> PetPanel {
+        PetPanel {
+            stage: Some(6),
+            growth: if finished { 9 } else { 7 },
+            exp: if finished { 100.0 } else { 50.0 },
+        }
+    }
+
+    #[test]
+    fn a_failed_read_is_unknown_never_finished() {
+        let unknown = feeding_cell(7, "pet", Some(0.02), None, None);
+        assert_eq!(unknown["status"], "unknown");
+        assert!(unknown["growth"].is_null());
+        let finished = feeding_cell(8, "pet", Some(0.02), Some(&panel(true)), None);
+        assert_eq!(finished["status"], "finished");
+        let feedable = feeding_cell(9, "pet", Some(0.02), Some(&panel(false)), None);
+        assert_eq!(feedable["status"], "feedable");
+    }
+
+    #[test]
+    fn an_empty_queue_replacement_is_refused() {
+        let error = queue_apply_arguments(&json!({"queue": []})).expect_err("empty is refused");
+        assert_eq!(error.1, "queue");
+        let error = queue_apply_arguments(&json!({"queue": [{"label": "x"}]}))
+            .expect_err("a crop is required");
+        assert_eq!(error.1, "queue");
+    }
+}

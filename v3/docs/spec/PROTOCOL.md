@@ -145,6 +145,8 @@ edits; it never re-serialises the whole file (§7).
 | `calibration.shop.test_scroll` | `{"notches":3,"up":true?}` - 1..=400 notches; `up` default false | `{"line":"…"}` - clicks the inert `buy_sell.scroll_point` for focus, then sends the firmware wheel command; takes the input lease (`tool_busy`). More than 400 notches is `bad_request` field `notches`; an uncalibrated focus point is `bad_request` field `scroll_point`; window/board errors as usual. |
 | `buy_sell.preflight` | `{}` | `{"ready":true\|false,"calibration":[{"ok","label","detail"}…],"session":[…],"lines":["…"]}` - READ-ONLY Buy/Sell checklist: each mark present, the grid/slot pitch agreement, presets/sell-cap/rows, and one player line per missing item. |
 | `pet.select_page` | `{"page":1}` - 1-based bag page | `{"page":1,"point":[x,y],"line":"…"}` - clicks the calibrated ABSOLUTE ITEM tab (one marked point per page) with the closed-loop pointer under the tool input lease, so a following scan/capture can rely on the page being up. A page with no tab mark is `bad_request` field `page`; window/board failures are the usual codes; the shell hides itself around the call. |
+| `pet.scan_feeding_page` | `{"page":1,"harvest":true?}` - one bag page; the shell hides around the call | `{"page":1,"cells":[{"cell":7,"label":"…","status":"feedable"\|"finished"\|"unknown","growth":7,"exp":52.0,"line":"…","match":0.02,"crop_png_base64":"…"?}],"summary":"…","report":["…"],"evidence":["logs/reads/…png"]}` - v2's find-then-hover sweep: click focus + ITEM tab, one clean page capture, match the queued icons, hover only those cells and OCR the tooltip panel; a failed read is `unknown`, NEVER `finished`; `harvest` crops icons for feedable cells only. Prerequisites missing = `bad_request` naming the field; `harvest` must be boolean; one page per request, a ~90 s live command. |
+| `pet.scan_apply_queue` | `{"queue":[{"label":"…","png":"…","rect":[x,y,w,h]?,"species":"…"?}]}` | `{"rev":23,"block":{…pet…}}` - replaces `pet.queue` only (normal writer + one `config.changed` after the response); every png must decode; an EMPTY queue is `bad_request` field `queue` and leaves the existing queue untouched. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -248,7 +250,8 @@ Notes:
 `board.test`, `board.details`, `pointer.place`/`pointer.click`, `logs.cleanup_captures`,
 `pet.preflight`/`pet.set_boarding`,
 `pet.capture_icon`,
-`pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`/
+`pet.scan_food_page`/`pet.scan_queue_page`/`pet.scan_feeding_page`/`pet.scan_apply_queue`/
+`pet.test_read_panel`/`pet.apply_food_scan`/
 `pet.select_page`,
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
 `calibration.fetch_all`/`calibration.kinds`/`calibration.check`/

@@ -27,9 +27,11 @@ use serde_json::{Map, Value, json};
 
 use crate::board;
 use crate::pet_state::PetStateSink;
+use crate::pointer;
 use crate::startup::{self, StartupError};
 use crate::supervisor::{self, StartReply, StopReply};
 use crate::win;
+use seal_domain::tools::shop::BagGrid;
 
 /// The protocol's `ui.window` fields, mapped to the names a v2 `local.yaml` already uses.
 ///
@@ -549,6 +551,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "pet.scan_food_page" => pet_scan_page(state, &request, false),
         "pet.scan_queue_page" => pet_scan_page(state, &request, true),
         "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
+        "pet.scan_feeding_page" => pet_scan_feeding_page(state, &request),
+        "pet.scan_apply_queue" => pet_scan_apply_queue(state, &request),
         "pet.test_read_panel" => pet_test_read_panel(state, &request),
         "pet.select_page" => crate::pet_session::select_page(state, &request),
         "tool.start" => tool_start(state, &request),
@@ -1451,6 +1455,317 @@ pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
                 json!({"reason": error.reason, "message": error.message}),
             ),
         )),
+    }
+}
+
+/// `pet.scan_feeding_page {page, harvest?}`: v2's "Scan bag for feedable pets", one page at a time.
+///
+/// It is FIND-THEN-HOVER, reusing the run's own matcher: one clean page capture, `score_all_scores`
+/// against the queued icons, then hover ONLY the matched cells and OCR the tooltip panel. A panel
+/// that will not read is `unknown` and never `finished`. `harvest` crops an icon for each feedable
+/// cell out of the CLEAN page image (not a panel-covered one), so a rebuilt queue's icons are the
+/// same pixels a hand capture would produce.
+fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
+    let arguments = match crate::pet_scan::feeding_arguments(&request.args) {
+        Ok(arguments) => arguments,
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Some(supervisor) = state.supervisor.as_ref() {
+        match supervisor.input_lease() {
+            Ok(Some(line)) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": request.cmd}),
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(line) => return internal(&request.id, &line),
+        }
+    }
+    let grid = match crate::pet_capture::page_grid(&state.config, arguments.page) {
+        Ok(grid) => grid,
+        Err(error) => return icon_error_response(&request.id, error),
+    };
+    let config = state.config.clone();
+    let tooltip: seal_domain::config::TooltipConfig = config
+        .get("tooltip")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
+    if !tooltip.is_set() {
+        return bad_request(
+            &request.id,
+            "The tooltip/panel region isn't calibrated - save the hover panel box on the Calibrate tab first.",
+            json!({"field": "tooltip"}),
+        );
+    }
+    let point = |path: &str, label: &str| -> Result<(i32, i32), Box<Response>> {
+        let values = config
+            .pointer(path)
+            .and_then(Value::as_array)
+            .filter(|values| values.len() == 2)
+            .ok_or_else(|| {
+                Box::new(bad_request(
+                    &request.id,
+                    &format!("{label} isn't calibrated - mark it on the Calibrate tab first."),
+                    json!({"field": path}),
+                ))
+            })?;
+        let x = values[0]
+            .as_i64()
+            .and_then(|value| i32::try_from(value).ok());
+        let y = values[1]
+            .as_i64()
+            .and_then(|value| i32::try_from(value).ok());
+        match (x, y) {
+            (Some(x), Some(y)) => Ok((x, y)),
+            _ => Err(Box::new(bad_request(
+                &request.id,
+                &format!("{label}'s mark is malformed - re-mark it on the Calibrate tab."),
+                json!({"field": path}),
+            ))),
+        }
+    };
+    let focus = match point("/buy_sell/scroll_point", "The focus/scroll point") {
+        Ok(point) => point,
+        Err(response) => return *response,
+    };
+    let tab_index = arguments.page - 1;
+    let tab_path = format!("/pet/page_tabs/{tab_index}");
+    let tab = match point(&tab_path, &format!("Bag page {}", arguments.page)) {
+        Ok(point) => point,
+        Err(response) => return *response,
+    };
+    if let Some(response) = ensure_ocr(state, &request.id) {
+        return response;
+    }
+    let title = match win::configured_title(&state.config) {
+        Ok(title) => title,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    if let Err(error) = pointer::system_perform(
+        &config,
+        seal_domain::geometry::Point::new(focus.0, focus.1),
+        true,
+    ) {
+        return pointer_failure(&request.id, error);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    if let Err(error) = pointer::system_perform(
+        &config,
+        seal_domain::geometry::Point::new(tab.0, tab.1),
+        true,
+    ) {
+        return pointer_failure(&request.id, error);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(900));
+    if let Err(error) = pointer::system_perform(
+        &config,
+        seal_domain::geometry::Point::new(focus.0, focus.1),
+        false,
+    ) {
+        return pointer_failure(&request.id, error);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let (page_frame, _display) = match win::capture(&title, None) {
+        Ok((frame, display)) => (frame, display),
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let page_image = match crate::pet_scan::frame_image(&page_frame) {
+        Ok(image) => image,
+        Err(message) => return internal(&request.id, &message),
+    };
+    let mut matched: std::collections::BTreeMap<usize, (String, f64)> =
+        std::collections::BTreeMap::new();
+    for (label, icon) in crate::pet_scan::queue_entries(&config) {
+        let Some(icon) = icon else { continue };
+        for (cell, score) in crate::pet::score_all_scores(&page_image, &grid, &icon) {
+            if score > seal_domain::tools::pet::MATCH_LIMIT {
+                break;
+            }
+            matched.entry(cell).or_insert((label.clone(), score));
+        }
+    }
+    let centres = BagGrid::centres(Some(&grid));
+    let pitch_x = BagGrid::pitch_x(&grid);
+    let pitch_y = BagGrid::pitch_y(&grid);
+    let mut cells = Vec::new();
+    let mut report = Vec::new();
+    let mut feedable = 0usize;
+    let mut finished = 0usize;
+    let mut unread = 0usize;
+    for (cell, (label, score)) in &matched {
+        let Some(centre) = centres.get(*cell) else {
+            continue;
+        };
+        let mut panel = None;
+        let mut crop = None;
+        if pointer::system_perform(
+            &config,
+            seal_domain::geometry::Point::new(centre.x, centre.y),
+            false,
+        )
+        .is_ok()
+        {
+            std::thread::sleep(std::time::Duration::from_millis(
+                tooltip.hover_delay_ms.max(200) as u64,
+            ));
+            let region = seal_domain::geometry::Rect::new(
+                centre.x + tooltip.offset_x,
+                centre.y + tooltip.offset_y,
+                tooltip.width,
+                tooltip.height,
+            );
+            if let Ok((panel_frame, _)) = win::capture(&title, Some(region))
+                && let Ok((width, height, rgba)) = frame_rgba(&panel_frame)
+                && let Some(pipeline) = state.ocr.as_mut()
+                && let Ok(scan) = pipeline.scan_rgba(width, height, &rgba)
+            {
+                let lines: Vec<String> = scan.lines.iter().map(|line| line.text.clone()).collect();
+                panel = seal_domain::ocr::PetPanel::parse(&lines);
+            }
+            if arguments.harvest
+                && let Some(crop_image) = crop_pitch(&page_image, centre, pitch_x, pitch_y)
+                && let Some(png) = encode_icon_png(&crop_image)
+            {
+                crop = Some(png);
+            }
+        }
+        let value = crate::pet_scan::feeding_cell(*cell, label, Some(*score), panel.as_ref(), crop);
+        match value["status"].as_str().unwrap_or("unknown") {
+            "feedable" => feedable += 1,
+            "finished" => finished += 1,
+            _ => unread += 1,
+        }
+        report.push(format!(
+            "cell {}: {} - {}",
+            cell + 1,
+            value["status"].as_str().unwrap_or("unknown"),
+            value["line"]
+                .as_str()
+                .unwrap_or("the hover panel didn't read")
+        ));
+        cells.push(value);
+    }
+    let summary = if matched.is_empty() {
+        "no queued pet matched on this page".to_owned()
+    } else {
+        format!(
+            "{} - {} feedable, {} finished, {} unread",
+            crate::pet_scan::feeding_summary(&cells),
+            feedable,
+            finished,
+            unread
+        )
+    };
+    let stamp = crate::logs::read_stamp();
+    let page_name = format!("pet_feed_page{}_{}.png", arguments.page, stamp);
+    let report_name = format!("pet_feed_page{}_{}.txt", arguments.page, stamp);
+    let mut evidence = Vec::new();
+    if let Some(data) = page_frame.get("data").and_then(Value::as_str)
+        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+        && let Some(path) = state.logs.write_read(&page_name, &bytes)
+    {
+        evidence.push(path);
+    }
+    if let Some(path) = state
+        .logs
+        .write_read(&report_name, report.join("\n").as_bytes())
+    {
+        evidence.push(path);
+    }
+    Response::ok(
+        &request.id,
+        json!({
+            "page": arguments.page,
+            "cells": cells,
+            "summary": summary,
+            "report": report,
+            "evidence": evidence,
+        }),
+    )
+}
+
+fn crop_pitch(
+    image: &crate::pet::PetImage,
+    centre: &seal_domain::geometry::Point,
+    pitch_x: f64,
+    pitch_y: f64,
+) -> Option<crate::pet::PetImage> {
+    let width = (pitch_x.round() as i32).max(1);
+    let height = (pitch_y.round() as i32).max(1);
+    let rect = seal_domain::geometry::Rect::new(
+        centre.x - width / 2,
+        centre.y - height / 2,
+        width,
+        height,
+    );
+    let (w, h, rgba) =
+        seal_win::pure::crop_rgba(image.width as u32, image.height as u32, &image.rgba, rect)
+            .ok()?;
+    Some(crate::pet::PetImage {
+        width: w as usize,
+        height: h as usize,
+        rgba,
+    })
+}
+
+fn encode_icon_png(image: &crate::pet::PetImage) -> Option<String> {
+    let mut bgra = Vec::with_capacity(image.rgba.len());
+    for pixel in image.rgba.as_chunks::<4>().0 {
+        bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+    let png = seal_win::pure::encode_png(image.width as u32, image.height as u32, &bgra).ok()?;
+    Some(base64::engine::general_purpose::STANDARD.encode(png))
+}
+
+/// `pet.scan_apply_queue {queue:[...]}`: replace `pet.queue` with the sweep's harvested icons. The
+/// normal config writer is used (this is not run state), with one rev bump and one `config.changed`
+/// after the response. An empty replacement is refused before any write.
+fn pet_scan_apply_queue(state: &mut CoreState, request: &Request) -> Response {
+    let queue = match crate::pet_scan::queue_apply_arguments(&request.args) {
+        Ok(queue) => Value::Array(queue),
+        Err((message, field)) => {
+            return bad_request(&request.id, &message, json!({"field": field}));
+        }
+    };
+    if let Err(error) = state.store.update_local(|local| {
+        if !local.get("pet").is_some_and(Value::is_object) {
+            local["pet"] = json!({});
+        }
+        if let Some(pet) = local.get_mut("pet").and_then(Value::as_object_mut) {
+            pet.insert("queue".to_owned(), queue.clone());
+        }
+    }) {
+        return Response::err(&request.id, Error::new("io", &error.to_string(), json!({})));
+    }
+    // The queue is the only field this command changes, so update the dispatcher's copy directly:
+    // re-reading the file could fail on a fixture with no defaults file and would not add a fact.
+    if !state.config.get("pet").is_some_and(Value::is_object) {
+        state.config["pet"] = json!({});
+    }
+    if let Some(pet) = state.config.get_mut("pet").and_then(Value::as_object_mut) {
+        pet.insert("queue".to_owned(), queue);
+    }
+    let block = state.config.get("pet").cloned().unwrap_or(Value::Null);
+    state.bump_revision();
+    state.queue_config_changed("pet");
+    Response::ok(&request.id, json!({"rev": state.rev, "block": block}))
+}
+
+fn pointer_failure(id: &str, error: pointer::PointerFailure) -> Response {
+    match error {
+        pointer::PointerFailure::Window(error) => win_error_response(id, error),
+        pointer::PointerFailure::Board(error) => board_error_response(id, error),
+        pointer::PointerFailure::Effects(line) => {
+            Response::err(id, Error::new("board_unavailable", &line, json!({})))
+        }
     }
 }
 

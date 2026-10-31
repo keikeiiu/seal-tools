@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 58 request fixtures.
+/// The 60 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -114,6 +114,10 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.pet.scan_food_page', message),
   'request.pet.scan_queue_page': (message) =>
       _request('request.pet.scan_queue_page', message),
+  'request.pet.scan_feeding_page': (message) =>
+      _request('request.pet.scan_feeding_page', message),
+  'request.pet.scan_apply_queue': (message) =>
+      _request('request.pet.scan_apply_queue', message),
   'request.pet.test_read_panel': (message) =>
       _request('request.pet.test_read_panel', message),
   'request.pet.apply_food_scan': (message) =>
@@ -355,6 +359,16 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.pet_scan_queue_page': (message) => _ok(
     'response.ok.pet_scan_queue_page',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_scan_feeding_page': (message) => _ok(
+    'response.ok.pet_scan_feeding_page',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_scan_apply_queue': (message) => _ok(
+    'response.ok.pet_scan_apply_queue',
     message,
     EnvelopePayload(_result(message)),
   ),
