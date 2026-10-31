@@ -89,7 +89,11 @@ line are the decision half's, so the card text is testable without a game. `Spri
 | window/placement | `game window not found — couldn't place the cursor on the spring` · `couldn't place the cursor on the spring — {detail}` |
 
 **Guards.** Cursor guard modes and the recenter budget; a signature repeated three times stops; the
-retry budget stops; the filter's `any/all/per_attr` result gates a success. **Loop (live):** capture + OCR through `TunerSource` (`win::capture` + `seal-ocr`), the bare `C`/`E`
+retry budget stops; the filter's `any/all/per_attr` result gates a success. Each live read re-captures until it is CONFIRMED — grade, every attribute row, and `remaining` — up
+to `tuner.ocr_retries` attempts (v2 default 3); the final unconfirmed attempt leaves a capture for
+post-mortem study. The grade falls back to v2's `tuner.grade_colors` colour counts when the text read
+found no letter; `remaining` is the `remaining_y`/`remaining_x` band read, not the feeder's count rule.
+**Loop (live):** capture + OCR through `TunerSource` (`win::capture` + `seal-ocr`), the bare `C`/`E`
 and `D` writes through `BoardEffects`, the countdown ticker and card rows (grade/attempt) published by
 `ToolStatus`. `GradeCycles` owns the per-grade tally.
 

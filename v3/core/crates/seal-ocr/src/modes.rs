@@ -7,9 +7,10 @@
 //! from the X+Y-filtered items grouped by row and classified label/value, `FixSign`, first 3 rows
 //! starting at Y >= 10.
 //!
-//! **Follow-ups, marked here rather than silently omitted:** the grade COLOUR fallback
-//! (`DetectGradeColorScores`/`DecideGrade`) and the `remaining` count read are not ported; the result
-//! carries `remaining: null` and colour is not consulted.
+//! The grade COLOUR fallback (`DetectGradeColorScores`/`DecideGrade`) and the `remaining` count read
+//! are ported (G25): a `grade` scan returns BOTH fields, with the colour fallback used only when the
+//! text read found no grade letter. `count` keeps the feeder's highest-confidence digit line; it is
+//! a different reader with a different question, not the tuner's remaining band.
 
 use seal_domain::config::AttributesConfig;
 use seal_domain::ocr::fix_sign;
@@ -59,6 +60,8 @@ pub struct OcrGeometry {
     /// `ConfigValidator` checks its x2/y2 against `region.width/height`. `None` means absent or
     /// outside the region; the reader then falls back to [`Self::grade_y`].
     pub grade_area: Option<GradeArea>,
+    pub remaining_x: Option<(i32, i32)>,
+    pub remaining_y: Option<(i32, i32)>,
     pub row_height: u32,
 }
 
@@ -91,6 +94,8 @@ impl Default for OcrGeometry {
             attr_y: None,
             grade_y: None,
             grade_area: None,
+            remaining_x: None,
+            remaining_y: None,
             row_height: 10,
         }
     }
@@ -131,6 +136,17 @@ pub struct ModeResult {
     pub remaining: Option<u32>,
 }
 
+/// The grade box's pixels, for the COLOUR fallback (G25). `rgba` is the cropped
+/// `tuner.ocr.grade_area` image; `None` when the caller has no pixels (OCR fixtures, unit tests),
+/// which keeps the text grade as the only source.
+#[derive(Debug, Clone, Copy)]
+pub struct GradeImage<'a> {
+    pub rgba: &'a [u8],
+    pub width: usize,
+    pub height: usize,
+    pub colors: &'a seal_domain::config::GradeColorsConfig,
+}
+
 /// Applies one mode to a scan. `attributes` is the active dictionary (its `negative_attr_markers`
 /// feed the domain's sign fix).
 pub fn apply(
@@ -138,6 +154,18 @@ pub fn apply(
     scan: &Scan,
     attributes: &AttributesConfig,
     geometry: &OcrGeometry,
+) -> ModeResult {
+    apply_with_image(mode, scan, attributes, geometry, None)
+}
+
+/// [`apply`] plus the grade image, so `mode:"grade"` can use v2's COLOUR fallback when the text
+/// read found no grade letter. `remaining` is read in the same pass (v2's `ScanOnce` returned both).
+pub fn apply_with_image(
+    mode: Mode,
+    scan: &Scan,
+    attributes: &AttributesConfig,
+    geometry: &OcrGeometry,
+    image: Option<GradeImage<'_>>,
 ) -> ModeResult {
     let lines: Vec<String> = scan.lines.iter().map(|line| line.text.clone()).collect();
     match mode {
@@ -156,11 +184,24 @@ pub fn apply(
             remaining: None,
             ..ModeResult::default()
         },
-        Mode::Grade => ModeResult {
-            lines,
-            grade: read_grade(&scan.items, geometry),
-            ..ModeResult::default()
-        },
+        Mode::Grade => {
+            let grade = read_grade(&scan.items, geometry).or_else(|| {
+                let image = image?;
+                let scores = seal_domain::tools::tuner::grade_color_scores(
+                    image.rgba,
+                    image.width,
+                    image.height,
+                    image.colors,
+                );
+                seal_domain::tools::tuner::decide_grade_colour(&scores, image.colors)
+            });
+            ModeResult {
+                lines,
+                grade,
+                remaining: read_remaining(&scan.items, geometry),
+                ..ModeResult::default()
+            }
+        }
     }
 }
 
@@ -181,6 +222,38 @@ pub fn feeder_count(lines: &[Line]) -> Option<u32> {
         .filter(char::is_ascii_digit)
         .collect();
     digits.parse().ok()
+}
+
+/// v2's remaining-spring count (`ScanOnce` step 5): the remaining X/Y band, confidence > 0.4, the
+/// first digit run 1..=99999. The X band is optional; when absent the whole width is used.
+pub fn read_remaining(items: &[RecognizedLine], geometry: &OcrGeometry) -> Option<u32> {
+    for item in items {
+        let y = item_y(item);
+        if !in_band(y, geometry.remaining_y) {
+            continue;
+        }
+        if let Some((left, right)) = geometry.remaining_x
+            && (item_max_x(item) < f64::from(left) || item_x(item) > f64::from(right))
+        {
+            continue;
+        }
+        if item.confidence <= 0.4 {
+            continue;
+        }
+        let digits: String = item
+            .text
+            .trim()
+            .chars()
+            .skip_while(|character| !character.is_ascii_digit())
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if let Ok(number) = digits.parse::<u32>()
+            && (1..=99_999).contains(&number)
+        {
+            return Some(number);
+        }
+    }
+    None
 }
 
 fn has_digit(text: &str) -> bool {
@@ -564,5 +637,62 @@ mod tests {
             None,
             "two boxes at the same Y are one line"
         );
+    }
+
+    #[test]
+    fn remaining_uses_its_band_x_filter_and_confidence_floor() {
+        let mut geometry = OcrGeometry {
+            remaining_y: Some((50, 70)),
+            remaining_x: Some((0, 200)),
+            ..OcrGeometry::default()
+        };
+        let items = vec![
+            item("99", 0.9, 0.0, 10.0),   // wrong Y band
+            item("42", 0.9, 400.0, 60.0), // outside the X band
+            item("7", 0.3, 0.0, 60.0),    // too low a confidence
+            item("12", 0.9, 10.0, 60.0),  // accepted
+        ];
+        assert_eq!(read_remaining(&items, &geometry), Some(12));
+        geometry.remaining_y = None;
+        geometry.remaining_x = None;
+        let no_digits = vec![item("springs", 0.9, 10.0, 60.0)];
+        assert_eq!(read_remaining(&no_digits, &geometry), None);
+    }
+
+    #[test]
+    fn the_grade_falls_back_to_the_grade_box_colour_when_the_text_is_missing() {
+        let scan = Scan {
+            lines: Vec::new(),
+            items: Vec::new(),
+        };
+        let attrs = AttributesConfig::default();
+        let geometry = OcrGeometry {
+            grade_area: Some(GradeArea {
+                x1: 0,
+                y1: 0,
+                x2: 10,
+                y2: 10,
+            }),
+            ..OcrGeometry::default()
+        };
+        let blue = [10u8, 10u8, 220u8, 255u8].repeat(100);
+        let colors = seal_domain::config::GradeColorsConfig::default();
+        let result = apply_with_image(
+            Mode::Grade,
+            &scan,
+            &attrs,
+            &geometry,
+            Some(GradeImage {
+                rgba: &blue,
+                width: 10,
+                height: 10,
+                colors: &colors,
+            }),
+        );
+        assert_eq!(result.grade.as_deref(), Some("G"));
+
+        // Without the pixels the text read is the only source, and it found nothing.
+        let without = apply_with_image(Mode::Grade, &scan, &attrs, &geometry, None);
+        assert_eq!(without.grade, None);
     }
 }

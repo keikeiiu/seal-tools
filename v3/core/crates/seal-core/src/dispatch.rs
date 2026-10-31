@@ -362,7 +362,41 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
         Ok(scan) => scan,
         Err(error) => return internal(&request.id, &error.message),
     };
-    let outcome = seal_ocr::modes::apply(mode, &scan, &state.attributes, &geometry);
+    // G25: the grade COLOUR fallback needs the grade box's pixels. `grade_area` is region-relative,
+    // so this is a crop of the captured image (the OCR pipeline's own coordinate space).
+    let grade_image = if mode == seal_ocr::modes::Mode::Grade {
+        let colors = state
+            .config
+            .pointer("/tuner/grade_colors")
+            .cloned()
+            .and_then(|block| serde_json::from_value(block).ok())
+            .unwrap_or_default();
+        geometry.grade_area.and_then(|area| {
+            let width = area.x2.saturating_sub(area.x1).max(1) as u32;
+            let height = area.y2.saturating_sub(area.y1).max(1) as u32;
+            let rect =
+                seal_domain::geometry::Rect::new(area.x1, area.y1, width as i32, height as i32);
+            seal_win::pure::crop_rgba(width, height, &rgba, rect)
+                .ok()
+                .map(|(w, h, pixels)| (colors, w as usize, h as usize, pixels))
+        })
+    } else {
+        None
+    };
+    let outcome = seal_ocr::modes::apply_with_image(
+        mode,
+        &scan,
+        &state.attributes,
+        &geometry,
+        grade_image.as_ref().map(
+            |(colors, width, height, pixels)| seal_ocr::modes::GradeImage {
+                rgba: pixels,
+                width: *width,
+                height: *height,
+                colors,
+            },
+        ),
+    );
     // v2 wrote one `ocr_log.jsonl` record per completed scan and an `ocr_errors.jsonl` record when
     // it stayed unconfirmed; a capture PNG is saved only while `tuner.save_captures` is on. The
     // scan's own PNG bytes are already in the frame, so a capture is a byte copy, not a re-encode.
@@ -406,6 +440,8 @@ pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
         attr_y: band("attr_y"),
         grade_y: band("grade_y"),
         grade_area: grade_area(config),
+        remaining_x: band("remaining_x"),
+        remaining_y: band("remaining_y"),
         row_height,
     }
 }

@@ -25,7 +25,10 @@
 //! tool failure); a total read failure or a spring-placement failure → `Error` (v2 put these on the
 //! card's red bar); the mouse guard tripping → `Guard`.
 
-use crate::config::{BoxConfig, FilterConfig, OcrGeometry, RegionConfig};
+use crate::config::{
+    BlueMaskConfig, BoxConfig, FilterConfig, GradeColorsConfig, GradeDecisionConfig, OcrGeometry,
+    PurpleMaskConfig, RedMaskConfig, RegionConfig, WhiteMaskConfig, YellowMaskConfig,
+};
 use crate::decision::StopReason;
 use crate::geometry::{Point, Rect};
 use crate::ocr::{AttrMatcher, MatchedAttr};
@@ -508,5 +511,215 @@ mod geometry_tests {
             Some(19),
         );
         assert_eq!(geometry.row_height, 19);
+    }
+}
+
+// ── the grade COLOUR fallback (G25) ────────────────────────────────────────────────────────────
+
+/// The five colour buckets v2 counted in the grade box. Only the letter in the box is coloured, so
+/// the dominant colour above its absolute floor IS the grade; a white "N" has no coloured blob and
+/// falls through to the white branch. Ported from `OcrEngine.DetectGradeColorScores`/`DecideGrade`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GradeColorScores {
+    pub n: i32,
+    pub g: i32,
+    pub dg: i32,
+    pub xg: i32,
+    pub sg: i32,
+}
+
+/// v2's shipped `tuner.grade_colors` defaults, used when a field is absent (a hand-edited file must
+/// degrade to no colour score, never a divide/range panic).
+mod grade_defaults {
+    pub const YELLOW_RG_GAP: i32 = 20;
+    pub const YELLOW_GB_GAP: i32 = 20;
+    pub const YELLOW_R_MIN: i32 = 120;
+    pub const YELLOW_G_MIN: i32 = 120;
+    pub const BLUE_BG_GAP: i32 = 25;
+    pub const BLUE_BR_GAP: i32 = 25;
+    pub const BLUE_B_MIN: i32 = 80;
+    pub const RED_RG_GAP: i32 = 40;
+    pub const RED_RB_GAP: i32 = 40;
+    pub const RED_R_MIN: i32 = 150;
+    pub const PURPLE_RB_GAP: i32 = 30;
+    pub const PURPLE_BG_GAP: i32 = 30;
+    pub const PURPLE_R_MIN: i32 = 80;
+    pub const PURPLE_B_MIN: i32 = 80;
+    pub const WHITE_MIN: i32 = 180;
+    pub const TOTAL_MIN: i32 = 10;
+    pub const DG_YELLOW: i32 = 80;
+    pub const G_BLUE: i32 = 60;
+    pub const XG_RED: i32 = 60;
+    pub const SG_PURPLE: i32 = 60;
+    pub const N_WHITE: i32 = 100;
+    pub const N_YELLOW_MAX: i32 = 60;
+    pub const N_BLUE_MAX: i32 = 60;
+}
+
+/// Count the five colour buckets over `rgba` (the grade box crop only), same masks and default
+/// thresholds as v2. Pixels are BGR-agnostic here because the input is RGBA; v2's OpenCV Mat was
+/// BGR and its `Item0/1/2` were B,G,R — the caller passes RGB order, and the masks are symmetric
+/// in the only place that matters (they compare channels by name).
+pub fn grade_color_scores(
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    colors: &GradeColorsConfig,
+) -> GradeColorScores {
+    use grade_defaults as d;
+    let yellow = colors.yellow.unwrap_or(YellowMaskConfig {
+        rg_gap: d::YELLOW_RG_GAP,
+        gb_gap: d::YELLOW_GB_GAP,
+        r_min: d::YELLOW_R_MIN,
+        g_min: d::YELLOW_G_MIN,
+    });
+    let blue = colors.blue.unwrap_or(BlueMaskConfig {
+        bg_gap: d::BLUE_BG_GAP,
+        br_gap: d::BLUE_BR_GAP,
+        b_min: d::BLUE_B_MIN,
+    });
+    let red = colors.red.unwrap_or(RedMaskConfig {
+        rg_gap: d::RED_RG_GAP,
+        rb_gap: d::RED_RB_GAP,
+        r_min: d::RED_R_MIN,
+    });
+    let purple = colors.purple.unwrap_or(PurpleMaskConfig {
+        rb_gap: d::PURPLE_RB_GAP,
+        bg_gap: d::PURPLE_BG_GAP,
+        r_min: d::PURPLE_R_MIN,
+        b_min: d::PURPLE_B_MIN,
+    });
+    let white = colors.white.unwrap_or(WhiteMaskConfig {
+        r_min: d::WHITE_MIN,
+        g_min: d::WHITE_MIN,
+        b_min: d::WHITE_MIN,
+    });
+    let mut scores = GradeColorScores::default();
+    let pixels = width.saturating_mul(height).min(rgba.len() / 4);
+    for pixel in rgba[..pixels * 4].as_chunks::<4>().0 {
+        let (r, g, b) = (
+            i32::from(pixel[0]),
+            i32::from(pixel[1]),
+            i32::from(pixel[2]),
+        );
+        let m_yellow =
+            r > g + yellow.rg_gap && g > b + yellow.gb_gap && r > yellow.r_min && g > yellow.g_min;
+        let m_blue = b > g + blue.bg_gap && b > r + blue.br_gap && b > blue.b_min;
+        let m_red = r > g + red.rg_gap && r > b + red.rb_gap && r > red.r_min;
+        let m_purple =
+            r > b + purple.rb_gap && b > g + purple.bg_gap && r > purple.r_min && b > purple.b_min;
+        let m_white = r > white.r_min && g > white.g_min && b > white.b_min;
+        let any_colour = m_yellow || m_blue || m_red || m_purple;
+        if m_white && !any_colour {
+            scores.n += 1;
+        }
+        if m_yellow {
+            scores.dg += 1;
+        }
+        if m_blue {
+            scores.g += 1;
+        }
+        if m_red {
+            scores.xg += 1;
+        }
+        if m_purple {
+            scores.sg += 1;
+        }
+    }
+    scores
+}
+
+/// v2's `DecideGrade`: the dominant colour above its absolute floor wins; white falls through to
+/// "N" only when no colour blob wins. `None` when the box is too empty to decide (v2's `total_min`).
+pub fn decide_grade_colour(
+    scores: &GradeColorScores,
+    colors: &GradeColorsConfig,
+) -> Option<String> {
+    use grade_defaults as d;
+    let decision = colors.decision.unwrap_or(GradeDecisionConfig {
+        total_min: d::TOTAL_MIN,
+        dg_yellow: d::DG_YELLOW,
+        g_blue: d::G_BLUE,
+        xg_red: d::XG_RED,
+        sg_purple: d::SG_PURPLE,
+        n_white: d::N_WHITE,
+        n_yellow_max: d::N_YELLOW_MAX,
+        n_blue_max: d::N_BLUE_MAX,
+    });
+    let total = scores.n + scores.g + scores.dg + scores.xg + scores.sg;
+    if total < decision.total_min {
+        return None;
+    }
+    let blue_win = scores.g > decision.g_blue
+        && scores.g >= scores.dg
+        && scores.g >= scores.xg
+        && scores.g >= scores.sg;
+    let yellow_win = scores.dg > decision.dg_yellow
+        && scores.dg >= scores.g
+        && scores.dg >= scores.xg
+        && scores.dg >= scores.sg;
+    let red_win = scores.xg > decision.xg_red
+        && scores.xg >= scores.g
+        && scores.xg >= scores.dg
+        && scores.xg >= scores.sg;
+    let purple_win = scores.sg > decision.sg_purple
+        && scores.sg >= scores.g
+        && scores.sg >= scores.dg
+        && scores.sg >= scores.xg;
+    if blue_win {
+        return Some("G".to_owned());
+    }
+    if yellow_win {
+        return Some("DG".to_owned());
+    }
+    if red_win {
+        return Some("XG".to_owned());
+    }
+    if purple_win {
+        return Some("SG".to_owned());
+    }
+    if scores.n > decision.n_white
+        && scores.dg < decision.n_yellow_max
+        && scores.g < decision.n_blue_max
+    {
+        return Some("N".to_owned());
+    }
+    None
+}
+
+#[cfg(test)]
+mod grade_colour_tests {
+    use super::*;
+
+    fn colors() -> GradeColorsConfig {
+        GradeColorsConfig::default()
+    }
+
+    #[test]
+    fn a_blue_box_reads_g_and_a_white_box_reads_n() {
+        // A 100-pixel solid blue crop: B=220, R=G=10. The blue mask alone must win.
+        let blue = [10u8, 10u8, 220u8, 255u8].repeat(100);
+        let scores = grade_color_scores(&blue, 10, 10, &colors());
+        assert_eq!(scores.g, 100);
+        assert_eq!(
+            decide_grade_colour(&scores, &colors()).as_deref(),
+            Some("G")
+        );
+
+        let white = [230u8, 230u8, 230u8, 255u8].repeat(1000);
+        let scores = grade_color_scores(&white, 20, 50, &colors());
+        assert_eq!(scores.n, 1000);
+        assert_eq!(
+            decide_grade_colour(&scores, &colors()).as_deref(),
+            Some("N")
+        );
+    }
+
+    #[test]
+    fn a_nearly_black_or_tiny_box_has_no_verdict() {
+        let dark = [5u8, 5u8, 5u8, 255u8].repeat(100);
+        let scores = grade_color_scores(&dark, 10, 10, &colors());
+        assert_eq!(scores, GradeColorScores::default());
+        assert_eq!(decide_grade_colour(&scores, &colors()), None);
     }
 }

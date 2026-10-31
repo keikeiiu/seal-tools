@@ -449,6 +449,11 @@ pub struct OcrTunerSource {
     geometry: seal_ocr::modes::OcrGeometry,
     attributes: seal_domain::config::AttributesConfig,
     pipeline: seal_ocr::pipeline::OcrPipeline,
+    /// `tuner.ocr_retries` (v2 default 3): a read is re-captured until it is CONFIRMED (grade +
+    /// every attribute row + remaining) or the budget runs out. The last attempt leaves a capture
+    /// for post-mortem study (v2's `forceCapture`).
+    retries: u32,
+    grade_colors: seal_domain::config::GradeColorsConfig,
 }
 
 impl OcrTunerSource {
@@ -467,6 +472,17 @@ impl OcrTunerSource {
         let pipeline =
             seal_ocr::pipeline::OcrPipeline::load_for_root(root, &attributes, geometry.row_height)
                 .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
+        let retries = config
+            .pointer("/tuner/ocr_retries")
+            .and_then(Value::as_i64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(3)
+            .clamp(1, 100);
+        let grade_colors = config
+            .pointer("/tuner/grade_colors")
+            .cloned()
+            .and_then(|block| serde_json::from_value(block).ok())
+            .unwrap_or_default();
         Ok((
             Self {
                 title,
@@ -474,14 +490,26 @@ impl OcrTunerSource {
                 geometry,
                 attributes,
                 pipeline,
+                retries,
+                grade_colors,
             },
             display,
         ))
     }
 }
 
-impl TunerSource for OcrTunerSource {
-    fn read(&mut self) -> Result<TunerRead, String> {
+/// v2's `IsConfirmed`: the read is only accepted once the grade, EVERY attribute row and the
+/// remaining count were all recognised. A transient OCR miss/merge is re-captured instead of
+/// advancing the tuner on a half-read.
+pub(crate) fn confirmed_read(read: &TunerRead) -> bool {
+    read.grade.is_some()
+        && read.remaining.is_some()
+        && read.attributes.len() == 3
+        && read.attributes.iter().all(|row| !row.name.is_empty())
+}
+
+impl OcrTunerSource {
+    fn read_once(&mut self) -> Result<TunerRead, String> {
         let (frame, _display) =
             crate::win::capture(&self.title, Some(self.region)).map_err(|error| error.line())?;
         let (width, height, rgba) = crate::dispatch::frame_rgba(&frame)?;
@@ -489,8 +517,29 @@ impl TunerSource for OcrTunerSource {
             .pipeline
             .scan_rgba(width, height, &rgba)
             .map_err(|error| error.message)?;
-
         let geometry = &self.geometry;
+        let grade_image = geometry.grade_area.and_then(|area| {
+            let crop_width = area.x2.saturating_sub(area.x1).max(1) as u32;
+            let crop_height = area.y2.saturating_sub(area.y1).max(1) as u32;
+            let rect = Rect::new(area.x1, area.y1, crop_width as i32, crop_height as i32);
+            seal_win::pure::crop_rgba(width as u32, height as u32, &rgba, rect)
+                .ok()
+                .map(|(w, h, pixels)| (w as usize, h as usize, pixels))
+        });
+        let grade_mode = seal_ocr::modes::apply_with_image(
+            seal_ocr::modes::Mode::Grade,
+            &scan,
+            &self.attributes,
+            geometry,
+            grade_image
+                .as_ref()
+                .map(|(w, h, pixels)| seal_ocr::modes::GradeImage {
+                    rgba: pixels,
+                    width: *w,
+                    height: *h,
+                    colors: &self.grade_colors,
+                }),
+        );
         let attributes_mode = seal_ocr::modes::apply(
             seal_ocr::modes::Mode::Attributes,
             &scan,
@@ -500,27 +549,40 @@ impl TunerSource for OcrTunerSource {
         let matcher = seal_domain::ocr::AttrMatcher::new(&self.attributes);
         let attributes =
             matcher.match_attributes(attributes_mode.attributes.as_deref().unwrap_or_default());
-        let grade = seal_ocr::modes::apply(
-            seal_ocr::modes::Mode::Grade,
-            &scan,
-            &self.attributes,
-            geometry,
-        )
-        .grade;
-        let remaining = seal_ocr::modes::apply(
-            seal_ocr::modes::Mode::Count,
-            &scan,
-            &self.attributes,
-            geometry,
-        )
-        .remaining
-        .and_then(|count| i32::try_from(count).ok());
-
         Ok(TunerRead {
-            grade,
-            remaining,
+            grade: grade_mode.grade,
+            remaining: grade_mode
+                .remaining
+                .and_then(|count| i32::try_from(count).ok()),
             attributes,
         })
+    }
+}
+
+impl TunerSource for OcrTunerSource {
+    fn read(&mut self) -> Result<TunerRead, String> {
+        let mut last = None;
+        for attempt in 1..=self.retries {
+            match self.read_once() {
+                Ok(read) => {
+                    if confirmed_read(&read) {
+                        return Ok(read);
+                    }
+                    if attempt == self.retries {
+                        // v2's forceCapture: the final unconfirmed attempt leaves a frame behind.
+                        let _ = crate::win::capture(&self.title, Some(self.region));
+                    }
+                    last = Some(Ok(read));
+                }
+                Err(error) => {
+                    if attempt == self.retries {
+                        return Err(error);
+                    }
+                    last = Some(Err(error));
+                }
+            }
+        }
+        last.unwrap_or_else(|| Err("the tuner OCR read produced no attempt".to_owned()))
     }
 
     fn cursor(&mut self) -> Option<Point> {
@@ -774,6 +836,29 @@ mod tests {
             Decision::ClickHere,
             "no placement in manual mode"
         );
+    }
+
+    #[test]
+    fn a_read_is_confirmed_only_with_grade_every_row_and_remaining() {
+        let row = || seal_domain::ocr::MatchedAttr {
+            name: "STR".to_owned(),
+            category: String::new(),
+            value: Some(1),
+            extra: None,
+            raw: vec!["STR +1".to_owned()],
+        };
+        let complete = TunerRead {
+            grade: Some("DG".to_owned()),
+            remaining: Some(100),
+            attributes: vec![row(), row(), row()],
+        };
+        assert!(confirmed_read(&complete));
+        let mut missing_remaining = complete.clone();
+        missing_remaining.remaining = None;
+        assert!(!confirmed_read(&missing_remaining));
+        let mut two_rows = complete;
+        two_rows.attributes.truncate(2);
+        assert!(!confirmed_read(&two_rows));
     }
 
     #[test]
