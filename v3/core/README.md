@@ -44,6 +44,20 @@ source is the only escape. The lib-only panic line keeps production code free of
 `panic!` while tests may still use them, and the rustdoc line keeps intra-doc links and HTML tags
 honest.
 
+## Dependency notes
+
+- `ndarray` is not a direct dependency: `seal-ocr` uses `ort`'s tensor API, so the tree carries only
+  `ort`'s own `ndarray` (0.17). One less duplicate than before.
+- `base64` is pinned at 0.23 in `seal-config` and `seal-core`; the `ureq` build-dependency copy is
+  the same version, so there is no version duplicate (resolver 3 keeps a host/build unit separate).
+- Two ecosystem-bound duplicates remain and are deliberately not "fixed" by hand:
+  - `windows-sys` 0.52 (pinned by `serialport`) and 0.61 (`schannel`/`ureq`). Unifying would mean
+    upgrading `serialport` past its current release or forcing a semver-incompatible API shim.
+  - `miniz_oxide` 0.8.9 and 0.9.1, both inside `png` 0.17.16's own graph. A newer `png` is the fix
+    when it is available offline; do not fork the dependency.
+- `cargo-deny`/`cargo-audit` are **not installed** (installing them runs third-party code and needs
+  the player's approval). `cargo tree --duplicates` plus the gates above are the current audit.
+
 ## Deliberate divergences from v2
 
 The port copies behaviour, not accidents. Every divergence gets an entry here, a test, and the
