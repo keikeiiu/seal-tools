@@ -62,19 +62,9 @@ class _SetupTabState extends State<SetupTab>
     scope: ConfigScope.portableSection,
     editableKeys: const {'variant'},
   );
-  late final ConfigDraft _arduinoSettingsDraft = ConfigDraft(
-    blockName: 'arduino',
-    scope: ConfigScope.portableSection,
-    editableKeys: const {'vid', 'pid', 'baud'},
-  );
-  late final ConfigDraft _arduinoPortDraft = ConfigDraft(
-    blockName: 'arduino',
-    scope: ConfigScope.ownedBlock,
-    editableKeys: const {'port'},
-  );
   late final ConfigDraftGroup _group = ConfigDraftGroup(
     label: 'setup',
-    parts: [_windowDraft, _gameDraft, _arduinoSettingsDraft, _arduinoPortDraft],
+    parts: [_windowDraft, _gameDraft],
   );
 
   @override
@@ -137,10 +127,17 @@ class _SetupTabState extends State<SetupTab>
   }
 
   String get _pidText =>
-      asJsonList(_arduinoSettingsDraft.value['pid'])
+      asJsonList(_merged('arduino')['pid'])
           .whereType<num>()
           .map((value) => value.round().toString())
           .join(', ');
+
+  String _arduinoValue(String key) {
+    final value = _merged('arduino')[key];
+    if (value is num) return value.round().toString();
+    if (value is String && value.trim().isNotEmpty) return value;
+    return '';
+  }
 
   // ── writers ──────────────────────────────────────────────────────────────────────────────
 
@@ -151,13 +148,6 @@ class _SetupTabState extends State<SetupTab>
       map[key] = value;
     }
   });
-
-  void _setPid(String text) {
-    final ids = <int>[
-      for (final part in text.split(',')) ?int.tryParse(part.trim()),
-    ];
-    _set(_arduinoSettingsDraft, 'pid', ids.isEmpty ? null : ids);
-  }
 
   Future<void> _runFind() async {
     final result = await model.findWindow();
@@ -254,61 +244,37 @@ class _SetupTabState extends State<SetupTab>
           EditorSection(
             title: 'Arduino',
             children: [
-              Wrap(
-                spacing: ShellSpace.md,
-                runSpacing: ShellSpace.sm,
-                children: [
-                  DraftFieldSlot(
-                    slotKey: 'setup-arduino-vid',
-                    syncToken: _arduinoSettingsDraft.seedRevision,
-                    child: DraftNumberField(
-                      label: 'VID (decimal)',
-                      integer: true,
-                      value: asNumber(_arduinoSettingsDraft.value['vid']),
-                      width: ShellWidth.labelColumn,
-                      onChanged: (value) =>
-                          _set(_arduinoSettingsDraft, 'vid', value),
-                    ),
-                  ),
-                  DraftFieldSlot(
-                    slotKey: 'setup-arduino-baud',
-                    syncToken: _arduinoSettingsDraft.seedRevision,
-                    child: DraftNumberField(
-                      label: 'Baud',
-                      integer: true,
-                      value: asNumber(_arduinoSettingsDraft.value['baud']),
-                      width: ShellWidth.fieldSm,
-                      onChanged: (value) =>
-                          _set(_arduinoSettingsDraft, 'baud', value),
-                    ),
-                  ),
-                  DraftFieldSlot(
-                    slotKey: 'setup-arduino-pid',
-                    syncToken: _arduinoSettingsDraft.seedRevision,
-                    child: DraftTextField(
-                      label: 'PID list (comma separated)',
-                      value: _pidText,
-                      width: ShellWidth.fieldLg,
-                      onChanged: _setPid,
-                    ),
-                  ),
-                ],
+              const ShellProse(
+                'Shipped board-matching values: automatic detection uses them when the COM '
+                'port is empty. They are shown read-only — the shipped Pro Micro values are '
+                'correct, and the Arduino tab reports what a Start would choose.',
               ),
               const SizedBox(height: ShellSpace.sm),
-              DraftFieldSlot(
-                slotKey: 'setup-arduino-port',
-                syncToken: _arduinoPortDraft.seedRevision,
-                child: DraftTextField(
-                  label: 'COM port override',
-                  helper: 'Empty finds the board by the IDs above.',
-                  value: asString(_arduinoPortDraft.value['port']) ?? '',
-                  width: ShellWidth.picker,
-                  onChanged: (value) => _set(
-                    _arduinoPortDraft,
-                    'port',
-                    value.trim().isEmpty ? '' : value,
-                  ),
-                ),
+              InfoRow(
+                key: const ValueKey('setup-arduino-vid'),
+                label: 'VID (decimal)',
+                value: _arduinoValue('vid'),
+                mono: true,
+              ),
+              InfoRow(
+                key: const ValueKey('setup-arduino-baud'),
+                label: 'Baud',
+                value: _arduinoValue('baud'),
+                mono: true,
+              ),
+              InfoRow(
+                key: const ValueKey('setup-arduino-pid'),
+                label: 'PID list',
+                value: _pidText.isEmpty ? '—' : _pidText,
+                mono: true,
+              ),
+              InfoRow(
+                key: const ValueKey('setup-arduino-port'),
+                label: 'COM port override',
+                value: _arduinoValue('port').isEmpty
+                    ? 'automatic (by board IDs)'
+                    : _arduinoValue('port'),
+                mono: true,
               ),
             ],
           ),

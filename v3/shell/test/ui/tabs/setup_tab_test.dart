@@ -38,11 +38,6 @@ Map<String, dynamic> _displayJson() => {
   'logical_client': {'x': 73, 'y': 87, 'w': 1280, 'h': 720},
 };
 
-Finder _field(String key) => find.descendant(
-  of: find.byKey(ValueKey(key)),
-  matching: find.byType(TextField),
-);
-
 Future<AppHarness> _pumpSetup(WidgetTester tester) async {
   tester.view.physicalSize = const ui.Size(1600, 2400);
   tester.view.devicePixelRatio = 1.0;
@@ -86,7 +81,7 @@ Future<void> _flush(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'renders the blocks and saves them as settings + the owned port',
+    'renders the board match read-only and saves only the editable blocks',
     (tester) async {
       final harness = await _pumpSetup(tester);
 
@@ -106,13 +101,33 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('setup-title-caption')), findsOneWidget);
-      expect(
-        find.textContaining('tw · dictionary attributes.yaml'),
-        findsOneWidget,
-      );
 
-      await tester.enterText(_field('setup-arduino-baud'), '9600');
-      await tester.pump();
+      // The four Arduino fields are shown but not editable: shipped board-matching values.
+      for (final key in [
+        'setup-arduino-vid',
+        'setup-arduino-baud',
+        'setup-arduino-pid',
+        'setup-arduino-port',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(TextField),
+          ),
+          findsNothing,
+          reason: '$key is read-only',
+        );
+      }
+      expect(find.text('9025'), findsOneWidget);
+      expect(find.text('115200'), findsOneWidget);
+      expect(find.text('32822, 32823'), findsOneWidget);
+      expect(find.text('automatic (by board IDs)'), findsOneWidget);
+
+      // The variant is the editable field on this screen now.
+      await tester.tap(find.byKey(const ValueKey('setup-variant')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('us').last);
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('dirty-setup')), findsOneWidget);
 
       harness.answerConfigCommands();
@@ -124,28 +139,21 @@ void main() {
       final sections =
           (apply!['args'] as Map<String, dynamic>)['sections']
               as Map<String, dynamic>;
-      expect(
-        sections.keys.toSet(),
-        {'settings', 'arduino'},
-        reason:
-            'portable half under settings, the machine port as its own block',
-      );
+      expect(sections.keys.toSet(), {
+        'settings',
+      }, reason: 'the read-only Arduino values are never sent back');
       final settings = sections['settings'] as Map<String, dynamic>;
-      expect(settings.keys.toSet(), {'window', 'game', 'arduino'});
+      expect(settings.keys.toSet(), {'window', 'game'});
       expect(
         (settings['window'] as Map<String, dynamic>)['title'],
         'TW_LIVE',
         reason: 'the title is displayed read-only, so the save keeps it',
       );
-      expect((settings['game'] as Map<String, dynamic>)['variant'], 'tw');
-      final arduino = settings['arduino'] as Map<String, dynamic>;
-      expect(arduino['baud'], 9600);
-      expect(arduino['vid'], 9025);
-      expect(arduino['pid'], [32822, 32823]);
+      expect((settings['game'] as Map<String, dynamic>)['variant'], 'us');
       expect(
-        (sections['arduino'] as Map<String, dynamic>)['port'],
-        '',
-        reason: 'the machine port rides the owned arduino block',
+        sections.containsKey('arduino'),
+        isFalse,
+        reason: 'the machine port is not editable here',
       );
 
       expect(find.byKey(const ValueKey('dirty-setup')), findsNothing);
@@ -223,8 +231,10 @@ void main() {
     tester,
   ) async {
     final harness = await _pumpSetup(tester);
-    await tester.enterText(_field('setup-arduino-baud'), '9600');
-    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('setup-variant')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('us').last);
+    await tester.pumpAndSettle();
 
     harness.answerConfigCommands(
       errors: ['the game block is malformed: variant must be a string'],
@@ -241,8 +251,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('cancel-setup')));
     await tester.pump();
     expect(
-      tester.widget<TextField>(_field('setup-arduino-baud')).controller?.text,
-      '115200',
+      find.text('tw'),
+      findsWidgets,
+      reason: 'Cancel re-seeds the editable draft from the mirror',
     );
     expect(
       find.descendant(

@@ -67,6 +67,9 @@ class _ArduinoTabState extends State<ArduinoTab>
   CoreActionResult<Map<String, dynamic>>? _keyResult;
   bool _loadingDetails = true; // initState kicks the first read.
   bool _queryingFirmware = false;
+  bool _portSaving = false;
+  String? _portNote;
+  bool _portFailed = false;
 
   /// A level a successful Query firmware just reported, shown until the next details fetch (the
   /// core's cache is the authority after that, and a Refresh reads it).
@@ -119,6 +122,34 @@ class _ArduinoTabState extends State<ArduinoTab>
         _probeLevel = value.level;
       }
     });
+  }
+
+  /// A radio selection in the port list: null is automatic (find by the board IDs), a string is a
+  /// COM-port override. It is a normal config save — the core validates and applies `arduino.port`,
+  /// then board.details is re-read so the radio reflects the real choice.
+  Future<void> _selectPort(String? port) async {
+    if (_portSaving) return;
+    setState(() {
+      _portSaving = true;
+      _portNote = null;
+      _portFailed = false;
+    });
+    final outcome = await widget.model.saveConfig({
+      'arduino': {'port': port ?? ''},
+    });
+    if (!mounted) return;
+    setState(() {
+      _portSaving = false;
+      _portFailed = !outcome.saved;
+      _portNote = outcome.saved
+          ? (port == null
+                ? 'Automatic board matching selected (empty COM port override).'
+                : 'COM port override saved as $port.')
+          : outcome.errorLines.join(' · ');
+    });
+    if (outcome.saved) {
+      await _loadDetails();
+    }
   }
 
   Future<void> _runClick() async {
@@ -376,10 +407,11 @@ class _ArduinoTabState extends State<ArduinoTab>
   /// trailing reason. The reason can no longer end up on its own line under a long description.
   Widget _portsPanel(ThemeData theme) {
     final details = _details?.value;
+    final expectedPort = details?.expected.port;
     final ports = details == null ? const <BoardPort>[] : details.ports;
     return SurfacePanel(
       title: 'Ports this machine has',
-      child: ports.isEmpty
+      child: details == null || ports.isEmpty
           ? Text(
               'This machine reports no serial ports at all.',
               key: const ValueKey('arduino-ports-empty'),
@@ -389,8 +421,89 @@ class _ArduinoTabState extends State<ArduinoTab>
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [for (final port in ports) _portRow(theme, port)],
+              children: [
+                RadioGroup<String?>(
+                  groupValue: expectedPort,
+                  onChanged: (value) => unawaited(_selectPort(value)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _automaticPortRow(theme, expectedPort),
+                      for (final port in ports) _portRow(theme, port),
+                      if (expectedPort != null &&
+                          !ports.any((port) => port.port == expectedPort))
+                        _missingOverrideRow(theme, expectedPort),
+                    ],
+                  ),
+                ),
+                if (_portNote != null) ...[
+                  const SizedBox(height: ShellSpace.sm),
+                  Text(
+                    _portNote!,
+                    key: const ValueKey('arduino-port-note'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _portFailed
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
+    );
+  }
+
+  Widget _automaticPortRow(ThemeData theme, String? current) {
+    return Padding(
+      key: const ValueKey('arduino-port-row-auto'),
+      padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+      child: Row(
+        children: [
+          Radio<String?>(
+            key: const ValueKey('arduino-port-radio-auto'),
+            value: null,
+          ),
+          const SizedBox(width: ShellSpace.xs),
+          Expanded(
+            child: Text(
+              'Automatic — find the board by its shipped IDs',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+          Text(
+            current == null ? 'Start will use this' : 'use the IDs',
+            key: const ValueKey('arduino-port-reason-auto'),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: current == null
+                  ? theme.shellColors.success
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _missingOverrideRow(ThemeData theme, String port) {
+    return Padding(
+      key: ValueKey('arduino-port-row-missing-$port'),
+      padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+      child: Row(
+        children: [
+          Radio<String?>(value: port),
+          const SizedBox(width: ShellSpace.xs),
+          Expanded(
+            child: Text(
+              '$port — named override, but this machine does not report that port',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -409,14 +522,11 @@ class _ArduinoTabState extends State<ArduinoTab>
       padding: const EdgeInsets.only(bottom: ShellSpace.xs),
       child: Row(
         children: [
-          Icon(
-            port.chosen
-                ? Icons.radio_button_checked
-                : Icons.radio_button_unchecked,
-            size: ShellSize.iconMd,
-            color: reasonColor,
+          Radio<String?>(
+            key: ValueKey('arduino-port-radio-${port.port}'),
+            value: port.port,
           ),
-          const SizedBox(width: ShellSpace.sm),
+          const SizedBox(width: ShellSpace.xs),
           SizedBox(
             width: ShellWidth.fieldSm,
             child: Text(

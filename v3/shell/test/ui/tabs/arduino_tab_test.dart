@@ -251,12 +251,8 @@ void main() {
     expect(_text(tester, 'arduino-advice'), refusal);
     expect(_statusKind(tester), StatusKind.error);
     // The present board is NOT marked as chosen: Start would refuse it, because COM9 was named.
-    final row = find.byKey(const ValueKey('arduino-port-row-COM5'));
     expect(
-      find.descendant(
-        of: row,
-        matching: find.byIcon(Icons.radio_button_unchecked),
-      ),
+      find.byKey(const ValueKey('arduino-port-radio-COM5')),
       findsOneWidget,
     );
     expect(_portRowText(tester, 'COM5'), contains('matches the expected ID'));
@@ -373,13 +369,10 @@ void main() {
           : <String, dynamic>{},
     );
 
-    // The chosen port carries the filled radio icon and the trailing reason; the other match the
-    // hollow icon and its own reason.
+    // The chosen port carries the trailing reason; the other match its own reason. (A Radio in a
+    // RadioGroup no longer exposes groupValue, so the reason/order are the visible contract.)
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('arduino-port-row-COM5')),
-        matching: find.byIcon(Icons.radio_button_checked),
-      ),
+      find.byKey(const ValueKey('arduino-port-radio-COM5')),
       findsOneWidget,
     );
     final chosen = _portRowText(tester, 'COM5');
@@ -388,10 +381,7 @@ void main() {
 
     final other = _portRowText(tester, 'COM3');
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('arduino-port-row-COM3')),
-        matching: find.byIcon(Icons.radio_button_unchecked),
-      ),
+      find.byKey(const ValueKey('arduino-port-radio-COM3')),
       findsOneWidget,
     );
     expect(other, contains('matches the expected ID'));
@@ -613,6 +603,46 @@ void main() {
           .where((message) => message['cmd'] == 'board.test')
           .length,
       sentBefore,
+    );
+  });
+
+  testWidgets('a port radio saves arduino.port through config.apply', (
+    tester,
+  ) async {
+    final harness = await _pumpArduino(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'board.details' => _detailsAnswer(
+          ports: [
+            _port(port: 'COM5', chosen: true, matchesIds: true),
+            _port(port: 'COM3', matchesIds: true),
+          ],
+        ),
+        'config.validate' => {'errors': <String>[], 'warnings': <String>[]},
+        'config.apply' => {
+          'rev': 8,
+          'sections': {
+            'arduino': {'port': 'COM3'},
+          },
+        },
+        _ => <String, dynamic>{},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('arduino-port-radio-COM3')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    expect(sections['arduino'], {'port': 'COM3'});
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('arduino-port-note'))).data,
+      contains('saved as COM3'),
     );
   });
 }

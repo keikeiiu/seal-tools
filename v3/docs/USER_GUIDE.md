@@ -136,18 +136,20 @@ setup**, and they will be wrong on your machine. The order is: **Setup → Calib
 
 ### 3.1 Setup
 
-Open **Setup**. The tab's **Save** writes the client variant, the Arduino IDs and the port; the Game
-window title is read-only, and the actions below set it.
+Open **Setup**. The tab's **Save** writes the client variant; the game window title and the four
+Arduino board-matching fields are read-only, and the actions below set the title. The board port
+itself is chosen with radio buttons on the **Arduino** tab.
 
 | Field | What it means |
 |---|---|
 | **Game window title** | **Read-only.** The window to find; matching is a **substring**, so the client title's distinctive part is enough. It is set with **Find window**, then **Use detected title** — the title identifies the game window, so it is not typed. |
 | **Client variant** | `tw`, `us`, or a variant name your config defines (`game.variants`). The variant supplies the window title **and** which attribute dictionary is loaded. Leave it on the right one: a wrong variant is "game window not found" or "the tuner matches nothing". |
-| **Arduino VID / PID list / Baud** | How the board is found when no port is named. The shipped values fit the Pro Micro used here; change them only for a different board. |
-| **COM port override** | Optional. Leave empty to find the board by its IDs. A **named port that does not exist is a refusal**, not a silent fallback to another board. |
+| **Arduino VID / PID list / Baud** | **Read-only.** How the board is found when no port is named. The shipped values fit the Pro Micro used here; nobody has to read or type them. A different board means editing `config/machine/` + the portable Arduino block by hand (advanced, unsupported in the UI). |
+| **COM port override** | **Read-only display.** Empty means "find the board by its IDs". A **named port that does not exist is a refusal**, not a silent fallback to another board; set it by editing the machine config, not from Setup. |
 
 The **read-only** section shows the variant currently in effect (and the dictionary file the variant
-names); the title above is read-only too. The **Actions** ask the core to:
+names). The title and the four Arduino board-matching fields are read-only too. The **Actions** ask
+the core to:
 
 - **Find window** — find the game window and report the detected title;
 - **Measure** — report the measured frame/client rectangles;
@@ -469,7 +471,8 @@ the dictionary from the core.
 
 ### 5.8 Arduino
 
-The Arduino tab is a read-only connection card plus a test surface. It opens on `board.details`, which
+The Arduino tab is a connection card (read-only facts plus the port radio list) and a test surface.
+It opens on `board.details`, which
 only enumerates the machine's serial ports — it never opens the board — so reading it is safe even
 while a tool runs.
 
