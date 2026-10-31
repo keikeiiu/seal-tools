@@ -36,8 +36,10 @@ fn local_now_windows() -> [u16; 7] {
         wSecond: 0,
         wMilliseconds: 0,
     };
-    // SAFETY: `GetLocalTime` writes one `SYSTEMTIME` into the pointer and reads nothing else; `time`
-    // is a live, correctly shaped stack value for the call. It cannot fail.
+    // SAFETY: `GetLocalTime` takes one `*mut SYSTEMTIME` and writes exactly one `SYSTEMTIME`
+    // through it (it returns `()` and has no failure case). `time` is a live, correctly aligned
+    // stack value of exactly that type and outlives the call; the API keeps no reference to it and
+    // reads nothing else.
     unsafe { GetLocalTime(&raw mut time) };
     [
         time.wYear,
