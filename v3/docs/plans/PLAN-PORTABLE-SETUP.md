@@ -346,6 +346,12 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 2 landed:** `seal-config::layout` is the READ half of the new tree — registry-ordered
+  defaults → `setup/` → `machine/`, field-wise overlay (objects merge, scalars/lists replace, null =
+  not stated), one-owner conflicts impossible by construction, malformed/newer-schema files fail
+  loudly with their path, unregistered `.yaml` files are warnings, and the active variant resolves
+  `window.title` last. The live path is still the old `local.yaml` store; increment 3 moves the
+  writer before the switch.
 - **Increment 1 landed:** `seal-config::file` is the per-file format layer — a file is a YAML
   mapping with the reserved `schema_version` (stripped on read, rewritten on save, a newer version
   refused loudly writing nothing), a class/domain header, unknown keys kept because the whole
