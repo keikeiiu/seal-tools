@@ -42,6 +42,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../app/pet_species.dart';
 import '../../app/pet_preflight.dart';
 import '../../protocol/protocol.dart';
 import '../components/empty_state.dart';
@@ -226,7 +227,7 @@ class _PetTabState extends State<PetTab>
 
   /// The Add-a-pet-by-icon form: view state, not config until a capture appends a queue entry.
   final TextEditingController _addLabel = TextEditingController();
-  final TextEditingController _addSpecies = TextEditingController();
+  String? _addSpeciesValue;
   int _addPage = 0;
   int? _addCell;
 
@@ -297,7 +298,7 @@ class _PetTabState extends State<PetTab>
     for (final entry in _queue().reversed) {
       final species = asString(entry['species']);
       if (species != null && species.isNotEmpty) {
-        _addSpecies.text = species;
+        _addSpeciesValue = species;
         break;
       }
     }
@@ -310,7 +311,6 @@ class _PetTabState extends State<PetTab>
     model.config.removeListener(_onMirrorChanged);
     model.tools.removeListener(_onToolsChanged);
     _addLabel.dispose();
-    _addSpecies.dispose();
     _group.dispose();
     super.dispose();
   }
@@ -689,7 +689,7 @@ class _PetTabState extends State<PetTab>
       return;
     }
     final label = _addLabel.text.trim();
-    final species = _addSpecies.text.trim();
+    final species = _addSpeciesValue?.trim() ?? '';
     setState(() {
       _machineDraft.edit((block) {
         final queue = asJsonList(block['queue']);
@@ -1560,6 +1560,17 @@ class _PetTabState extends State<PetTab>
     );
   }
 
+  /// The game-data species options, keeping a value an older config already carries even when it is
+  /// not in the current list (a custom/renamed species must not silently disappear on Save).
+  List<String> _speciesOptions(String current) {
+    final options = [...petSpecies];
+    final trimmed = current.trim();
+    if (trimmed.isNotEmpty && !options.contains(trimmed)) {
+      options.insert(0, trimmed);
+    }
+    return options;
+  }
+
   /// One queued pet as a table row: the captured icon (the identity the run matches), the editable
   /// label/species and Remove. Edits go to the machine draft and ride the tab's one Save — v2
   /// auto-saved each edit; v3 keeps everything in the draft until Save, so a half-typed label never
@@ -1602,14 +1613,19 @@ class _PetTabState extends State<PetTab>
             child: DraftFieldSlot(
               slotKey: 'pet-queue-species-$index',
               syncToken: _machineDraft.seedRevision,
-              child: DraftTextField(
+              child: DraftDropdownField(
                 key: ValueKey('pet-queue-species-$index'),
                 label: 'Species (feeding-table line)',
-                value: asString(entry['species']) ?? '',
+                value:
+                    _speciesOptions(asString(entry['species']) ?? '')
+                        .contains(asString(entry['species']) ?? '')
+                    ? asString(entry['species'])
+                    : null,
+                options: _speciesOptions(asString(entry['species']) ?? ''),
                 onChanged: (value) => _setQueueField(
                   index,
                   'species',
-                  value.trim().isEmpty ? null : value,
+                  (value ?? '').trim().isEmpty ? null : value,
                 ),
               ),
             ),
@@ -1746,15 +1762,15 @@ class _PetTabState extends State<PetTab>
           ),
           SizedBox(
             width: 300,
-            child: TextField(
+            child: DraftDropdownField(
               key: const ValueKey('pet-add-species'),
-              controller: _addSpecies,
-              style: theme.textTheme.bodyMedium,
-              decoration: const InputDecoration(
-                labelText: 'Species (feeding-table line, optional)',
-                helperText: 'turns the panel growth into minutes',
-                isDense: true,
-                border: OutlineInputBorder(),
+              label: 'Species (feeding-table line, optional)',
+              value: _addSpeciesValue,
+              options: _speciesOptions(_addSpeciesValue ?? ''),
+              onChanged: (value) => setState(
+                () => _addSpeciesValue = value?.trim().isEmpty ?? true
+                    ? null
+                    : value,
               ),
             ),
           ),

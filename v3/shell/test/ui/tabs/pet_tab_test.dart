@@ -370,6 +370,23 @@ Future<Map<String, dynamic>> _save(
   return args['sections'] as Map<String, dynamic>;
 }
 
+Future<void> _selectSpecies(
+  WidgetTester tester,
+  String key,
+  String species,
+) async {
+  final finder = find.descendant(
+    of: find.byKey(ValueKey(key)).first,
+    matching: find.byType(DropdownButtonFormField<String>),
+  );
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(species).last);
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tap(WidgetTester tester, String key) async {
   final finder = find.byKey(ValueKey(key));
   // The Pet tab's editors run past one screen at the default test surface: scroll the control into
@@ -937,10 +954,7 @@ void main() {
         find.byKey(const ValueKey('pet-add-label')),
         'new pet',
       );
-      await tester.enterText(
-        find.byKey(const ValueKey('pet-add-species')),
-        'Knight',
-      );
+      await _selectSpecies(tester, 'pet-add-species', '鸟蛋类');
       await _tap(tester, 'pet-add-page-1');
       await _tap(tester, 'pet-add-cell-1-34');
       expect(
@@ -974,7 +988,7 @@ void main() {
       final queue = (sections['pet'] as Map<String, dynamic>)['queue'] as List;
       expect(queue, hasLength(3));
       expect(queue[2]['label'], 'new pet');
-      expect(queue[2]['species'], 'Knight');
+      expect(queue[2]['species'], '鸟蛋类');
       expect(queue[2]['rect'], [10, 40, 10, 10]);
       expect(queue[2]['png'], _capturedPng);
 
@@ -1146,13 +1160,13 @@ void main() {
   ) async {
     final harness = await _pumpPet(tester, pet: _machinePet());
     await tester.enterText(_field('pet-queue-label-0'), 'renamed');
-    await tester.enterText(_field('pet-queue-species-0'), 'Mage');
+    await _selectSpecies(tester, 'pet-queue-species-0', '三尾狐');
     await tester.pump();
 
     final sections = await _save(tester, harness);
     final queue = (sections['pet'] as Map<String, dynamic>)['queue'] as List;
     expect(queue[0]['label'], 'renamed');
-    expect(queue[0]['species'], 'Mage');
+    expect(queue[0]['species'], '三尾狐');
     expect(
       harness.sentMessages.where((message) => message['cmd'] == 'config.apply'),
       hasLength(1),

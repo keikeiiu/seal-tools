@@ -389,12 +389,13 @@ does not open the board or read the game.
   line under the rows, and the tick shows the core's current value, so the feeder's own mid-run
   updates appear there too.
 - **Queue** — each queued pet shows its **captured icon** (the identity the run matches), an editable
-  **Label** (log/list only) and **Species** (the free-text feeding-table line used for the minute
-  estimate), plus **Remove**. Edits and captured entries are saved by the tab's **Save** — unlike
-  v2's per-edit auto-save — and a captured entry is added to this list as a draft immediately (only
-  persistence waits for Save), so it can be Removed before saving. Species is seeded from the last
-  queue entry that has a non-empty species (the shell cannot read v2's `docs/pet-data.csv` picker or
-  validation); an empty or unmatched value simply has no minute estimate. When the queue is empty the
+  **Label** (log/list only) and a **Species** dropdown, plus **Remove**. Edits and captured entries
+  are saved by the tab's **Save** — unlike v2's per-edit auto-save — and a captured entry is added to
+  this list as a draft immediately (only persistence waits for Save), so it can be Removed before
+  saving. The dropdown lists the game's known species (the `species` column of `docs/pet-data.csv`,
+  embedded in the shell), so adding a pet is a pick, not typing; a value inherited from an older
+  config is kept as an option rather than dropped. The selected species is what turns the panel
+  growth into a minute estimate; empty simply has no estimate. When the queue is empty the
   **Return slot** is the fallback the run right-clicks.
 - **Bag food cells** — per page (**ITEM1**..**ITEM3**) an 8×8 grid of the boarding bag; toggle the
   cells that hold pet food. The grid is available only after the **Boarding bag grid** mark is
