@@ -50,6 +50,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.pet.save",
     "calibration.pet.test_read",
     "calibration.gem.moves.save",
+    "calibration.gem.check_result",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -371,6 +372,12 @@ fn cases() -> Vec<Case> {
                 "register_combine": [18, -4],
                 "radio_to_register": {"N": [10, 20], "G": [-5, 6]}
             }}),
+        ),
+        request_case(
+            "request.calibration.gem.check_result",
+            "65",
+            "calibration.gem.check_result",
+            json!({"frame_id": "f1", "area": {"x": 10, "y": 10, "w": 20, "h": 20}}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -1121,6 +1128,25 @@ fn cases() -> Vec<Case> {
                     "register_combine": [18, -4],
                     "radio_to_register": {"N": [10, 20], "G": [-5, 6]}
                 }}
+            }),
+        ),
+        ok_case(
+            "response.ok.gem_check_result",
+            "65",
+            json!({
+                "composition": {
+                    "mean_v": 0.9,
+                    "mean_sat": 0.1,
+                    "colored_fraction": 0.0,
+                    "mean_r": 0.88,
+                    "mean_g": 0.9,
+                    "mean_b": 0.92
+                },
+                "distance": 0.012,
+                "verdict": "empty",
+                "spread": 0.04,
+                "dominant": "neutral / pale",
+                "crop_png_base64": "iVBORw0KGgo="
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────

@@ -495,6 +495,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "calibration.pet.save" => crate::pet_calibration::save(state, &request),
         "calibration.pet.test_read" => crate::pet_calibration::test_read(state, &request),
         "calibration.gem.moves.save" => crate::gem_session::save(state, &request),
+        "calibration.gem.check_result" => crate::gem_session::check_result(state, &request),
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),
