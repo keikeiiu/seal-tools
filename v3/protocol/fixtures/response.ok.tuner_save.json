@@ -1,0 +1,105 @@
+{
+  "case": "response.ok.tuner_save",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "60",
+    "ok": true,
+    "result": {
+      "rev": 13,
+      "block": {
+        "ocr": {
+          "region": {
+            "left": 100,
+            "top": 100,
+            "width": 200,
+            "height": 120
+          },
+          "grade_area": {
+            "x1": 20,
+            "y1": 0,
+            "x2": 60,
+            "y2": 20
+          },
+          "grade_y": [
+            0,
+            20
+          ],
+          "attr_y": [
+            30,
+            90
+          ],
+          "remaining_y": [
+            100,
+            120
+          ],
+          "attr_x": [
+            0,
+            200
+          ],
+          "remaining_x": [
+            10,
+            160
+          ],
+          "row_height": 19
+        },
+        "spring_point": [
+          500,
+          400
+        ],
+        "calibration": {
+          "dpi_scale": 1.5,
+          "monitor_dpi": 144,
+          "screen": {
+            "w": 1920,
+            "h": 1080
+          },
+          "client_size": [
+            1200,
+            600
+          ],
+          "measured_at": "2026-10-30T12:00:00Z"
+        }
+      },
+      "derived": {
+        "region": {
+          "left": 100,
+          "top": 100,
+          "width": 200,
+          "height": 120
+        },
+        "grade_area": {
+          "x1": 20,
+          "y1": 0,
+          "x2": 60,
+          "y2": 20
+        },
+        "grade_y": [
+          0,
+          20
+        ],
+        "attr_y": [
+          30,
+          90
+        ],
+        "remaining_y": [
+          100,
+          120
+        ],
+        "attr_x": [
+          0,
+          200
+        ],
+        "remaining_x": [
+          10,
+          160
+        ],
+        "row_height": 19
+      },
+      "artifact": {
+        "file": "calib_tuner.png",
+        "path": "config/calib_tuner.png"
+      }
+    }
+  }
+}

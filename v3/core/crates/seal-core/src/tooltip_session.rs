@@ -56,7 +56,7 @@ fn pointer_failure(id: &str, failure: crate::pointer::PointerFailure) -> Respons
 /// The shared input-lease snapshot: a running foreground tool (or the resident feeder holding the
 /// game) refuses the calibration action with the same `tool_busy` line a start gets. `Some` means the
 /// action is over before it touched the game.
-fn check_input_lease(state: &CoreState, id: &str, command: &str) -> Option<Response> {
+pub(crate) fn check_input_lease(state: &CoreState, id: &str, command: &str) -> Option<Response> {
     let supervisor = state.supervisor.as_ref()?;
     match supervisor.input_lease() {
         Ok(None) => None,

@@ -566,6 +566,12 @@ fn four_numbers(value: &Value) -> Option<[i32; 4]> {
     Some(numbers)
 }
 
+/// Write the calibration environment block through the one local writer (tuner/gem/pet saves that
+/// measured their own frame record the same block `calibration.save` does).
+pub(crate) fn set_environment_block(local: &mut Value, block: Value) {
+    set_path(local, &["calibration"], block);
+}
+
 /// Write the tooltip block through the one local writer (the `calibration.tooltip.save` command).
 pub(crate) fn set_tooltip_block(local: &mut Value, block: Value) {
     set_path(local, &["tooltip"], block);

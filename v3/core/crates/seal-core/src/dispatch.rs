@@ -489,6 +489,8 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         }
         "calibration.tooltip.save" => crate::tooltip_session::save(state, &request),
         "calibration.tooltip.test" => crate::tooltip_session::test(state, &request),
+        "calibration.tuner.check" => crate::tuner_session::check(state, &request),
+        "calibration.tuner.save" => crate::tuner_session::save(state, &request),
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),

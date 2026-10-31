@@ -29,5 +29,6 @@ pub mod startup;
 pub mod supervisor;
 pub mod tooltip_session;
 pub mod tuner;
+pub mod tuner_session;
 pub mod validate;
 pub mod win;

@@ -44,6 +44,8 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.tooltip.hover_capture",
     "calibration.tooltip.save",
     "calibration.tooltip.test",
+    "calibration.tuner.check",
+    "calibration.tuner.save",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -283,6 +285,35 @@ fn cases() -> Vec<Case> {
             "58",
             "calibration.tooltip.test",
             json!({"point": {"x": 120, "y": 240}, "hover_delay_ms": 700, "debug": true}),
+        ),
+        request_case(
+            "request.calibration.tuner.check",
+            "59",
+            "calibration.tuner.check",
+            json!({
+                "frame_id": "f1",
+                "boxes": {
+                    "grade": {"x": 120, "y": 100, "w": 40, "h": 20},
+                    "attr": {"x": 100, "y": 130, "w": 200, "h": 60},
+                    "remaining": {"x": 110, "y": 200, "w": 150, "h": 20}
+                }
+            }),
+        ),
+        request_case(
+            "request.calibration.tuner.save",
+            "60",
+            "calibration.tuner.save",
+            json!({
+                "frame_id": "f1",
+                "boxes": {
+                    "grade": {"x": 120, "y": 100, "w": 40, "h": 20},
+                    "attr": {"x": 100, "y": 130, "w": 200, "h": 60},
+                    "remaining": {"x": 110, "y": 200, "w": 150, "h": 20}
+                },
+                "row_height": 19,
+                "spring_point": {"x": 500, "y": 400},
+                "display": {"dpi_scale": 1.5, "monitor_dpi": 144, "screen": {"w": 1920, "h": 1080}}
+            }),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -891,6 +922,74 @@ fn cases() -> Vec<Case> {
                 ],
                 "region": {"x": 112, "y": 234, "width": 320, "height": 210},
                 "debug_path": "logs/reads/tooltip_20261030_120000.png"
+            }),
+        ),
+        ok_case(
+            "response.ok.tuner_check",
+            "59",
+            json!({
+                "geometry": {
+                    "region": {"left": 100, "top": 100, "width": 200, "height": 120},
+                    "grade_area": {"x1": 20, "y1": 0, "x2": 60, "y2": 20},
+                    "grade_y": [0, 20],
+                    "attr_y": [30, 90],
+                    "remaining_y": [100, 120],
+                    "attr_x": [0, 200],
+                    "remaining_x": [10, 160],
+                    "row_height": 19
+                },
+                "measured_row_height": 19,
+                "grade": "DG",
+                "remaining": 25000,
+                "attributes": [["力量", "+7"], ["敏捷", "+5"], []],
+                "matched": [
+                    {"name": "力量", "category": "stat", "value": 7, "raw": ["力量", "+7"]}
+                ],
+                "filter": {
+                    "enabled": true,
+                    "passed": false,
+                    "reason": "力量 7 is below the 10 minimum",
+                    "hits": []
+                },
+                "warnings": []
+            }),
+        ),
+        ok_case(
+            "response.ok.tuner_save",
+            "60",
+            json!({
+                "rev": 13,
+                "block": {
+                    "ocr": {
+                    "region": {"left": 100, "top": 100, "width": 200, "height": 120},
+                    "grade_area": {"x1": 20, "y1": 0, "x2": 60, "y2": 20},
+                    "grade_y": [0, 20],
+                    "attr_y": [30, 90],
+                    "remaining_y": [100, 120],
+                    "attr_x": [0, 200],
+                    "remaining_x": [10, 160],
+                    "row_height": 19
+                },
+                    "spring_point": [500, 400],
+                    "calibration": {
+                        "dpi_scale": 1.5,
+                        "monitor_dpi": 144,
+                        "screen": {"w": 1920, "h": 1080},
+                        "client_size": [1200, 600],
+                        "measured_at": "2026-10-30T12:00:00Z"
+                    }
+                },
+                "derived": {
+                    "region": {"left": 100, "top": 100, "width": 200, "height": 120},
+                    "grade_area": {"x1": 20, "y1": 0, "x2": 60, "y2": 20},
+                    "grade_y": [0, 20],
+                    "attr_y": [30, 90],
+                    "remaining_y": [100, 120],
+                    "attr_x": [0, 200],
+                    "remaining_x": [10, 160],
+                    "row_height": 19
+                },
+                "artifact": {"file": "calib_tuner.png", "path": "config/calib_tuner.png"}
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────

@@ -96,6 +96,32 @@ impl Default for OcrGeometry {
     }
 }
 
+/// v2 `MeasureLineSpacing`: the measured attribute line pitch, in pixels.
+///
+/// Collapse the boxes' top Ys closer than 3 px into one line (one glyph can be split into several
+/// boxes at nearly the same Y), then take the MEDIAN gap between consecutive lines. `None` when
+/// fewer than two lines were seen, which is v2's own answer and makes the caller keep the configured
+/// `row_height` rather than invent one.
+pub fn measure_line_spacing(items: &[RecognizedLine]) -> Option<u32> {
+    let mut collapsed: Vec<i32> = Vec::new();
+    let mut tops: Vec<i32> = items
+        .iter()
+        .map(|item| item_y(item).round() as i32)
+        .collect();
+    tops.sort_unstable();
+    for y in tops {
+        if collapsed.last().is_none_or(|previous| y - previous > 3) {
+            collapsed.push(y);
+        }
+    }
+    if collapsed.len() < 2 {
+        return None;
+    }
+    let mut gaps: Vec<i32> = collapsed.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    gaps.sort_unstable();
+    u32::try_from(gaps[gaps.len() / 2]).ok()
+}
+
 /// The protocol's one result shape (`PROTOCOL.md` §4): absent fields are `None`/null.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ModeResult {
@@ -515,5 +541,28 @@ mod tests {
 
         let attrs = apply(Mode::Attributes, &scan, &attributes, &geometry);
         assert!(attrs.attributes.is_some());
+    }
+
+    #[test]
+    fn line_spacing_collapses_nearby_tops_and_takes_the_median_gap() {
+        // Two glyph boxes at almost the same Y are ONE line; the gaps are 20, 20, 25 → median 20.
+        let items = vec![
+            item("a", 0.9, 0.0, 0.0),
+            item("b", 0.9, 10.0, 2.0),
+            item("c", 0.9, 0.0, 20.0),
+            item("d", 0.9, 0.0, 40.0),
+            item("e", 0.9, 0.0, 65.0),
+        ];
+        assert_eq!(measure_line_spacing(&items), Some(20));
+    }
+
+    #[test]
+    fn line_spacing_is_none_with_fewer_than_two_collapsed_lines() {
+        assert_eq!(measure_line_spacing(&[]), None);
+        assert_eq!(
+            measure_line_spacing(&[item("a", 0.9, 0.0, 0.0), item("b", 0.9, 5.0, 1.0)]),
+            None,
+            "two boxes at the same Y are one line"
+        );
     }
 }

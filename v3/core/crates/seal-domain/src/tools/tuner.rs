@@ -25,9 +25,9 @@
 //! tool failure); a total read failure or a spring-placement failure → `Error` (v2 put these on the
 //! card's red bar); the mouse guard tripping → `Guard`.
 
-use crate::config::FilterConfig;
+use crate::config::{BoxConfig, FilterConfig, OcrGeometry, RegionConfig};
 use crate::decision::StopReason;
-use crate::geometry::Point;
+use crate::geometry::{Point, Rect};
 use crate::ocr::{AttrMatcher, MatchedAttr};
 
 /// The Start countdown v2 shows before the first click ("5... 4... ..."), in seconds.
@@ -417,3 +417,96 @@ pub fn spring_failed(detail: &str) -> StopReason {
 // The per-grade tally is shared with the gem composer; re-exported here so callers that know it
 // from the tuner can keep importing it from this module.
 pub use crate::tools::grade_cycles::{GradeCycleRow, GradeCycles, describe};
+
+/// v2 `BuildOcrGeometry`: the three dragged boxes become the tuner's OCR region and its bands.
+///
+/// The region is the bounding box of the three boxes, so the window can move/resize and the boxes
+/// only have to surround the text; every sub-band is stored REGION-RELATIVE, which is the space
+/// `seal_ocr::modes` reads. `row_height` is the measured line pitch when the caller has one
+/// (`Check OCR`), else v2's fallback `attr.height / 3` — exact only when the attr box hugs its
+/// three lines. The function is pure; the core owns validation, the shell owns drawing.
+pub fn geometry_from_boxes(
+    grade: Rect,
+    attr: Rect,
+    remaining: Rect,
+    measured_row_height: Option<i32>,
+) -> OcrGeometry {
+    let left = grade.x.min(attr.x).min(remaining.x);
+    let top = grade.y.min(attr.y).min(remaining.y);
+    let right = grade.right().max(attr.right()).max(remaining.right());
+    let bottom = grade.bottom().max(attr.bottom()).max(remaining.bottom());
+    let row_height = measured_row_height
+        .filter(|height| *height > 0)
+        .unwrap_or_else(|| ((f64::from(attr.h)) / 3.0).round().max(1.0) as i32);
+    OcrGeometry {
+        region: Some(RegionConfig {
+            left,
+            top,
+            width: right - left,
+            height: bottom - top,
+        }),
+        grade_area: Some(BoxConfig {
+            x1: grade.x - left,
+            y1: grade.y - top,
+            x2: grade.right() - left,
+            y2: grade.bottom() - top,
+        }),
+        grade_y: vec![grade.y - top, grade.bottom() - top],
+        attr_y: vec![attr.y - top, attr.bottom() - top],
+        remaining_y: vec![remaining.y - top, remaining.bottom() - top],
+        attr_x: vec![attr.x - left, attr.right() - left],
+        remaining_x: vec![remaining.x - left, remaining.right() - left],
+        row_height,
+    }
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+    use crate::geometry::Rect;
+
+    #[test]
+    fn the_region_is_the_bounding_box_and_the_bands_are_region_relative() {
+        let geometry = geometry_from_boxes(
+            Rect::new(120, 100, 40, 20),
+            Rect::new(100, 130, 200, 60),
+            Rect::new(110, 200, 150, 20),
+            None,
+        );
+        assert_eq!(
+            geometry.region,
+            Some(RegionConfig {
+                left: 100,
+                top: 100,
+                width: 200,
+                height: 120,
+            })
+        );
+        assert_eq!(
+            geometry.grade_area,
+            Some(BoxConfig {
+                x1: 20,
+                y1: 0,
+                x2: 60,
+                y2: 20
+            })
+        );
+        assert_eq!(geometry.grade_y, vec![0, 20]);
+        assert_eq!(geometry.attr_y, vec![30, 90]);
+        assert_eq!(geometry.remaining_y, vec![100, 120]);
+        assert_eq!(geometry.attr_x, vec![0, 200]);
+        assert_eq!(geometry.remaining_x, vec![10, 160]);
+        assert_eq!(geometry.row_height, 20, "attr height / 3");
+    }
+
+    #[test]
+    fn a_measured_pitch_overrides_the_attr_height_guess() {
+        let geometry = geometry_from_boxes(
+            Rect::new(0, 0, 20, 20),
+            Rect::new(0, 30, 100, 90),
+            Rect::new(0, 130, 80, 20),
+            Some(19),
+        );
+        assert_eq!(geometry.row_height, 19);
+    }
+}

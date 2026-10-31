@@ -134,6 +134,8 @@ edits; it never re-serialises the whole file (§7).
 | `calibration.tooltip.hover_capture` | `{"point":{"x":120,"y":240},"hover_delay_ms":700}` — client-relative PHYSICAL point; delay optional | `{"frame":{…,"frame_id":"f5"},"display":{…},"placed":{"x":120,"y":240},"line":"…"}` — places the cursor (closed loop), clicks the inert buy/sell `scroll_point` for focus, hovers the point WITHOUT clicking it, waits `hover_delay_ms` (config default 700), captures the full client and caches the frame for the next save (G01). Input lease → `tool_busy`; missing focus point → `bad_request` field `scroll_point`; window/foreground errors as usual. The shell hides itself around the command. |
 | `calibration.tooltip.save` | `{"offset_x":-8,"offset_y":-6,"width":320,"height":210,"hover_delay_ms":900}` — offset fields required; width/height must be ≥20; delay 0..10000, default the current config | `{"rev":18,"block":{"offset_x":-8,"offset_y":-6,"width":320,"height":210,"hover_delay_ms":900}}` — writes the ONE `tooltip` block through the single writer, keeps the rest of the file/foreign blocks, bumps the revision and emits exactly one `config.changed {block:"tooltip"}` AFTER the response. A box under 20×20 is `bad_request` field `width`; offsets are the panel's left/top minus the hover point. |
 | `calibration.tooltip.test` | `{"point":{"x":120,"y":240},"hover_delay_ms":700,"debug":true}` — point required; delay/debug optional (debug default true) | `{"lines":[{"text":"…","score":0.93},…],"region":{"x":112,"y":234,"width":320,"height":210},"debug_path":"logs/reads/tooltip_…png"\|null}` — hovers like `hover_capture`, OCRs the configured region (point + offset/size) and returns the recognised lines with confidence. READ-ONLY. Unset `tooltip` is `bad_request` field `tooltip`; input lease/window/OCR errors as usual. The debug PNG is best-effort and shows exactly the region OCR was given. |
+| `calibration.tuner.check` | `{"frame_id":"f1","boxes":{"grade":{x,y,w,h},"attr":{…},"remaining":{…}},"row_height":19?}` — the three dragged client-relative physical boxes; each ≥4 px; `frame_id` may be omitted (the core captures the full client, shell hides/shows); `row_height` is a previously measured pitch | `{"geometry":{region,grade_area,grade_y,attr_y,remaining_y,attr_x,remaining_x,row_height},"measured_row_height":19,"grade":"DG","remaining":25000,"attributes":[[…],[…],[…]],"matched":[{"name":…,"category":…,"value":…,"raw":[…]},…],"filter":{"enabled":true,"passed":false,"reason":…,"hits":[…]},`warnings`:[…]}` — READ-ONLY (G02). The region is the bounding box of the three boxes and every band is region-relative; `row_height` falls back to `attr.h/3` when nothing was measured. OCR/`ocr_unavailable` and window errors as usual; a tiny box or a frame that does not contain the region is `bad_request` field `boxes`. |
+| `calibration.tuner.save` | `{…check args…,"spring_point":{x,y}?,"display":{dpi_scale,monitor_dpi,screen}?}` | `{"rev":13,"block":{"ocr":{…},"spring_point":[500,400]?,"calibration":{…}?},"derived":{…geometry…},"artifact":{"file":"calib_tuner.png","path":"…"}}` — derives the geometry, writes `tuner.ocr` (and `tuner.spring_point` only when given; the existing one is preserved when absent), stamps the calibration environment (`measured_at` + `client_size` from the frame), draws the three bands on the full-client frame and writes `config/calib_tuner.png` before the block write; one local write, one revision, `config.changed` for `tuner` (and `calibration` when the environment changed) AFTER the response. No OCR is needed for save. Input lease → `tool_busy`; evicted `frame_id` → `bad_request` naming it. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -240,7 +242,8 @@ Notes:
 `pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`,
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
 `calibration.fetch_all`/`calibration.kinds`/`calibration.check`/
-`calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`, `ocr.scan`,
+`calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`/
+`calibration.tuner.check`/`calibration.tuner.save`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.
 
@@ -572,6 +575,14 @@ LANDED as §12.8, not left as a silent omission.
     read-only companion that runs the same hover and OCRs the configured region. The shell hides/
     shows around the capture commands exactly as for `capture`; the offset is computed by the CORE
     from the point it placed, never from a client-side cursor read.
+
+12. **The tuner calibration is a three-box DERIVATION session (G02).** The player drags the grade
+    box, the attribute band and the remaining band on a captured frame; the core derives the OCR
+    region as their bounding box and every sub-band region-relative
+    (`seal_domain::tools::tuner::geometry_from_boxes`), exactly v2's `BuildOcrGeometry`. `check` runs
+    the live OCR/matcher/filter pipeline on the frame so the boxes can be verified before saving;
+    `save` needs no OCR and annotates the full-client frame with the three coloured bands. This is
+    why `tuner_region` stays withdrawn: the three-box command is its real home.
 ## 13. Replay mode (development)
 
 `seal-core --replay <script.json>` serves the SAME stdio protocol from a script instead of from the
