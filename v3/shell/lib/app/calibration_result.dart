@@ -186,6 +186,33 @@ class CalibrationFetchResult {
       : 'Stored mark [${mark!.label}] (rev $rev)';
 }
 
+/// One annotated reference screenshot the core echoes in `calibration.fetch`/`fetch_all`'s
+/// `gallery`: the session saves' own `calib_*.png` images, with natural dimensions and bytes.
+class CalibrationGalleryEntry {
+  const CalibrationGalleryEntry({
+    required this.name,
+    required this.file,
+    required this.width,
+    required this.height,
+    required this.pngBase64,
+  });
+
+  final String name;
+  final String file;
+  final int width;
+  final int height;
+  final String pngBase64;
+
+  factory CalibrationGalleryEntry.fromJson(JsonMap map) =>
+      CalibrationGalleryEntry(
+        name: asString(map['name']) ?? '?',
+        file: asString(map['file']) ?? '?',
+        width: asNumber(map['width'])?.round() ?? 0,
+        height: asNumber(map['height'])?.round() ?? 0,
+        pngBase64: asString(map['png_base64']) ?? '',
+      );
+}
+
 /// `calibration.fetch_all`'s answer (G08): every stored mark plus the environment block in ONE
 /// request, instead of the shell's old 35-fetch opening loop.
 class CalibrationFetchAllResult {
@@ -193,6 +220,7 @@ class CalibrationFetchAllResult {
     required this.rev,
     required this.marks,
     this.calibration,
+    this.gallery = const [],
   });
 
   final int rev;
@@ -200,6 +228,9 @@ class CalibrationFetchAllResult {
 
   /// The stored `calibration` environment block (null when nothing was ever saved).
   final JsonMap? calibration;
+
+  /// The session saves' annotated reference screenshots that exist beside the config files.
+  final List<CalibrationGalleryEntry> gallery;
 
   factory CalibrationFetchAllResult.fromJson(JsonMap map) {
     final rev = asNumber(map['rev'])?.round() ?? 0;
@@ -223,12 +254,24 @@ class CalibrationFetchAllResult {
         );
       }
     }
+    final gallery = <CalibrationGalleryEntry>[];
+    final rawGallery = map['gallery'];
+    if (rawGallery is List) {
+      for (final entry in rawGallery) {
+        if (entry is Map) {
+          gallery.add(
+            CalibrationGalleryEntry.fromJson(entry.cast<String, Object?>()),
+          );
+        }
+      }
+    }
     return CalibrationFetchAllResult(
       rev: rev,
       marks: marks,
       calibration: map['calibration'] is Map
           ? asJsonMap(map['calibration'])
           : null,
+      gallery: gallery,
     );
   }
 }

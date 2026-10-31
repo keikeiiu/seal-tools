@@ -1,10 +1,16 @@
 /// The Calibrate workspace's reference-image gallery: what image artifacts actually exist, and what
 /// each one is.
 ///
-/// Truthful states only (CALIBRATION §5/§7): the result-gem crop is the ONE shipped binary artifact and
-/// it exists only after an `empty: true` save; the pet crops are learned by the Pet run (not frame
-/// marks); `calib_tuner.png`/`calib_gem.png` are v2 conventions no v3 tool reads. A missing image is
-/// said to be missing — no placeholder is dressed up as a capture.
+/// Every reference screenshot is written by a v3 session save and echoed by the core's
+/// `calibration.fetch`/`fetch_all` `gallery`:
+///
+/// - `calib_tuner.png` — Calibrate Tuner's Save (the three OCR bands drawn);
+/// - `calib_gem.png` — Calibrate Gem's Save (click points + result box);
+/// - `calib_pet.png` — Calibrate Pet's Save (row boxes/strips);
+/// - `calib_gem_result.png` — the result-gem crop, also the empty-result reference.
+///
+/// A missing file is said to be missing — no placeholder is dressed up as a capture, and there is no
+/// "v2 only" state any more: v3 writes all four.
 ///
 /// [CALIBRATION.md]: ../../../docs/spec/CALIBRATION.md
 library;
@@ -18,14 +24,30 @@ import '../../theme.dart';
 import '../calibration_widgets.dart' show CalibrationCropPicture;
 
 class ReferenceGalleryPanel extends StatelessWidget {
-  const ReferenceGalleryPanel({super.key, required this.stored});
+  const ReferenceGalleryPanel({
+    super.key,
+    required this.stored,
+    this.gallery = const [],
+  });
 
-  /// The stored-map fetches: `result_gem_area`'s artifact is the crop, when present.
+  /// The stored-map fetches: `result_gem_area`'s artifact is the empty-result crop.
   final Map<String, CalibrationFetchResult> stored;
+
+  /// The session saves' annotated screenshots, as the core echoes them.
+  final List<CalibrationGalleryEntry> gallery;
+
+  CalibrationGalleryEntry? _entry(String name) {
+    for (final entry in gallery) {
+      if (entry.name == name) return entry;
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final crop = stored['result_gem_area']?.artifact;
+    final theme = Theme.of(context);
+    final resultCrop = stored['result_gem_area']?.artifact;
+    final resultEntry = _entry('gem_result');
     return SurfacePanel(
       title: 'Reference images',
       padding: const EdgeInsets.all(ShellSpace.md),
@@ -36,20 +58,49 @@ class ReferenceGalleryPanel extends StatelessWidget {
             key: const ValueKey('calibrate-gallery-result-gem'),
             icon: Icons.image_outlined,
             title: 'Result gem crop',
-            description: crop == null
+            description: resultCrop == null && resultEntry == null
                 ? 'calib_gem_result.png — not captured. Save the result gem area with '
                       '"the box is empty now" to write the strong empty-result reference.'
                 : 'calib_gem_result.png — present. The strong empty-result test; the colour '
                       'signature is only its fallback.',
-            chip: crop == null
+            chip: resultCrop == null && resultEntry == null
                 ? const _GalleryChip('not captured', StatusKind.muted)
                 : const _GalleryChip('present', StatusKind.success),
-            preview: crop == null
-                ? null
-                : CalibrationCropPicture(
-                    file: crop.file,
-                    pngBase64: crop.pngBase64,
-                  ),
+            preview: resultCrop != null
+                ? CalibrationCropPicture(
+                    file: resultCrop.file,
+                    pngBase64: resultCrop.pngBase64,
+                  )
+                : resultEntry != null
+                ? CalibrationCropPicture(
+                    file: resultEntry.file,
+                    pngBase64: resultEntry.pngBase64,
+                  )
+                : null,
+          ),
+          _referenceRow(
+            key: const ValueKey('calibrate-gallery-tuner'),
+            name: 'tuner',
+            title: 'calib_tuner.png (OCR bands drawn)',
+            description:
+                'Written by Calibrate Tuner → Save. The captured frame with the grade, '
+                'attribute and remaining bands outlined.',
+          ),
+          _referenceRow(
+            key: const ValueKey('calibrate-gallery-gem'),
+            name: 'gem',
+            title: 'calib_gem.png (points drawn)',
+            description:
+                'Written by Calibrate Gem → Save. The captured frame with the grade/Register/'
+                'Combine and resource points dotted and the result box outlined.',
+          ),
+          _referenceRow(
+            key: const ValueKey('calibrate-gallery-pet'),
+            name: 'pet',
+            title: 'calib_pet.png (row marks drawn)',
+            description:
+                'Written by Calibrate Pet → Save. The captured frame with each row\'s toggle, '
+                'boarding slot and feeder strip outlined.',
           ),
           _GalleryRow(
             key: const ValueKey('calibrate-gallery-pet-crops'),
@@ -57,38 +108,44 @@ class ReferenceGalleryPanel extends StatelessWidget {
             title: 'Pet slot-empty / close-X crops',
             description:
                 'Captured from the running game on the Pet tab and by the Pet run '
-                '(the close-X crop is learned); stored as base64 crops in local.yaml. '
-                'Session features, not frame marks.',
+                '(the close-X crop is learned); stored as base64 crops in the config.',
             chip: const _GalleryChip('run-learned', StatusKind.info),
-          ),
-          _GalleryRow(
-            key: const ValueKey('calibrate-gallery-v2-tuner'),
-            icon: Icons.article_outlined,
-            title: 'calib_tuner.png (bands drawn)',
-            description:
-                'v2 wrote a reference screenshot with the OCR bands drawn on it. v3 does not, '
-                'and no tool reads it — kept only for migration.',
-            chip: const _GalleryChip('v2 only', StatusKind.muted),
-          ),
-          _GalleryRow(
-            key: const ValueKey('calibrate-gallery-v2-gem'),
-            icon: Icons.article_outlined,
-            title: 'calib_gem.png (points drawn)',
-            description:
-                'v2 wrote a reference screenshot with the click points and result box drawn on '
-                'it. v3 does not, and no tool reads it — kept only for migration.',
-            chip: const _GalleryChip('v2 only', StatusKind.muted),
           ),
           const SizedBox(height: ShellSpace.xxs),
           Text(
-            'One artifact is written by v3 today: the result-gem crop. The other entries are the '
-            'honest state of v2 images and run-learned crops.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            'All four reference screenshots are written by v3 session saves; a row says '
+            '"not captured" until its Save has run.',
+            key: const ValueKey('calibrate-gallery-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _referenceRow({
+    required Key key,
+    required String name,
+    required String title,
+    required String description,
+  }) {
+    final entry = _entry(name);
+    return _GalleryRow(
+      key: key,
+      icon: Icons.article_outlined,
+      title: title,
+      description: description,
+      chip: entry == null
+          ? const _GalleryChip('not captured', StatusKind.muted)
+          : const _GalleryChip('present', StatusKind.success),
+      preview: entry == null
+          ? null
+          : CalibrationCropPicture(
+              file: entry.file,
+              pngBase64: entry.pngBase64,
+            ),
     );
   }
 }
@@ -133,7 +190,7 @@ class _GalleryRow extends StatelessWidget {
                   runSpacing: ShellSpace.xxs,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(title, style: theme.textTheme.labelLarge),
+                    Text(title, style: theme.textTheme.labelMedium),
                     chip,
                   ],
                 ),

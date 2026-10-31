@@ -2030,4 +2030,59 @@ void main() {
     await _flush(tester);
     expect(find.textContaining('1 slot(s) read'), findsOneWidget);
   });
+
+  testWidgets('the gallery shows the session saves as present, not v2 only', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch_all' => {
+          'result': {
+            'rev': 9,
+            'calibration': {'dpi_scale': 1.5},
+            'marks': [
+              {
+                'kind': 'bag_grid',
+                'target': null,
+                'mark': [10, 20, 30, 40],
+                'artifact': null,
+              },
+            ],
+            'gallery': [
+              for (final name in ['tuner', 'gem', 'pet'])
+                {
+                  'name': name,
+                  'file': 'calib_$name.png',
+                  'width': 4,
+                  'height': 3,
+                  'png_base64': _tinyPng,
+                },
+            ],
+            'withdrawn': <Map<String, dynamic>>[],
+          },
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': null,
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    expect(find.text('present'), findsNWidgets(3));
+    expect(find.text('v2 only'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('calibrate-gallery-tuner')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('calibrate-gallery-gem')), findsOneWidget);
+    expect(find.byKey(const ValueKey('calibrate-gallery-pet')), findsOneWidget);
+  });
 }

@@ -190,7 +190,7 @@ widths and stacks them under the prose when the window is narrow.
   **Copy as YAML** copies the saved marks as a small YAML document to the clipboard (a read of values
   already on screen; it writes nothing and is not a config import).
 - **Reference images:** result-gem crop (present/not captured), pet crops marked "run-learned", v2
-  annotated screenshots marked "v2 only" — truthful states, no invented artifacts.
+  annotated screenshots written by the v3 session saves and marked present/not captured — truthful states, no invented artifacts, and no v2-only state.
 - **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
   `StatusBanner` "recalibrate before running a tool" (client-size/screen invalidates every point, scale
   alone does not; no auto-anchor, no proportional transform).

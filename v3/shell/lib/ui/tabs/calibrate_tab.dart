@@ -116,6 +116,9 @@ class _CalibrateTabState extends State<CalibrateTab>
   final Map<String, CalibrationFetchResult> _stored = {};
   final Map<String, String> _storedErrors = {};
 
+  /// The session saves' annotated reference screenshots the core echoed in `fetch_all` (G04).
+  List<CalibrationGalleryEntry> _gallery = const [];
+
   /// The `calibration` block signature when the stored marks were last loaded; a change means another
   /// writer touched the stored calibration.
   String? _storedConfigSignature;
@@ -187,6 +190,7 @@ class _CalibrateTabState extends State<CalibrateTab>
       setState(() {
         _stored.clear();
         _storedErrors.clear();
+        _gallery = all.value!.gallery;
         for (final mark in all.value!.marks) {
           final key = calibrationStoredKey(mark.kind, mark.target);
           if (slots.contains(key)) {
@@ -675,7 +679,10 @@ class _CalibrateTabState extends State<CalibrateTab>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _buildMarkEditor(theme),
-                        ReferenceGalleryPanel(stored: _stored),
+                        ReferenceGalleryPanel(
+                          stored: _stored,
+                          gallery: _gallery,
+                        ),
                       ],
                     );
                     if (!wide) {
