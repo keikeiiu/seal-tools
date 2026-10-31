@@ -1835,4 +1835,93 @@ void main() {
     await _flush(tester);
     expect(find.text('panel line one'), findsOneWidget);
   });
+
+  testWidgets('the tuner session captures, checks and saves three boxes', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f9')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': null,
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        'calibration.tuner.check' => {
+          'result': {
+            'geometry': {
+              'region': {'left': 0, 'top': 0, 'width': 300, 'height': 200},
+            },
+            'measured_row_height': 19,
+            'grade': 'DG',
+            'remaining': 25000,
+            'attributes': <List<String>>[],
+            'matched': [
+              {'name': 'STR', 'value': 10},
+            ],
+            'filter': {'enabled': true, 'passed': true, 'reason': 'ok'},
+            'warnings': <String>[],
+          },
+        },
+        'calibration.tuner.save' => {
+          'result': {
+            'rev': 12,
+            'block': {
+              'tuner': {'ocr': <String, dynamic>{}},
+            },
+            'derived': <String, dynamic>{},
+            'artifact': {
+              'file': 'calib_tuner.png',
+              'path': 'config/calib_tuner.png',
+            },
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    final capture = find.byKey(const ValueKey('session-tuner-capture'));
+    await tester.ensureVisible(capture);
+    await tester.tap(capture);
+    await _flush(tester);
+
+    final check = find.byKey(const ValueKey('session-tuner-check'));
+    await tester.ensureVisible(check);
+    await tester.tap(check);
+    await _flush(tester);
+    final checkArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'calibration.tuner.check',
+            )['args']
+            as Map<String, dynamic>;
+    expect(checkArgs['frame_id'], 'f9');
+    final boxes = checkArgs['boxes'] as Map<String, dynamic>;
+    expect((boxes['grade'] as Map<String, dynamic>)['w'], 100);
+    expect(find.byKey(const ValueKey('session-tuner-matched')), findsOneWidget);
+
+    final save = find.byKey(const ValueKey('session-tuner-save'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await _flush(tester);
+    final saveArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'calibration.tuner.save',
+            )['args']
+            as Map<String, dynamic>;
+    expect(saveArgs['frame_id'], 'f9');
+    expect(saveArgs['display'], isNotNull);
+    expect(saveArgs['display']['dpi_scale'], 1.5);
+    expect(find.textContaining('tuner saved'), findsOneWidget);
+  });
 }

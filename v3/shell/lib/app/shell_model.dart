@@ -724,6 +724,48 @@ class ShellModel extends ChangeNotifier {
     },
   );
 
+  /// `calibration.tuner.check`: the three boxes' derived geometry + one OCR/filter read (G02). Pure;
+  /// no write. The boxes are client-relative physical rects.
+  Future<CoreActionResult<JsonMap>> tunerCheck({
+    required String frameId,
+    required Map<String, Map<String, int>> boxes,
+    int? rowHeight,
+    int? springX,
+    int? springY,
+  }) => _coreAction(
+    'calibration.tuner.check',
+    (result) => result,
+    args: {
+      'frame_id': frameId,
+      'boxes': boxes,
+      'row_height': ?rowHeight,
+      if (springX != null && springY != null)
+        'spring_point': {'x': springX, 'y': springY},
+    },
+  );
+
+  /// `calibration.tuner.save`: writes `tuner.ocr` (and `tuner.spring_point` when given), stamps the
+  /// environment and writes the annotated `calib_tuner.png` (G02).
+  Future<CoreActionResult<JsonMap>> tunerSave({
+    required String frameId,
+    required Map<String, Map<String, int>> boxes,
+    required DisplayInfo display,
+    int? rowHeight,
+    int? springX,
+    int? springY,
+  }) => _coreAction(
+    'calibration.tuner.save',
+    (result) => result,
+    args: {
+      'frame_id': frameId,
+      'boxes': boxes,
+      'row_height': ?rowHeight,
+      if (springX != null && springY != null)
+        'spring_point': {'x': springX, 'y': springY},
+      'display': calibrationDisplayJson(display),
+    },
+  );
+
   /// `calibration.check {}`: the core's canonical comparison of the stored calibration with this PC
   /// (G09). READ-ONLY: the game being closed is a result with a note, never an error.
   Future<CoreActionResult<JsonMap>> calibrationCheck() =>

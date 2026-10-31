@@ -18,6 +18,7 @@ import '../../../app/core_actions.dart';
 import '../../../app/host_actions.dart';
 import '../../../app/shell_model.dart';
 import '../../../protocol/json.dart';
+import '../../../protocol/types.dart';
 import '../../components/status_chip.dart';
 import '../../components/surface_panel.dart';
 import '../../theme.dart';
@@ -52,6 +53,32 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   Uint8List? _preview;
   List<String> _lines = const [];
 
+  // G02 tuner session: three boxes on a captured frame.
+  final Map<String, TextEditingController> _boxFields = {
+    for (final key in [
+      'grade.x',
+      'grade.y',
+      'grade.w',
+      'grade.h',
+      'attr.x',
+      'attr.y',
+      'attr.w',
+      'attr.h',
+      'remaining.x',
+      'remaining.y',
+      'remaining.w',
+      'remaining.h',
+    ])
+      key: TextEditingController(
+        text: key.endsWith('.w') || key.endsWith('.h') ? '100' : '0',
+      ),
+  };
+  final _rowHeight = TextEditingController(text: '0');
+  final _springX = TextEditingController(text: '0');
+  final _springY = TextEditingController(text: '0');
+  CaptureResult? _tunerCapture;
+  JsonMap? _tunerCheck;
+
   @override
   void dispose() {
     for (final controller in [
@@ -65,6 +92,12 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     ]) {
       controller.dispose();
     }
+    for (final controller in _boxFields.values) {
+      controller.dispose();
+    }
+    _rowHeight.dispose();
+    _springX.dispose();
+    _springY.dispose();
     super.dispose();
   }
 
@@ -145,6 +178,201 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       x: _number(_x) ?? 0,
       y: _number(_y) ?? 0,
       hoverDelayMs: _number(_delay),
+    ),
+  );
+
+  Map<String, Map<String, int>> _boxes() {
+    final boxes = <String, Map<String, int>>{};
+    for (final name in ['grade', 'attr', 'remaining']) {
+      boxes[name] = {
+        'x': _number(_boxFields['$name.x']!) ?? 0,
+        'y': _number(_boxFields['$name.y']!) ?? 0,
+        'w': _number(_boxFields['$name.w']!) ?? 0,
+        'h': _number(_boxFields['$name.h']!) ?? 0,
+      };
+    }
+    return boxes;
+  }
+
+  Future<void> _captureTuner() async {
+    setState(() {
+      _busy = true;
+      _status = null;
+      _failed = false;
+    });
+    try {
+      await widget.host.hideWindow();
+    } catch (_) {}
+    final result = await widget.model.captureFrame();
+    try {
+      await widget.host.showWindow();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _failed = !result.ok;
+      if (!result.ok) {
+        _status = result.errorLine;
+        return;
+      }
+      _tunerCapture = result.value!;
+      _status =
+          'captured ${result.value!.frame.frameId} — drag the three boxes';
+    });
+  }
+
+  Future<void> _checkTuner() async {
+    final capture = _tunerCapture;
+    if (capture == null) {
+      setState(() {
+        _failed = true;
+        _status = 'Capture the screen first.';
+      });
+      return;
+    }
+    final result = await widget.model.tunerCheck(
+      frameId: capture.frame.frameId,
+      boxes: _boxes(),
+      rowHeight: _number(_rowHeight),
+    );
+    if (!mounted) return;
+    setState(() {
+      _failed = !result.ok;
+      if (!result.ok) {
+        _status = result.errorLine;
+        return;
+      }
+      _tunerCheck = result.value;
+      final grade = result.value!['grade'] ?? '?';
+      final remaining = result.value!['remaining'] ?? '?';
+      final warnings = result.value!['warnings'];
+      _status =
+          'check: grade $grade, remaining $remaining'
+          '${warnings is List && warnings.isNotEmpty ? ' — ${warnings.first}' : ''}';
+    });
+  }
+
+  Future<void> _saveTuner() async {
+    final capture = _tunerCapture;
+    if (capture == null) {
+      setState(() {
+        _failed = true;
+        _status = 'Capture the screen first.';
+      });
+      return;
+    }
+    final result = await widget.model.tunerSave(
+      frameId: capture.frame.frameId,
+      boxes: _boxes(),
+      display: capture.display,
+      rowHeight: _number(_rowHeight),
+      springX: _number(_springX),
+      springY: _number(_springY),
+    );
+    if (!mounted) return;
+    setState(() {
+      _failed = !result.ok;
+      _status = result.ok
+          ? 'tuner saved (rev ${result.value!['rev'] ?? '?'})'
+          : result.errorLine;
+    });
+  }
+
+  Widget _tunerSection(ThemeData theme, ColorScheme colors) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text('Tuner OCR 3-box', style: theme.textTheme.labelLarge),
+            StatusChip(
+              kind: _tunerCapture == null
+                  ? StatusKind.muted
+                  : StatusKind.success,
+              label: _tunerCapture == null ? 'needs capture' : 'captured',
+            ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text(
+          'The tuner three-box session: capture the screen, enter grade/attribute/remaining boxes '
+          'and Check before Save. The region, bands and row pitch are derived by the core.',
+          key: const ValueKey('calibrate-tuner-note'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        for (final name in ['grade', 'attr', 'remaining'])
+          Padding(
+            padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+            child: Wrap(
+              spacing: ShellSpace.sm,
+              runSpacing: ShellSpace.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 70,
+                  child: Text(name, style: theme.textTheme.bodySmall),
+                ),
+                for (final axis in ['x', 'y', 'w', 'h'])
+                  _boxField('$name.$axis', _boxFields['$name.$axis']!),
+              ],
+            ),
+          ),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            _fieldBox('row h', _rowHeight, 'session-tuner-row-height'),
+            _fieldBox('spring x', _springX, 'session-tuner-spring-x'),
+            _fieldBox('spring y', _springY, 'session-tuner-spring-y'),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            OutlinedButton(
+              key: const ValueKey('session-tuner-capture'),
+              onPressed: _busy ? null : _captureTuner,
+              child: const Text('Capture screen'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('session-tuner-check'),
+              onPressed: _busy ? null : _checkTuner,
+              child: const Text('Check boxes'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('session-tuner-save'),
+              onPressed: _busy ? null : _saveTuner,
+              child: const Text('Save tuner'),
+            ),
+          ],
+        ),
+        if (_tunerCheck != null && _tunerCheck!['matched'] is List) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            'matched ${(_tunerCheck!['matched'] as List).length} attribute row(s)',
+            key: const ValueKey('session-tuner-matched'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _boxField(String key, TextEditingController controller) => SizedBox(
+    width: 74,
+    child: TextField(
+      key: ValueKey('session-tuner-$key'),
+      controller: controller,
+      decoration: InputDecoration(labelText: key, isDense: true),
+      keyboardType: TextInputType.number,
     ),
   );
 
@@ -248,7 +476,8 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
               style: theme.textTheme.bodySmall,
             ),
           const SizedBox(height: ShellSpace.md),
-          _locked(context, 'tuner', 'Tuner OCR 3-box'),
+          _tunerSection(theme, colors),
+          const SizedBox(height: ShellSpace.md),
           _locked(context, 'pet', 'Pet reference crops'),
         ],
       ),
