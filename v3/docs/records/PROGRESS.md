@@ -19,6 +19,24 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)
+
+The player asked for the harness-style hideable sidebar. `_ShellPageState` now carries
+`_railVisible` (session-only): while true the 216 px `ShellRail` is a `Row` child; while false the row
+omits it so the content panel gets the full width, and the selected tab/draft is untouched (the
+`IndexedStack` is unchanged). The top bar gained a leading `rail-toggle` `IconButton`
+(`view_sidebar`/`view_sidebar_outlined`, tooltip says Hide/Show sidebar (Ctrl+B)) and the page's
+`CallbackShortcuts` gained `Ctrl+B` beside the existing Ctrl+L/Esc. The status strip hint now reads
+`Ctrl+B sidebar · Ctrl+L logs` (plus `· Esc close` when the drawer is open), so the shortcut is
+discoverable without hovering. No persistence: the rail is visible again on the next launch, matching
+the mini bar's session-only placement. There is no core/protocol change.
+
+The widget test (`shell_page_test.dart`, "the rail collapses from the top bar and Ctrl+B") pins both
+entry points and that hiding keeps `cards-list` while removing `shell-rail`. Full shell gates:
+`flutter analyze` No issues, `flutter test` **304/304**, `dart format` clean, Windows debug build OK.
+The new chrome is described in [UI.md §Chrome](../spec/UI.md#chrome-phase-1), and the EN/zh-TW
+USER_GUIDEs now name the sidebar toggle and Ctrl+B.
+
 ## 2026-11-01 (30) — the mini running bar ships: 360 × 96, borderless, one-click Stop
 
 Landed in `2b4c8b2` (shell + runner + tests + USER_GUIDE/spec). The player's requested shape was

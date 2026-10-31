@@ -71,11 +71,13 @@ along the bottom. When the core stops or cannot start, the whole page becomes th
   **Logs** button, the **always-on-top pin** (`Keep Seal Tools on top`) and the small product version. (The shell↔core
   protocol client identity is a separate engineering value documented in `PROTOCOL.md`; it does not
   follow the product version.) There is **no Hold Space toggle any more**: Hold Space is a card on the
-  Cards screen (section 2.3).
+  Cards screen (section 2.3). The leftmost button is the **sidebar toggle** (Ctrl+B).
 - **The rail:** one row per screen, grouped by job, with a badge on **Cards** counting the running
-  tools. The rail replaced the twelve-tab strip; a running tool never moves the rail.
+  tools. The rail replaced the twelve-tab strip; a running tool never moves the rail. The top bar's
+  sidebar button (or Ctrl+B) hides the rail so the content uses the whole width; the rail returns on
+  the next launch (the choice is session-only).
 - **The status strip:** `core <version> · rev <n>` and the **root** folder the core is using on the
-  left, and the `Ctrl+L logs` hint on the right.
+  left, and the `Ctrl+B sidebar · Ctrl+L logs` hints on the right.
 
 
 **The always-on-top pin.** A filled pin keeps the shell window above the game and other windows;

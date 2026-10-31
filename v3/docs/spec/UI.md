@@ -50,16 +50,20 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
   a `rail-<key>` ValueKey; the Cards row shows a badge with the running-tool count (Hold Space included).
   Selecting builds the destination lazily and keeps it alive in an `IndexedStack`, so drafts survive
   navigation exactly as they did with the old kept-alive tabs. **Hold Space has no rail row** — it has
-  nothing to configure.
-- **Top bar (48 px):** the compact core status line (`core ready · rev <n> · <window title>`; a success
-  dot, not a pill) on the left, the outlined **Logs (N)** button (a list icon), the always-on-top pin
+  nothing to configure. **The rail can be hidden** with the top bar's `rail-toggle` sidebar button or
+  **Ctrl+B**; hiding it removes the rail from the row so the content panel takes the full width (the
+  selected tab and its draft are unchanged). The choice is session-only — the rail is visible again on
+  the next launch.
+- **Top bar (48 px):** the `rail-toggle` sidebar button (`view_sidebar`, tooltip Hide/Show sidebar
+  (Ctrl+B)) leads; then the compact core status line (`core ready · rev <n> · <window title>`; a success
+  dot, not a pill), the outlined **Logs (N)** button (a list icon), the always-on-top pin
   (`app-bar-always-on-top`) and the product version on the right. There is **no in-app "Seal Tools"
   brand**: the native Win32 caption already carries the window title, so repeating it in the bar only
   competed with the status. **There is no Hold Space toggle.** While a foreground tool runs (Pet
   excluded) an `app-bar-mini` picture-in-picture action appears to collapse into the mini bar.
 - **Status strip (28 px):** a top hairline, core version/rev on the left, the core's root, and
-  `Ctrl+L logs` (or `Ctrl+L logs · Esc close` while the drawer is open) on the right. It advertises the
-  shortcut; the drawer is opened from the top bar or Ctrl+L.
+  `Ctrl+B sidebar · Ctrl+L logs` (plus `· Esc close` while the drawer is open) on the right. It
+  advertises the shortcuts; the drawer and rail are opened from the top bar or their shortcut.
 - **Logs drawer (`LogDrawer`):** 238 px along the bottom of the content, **newest line first at the
   top** (the model appends oldest→newest; the builder walks backwards), a fixed 44 px level badge per
   line (info/warn/error, `note` for shell notes, stderr = error), a fixed origin column (stderr/shell),
@@ -283,7 +287,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 303/303; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 304/304; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

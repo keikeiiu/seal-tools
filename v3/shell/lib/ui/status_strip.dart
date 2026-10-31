@@ -1,9 +1,9 @@
-/// The bottom status strip: core identity on the left, the logs shortcut hint on the right
+/// The bottom status strip: core identity on the left, the shortcut hints on the right
 /// ([PLAN-V3-UI-UX.md] §6 Chrome).
 ///
 /// It reads the model only. The root path is the core's from `hello` — the shell renders it and
-/// never rewrites files under it ([DESIGN.md] §4). The logs drawer itself is toggled from the top
-/// bar or Ctrl+L; the strip only advertises the shortcut.
+/// never rewrites files under it ([DESIGN.md] §4). The logs drawer and the rail are toggled from the
+/// top bar or Ctrl+L / Ctrl+B; the strip only advertises the shortcuts.
 ///
 /// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 /// [DESIGN.md]: ../../../docs/spec/DESIGN.md
@@ -66,7 +66,9 @@ class StatusStrip extends StatelessWidget {
               ),
             ),
             Text(
-              logsVisible ? 'Ctrl+L logs · Esc close' : 'Ctrl+L logs',
+              logsVisible
+                  ? 'Ctrl+B sidebar · Ctrl+L logs · Esc close'
+                  : 'Ctrl+B sidebar · Ctrl+L logs',
               key: const ValueKey('logs-hint'),
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

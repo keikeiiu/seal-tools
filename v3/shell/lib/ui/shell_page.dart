@@ -54,6 +54,10 @@ class _ShellPageState extends State<ShellPage> {
   int _selected = 0;
   bool _logsVisible = false;
 
+  /// The rail can be collapsed to give the content panel the whole width (session-only, like the
+  /// harness/GUI sidebar): the top-bar toggle or Ctrl+B.
+  bool _railVisible = true;
+
   /// The full shell's subtree key: the mini bar keeps the shell mounted (and every tab's draft
   /// alive) by reparenting this keyed subtree offstage while the window is collapsed.
   final GlobalKey _shellKey = GlobalKey(debugLabel: 'full-shell');
@@ -72,6 +76,8 @@ class _ShellPageState extends State<ShellPage> {
   }
 
   void _toggleLogs() => setState(() => _logsVisible = !_logsVisible);
+
+  void _toggleRail() => setState(() => _railVisible = !_railVisible);
 
   /// Esc is the demo's close key for the logs drawer; it must not steal Esc from the rest of the
   /// shell, so it only acts when the drawer is open (a closed drawer swallows nothing).
@@ -183,6 +189,8 @@ class _ShellPageState extends State<ShellPage> {
         bindings: {
           const SingleActivator(LogicalKeyboardKey.keyL, control: true):
               _toggleLogs,
+          const SingleActivator(LogicalKeyboardKey.keyB, control: true):
+              _toggleRail,
           const SingleActivator(LogicalKeyboardKey.escape): _closeLogs,
         },
         child: Focus(
@@ -192,17 +200,20 @@ class _ShellPageState extends State<ShellPage> {
               _TopBar(
                 model: model,
                 logsVisible: _logsVisible,
+                railVisible: _railVisible,
                 onToggleLogs: _toggleLogs,
+                onToggleRail: _toggleRail,
                 onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
               ),
               Expanded(
                 child: Row(
                   children: [
-                    ShellRail(
-                      selected: _selected,
-                      onSelect: _select,
-                      runningCount: cardRunningCount(model),
-                    ),
+                    if (_railVisible)
+                      ShellRail(
+                        selected: _selected,
+                        onSelect: _select,
+                        runningCount: cardRunningCount(model),
+                      ),
                     Expanded(
                       child: Column(
                         children: [
@@ -254,13 +265,17 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.model,
     required this.logsVisible,
+    required this.railVisible,
     required this.onToggleLogs,
+    required this.onToggleRail,
     required this.onTogglePin,
   });
 
   final ShellModel model;
   final bool logsVisible;
+  final bool railVisible;
   final VoidCallback onToggleLogs;
+  final VoidCallback onToggleRail;
   final VoidCallback onTogglePin;
 
   @override
@@ -276,7 +291,20 @@ class _TopBar extends StatelessWidget {
           child: Row(
             children: [
               // The window title ("Seal Tools v3") is the native Win32 caption, so the bar starts
-              // with the core's state instead of repeating the product name.
+              // with the sidebar toggle and then the core's state instead of repeating the product
+              // name.
+              IconButton(
+                key: const ValueKey('rail-toggle'),
+                tooltip: railVisible
+                    ? 'Hide sidebar (Ctrl+B)'
+                    : 'Show sidebar (Ctrl+B)',
+                isSelected: railVisible,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.view_sidebar_outlined),
+                selectedIcon: const Icon(Icons.view_sidebar),
+                onPressed: onToggleRail,
+              ),
+              const SizedBox(width: ShellSpace.xs),
               _CoreStatus(model: model),
               const Spacer(),
               if (ready && model.miniCandidate != null)

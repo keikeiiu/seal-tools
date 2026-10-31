@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/app/version.dart';
@@ -127,6 +128,31 @@ void main() {
       );
     },
   );
+
+  testWidgets('the rail collapses from the top bar and Ctrl+B', (tester) async {
+    await _pumpShell(tester);
+    expect(find.byKey(const ValueKey('shell-rail')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('rail-toggle')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('shell-rail')),
+      findsNothing,
+      reason: 'the rail is page chrome, not a tab: hiding it must not unmount it forever',
+    );
+    expect(find.byKey(const ValueKey('cards-list')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('rail-toggle')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('shell-rail')), findsOneWidget);
+
+    // Ctrl+B is the same toggle, so the sidebar is reachable without aiming at the button.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('shell-rail')), findsNothing);
+  });
 
   testWidgets(
     'state events update cards, including rows:[] and a two-row card',
