@@ -1718,4 +1718,121 @@ void main() {
     );
     expect(find.textContaining('10, 20, 30, 40'), findsWidgets);
   });
+
+  testWidgets('the tooltip session drives hover, save and test over the core', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch_all' => {
+          'result': {
+            'rev': 9,
+            'marks': <Map<String, dynamic>>[],
+            'calibration': null,
+            'withdrawn': <Map<String, dynamic>>[],
+          },
+        },
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': null,
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        'calibration.tooltip.hover_capture' => {
+          'result': {
+            'frame': {
+              'format': 'png',
+              'width': 4,
+              'height': 3,
+              'origin': {'x': 0, 'y': 0},
+              'data': _tinyPng,
+              'frame_id': 'f2',
+            },
+            'display': _displayJson(),
+            'placed': {'x': 300, 'y': 400},
+            'line': 'hover captured',
+          },
+        },
+        'calibration.tooltip.save' => {
+          'result': {
+            'rev': 8,
+            'block': {
+              'tooltip': {'offset_x': -8, 'offset_y': -6},
+            },
+          },
+        },
+        'calibration.tooltip.test' => {
+          'result': {
+            'lines': [
+              {'text': 'panel line one', 'score': 0.9},
+            ],
+            'region': {'x': 292, 'y': 394, 'width': 320, 'height': 210},
+            'debug_path': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    final hover = find.byKey(const ValueKey('session-tooltip-hover'));
+    await tester.ensureVisible(hover);
+    await tester.tap(hover);
+    await _flush(tester);
+    final hoverArgs =
+        harness.sentMessages.lastWhere(
+              (message) =>
+                  message['cmd'] == 'calibration.tooltip.hover_capture',
+            )['args']
+            as Map<String, dynamic>;
+    expect(hoverArgs['point'], {'x': 0, 'y': 0});
+    expect(hoverArgs['hover_delay_ms'], 700);
+    expect(
+      find.byKey(const ValueKey('session-tooltip-preview')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('session-tooltip-offset-x')),
+      '-8',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('session-tooltip-offset-y')),
+      '-6',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('session-tooltip-width')),
+      '320',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('session-tooltip-height')),
+      '210',
+    );
+    final save = find.byKey(const ValueKey('session-tooltip-save'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await _flush(tester);
+    final saveArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'calibration.tooltip.save',
+            )['args']
+            as Map<String, dynamic>;
+    expect(saveArgs['offset_x'], -8);
+    expect(saveArgs['width'], 320);
+
+    final test = find.byKey(const ValueKey('session-tooltip-test'));
+    await tester.ensureVisible(test);
+    await tester.tap(test);
+    await _flush(tester);
+    expect(find.text('panel line one'), findsOneWidget);
+  });
 }

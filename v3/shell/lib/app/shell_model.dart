@@ -673,6 +673,57 @@ class ShellModel extends ChangeNotifier {
   Future<CoreActionResult<CalibrationFetchAllResult>> calibrationFetchAll() =>
       _coreAction('calibration.fetch_all', CalibrationFetchAllResult.fromJson);
 
+  /// `calibration.tooltip.hover_capture`: place + focus-click the hover point, wait the panel delay
+  /// and capture, so the shell can show the panel and measure the offset box (G01).
+  Future<CoreActionResult<JsonMap>> tooltipHoverCapture({
+    required int x,
+    required int y,
+    int? hoverDelayMs,
+  }) => _coreAction(
+    'calibration.tooltip.hover_capture',
+    (result) => result,
+    args: {
+      'point': {'x': x, 'y': y},
+      'hover_delay_ms': ?hoverDelayMs,
+    },
+  );
+
+  /// `calibration.tooltip.save`: the panel box measured from the hover capture, relative to the
+  /// hover point. The core validates the size (>= 20 px) and writes the tooltip block.
+  Future<CoreActionResult<JsonMap>> tooltipSave({
+    required int offsetX,
+    required int offsetY,
+    required int width,
+    required int height,
+    int? hoverDelayMs,
+  }) => _coreAction(
+    'calibration.tooltip.save',
+    (result) => result,
+    args: {
+      'offset_x': offsetX,
+      'offset_y': offsetY,
+      'width': width,
+      'height': height,
+      'hover_delay_ms': ?hoverDelayMs,
+    },
+  );
+
+  /// `calibration.tooltip.test`: hover the point again, OCR the stored panel box and return the
+  /// lines plus the debug crop (G01's live read).
+  Future<CoreActionResult<JsonMap>> tooltipTest({
+    required int x,
+    required int y,
+    int? hoverDelayMs,
+  }) => _coreAction(
+    'calibration.tooltip.test',
+    (result) => result,
+    args: {
+      'point': {'x': x, 'y': y},
+      'hover_delay_ms': ?hoverDelayMs,
+      'debug': true,
+    },
+  );
+
   /// `calibration.check {}`: the core's canonical comparison of the stored calibration with this PC
   /// (G09). READ-ONLY: the game being closed is a result with a note, never an error.
   Future<CoreActionResult<JsonMap>> calibrationCheck() =>

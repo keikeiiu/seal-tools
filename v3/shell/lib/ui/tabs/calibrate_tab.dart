@@ -705,7 +705,10 @@ class _CalibrateTabState extends State<CalibrateTab>
                   onSelectSlot: _selectSlot,
                 ),
                 const SizedBox(height: ShellSpace.md),
-                const SessionCalibrationsPanel(),
+                SessionCalibrationsPanel(
+                  model: widget.model,
+                  host: widget.host,
+                ),
                 const SizedBox(height: ShellSpace.lg),
               ],
             ),
