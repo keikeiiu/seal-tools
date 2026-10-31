@@ -12,6 +12,7 @@ pub mod dry_run;
 pub mod effects;
 pub mod events;
 pub mod gem;
+pub mod gem_routes_session;
 pub mod gem_session;
 pub mod holdspace;
 pub mod logs;

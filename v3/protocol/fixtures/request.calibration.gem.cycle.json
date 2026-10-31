@@ -1,0 +1,12 @@
+{
+  "case": "request.calibration.gem.cycle",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "75",
+    "cmd": "calibration.gem.cycle",
+    "args": {
+      "confirm": true
+    }
+  }
+}

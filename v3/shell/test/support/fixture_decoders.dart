@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 60 request fixtures.
+/// The 62 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -160,6 +160,10 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.gem.moves.save', message),
   'request.calibration.gem.check_result': (message) =>
       _request('request.calibration.gem.check_result', message),
+  'request.calibration.gem.test_route': (message) =>
+      _request('request.calibration.gem.test_route', message),
+  'request.calibration.gem.cycle': (message) =>
+      _request('request.calibration.gem.cycle', message),
   'request.calibration.buysell.preview': (message) =>
       _request('request.calibration.buysell.preview', message),
   'request.calibration.shop.test_scroll': (message) =>
@@ -461,6 +465,13 @@ final Map<String, FixtureDecoder> responseDecoders = {
     message,
     EnvelopePayload(_result(message)),
   ),
+  'response.ok.gem_test_route': (message) => _ok(
+    'response.ok.gem_test_route',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.gem_cycle': (message) =>
+      _ok('response.ok.gem_cycle', message, EnvelopePayload(_result(message))),
   'response.ok.buysell_preview': (message) => _ok(
     'response.ok.buysell_preview',
     message,

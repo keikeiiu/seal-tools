@@ -147,6 +147,8 @@ edits; it never re-serialises the whole file (§7).
 | `pet.select_page` | `{"page":1}` - 1-based bag page | `{"page":1,"point":[x,y],"line":"…"}` - clicks the calibrated ABSOLUTE ITEM tab (one marked point per page) with the closed-loop pointer under the tool input lease, so a following scan/capture can rely on the page being up. A page with no tab mark is `bad_request` field `page`; window/board failures are the usual codes; the shell hides itself around the call. |
 | `pet.scan_feeding_page` | `{"page":1,"harvest":true?}` - one bag page; the shell hides around the call | `{"page":1,"cells":[{"cell":7,"label":"…","status":"feedable"\|"finished"\|"unknown","growth":7,"exp":52.0,"line":"…","match":0.02,"crop_png_base64":"…"?}],"summary":"…","report":["…"],"evidence":["logs/reads/…png"]}` - v2's find-then-hover sweep: click focus + ITEM tab, one clean page capture, match the queued icons, hover only those cells and OCR the tooltip panel; a failed read is `unknown`, NEVER `finished`; `harvest` crops icons for feedable cells only. Prerequisites missing = `bad_request` naming the field; `harvest` must be boolean; one page per request, a ~90 s live command. |
 | `pet.scan_apply_queue` | `{"queue":[{"label":"…","png":"…","rect":[x,y,w,h]?,"species":"…"?}]}` | `{"rev":23,"block":{…pet…}}` - replaces `pet.queue` only (normal writer + one `config.changed` after the response); every png must decode; an EMPTY queue is `bad_request` field `queue` and leaves the existing queue untouched. |
+| `calibration.gem.test_route` | `{"move":"tuned"\|"arduino","from":"N","to":"Register","tuned":{"dx":40,"dy":-12}?}` | `{"steps":[{"action":"click","point":"N","placement":{"x":10,"y":20}},{"action":"move","dx":40,"dy":-12},{"action":"click","point":"Register"}],"line":"…","move":"tuned"}` - resolves BOTH points before any action, then clicks the source, performs the route (raw D for tuned; closed-loop place for arduino), clicks the target; takes the input lease; missing point = `bad_request` naming `from`/`to`, a tuned pair with no counts = field `tuned` unless explicit counts are passed. |
+| `calibration.gem.cycle` | `{"confirm":true}` | `{"steps":[{"index":1,"action":"click","point":"N"}…21],"done":true,"log":"arduino_debug.txt: cycle done (21 steps)"}` - v2's N/G/DG cycle: N and G combine twice with the composer's deregister+register pair and cleared Resource1-3 between, then DG combines once. Refuses without `confirm`; resolves EVERY point before the first click (uncalibrated = `bad_request` naming the point, "nothing was clicked"); real clicks under the input lease; one diagnostic line appended to `logs/reads/arduino_debug.txt`. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -258,7 +260,8 @@ Notes:
 `calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`/
 `calibration.tuner.check`/`calibration.tuner.save`/
 `calibration.pet.preview`/`calibration.pet.save`/`calibration.pet.test_read`/
-`calibration.gem.moves.save`/`calibration.gem.check_result`/
+`calibration.gem.moves.save`/`calibration.gem.check_result`/`calibration.gem.test_route`/
+`calibration.gem.cycle`/
 `calibration.buysell.preview`/`calibration.shop.test_scroll`, `buy_sell.preflight`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.

@@ -51,6 +51,8 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.pet.test_read",
     "calibration.gem.moves.save",
     "calibration.gem.check_result",
+    "calibration.gem.test_route",
+    "calibration.gem.cycle",
     "calibration.buysell.preview",
     "calibration.shop.test_scroll",
     "buy_sell.preflight",
@@ -407,6 +409,18 @@ fn cases() -> Vec<Case> {
             "68",
             "buy_sell.preflight",
             json!({}),
+        ),
+        request_case(
+            "request.calibration.gem.test_route",
+            "74",
+            "calibration.gem.test_route",
+            json!({"move": "tuned", "from": "N", "to": "Register"}),
+        ),
+        request_case(
+            "request.calibration.gem.cycle",
+            "75",
+            "calibration.gem.cycle",
+            json!({"confirm": true}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -1176,6 +1190,31 @@ fn cases() -> Vec<Case> {
                     "eta_region": [96, 360, 188, 48]
                 }],
                 "hidden_ms": 420
+            }),
+        ),
+        ok_case(
+            "response.ok.gem_test_route",
+            "74",
+            json!({
+                "steps": [
+                    {"action": "click", "point": "N", "placement": {"x": 10, "y": 20}},
+                    {"action": "move", "dx": 40, "dy": -12},
+                    {"action": "click", "point": "Register"}
+                ],
+                "line": "Test move: click \"N\" then D 40 -12 then click \"Register\". Does it land?",
+                "move": "tuned"
+            }),
+        ),
+        ok_case(
+            "response.ok.gem_cycle",
+            "75",
+            json!({
+                "steps": [
+                    {"index": 1, "action": "click", "point": "N"},
+                    {"index": 2, "action": "click", "point": "Register"}
+                ],
+                "done": true,
+                "log": "arduino_debug.txt: cycle done (21 steps)"
             }),
         ),
         ok_case(

@@ -108,6 +108,12 @@ impl Logs {
 
     /// `holdspace.log`: v2's `HoldDiag` shape, which is deliberately not the generic one (it is a
     /// diagnostic trail written from the service as well as the card).
+    /// `arduino_debug.txt`: v2's route/cycle diagnostic. Appended, never truncated, with the local
+    /// `HH:mm:ss` prefix v2 used, so a route that did not land can be inspected afterwards.
+    pub fn arduino_debug_line(&self, line: &str) {
+        self.append("arduino_debug.txt", &format!("{} {line}", line_stamp()));
+    }
+
     pub fn holdspace_line(&self, line: &str) {
         self.append("holdspace.log", &format!("{} [svc] {line}", hold_stamp()));
     }

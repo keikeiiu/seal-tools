@@ -1,0 +1,14 @@
+{
+  "case": "request.calibration.gem.test_route",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "74",
+    "cmd": "calibration.gem.test_route",
+    "args": {
+      "move": "tuned",
+      "from": "N",
+      "to": "Register"
+    }
+  }
+}
