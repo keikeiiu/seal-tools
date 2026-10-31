@@ -60,6 +60,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "board.probe",
     "board.details",
     "pet.preflight",
+    "pet.select_page",
     "pet.set_boarding",
     "pet.capture_icon",
     "pet.scan_food_page",
@@ -444,6 +445,12 @@ fn cases() -> Vec<Case> {
         request_case("request.board.probe", "10", "board.probe", json!({})),
         request_case("request.board.details", "43", "board.details", json!({})),
         request_case("request.pet.preflight", "44", "pet.preflight", json!({})),
+        request_case(
+            "request.pet.select_page",
+            "70",
+            "pet.select_page",
+            json!({"page": 1}),
+        ),
         request_case(
             "request.pet.set_boarding",
             "45",
@@ -1209,6 +1216,11 @@ fn cases() -> Vec<Case> {
                 "session": [{"ok": true, "label": "ready", "detail": "yes"}],
                 "lines": []
             }),
+        ),
+        ok_case(
+            "response.ok.pet_select_page",
+            "70",
+            json!({"page": 1, "point": [300, 20], "line": "clicked the ITEM1 tab at (300, 20)"}),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────
         event_case(

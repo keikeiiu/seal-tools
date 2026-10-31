@@ -7,9 +7,12 @@
 //! (`ConfigStore::persist_pet_run_state`), so a tick cannot race the feeder's own mid-run updates or
 //! replace the rest of the pet block.
 
+use seal_domain::geometry::Point;
 use seal_domain::tools::pet::{FeederLayout, cycle_minutes};
+use seal_proto::{Error, Request, Response};
 use serde_json::{Value, json};
 
+use crate::dispatch::CoreState;
 use crate::pet::setup;
 
 /// The read-only preflight answer. `ready` is the overall run readiness: v2's Ready-to-run lines are
@@ -681,5 +684,123 @@ mod tests {
             .expect("the board item");
         assert_eq!(board["ok"], true);
         assert_eq!(board["detail"], "not checked by preflight — normal");
+    }
+}
+
+// ── G22: put a bag page up before a scan ────────────────────────────────────────────────────────
+
+/// `pet.select_page {"page":N}`: click the calibrated ITEM tab for 1-based page `N`. The shell
+/// hides itself around the call (the same contract as a capture/scan); this only performs the one
+/// inert closed-loop click under the tool input lease, so the scan commands can rely on the page
+/// being up instead of documenting a caveat.
+///
+/// The tab is ONE marked point (`pet.page_tabs[N-1]`); v2's tabs are ABSOLUTE ("clicking one lands
+/// on that page whatever page you were on"), which is why there is one mark per page and no
+/// next/previous count to lose.
+pub fn select_page(state: &CoreState, request: &Request) -> Response {
+    let Some(page) = request.args.get("page").and_then(Value::as_i64) else {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                "pet.select_page needs a 1-based page number",
+                json!({"field": "page"}),
+            ),
+        );
+    };
+    if page < 1 {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                "pet.select_page's page must be at least 1",
+                json!({"field": "page"}),
+            ),
+        );
+    }
+    let tabs = state
+        .config
+        .pointer("/pet/page_tabs")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let index = usize::try_from(page - 1).unwrap_or(usize::MAX);
+    let Some(tab) = tabs.get(index).and_then(Value::as_array) else {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                &format!("bag page {page} has no calibrated tab — mark it on Calibrate Pet first"),
+                json!({"field": "page", "pages": tabs.len()}),
+            ),
+        );
+    };
+    let (Some(x), Some(y)) = (
+        tab.first().and_then(Value::as_i64),
+        tab.get(1).and_then(Value::as_i64),
+    ) else {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                &format!("bag page {page}'s tab mark is malformed — re-mark it on Calibrate Pet"),
+                json!({"field": "page"}),
+            ),
+        );
+    };
+    let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) else {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "bad_request",
+                &format!("bag page {page}'s tab point is outside the i32 range"),
+                json!({"field": "page"}),
+            ),
+        );
+    };
+    if let Some(response) =
+        crate::tooltip_session::check_input_lease(state, &request.id, request.cmd.as_str())
+    {
+        return response;
+    }
+    match crate::pointer::system_perform(&state.config, Point::new(x, y), true) {
+        Ok(()) => Response::ok(
+            &request.id,
+            json!({
+                "page": page,
+                "point": [x, y],
+                "line": format!("clicked the ITEM{page} tab at ({x}, {y})"),
+            }),
+        ),
+        Err(crate::pointer::PointerFailure::Window(error)) => {
+            crate::dispatch::win_error_response(&request.id, error)
+        }
+        Err(crate::pointer::PointerFailure::Board(error)) => {
+            crate::dispatch::board_error_response(&request.id, error)
+        }
+        Err(crate::pointer::PointerFailure::Effects(line)) => Response::err(
+            &request.id,
+            Error::new("board_unavailable", &line, json!({})),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    #[test]
+    fn a_page_with_no_tab_mark_is_refused_before_any_click() {
+        let mut state = crate::dispatch::CoreState::new(std::env::temp_dir());
+        state.config = json!({"pet": {"page_tabs": [[10, 20]]}});
+        let response = select_page(
+            &state,
+            &Request::new("1", "pet.select_page", json!({"page": 2})),
+        );
+        assert!(!response.ok);
+        let error = response.error.expect("a refusal");
+        assert_eq!(error.code, "bad_request");
+        assert_eq!(error.detail["field"], "page");
+        assert!(error.message.contains("page 2"), "{}", error.message);
     }
 }

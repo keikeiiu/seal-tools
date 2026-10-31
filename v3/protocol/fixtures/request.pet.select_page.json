@@ -1,0 +1,12 @@
+{
+  "case": "request.pet.select_page",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "70",
+    "cmd": "pet.select_page",
+    "args": {
+      "page": 1
+    }
+  }
+}

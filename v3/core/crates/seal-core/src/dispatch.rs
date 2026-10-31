@@ -514,6 +514,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "pet.scan_queue_page" => pet_scan_page(state, &request, true),
         "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
         "pet.test_read_panel" => pet_test_read_panel(state, &request),
+        "pet.select_page" => crate::pet_session::select_page(state, &request),
         "tool.start" => tool_start(state, &request),
         "tool.stop" => tool_stop(state, &request),
         other => bad_request(

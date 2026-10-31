@@ -144,6 +144,7 @@ edits; it never re-serialises the whole file (§7).
 | `calibration.buysell.preview` | `{"draft":{"bag_grid":[x,y,w,h]?,"bag_slot":[x,y,w,h]?,"shop_region":[x,y,w,h]?,"shop_rows":10?}}` | `{"bag_centres":[[x,y],…64],"row_centres":[[x,y],…],"pitch":{"w":…,"h":…}\|null,"row_pitch":…,"problem":"…"\|null}` - READ-ONLY v2 overlay geometry (G05/G19): 64 slot centres, every visible row centre, derived pitches, and the grid/slot disagreement or missing-region problem as a sentence, never a code error. |
 | `calibration.shop.test_scroll` | `{"notches":3,"up":true?}` - 1..=400 notches; `up` default false | `{"line":"…"}` - clicks the inert `buy_sell.scroll_point` for focus, then sends the firmware wheel command; takes the input lease (`tool_busy`). More than 400 notches is `bad_request` field `notches`; an uncalibrated focus point is `bad_request` field `scroll_point`; window/board errors as usual. |
 | `buy_sell.preflight` | `{}` | `{"ready":true\|false,"calibration":[{"ok","label","detail"}…],"session":[…],"lines":["…"]}` - READ-ONLY Buy/Sell checklist: each mark present, the grid/slot pitch agreement, presets/sell-cap/rows, and one player line per missing item. |
+| `pet.select_page` | `{"page":1}` - 1-based bag page | `{"page":1,"point":[x,y],"line":"…"}` - clicks the calibrated ABSOLUTE ITEM tab (one marked point per page) with the closed-loop pointer under the tool input lease, so a following scan/capture can rely on the page being up. A page with no tab mark is `bad_request` field `page`; window/board failures are the usual codes; the shell hides itself around the call. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -247,7 +248,8 @@ Notes:
 `board.test`, `board.details`, `pointer.place`/`pointer.click`, `logs.cleanup_captures`,
 `pet.preflight`/`pet.set_boarding`,
 `pet.capture_icon`,
-`pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`,
+`pet.scan_food_page`/`pet.scan_queue_page`/`pet.test_read_panel`/`pet.apply_food_scan`/
+`pet.select_page`,
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
 `calibration.fetch_all`/`calibration.kinds`/`calibration.check`/
 `calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`/

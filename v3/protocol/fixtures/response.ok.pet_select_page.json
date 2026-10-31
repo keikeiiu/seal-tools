@@ -1,0 +1,17 @@
+{
+  "case": "response.ok.pet_select_page",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "70",
+    "ok": true,
+    "result": {
+      "page": 1,
+      "point": [
+        300,
+        20
+      ],
+      "line": "clicked the ITEM1 tab at (300, 20)"
+    }
+  }
+}
