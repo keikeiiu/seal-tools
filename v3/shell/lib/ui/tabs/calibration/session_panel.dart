@@ -79,6 +79,44 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   CaptureResult? _tunerCapture;
   JsonMap? _tunerCheck;
 
+  // G03 pet session: one row + the shared points, enough to drive preview/save/test_read.
+  final Map<String, TextEditingController> _petFields = {
+    for (final key in [
+      'toggle.x',
+      'toggle.y',
+      'toggle.w',
+      'toggle.h',
+      'boarding.x',
+      'boarding.y',
+      'boarding.w',
+      'boarding.h',
+      'strip.x',
+      'strip.y',
+      'strip.w',
+      'strip.h',
+      'grid.x',
+      'grid.y',
+      'grid.w',
+      'grid.h',
+      'slot.x',
+      'slot.y',
+      'slot.w',
+      'slot.h',
+      'menu.x',
+      'menu.y',
+      'feed.x',
+      'feed.y',
+      'close.x',
+      'close.y',
+      'tab.x',
+      'tab.y',
+    ])
+      key: TextEditingController(text: '0'),
+  };
+  final _petStacks = TextEditingController(text: '2');
+  CaptureResult? _petCapture;
+  JsonMap? _petPreview;
+
   @override
   void dispose() {
     for (final controller in [
@@ -95,6 +133,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     for (final controller in _boxFields.values) {
       controller.dispose();
     }
+    for (final controller in _petFields.values) {
+      controller.dispose();
+    }
+    _petStacks.dispose();
     _rowHeight.dispose();
     _springX.dispose();
     _springY.dispose();
@@ -376,6 +418,247 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     ),
   );
 
+  int? _petNumber(String key) => _number(_petFields[key]!);
+
+  Map<String, num> _rect(String prefix) => {
+    'x': _petNumber('$prefix.x') ?? 0,
+    'y': _petNumber('$prefix.y') ?? 0,
+    'w': _petNumber('$prefix.w') ?? 0,
+    'h': _petNumber('$prefix.h') ?? 0,
+  };
+
+  List<JsonMap> _petRows() => [
+    {
+      'toggle_label': _rect('toggle'),
+      'boarding_pet_slot': _rect('boarding'),
+      'feeder_strip': _rect('strip'),
+      'stacks': _number(_petStacks) ?? 2,
+    },
+  ];
+
+  JsonMap _petPoints() => {
+    'menu': _petPoint('menu'),
+    'feed': _petPoint('feed'),
+    'close': _petPoint('close'),
+    'page_tabs': [
+      [_petNumber('tab.x') ?? 0, _petNumber('tab.y') ?? 0],
+    ],
+  };
+
+  /// The save's `points.menu/feed/close` are rects (v2 boxes them with a 10 px box around the
+  /// marked point); the panel offers only the point.
+  JsonMap _petPoint(String prefix) => {
+    'x': _petNumber('$prefix.x') ?? 0,
+    'y': _petNumber('$prefix.y') ?? 0,
+    'w': 10,
+    'h': 10,
+  };
+
+  JsonMap _petBag() => {
+    'grid': [
+      _petNumber('grid.x') ?? 0,
+      _petNumber('grid.y') ?? 0,
+      _petNumber('grid.w') ?? 0,
+      _petNumber('grid.h') ?? 0,
+    ],
+    'slot': [
+      _petNumber('slot.x') ?? 0,
+      _petNumber('slot.y') ?? 0,
+      _petNumber('slot.w') ?? 0,
+      _petNumber('slot.h') ?? 0,
+    ],
+  };
+
+  Future<void> _capturePet() async {
+    setState(() {
+      _busy = true;
+      _failed = false;
+      _status = null;
+    });
+    try {
+      await widget.host.hideWindow();
+    } catch (_) {}
+    final result = await widget.model.captureFrame();
+    try {
+      await widget.host.showWindow();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _failed = !result.ok;
+      if (!result.ok) {
+        _status = result.errorLine;
+        return;
+      }
+      _petCapture = result.value!;
+      _status = 'captured ${result.value!.frame.frameId} — fill the row marks';
+    });
+  }
+
+  Future<void> _previewPet() async {
+    final result = await widget.model.petPreview(
+      draft: {
+        'rows': _petRows(),
+        'bag_grid': _petBag()['grid'],
+        'feeder_count_left_fraction': 0.4,
+        'feeder_count_min_score': 0.75,
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _failed = !result.ok;
+      if (!result.ok) {
+        _status = result.errorLine;
+        return;
+      }
+      _petPreview = result.value;
+      final rows = result.value!['rows'];
+      final problem = result.value!['problem'];
+      _status =
+          'preview: ${rows is List ? rows.length : 0} row(s)'
+          '${problem is String ? ' — $problem' : ''}';
+    });
+  }
+
+  Future<void> _savePet() async {
+    final capture = _petCapture;
+    if (capture == null) {
+      setState(() {
+        _failed = true;
+        _status = 'Capture the screen first.';
+      });
+      return;
+    }
+    final result = await widget.model.petSave(
+      frameId: capture.frame.frameId,
+      rows: _petRows(),
+      points: _petPoints(),
+      bag: _petBag(),
+      display: capture.display,
+    );
+    if (!mounted) return;
+    setState(() {
+      _failed = !result.ok;
+      _status = result.ok
+          ? 'pet saved (rev ${result.value!['rev'] ?? '?'})'
+          : result.errorLine;
+    });
+  }
+
+  Future<void> _testPet() async {
+    final result = await widget.model.petTestRead(rows: _petRows());
+    if (!mounted) return;
+    setState(() {
+      _failed = !result.ok;
+      if (!result.ok) {
+        _status = result.errorLine;
+        return;
+      }
+      final rows = result.value!['rows'];
+      final firstSlot = rows is List && rows.isNotEmpty && rows.first is Map
+          ? (rows.first as Map)['slots']
+          : null;
+      _status =
+          'test read: ${firstSlot is List ? firstSlot.length : 0} slot(s) read';
+    });
+  }
+
+  Widget _petSection(ThemeData theme, ColorScheme colors) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text('Pet crops / rows', style: theme.textTheme.labelLarge),
+            StatusChip(
+              kind: _petCapture == null ? StatusKind.muted : StatusKind.success,
+              label: _petCapture == null ? 'needs capture' : 'captured',
+            ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        Text(
+          'One row drives the pet session: row rects, the shared points and the bag. Preview '
+          'derives the count/ETA regions, Save writes the calibration half + crops, Test read '
+          'reports every slot count.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        for (final prefix in ['toggle', 'boarding', 'strip', 'grid', 'slot'])
+          Padding(
+            padding: const EdgeInsets.only(bottom: ShellSpace.xs),
+            child: Wrap(
+              spacing: ShellSpace.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 70,
+                  child: Text(prefix, style: theme.textTheme.bodySmall),
+                ),
+                for (final axis in ['x', 'y', 'w', 'h'])
+                  _boxField('pet.$prefix.$axis', _petFields['$prefix.$axis']!),
+              ],
+            ),
+          ),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            _fieldBox('stacks', _petStacks, 'session-pet-stacks'),
+            _fieldBox('menu x', _petFields['menu.x']!, 'session-pet-menu-x'),
+            _fieldBox('menu y', _petFields['menu.y']!, 'session-pet-menu-y'),
+            _fieldBox('feed x', _petFields['feed.x']!, 'session-pet-feed-x'),
+            _fieldBox('feed y', _petFields['feed.y']!, 'session-pet-feed-y'),
+            _fieldBox('close x', _petFields['close.x']!, 'session-pet-close-x'),
+            _fieldBox('close y', _petFields['close.y']!, 'session-pet-close-y'),
+            _fieldBox('tab x', _petFields['tab.x']!, 'session-pet-tab-x'),
+            _fieldBox('tab y', _petFields['tab.y']!, 'session-pet-tab-y'),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            OutlinedButton(
+              key: const ValueKey('session-pet-capture'),
+              onPressed: _busy ? null : _capturePet,
+              child: const Text('Capture screen'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('session-pet-preview'),
+              onPressed: _busy ? null : _previewPet,
+              child: const Text('Preview'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('session-pet-save'),
+              onPressed: _busy ? null : _savePet,
+              child: const Text('Save pet'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('session-pet-test'),
+              onPressed: _busy ? null : _testPet,
+              child: const Text('Test read'),
+            ),
+          ],
+        ),
+        if (_petPreview != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            'preview rows: ${(_petPreview!['rows'] as List?)?.length ?? 0}',
+            key: const ValueKey('session-pet-preview-rows'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -478,7 +761,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           const SizedBox(height: ShellSpace.md),
           _tunerSection(theme, colors),
           const SizedBox(height: ShellSpace.md),
-          _locked(context, 'pet', 'Pet reference crops'),
+          _petSection(theme, colors),
         ],
       ),
     );
@@ -497,35 +780,4 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       keyboardType: TextInputType.number,
     ),
   );
-
-  Widget _locked(BuildContext context, String id, String title) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ShellSpace.sm),
-      child: Row(
-        children: [
-          Icon(Icons.lock_outline, size: 12, color: theme.colorScheme.outline),
-          const SizedBox(width: ShellSpace.sm),
-          Expanded(
-            child: Text(
-              id == 'tuner'
-                  ? '$title — the three-box session needs the canvas increment.'
-                  : '$title — needs the canvas session increment.',
-              key: id == 'tuner'
-                  ? const ValueKey('calibrate-tuner-note')
-                  : null,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          OutlinedButton(
-            key: ValueKey('calibrate-run-session-$id'),
-            onPressed: null,
-            child: const Text('Run session'),
-          ),
-        ],
-      ),
-    );
-  }
 }

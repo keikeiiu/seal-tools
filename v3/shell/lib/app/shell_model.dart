@@ -724,6 +724,49 @@ class ShellModel extends ChangeNotifier {
     },
   );
 
+  /// `calibration.pet.preview`: pure row/count/ETA derivation from the draft (G03).
+  Future<CoreActionResult<JsonMap>> petPreview({required JsonMap draft}) =>
+      _coreAction(
+        'calibration.pet.preview',
+        (result) => result,
+        args: {'draft': draft},
+      );
+
+  /// `calibration.pet.save`: rows + points + bag + display on a captured frame; writes the
+  /// calibration half, the crops and the annotated calib_pet.png (G03).
+  Future<CoreActionResult<JsonMap>> petSave({
+    required String frameId,
+    required List<JsonMap> rows,
+    required JsonMap points,
+    required JsonMap bag,
+    required DisplayInfo display,
+  }) => _coreAction(
+    'calibration.pet.save',
+    (result) => result,
+    args: {
+      'frame_id': frameId,
+      'rows': rows,
+      'points': points,
+      'bag': bag,
+      'feeder_count_left_fraction': 0.4,
+      'feeder_count_min_score': 0.75,
+      'display': calibrationDisplayJson(display),
+    },
+  );
+
+  /// `calibration.pet.test_read`: hover every draft row/slot once and report each count (G03).
+  Future<CoreActionResult<JsonMap>> petTestRead({
+    required List<JsonMap> rows,
+  }) => _coreAction(
+    'calibration.pet.test_read',
+    (result) => result,
+    args: {
+      'rows': rows,
+      'feeder_count_left_fraction': 0.4,
+      'feeder_count_min_score': 0.75,
+    },
+  );
+
   /// `calibration.tuner.check`: the three boxes' derived geometry + one OCR/filter read (G02). Pure;
   /// no write. The boxes are client-relative physical rects.
   Future<CoreActionResult<JsonMap>> tunerCheck({

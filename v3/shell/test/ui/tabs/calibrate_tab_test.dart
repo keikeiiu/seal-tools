@@ -1924,4 +1924,110 @@ void main() {
     expect(saveArgs['display']['dpi_scale'], 1.5);
     expect(find.textContaining('tuner saved'), findsOneWidget);
   });
+
+  testWidgets('the pet session previews, saves and test-reads one row', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f7')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': null,
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        'calibration.pet.preview' => {
+          'result': {
+            'rows': [
+              {
+                'slot_boxes': <Map<String, dynamic>>[],
+                'count_regions': <Map<String, dynamic>>[],
+                'problems': <String>[],
+              },
+            ],
+            'bag_centres': <List<int>>[],
+            'problem': null,
+          },
+        },
+        'calibration.pet.save' => {
+          'result': {
+            'rev': 11,
+            'block': {
+              'pet': {'slots': <Map<String, dynamic>>[]},
+            },
+            'artifacts': [
+              {'file': 'calib_pet.png', 'path': 'config/calib_pet.png'},
+            ],
+            'derived': <String, dynamic>{},
+            'warnings': <String>[],
+          },
+        },
+        'calibration.pet.test_read' => {
+          'result': {
+            'rows': [
+              {
+                'row': 1,
+                'slots': [
+                  {'index': 1, 'reads': <Map<String, dynamic>>[], 'count': 123},
+                ],
+              },
+            ],
+            'hidden_ms': 700,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    final capture = find.byKey(const ValueKey('session-pet-capture'));
+    await tester.ensureVisible(capture);
+    await tester.tap(capture);
+    await _flush(tester);
+
+    final preview = find.byKey(const ValueKey('session-pet-preview'));
+    await tester.ensureVisible(preview);
+    await tester.tap(preview);
+    await _flush(tester);
+    final previewArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'calibration.pet.preview',
+            )['args']
+            as Map<String, dynamic>;
+    final draft = previewArgs['draft'] as Map<String, dynamic>;
+    expect((draft['rows'] as List).length, 1);
+    expect(
+      ((draft['rows'] as List).first as Map<String, dynamic>)['stacks'],
+      2,
+    );
+
+    final save = find.byKey(const ValueKey('session-pet-save'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await _flush(tester);
+    final saveArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'calibration.pet.save',
+            )['args']
+            as Map<String, dynamic>;
+    expect(saveArgs['frame_id'], 'f7');
+    expect(saveArgs['points'], isNotNull);
+    expect(saveArgs['display']['dpi_scale'], 1.5);
+
+    final test = find.byKey(const ValueKey('session-pet-test'));
+    await tester.ensureVisible(test);
+    await tester.tap(test);
+    await _flush(tester);
+    expect(find.textContaining('1 slot(s) read'), findsOneWidget);
+  });
 }
