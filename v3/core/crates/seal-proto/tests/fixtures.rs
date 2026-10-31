@@ -46,6 +46,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.tooltip.test",
     "calibration.tuner.check",
     "calibration.tuner.save",
+    "calibration.pet.preview",
+    "calibration.pet.save",
+    "calibration.pet.test_read",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -313,6 +316,50 @@ fn cases() -> Vec<Case> {
                 "row_height": 19,
                 "spring_point": {"x": 500, "y": 400},
                 "display": {"dpi_scale": 1.5, "monitor_dpi": 144, "screen": {"w": 1920, "h": 1080}}
+            }),
+        ),
+        request_case(
+            "request.calibration.pet.preview",
+            "61",
+            "calibration.pet.preview",
+            json!({"draft": {
+                "rows": [{"feeder_strip": {"x": 100, "y": 320, "w": 400, "h": 40}, "stacks": 4}],
+                "bag_grid": [0, 0, 240, 240]
+            }}),
+        ),
+        request_case(
+            "request.calibration.pet.save",
+            "62",
+            "calibration.pet.save",
+            json!({
+                "frame_id": "f1",
+                "rows": [{
+                    "toggle_label": {"x": 10, "y": 200, "w": 60, "h": 20},
+                    "boarding_pet_slot": {"x": 100, "y": 200, "w": 100, "h": 100},
+                    "feeder_strip": {"x": 100, "y": 320, "w": 400, "h": 40},
+                    "stacks": 4,
+                    "pet_slot_empty_png": true
+                }],
+                "points": {
+                    "menu": {"x": 10, "y": 10, "w": 20, "h": 20},
+                    "feed": {"x": 40, "y": 10, "w": 20, "h": 20},
+                    "close": {"x": 70, "y": 10, "w": 20, "h": 20},
+                    "page_tabs": [{"x": 300, "y": 20}, {"x": 340, "y": 20}, {"x": 380, "y": 20}]
+                },
+                "bag": {"grid": [0, 0, 240, 240], "slot": [0, 0, 30, 30]},
+                "feeder_count_left_fraction": 0.4,
+                "feeder_count_min_score": 0.75,
+                "display": {"dpi_scale": 1.5, "monitor_dpi": 144, "screen": {"w": 1920, "h": 1080}}
+            }),
+        ),
+        request_case(
+            "request.calibration.pet.test_read",
+            "63",
+            "calibration.pet.test_read",
+            json!({
+                "rows": [{"feeder_strip": {"x": 100, "y": 320, "w": 400, "h": 40}, "stacks": 4}],
+                "feeder_count_left_fraction": 0.4,
+                "feeder_count_min_score": 0.75
             }),
         ),
         request_case(
@@ -990,6 +1037,69 @@ fn cases() -> Vec<Case> {
                     "row_height": 19
                 },
                 "artifact": {"file": "calib_tuner.png", "path": "config/calib_tuner.png"}
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_preview",
+            "61",
+            json!({
+                "rows": [{
+                    "slot_boxes": [[100, 320, 100, 40], [200, 320, 100, 40], [300, 320, 100, 40], [400, 320, 100, 40]],
+                    "count_regions": [[140, 320, 60, 40], [240, 320, 60, 40], [340, 320, 60, 40], [440, 320, 60, 40]],
+                    "eta_region": [96, 360, 188, 48],
+                    "problems": []
+                }],
+                "bag_centres": [[15, 15]],
+                "problem": null
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_save",
+            "62",
+            json!({
+                "rev": 17,
+                "block": {
+                    "menu_button": [10, 10, 20, 20],
+                    "feed_icon": [40, 10, 20, 20],
+                    "close_button": [70, 10, 20, 20],
+                    "page_tabs": [[300, 20], [340, 20], [380, 20]],
+                    "bag_grid": [0, 0, 240, 240],
+                    "bag_slot": [0, 0, 30, 30],
+                    "feeder_count_left_fraction": 0.4,
+                    "feeder_count_min_score": 0.75,
+                    "slots": [{
+                        "enabled": true,
+                        "toggle_label": [10, 200, 60, 20],
+                        "boarding_pet_slot": [100, 200, 100, 100],
+                        "feeder_strip": [100, 320, 400, 40],
+                        "stacks": 4,
+                        "pet_slot_empty_png": "iVBORw0KGgo="
+                    }]
+                },
+                "artifacts": [{"file": "calib_pet.png", "path": "config/calib_pet.png"}],
+                "derived": {"rows": [{
+                    "slot_boxes": [[100, 320, 100, 40], [200, 320, 100, 40], [300, 320, 100, 40], [400, 320, 100, 40]],
+                    "count_regions": [[140, 320, 60, 40], [240, 320, 60, 40], [340, 320, 60, 40], [440, 320, 60, 40]],
+                    "eta_region": [96, 360, 188, 48],
+                    "problems": []
+                }]},
+                "warnings": []
+            }),
+        ),
+        ok_case(
+            "response.ok.pet_test_read",
+            "63",
+            json!({
+                "rows": [{
+                    "row": 1,
+                    "slots": [{
+                        "index": 1,
+                        "reads": [{"text": "138", "score": 0.99, "upscale": 3}],
+                        "count": 138
+                    }],
+                    "eta_region": [96, 360, 188, 48]
+                }],
+                "hidden_ms": 420
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────

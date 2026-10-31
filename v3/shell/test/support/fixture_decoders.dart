@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 47 request fixtures.
+/// The 50 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -144,6 +144,12 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.tuner.check', message),
   'request.calibration.tuner.save': (message) =>
       _request('request.calibration.tuner.save', message),
+  'request.calibration.pet.preview': (message) =>
+      _request('request.calibration.pet.preview', message),
+  'request.calibration.pet.save': (message) =>
+      _request('request.calibration.pet.save', message),
+  'request.calibration.pet.test_read': (message) =>
+      _request('request.calibration.pet.test_read', message),
   'request.calibration.fetch.targeted': (message) =>
       _request('request.calibration.fetch.targeted', message),
   'request.calibration.save.empty': (message) =>
@@ -392,6 +398,18 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.tuner_save': (message) =>
       _ok('response.ok.tuner_save', message, EnvelopePayload(_result(message))),
+  'response.ok.pet_preview': (message) => _ok(
+    'response.ok.pet_preview',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.pet_save': (message) =>
+      _ok('response.ok.pet_save', message, EnvelopePayload(_result(message))),
+  'response.ok.pet_test_read': (message) => _ok(
+    'response.ok.pet_test_read',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
   'response.ok.calibration_fetch.targeted': (message) => _ok(
     'response.ok.calibration_fetch.targeted',
     message,

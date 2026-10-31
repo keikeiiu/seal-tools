@@ -13,6 +13,7 @@ pub mod gem;
 pub mod holdspace;
 pub mod logs;
 pub mod pet;
+pub mod pet_calibration;
 pub mod pet_capture;
 pub mod pet_panel;
 pub mod pet_scan;

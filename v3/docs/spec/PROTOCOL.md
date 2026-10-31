@@ -136,6 +136,9 @@ edits; it never re-serialises the whole file (§7).
 | `calibration.tooltip.test` | `{"point":{"x":120,"y":240},"hover_delay_ms":700,"debug":true}` — point required; delay/debug optional (debug default true) | `{"lines":[{"text":"…","score":0.93},…],"region":{"x":112,"y":234,"width":320,"height":210},"debug_path":"logs/reads/tooltip_…png"\|null}` — hovers like `hover_capture`, OCRs the configured region (point + offset/size) and returns the recognised lines with confidence. READ-ONLY. Unset `tooltip` is `bad_request` field `tooltip`; input lease/window/OCR errors as usual. The debug PNG is best-effort and shows exactly the region OCR was given. |
 | `calibration.tuner.check` | `{"frame_id":"f1","boxes":{"grade":{x,y,w,h},"attr":{…},"remaining":{…}},"row_height":19?}` — the three dragged client-relative physical boxes; each ≥4 px; `frame_id` may be omitted (the core captures the full client, shell hides/shows); `row_height` is a previously measured pitch | `{"geometry":{region,grade_area,grade_y,attr_y,remaining_y,attr_x,remaining_x,row_height},"measured_row_height":19,"grade":"DG","remaining":25000,"attributes":[[…],[…],[…]],"matched":[{"name":…,"category":…,"value":…,"raw":[…]},…],"filter":{"enabled":true,"passed":false,"reason":…,"hits":[…]},`warnings`:[…]}` — READ-ONLY (G02). The region is the bounding box of the three boxes and every band is region-relative; `row_height` falls back to `attr.h/3` when nothing was measured. OCR/`ocr_unavailable` and window errors as usual; a tiny box or a frame that does not contain the region is `bad_request` field `boxes`. |
 | `calibration.tuner.save` | `{…check args…,"spring_point":{x,y}?,"display":{dpi_scale,monitor_dpi,screen}?}` | `{"rev":13,"block":{"ocr":{…},"spring_point":[500,400]?,"calibration":{…}?},"derived":{…geometry…},"artifact":{"file":"calib_tuner.png","path":"…"}}` — derives the geometry, writes `tuner.ocr` (and `tuner.spring_point` only when given; the existing one is preserved when absent), stamps the calibration environment (`measured_at` + `client_size` from the frame), draws the three bands on the full-client frame and writes `config/calib_tuner.png` before the block write; one local write, one revision, `config.changed` for `tuner` (and `calibration` when the environment changed) AFTER the response. No OCR is needed for save. Input lease → `tool_busy`; evicted `frame_id` → `bad_request` naming it. |
+| `calibration.pet.preview` | `{"draft":{"rows":[{"feeder_strip":{x,y,w,h},"stacks":1..5},…],"bag_grid":[x,y,w,h]?,"feeder_count_left_fraction":0.4?}}` — 1..4 draft rows | `{"rows":[{"slot_boxes":[[…],…],"count_regions":[[…],…],"eta_region":[…],"problems":[…]}],"bag_centres":[[x,y],…],"problem":null\|"…"}` — READ-ONLY derivation (G03): strip divided into `stacks` slots, each count region from the left fraction, ETA region from the slot height; 64 bag centres when a grid is drafted. Problems are sentences, never errors, so the checklist can render them. |
+| `calibration.pet.save` | `{"frame_id":"f1","rows":[{"toggle_label":{…},"boarding_pet_slot":{…},"feeder_strip":{…},"stacks":4,"pet_slot_empty_png":true?},…1..4],"points":{"menu":{…},"feed":{…},"close":{…},"page_tabs":[{x,y},…]},"bag":{"grid":[x,y,w,h]?,"slot":[x,y,w,h]?},"feeder_count_left_fraction":0.4?,"feeder_count_min_score":0.75?,"display":{…}?}` | `{"rev":17,"block":{"menu_button":[…],"feed_icon":[…],"close_button":[…],"page_tabs":[[x,y],…],"bag_grid":[…],"bag_slot":[…],"feeder_count_left_fraction":0.4,"feeder_count_min_score":0.75,"slots":[{"enabled":true,"toggle_label":[…],"boarding_pet_slot":[…],"feeder_strip":[…],"stacks":4,"pet_slot_empty_png":"…"?}]},"artifacts":[{"file":"calib_pet.png","path":"…"}],"derived":{"rows":[…]},"warnings":[]}` — writes ONLY the calibration half: queue/food cells/run flags/portable preferences are preserved, existing `enabled`/`boarding_running`/unrequested empty-slot crops survive; marks are ≥10 px boxes; an empty-slot crop is taken from the frame and inline base64; the frame is annotated (toggle green, slot blue, strip orange, points dots) into `calib_pet.png`; one local write, one rev, `config.changed` for `pet` (and `calibration` when the environment was recorded). |
+| `calibration.pet.test_read` | `{"rows":[{"feeder_strip":{…},"stacks":4},…],"feeder_count_left_fraction":0.4?,"feeder_count_min_score":0.75?}` | `{"rows":[{"row":1,"slots":[{"index":1,"reads":[{"text":"138","score":0.99,"upscale":3}],"count":138},…],"eta_region":[…]}],"hidden_ms":420}` — READ-ONLY live companion: ONE capture, then each ticked row's count regions read at v2's `3×/9×/24×` ladder; the first rung whose best line passes the score gate supplies the count, every rung's best line travels in `reads`. No config write. |
 | `keys.parse` | `{"names":{"start":"F12","quit":"F11",...}}` | `{"codes":{"start":123,...},"errors":[{"field":"pause","input":"Zulu","line":"…"}]}` |
 | `keys.names` | `{"codes":{"start":123,...}}` | `{"names":{"start":"F12",...}}` |
 | `attributes.get` | `{}` | `{"variant":"tw","dictionary":"attributes.yaml","attributes":{...}}` |
@@ -243,7 +246,8 @@ Notes:
 `keys.parse`/`keys.names`, `attributes.get`, `calibration.save`/`calibration.fetch`/
 `calibration.fetch_all`/`calibration.kinds`/`calibration.check`/
 `calibration.tooltip.hover_capture`/`calibration.tooltip.save`/`calibration.tooltip.test`/
-`calibration.tuner.check`/`calibration.tuner.save`, `ocr.scan`,
+`calibration.tuner.check`/`calibration.tuner.save`/
+`calibration.pet.preview`/`calibration.pet.save`/`calibration.pet.test_read`, `ocr.scan`,
 `tool.start`, `tool.stop`, `shutdown`. A command in this table is the contract; the implemented list
 is the current fact, and nothing in §4 is spec-only today.
 
@@ -583,6 +587,13 @@ LANDED as §12.8, not left as a silent omission.
     the live OCR/matcher/filter pipeline on the frame so the boxes can be verified before saving;
     `save` needs no OCR and annotates the full-client frame with the three coloured bands. This is
     why `tuner_region` stays withdrawn: the three-box command is its real home.
+
+13. **The pet calibration is a preview/save/test-read SESSION whose save owns only the calibration
+    half (G03).** One strip per row becomes the slot boxes/count/ETA regions through the existing
+    `FeederLayout`; the empty-slot reference is a crop OF THE FRAME, never a live grab; the read-only
+    `test_read` shares the run's 3×/9×/24× ladder so it can explain a slot the run would read. The
+    save preserves the queue, food cells, run flags and portable preferences because they are Pet-tab
+    state, not calibration.
 ## 13. Replay mode (development)
 
 `seal-core --replay <script.json>` serves the SAME stdio protocol from a script instead of from the
