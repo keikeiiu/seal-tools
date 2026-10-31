@@ -885,12 +885,34 @@ fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)
         ));
     };
     for key in object.keys() {
-        if !matches!(key.as_str(), "tool" | "preset" | "count" | "slots") {
+        if !matches!(key.as_str(), "tool" | "preset" | "count" | "slots" | "test") {
             return Err((
                 format!("tool.start doesn't take a {key:?} field"),
                 key.clone(),
             ));
         }
+    }
+
+    if object.contains_key("test") {
+        if tool != ToolId::Quest {
+            return Err((
+                "tool.start's \"test\" is only accepted by \"quest\"".to_owned(),
+                "test".to_owned(),
+            ));
+        }
+        let Some(test) = object.get("test").and_then(Value::as_bool) else {
+            return Err((
+                "tool.start's \"test\" must be a boolean".to_owned(),
+                "test".to_owned(),
+            ));
+        };
+        if !test {
+            return Err((
+                "tool.start's \"test\" is a positive flag; omit it for a normal run".to_owned(),
+                "test".to_owned(),
+            ));
+        }
+        return Ok(json!({"test": true}));
     }
 
     match tool {
@@ -1972,6 +1994,21 @@ mod tests {
             assert_eq!(error.1, "slots", "{case}");
             assert!(error.0.contains("slots"), "{case}: {}", error.0);
         }
+    }
+
+    #[test]
+    fn a_quest_test_flag_is_forwarded_and_other_tools_refuse_it() {
+        assert_eq!(
+            start_arguments(ToolId::Quest, &json!({"tool": "quest", "test": true})).unwrap(),
+            json!({"test": true})
+        );
+        let error = start_arguments(ToolId::Tuner, &json!({"tool": "tuner", "test": true}))
+            .expect_err("only quest has a test loop");
+        assert_eq!(error.1, "test");
+        assert!(error.0.contains("only accepted by \"quest\""));
+        let error = start_arguments(ToolId::Quest, &json!({"tool": "quest", "test": false}))
+            .expect_err("false is not a normal run");
+        assert_eq!(error.1, "test");
     }
 
     #[test]

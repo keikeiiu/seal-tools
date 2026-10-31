@@ -61,12 +61,15 @@ class ConfigReloadArgs implements WirePayload {
 
 /// `tool.start`'s arguments.
 class ToolStartArgs implements WirePayload {
-  const ToolStartArgs({required this.tool});
+  const ToolStartArgs({required this.tool, this.test});
 
   final ToolId tool;
 
+  /// QUES T only: run the same validated plan for exactly one master loop (G21).
+  final bool? test;
+
   @override
-  JsonMap toJson() => {'tool': tool.wire};
+  JsonMap toJson() => {'tool': tool.wire, if (test != null) 'test': test};
 }
 
 /// `tool.stop`'s arguments: a tool, or none to stop whatever runs ([PROTOCOL.md] §4).

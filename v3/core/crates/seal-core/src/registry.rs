@@ -178,9 +178,11 @@ impl ProductionRegistry {
         })
     }
 
-    fn quest_session(&self) -> Result<Session, String> {
+    fn quest_session(&self, args: &Value) -> Result<Session, String> {
         let config = self.config();
-        let plan = crate::quest::resolve(&config).map_err(|reason| reason.message)?;
+        let test = args.get("test").and_then(Value::as_bool).unwrap_or(false);
+        let plan = crate::quest::resolve_with(&config, test.then_some(1))
+            .map_err(|reason| reason.message)?;
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
@@ -400,7 +402,7 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Spammer => self.spammer_session(),
             ToolId::HoldSpace => self.hold_space_session(),
             ToolId::Tuner => self.tuner_session(),
-            ToolId::Quest => self.quest_session(),
+            ToolId::Quest => self.quest_session(args),
             ToolId::Sell => self.sell_session(args),
             ToolId::Gem => self.gem_session(),
             ToolId::Pet => self.pet_session(game),

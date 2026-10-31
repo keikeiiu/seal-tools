@@ -511,6 +511,12 @@ fn cases() -> Vec<Case> {
             json!({"left": 100, "top": 100, "width": 900, "height": 700, "pinned": false}),
         ),
         request_case(
+            "request.tool.start.quest_test",
+            "69",
+            "tool.start",
+            json!({"tool": "quest", "test": true}),
+        ),
+        request_case(
             "request.tool.start",
             "15",
             "tool.start",

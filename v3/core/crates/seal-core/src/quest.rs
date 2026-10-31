@@ -52,6 +52,13 @@ impl QuestSource for WinQuestSource {
 
 /// Resolve the run's plan out of the merged config, or the line that refuses the start.
 pub fn resolve(config: &Value) -> Result<QuestPlan, StopReason> {
+    resolve_with(config, None)
+}
+
+/// [`resolve`] with an optional master-loop override. `Some(1)` is the Quest tab's **Test one
+/// loop**: the same validated plan, run exactly once, so a wrong flow cannot do its whole loop
+/// count before the player sees it.
+pub fn resolve_with(config: &Value, loops_override: Option<i32>) -> Result<QuestPlan, StopReason> {
     let quest: QuestConfig = match config.get("quest").cloned() {
         Some(block) => serde_json::from_value(block).map_err(|error| {
             StopReason::error(format!(
@@ -60,7 +67,11 @@ pub fn resolve(config: &Value) -> Result<QuestPlan, StopReason> {
         })?,
         None => QuestConfig::default(),
     };
-    plan(&quest, None, None, None)
+    let mut resolved = plan(&quest, None, None, None)?;
+    if let Some(loops) = loops_override {
+        resolved.loops = loops.max(1);
+    }
+    Ok(resolved)
 }
 
 /// The quest's effects: bare sends only, over the board's command grammar.
@@ -412,6 +423,15 @@ mod tests {
             }
             other => panic!("expected done, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_one_loop_overrides_the_configured_count() {
+        let plan = resolve_with(&config(simple_steps(), 5), Some(1)).expect("resolves");
+        assert_eq!(
+            plan.loops, 1,
+            "Test one loop runs the same plan exactly once"
+        );
     }
 
     #[test]

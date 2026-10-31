@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 55 request fixtures.
+/// The 56 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -243,6 +243,11 @@ final Map<String, FixtureDecoder> requestDecoders = {
     typedArgs: ToolStartArgs(
       tool: ToolId.parse(decodeString(_args(message)['tool'], 'args.tool')),
     ),
+  ),
+  'request.tool.start.quest_test': (message) => _request(
+    'request.tool.start.quest_test',
+    message,
+    typedArgs: const ToolStartArgs(tool: ToolId.quest, test: true),
   ),
   'request.tool.stop.any': (message) => _request(
     'request.tool.stop.any',
