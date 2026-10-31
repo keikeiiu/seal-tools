@@ -147,9 +147,10 @@ impl ProductionRegistry {
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
         let effects = crate::effects::system_effects(transport, display);
+        let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Buy);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Buy, plan)),
-            effects: Box::new(effects),
+            effects,
         })
     }
     fn sell_session(&self, args: &Value) -> Result<Session, String> {
@@ -172,9 +173,10 @@ impl ProductionRegistry {
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
         let effects = crate::effects::system_effects(transport, display);
+        let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Sell);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Sell, plan)),
-            effects: Box::new(effects),
+            effects,
         })
     }
 
@@ -408,6 +410,28 @@ impl ToolRegistry for ProductionRegistry {
             ToolId::Pet => self.pet_session(game),
             ToolId::Buy => self.buy_session(args),
         }
+    }
+}
+
+/// Wrap the real effects in the dry-run recorder when the start arguments ask for one. A normal
+/// start keeps the real effects untouched.
+fn wrap_dry_run<T>(
+    effects: T,
+    args: &Value,
+    logs: Arc<crate::logs::Logs>,
+    tool: ToolId,
+) -> Box<dyn Effects + Send>
+where
+    T: Effects + Send + 'static,
+{
+    if args
+        .get("dry_run")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        Box::new(crate::dry_run::DryRunEffects::new(effects, logs, tool))
+    } else {
+        Box::new(effects)
     }
 }
 

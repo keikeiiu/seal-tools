@@ -8,6 +8,7 @@ pub mod board;
 pub mod buysell_session;
 pub mod calibration;
 pub mod dispatch;
+pub mod dry_run;
 pub mod effects;
 pub mod events;
 pub mod gem;

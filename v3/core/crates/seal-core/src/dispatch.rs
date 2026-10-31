@@ -886,13 +886,40 @@ fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)
         ));
     };
     for key in object.keys() {
-        if !matches!(key.as_str(), "tool" | "preset" | "count" | "slots" | "test") {
+        if !matches!(
+            key.as_str(),
+            "tool" | "preset" | "count" | "slots" | "test" | "dry_run"
+        ) {
             return Err((
                 format!("tool.start doesn't take a {key:?} field"),
                 key.clone(),
             ));
         }
     }
+
+    let dry_run = if let Some(value) = object.get("dry_run") {
+        if !matches!(tool, ToolId::Buy | ToolId::Sell) {
+            return Err((
+                "tool.start's \"dry_run\" is only accepted by \"buy\" and \"sell\"".to_owned(),
+                "dry_run".to_owned(),
+            ));
+        }
+        let Some(flag) = value.as_bool() else {
+            return Err((
+                "tool.start's \"dry_run\" must be a boolean".to_owned(),
+                "dry_run".to_owned(),
+            ));
+        };
+        if !flag {
+            return Err((
+                "tool.start's \"dry_run\" is a positive flag; omit it for a real run".to_owned(),
+                "dry_run".to_owned(),
+            ));
+        }
+        true
+    } else {
+        false
+    };
 
     if object.contains_key("test") {
         if tool != ToolId::Quest {
@@ -925,6 +952,9 @@ fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)
                 ));
             }
             let mut forwarded = serde_json::Map::new();
+            if dry_run {
+                forwarded.insert("dry_run".to_owned(), Value::Bool(true));
+            }
             if let Some(value) = object.get("preset") {
                 let Some(preset) = value.as_str() else {
                     return Err((
@@ -961,6 +991,9 @@ fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)
                 }
             }
             let mut forwarded = serde_json::Map::new();
+            if dry_run {
+                forwarded.insert("dry_run".to_owned(), Value::Bool(true));
+            }
             if let Some(value) = object.get("slots") {
                 let slots = slot_selection(value)?;
                 forwarded.insert("slots".to_owned(), Value::Array(slots));
@@ -1995,6 +2028,30 @@ mod tests {
             assert_eq!(error.1, "slots", "{case}");
             assert!(error.0.contains("slots"), "{case}: {}", error.0);
         }
+    }
+
+    #[test]
+    fn a_dry_run_flag_is_forwarded_only_for_buy_and_sell() {
+        assert_eq!(
+            start_arguments(ToolId::Buy, &json!({"tool": "buy", "dry_run": true})).unwrap(),
+            json!({"dry_run": true})
+        );
+        assert_eq!(
+            start_arguments(
+                ToolId::Sell,
+                &json!({"tool": "sell", "slots": [1, 2], "dry_run": true})
+            )
+            .unwrap(),
+            json!({"dry_run": true, "slots": [1, 2]})
+        );
+        for tool in [ToolId::Tuner, ToolId::Quest, ToolId::Pet] {
+            let error = start_arguments(tool, &json!({"tool": tool.to_string(), "dry_run": true}))
+                .expect_err("only buy/sell have a dry run");
+            assert_eq!(error.1, "dry_run");
+        }
+        let error = start_arguments(ToolId::Buy, &json!({"tool": "buy", "dry_run": false}))
+            .expect_err("false is not a dry run");
+        assert_eq!(error.1, "dry_run");
     }
 
     #[test]

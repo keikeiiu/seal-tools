@@ -61,15 +61,22 @@ class ConfigReloadArgs implements WirePayload {
 
 /// `tool.start`'s arguments.
 class ToolStartArgs implements WirePayload {
-  const ToolStartArgs({required this.tool, this.test});
+  const ToolStartArgs({required this.tool, this.test, this.dryRun});
 
   final ToolId tool;
 
   /// QUES T only: run the same validated plan for exactly one master loop (G21).
   final bool? test;
 
+  /// BUY/SELL only: validate the plan and move the cursor, but never click (G20).
+  final bool? dryRun;
+
   @override
-  JsonMap toJson() => {'tool': tool.wire, if (test != null) 'test': test};
+  JsonMap toJson() => {
+    'tool': tool.wire,
+    if (test != null) 'test': test,
+    if (dryRun != null) 'dry_run': dryRun,
+  };
 }
 
 /// `tool.stop`'s arguments: a tool, or none to stop whatever runs ([PROTOCOL.md] §4).
