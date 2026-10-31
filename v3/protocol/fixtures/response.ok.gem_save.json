@@ -1,0 +1,54 @@
+{
+  "case": "response.ok.gem_save",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "76",
+    "ok": true,
+    "result": {
+      "rev": 14,
+      "block": {
+        "gem": {
+          "grade_positions": {
+            "N": [
+              10,
+              20
+            ]
+          },
+          "result_gem_area": [
+            100,
+            110,
+            20,
+            30
+          ]
+        }
+      },
+      "derived": {
+        "result_area": {
+          "x": 100,
+          "y": 110,
+          "w": 20,
+          "h": 30
+        },
+        "empty_signature": {
+          "mean_v": 0.2,
+          "mean_sat": 0.8,
+          "colored_fraction": 1.0,
+          "mean_r": 0.1,
+          "mean_g": 0.1,
+          "mean_b": 0.9
+        }
+      },
+      "artifacts": [
+        {
+          "file": "calib_gem_result.png",
+          "path": "C:/repo/config/calib_gem_result.png"
+        },
+        {
+          "file": "calib_gem.png",
+          "path": "C:/repo/config/calib_gem.png"
+        }
+      ]
+    }
+  }
+}

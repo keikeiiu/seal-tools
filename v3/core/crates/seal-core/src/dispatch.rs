@@ -534,6 +534,7 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "calibration.pet.test_read" => crate::pet_calibration::test_read(state, &request),
         "calibration.gem.moves.save" => crate::gem_session::save(state, &request),
         "calibration.gem.check_result" => crate::gem_session::check_result(state, &request),
+        "calibration.gem.save" => crate::gem_save::save(state, &request),
         "calibration.gem.test_route" => crate::gem_routes_session::test_route(state, &request),
         "calibration.gem.cycle" => crate::gem_routes_session::cycle(state, &request),
         "calibration.buysell.preview" => crate::buysell_session::preview(state, &request),

@@ -887,6 +887,35 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     Response::ok(&request.id, result)
 }
 
+/// The session artifacts the reference gallery shows (G04): every annotated frame a session save has
+/// written, with its natural dimensions and the bytes so the shell can draw it after a restart without
+/// guessing a path. A missing/undecodable file is simply absent - the gallery is evidence, not a
+/// reason for `fetch` to fail.
+fn session_gallery(state: &CoreState) -> Value {
+    const ARTIFACTS: &[(&str, &str)] = &[
+        ("tuner", "calib_tuner.png"),
+        ("pet", "calib_pet.png"),
+        ("gem", "calib_gem.png"),
+        ("gem_result", "calib_gem_result.png"),
+    ];
+    let entries: Vec<Value> = ARTIFACTS
+        .iter()
+        .filter_map(|(name, file)| {
+            let path = state.store.path_of(file);
+            let bytes = std::fs::read(&path).ok()?;
+            let (width, height, _) = seal_win::pure::decode_png(&bytes).ok()?;
+            Some(json!({
+                "name": name,
+                "file": file,
+                "width": width,
+                "height": height,
+                "png_base64": base64::engine::general_purpose::STANDARD.encode(&bytes),
+            }))
+        })
+        .collect();
+    Value::Array(entries)
+}
+
 /// Run `calibration.fetch`: the stored mark and, when the kind has one, the stored crop.
 pub fn fetch(state: &CoreState, request: &Request) -> Response {
     let Some(kind_name) = request.args.get("kind").and_then(Value::as_str) else {
@@ -950,6 +979,7 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
         "kind": def.name,
         "mark": mark,
         "artifact": artifact,
+        "gallery": session_gallery(state),
         "rev": state.rev,
     });
     if let Some(target) = &target {
@@ -1065,6 +1095,7 @@ pub fn fetch_all(state: &CoreState, request: &Request) -> Response {
     Response::ok(
         &request.id,
         json!({
+        "gallery": session_gallery(state),
             "rev": state.rev,
             "calibration": calibration,
             "marks": marks,

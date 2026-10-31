@@ -1,0 +1,43 @@
+{
+  "case": "request.calibration.gem.save",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "76",
+    "cmd": "calibration.gem.save",
+    "args": {
+      "frame_id": "f1",
+      "points": {
+        "N": [
+          10,
+          20
+        ],
+        "Register": [
+          30,
+          40
+        ]
+      },
+      "resources": [
+        [
+          50,
+          60
+        ],
+        [
+          70,
+          80
+        ],
+        [
+          90,
+          100
+        ]
+      ],
+      "result_area": [
+        100,
+        110,
+        20,
+        30
+      ],
+      "empty": true
+    }
+  }
+}

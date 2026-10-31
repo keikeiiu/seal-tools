@@ -49,6 +49,7 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.pet.preview",
     "calibration.pet.save",
     "calibration.pet.test_read",
+    "calibration.gem.save",
     "calibration.gem.moves.save",
     "calibration.gem.check_result",
     "calibration.gem.test_route",
@@ -370,6 +371,18 @@ fn cases() -> Vec<Case> {
                 "rows": [{"feeder_strip": {"x": 100, "y": 320, "w": 400, "h": 40}, "stacks": 4}],
                 "feeder_count_left_fraction": 0.4,
                 "feeder_count_min_score": 0.75
+            }),
+        ),
+        request_case(
+            "request.calibration.gem.save",
+            "76",
+            "calibration.gem.save",
+            json!({
+                "frame_id": "f1",
+                "points": {"N": [10, 20], "Register": [30, 40]},
+                "resources": [[50, 60], [70, 80], [90, 100]],
+                "result_area": [100, 110, 20, 30],
+                "empty": true
             }),
         ),
         request_case(
@@ -1215,6 +1228,22 @@ fn cases() -> Vec<Case> {
                 ],
                 "done": true,
                 "log": "arduino_debug.txt: cycle done (21 steps)"
+            }),
+        ),
+        ok_case(
+            "response.ok.gem_save",
+            "76",
+            json!({
+                "rev": 14,
+                "block": {"gem": {"grade_positions": {"N": [10, 20]}, "result_gem_area": [100, 110, 20, 30]}},
+                "derived": {
+                    "result_area": {"x": 100, "y": 110, "w": 20, "h": 30},
+                    "empty_signature": {"mean_v": 0.2, "mean_sat": 0.8, "colored_fraction": 1.0, "mean_r": 0.1, "mean_g": 0.1, "mean_b": 0.9}
+                },
+                "artifacts": [
+                    {"file": "calib_gem_result.png", "path": "C:/repo/config/calib_gem_result.png"},
+                    {"file": "calib_gem.png", "path": "C:/repo/config/calib_gem.png"}
+                ]
             }),
         ),
         ok_case(
