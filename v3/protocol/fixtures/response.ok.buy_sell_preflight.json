@@ -1,0 +1,32 @@
+{
+  "case": "response.ok.buy_sell_preflight",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "68",
+    "ok": true,
+    "result": {
+      "ready": true,
+      "calibration": [
+        {
+          "ok": true,
+          "label": "Bag grid",
+          "detail": "marked"
+        },
+        {
+          "ok": true,
+          "label": "Bag slot",
+          "detail": "marked"
+        }
+      ],
+      "session": [
+        {
+          "ok": true,
+          "label": "ready",
+          "detail": "yes"
+        }
+      ],
+      "lines": []
+    }
+  }
+}

@@ -496,6 +496,12 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
         "calibration.pet.test_read" => crate::pet_calibration::test_read(state, &request),
         "calibration.gem.moves.save" => crate::gem_session::save(state, &request),
         "calibration.gem.check_result" => crate::gem_session::check_result(state, &request),
+        "calibration.buysell.preview" => crate::buysell_session::preview(state, &request),
+        "calibration.shop.test_scroll" => crate::buysell_session::test_scroll(state, &request),
+        "buy_sell.preflight" => Response::ok(
+            &request.id,
+            crate::buysell_session::preflight(&state.config),
+        ),
         "pointer.place" => pointer_command(state, &request, false),
         "pointer.click" => pointer_command(state, &request, true),
         "board.probe" => board_probe(state, &request),

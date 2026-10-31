@@ -51,6 +51,9 @@ const REQUEST_COMMANDS: &[&str] = &[
     "calibration.pet.test_read",
     "calibration.gem.moves.save",
     "calibration.gem.check_result",
+    "calibration.buysell.preview",
+    "calibration.shop.test_scroll",
+    "buy_sell.preflight",
     "keys.parse",
     "keys.names",
     "attributes.get",
@@ -378,6 +381,29 @@ fn cases() -> Vec<Case> {
             "65",
             "calibration.gem.check_result",
             json!({"frame_id": "f1", "area": {"x": 10, "y": 10, "w": 20, "h": 20}}),
+        ),
+        request_case(
+            "request.calibration.buysell.preview",
+            "66",
+            "calibration.buysell.preview",
+            json!({"draft": {
+                "bag_grid": [0, 0, 800, 400],
+                "bag_slot": [0, 0, 100, 50],
+                "shop_region": [100, 300, 400, 400],
+                "shop_rows": 10
+            }}),
+        ),
+        request_case(
+            "request.calibration.shop.test_scroll",
+            "67",
+            "calibration.shop.test_scroll",
+            json!({"notches": 3, "up": true}),
+        ),
+        request_case(
+            "request.buy_sell.preflight",
+            "68",
+            "buy_sell.preflight",
+            json!({}),
         ),
         request_case(
             "request.calibration.save.targeted",
@@ -1147,6 +1173,35 @@ fn cases() -> Vec<Case> {
                 "spread": 0.04,
                 "dominant": "neutral / pale",
                 "crop_png_base64": "iVBORw0KGgo="
+            }),
+        ),
+        ok_case(
+            "response.ok.buysell_preview",
+            "66",
+            json!({
+                "bag_centres": [[50, 25], [150, 25]],
+                "row_centres": [[300, 320]],
+                "pitch": {"w": 100, "h": 50},
+                "row_pitch": 40.0,
+                "problem": null
+            }),
+        ),
+        ok_case(
+            "response.ok.shop_test_scroll",
+            "67",
+            json!({"line": "clicked the focus point at (1000, 420) and scrolled 3 notch(es) up through COM5"}),
+        ),
+        ok_case(
+            "response.ok.buy_sell_preflight",
+            "68",
+            json!({
+                "ready": true,
+                "calibration": [
+                    {"ok": true, "label": "Bag grid", "detail": "marked"},
+                    {"ok": true, "label": "Bag slot", "detail": "marked"}
+                ],
+                "session": [{"ok": true, "label": "ready", "detail": "yes"}],
+                "lines": []
             }),
         ),
         // ── Events: every one in §5 ─────────────────────────────────────────────────────────────

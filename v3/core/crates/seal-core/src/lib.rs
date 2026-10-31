@@ -5,6 +5,7 @@
 
 pub mod artifacts;
 pub mod board;
+pub mod buysell_session;
 pub mod calibration;
 pub mod dispatch;
 pub mod effects;

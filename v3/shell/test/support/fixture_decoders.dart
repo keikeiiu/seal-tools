@@ -95,7 +95,7 @@ final class EnvelopePayload implements WirePayload {
   JsonMap toJson() => value;
 }
 
-/// The 52 request fixtures.
+/// The 55 request fixtures.
 final Map<String, FixtureDecoder> requestDecoders = {
   'request.board.probe': (message) => _request('request.board.probe', message),
   'request.board.details': (message) =>
@@ -154,6 +154,12 @@ final Map<String, FixtureDecoder> requestDecoders = {
       _request('request.calibration.gem.moves.save', message),
   'request.calibration.gem.check_result': (message) =>
       _request('request.calibration.gem.check_result', message),
+  'request.calibration.buysell.preview': (message) =>
+      _request('request.calibration.buysell.preview', message),
+  'request.calibration.shop.test_scroll': (message) =>
+      _request('request.calibration.shop.test_scroll', message),
+  'request.buy_sell.preflight': (message) =>
+      _request('request.buy_sell.preflight', message),
   'request.calibration.fetch.targeted': (message) =>
       _request('request.calibration.fetch.targeted', message),
   'request.calibration.save.empty': (message) =>
@@ -421,6 +427,21 @@ final Map<String, FixtureDecoder> responseDecoders = {
   ),
   'response.ok.gem_check_result': (message) => _ok(
     'response.ok.gem_check_result',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.buysell_preview': (message) => _ok(
+    'response.ok.buysell_preview',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.shop_test_scroll': (message) => _ok(
+    'response.ok.shop_test_scroll',
+    message,
+    EnvelopePayload(_result(message)),
+  ),
+  'response.ok.buy_sell_preflight': (message) => _ok(
+    'response.ok.buy_sell_preflight',
     message,
     EnvelopePayload(_result(message)),
   ),

@@ -1,0 +1,32 @@
+{
+  "case": "request.calibration.buysell.preview",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "66",
+    "cmd": "calibration.buysell.preview",
+    "args": {
+      "draft": {
+        "bag_grid": [
+          0,
+          0,
+          800,
+          400
+        ],
+        "bag_slot": [
+          0,
+          0,
+          100,
+          50
+        ],
+        "shop_region": [
+          100,
+          300,
+          400,
+          400
+        ],
+        "shop_rows": 10
+      }
+    }
+  }
+}

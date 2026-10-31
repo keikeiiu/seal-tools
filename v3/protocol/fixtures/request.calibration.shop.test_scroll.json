@@ -1,0 +1,13 @@
+{
+  "case": "request.calibration.shop.test_scroll",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "67",
+    "cmd": "calibration.shop.test_scroll",
+    "args": {
+      "notches": 3,
+      "up": true
+    }
+  }
+}
