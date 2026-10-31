@@ -176,6 +176,31 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     setState(() => _loadingStored = true);
+    // G08: ONE request instead of 35 sequential fetches. A core refusal or a pre-G08 fake falls
+    // back to the per-slot loop so the screen still renders something truthful.
+    final all = await widget.model.calibrationFetchAll();
+    if (!mounted) {
+      return;
+    }
+    if (all.ok && all.value!.marks.isNotEmpty) {
+      final slots = {for (final slot in calibrationMarkSlots()) slot.key};
+      setState(() {
+        _stored.clear();
+        _storedErrors.clear();
+        for (final mark in all.value!.marks) {
+          final key = calibrationStoredKey(mark.kind, mark.target);
+          if (slots.contains(key)) {
+            _stored[key] = mark;
+          }
+        }
+        _loadingStored = false;
+        _storedConfigSignature = _configSignature();
+        if (!_draftTouched) {
+          _fillEditorFromStored();
+        }
+      });
+      return;
+    }
     final slots = calibrationMarkSlots();
     final results = await Future.wait([
       for (final slot in slots)

@@ -186,6 +186,53 @@ class CalibrationFetchResult {
       : 'Stored mark [${mark!.label}] (rev $rev)';
 }
 
+/// `calibration.fetch_all`'s answer (G08): every stored mark plus the environment block in ONE
+/// request, instead of the shell's old 35-fetch opening loop.
+class CalibrationFetchAllResult {
+  const CalibrationFetchAllResult({
+    required this.rev,
+    required this.marks,
+    this.calibration,
+  });
+
+  final int rev;
+  final List<CalibrationFetchResult> marks;
+
+  /// The stored `calibration` environment block (null when nothing was ever saved).
+  final JsonMap? calibration;
+
+  factory CalibrationFetchAllResult.fromJson(JsonMap map) {
+    final rev = asNumber(map['rev'])?.round() ?? 0;
+    final marks = <CalibrationFetchResult>[];
+    final raw = map['marks'];
+    if (raw is List) {
+      for (final entry in raw) {
+        if (entry is! Map) continue;
+        final item = entry.cast<String, Object?>();
+        final artifact = item['artifact'];
+        marks.add(
+          CalibrationFetchResult(
+            kind: asString(item['kind']) ?? '?',
+            target: asString(item['target']),
+            mark: CalibrationMark.fromJson(item['mark']),
+            artifact: artifact is Map<String, dynamic>
+                ? CalibrationCrop.fromJson(artifact)
+                : null,
+            rev: rev,
+          ),
+        );
+      }
+    }
+    return CalibrationFetchAllResult(
+      rev: rev,
+      marks: marks,
+      calibration: map['calibration'] is Map
+          ? asJsonMap(map['calibration'])
+          : null,
+    );
+  }
+}
+
 /// The `display` subset a save carries so the core records the measured environment.
 ///
 /// The protocol's calibration environment uses v2's key names (`dpi_scale`, `monitor_dpi`, `screen`),

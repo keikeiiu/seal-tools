@@ -668,6 +668,11 @@ class ShellModel extends ChangeNotifier {
     },
   );
 
+  /// `calibration.fetch_all {}`: every stored mark in ONE local read (G08). Returns null marks only
+  /// when the core refuses (the workspace then falls back to per-slot fetches and shows the refusal).
+  Future<CoreActionResult<CalibrationFetchAllResult>> calibrationFetchAll() =>
+      _coreAction('calibration.fetch_all', CalibrationFetchAllResult.fromJson);
+
   /// `calibration.check {}`: the core's canonical comparison of the stored calibration with this PC
   /// (G09). READ-ONLY: the game being closed is a result with a note, never an error.
   Future<CoreActionResult<JsonMap>> calibrationCheck() =>

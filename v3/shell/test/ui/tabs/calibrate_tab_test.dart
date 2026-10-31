@@ -1657,4 +1657,65 @@ void main() {
       reason: 'a conflict refreshes the mark the core refused against',
     );
   });
+
+  testWidgets('opening the workspace loads every mark with ONE fetch_all', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'calibration.fetch_all' => {
+          'result': {
+            'rev': 9,
+            'calibration': {
+              'dpi_scale': 1.5,
+              'measured_at': '2026-11-01T00:00:00Z',
+            },
+            'marks': [
+              {
+                'kind': 'bag_grid',
+                'target': null,
+                'mark': [10, 20, 30, 40],
+                'artifact': null,
+              },
+              {
+                'kind': 'max_button',
+                'target': null,
+                'mark': [50, 60],
+                'artifact': null,
+              },
+            ],
+            'withdrawn': <Map<String, dynamic>>[],
+          },
+        },
+        'calibration.check' => {
+          'result': {
+            'live': null,
+            'stored': null,
+            'differences': <String>[],
+            'matches': null,
+            'note': 'game window not open',
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    expect(
+      harness.sentMessages.where(
+        (message) => message['cmd'] == 'calibration.fetch_all',
+      ),
+      hasLength(1),
+      reason: 'the workspace opens with one request, not 35',
+    );
+    expect(
+      harness.sentMessages.where(
+        (message) => message['cmd'] == 'calibration.fetch',
+      ),
+      isEmpty,
+      reason: 'fetch_all covered every served mark',
+    );
+    expect(find.textContaining('10, 20, 30, 40'), findsWidgets);
+  });
 }
