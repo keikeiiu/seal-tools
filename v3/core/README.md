@@ -32,10 +32,17 @@ therefore a full-access run); after the fetch the whole team can build offline.
 .\cargo.cmd test --workspace --offline
 .\cargo.cmd fmt --all -- --check
 .\cargo.cmd clippy --workspace --all-targets --offline -- -D warnings
+.\cargo.cmd clippy --workspace --lib --offline -- -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -D warnings
+$env:RUSTDOCFLAGS = '-D warnings'; .\cargo.cmd doc --workspace --no-deps --offline
 ```
 
-All three must be clean. A warning is a failure: this core replaces a codebase whose build gate
-was already warnings-as-errors, and `cargo clippy -- -D warnings` keeps that property.
+All five must be clean. A warning is a failure: this core replaces a codebase whose build gate
+was already warnings-as-errors, and `cargo clippy -- -D warnings` keeps that property. The
+workspace opts every crate into `clippy::pedantic` (root `[workspace.lints]`), so the ordinary
+clippy line above enforces the pedantic bar too; narrow `#[allow(..., reason = "...")]` in the
+source is the only escape. The lib-only panic line keeps production code free of `unwrap`/`expect`/
+`panic!` while tests may still use them, and the rustdoc line keeps intra-doc links and HTML tags
+honest.
 
 ## Deliberate divergences from v2
 

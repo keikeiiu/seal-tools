@@ -28,6 +28,10 @@ pub trait PetStateSink: Send + Sync {
 
     /// The command-caller half: same write/event path, with the revision returned for the response.
     /// The default keeps a recording test sink source-compatible (it has no revision to report).
+    ///
+    /// # Errors
+    ///
+    /// The default recording sink cannot fail, so this returns `Ok` with revision 0; a store-backed sink returns its write failure.
     fn persist_rev(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
         self.persist(patch);
         Ok(0)
@@ -66,6 +70,10 @@ impl ConfigPetStateSink {
     /// bump the shared revision. It deliberately does NOT emit the event — a command caller queues
     /// the same `config.changed` after its response (`config.apply`'s order); a live tool calls
     /// [`Self::persist_once`] and emits immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns the line when the patch is empty or the store refuses the write.
     pub fn write_rev(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
         if patch.is_empty() {
             return Err("an empty pet run-state patch is not a write".to_owned());
@@ -82,6 +90,10 @@ impl ConfigPetStateSink {
 
     /// The live-tool half: write, then emit the one `config.changed` immediately (there is no
     /// response to order it after).
+    ///
+    /// # Errors
+    ///
+    /// Returns the line when the write fails or the config cannot be re-read for the emitted event.
     pub fn persist_once(&self, patch: &PetRunStatePatch) -> Result<u64, String> {
         let rev = self.write_rev(patch)?;
         let config = self.store.load().map_err(|error| error.to_string())?;

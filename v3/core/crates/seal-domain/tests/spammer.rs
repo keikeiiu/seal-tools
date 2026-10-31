@@ -10,7 +10,7 @@
 //! v2's `Dictionary` preserved it. Rust's `BTreeMap` would sort it, so the rotation keeps the order
 //! explicitly and the caller (the config merge) must not sort.
 
-use seal_domain::config::SpammerCombo;
+use seal_domain::config::{SpammerCombo, SpammerStartup};
 use seal_domain::decision::StopReason;
 use seal_domain::tools::spammer::{
     BoardPress, SpammerPlan, SpammerPress, SpammerRotation, SpammerRun, order_for, plan_or_stop,
@@ -36,7 +36,7 @@ fn rotation(keys: &[(&str, f64)], priority: &[&str], combos: Vec<SpammerCombo>) 
             .collect(),
         priority: names(priority),
         combos,
-        startup: Default::default(),
+        startup: SpammerStartup::default(),
     }
 }
 
@@ -135,14 +135,14 @@ fn unnamed_keys_keep_their_precedence() {
 fn a_combo_needs_at_least_two_keys() {
     let runnable = runnable_combos(&names(&["1", "2"]), &[combo(&["1"], 0.8)]);
 
-    assert!(runnable.is_empty());
+    assert_eq!(runnable, [] as [seal_domain::config::SpammerCombo; 0]);
 }
 
 #[test]
 fn a_combo_naming_a_key_the_preset_lacks_is_dropped() {
     let runnable = runnable_combos(&names(&["1", "2"]), &[combo(&["1", "nope"], 0.8)]);
 
-    assert!(runnable.is_empty());
+    assert_eq!(runnable, [] as [seal_domain::config::SpammerCombo; 0]);
 }
 
 #[test]

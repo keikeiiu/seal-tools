@@ -84,11 +84,12 @@ fn the_levels_are_the_ones_the_sketch_and_domain_agree_on() {
     assert_eq!(CURRENT_LEVEL, 2, "the sketch's FW_VERSION");
     assert_eq!(DRAG_LEVEL, 2, "the level that added L/l");
     // The domain half-owns the drag rule; the board half must agree with it rather than restate it.
+    let drag_level = i32::try_from(DRAG_LEVEL).expect("the drag level fits in an i32");
     assert!(seal_domain::tools::pet::food_load::board_can_drag(Some(
-        DRAG_LEVEL as i32
+        drag_level
     )));
     assert!(!seal_domain::tools::pet::food_load::board_can_drag(Some(
-        DRAG_LEVEL as i32 - 1
+        drag_level - 1
     )));
 }
 

@@ -285,9 +285,8 @@ fn opening_a_port_that_does_not_exist_is_a_typed_error() {
     // panicking. (The successful-open path is live-only; see tests/live_only.rs.)
     let clock = RecordingClock::default();
 
-    let error = match SerialTransport::open("COM_DOES_NOT_EXIST_999", 115200, &clock) {
-        Ok(_) => panic!("there is no such port on this machine"),
-        Err(error) => error,
+    let Err(error) = SerialTransport::open("COM_DOES_NOT_EXIST_999", 115_200, &clock) else {
+        panic!("there is no such port on this machine");
     };
 
     assert!(

@@ -77,6 +77,7 @@ impl FeederEta {
     /// caught it: *"there is no stage 8 stage 9."* The hover panel's `(6階)` is the **stage**; the
     /// panel's `+7` and this line's `到9為止` are the **growth**, which ends at +9/100 % — the
     /// finished pet. DISPLAY ONLY: the level form drives nothing.
+    #[must_use]
     pub fn growth_target(line: Option<&str>) -> Option<i32> {
         let line = line?;
         let characters: Vec<char> = line.chars().collect();
@@ -97,6 +98,7 @@ impl FeederEta {
     ///
     /// Implausible values are rejected rather than clamped: a misread rate would silently rescale
     /// every time this row computes.
+    #[must_use]
     pub fn parse_rate(lines: &[String]) -> Option<i32> {
         for line in lines {
             if line.trim().is_empty() {
@@ -126,6 +128,7 @@ impl FeederEta {
     ///
     /// `None` is an ordinary answer — an older window, a mangled read, a pet whose line says
     /// something else — and the caller falls back to the food figure.
+    #[must_use]
     pub fn parse(lines: &[String]) -> Option<Reading> {
         for line in lines {
             if line.trim().is_empty() {
@@ -165,6 +168,7 @@ impl FeederEta {
 
     /// How long until the row next needs looking at BECAUSE OF THE PET — `None` unless the game said
     /// the boarding completes, in which case the pet is about to be mailed and the row emptied.
+    #[must_use]
     pub fn completion_minutes(reading: Option<&Reading>) -> Option<i32> {
         reading
             .filter(|reading| reading.is_completion)
@@ -321,18 +325,24 @@ impl FeederLayout {
     ///
     /// `None` when the strip or the stack count is unusable, so a half-calibrated row yields no slots
     /// rather than a row of boxes at (0,0).
+    #[must_use]
     pub fn slot_boxes(strip: Option<&[i32]>, stacks: i32) -> Option<Vec<Vec<i32>>> {
         let strip = strip.filter(|strip| BagGrid::is_valid_rect(Some(strip)))?;
         if stacks < 1 {
             return None;
         }
 
-        let mut boxes = Vec::with_capacity(stacks as usize);
+        let mut boxes = Vec::with_capacity(usize::try_from(stacks).ok()?);
         for index in 0..stacks {
             let width = i64::from(strip[2]);
             let stacks64 = i64::from(stacks);
-            let left = strip[0] + (width * i64::from(index) / stacks64) as i32;
-            let right = strip[0] + (width * (i64::from(index) + 1) / stacks64) as i32;
+            // The edges are computed in i64 (a width times a stack count can pass i32) and converted
+            // back with a checked conversion: an absurd strip yields no boxes rather than wrapping.
+            let left =
+                i32::try_from(i64::from(strip[0]) + width * i64::from(index) / stacks64).ok()?;
+            let right =
+                i32::try_from(i64::from(strip[0]) + width * (i64::from(index) + 1) / stacks64)
+                    .ok()?;
             boxes.push(vec![left, strip[1], (right - left).max(1), strip[3]]);
         }
         Some(boxes)
@@ -352,6 +362,7 @@ impl FeederLayout {
     /// that misses returns nothing rather than something wrong. Widening is free here: the parser
     /// PATTERN-MATCHES and skips the expiry line, a bare count cannot match `約N分`, and the new band
     /// is a strict superset of the old — **no row that read before can stop reading**.
+    #[must_use]
     pub fn eta_region(strip: Option<&[i32]>) -> Option<Vec<i32>> {
         let strip = strip.filter(|strip| BagGrid::is_valid_rect(Some(strip)))?;
         let height = f64::from(strip[3]);
@@ -364,6 +375,7 @@ impl FeederLayout {
     }
 
     /// The region a count is read from for one slot.
+    #[must_use]
     pub fn read_region(slot: Option<&[i32]>, left_fraction: f64) -> Option<Vec<i32>> {
         let slot = slot.filter(|slot| BagGrid::is_valid_rect(Some(slot)))?;
         let left = slot[0] + round_ties_even(f64::from(slot[2]) * left_fraction);

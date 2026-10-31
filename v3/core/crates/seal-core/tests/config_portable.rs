@@ -259,7 +259,7 @@ fn reload_with_an_invalid_on_disk_config_answers_config_invalid_and_keeps_the_se
     let error = response.error.expect("a refusal");
     assert_eq!(error.code, "config_invalid");
     let errors = error.detail["errors"].as_array().expect("detail.errors");
-    assert!(!errors.is_empty());
+    assert_ne!(errors.as_slice(), [] as [serde_json::Value; 0]);
     assert!(
         errors.iter().any(|line| line
             .as_str()

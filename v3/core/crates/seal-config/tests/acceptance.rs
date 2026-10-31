@@ -23,8 +23,8 @@ fn def(path: &str) -> &'static FileDef {
         .expect("a registry entry")
 }
 
-fn write(dir: &TestDir, path: &str, content: Value) {
-    file::write(dir.path(), def(path), &content).expect("seeds a file");
+fn write(dir: &TestDir, path: &str, content: &Value) {
+    file::write(dir.path(), def(path), content).expect("seeds a file");
 }
 
 fn template() -> &'static str {
@@ -37,27 +37,27 @@ fn tree() -> TestDir {
     write(
         &dir,
         "meta.yaml",
-        json!({"layout_version": 1, "legacy_folded": true}),
+        &json!({"layout_version": 1, "legacy_folded": true}),
     );
     write(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "TW_LIVE"}, "hotkeys": {"start": 123}}),
+        &json!({"window": {"title": "TW_LIVE"}, "hotkeys": {"start": 123}}),
     );
     write(
         &dir,
         "setup/buy_sell.yaml",
-        json!({"buy_sell": {"presets": {"Potion": {"scroll": 0, "row": 2, "count": 2}}}}),
+        &json!({"buy_sell": {"presets": {"Potion": {"scroll": 0, "row": 2, "count": 2}}}}),
     );
     write(
         &dir,
         "machine/display.yaml",
-        json!({"calibration": {"dpi_scale": 1.5, "monitor_dpi": 144}}),
+        &json!({"calibration": {"dpi_scale": 1.5, "monitor_dpi": 144}}),
     );
     write(
         &dir,
         "machine/pet.yaml",
-        json!({"pet": {"slots": [{"enabled": true, "stacks": 4}]}}),
+        &json!({"pet": {"slots": [{"enabled": true, "stacks": 4}]}}),
     );
     dir
 }

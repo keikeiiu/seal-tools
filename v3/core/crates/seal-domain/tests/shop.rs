@@ -43,6 +43,12 @@ fn settings() -> ShopSettings {
 
 // ── the bag grid (`BagGridTests`, translated) ────────────────────────────────────────────────
 
+// The helper returns the config-shaped `Option<Vec<i32>>` on purpose: the point of the fixture is the
+// value the production functions take, and `Some(...)` is part of the shape being tested.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the fixture mirrors the Option<Vec<i32>> config field the production function takes"
+)]
 fn grid() -> Option<Vec<i32>> {
     Some(vec![100, 200, 408, 408])
 }
@@ -144,7 +150,10 @@ fn invalid_bag_rectangles_are_rejected() {
 
     for rect in invalid {
         assert!(!BagGrid::is_valid_rect(rect), "should be invalid: {rect:?}");
-        assert!(BagGrid::centres(rect).is_empty());
+        assert_eq!(
+            BagGrid::centres(rect),
+            [] as [seal_domain::geometry::Point; 0]
+        );
     }
 }
 
@@ -158,6 +167,11 @@ fn bag_disagreement_copes_with_an_incomplete_calibration() {
 
 // ── the shop rows (`ShopGeometryTests`, translated) ─────────────────────────────────────────
 
+// Same reason as `grid`: the fixture carries the config's `Option<Vec<i32>>` shape.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the fixture mirrors the Option<Vec<i32>> config field the production function takes"
+)]
 fn region() -> Option<Vec<i32>> {
     Some(vec![100, 300, 400, 470])
 }
@@ -215,7 +229,10 @@ fn an_undrawn_shop_region_is_refused_not_guessed() {
     assert_eq!(ShopGeometry::problem(region().as_deref(), 10), None);
 
     assert_eq!(ShopGeometry::row_centre(None, 10, 0), None);
-    assert!(ShopGeometry::row_centres(None, 10).is_empty());
+    assert_eq!(
+        ShopGeometry::row_centres(None, 10),
+        [] as [seal_domain::geometry::Point; 0]
+    );
 }
 
 #[test]
@@ -395,7 +412,10 @@ fn the_sell_slots_are_highest_first_distinct_and_capped() {
 
     // `Enumerable.Take` with a non-positive count is empty, not an exception.
     settings.sell_cap = 0;
-    assert!(seal_domain::tools::shop::sell_slots_to_sell(&settings).is_empty());
+    assert_eq!(
+        seal_domain::tools::shop::sell_slots_to_sell(&settings),
+        [] as [i32; 0]
+    );
 }
 
 /// The plan is the ordered effect list v2 performs, waits included: focus, then per slot the right

@@ -38,6 +38,7 @@ const SCALE_TOLERANCE: f64 = 0.001;
 /// A field the stored calibration does not carry is not a difference (`CalibrationCheck.cs:22`): an
 /// install that has never been calibrated has nothing to be wrong about. The order is v2's: scale,
 /// client size, screen.
+#[must_use]
 pub fn differences(stored: &CalibrationInfo, live: &DisplayInfo) -> Vec<String> {
     let mut diffs = Vec::new();
 

@@ -41,6 +41,7 @@ impl ToolId {
     ];
 
     /// The id as the protocol spells it (`PROTOCOL.md` §9: `holdspace`, `buy`, `sell`, …).
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Spammer => "spammer",
@@ -55,12 +56,14 @@ impl ToolId {
     }
 
     /// Exact, untrimmed lookup: an id is a wire value, not player input.
+    #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|tool| tool.as_str() == name)
     }
 
     /// The one tool that owns a schedule rather than an operation (`LauncherService.ResidentId`):
     /// the pet feeder waits for the game instead of taking it for a whole run.
+    #[must_use]
     pub const fn is_resident(self) -> bool {
         matches!(self, Self::Pet)
     }
@@ -84,6 +87,7 @@ pub enum ToolPhase {
 }
 
 impl ToolPhase {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
@@ -95,6 +99,7 @@ impl ToolPhase {
 
     /// True for everything but [`Self::Idle`]: a press on an engaged tool stops or cancels it, never
     /// starts it again.
+    #[must_use]
     pub const fn engaged(self) -> bool {
         !matches!(self, Self::Idle)
     }
@@ -120,6 +125,7 @@ pub enum ToolNextAction {
 }
 
 impl ToolNextAction {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Feed => "feed",
@@ -158,16 +164,19 @@ impl ToolRow {
         }
     }
 
+    #[must_use]
     pub fn detail(mut self, detail: Option<impl Into<String>>) -> Self {
         self.detail = detail.map(Into::into);
         self
     }
 
+    #[must_use]
     pub fn next_action_in_seconds(mut self, seconds: Option<f64>) -> Self {
         self.next_action_in_seconds = seconds;
         self
     }
 
+    #[must_use]
     pub fn next_action(mut self, action: Option<ToolNextAction>) -> Self {
         self.next_action = action;
         self
@@ -230,6 +239,7 @@ pub struct ToolSnapshot {
 
 impl ToolSnapshot {
     /// The idle snapshot for one tool: what a stopped tool publishes.
+    #[must_use]
     pub fn new(tool: ToolId) -> Self {
         Self {
             tool,
@@ -244,32 +254,38 @@ impl ToolSnapshot {
     }
 
     /// Engages the tool in `phase` and sets the card boolean from it.
+    #[must_use]
     pub fn running(mut self, phase: ToolPhase) -> Self {
         self.phase = phase;
         self.running = phase.engaged();
         self
     }
 
+    #[must_use]
     pub fn message(mut self, message: impl Into<String>) -> Self {
         self.message = message.into();
         self
     }
 
+    #[must_use]
     pub fn countdown_s(mut self, countdown_s: Option<f64>) -> Self {
         self.countdown_s = countdown_s;
         self
     }
 
+    #[must_use]
     pub fn rows(mut self, rows: Vec<ToolRow>) -> Self {
         self.rows = rows;
         self
     }
 
+    #[must_use]
     pub fn detail(mut self, detail: Vec<ToolDetail>) -> Self {
         self.detail = detail;
         self
     }
 
+    #[must_use]
     pub fn error(mut self, error: Option<String>) -> Self {
         self.error = error;
         self
@@ -277,6 +293,7 @@ impl ToolSnapshot {
 
     /// The final snapshot of a run that ended on its own or was stopped: idle, not running, and the
     /// reason the player reads.
+    #[must_use]
     pub fn stopped(mut self, message: impl Into<String>) -> Self {
         self.running = false;
         self.phase = ToolPhase::Idle;
@@ -298,10 +315,12 @@ pub struct StateCell {
 impl StateCell {
     /// A cell with no snapshot published yet — a tool that has never run. [`StateCell::read`] then
     /// returns `None`.
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn new(initial: ToolSnapshot) -> Self {
         let cell = Self::empty();
         cell.publish(initial);
@@ -315,16 +334,17 @@ impl StateCell {
         let mut current = self
             .current
             .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *current = Some(Arc::new(snapshot));
     }
 
     /// The current snapshot, or `None` before the first publish. The returned `Arc` is immutable:
     /// a later publish changes the cell, never a value somebody already holds.
+    #[must_use]
     pub fn read(&self) -> Option<Arc<ToolSnapshot>> {
         self.current
             .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 }

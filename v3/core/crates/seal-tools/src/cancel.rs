@@ -38,6 +38,7 @@ pub struct CancelToken {
 }
 
 impl CancelToken {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -48,11 +49,16 @@ impl CancelToken {
         self.cancelled.store(true, Ordering::SeqCst);
     }
 
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
 
     /// [`Cancelled`] when the run has been stopped, `Ok(())` while it may continue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Cancelled`] when the run has been stopped; `Ok(())` carries no error.
     pub fn check(&self) -> Result<(), Cancelled> {
         if self.is_cancelled() {
             Err(Cancelled)
@@ -82,16 +88,21 @@ pub struct RunControl {
 }
 
 impl RunControl {
+    #[must_use]
     pub fn new(token: CancelToken) -> Self {
         Self { token }
     }
 
     /// The raw signal, for a loop's own exit test (`v2`'s `ct.IsCancellationRequested` in the loop
     /// head). Cleanup code cannot reach it: a [`Cleanup`] section only has its own quiet operations.
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.token.is_cancelled()
     }
 
+    /// # Errors
+    ///
+    /// Returns [`Cancelled`] when the run has been stopped; `Ok(())` while it may continue.
     pub fn check(&self) -> Result<(), Cancelled> {
         self.token.check()
     }
@@ -100,6 +111,18 @@ impl RunControl {
     /// mid-wait, not at the end. A non-positive or nonsense wait is clamped to one tick (v2's
     /// `Math.Max(1, …)`) rather than rejected: a nonsense number from a config is a tick, not a
     /// crash.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Cancelled`] as soon as the token is set, which can be during the every-tick check
+    /// rather than at the end of the wait.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a wait length converted to 50 ms ticks: the count is clamped to >= 1 first, a \
+                  tick count is exact in f64, and only the sub-tick fraction is truncated"
+    )]
     pub fn sleep(&self, clock: &dyn Clock, seconds: f64) -> Result<(), Cancelled> {
         let steps = ((seconds / TICK_SECONDS) as usize).max(1);
         let tick = (seconds / steps as f64).max(MIN_TICK_SECONDS);

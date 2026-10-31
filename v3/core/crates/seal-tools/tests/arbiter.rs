@@ -144,7 +144,7 @@ fn stop_with_no_name_stops_the_current_tool() {
 
     match stop {
         Stop::Cancelling { tool, .. } => assert_eq!(tool, ToolId::Sell),
-        other => panic!("expected a cancellation, got {other:?}"),
+        Stop::NotRunning => panic!("expected a cancellation of the current tool, got NotRunning"),
     }
 }
 
@@ -157,7 +157,9 @@ fn stop_with_no_name_falls_back_to_the_resident_feeder() {
 
     match arbiter.stop(None) {
         Stop::Cancelling { tool, .. } => assert_eq!(tool, ToolId::Pet),
-        other => panic!("expected a cancellation, got {other:?}"),
+        Stop::NotRunning => {
+            panic!("expected a cancellation of the resident feeder, got NotRunning")
+        }
     }
 }
 

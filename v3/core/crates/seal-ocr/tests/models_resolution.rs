@@ -36,7 +36,7 @@ impl Scratch {
     }
 
     /// A `models`-shaped directory holding exactly `names` as empty files.
-    fn models(&self, parent: &Path, names: &[&str]) -> PathBuf {
+    fn models(parent: &Path, names: &[&str]) -> PathBuf {
         let path = parent.join("models");
         std::fs::create_dir_all(&path).expect("the models dir creates");
         for name in names {
@@ -48,7 +48,7 @@ impl Scratch {
     /// A parent directory whose `models` holds all three files.
     fn valid_parent(&self, name: &str) -> PathBuf {
         let parent = self.dir(name);
-        let _ = self.models(&parent, &MODEL_FILES);
+        let _ = Self::models(&parent, &MODEL_FILES);
         parent
     }
 }
@@ -95,7 +95,7 @@ fn a_set_environment_missing_one_model_is_a_loud_error_not_a_fallback() {
     let root = scratch.valid_parent("root");
     let env_parent = scratch.dir("env");
     let two = &MODEL_FILES[..2];
-    let env = scratch.models(&env_parent, two);
+    let env = Scratch::models(&env_parent, two);
 
     let error = resolve_models_dir(Some(&env), Some(&root), None)
         .expect_err("the env var wins or fails; the valid root must not be used");
@@ -164,7 +164,7 @@ fn a_directory_with_two_of_three_models_does_not_count() {
     let scratch = Scratch::new("two");
     let root = scratch.dir("root");
     let two = &MODEL_FILES[..2];
-    let _ = scratch.models(&root, two);
+    let _ = Scratch::models(&root, two);
     let exe = scratch.dir("exe");
 
     let error = resolve_models_dir(None, Some(&root), Some(&exe))

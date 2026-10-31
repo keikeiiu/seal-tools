@@ -27,6 +27,10 @@ pub enum PointerFailure {
 
 /// Parse the flat `{"x":<int>,"y":<int>}` pointer arguments. Both are required integers >= 0; a
 /// malformed one names its own field (the dispatcher reports it as `bad_request`).
+///
+/// # Errors
+///
+/// Returns the player-facing line and field name when `x` or `y` is missing or not a non-negative integer.
 pub fn point_arguments(cmd: &str, args: &Value) -> Result<Point, (String, String)> {
     let coordinate = |name: &str| -> Result<i32, (String, String)> {
         let Some(value) = args.get(name).and_then(Value::as_i64) else {
@@ -56,6 +60,10 @@ pub fn point_arguments(cmd: &str, args: &Value) -> Result<Point, (String, String
 /// missing window is `NotFound`; a covered game is `NotForeground`; the measure failure keeps its
 /// typed Win32 shape. `DisplayInfo::cursor_target` is applied later by `BoardEffects`, so this is
 /// the one place the physical/logical conversion happens.
+///
+/// # Errors
+///
+/// Returns the command error when the configured title is empty or the window cannot be found.
 pub fn game_display(config: &Value) -> Result<DisplayInfo, CommandError> {
     let title = win::configured_title(config)?;
     let hwnd = seal_win::window::find_window(&title).ok_or(CommandError::NotFound {
@@ -69,6 +77,10 @@ pub fn game_display(config: &Value) -> Result<DisplayInfo, CommandError> {
 
 /// Perform the pointer action through the existing effects placement. `click` only adds the bare
 /// left click after a successful placement; a failed placement never clicks.
+///
+/// # Errors
+///
+/// Returns the line when the placement or the click write fails.
 pub fn perform<T, C, K>(
     effects: &mut BoardEffects<T, C, K>,
     point: Point,
@@ -90,6 +102,10 @@ where
 /// The production path: window/foreground/measure, open the board, then place (and optionally click)
 /// through the closed loop. The pointer command's input lease is checked by the dispatcher before
 /// this is called.
+///
+/// # Errors
+///
+/// Returns the pointer failure when the window or the board cannot be opened, or the action fails.
 #[cfg(windows)]
 pub fn system_perform(config: &Value, point: Point, click: bool) -> Result<(), PointerFailure> {
     let display = game_display(config).map_err(PointerFailure::Window)?;

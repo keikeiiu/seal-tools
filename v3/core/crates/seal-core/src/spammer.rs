@@ -33,6 +33,7 @@ pub trait Now {
 pub struct RealNow(Instant);
 
 impl RealNow {
+    #[must_use]
     pub fn start() -> Self {
         Self(Instant::now())
     }
@@ -104,6 +105,10 @@ pub fn rotation(config: &Value) -> (bool, String, Option<SpammerRotation>) {
 }
 
 /// The run's plan, or the refusal line v2's `Run()` shows.
+///
+/// # Errors
+///
+/// Returns the refusal line when no preset is configured or the active preset is missing.
 pub fn plan(config: &Value) -> Result<SpammerPlan, String> {
     let (presets_configured, active, rotation) = rotation(config);
     plan_or_stop(presets_configured, &active, rotation).map_err(|reason| reason.message)
@@ -112,6 +117,7 @@ pub fn plan(config: &Value) -> Result<SpammerPlan, String> {
 /// The keys the firmware cannot send, one v2 warning line each. The whole rotation is checked at
 /// START: a run that would silently drop half its rotation is worse than a refused start, and the
 /// player can fix the preset before anything is pressed.
+#[must_use]
 pub fn unsupported_keys(config: &Value) -> Vec<String> {
     let (_, _, rotation) = rotation(config);
     let Some(rotation) = rotation else {
@@ -132,6 +138,7 @@ pub struct SpammerTool {
 }
 
 impl SpammerTool {
+    #[must_use]
     pub fn new(plan: &SpammerPlan, now: Box<dyn Now + Send>) -> Self {
         let started = now.seconds();
         Self {
@@ -199,7 +206,7 @@ mod tests {
         }
     }
 
-    fn config(presets: Value, active: &str) -> Value {
+    fn config(presets: &Value, active: &str) -> Value {
         serde_json::json!({
             "spammer": {
                 "active": active,
@@ -211,7 +218,7 @@ mod tests {
     #[test]
     fn the_active_preset_is_read_in_file_order_with_its_cooldowns() {
         let config = config(
-            serde_json::json!({
+            &serde_json::json!({
                 "buff": {"1": 1, "2": 0.5},
                 "other": {"3": 2},
             }),
@@ -232,7 +239,7 @@ mod tests {
 
     #[test]
     fn a_preset_that_is_not_there_gets_the_look_up_line() {
-        let config = config(serde_json::json!({"buff": {"1": 1}}), "missing");
+        let config = config(&serde_json::json!({"buff": {"1": 1}}), "missing");
 
         let line = plan(&config).expect_err("no such preset");
 
@@ -242,7 +249,7 @@ mod tests {
 
     #[test]
     fn no_presets_at_all_gets_the_add_one_line() {
-        let config = config(serde_json::json!({}), "");
+        let config = config(&serde_json::json!({}), "");
 
         let line = plan(&config).expect_err("no presets");
 
@@ -252,7 +259,7 @@ mod tests {
     #[test]
     fn unsendable_keys_are_all_named_before_a_run_starts() {
         let config = config(
-            serde_json::json!({"buff": {"1": 1, "ab": 2, "F13": 3}}),
+            &serde_json::json!({"buff": {"1": 1, "ab": 2, "F13": 3}}),
             "buff",
         );
 
@@ -271,7 +278,7 @@ mod tests {
     fn a_tick_turns_presses_into_decisions_then_waits() {
         // A cooldown above zero is what makes the key STOP being due: a zero-cooldown key is due every
         // tick, which is a legitimate preset (a key with no cooldown) rather than the wait case.
-        let config = config(serde_json::json!({"buff": {"1": 5.0}}), "buff");
+        let config = config(&serde_json::json!({"buff": {"1": 5.0}}), "buff");
         let plan = plan(&config).expect("a plan");
         let mut tool = SpammerTool::new(&plan, Box::new(StepNow::new(0.0)));
 
@@ -282,7 +289,7 @@ mod tests {
 
     #[test]
     fn a_starred_key_is_the_fast_tap_decision() {
-        let config = config(serde_json::json!({"buff": {"*1": 0.0}}), "buff");
+        let config = config(&serde_json::json!({"buff": {"*1": 0.0}}), "buff");
         let plan = plan(&config).expect("a plan");
         let mut tool = SpammerTool::new(&plan, Box::new(StepNow::new(0.0)));
 

@@ -351,7 +351,10 @@ fn an_unreadable_cursor_is_refused_before_anything_is_sent() {
         placement.error.as_deref(),
         Some("the cursor position can't be read (GetCursorPos failed)")
     );
-    assert!(rig.writes().is_empty());
+    assert!(
+        rig.writes().is_empty(),
+        "nothing is sent when the cursor can't be read"
+    );
 }
 
 #[test]

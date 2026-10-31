@@ -60,7 +60,7 @@ fn sketch_commands(source: &str) -> String {
     while let Some(start) = rest.find(marker) {
         rest = &rest[start + marker.len()..];
         if let Some(letter) = rest.chars().next()
-            && rest[..letter.len_utf8() + 1].ends_with('\'')
+            && rest[..=letter.len_utf8()].ends_with('\'')
         {
             commands.insert(letter);
         }

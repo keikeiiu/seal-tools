@@ -20,8 +20,8 @@ fn def(path: &str) -> &'static FileDef {
         .expect("a registry entry")
 }
 
-fn write(dir: &TestDir, path: &str, content: Value) {
-    file::write(dir.path(), def(path), &content).expect("seeds a file");
+fn write(dir: &TestDir, path: &str, content: &Value) {
+    file::write(dir.path(), def(path), content).expect("seeds a file");
 }
 
 fn tree() -> TestDir {
@@ -35,22 +35,22 @@ fn tree() -> TestDir {
     write(
         &dir,
         "meta.yaml",
-        json!({"layout_version": 1, "legacy_folded": true}),
+        &json!({"layout_version": 1, "legacy_folded": true}),
     );
     write(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "TW_LIVE"}, "hotkeys": {"start": 123}}),
+        &json!({"window": {"title": "TW_LIVE"}, "hotkeys": {"start": 123}}),
     );
     write(
         &dir,
         "machine/tuner.yaml",
-        json!({"tuner": {"ocr": {"row_height": 19}}}),
+        &json!({"tuner": {"ocr": {"row_height": 19}}}),
     );
     write(
         &dir,
         "machine/ui.yaml",
-        json!({"ui": {"left": 10.0, "top": 20.0}}),
+        &json!({"ui": {"left": 10.0, "top": 20.0}}),
     );
     dir
 }
@@ -142,7 +142,7 @@ fn the_pet_run_state_persists_through_the_routing() {
     write(
         &dir,
         "machine/pet.yaml",
-        json!({"pet": {"slots": [{"enabled": true, "stacks": 2}]}}),
+        &json!({"pet": {"slots": [{"enabled": true, "stacks": 2}]}}),
     );
     store
         .persist_pet_run_state(&PetRunStatePatch {

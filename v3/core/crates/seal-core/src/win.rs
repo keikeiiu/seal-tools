@@ -35,6 +35,7 @@ impl CommandError {
     /// The protocol mapping (`dispatch::win_error_response`) uses this for its message and a tool's
     /// read loop uses it directly, so the wording lives in one place instead of growing a second
     /// copy in the tools.
+    #[must_use]
     pub fn line(&self) -> String {
         match self {
             Self::MissingTitle => "window.title is not configured".to_owned(),
@@ -69,6 +70,10 @@ impl From<WinError> for CommandError {
 
 /// The configured window title, or a typed refusal. An empty title is a config error rather than
 /// "match every window" (`seal-win`'s `title_matches` makes the same choice).
+///
+/// # Errors
+///
+/// Returns the command error when `window.title` is missing or empty.
 pub fn configured_title(config: &Value) -> Result<String, CommandError> {
     config
         .get("window")
@@ -82,6 +87,10 @@ pub fn configured_title(config: &Value) -> Result<String, CommandError> {
 
 /// `window.find`'s result. "Not found" is a RESULT here, not an error: the calibrator shows
 /// found/not-found long before it measures (`PROTOCOL.md` §4).
+///
+/// # Errors
+///
+/// Returns the command error when the title is empty; a missing window is an ordinary result.
 pub fn find(title: &str) -> Result<Value, CommandError> {
     match window::find_window(title) {
         Some(hwnd) => Ok(json!({
@@ -94,13 +103,21 @@ pub fn find(title: &str) -> Result<Value, CommandError> {
 
 /// `window.measure`'s result: the `DisplayInfo` object, serialised from the domain type so the wire
 /// shape has one source (`PROTOCOL.md` §3).
+///
+/// # Errors
+///
+/// Returns the command error when the window cannot be found or measured.
 pub fn measure(title: &str) -> Result<Value, CommandError> {
     let hwnd = locate(title)?;
     let display = window::measure(hwnd).map_err(CommandError::from)?;
-    Ok(json!({ "display": serialised(&display) }))
+    Ok(json!({ "display": serialised(&display)? }))
 }
 
 /// `capture`'s result: the frame (without its id — the cache assigns it) and the fresh `DisplayInfo`.
+///
+/// # Errors
+///
+/// Returns the command error when the window cannot be found, measured or captured.
 pub fn capture(title: &str, region: Option<Rect>) -> Result<(Value, Value), CommandError> {
     let hwnd = locate(title)?;
     let display = window::measure(hwnd).map_err(CommandError::from)?;
@@ -113,7 +130,7 @@ pub fn capture(title: &str, region: Option<Rect>) -> Result<(Value, Value), Comm
         "origin": {"x": captured.origin.x, "y": captured.origin.y},
         "data": data,
     });
-    Ok((frame, serialised(&display)))
+    Ok((frame, serialised(&display)?))
 }
 
 fn locate(title: &str) -> Result<Hwnd, CommandError> {
@@ -122,12 +139,18 @@ fn locate(title: &str) -> Result<Hwnd, CommandError> {
     })
 }
 
-fn serialised<T: serde::Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).expect("the geometry types serialise")
+fn serialised<T: serde::Serialize>(value: &T) -> Result<Value, CommandError> {
+    serde_json::to_value(value).map_err(|error| {
+        CommandError::Internal(format!("the display info could not be serialised: {error}"))
+    })
 }
 
 /// The `region` argument of `capture`: absent → the whole client, otherwise `{x,y,w,h}` integers. A
 /// malformed region is a caller bug and is refused before any Win32 call.
+///
+/// # Errors
+///
+/// Returns the command error when `region` is not a `{x,y,w,h}` object of integers.
 pub fn parse_region(args: &Value) -> Result<Option<Rect>, CommandError> {
     let Some(region) = args.get("region") else {
         return Ok(None);
@@ -173,6 +196,7 @@ impl FrameCache {
         id
     }
 
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&Value> {
         self.entries
             .iter()
@@ -180,10 +204,12 @@ impl FrameCache {
             .map(|(_, frame)| frame)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

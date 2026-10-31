@@ -74,6 +74,12 @@ fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// Commit up to two files as one unit. On any error before the journal's renames the targets are
 /// untouched; an error during the renames triggers a rollback.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] when the journal directory, a backup copy, an encoded temp file, the
+/// journal itself, or one of the target renames cannot be written. A rename that fails after an
+/// earlier one succeeded is rolled back before the error is returned.
 pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
     if writes.is_empty() {
         return Ok(());
@@ -115,8 +121,12 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
     }
 
     let journal = json!({"v": 1, "files": entries});
-    let journal_text = serde_json::to_string_pretty(&journal).expect("the journal is JSON");
     let journal_path = directory.join("journal.json");
+    let journal_text =
+        serde_json::to_string_pretty(&journal).map_err(|error| ConfigError::Serialize {
+            path: journal_path.clone(),
+            message: error.to_string(),
+        })?;
     let journal_temp = directory.join("journal.tmp");
     write_synced(&journal_temp, journal_text.as_bytes()).map_err(|source| ConfigError::Write {
         path: journal_temp.clone(),
@@ -160,6 +170,12 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
 
 /// Sweep every journal left by an interrupted commit, restoring every target from its backup. Returns
 /// the number of transactions rolled back (0 when the tree is clean). Idempotent.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] when a journal exists but cannot be read or parsed, when a backup cannot
+/// be read back, when a restored file cannot be written, or when the swept transaction directory
+/// cannot be removed.
 pub fn recover(root: &Path) -> Result<usize, ConfigError> {
     let journal_root = root.join(JOURNAL_DIR);
     let Ok(entries) = fs::read_dir(&journal_root) else {

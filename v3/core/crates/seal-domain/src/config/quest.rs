@@ -146,6 +146,7 @@ impl QuestConfig {
     /// v2's `ActivePreset` returned an EMPTY preset there (deliberately not another flow's); the
     /// plan builder reproduces that by falling back to a default preset, which validation then
     /// refuses with "has no steps".
+    #[must_use]
     pub fn active_preset(&self) -> Option<&QuestPreset> {
         self.presets.get(self.active.as_str())
     }
@@ -155,6 +156,7 @@ impl QuestConfig {
     /// An empty `active_sequence` means "run the single flow" — the shape of every config written
     /// before sequences existed — and a typo falls back the same way rather than leaving the tool
     /// with nothing to do. Both are trimmed for the comparison, as the runner does.
+    #[must_use]
     pub fn active_sequence_or_null(&self) -> Option<&QuestSequence> {
         let name = self.active_sequence.trim();
         if name.is_empty() {
@@ -261,7 +263,7 @@ pub struct QuestStep {
     /// The character a `key` step sends. Ignored by the others.
     ///
     /// v2 wrote this as a YAML scalar, so a migrated file can carry `value: 1` or `value: true`
-    /// where the model wants text. v2's YamlDotNet binding accepted those and the tool sent the
+    /// where the model wants text. v2's `YamlDotNet` binding accepted those and the tool sent the
     /// character; a migrated config must not be refused just because the step is a digit. Strings
     /// stay unchanged, numbers/bools are normalised through their display form, null stays None.
     #[serde(default, deserialize_with = "quest_step_value")]

@@ -85,7 +85,7 @@ fn a_new_snapshot_is_idle_and_empty() {
     assert_eq!(snapshot.phase, ToolPhase::Idle);
     assert_eq!(snapshot.message, "");
     assert_eq!(snapshot.countdown_s, None);
-    assert!(snapshot.rows.is_empty());
+    assert!(snapshot.rows.is_empty(), "a new snapshot has no rows");
     assert_eq!(snapshot.error, None);
 }
 
@@ -186,6 +186,12 @@ fn a_concurrent_reader_never_sees_a_torn_snapshot() {
 
     /// One snapshot whose three related fields are derived from the same cycle number, so a reader
     /// can check that the fields it read were written together.
+    //
+    // The cast is exact: the test's cycle range is far below 2^53.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the test's cycle count is exact in f64"
+    )]
     fn marked(cycle: i64) -> ToolSnapshot {
         ToolSnapshot::new(ToolId::Pet)
             .running(ToolPhase::Running)

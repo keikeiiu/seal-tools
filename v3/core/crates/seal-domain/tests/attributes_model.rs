@@ -89,19 +89,34 @@ fn the_whole_dictionary_round_trips_with_v2_field_names() {
 fn the_shipped_us_shape_loads_as_an_empty_dictionary() {
     let config: AttributesConfig = serde_json::from_value(json!({"attributes": []})).unwrap();
 
-    assert!(config.attributes.is_empty());
-    assert!(config.per_level_stats.is_empty());
-    assert!(config.negative_attr_markers.is_empty());
-    assert!(config.text_fixes.whole.is_empty());
-    assert!(config.text_fixes.regex.is_empty());
+    assert_eq!(
+        config.attributes,
+        [] as [seal_domain::config::AttributeDef; 0]
+    );
+    assert_eq!(config.per_level_stats, [] as [std::string::String; 0]);
+    assert_eq!(config.negative_attr_markers, [] as [std::string::String; 0]);
+    assert_eq!(
+        config.text_fixes.whole,
+        [] as [seal_domain::config::TextFix; 0]
+    );
+    assert_eq!(
+        config.text_fixes.regex,
+        [] as [seal_domain::config::TextFix; 0]
+    );
 }
 
 #[test]
 fn an_empty_or_partial_file_loads_without_error() {
     for fixture in [json!({}), json!({"attributes": []})] {
         let config: AttributesConfig = serde_json::from_value(fixture).unwrap();
-        assert!(config.attributes.is_empty());
-        assert!(config.text_fixes.whole.is_empty());
+        assert_eq!(
+            config.attributes,
+            [] as [seal_domain::config::AttributeDef; 0]
+        );
+        assert_eq!(
+            config.text_fixes.whole,
+            [] as [seal_domain::config::TextFix; 0]
+        );
     }
 
     // A bare `text_fixes:` and a bare `attributes:` are nulls a hand-edit produces.
@@ -112,8 +127,14 @@ fn an_empty_or_partial_file_loads_without_error() {
         "text_fixes": {"whole": null, "substring": null, "regex": null}
     }))
     .unwrap();
-    assert!(config.attributes.is_empty());
-    assert!(config.text_fixes.substring.is_empty());
+    assert_eq!(
+        config.attributes,
+        [] as [seal_domain::config::AttributeDef; 0]
+    );
+    assert_eq!(
+        config.text_fixes.substring,
+        [] as [seal_domain::config::TextFix; 0]
+    );
 }
 
 /// `IgnoreUnmatchedProperties` in v2: a key nothing models is ignored on load.
@@ -146,9 +167,12 @@ fn a_fix_entry_missing_its_replacement_decodes_to_empty() {
 #[test]
 fn a_dictionary_with_no_fix_tables_has_empty_tables() {
     let fixes = TextFixesConfig::default();
-    assert!(fixes.whole.is_empty());
-    assert!(fixes.substring.is_empty());
-    assert!(fixes.simplified_traditional.is_empty());
-    assert!(fixes.final_rules.is_empty());
-    assert!(fixes.regex.is_empty());
+    assert_eq!(fixes.whole, [] as [seal_domain::config::TextFix; 0]);
+    assert_eq!(fixes.substring, [] as [seal_domain::config::TextFix; 0]);
+    assert_eq!(
+        fixes.simplified_traditional,
+        [] as [seal_domain::config::TextFix; 0]
+    );
+    assert_eq!(fixes.final_rules, [] as [seal_domain::config::TextFix; 0]);
+    assert_eq!(fixes.regex, [] as [seal_domain::config::TextFix; 0]);
 }

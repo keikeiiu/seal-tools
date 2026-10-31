@@ -4,7 +4,7 @@
 //! device. v2's open sequence is kept exactly (`LauncherService.ArduinoPortAsync` /
 //! `Arduino.Open`):
 //!
-//! 1. open at the configured baud with the ATmega32U4's required `DTR` asserted
+//! 1. open at the configured baud with the `ATmega32U4`'s required `DTR` asserted
 //!    (`Arduino.cs:131-145`: the 32U4 handles USB CDC on the main chip and needs DTR/RTS to keep the
 //!    connection alive — unlike the Uno, it does not reset on DTR);
 //! 2. assert `RTS` as v2 did (`RtsEnable = true`);
@@ -51,11 +51,34 @@ const INITIAL_READ_SECONDS: f64 = 1.0;
 /// script. Keeping this a trait is the failure seam: a failing writer is injected here, so the
 /// adapter's error path is tested without a board (and without a driver that can be unplugged).
 pub trait SerialDevice: Send {
+    /// Writes every byte of `bytes`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the driver's I/O error when the port is gone or the device refuses the write.
     fn write_all(&mut self, bytes: &[u8]) -> io::Result<()>;
+
+    /// Flushes the driver's write buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns the driver's I/O error when the port is gone or the flush fails.
     fn flush(&mut self) -> io::Result<()>;
+
+    /// Sets the timeout for subsequent reads.
+    ///
+    /// # Errors
+    ///
+    /// Returns the driver's I/O error when the port is gone or the driver refuses the timeout.
     fn set_timeout(&mut self, timeout: Duration) -> io::Result<()>;
+
     /// Reads up to `buffer.len()` bytes. A driver timeout is an `io::Error` of kind
     /// `TimedOut`/`WouldBlock`; `Ok(0)` means the port closed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the driver's I/O error for a real failure (a closed port, a device error); a read
+    /// timeout is reported as one of the silence kinds above rather than as a failure.
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize>;
 }
 
@@ -67,6 +90,7 @@ pub struct SerialTransport {
 
 impl SerialTransport {
     /// Builds a transport over an injected device (the test seam; production uses [`Self::open`]).
+    #[must_use]
     pub fn with_device(device: Box<dyn SerialDevice>) -> Self {
         Self {
             device,
@@ -78,6 +102,11 @@ impl SerialTransport {
     ///
     /// A failure is a [`TransportError`] naming the port; the caller shows that line rather than
     /// pretending a board is there.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError`] naming the port when the driver refuses to open it or to assert
+    /// RTS. The boot wait itself cannot fail; it only sleeps through `clock`.
     #[cfg(windows)]
     pub fn open(port_name: &str, baud: u32, clock: &dyn Clock) -> Result<Self, TransportError> {
         let opened = serialport::new(port_name, baud)

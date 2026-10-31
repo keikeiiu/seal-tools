@@ -185,6 +185,14 @@ fn composition(c: &ColorComposition) -> Value {
 }
 
 /// `calibration.gem.save {frame_id?, points?, resources?, result_area?, empty?}`.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one calibration command keeps its validation, path resolution and write in one place"
+)]
 pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let draft = match draft(&request.args) {
         Ok(draft) => draft,
@@ -198,13 +206,12 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         .as_ref()
         .and_then(|frame| frame.get("origin"))
         .and_then(Value::as_object)
-        .map(|origin| {
+        .map_or((0, 0), |origin| {
             (
                 i32::try_from(origin.get("x").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
                 i32::try_from(origin.get("y").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
             )
-        })
-        .unwrap_or((0, 0));
+        });
     let mut empty_signature = None;
     let mut artifacts = Vec::new();
     if let Some(frame) = &frame {
@@ -288,7 +295,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         match crate::artifacts::annotate_png(&png, &shapes) {
             Ok(annotated) => match state.store.write_artifact(ARTIFACT, &annotated) {
                 Ok(path) => {
-                    artifacts.push(json!({"file": ARTIFACT, "path": path.display().to_string()}))
+                    artifacts.push(json!({"file": ARTIFACT, "path": path.display().to_string()}));
                 }
                 Err(error) => {
                     return Response::err(

@@ -24,7 +24,7 @@ fn load_merges_the_base_and_the_overlay() {
     assert_eq!(config.pointer("/window/title"), Some(&json!("TW_LIVE")));
     assert_eq!(config.pointer("/arduino/vid"), Some(&json!(9025)));
     assert_eq!(config.pointer("/tuner/target_grade"), Some(&json!("DG")));
-    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999999)));
+    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999_999)));
     assert_eq!(
         config.pointer("/tuner/timing/click_enter_delay"),
         Some(&json!(0.4))
@@ -133,7 +133,7 @@ fn a_partial_settings_block_leaves_the_rest_standing() {
     // read a deliberate value as silence and quietly left the shipped one in place.
     assert_eq!(config.pointer("/gem/colored_gap_min"), Some(&json!(0)));
     // And every value the block does not mention is untouched.
-    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999999)));
+    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999_999)));
     assert_eq!(config.pointer("/tuner/spring_mode"), Some(&json!("hid")));
     assert_eq!(config.pointer("/tuner/timing/ocr_delay"), Some(&json!(0.8)));
     assert_eq!(config.pointer("/gem/move_mode"), Some(&json!("arduino")));
@@ -260,7 +260,7 @@ fn load_attributes_parses_the_committed_dictionary() {
         .pointer("/text_fixes/whole")
         .and_then(Value::as_array)
         .expect("text_fixes.whole is a list");
-    assert!(!text_fixes.is_empty());
+    assert!(!text_fixes.is_empty(), "the dictionary carries text fixes");
 }
 
 #[test]

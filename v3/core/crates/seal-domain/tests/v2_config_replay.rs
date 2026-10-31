@@ -50,7 +50,7 @@ fn a_sanitized_v2_era_config_decodes_into_the_typed_local_overlay() {
     assert_eq!(
         gem.grade_positions
             .as_ref()
-            .map(|positions| positions.len()),
+            .map(std::collections::BTreeMap::len),
         Some(5)
     );
     assert_eq!(gem.resource_gems.as_ref().map(Vec::len), Some(3));

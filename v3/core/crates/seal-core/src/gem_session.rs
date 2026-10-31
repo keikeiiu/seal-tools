@@ -227,18 +227,21 @@ fn frame_for(state: &CoreState, request: &Request) -> Result<Value, Box<Response
         .map_err(|error| Box::new(win_error_response(&request.id, error)))
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn crop_area(frame: &Value, area: Rect) -> Result<(u32, u32, Vec<u8>, String), String> {
-    let (width, height, rgba) = frame_rgba(frame).map_err(|message| message.to_string())?;
+    let (width, height, rgba) = frame_rgba(frame).map_err(|message| message.clone())?;
     let origin = frame
         .get("origin")
         .and_then(Value::as_object)
-        .map(|origin| {
+        .map_or((0, 0), |origin| {
             (
                 i32::try_from(origin.get("x").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
                 i32::try_from(origin.get("y").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
             )
-        })
-        .unwrap_or((0, 0));
+        });
     let local = Rect::new(area.x - origin.0, area.y - origin.1, area.w, area.h);
     let (crop_w, crop_h, cropped) =
         seal_win::pure::crop_rgba(width as u32, height as u32, &rgba, local)

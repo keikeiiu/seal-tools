@@ -25,6 +25,7 @@ pub struct GradeCycles {
 }
 
 impl GradeCycles {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -35,6 +36,7 @@ impl GradeCycles {
     }
 
     /// Cycles spent on `grade` so far — 0 for one not reached yet.
+    #[must_use]
     pub fn count_for(&self, grade: &str) -> i32 {
         self.counts.get(grade).copied().unwrap_or(0)
     }
@@ -47,6 +49,7 @@ impl GradeCycles {
     /// One row per grade, in the order the composer runs them. Every grade appears including the ones
     /// not reached: "DG: 0 cycles" is information, and a list that grows as the run proceeds moves
     /// under the reader's eye.
+    #[must_use]
     pub fn rows(&self, grades: &[String]) -> Vec<GradeCycleRow> {
         grades
             .iter()
@@ -59,6 +62,7 @@ impl GradeCycles {
 
     /// The whole tally on one line, for the log — `N 12 · G 8 · DG 3 · 23 total`. The total is the sum
     /// of the grades rather than a separate counter, so it cannot disagree with them.
+    #[must_use]
     pub fn summary(&self, grades: &[String]) -> String {
         let mut parts: Vec<String> = grades
             .iter()
@@ -69,6 +73,7 @@ impl GradeCycles {
     }
 
     /// Cycles this tally has counted, across the listed grades.
+    #[must_use]
     pub fn total(&self, grades: &[String]) -> i32 {
         grades.iter().map(|grade| self.count_for(grade)).sum()
     }
@@ -76,6 +81,7 @@ impl GradeCycles {
 
 /// `1 cycle` / `4 cycles` — one wording, so the card and the log cannot disagree, and "1 cycles"
 /// never reaches a reader.
+#[must_use]
 pub fn describe(cycles: i32) -> String {
     if cycles == 1 {
         "1 cycle".to_owned()

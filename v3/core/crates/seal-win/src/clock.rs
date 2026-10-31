@@ -9,6 +9,7 @@
 //! fallback keeps the crate buildable elsewhere without a time dependency.
 
 /// `[year, month, day, hour, minute, second, milliseconds]`, LOCAL time.
+#[must_use]
 pub fn local_now() -> [u16; 7] {
     #[cfg(windows)]
     {
@@ -37,7 +38,7 @@ fn local_now_windows() -> [u16; 7] {
     };
     // SAFETY: `GetLocalTime` writes one `SYSTEMTIME` into the pointer and reads nothing else; `time`
     // is a live, correctly shaped stack value for the call. It cannot fail.
-    unsafe { GetLocalTime(&mut time) };
+    unsafe { GetLocalTime(&raw mut time) };
     [
         time.wYear,
         time.wMonth,

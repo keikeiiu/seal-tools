@@ -14,12 +14,22 @@ use serde_json::Value;
 
 /// Parses one YAML document into JSON-shaped data. An empty document becomes `Value::Null`, which
 /// is exactly how v2's deserialiser spelled "nothing here"; the caller decides what that means.
+///
+/// # Errors
+///
+/// Returns the YAML parser's message when `text` is not one well-formed document, or when it
+/// carries a shape JSON cannot represent (the parser reports the offending line).
 pub fn parse(text: &str) -> Result<Value, String> {
     serde_norway::from_str::<Value>(text).map_err(|error| error.to_string())
 }
 
 /// Emits one YAML document. The result ends with a newline, which the writer relies on when it
 /// appends the preserved foreign blocks.
+///
+/// # Errors
+///
+/// Returns the emitter's message when `value` cannot be written as YAML (for example a mapping
+/// key that is not a string).
 pub fn to_string(value: &Value) -> Result<String, String> {
     serde_norway::to_string(value).map_err(|error| error.to_string())
 }
@@ -76,7 +86,7 @@ mod tests {
         let value = parse("a: 9025\nb: 0.4\nc: 115200\n").unwrap();
         assert_eq!(value["a"], json!(9025));
         assert_eq!(value["b"], json!(0.4));
-        assert_eq!(value["c"], json!(115200));
+        assert_eq!(value["c"], json!(115_200));
     }
 
     #[test]

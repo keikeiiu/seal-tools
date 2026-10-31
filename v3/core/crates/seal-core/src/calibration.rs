@@ -241,6 +241,7 @@ const BAG_GRID: &str = "bag_grid";
 /// bad drag, and one pixel of rounding is the first case.
 const BAG_PITCH_TOLERANCE_PX: f64 = 1.0;
 
+#[must_use]
 pub fn kind(name: &str) -> Option<&'static KindDef> {
     KINDS.iter().find(|kind| kind.name == name)
 }
@@ -442,19 +443,28 @@ fn set_instance_mark(root: &mut Value, def: &KindDef, target: &Target, value: Va
     if !root.is_object() {
         *root = json!({});
     }
-    let root_object = root.as_object_mut().expect("just made an object");
+    let Some(root_object) = root.as_object_mut() else {
+        // Normalised to an object just above; the writer must not panic on it.
+        return;
+    };
     let block = root_object.entry(def.path[0]).or_insert_with(|| json!({}));
     if !block.is_object() {
         *block = json!({});
     }
-    let block_object = block.as_object_mut().expect("just made an object");
+    let Some(block_object) = block.as_object_mut() else {
+        // Normalised to an object just above (see the note in the first normalisation).
+        return;
+    };
     let container = block_object.entry(def.path[1]).or_insert_with(|| json!({}));
     match &target.instance {
         Instance::Index(index) => {
             if !container.is_array() {
                 *container = json!([]);
             }
-            let array = container.as_array_mut().expect("just made an array");
+            let Some(array) = container.as_array_mut() else {
+                // Normalised to an array just above.
+                return;
+            };
             while array.len() <= *index {
                 array.push(Value::Null);
             }
@@ -533,7 +543,13 @@ fn set_path(root: &mut Value, path: &[&str], value: Value) {
     }
     let mut cursor = root;
     for step in &path[..path.len() - 1] {
-        let object = cursor.as_object_mut().expect("just made an object");
+        if !cursor.is_object() {
+            *cursor = json!({});
+        }
+        let Some(object) = cursor.as_object_mut() else {
+            // Normalised to an object just above.
+            return;
+        };
         cursor = object
             .entry((*step).to_owned())
             .or_insert_with(|| json!({}));
@@ -578,6 +594,14 @@ pub(crate) fn set_tooltip_block(local: &mut Value, block: Value) {
 }
 
 /// Run `calibration.save`.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one calibration command keeps its validation, path resolution and write in one place"
+)]
 pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let args = &request.args;
     let Some(kind_name) = args.get("kind").and_then(Value::as_str) else {
@@ -690,10 +714,10 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         && let Some(rect) = rect
         && let Some(grid) = get_path(&state.config, &["buy_sell", BAG_GRID]).and_then(four_numbers)
     {
-        let grid_pitch_w = grid[2] as f64 / 8.0;
-        let grid_pitch_h = grid[3] as f64 / 8.0;
-        if (rect.w as f64 - grid_pitch_w).abs() > BAG_PITCH_TOLERANCE_PX
-            || (rect.h as f64 - grid_pitch_h).abs() > BAG_PITCH_TOLERANCE_PX
+        let grid_pitch_w = f64::from(grid[2]) / 8.0;
+        let grid_pitch_h = f64::from(grid[3]) / 8.0;
+        if (f64::from(rect.w) - grid_pitch_w).abs() > BAG_PITCH_TOLERANCE_PX
+            || (f64::from(rect.h) - grid_pitch_h).abs() > BAG_PITCH_TOLERANCE_PX
         {
             return fail(
                 &request.id,
@@ -802,7 +826,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let derived = match def.name {
         "bag_grid" => match rect {
             Some(rect) => json!({
-                "pitch": {"w": rect.w as f64 / 8.0, "h": rect.h as f64 / 8.0},
+                "pitch": {"w": f64::from(rect.w) / 8.0, "h": f64::from(rect.h) / 8.0},
             }),
             None => json!({}),
         },
@@ -1009,6 +1033,7 @@ fn calibration_conflict(state: &CoreState, id: &str, def: &KindDef) -> Response 
 
 /// `calibration.kinds {}`: the core-owned catalog of every calibratable mark, so the shell stops
 /// copying the table and a new kind appears without a shell edit (G08).
+#[must_use]
 pub fn kinds(request: &Request) -> Response {
     Response::ok(&request.id, catalog())
 }
@@ -1053,6 +1078,7 @@ fn withdrawn_catalog() -> Value {
 /// `calibration.fetch_all {}`: every stored mark plus the environment block in ONE local read, so
 /// opening the workspace is one request rather than ~35 fetches (G08). Artifacts stay per-kind (only
 /// one kind has one today) and are read best-effort like `fetch` does.
+#[must_use]
 pub fn fetch_all(state: &CoreState, request: &Request) -> Response {
     let local = match state.store.load_local() {
         Ok(local) => local,
@@ -1163,6 +1189,7 @@ fn artifact_json(state: &CoreState, name: &str) -> Result<Value, String> {
 /// [`seal_domain::calibration::differences`]; this function only measures the live side and shapes
 /// the answer. A closed game is NOT an error — `live: null` and a note say why, and `matches` stays
 /// null because nothing was compared.
+#[must_use]
 pub fn check(state: &CoreState, request: &Request) -> Response {
     let local = match state.store.load_local() {
         Ok(local) => local,
@@ -1262,7 +1289,8 @@ mod tests {
     #[test]
     fn the_bag_grid_derives_its_pitch() {
         let rect = Rect::new(0, 0, 800, 600);
-        let derived = json!({"pitch": {"w": rect.w as f64 / 8.0, "h": rect.h as f64 / 8.0}});
+        let derived =
+            json!({"pitch": {"w": f64::from(rect.w) / 8.0, "h": f64::from(rect.h) / 8.0}});
         assert_eq!(derived["pitch"]["w"], json!(100.0));
         assert_eq!(derived["pitch"]["h"], json!(75.0));
     }

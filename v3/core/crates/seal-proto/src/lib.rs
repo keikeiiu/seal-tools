@@ -23,6 +23,7 @@ pub struct Request {
 }
 
 impl Request {
+    #[must_use]
     pub fn new(id: &str, cmd: &str, args: Value) -> Self {
         Self {
             v: PROTOCOL_VERSION,
@@ -46,6 +47,7 @@ pub struct Response {
 }
 
 impl Response {
+    #[must_use]
     pub fn ok(id: &str, result: Value) -> Self {
         Self {
             v: PROTOCOL_VERSION,
@@ -56,6 +58,7 @@ impl Response {
         }
     }
 
+    #[must_use]
     pub fn err(id: &str, error: Error) -> Self {
         Self {
             v: PROTOCOL_VERSION,
@@ -77,6 +80,7 @@ pub struct Error {
 }
 
 impl Error {
+    #[must_use]
     pub fn new(code: &str, message: &str, detail: Value) -> Self {
         Self {
             code: code.to_owned(),
@@ -95,6 +99,7 @@ pub struct Event {
 }
 
 impl Event {
+    #[must_use]
     pub fn new(event: &str, data: Value) -> Self {
         Self {
             v: PROTOCOL_VERSION,

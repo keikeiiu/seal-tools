@@ -62,6 +62,13 @@ pub struct SpammerPlan {
 
 impl SpammerPlan {
     /// Derives the plan from a rotation. See [`runnable_combos`] and [`singles`] for the rules.
+    // The rotation is taken by value so a caller can build it inline; this is a public constructor, and
+    // borrowing it instead would change every call site for no behaviour change.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public constructor takes the rotation by value so callers can build it inline; changing it to a reference would only rename callers"
+    )]
+    #[must_use]
     pub fn new(rotation: SpammerRotation) -> Self {
         let keys: Vec<String> = rotation.keys.iter().map(|(key, _)| key.clone()).collect();
         let cooldowns: BTreeMap<String, f64> = rotation.keys.iter().cloned().collect();
@@ -79,6 +86,7 @@ impl SpammerPlan {
     }
 
     /// A key's cooldown in seconds, from the active preset.
+    #[must_use]
     pub fn cooldown(&self, key: &str) -> Option<f64> {
         self.cooldowns.get(key).copied()
     }
@@ -92,6 +100,11 @@ impl SpammerPlan {
 ///
 /// `presets_configured` is "the merged config has any spammer presets at all"; `active` is the name
 /// the config points at. Both come from the merged `spammer` block.
+///
+/// # Errors
+///
+/// Returns [`StopReason::error`] naming which refusal applies when the rotation is missing or has no
+/// keys: "no presets are configured" or "the active preset was not found".
 pub fn plan_or_stop(
     presets_configured: bool,
     active: &str,
@@ -125,6 +138,7 @@ fn preset_refusal(presets_configured: bool, active: &str) -> StopReason {
 /// any of this existed. THE CALLER decides what that means, because an empty list cannot distinguish
 /// "no rule was asked for" from "no key outranks another" — that is why [`SpammerPlan::preempt`] is
 /// `priority`'s presence and not its contents.
+#[must_use]
 pub fn order_for(keys: &[String], priority: &[String]) -> Vec<String> {
     let mut order: Vec<String> = Vec::with_capacity(keys.len());
     for named in priority {
@@ -151,6 +165,7 @@ pub fn order_for(keys: &[String], priority: &[String]) -> Vec<String> {
 /// One way only, and only where it is unambiguous. A name matching NEITHER spelling is left alone,
 /// so a genuine typo is still pruned by the normal rule rather than being rewritten into some key
 /// that happens to exist.
+#[must_use]
 pub fn respell(names: &[String], preset_keys: &[String]) -> Vec<String> {
     names
         .iter()
@@ -177,6 +192,7 @@ pub fn respell(names: &[String], preset_keys: &[String]) -> Vec<String> {
 /// The subtraction is what makes a combo a UNIT. Left in the walk, the second key of a pair would
 /// fire on its own whenever the first was on cooldown — the effect never triggers, and nothing says
 /// so.
+#[must_use]
 pub fn singles(keys: &[String], priority: &[String], combos: &[SpammerCombo]) -> Vec<String> {
     let mut owned: Vec<&str> = Vec::new();
     for combo in combos {
@@ -198,6 +214,7 @@ pub fn singles(keys: &[String], priority: &[String], combos: &[SpammerCombo]) ->
 /// Everything else is DROPPED rather than run, and that includes a combo naming a key the preset does
 /// not have — a typo. Half a combo is worse than no combo: it fires the first skill, spends its
 /// cooldown, and leaves the effect un-triggered with nothing to show for it.
+#[must_use]
 pub fn runnable_combos(keys: &[String], combos: &[SpammerCombo]) -> Vec<SpammerCombo> {
     combos
         .iter()
@@ -238,6 +255,7 @@ impl SpammerRun {
     /// but the first. Staggered by UNIT and not by key: a combo is one move, so its keys share an
     /// offset and the combo's own gap does the spacing INSIDE it. Each key's `last_press` is seeded at
     /// `at - cooldown`, which puts its due moment exactly at `at`.
+    #[must_use]
     pub fn start(plan: &SpammerPlan, now: f64) -> Self {
         Self::open(plan, now, plan.startup.lead_in)
     }
@@ -247,6 +265,7 @@ impl SpammerRun {
     /// The LEAD-IN is deliberately not paid again — it exists to give the player time to focus the
     /// game after Start, and the game is already in front by the time a reload finishes. The opening
     /// stagger IS re-applied, so a 30 s pause does not end with every expired cooldown firing at once.
+    #[must_use]
     pub fn resume(plan: &SpammerPlan, now: f64) -> Self {
         Self::open(plan, now, 0.0)
     }
@@ -286,6 +305,7 @@ impl SpammerRun {
 
     /// Seconds left of the lead-in, for the card's countdown line. `None` once the opening has
     /// started, so a card never counts to a moment already gone.
+    #[must_use]
     pub fn lead_in_remaining(&self, now: f64) -> Option<f64> {
         if self.lead_in > 0.0 && now < self.opening_at {
             Some(self.opening_at - now)
@@ -295,6 +315,7 @@ impl SpammerRun {
     }
 
     /// The run's opening moment on the caller's clock.
+    #[must_use]
     pub fn opening_at(&self) -> f64 {
         self.opening_at
     }
@@ -332,16 +353,7 @@ impl SpammerRun {
             }
         }
 
-        if !self.pending.is_empty() {
-            // A running combo OWNS the tick.
-            if now >= self.next_step_at
-                && let Some(key) = self.pending.pop_front()
-            {
-                self.last_press.insert(key.clone(), now);
-                presses.push(SpammerPress::new(key));
-                self.next_step_at = now + self.running_gap;
-            }
-        } else {
+        if self.pending.is_empty() {
             for key in self.plan.singles.clone() {
                 if !self.due(&key, now) {
                     continue;
@@ -351,6 +363,15 @@ impl SpammerRun {
                 if self.plan.preempt {
                     break;
                 }
+            }
+        } else {
+            // A running combo OWNS the tick.
+            if now >= self.next_step_at
+                && let Some(key) = self.pending.pop_front()
+            {
+                self.last_press.insert(key.clone(), now);
+                presses.push(SpammerPress::new(key));
+                self.next_step_at = now + self.running_gap;
             }
         }
 
@@ -376,10 +397,12 @@ pub struct SpammerTick {
 
 impl SpammerTick {
     /// The configured key names, for assertions and log lines.
+    #[must_use]
     pub fn keys(&self) -> Vec<String> {
         self.presses.iter().map(|press| press.key.clone()).collect()
     }
 
+    #[must_use]
     pub fn is_idle(&self) -> bool {
         self.presses.is_empty()
     }
@@ -409,6 +432,7 @@ impl SpammerPress {
     }
 
     /// The press the board should send, or `None` when it cannot.
+    #[must_use]
     pub fn board_press(&self) -> Option<BoardPress> {
         self.board_key.map(|key| BoardPress {
             key,
@@ -417,6 +441,7 @@ impl SpammerPress {
     }
 
     /// The warning v2 logs and shows once per bad key, or `None` when the key is sendable.
+    #[must_use]
     pub fn unsupported_message(&self) -> Option<String> {
         match self.board_key {
             Some(_) => None,
@@ -437,6 +462,7 @@ pub struct BoardPress {
 ///
 /// The key is shown WITHOUT the fast-tap `*`, exactly as v2 strips it before warning. `None` when the
 /// key is sendable.
+#[must_use]
 pub fn unsupported_key_message(key: &str) -> Option<String> {
     let stripped = key.strip_prefix('*').unwrap_or(key);
     if Key::parse(stripped).is_ok() {

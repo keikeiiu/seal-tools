@@ -118,6 +118,7 @@ impl PetFeeding {
     /// Parses the shipped CSV text. A row that cannot parse is skipped, not fatal: a schedule that
     /// cannot be computed falls back to the configured cycle, which is what the tool did before any
     /// of this existed.
+    #[must_use]
     pub fn parse(text: &str) -> Vec<FeedingLine> {
         let normalised = text.replace("\r\n", "\n");
         let rows: Vec<&str> = normalised.split('\n').collect();
@@ -159,6 +160,7 @@ impl PetFeeding {
     /// The line for a species at a stage — `None` when the table has no such pet. A species spans
     /// five stages or seven, so a stage outside its range is a species that was named wrongly rather
     /// than a pet the table is missing.
+    #[must_use]
     pub fn find<'a>(
         table: &'a [FeedingLine],
         species: Option<&str>,
@@ -175,6 +177,7 @@ impl PetFeeding {
     ///
     /// At `+9` 100 % this is zero — the goal state. At `+0` 0 % it is `wyz × 14.5`, the table's own
     /// total.
+    #[must_use]
     pub fn remaining_value(wyz: f64, growth: i32, exp_percent: f64) -> f64 {
         let exp = clamp_exp(exp_percent);
         if growth >= PetPanel::MAX_GROWTH {
@@ -190,6 +193,7 @@ impl PetFeeding {
 
     /// How long the pet still needs, in minutes — `None` when the line cannot answer, which the
     /// caller treats as "no estimate".
+    #[must_use]
     pub fn minutes_to_finish(
         line: Option<&FeedingLine>,
         growth: i32,
@@ -236,6 +240,7 @@ pub enum ScheduleSource {
 
 impl ScheduleSource {
     /// The words a person reads in `pet.log`, not the enum name.
+    #[must_use]
     pub fn describe(self) -> &'static str {
         match self {
             Self::CountRead => "a feeder count was read, with food in it",
@@ -261,16 +266,19 @@ pub struct RowReading {
 
 /// Per-row rate: the game's own line read for THIS row when there was one, else the configured
 /// fallback — clamped to at least 1 so a broken config cannot divide by zero or spin the loop.
+#[must_use]
 pub fn rate_for(measured: Option<i32>, configured: i32) -> i32 {
     measured.unwrap_or_else(|| configured.max(1))
 }
 
 /// Items one reload puts into a row, derived from that row's stack count so the two cannot disagree.
+#[must_use]
 pub fn load_items(stacks: i32) -> i32 {
     stacks.max(1) * STACK_SIZE
 }
 
 /// Minutes that row's load lasts, at the given rate.
+#[must_use]
 pub fn load_minutes(stacks: i32, items_per_minute: i32) -> i32 {
     if items_per_minute > 0 {
         load_items(stacks) / items_per_minute
@@ -281,6 +289,7 @@ pub fn load_minutes(stacks: i32, items_per_minute: i32) -> i32 {
 
 /// Minutes between reloads for a row: the load, plus the wait past empty — with the tool's own guard
 /// (`max(5, …)`, and 60 when the rate is broken so a misconfiguration cannot spin the loop).
+#[must_use]
 pub fn cycle_minutes(stacks: i32, items_per_minute: i32, wait_after_empty_minutes: i32) -> f64 {
     let full = load_minutes(stacks, items_per_minute);
     if full <= 0 {
@@ -317,6 +326,7 @@ pub struct ScheduleRead {
 ///
 /// `None` means either "not boarding" (reload now — it needs a pet and a fill) or "couldn't read"
 /// (cycle fallback, which assumes a full load). The two are different and the source says which.
+#[must_use]
 pub fn schedule_for(read: &ScheduleRead, settings: &PetScheduleSettings) -> RowReading {
     let slot_occupied = read.slot_occupied;
     if settings.reload_on_start {
@@ -389,6 +399,7 @@ pub fn schedule_for(read: &ScheduleRead, settings: &PetScheduleSettings) -> RowR
 /// would skip a needed reload, and an unfed pet cannot be undone.
 ///
 /// `strikes` is only logged — a veto leaves the count untouched, because the row proved it can be fed.
+#[must_use]
 pub fn consider_veto(fresh: &RowReading, strikes: i32) -> (bool, String) {
     let standing = if strikes > 0 {
         format!(" ({strikes} strike(s) standing)")
@@ -478,6 +489,7 @@ pub struct FoldResult {
 ///
 /// `next_label` is the caller's formatted `HH:mm` for the "reloaded, next …" line — the decision half
 /// has no clock.
+#[must_use]
 pub fn fold_back(
     row: &str,
     outcome: &RowOutcome,
@@ -609,6 +621,7 @@ impl PetCard {
     /// `no rows scheduled`.
     ///
     /// `next_label` is the caller's formatted `HH:mm` for the soonest row; ignored when there is none.
+    #[must_use]
     pub fn schedule_line(&self, next_label: &str) -> String {
         let Some(next_row) = &self.next_row else {
             return "no rows scheduled".to_owned();
@@ -630,6 +643,7 @@ impl PetCard {
 
     /// The FACTS the `seal-tools` arbiter needs from this half — plain data, no rule:
     /// whether a row wants the game NOW, and when the next action is due if not.
+    #[must_use]
     pub fn facts(&self) -> PetFacts {
         let wants_game_now = self.next_minutes.is_some_and(|minutes| minutes <= 0.0);
         PetFacts {
@@ -655,6 +669,7 @@ pub struct PetFacts {
 /// soonest: *"if I have 4 pets pending to feed … list out all 4 conditions"*. The detail is the last
 /// feeder reading, shown as the reading it is: the tray drains between visits and nothing here is a
 /// live count.
+#[must_use]
 pub fn build_card(views: &[PetRowView]) -> PetCard {
     let mut rows = Vec::with_capacity(views.len());
     let mut boarding = Vec::new();
@@ -713,10 +728,11 @@ pub fn build_card(views: &[PetRowView]) -> PetCard {
     if scheduled.is_empty() {
         return card;
     }
-    let soonest = scheduled
-        .iter()
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .expect("scheduled is non-empty");
+    let Some(soonest) = scheduled.iter().min_by(|a, b| a.1.total_cmp(&b.1)) else {
+        // `scheduled.is_empty()` returned above; no panic path is worth keeping for an unreachable
+        // branch in a card builder.
+        return card;
+    };
     card.next_row = Some(soonest.0.to_owned());
     card.next_minutes = Some(soonest.1);
     card.queued = scheduled.len().saturating_sub(1);
@@ -754,36 +770,41 @@ pub struct PetSetup {
     pub buy_sell_max_button: Option<Vec<i32>>,
 }
 
-fn is_point(point: &Option<Vec<i32>>) -> bool {
-    point.as_ref().is_some_and(|values| values.len() == 2)
+fn is_point(point: Option<&[i32]>) -> bool {
+    point.is_some_and(|values| values.len() == 2)
 }
 
-fn valid_rect(rect: &Option<Vec<i32>>) -> bool {
-    rect.as_ref()
-        .is_some_and(|values| values.len() == 4 && values[2] > 0 && values[3] > 0)
+fn valid_rect(rect: Option<&[i32]>) -> bool {
+    rect.is_some_and(|values| values.len() == 4 && values[2] > 0 && values[3] > 0)
 }
 
 /// `Ready`: why a run can't start, or `Ok`. Checked before anything moves, so a half-calibrated setup
 /// says what is missing instead of clicking into empty screen.
+///
+/// # Errors
+///
+/// Returns [`StopReason::error`] naming the first missing mark, unconfigured row or page mismatch —
+/// every refusal is a sentence the player can act on (the mark to save on the Calibrate tab), because
+/// the run cannot start without it.
 pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     let refusal = |message: &str| Err(StopReason::error(message));
 
-    if !is_point(&setup.menu_button) {
+    if !is_point(setup.menu_button.as_deref()) {
         return refusal(
             "The pet menu button isn't calibrated — save the 目錄 (menu) point on the Calibrate tab.",
         );
     }
-    if !is_point(&setup.feed_icon) {
+    if !is_point(setup.feed_icon.as_deref()) {
         return refusal(
             "The pet feed icon isn't calibrated — save the Pet feed icon point on the Calibrate tab.",
         );
     }
-    if !is_point(&setup.close_button) {
+    if !is_point(setup.close_button.as_deref()) {
         return refusal(
             "The boarding window's X isn't calibrated — save the Boarding X point on the Calibrate tab.",
         );
     }
-    if !valid_rect(&setup.bag_grid) || !valid_rect(&setup.bag_slot) {
+    if !valid_rect(setup.bag_grid.as_deref()) || !valid_rect(setup.bag_slot.as_deref()) {
         return refusal(
             "The boarding bag's grid isn't calibrated — save the Boarding bag grid and Boarding bag slot on the Calibrate tab. (Its own, not the shop's.)",
         );
@@ -809,7 +830,7 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
         if !row.enabled {
             continue;
         }
-        if !valid_rect(&row.toggle_label) {
+        if !valid_rect(row.toggle_label.as_deref()) {
             return Err(StopReason::error(format!(
                 "Row {}'s start/end button isn't marked — save the Row start/end button for row {} on the Calibrate tab. The tool has nothing to click for that row. Untick it on the Pet tab to leave it alone.",
                 index + 1,
@@ -839,40 +860,13 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     // Every marked cell carries a PAGE, so a tab that was never calibrated is a mark pointing at a
     // page the tool cannot reach. Checked here rather than discovered mid-flow: the reload closes the
     // window on any failure, so a bad page surfaced as "it opened and then shut again".
-    let mut pages: Vec<(&str, i32)> = Vec::new();
-    if let Some(return_slot) = &setup.return_slot
-        && return_slot.len() == 2
-    {
-        pages.push(("The return slot", return_slot[0]));
-    }
-    for cell in &setup.food_slots {
-        if cell.len() == 2 {
-            pages.push(("A food cell", cell[0]));
-        }
-    }
-
-    for (what, page) in pages {
-        if page < 0 || page as usize >= setup.page_tabs.len() {
-            return Err(StopReason::error(format!(
-                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or change it on the Pet tab.",
-                page + 1,
-                setup.page_tabs.len()
-            )));
-        }
-        if setup.page_tabs[page as usize].len() != 2 {
-            return Err(StopReason::error(format!(
-                "{what} is marked on bag page {}, and that page's tab isn't calibrated — save the Bag page tab point ITEM{} on the Calibrate tab.",
-                page + 1,
-                page + 1
-            )));
-        }
-    }
+    check_pages(setup)?;
 
     // The fixed cell is only required while there is no queue to find the pet by.
-    if !(setup
+    if setup
         .return_slot
         .as_ref()
-        .is_some_and(|slot| slot.len() == 2))
+        .is_none_or(|slot| slot.len() != 2)
         && setup.queue_len == 0
     {
         return refusal(
@@ -889,6 +883,50 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
     }
     Ok(())
 }
+
+/// Check that every marked cell's bag PAGE has a calibrated tab point.
+///
+/// A mark carries the page number it lives on, so a tab that was never calibrated is a mark pointing
+/// at a page the tool cannot reach. Split from [`ready`] because it is a second, independent walk over
+/// the setup.
+fn check_pages(setup: &PetSetup) -> Result<(), StopReason> {
+    let mut pages: Vec<(&str, i32)> = Vec::new();
+    if let Some(return_slot) = &setup.return_slot
+        && return_slot.len() == 2
+    {
+        pages.push(("The return slot", return_slot[0]));
+    }
+    for cell in &setup.food_slots {
+        if cell.len() == 2 {
+            pages.push(("A food cell", cell[0]));
+        }
+    }
+
+    for (what, page) in pages {
+        // A mark carries the page as a signed number; a negative page is as unreachable as one past
+        // the tabs, and the conversion is checked so neither can wrap into a valid index.
+        let Some(index) = usize::try_from(page)
+            .ok()
+            .filter(|index| *index < setup.page_tabs.len())
+        else {
+            return Err(StopReason::error(format!(
+                "{what} is marked on bag page {}, but only {} page tab(s) are calibrated — save the Bag page tab point on the Calibrate tab, or change it on the Pet tab.",
+                page + 1,
+                setup.page_tabs.len()
+            )));
+        };
+        if setup.page_tabs[index].len() != 2 {
+            return Err(StopReason::error(format!(
+                "{what} is marked on bag page {}, and that page's tab isn't calibrated — save the Bag page tab point ITEM{} on the Calibrate tab.",
+                page + 1,
+                page + 1
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 fn is_drag(food_load_mode: &str) -> bool {
     food_load_mode.eq_ignore_ascii_case("drag")
 }
@@ -909,7 +947,7 @@ pub fn visit_opening_message(batch: &[String]) -> String {
     } else {
         format!(
             "{}: opening the boarding window…",
-            batch.first().map(String::as_str).unwrap_or("")
+            batch.first().map_or("", String::as_str)
         )
     }
 }
@@ -926,6 +964,7 @@ pub enum ReloadStep {
 }
 
 impl ReloadStep {
+    #[must_use]
     pub fn text(self) -> &'static str {
         match self {
             Self::Reloading => "reloading…",
@@ -937,12 +976,14 @@ impl ReloadStep {
     }
 }
 
+#[must_use]
 pub fn reload_step_message(row: &str, step: ReloadStep) -> String {
     format!("{row}: {}", step.text())
 }
 
 /// The end toggle press did NOT bring the pet back, so it did the opposite of what was asked. The one
 /// failure that used to log nothing — and the most common in `pet.log`.
+#[must_use]
 pub fn end_toggle_failed(row: &str) -> String {
     format!(
         "{row}: the pet did NOT come back out of the loader after pressing the end button — so that \
@@ -953,12 +994,14 @@ pub fn end_toggle_failed(row: &str) -> String {
 }
 
 /// The right-click placement never took: the slot still looks empty after the attempts.
+#[must_use]
 pub fn pet_did_not_go_in() -> String {
     format!(
         "The pet did not go in after {PLACE_ATTEMPTS} right-clicks — the slot still looks empty. Nothing was loaded. Check the return slot on the Pet tab."
     )
 }
 /// Every candidate was found and REFUSED (+9/100 %), which is a different fix from "nothing found".
+#[must_use]
 pub fn all_refused_message(refused: &[String]) -> String {
     format!(
         "Every pet that could be boarded reads +9/100%. Refused {}. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet).",
@@ -966,41 +1009,49 @@ pub fn all_refused_message(refused: &[String]) -> String {
     )
 }
 /// Nothing usable in the bag: the return slot is empty and no queued icon matched.
+#[must_use]
 pub fn nothing_matched_message() -> String {
     "The return slot holds no pet, and no queued icon matched one in the bag. Capture the icon of a pet that can still be fed and add it to pet.queue in config/local.yaml (adding queue entries is not built yet)."
         .to_owned()
 }
 /// No way to find a pet at all — no queued icon and no return slot marked.
+#[must_use]
 pub fn no_way_to_find_pet_message() -> String {
     "Neither a queued pet icon nor a return slot is set — there is nothing to right-click. Set the return slot on the Pet tab, or add a pet icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
         .to_owned()
 }
 /// The bag held no feedable pet, with the sweep's reason.
+#[must_use]
 pub fn no_pet_in_bag_message(why: &str) -> String {
     format!(
         "No queued pet is in the bag ({why}). Right-clicked nothing. If the pet finished it was mailed, so this is the queue being empty of live pets — add the next one's icon to pet.queue in config/local.yaml (adding queue entries is not built yet)."
     )
 }
+#[must_use]
 pub fn bag_grid_missing_message() -> String {
     "The bag grid isn't calibrated — save the Boarding bag grid on the Calibrate tab; there is \
      nothing to right-click."
         .to_owned()
 }
 /// Every row was dropped after its strikes: the run has nothing left to feed.
+#[must_use]
 pub fn every_row_failed_message() -> String {
     "Every row has failed repeatedly — stopped.".to_owned()
 }
 
+#[must_use]
 pub fn stopped_before_reading_message() -> String {
     "Stopped before it could read the rows.".to_owned()
 }
 
+#[must_use]
 pub fn checking_rows_message() -> String {
     "Checking what is already running…".to_owned()
 }
 
 /// The game window left the front MID-READ: five minutes and a fresh look, not the configured cycle —
 /// the game is there and a row may be dry NOW.
+#[must_use]
 pub fn window_left_front_message() -> String {
     format!(
         "The game window left the front while reading the rows — trying again in {RETRY_MINUTES:.0} min."
@@ -1010,6 +1061,7 @@ pub fn window_left_front_message() -> String {
 /// The game window was not in front BEFORE the visit: no click is sent, no strike counted, the rows
 /// keep their place. (Whether the arbiter may then take the game IS the arbiter's rule; this is only
 /// the line the card shows while the caller defers.)
+#[must_use]
 pub fn window_not_in_front_message(row: &str) -> String {
     format!(
         "The game window isn't in front — {row} keeps its place; nothing was clicked, and it is tried \
@@ -1019,6 +1071,7 @@ pub fn window_not_in_front_message(row: &str) -> String {
 
 /// The note left on the card when a stop lands INSIDE a visit: the reload was cut and this process
 /// cannot put the game back. The same words for the loop's visits and for the look's hand-off.
+#[must_use]
 pub fn stopped_during(rows: &[String]) -> String {
     if rows.len() == 1 {
         format!(
@@ -1039,6 +1092,7 @@ pub fn stopped_during(rows: &[String]) -> String {
 /// The next action the pet half knows about, in minutes from now, from a set of per-row next times.
 /// `None` means no row is scheduled (all given up). The arbiter uses this to decide WHEN it may take
 /// the game; the feeder itself never waits on the game window beyond the loop's own deferral.
+#[must_use]
 pub fn next_action_minutes(next: &[(String, f64)]) -> Option<(String, f64)> {
     next.iter()
         .min_by(|a, b| a.1.total_cmp(&b.1))

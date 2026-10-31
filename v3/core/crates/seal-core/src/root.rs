@@ -11,6 +11,7 @@ pub const DEFAULTS_TEMPLATE: &str = "config/defaults.yaml.example";
 /// Walks up from `start` (or its parent, when it is a file) for the nearest directory that holds
 /// either marker. The executable's neighbouring directory is the usual starting point; a test or
 /// a future CLI may pass its own.
+#[must_use]
 pub fn find_root(start: &Path) -> Option<PathBuf> {
     let start = if start.is_dir() {
         start

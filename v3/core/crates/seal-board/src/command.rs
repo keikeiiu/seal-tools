@@ -62,6 +62,7 @@ impl CommandError {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -85,12 +86,18 @@ pub const FUNCTION_KEY_MAX: u8 = 12;
 
 impl BoardCommand {
     /// A relative move by raw HID counts. The counts are passed through untouched.
+    #[must_use]
     pub const fn move_by(dx: i32, dy: i32) -> Self {
         Self::Move { dx, dy }
     }
 
     /// One printable ASCII character press. The sketch accepts `0x20..=0x7E`; anything else is a
     /// frame it silently ignores, so the host refuses it here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommandError`] naming the character when it is outside the printable ASCII range
+    /// the sketch accepts.
     pub fn key(character: char, fast: bool) -> Result<Self, CommandError> {
         if !matches!(character, ' '..='~') {
             return Err(CommandError::new(format!(
@@ -102,6 +109,10 @@ impl BoardCommand {
     }
 
     /// F1–F12, normal or fast hold.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommandError`] naming the number when it is 0 or above [`FUNCTION_KEY_MAX`].
     pub fn function_key(number: u8, fast: bool) -> Result<Self, CommandError> {
         if number == 0 || number > FUNCTION_KEY_MAX {
             return Err(CommandError::new(format!(
@@ -112,6 +123,10 @@ impl BoardCommand {
     }
 
     /// Wheel notches, up or down. 1–400 per frame (`WHEEL_MAX_NOTCHES`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommandError`] naming the count when it is 0 or above [`WHEEL_MAX_NOTCHES`].
     pub fn wheel(up: bool, notches: u16) -> Result<Self, CommandError> {
         if notches == 0 || notches > WHEEL_MAX_NOTCHES {
             return Err(CommandError::new(format!(
@@ -125,6 +140,7 @@ impl BoardCommand {
     ///
     /// The transport writes these bytes verbatim (`transport`): the grammar owns the line, so a
     /// `\r` cannot sneak in from a text-mode serial layer.
+    #[must_use]
     pub fn encode(&self) -> String {
         match *self {
             Self::LeftClick => "C\n".to_owned(),

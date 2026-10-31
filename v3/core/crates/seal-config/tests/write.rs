@@ -36,7 +36,11 @@ fn temp_files(dir: &TestDir) -> Vec<String> {
         .unwrap()
         .flatten()
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".tmp"))
+        .filter(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("tmp"))
+        })
         .collect()
 }
 
@@ -407,7 +411,7 @@ fn save_settings_projects_only_portable_fields_into_the_settings_block() {
     // The section is carried WHOLE: a lone leaf would drag the other defaults in with it.
     assert_eq!(
         local.pointer("/settings/tuner/max_retries"),
-        Some(&json!(999999))
+        Some(&json!(999_999))
     );
     // ...but only as far as the template's shape: a machine-only field cannot leak into the
     // portable half.

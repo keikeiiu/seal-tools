@@ -154,6 +154,7 @@ fn derive_row(row: &Value, left_fraction: f64) -> Value {
 }
 
 /// `calibration.pet.preview`: pure derivation for the overlay/checklist.
+#[must_use]
 pub fn preview(_state: &CoreState, request: &Request) -> Response {
     let draft = request.args.get("draft").cloned().unwrap_or_default();
     let draft_rows = match rows(&draft) {
@@ -201,21 +202,24 @@ fn origin_of(frame: &Value) -> Point {
     frame
         .get("origin")
         .and_then(Value::as_object)
-        .map(|origin| {
+        .map_or(Point::new(0, 0), |origin| {
             Point::new(
                 i32::try_from(origin.get("x").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
                 i32::try_from(origin.get("y").and_then(Value::as_i64).unwrap_or(0)).unwrap_or(0),
             )
         })
-        .unwrap_or(Point::new(0, 0))
 }
 
 fn shifted(rect: Rect, origin: Point) -> Rect {
     Rect::new(rect.x - origin.x, rect.y - origin.y, rect.w, rect.h)
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel dimensions are far inside u32"
+)]
 fn crop_rgba(frame: &Value, rect: Rect) -> Result<(u32, u32, Vec<u8>, String), String> {
-    let (width, height, rgba) = frame_rgba(frame).map_err(|message| message.to_string())?;
+    let (width, height, rgba) = frame_rgba(frame).map_err(|message| message.clone())?;
     let origin = origin_of(frame);
     let local = Rect::new(rect.x - origin.x, rect.y - origin.y, rect.w, rect.h);
     let (crop_w, crop_h, cropped) =
@@ -256,6 +260,10 @@ fn frame_from(state: &CoreState, request: &Request) -> Result<Value, Box<Respons
 }
 
 /// `calibration.pet.save`: marks + empty-slot crops + environment + annotation, one write, one rev.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one calibration command keeps its validation, path resolution and write in one place"
+)]
 pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let rows = match rows(&request.args) {
         Ok(rows) => rows,
@@ -541,6 +549,10 @@ fn page_tabs(value: Option<&Value>) -> Result<Vec<Value>, (String, &'static str)
 
 /// `calibration.pet.test_read`: one live capture, then the ticked rows' count regions read at v2's
 /// upscale ladder. READ-ONLY; models/capture errors are the usual refusals.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "elapsed milliseconds are far inside u64"
+)]
 pub fn test_read(state: &mut CoreState, request: &Request) -> Response {
     let draft_rows = match request.args.get("rows").and_then(Value::as_array) {
         Some(rows) if !rows.is_empty() && rows.len() <= MAX_ROWS => rows.clone(),
@@ -589,7 +601,7 @@ pub fn test_read(state: &mut CoreState, request: &Request) -> Response {
                 slots.push(json!({"index": slot_index + 1, "reads": [], "count": null}));
                 continue;
             };
-            let (reads, count) = read_count(state, &frame, region, min_score);
+            let (reads, count) = read_count(state, &frame, &region, min_score);
             slots.push(json!({
                 "index": slot_index + 1,
                 "reads": reads,
@@ -603,7 +615,7 @@ pub fn test_read(state: &mut CoreState, request: &Request) -> Response {
         &request.id,
         json!({
             "rows": result_rows,
-            "hidden_ms": started.elapsed().as_millis() as u64,
+            "hidden_ms": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         }),
     )
 }
@@ -613,7 +625,7 @@ pub fn test_read(state: &mut CoreState, request: &Request) -> Response {
 fn read_count(
     state: &mut CoreState,
     frame: &Value,
-    region: Vec<i32>,
+    region: &[i32],
     min_score: f64,
 ) -> (Vec<Value>, Option<i32>) {
     let rect = Rect::new(region[0], region[1], region[2], region[3]);
@@ -621,7 +633,9 @@ fn read_count(
         return (Vec::new(), None);
     };
     let mut reads = Vec::new();
-    let pipeline = state.ocr.as_mut().expect("the OCR preflight loaded it");
+    let Some(pipeline) = state.ocr.as_mut() else {
+        return (reads, None);
+    };
     for upscale in std::iter::once(1).chain(UPSCALES) {
         let (scaled_w, scaled_h, scaled) = upscale_rgba(width, height, &rgba, upscale);
         let Ok(scan) = pipeline.scan_rgba(scaled_w as usize, scaled_h as usize, &scaled) else {
@@ -648,6 +662,7 @@ fn read_count(
 
 /// Nearest-neighbour upscale of one RGBA image (v2's ladder only needs more pixels for the detector;
 /// no smoothing is claimed). Public for the ladder's unit test.
+#[must_use]
 pub fn upscale_rgba(width: u32, height: u32, rgba: &[u8], factor: u32) -> (u32, u32, Vec<u8>) {
     let factor = factor.max(1);
     let scaled_w = width * factor;

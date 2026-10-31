@@ -3,9 +3,9 @@
 //!
 //! The plan this implements changed after [`v3/docs/records/OCR-RESEARCH.md`](../../../docs/records/OCR-RESEARCH.md)
 //! measured the real payload: the character dictionary is the recogniser model's
-//! `metadata_props["character"]` string (6,623 entries), NOT a file inside RapidOCRSharpOnnx, and
+//! `metadata_props["character"]` string (6,623 entries), NOT a file inside `RapidOCRSharpOnnx`, and
 //! the constants to port are the C# library's PP-OCRv4 defaults (mean/std 0.485/0.456/0.406,
-//! box_thresh 0.6, unclip_ratio 1.5), not the Python package's (which differ). v2's recorded corpus
+//! `box_thresh` 0.6, `unclip_ratio` 1.5), not the Python package's (which differ). v2's recorded corpus
 //! is the oracle for text and post-processing; its captures are debug drawings, so end-to-end
 //! parity needs a raw-crop recording pass.
 //!
@@ -27,7 +27,7 @@
 //!   `[-1,-1,6625]` (the class axis equals 6,623 dictionary entries + blank + space), det input
 //!   `[-1,3,-1,-1]`, det output `[-1,1,-1,-1]`; rec session load 173 ms, one 320-wide synthetic
 //!   inference 17 ms on CPU with intra/inter threads = 1; two runs bit-identical.
-//! - **Shipping:** `ort`'s `download-binaries` feature fetched the DirectML static distribution in
+//! - **Shipping:** `ort`'s `download-binaries` feature fetched the `DirectML` static distribution in
 //!   this build: the runtime is linked statically and the copied payload DLL is `DirectML.dll`
 //!   (18,527,776 B). `copy-dylibs` is what puts it beside the artifacts; a release zip must include
 //!   it. A clean build needs the binary download step — which fails in this sandbox (see the task

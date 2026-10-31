@@ -38,6 +38,12 @@ pub struct Loaded {
 /// Load the new tree over a shipped base. `base` is the parsed `defaults.yaml.example`; the caller
 /// keeps owning which template is current (the old store's template/adoption rules are unchanged
 /// until the migration increment).
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] when an interrupted save cannot be recovered, when a registered file
+/// cannot be read or parsed, when its shape is wrong, or when its `schema_version` is newer than
+/// this core understands.
 pub fn load(root: &Path, base: &Value) -> Result<Loaded, ConfigError> {
     crate::transaction::recover(root)?;
     let mut config = base.clone();
@@ -95,7 +101,7 @@ fn unknown_files(root: &Path) -> Vec<String> {
             .flatten()
             .filter_map(|entry| {
                 let name = entry.file_name().to_string_lossy().into_owned();
-                name.ends_with(".yaml").then(|| format!("{folder}/{name}"))
+                is_yaml(&name).then(|| format!("{folder}/{name}"))
             })
             .collect();
         names.sort();
@@ -109,6 +115,14 @@ fn unknown_files(root: &Path) -> Vec<String> {
         }
     }
     warnings
+}
+
+/// Case-insensitive `.yaml` test. Windows hands back whatever case the player saved under, and the
+/// loader would not load `Setup.YAML` either, so the "unregistered file" warning must not miss it.
+fn is_yaml(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("yaml"))
 }
 
 /// The one post-merge rewrite: the active variant supplies `window.title`, exactly as the old
@@ -154,6 +168,7 @@ pub struct ChangeSummary {
 }
 
 impl ChangeSummary {
+    #[must_use]
     pub fn changed(&self, path: &str) -> bool {
         self.files.contains(&path)
     }
@@ -167,11 +182,16 @@ impl ChangeSummary {
 /// written, so routing cannot half-apply a save. Fields inside one block may route to different
 /// files (`buy_sell.presets` setup, `buy_sell.bag_grid` machine); a field with no specific owner
 /// falls back to its block's owner, which is how `calibration`/`spammer`/`quest` route wholesale.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::SectionNotOwned`] when a block or field has no registry owner (nothing is
+/// written in that case), and the read/encode/write or transaction errors of the writes that follow.
 pub fn write_sections(
     root: &Path,
     sections: &Map<String, Value>,
 ) -> Result<ChangeSummary, ConfigError> {
-    let mut groups: std::collections::BTreeMap<&'static str, Value> =
+    let mut groups: std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)> =
         std::collections::BTreeMap::new();
     // Validate and route into per-file fragments first. A failure leaves the tree untouched.
     for (block, value) in sections {
@@ -185,11 +205,7 @@ pub fn write_sections(
         return Ok(ChangeSummary::default());
     }
     let mut writes = Vec::with_capacity(groups.len());
-    for (path, fragment) in &groups {
-        let def = registry::FILES
-            .iter()
-            .find(|def| def.path == *path)
-            .expect("a routed path came from the registry");
+    for (def, fragment) in groups.values() {
         let mut content = match file::read(root, def)? {
             Some(content) => content,
             None => Value::Object(Map::new()),
@@ -212,18 +228,24 @@ pub fn write_sections(
 fn route_settings(
     block: &str,
     value: &Value,
-    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+    groups: &mut std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)>,
 ) -> Result<(), ConfigError> {
     let Some(sections) = value.as_object() else {
         return Err(ConfigError::SectionNotOwned(block.to_owned()));
     };
     for (section, section_value) in sections {
         if section == "legacy_folded" {
-            // `meta.yaml` holds the fold marker at its top level, not under a `meta:` block.
+            // `meta.yaml` holds the fold marker at its top level, not under a `meta:` block. Its
+            // registry entry is the owner of this one legacy-model path.
+            let Some(meta_def) = registry::owner_of("settings.legacy_folded") else {
+                return Err(ConfigError::SectionNotOwned(
+                    "settings.legacy_folded".to_owned(),
+                ));
+            };
             let meta = groups
-                .entry("meta.yaml")
-                .or_insert_with(|| Value::Object(Map::new()));
-            if let Some(meta) = meta.as_object_mut() {
+                .entry(meta_def.path)
+                .or_insert_with(|| (meta_def, Value::Object(Map::new())));
+            if let Some(meta) = meta.1.as_object_mut() {
                 meta.insert("legacy_folded".to_owned(), section_value.clone());
             }
             continue;
@@ -243,7 +265,7 @@ fn route_settings(
 fn route_block(
     block: &str,
     value: &Value,
-    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+    groups: &mut std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)>,
 ) -> Result<(), ConfigError> {
     let Some(fields) = value.as_object() else {
         route_field(block, block, value.clone(), groups)?;
@@ -267,13 +289,13 @@ fn route_canonical(
     block: &str,
     field: &str,
     value: Value,
-    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+    groups: &mut std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)>,
 ) -> Result<(), ConfigError> {
     let owner = registry::owner_of(canonical).or_else(|| registry::owner_of(block));
     let Some(owner) = owner else {
         return Err(ConfigError::SectionNotOwned(canonical.to_owned()));
     };
-    insert_fragment(groups, owner.path, block, field, value);
+    insert_fragment(groups, owner, block, field, value);
     Ok(())
 }
 
@@ -281,26 +303,26 @@ fn route_field(
     block: &str,
     field: &str,
     value: Value,
-    groups: &mut std::collections::BTreeMap<&'static str, Value>,
+    groups: &mut std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)>,
 ) -> Result<(), ConfigError> {
     let Some(owner) = registry::owner_of(block) else {
         return Err(ConfigError::SectionNotOwned(block.to_owned()));
     };
-    insert_fragment(groups, owner.path, block, field, value);
+    insert_fragment(groups, owner, block, field, value);
     Ok(())
 }
 
 fn insert_fragment(
-    groups: &mut std::collections::BTreeMap<&'static str, Value>,
-    path: &'static str,
+    groups: &mut std::collections::BTreeMap<&'static str, (&'static registry::FileDef, Value)>,
+    owner: &'static registry::FileDef,
     block: &str,
     field: &str,
     value: Value,
 ) {
     let fragment = groups
-        .entry(path)
-        .or_insert_with(|| Value::Object(Map::new()));
-    let Some(fragment) = fragment.as_object_mut() else {
+        .entry(owner.path)
+        .or_insert_with(|| (owner, Value::Object(Map::new())));
+    let Some(fragment) = fragment.1.as_object_mut() else {
         return;
     };
     let block_value = fragment
@@ -390,7 +412,10 @@ mod tests {
         let mut expected = base();
         expected["window"]["title"] = json!("TW_LIVE");
         assert_eq!(loaded.config, expected);
-        assert!(loaded.warnings.is_empty());
+        assert!(
+            loaded.warnings.is_empty(),
+            "a clean load reports no warnings"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

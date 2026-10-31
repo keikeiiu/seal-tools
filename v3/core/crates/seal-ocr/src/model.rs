@@ -96,16 +96,36 @@ fn describe(session: &Session) -> ModelIo {
     }
 }
 
+/// The element count a static shape declares, or `None` when a dimension is not a length.
+///
+/// A negative or overflowing dimension is refused rather than turned into a bogus expected length;
+/// `i64` is ONNX's shape type and `usize` is what the buffers index with.
+pub(crate) fn tensor_len(shape: &[i64]) -> Option<usize> {
+    shape.iter().try_fold(1usize, |length, dimension| {
+        usize::try_from(*dimension).ok()?.checked_mul(length)
+    })
+}
+
 /// The process-wide ONNX Runtime environment: ORT allows exactly one per process and the det and rec
 /// sessions share it, so it is built once and never dropped.
-fn environment() -> &'static Environment {
-    static ENVIRONMENT: OnceLock<Environment> = OnceLock::new();
-    ENVIRONMENT.get_or_init(|| {
-        ort::init()
-            .with_name("seal-ocr")
-            .build()
-            .expect("the ONNX Runtime environment must initialise")
-    })
+///
+/// The build's outcome is cached, not just its success: a failure is returned as an [`OcrError`] and
+/// a later call repeats it, because a second initialisation attempt could not succeed either.
+fn environment() -> Result<&'static Environment, OcrError> {
+    static ENVIRONMENT: OnceLock<Result<Environment, String>> = OnceLock::new();
+    ENVIRONMENT
+        .get_or_init(|| {
+            ort::init()
+                .with_name("seal-ocr")
+                .build()
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|message| {
+            OcrError::Ort(format!(
+                "the ONNX Runtime environment failed to initialise: {message}"
+            ))
+        })
 }
 
 pub(crate) fn open_session(path: &Path, threads: usize) -> Result<(Session, ModelIo), OcrError> {
@@ -115,7 +135,7 @@ pub(crate) fn open_session(path: &Path, threads: usize) -> Result<(Session, Mode
             format!("model not found: {}", path.display()),
         )));
     }
-    let builder = Session::builder(environment()).map_err(ort_error)?;
+    let builder = Session::builder(environment()?).map_err(ort_error)?;
     let builder = builder.with_intra_threads(threads).map_err(ort_error)?;
     let builder = builder.with_inter_threads(threads).map_err(ort_error)?;
     let mut builder = builder;
@@ -157,6 +177,12 @@ pub struct Decoded {
 impl RecModel {
     /// Opens the recogniser and reads its dictionary. `threads` is pinned (the parity corpus needs a
     /// deterministic run; 1 is the value the spike uses).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OcrError::Io`] when the model file is not readable, [`OcrError::Ort`] when the
+    /// runtime rejects the session, and [`OcrError::MissingDictionary`] when the model carries no
+    /// `character` metadata.
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
         let (session, io) = open_session(path, threads)?;
         let dictionary: Vec<String> = {
@@ -184,10 +210,12 @@ impl RecModel {
         })
     }
 
+    #[must_use]
     pub fn io(&self) -> &ModelIo {
         &self.io
     }
 
+    #[must_use]
     pub fn custom_metadata_keys(&self) -> Vec<String> {
         self.session
             .metadata()
@@ -196,26 +224,39 @@ impl RecModel {
     }
 
     /// The model's own dictionary: `metadata_props["character"]` split on newlines.
+    #[must_use]
     pub fn dictionary(&self) -> &[String] {
         &self.dictionary
     }
 
     /// The class list the CTC decode indexes: `"blank"` + dictionary + `" "` (C# `TextRecognizerBase`).
+    #[must_use]
     pub fn class_list(&self) -> &[String] {
         &self.class_list
     }
 
+    #[must_use]
     pub fn class_count(&self) -> usize {
         self.class_list.len()
     }
 
+    #[must_use]
     pub fn dictionary_sha256(&self) -> String {
         sha256_hex(self.dictionary.join("\n").as_bytes())
     }
 
     /// Runs one recogniser tensor. `data` is row-major `[N, C, H, W]` f32, as `shape` says.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OcrError::Ort`] when `shape` has a negative or overflowing dimension, when `data`
+    /// does not match `shape`, or when the runtime rejects the tensor or the inference.
     pub fn infer(&mut self, data: &[f32], shape: &[i64]) -> Result<RecOutput, OcrError> {
-        let expected: usize = shape.iter().map(|dim| *dim as usize).product();
+        let Some(expected) = tensor_len(shape) else {
+            return Err(OcrError::Ort(format!(
+                "input shape {shape:?} has a negative or overflowing dimension"
+            )));
+        };
         if data.len() != expected {
             return Err(OcrError::Ort(format!(
                 "input has {} values but shape {shape:?} needs {expected}",
@@ -239,6 +280,7 @@ impl RecModel {
     }
 
     /// Greedy CTC decode with this model's class list.
+    #[must_use]
     pub fn decode(&self, output: &RecOutput) -> Decoded {
         let (timesteps, classes) = match output.shape.as_slice() {
             [_, timesteps, classes] => (*timesteps, *classes),
@@ -246,8 +288,8 @@ impl RecModel {
         };
         decode_ctc(
             &output.logits,
-            timesteps.max(0) as usize,
-            classes.max(0) as usize,
+            usize::try_from(timesteps.max(0)).unwrap_or(0),
+            usize::try_from(classes.max(0)).unwrap_or(0),
             &self.dictionary,
         )
     }
@@ -255,6 +297,7 @@ impl RecModel {
 
 /// `"blank"` + the dictionary + `" "`: the class list the C# library builds around the model's
 /// metadata string (`TextRecognizerBase` constructor).
+#[must_use]
 pub fn class_list(dictionary: &[String]) -> Vec<String> {
     let mut classes = Vec::with_capacity(dictionary.len() + 2);
     classes.push("blank".to_owned());
@@ -266,6 +309,11 @@ pub fn class_list(dictionary: &[String]) -> Vec<String> {
 /// The C# library's greedy CTC decode: per timestep argmax; drop index 0 (blank) and a token equal to
 /// the PREVIOUS timestep's argmax; join the remaining class strings; confidence = mean of the kept
 /// timesteps' maxima, rounded to five decimals.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "`kept` counts CTC timesteps (the model's T axis, hundreds at most) and is far below f32's 2^24 exact-integer range"
+)]
 pub fn decode_ctc(
     logits: &[f32],
     timesteps: usize,
@@ -315,24 +363,96 @@ pub fn decode_ctc(
     Decoded { text, confidence }
 }
 
+/// The SHA-256 round constants (FIPS 180-4 §4.2.2), in order.
+const SHA256_K: [u32; 64] = [
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
+];
+
+/// The SHA-256 initial hash state (FIPS 180-4 §5.3.3).
+const SHA256_INITIAL_STATE: [u32; 8] = [
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
+];
+
 /// SHA-256 (FIPS 180-4), hex-lowercase. Exists to pin the dictionary hash without adding a crate.
+#[must_use]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "`a`..`h` are the state variable names FIPS 180-4 defines; renaming them would obscure the algorithm"
+)]
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut state: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
+    use std::fmt::Write as _;
+
+    let mut state = SHA256_INITIAL_STATE;
 
     let mut message = bytes.to_vec();
     let bit_len = (bytes.len() as u64).wrapping_mul(8);
@@ -367,7 +487,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
             let temp1 = h
                 .wrapping_add(s1)
                 .wrapping_add(choice)
-                .wrapping_add(K[index])
+                .wrapping_add(SHA256_K[index])
                 .wrapping_add(schedule[index]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let majority = (a & b) ^ (a & c) ^ (b & c);
@@ -386,8 +506,9 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         }
     }
 
-    state
-        .iter()
-        .map(|word| format!("{word:08x}"))
-        .collect::<String>()
+    let mut hex = String::with_capacity(state.len() * 8);
+    for word in state {
+        let _ = write!(hex, "{word:08x}");
+    }
+    hex
 }

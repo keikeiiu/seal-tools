@@ -65,6 +65,10 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
     }
 
     /// Place the cursor at a client-relative PHYSICAL offset and DO NOT click.
+    ///
+    /// # Errors
+    ///
+    /// Returns the effect error when the board placement fails.
     pub fn place_at(&mut self, at: Point) -> Result<(), EffectError> {
         let target = self.display.cursor_target(at.x, at.y).logical;
         let placement = place(
@@ -83,6 +87,10 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
 
     /// Place the cursor at a client-relative PHYSICAL offset, then click. The placement loop is the
     /// board crate's; a failed placement never clicks.
+    ///
+    /// # Errors
+    ///
+    /// Returns the effect error when the placement fails, or the click cannot be written.
     pub fn click_at(&mut self, at: Point) -> Result<(), EffectError> {
         self.place_at(at)?;
         self.write(BoardCommand::LeftClick)
@@ -189,6 +197,7 @@ impl Cursor for WinCursor {
 /// The effects a real tool gets at run start: a serial transport opened by the caller, the real
 /// cursor read, the real clock, and the display measurement captured when the run began.
 #[cfg(windows)]
+#[must_use]
 pub fn system_effects(
     transport: seal_board::serial::SerialTransport,
     display: DisplayInfo,

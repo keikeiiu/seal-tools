@@ -29,6 +29,7 @@ pub enum IconKind {
 }
 
 impl IconKind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Queue => "queue",
@@ -49,6 +50,14 @@ pub enum IconError {
 }
 
 /// Parse and validate `{"kind","page","cell"}`. Bad values are `bad_request` naming the field.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `kind`, `page` or `cell` is malformed.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "row/page/cell indices are small values validated before use"
+)]
 pub fn arguments(value: &Value) -> Result<IconArguments, (String, &'static str)> {
     let kind = match value.get("kind").and_then(Value::as_str) {
         Some("queue") => IconKind::Queue,
@@ -101,6 +110,10 @@ pub fn arguments(value: &Value) -> Result<IconArguments, (String, &'static str)>
 /// `BagGrid::centres` + rounded pitch box.
 /// Validate the bag grid and the requested page's 2-point tab mark. The scans and the icon
 /// capture share this prerequisite so a page that cannot be captured is refused the same way.
+///
+/// # Errors
+///
+/// Returns the icon error when the bag grid or the requested page's tab marks are not calibrated.
 pub fn page_grid(config: &Value, page: usize) -> Result<Vec<i32>, IconError> {
     let grid = config
         .pointer("/pet/bag_grid")
@@ -123,7 +136,7 @@ pub fn page_grid(config: &Value, page: usize) -> Result<Vec<i32>, IconError> {
         .and_then(Value::as_array)
         .map(|tabs| {
             tabs.iter()
-                .map(|tab| tab.as_array().map(|values| values.len()).unwrap_or(0))
+                .map(|tab| tab.as_array().map_or(0, std::vec::Vec::len))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -139,6 +152,10 @@ pub fn page_grid(config: &Value, page: usize) -> Result<Vec<i32>, IconError> {
     Ok(grid)
 }
 
+///
+/// # Errors
+///
+/// Returns the icon error when the page cannot be captured or the requested cell is out of range.
 pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconError> {
     let grid = page_grid(config, arguments.page)?;
     if arguments.cell > BagGrid::SLOT_COUNT {
@@ -160,6 +177,14 @@ pub fn geometry(config: &Value, arguments: &IconArguments) -> Result<Rect, IconE
 
 /// Crop one cell out of a captured client frame and return the protocol result. Kept separate from
 /// the Win32 capture so the byte-level crop is testable on any machine.
+///
+/// # Errors
+///
+/// Returns the icon error when the frame cannot be decoded or the crop lies outside it.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 pub fn icon_from_frame(
     arguments: &IconArguments,
     rect: Rect,
@@ -216,7 +241,12 @@ mod tests {
         let mut rgba = Vec::with_capacity((width * height * 4) as usize);
         for y in 0..height {
             for x in 0..width {
-                rgba.extend_from_slice(&[x as u8, y as u8, 0x33, 0xff]);
+                rgba.extend_from_slice(&[
+                    u8::try_from(x).unwrap(),
+                    u8::try_from(y).unwrap(),
+                    0x33,
+                    0xff,
+                ]);
             }
         }
         let (pixels, _) = rgba.as_chunks::<4>();
@@ -347,7 +377,12 @@ mod tests {
                 let at = ((y * 10 + x) * 4) as usize;
                 assert_eq!(
                     &rgba[at..at + 4],
-                    &[(10 + x) as u8, (40 + y) as u8, 0x33, 0xff]
+                    &[
+                        u8::try_from(10 + x).unwrap(),
+                        u8::try_from(40 + y).unwrap(),
+                        0x33,
+                        0xff
+                    ]
                 );
             }
         }

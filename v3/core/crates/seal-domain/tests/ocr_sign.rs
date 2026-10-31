@@ -68,7 +68,7 @@ fn the_labels_are_kept_and_come_first() {
 #[test]
 fn an_empty_marker_table_means_nothing_is_negative() {
     let config = AttributesConfig::default();
-    assert!(config.negative_attr_markers.is_empty());
+    assert_eq!(config.negative_attr_markers, [] as [std::string::String; 0]);
 
     let fixed = fix_sign(
         &owned(&["減少傷害"]),

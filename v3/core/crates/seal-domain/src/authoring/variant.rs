@@ -40,6 +40,7 @@ pub enum VariantError {
 
 impl VariantError {
     /// The line the Setup tab's status shows — v2's `ApplyVariant` wording.
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Unknown { requested, known } => format!(
@@ -66,6 +67,11 @@ impl std::error::Error for VariantError {}
 /// A variant with a blank dictionary falls back to `attributes.yaml`, which is what v2's
 /// `ConfigLoader.LoadAttributes(null)` does: a config saved before a client grew its own dictionary
 /// must still start rather than pointing at no file at all.
+///
+/// # Errors
+///
+/// Returns [`VariantError::Unknown`] when the requested name (after trimming) is not one of the
+/// configured clients, naming the ones that are.
 pub fn plan_variant_switch(
     game: &GameConfig,
     requested: &str,
@@ -101,6 +107,7 @@ pub fn plan_variant_switch(
 /// Unset is the shape of every config written before variants existed; unknown is a typo. In both the
 /// configured `window.title` stands — blanking it would send every tool hunting a window called "".
 /// v2's guard is `{ Title.Length: > 0 }`, so a variant with an empty title leaves the title alone too.
+#[must_use]
 pub fn resolve_window_title<'a>(game: &'a GameConfig, configured: &'a str) -> &'a str {
     match game.active() {
         Some(variant) if !variant.title.is_empty() => variant.title.as_str(),

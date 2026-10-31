@@ -90,29 +90,39 @@ pub enum Decision {
 }
 
 impl Decision {
+    #[must_use]
     pub const fn click(point: Point) -> Self {
         Self::Click(point)
     }
 
     /// A one-character key press, or [`KeyError`] when the character cannot be sent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeyError::Unsendable`] when the character is not one printable ASCII character, so
+    /// the runner can show [`KeyError::message`] instead of sending a no-op.
     pub fn key(character: char) -> Result<Self, KeyError> {
         Key::character(character).map(Self::Key)
     }
 
+    #[must_use]
     pub const fn wait(seconds: f64) -> Self {
         Self::Wait(seconds)
     }
 
+    #[must_use]
     pub const fn stop(reason: StopReason) -> Self {
         Self::Stop(reason)
     }
 
     /// True when this decision ends the run; the loop may then skip its next read entirely.
+    #[must_use]
     pub const fn is_terminal(&self) -> bool {
         matches!(self, Self::Stop(_))
     }
 
     /// The stop reason, when this decision is a [`Decision::Stop`].
+    #[must_use]
     pub const fn stop_reason(&self) -> Option<&StopReason> {
         match self {
             Self::Stop(reason) => Some(reason),
@@ -125,7 +135,7 @@ impl Decision {
 ///
 /// The firmware's `K` handler presses ONE printable ASCII character and its `F` handler one function
 /// key from a table that ends at F12 (`SkillSpammer.SendKey`: "the firmware's table goes to twelve.
-/// ParseVk accepts F1–F24 elsewhere, so anything above twelve is refused here rather than sent and
+/// `ParseVk` accepts F1–F24 elsewhere, so anything above twelve is refused here rather than sent and
 /// silently ignored on board"). Hotkey names and board keys are therefore two questions with
 /// different answers, and this type answers the board's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +148,11 @@ pub enum Key {
 
 impl Key {
     /// A printable ASCII character, or [`KeyError`] with the message a player needs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeyError::Unsendable`] for anything outside `0x20..=0x7E` — the firmware's `K`
+    /// handler sends exactly one printable ASCII character.
     pub fn character(character: char) -> Result<Self, KeyError> {
         if (' '..='~').contains(&character) {
             Ok(Self::Char(character))
@@ -149,6 +164,11 @@ impl Key {
     }
 
     /// A function key, 1 through 12 (the firmware's table), or [`KeyError`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeyError::Unsendable`] for a number outside 1 through 12, because the firmware's
+    /// table stops at F12 even though a hotkey may be F13–F24.
     pub fn function(number: u8) -> Result<Self, KeyError> {
         if (1..=12).contains(&number) {
             Ok(Self::Function(number))
@@ -165,6 +185,11 @@ impl Key {
     /// not read as a function key there, and inventing that here would let a run send a key the v2
     /// build refused. The number is trimmed and parsed the way C# `int.TryParse` parses it, so a
     /// padded `F01` still means F1 rather than being refused for a spelling the board accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeyError::Unsendable`] when the spelling is not one character, not a valid `F<1-12>`,
+    /// or has trailing characters after the one character.
     pub fn parse(text: &str) -> Result<Self, KeyError> {
         if let Some(number) = text.strip_prefix('F') {
             if let Ok(number) = number.trim().parse::<u8>() {
@@ -196,6 +221,7 @@ pub enum KeyError {
 impl KeyError {
     /// The line to show the player. v2 refuses these too (`SkillSpammer.WarnUnsupported`,
     /// `QuestAction.Complaint`), so this is a port rather than a new rule.
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Unsendable { input } if input.is_empty() => {

@@ -19,6 +19,7 @@ pub struct Pt {
 pub struct Quad(pub [Pt; 4]);
 
 /// Shoelace area (absolute).
+#[must_use]
 pub fn contour_area(points: &[(f64, f64)]) -> f64 {
     signed_area(points).abs()
 }
@@ -37,6 +38,7 @@ fn signed_area(points: &[(f64, f64)]) -> f64 {
 }
 
 /// `ArcLength`: pairwise distance, closing the loop when `closed`.
+#[must_use]
 pub fn arc_length(points: &[(f64, f64)], closed: bool) -> f64 {
     if points.len() < 2 {
         return 0.0;
@@ -60,6 +62,7 @@ fn distance_pt(a: Pt, b: Pt) -> f64 {
 }
 
 /// The unclip distance the C# computes: `area * unclip_ratio / perimeter`.
+#[must_use]
 pub fn unclip_distance(area: f64, perimeter: f64, unclip_ratio: f64) -> f64 {
     if perimeter <= 0.0 {
         return 0.0;
@@ -67,8 +70,9 @@ pub fn unclip_distance(area: f64, perimeter: f64, unclip_ratio: f64) -> f64 {
     area * unclip_ratio / perimeter
 }
 
-/// OpenCV `ContourArea` sign helper for a traced contour (positive = counter-clockwise in image
+/// `OpenCV` `ContourArea` sign helper for a traced contour (positive = counter-clockwise in image
 /// coordinates, which is what the contour tracer normalises outer boundaries to).
+#[must_use]
 pub fn polygon_is_counter_clockwise(points: &[(f64, f64)]) -> bool {
     signed_area(points) > 0.0
 }
@@ -104,17 +108,18 @@ pub fn convex_hull(points: &[(i32, i32)]) -> Vec<(f64, f64)> {
 }
 
 fn cast(point: (i32, i32)) -> (f64, f64) {
-    (point.0 as f64, point.1 as f64)
+    (f64::from(point.0), f64::from(point.1))
 }
 
 fn cross(origin: (i32, i32), a: (i32, i32), b: (i32, i32)) -> i64 {
-    (a.0 as i64 - origin.0 as i64) * (b.1 as i64 - origin.1 as i64)
-        - (a.1 as i64 - origin.1 as i64) * (b.0 as i64 - origin.0 as i64)
+    (i64::from(a.0) - i64::from(origin.0)) * (i64::from(b.1) - i64::from(origin.1))
+        - (i64::from(a.1) - i64::from(origin.1)) * (i64::from(b.0) - i64::from(origin.0))
 }
 
 /// The smallest-area rectangle around `points` (hull + rotating calipers), returned as four corners
 /// clockwise from the top-most/left-most corner. A degenerate (collinear) input gives a zero-area
 /// rectangle lying on the line, which the box filter then refuses.
+#[must_use]
 pub fn min_area_rect(points: &[(i32, i32)]) -> Quad {
     let hull = convex_hull(points);
     if hull.len() < 2 {
@@ -209,8 +214,13 @@ fn order_corners(corners: [Pt; 4]) -> [Pt; 4] {
 }
 
 /// The mean score over the pixels whose centres fall inside `polygon` (the `FillPoly` + `Mean`
-/// approximation; OpenCV's fill rule for integer polygons is boundary-inclusive and is called out in
+/// approximation; `OpenCV`'s fill rule for integer polygons is boundary-inclusive and is called out in
 /// the report as an ambiguity).
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "the polygon scan runs over the score map's own pixel grid and pixel count, both exactly representable in f64"
+)]
 pub fn filled_mean(map: &crate::detmask::ScoreMap, polygon: &[Pt]) -> f64 {
     let coords: Vec<(f64, f64)> = polygon.iter().map(|point| (point.x, point.y)).collect();
     let mut sum = 0.0;
@@ -241,13 +251,21 @@ fn point_in_polygon(polygon: &[(f64, f64)], x: f64, y: f64) -> bool {
 }
 
 /// `FillPoly` + `Mean`: the box's score in the detector map.
+#[must_use]
 pub fn box_score(map: &crate::detmask::ScoreMap, quad: &Quad) -> f64 {
     filled_mean(map, &quad.0)
 }
 
 /// Minkowski sum of a convex quad with a disk: the Clipper round-join unclip. Returns an ordered
 /// polygon (counter-clockwise in image coordinates) sampled with 16 segments per rounded corner.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "the angle sweep is sampled with a small integer segment index, exactly representable in f64"
+)]
 pub fn offset_round(quad: &Quad, distance: f64) -> Vec<Pt> {
+    const ARC_SEGMENTS: usize = 16;
+
     let mut polygon: Vec<Pt> = quad.0.to_vec();
     if distance <= 0.0 {
         return polygon;
@@ -275,7 +293,6 @@ pub fn offset_round(quad: &Quad, distance: f64) -> Vec<Pt> {
             }
         })
         .collect();
-    const ARC_SEGMENTS: usize = 16;
     for index in 0..count {
         let previous_normal = normals[(index + count - 1) % count];
         let next_normal = normals[index];
@@ -307,7 +324,8 @@ pub struct DetBox {
     pub score: f64,
 }
 
-/// `MinAreaRect` + box score + the box_thresh filter: `None` for a degenerate quad or a low score.
+/// `MinAreaRect` + box score + the `box_thresh` filter: `None` for a degenerate quad or a low score.
+#[must_use]
 pub fn accept_box(map: &crate::detmask::ScoreMap, quad: &Quad, box_thresh: f64) -> Option<DetBox> {
     let coords: Vec<(f64, f64)> = quad.0.iter().map(|point| (point.x, point.y)).collect();
     if contour_area(&coords) < 1e-6 {
@@ -319,6 +337,7 @@ pub fn accept_box(map: &crate::detmask::ScoreMap, quad: &Quad, box_thresh: f64) 
 
 /// `ContourArea` + `ArcLength` + unclip: `None` when the quad is degenerate or the offset polygon
 /// self-intersects (the C# Clipper result for such a box is refused by the caller).
+#[must_use]
 pub fn unclip_quad(quad: &Quad, unclip_ratio: f64) -> Option<Vec<Pt>> {
     let coords: Vec<(f64, f64)> = quad.0.iter().map(|point| (point.x, point.y)).collect();
     let area = contour_area(&coords);
@@ -332,6 +351,7 @@ pub fn unclip_quad(quad: &Quad, unclip_ratio: f64) -> Option<Vec<Pt>> {
 }
 
 /// True when no two non-adjacent edges of the closed polygon intersect.
+#[must_use]
 pub fn is_simple_polygon(points: &[Pt]) -> bool {
     let count = points.len();
     if count < 3 {
@@ -396,6 +416,7 @@ pub fn sort_boxes(boxes: &mut [DetBox]) {
 }
 
 /// Distance helper used by tests/reporting.
+#[must_use]
 pub fn quad_perimeter(quad: &Quad) -> f64 {
     arc_length(
         &quad
@@ -408,6 +429,7 @@ pub fn quad_perimeter(quad: &Quad) -> f64 {
 }
 
 /// Corner-to-corner distance (diagnostics only).
+#[must_use]
 pub fn quad_diagonal(quad: &Quad) -> f64 {
     distance_pt(quad.0[0], quad.0[2])
 }

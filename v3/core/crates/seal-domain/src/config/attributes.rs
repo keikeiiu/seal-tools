@@ -76,7 +76,7 @@ pub struct TextFixesConfig {
     #[serde(default, deserialize_with = "crate::config::de::null_as_default")]
     pub substring: Vec<TextFix>,
 
-    /// RapidOCR defaults to simplified Chinese; these convert the characters that arrive that way.
+    /// `RapidOCR` defaults to simplified Chinese; these convert the characters that arrive that way.
     #[serde(default, deserialize_with = "crate::config::de::null_as_default")]
     pub simplified_traditional: Vec<TextFix>,
 

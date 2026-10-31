@@ -42,6 +42,7 @@ impl PetPanel {
     /// which is the one direction that makes the tool stop feeding a pet that still needs it. It stays
     /// safe because the growth pattern reads ONE digit, so a panel that reads a digit too many yields
     /// the leading digit rather than a number above the maximum.
+    #[must_use]
     pub fn is_finished(&self) -> bool {
         self.growth == Self::MAX_GROWTH && self.exp >= Self::FINISHED_EXP
     }
@@ -49,12 +50,12 @@ impl PetPanel {
     /// For a log line or the Test read. Deliberately not a derived `Debug`: the numbers are the whole
     /// content, and "stage ?" for a stage the OCR missed says so rather than printing a zero that
     /// looks measured.
+    #[must_use]
     pub fn describe(&self) -> String {
         let mut line = format!(
             "stage {}, +{}, {}%",
             self.stage
-                .map(|stage| stage.to_string())
-                .unwrap_or_else(|| "?".to_owned()),
+                .map_or_else(|| "?".to_owned(), |stage| stage.to_string()),
             self.growth,
             format_percentage(self.exp),
         );
@@ -76,6 +77,7 @@ impl PetPanel {
     ///
     /// (v2's `Parse` also accepts a null line list and answers null; a `&[String]` cannot be null,
     /// and the empty slice — its Rust spelling — takes the same path.)
+    #[must_use]
     pub fn parse(lines: &[String]) -> Option<Self> {
         let text = normalise(&lines.join(" "));
         let characters: Vec<char> = text.chars().collect();
@@ -209,7 +211,9 @@ fn match_growth(characters: &[char]) -> Option<i32> {
             continue;
         }
 
-        return characters[digit_at].to_digit(10).map(|digit| digit as i32);
+        return characters[digit_at]
+            .to_digit(10)
+            .and_then(|digit| i32::try_from(digit).ok());
     }
     None
 }

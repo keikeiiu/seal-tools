@@ -24,6 +24,7 @@ pub enum Color {
 }
 
 impl Color {
+    #[must_use]
     pub const fn rgb(self) -> [u8; 3] {
         match self {
             Self::Green => [0, 200, 0],
@@ -63,6 +64,10 @@ pub enum Shape {
 /// partly outside the captured frame, and a save must refuse or draw what is visible rather than
 /// kill the core. A non-PNG input is the decoder's own error (`WinError::EmptyCapture`), the same
 /// shape the existing crop path reports.
+///
+/// # Errors
+///
+/// Returns the decoder's `WinError::EmptyCapture` for a non-PNG input, and the encoder's error when the annotated PNG cannot be written.
 pub fn annotate_png(png: &[u8], shapes: &[Shape]) -> Result<Vec<u8>, WinError> {
     let (width, height, mut rgba) = seal_win::pure::decode_png(png)?;
     for shape in shapes {
@@ -84,6 +89,11 @@ pub fn annotate_png(png: &[u8], shapes: &[Shape]) -> Result<Vec<u8>, WinError> {
     seal_win::pure::encode_png(width, height, &bgra)
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn draw_rect(rgba: &mut [u8], width: u32, height: u32, rect: Rect, color: Color) {
     let left = rect.x.max(0);
     let top = rect.y.max(0);
@@ -92,10 +102,10 @@ fn draw_rect(rgba: &mut [u8], width: u32, height: u32, rect: Rect, color: Color)
     if left >= right || top >= bottom {
         return;
     }
-    let paint = color.rgba();
+    let fill = color.rgba();
     let mut put = |x: i32, y: i32| {
         let index = ((y as usize) * width as usize + x as usize) * 4;
-        rgba[index..index + 4].copy_from_slice(&paint);
+        rgba[index..index + 4].copy_from_slice(&fill);
     };
     for x in left..right {
         put(x, top);
@@ -107,9 +117,14 @@ fn draw_rect(rgba: &mut [u8], width: u32, height: u32, rect: Rect, color: Color)
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn draw_dot(rgba: &mut [u8], width: u32, height: u32, point: Point, color: Color, radius: u32) {
-    let radius = radius.min(i32::MAX as u32) as i64;
-    let paint = color.rgba();
+    let radius = i64::from(radius.min(i32::MAX as u32));
+    let fill = color.rgba();
     let min_x = (i64::from(point.x) - radius).max(0);
     let max_x = (i64::from(point.x) + radius).min(i64::from(width) - 1);
     let min_y = (i64::from(point.y) - radius).max(0);
@@ -123,7 +138,7 @@ fn draw_dot(rgba: &mut [u8], width: u32, height: u32, point: Point, color: Color
             let dy = y - i64::from(point.y);
             if dx * dx + dy * dy <= radius * radius {
                 let index = (y as usize * width as usize + x as usize) * 4;
-                rgba[index..index + 4].copy_from_slice(&paint);
+                rgba[index..index + 4].copy_from_slice(&fill);
             }
         }
     }

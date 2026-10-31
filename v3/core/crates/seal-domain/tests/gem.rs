@@ -227,20 +227,20 @@ fn an_unknown_route_is_refused_by_its_key() {
 #[test]
 fn the_composition_distance_is_euclidean_not_the_mean_that_hid_a_gem() {
     let empty = ColorComposition {
-        mean_v: 0.859564,
-        mean_sat: 0.274034,
+        mean_v: 0.859_564,
+        mean_sat: 0.274_034,
         colored_fraction: 1.0,
-        mean_r: 0.839423,
-        mean_g: 0.859273,
-        mean_b: 0.631923,
+        mean_r: 0.839_423,
+        mean_g: 0.859_273,
+        mean_b: 0.631_923,
     };
     let gem = ColorComposition {
-        mean_v: 0.811451,
-        mean_sat: 0.414936,
-        colored_fraction: 0.934937,
-        mean_r: 0.640172,
-        mean_g: 0.716273,
-        mean_b: 0.638671,
+        mean_v: 0.811_451,
+        mean_sat: 0.414_936,
+        colored_fraction: 0.934_937,
+        mean_r: 0.640_172,
+        mean_g: 0.716_273,
+        mean_b: 0.638_671,
     };
 
     let distance = composition_distance(&empty, &gem);

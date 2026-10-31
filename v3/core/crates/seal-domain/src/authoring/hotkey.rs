@@ -30,6 +30,7 @@ pub struct HotkeyNameError {
 }
 
 impl HotkeyNameError {
+    #[must_use]
     pub fn message(&self) -> String {
         format!(
             "\"{}\" is not a key. Use F1–24, Esc, CapsLock, Space, Tab, Enter, or a single \
@@ -58,12 +59,14 @@ pub enum HotkeyError {
 }
 
 impl HotkeyError {
+    #[must_use]
     pub fn field(&self) -> &'static str {
         match self {
             Self::Invalid { field, .. } => field,
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Invalid { input, .. } => HotkeyNameError {
@@ -92,14 +95,19 @@ impl std::error::Error for HotkeyError {}
 ///
 /// A name that is none of those is refused. v2 returned `0` there and the Save compared against 0;
 /// the error type makes "not a key" unrepresentable as a valid value.
+///
+/// # Errors
+///
+/// Returns [`HotkeyNameError`] when the name is not one of the accepted spellings, carrying the text
+/// as the player typed it so the refusal can quote it.
 pub fn parse_virtual_key(name: &str) -> Result<u32, HotkeyNameError> {
     let trimmed = name.trim();
 
     if let Some(number) = trimmed.strip_prefix(['F', 'f'])
-        && let Ok(function) = number.trim().parse::<i32>()
+        && let Ok(function) = number.trim().parse::<u32>()
         && (1..=24).contains(&function)
     {
-        return Ok(0x70 + (function - 1) as u32);
+        return Ok(0x70 + (function - 1));
     }
 
     match trimmed.to_uppercase().as_str() {
@@ -131,6 +139,7 @@ pub fn parse_virtual_key(name: &str) -> Result<u32, HotkeyNameError> {
 
 /// The name the Hotkeys tab shows for a VK code (`MainWindow.VkName`), or its hex code when there is
 /// no name.
+#[must_use]
 pub fn virtual_key_name(vk: u32) -> String {
     if (0x70..=0x87).contains(&vk) {
         return format!("F{}", vk - 0x70 + 1);
@@ -144,8 +153,7 @@ pub fn virtual_key_name(vk: u32) -> String {
         0x0D => "Enter".to_owned(),
         0x08 => "Backspace".to_owned(),
         0x21..=0x7E => char::from_u32(vk)
-            .map(|character| character.to_string())
-            .unwrap_or_else(|| format!("0x{vk:X}")),
+            .map_or_else(|| format!("0x{vk:X}"), |character| character.to_string()),
         _ => format!("0x{vk:X}"),
     }
 }
@@ -155,6 +163,11 @@ pub fn virtual_key_name(vk: u32) -> String {
 /// v2's Save refused the whole set and wrote nothing when any parsed to 0; the port keeps the refusal
 /// (a partial write is worse) and reports each bad field, because a single message over four boxes
 /// makes the player hunt.
+///
+/// # Errors
+///
+/// Returns every [`HotkeyError`] the set produced — one per box that would not parse — so the tab can
+/// mark each bad field rather than only the first.
 pub fn parse_hotkeys(names: HotkeyNames<'_>) -> Result<HotkeysConfig, Vec<HotkeyError>> {
     let fields = [
         ("start", names.start),
@@ -167,7 +180,16 @@ pub fn parse_hotkeys(names: HotkeyNames<'_>) -> Result<HotkeysConfig, Vec<Hotkey
     let mut errors = Vec::new();
     for (index, (field, input)) in fields.iter().enumerate() {
         match parse_virtual_key(input) {
-            Ok(code) => codes[index] = code as i32,
+            Ok(code) => {
+                // A VK code is one keyboard character or F1-F24: `parse_virtual_key` maps a `char`
+                // (at most 0x10FFFF) or 0x70..=0x87, so it always fits the config's `i32` field.
+                #[allow(
+                    clippy::cast_possible_wrap,
+                    reason = "a virtual-key code is one keyboard character or F1-F24, so it always fits i32"
+                )]
+                let code = code as i32;
+                codes[index] = code;
+            }
             Err(_) => errors.push(HotkeyError::Invalid {
                 field,
                 input: (*input).to_owned(),

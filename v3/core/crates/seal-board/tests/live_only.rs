@@ -31,7 +31,7 @@ fn live_port() -> String {
 fn a_just_flashed_board_answers_the_version_probe() {
     let port = live_port();
     let mut transport =
-        SerialTransport::open(&port, 115200, &RealClock).expect("the board opens and boots");
+        SerialTransport::open(&port, 115_200, &RealClock).expect("the board opens and boots");
     transport.write_line("V\n").expect("the probe is written");
     match transport.read_line(Deadline::after_seconds(1.5)) {
         LineRead::Line(line) => {
@@ -52,7 +52,7 @@ fn a_just_flashed_board_answers_the_version_probe() {
 #[ignore = "live board: unplug the board while this test is sleeping"]
 fn an_unplug_mid_run_is_a_typed_failure() {
     let port = live_port();
-    let mut transport = SerialTransport::open(&port, 115200, &RealClock).expect("the board opens");
+    let mut transport = SerialTransport::open(&port, 115_200, &RealClock).expect("the board opens");
     transport.write_line("C\n").expect("a click is written");
     println!("UNPLUG THE BOARD NOW; the next read must fail");
     std::thread::sleep(std::time::Duration::from_secs(10));
@@ -71,7 +71,7 @@ fn an_unplug_mid_run_is_a_typed_failure() {
 fn a_click_reaches_the_board_while_the_game_is_running() {
     let port = live_port();
     let mut transport =
-        SerialTransport::open(&port, 115200, &RealClock).expect("the port opens beside the game");
+        SerialTransport::open(&port, 115_200, &RealClock).expect("the port opens beside the game");
     transport.write_line("C\n").expect("the click is written");
 }
 
@@ -82,7 +82,7 @@ fn a_click_reaches_the_board_while_the_game_is_running() {
 #[ignore = "live board: measures the real driver's read timeout"]
 fn a_silent_read_returns_after_roughly_the_deadline() {
     let port = live_port();
-    let mut transport = SerialTransport::open(&port, 115200, &RealClock).expect("the board opens");
+    let mut transport = SerialTransport::open(&port, 115_200, &RealClock).expect("the board opens");
     let started = std::time::Instant::now();
     let read = transport.read_line(Deadline::after_seconds(0.5));
     let elapsed = started.elapsed();

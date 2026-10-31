@@ -53,6 +53,7 @@ impl PortInfo {
         }
     }
 
+    #[must_use]
     pub fn with_manufacturer(mut self, manufacturer: Option<String>) -> Self {
         self.manufacturer = manufacturer;
         self
@@ -72,11 +73,13 @@ impl PortInfo {
 }
 
 /// Whether `port` is the configured board by USB identity.
+#[must_use]
 pub fn matches_ids(port: &PortInfo, vid: u16, pids: &[u16]) -> bool {
     port.vid == Some(vid) && port.pid.is_some_and(|pid| pids.contains(&pid))
 }
 
 /// v2's discovery: the first VID/PID match, else the first port whose name mentions Arduino.
+#[must_use]
 pub fn discover(ports: &[PortInfo], vid: u16, pids: &[u16]) -> Option<String> {
     ports
         .iter()
@@ -86,6 +89,7 @@ pub fn discover(ports: &[PortInfo], vid: u16, pids: &[u16]) -> Option<String> {
 }
 
 /// The port names, as [`crate::port_choice::choose`] takes them.
+#[must_use]
 pub fn names(ports: &[PortInfo]) -> Vec<String> {
     ports.iter().map(|port| port.name.clone()).collect()
 }

@@ -61,15 +61,14 @@ fn an_invalid_config_is_refused_with_v2s_exception_text() {
     root.write("config/local.yaml", "{}");
     root.write("config/attributes.yaml", BASE_ATTRIBUTES);
 
-    let error = match CoreState::load(root.path().to_path_buf()) {
-        Ok(_) => panic!("an invalid config must not load"),
-        Err(error) => error,
+    let Err(error) = CoreState::load(root.path().to_path_buf()) else {
+        panic!("an invalid config must not load");
     };
 
     let StartupError::Invalid { lines, .. } = &error else {
         panic!("expected validation lines, got {error:?}");
     };
-    assert!(!lines.is_empty());
+    assert_ne!(lines.as_slice(), [] as [String; 0]);
     let message = error.message();
     assert!(
         message.starts_with("Config validation failed:"),
@@ -102,7 +101,10 @@ fn a_bare_section_is_skipped_the_way_v2_skips_it() {
     assert_eq!(input.window, None);
 
     let (absent, _) = startup::validation_input(&json!({}));
-    assert_eq!(absent.window, Some(Default::default()));
+    assert_eq!(
+        absent.window,
+        Some(seal_domain::config::WindowConfig::default())
+    );
 }
 
 #[test]
@@ -143,9 +145,8 @@ fn a_missing_dictionary_refuses_to_boot_with_the_loaders_line() {
     let root = config_root();
     fs::remove_file(root.path_of("config/attributes.yaml")).expect("remove the dictionary");
 
-    let error = match CoreState::load(root.path().to_path_buf()) {
-        Ok(_) => panic!("a missing dictionary must not boot"),
-        Err(error) => error,
+    let Err(error) = CoreState::load(root.path().to_path_buf()) else {
+        panic!("a missing dictionary must not boot");
     };
 
     assert!(

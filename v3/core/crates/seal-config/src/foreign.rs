@@ -14,12 +14,14 @@
 use crate::OWNED_LOCAL_BLOCKS;
 
 /// True when the application owns and rewrites this top-level block.
+#[must_use]
 pub fn is_owned_block(key: &str) -> bool {
     OWNED_LOCAL_BLOCKS.contains(&key)
 }
 
 /// The top-level blocks in `text` that the application does NOT own, as raw text ready to append
 /// after a save. Empty when there is nothing foreign, which is the normal case.
+#[must_use]
 pub fn foreign_blocks(text: &str) -> String {
     if text.is_empty() {
         return String::new();

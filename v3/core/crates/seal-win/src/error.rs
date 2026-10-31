@@ -21,6 +21,7 @@ pub enum WinError {
 }
 
 impl WinError {
+    #[must_use]
     pub fn win32(call: &'static str, code: u32) -> Self {
         Self::Win32 { call, code }
     }

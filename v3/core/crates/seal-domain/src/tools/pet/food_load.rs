@@ -51,6 +51,7 @@ pub fn is_drag(mode: Option<&str>) -> bool {
 /// `None` means the board never answered — which is a DEFINITE NO, not an unknown: the sketch that
 /// predates version reporting also predates `L`/`l`. Treating it as "maybe" is what would let an
 /// un-reflashed board be trusted with a drag.
+#[must_use]
 pub fn board_can_drag(firmware_level: Option<i32>) -> bool {
     firmware_level.is_some_and(|level| level >= FIRMWARE_DRAG_LEVEL)
 }
@@ -61,6 +62,7 @@ pub fn board_can_drag(firmware_level: Option<i32>) -> bool {
 /// A sentence for the card, because "the drag did nothing" and "the board is too old to drag" look
 /// identical from outside. The reported-level form names the level it saw, so "wrong board" and "wrong
 /// setting" can be told apart from the message alone — the player cannot see the board.
+#[must_use]
 pub fn complaint(mode: Option<&str>, firmware_level: Option<i32>) -> Option<String> {
     if !is_drag(mode) {
         return None;

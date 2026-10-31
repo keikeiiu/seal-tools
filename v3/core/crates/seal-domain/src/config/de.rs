@@ -1,7 +1,7 @@
 //! Repairs for hand-edited YAML, ported from what v2 actually does with the file.
 //!
 //! `v2/SealTools.Core/Config/ConfigLoader.cs` deserialises with
-//! `IgnoreUnmatchedProperties` and lets YamlDotNet hand a null to any *reference* property whose
+//! `IgnoreUnmatchedProperties` and lets `YamlDotNet` hand a null to any *reference* property whose
 //! key is present with no value (`run:`, `steps:`, `- `). Its readers then either treat the null as
 //! "nothing" or throw — the class of failure `QuestConfig.NormaliseNullBodies` exists to remove, and
 //! the one `local.yaml` is hand-editable by contract. The helpers here repair the null at the decode
@@ -12,7 +12,7 @@
 //! - a list whose items are bodies (a bare `- ` entry) has a blank body;
 //! - a list/object field is its type's default rather than a null a reader has to guard.
 //!
-//! Value-type properties (`loops:`, an `int`) get no repair: YamlDotNet fails such a load too, and a
+//! Value-type properties (`loops:`, an `int`) get no repair: `YamlDotNet` fails such a load too, and a
 //! quiet zero there would be a setting that means something different from absent.
 
 use serde::de::{Deserialize, Deserializer};

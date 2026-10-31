@@ -75,6 +75,7 @@ impl StartupError {
     }
 
     /// The validator's player-facing lines for `detail.errors` (`PROTOCOL.md` §6 `config_invalid`).
+    #[must_use]
     pub fn invalid_errors(&self) -> Option<Vec<String>> {
         match self {
             Self::Invalid { lines, malformed } => {
@@ -153,6 +154,10 @@ pub fn active(config: &Value) -> Active {
 /// Loads one attribute dictionary (`config/<name>`, seeded from `<name>.example` when present) and
 /// decodes it. The one place boot, reload and the apply's pre-write check get the dictionary from, so
 /// the three cannot drift.
+///
+/// # Errors
+///
+/// Returns the startup refusal when the dictionary file cannot be read, parsed or decoded.
 pub fn load_dictionary(
     store: &seal_config::ConfigStore,
     dictionary: &str,
@@ -169,6 +174,10 @@ pub fn load_dictionary(
 }
 
 /// Runs the ported `ConfigValidator` rules over the merged config.
+///
+/// # Errors
+///
+/// Returns the startup refusal listing every malformed config field.
 pub fn validate_config(config: &Value) -> Result<(), StartupError> {
     let (input, malformed) = validation_input(config);
     let errors = validate(&input);
@@ -182,6 +191,7 @@ pub fn validate_config(config: &Value) -> Result<(), StartupError> {
 }
 
 /// Rebuilds v2's typed graph from the merged JSON, keeping v2's absent-vs-null distinction.
+#[must_use]
 pub fn validation_input(config: &Value) -> (ValidationInput, Vec<String>) {
     let mut malformed = Vec::new();
     let input = ValidationInput {
@@ -269,8 +279,6 @@ fn tuner_input(config: &Value, malformed: &mut Vec<String>) -> Option<TunerInput
 
 fn gem_input(config: &Value) -> Option<GemInput> {
     match section(config, "gem") {
-        Presence::Absent => Some(GemInput::default()),
-        Presence::Null => None,
         Presence::Value(Value::Object(gem)) => Some(GemInput {
             move_mode: field_string(gem, "move_mode", "arduino"),
             empty_mode: field_string(gem, "empty_mode", "stop"),
@@ -279,14 +287,15 @@ fn gem_input(config: &Value) -> Option<GemInput> {
                 .and_then(Value::as_i64)
                 .unwrap_or(40),
         }),
-        Presence::Value(_) => Some(GemInput::default()),
+        Presence::Absent | Presence::Value(_) => Some(GemInput::default()),
+        Presence::Null => None,
     }
 }
 
 // ── small presence-aware field reads ─────────────────────────────────────────────────────────
 
 /// A string field with v2's field-initialiser default: absent → the default, present-null → `None`
-/// (which the `[AllowedValues]` annotations accept, as every DataAnnotation except `Required` does).
+/// (which the `[AllowedValues]` annotations accept, as every `DataAnnotation` except `Required` does).
 fn field_string(section: &Map<String, Value>, name: &str, default: &str) -> Option<String> {
     match section.get(name) {
         None => Some(default.to_owned()),
@@ -304,10 +313,9 @@ enum Nested<'a> {
 
 fn nested<'a>(section: &'a Map<String, Value>, name: &str) -> Nested<'a> {
     match section.get(name) {
-        None => Nested::Absent,
         Some(Value::Null) => Nested::Null,
         Some(Value::Object(object)) => Nested::Object(object),
-        Some(_) => Nested::Absent,
+        None | Some(_) => Nested::Absent,
     }
 }
 

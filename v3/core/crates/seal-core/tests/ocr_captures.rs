@@ -36,7 +36,11 @@ fn the_pipeline_reads_the_real_v2_captures() {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("");
-        if !(name.starts_with("full_") && name.ends_with(".png")) {
+        let is_capture = name.starts_with("full_")
+            && std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+        if !is_capture {
             continue;
         }
         files += 1;

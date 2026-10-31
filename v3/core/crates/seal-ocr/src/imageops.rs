@@ -15,6 +15,10 @@ pub struct Rgb {
 }
 
 impl Rgb {
+    /// # Panics
+    ///
+    /// Panics when `pixels.len()` is not `width * height * 3`.
+    #[must_use]
     pub fn new(width: usize, height: usize, pixels: Vec<u8>) -> Self {
         assert_eq!(pixels.len(), width * height * 3, "RGB buffer size");
         Self {
@@ -24,6 +28,7 @@ impl Rgb {
         }
     }
 
+    #[must_use]
     pub fn pixel(&self, x: usize, y: usize) -> (u8, u8, u8) {
         let index = (y * self.width + x) * 3;
         (
@@ -41,6 +46,12 @@ impl Rgb {
     }
 
     /// Replicate-border fetch by integer pixel index.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "the image dimensions come from the capture and fit i32; the clamp makes the value a valid non-negative index before the usize cast"
+    )]
     fn pixel_replicate(&self, x: i32, y: i32) -> (u8, u8, u8) {
         let x = x.clamp(0, self.width as i32 - 1) as usize;
         let y = y.clamp(0, self.height as i32 - 1) as usize;
@@ -48,7 +59,7 @@ impl Rgb {
     }
 }
 
-/// Catmull-Rom-style cubic kernel with OpenCV's `a = -0.75`.
+/// Catmull-Rom-style cubic kernel with `OpenCV`'s `a = -0.75`.
 fn cubic_kernel(x: f64) -> f64 {
     const A: f64 = -0.75;
     let x = x.abs();
@@ -61,9 +72,25 @@ fn cubic_kernel(x: f64) -> f64 {
     }
 }
 
+/// One 8-bit channel from a weighted sum: clamp to the byte range, then round.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the clamp bounds the sum to 0.0..=255.0 before the byte cast"
+)]
+fn quantise_channel(value: f64) -> u8 {
+    value.round().clamp(0.0, 255.0) as u8
+}
+
 /// `Cv2.WarpPerspective(..., InterpolationFlags.Cubic, BorderTypes.Replicate)`: map the output pixel
 /// grid onto the quad. The quad's corners are pixel-CORNER coordinates (so an identity quad that
 /// covers `[0,width]x[0,height]` is a copy).
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "the homography runs on the capture's pixel grid (a few thousand pixels, exactly representable in f64); the sample coordinates are clamped to the source image before the integer cast"
+)]
 pub fn perspective_crop(source: &Rgb, quad: &Quad, out_w: usize, out_h: usize) -> Rgb {
     let homography = homography_from_quad(quad, out_w, out_h);
     let mut output = Rgb::new(out_w, out_h, vec![0u8; out_w * out_h * 3]);
@@ -77,13 +104,13 @@ pub fn perspective_crop(source: &Rgb, quad: &Quad, out_w: usize, out_h: usize) -
             let clamped_y = sample_y.clamp(0.0, source.height as f64 - 1.0);
             let base_x = clamped_x.floor() as i32;
             let base_y = clamped_y.floor() as i32;
-            let tx = clamped_x - base_x as f64;
-            let ty = clamped_y - base_y as f64;
+            let tx = clamped_x - f64::from(base_x);
+            let ty = clamped_y - f64::from(base_y);
             let mut sums = [0.0f64; 3];
             for row in -1..=2 {
-                let wy = cubic_kernel(row as f64 - ty);
+                let wy = cubic_kernel(f64::from(row) - ty);
                 for col in -1..=2 {
-                    let wx = cubic_kernel(col as f64 - tx);
+                    let wx = cubic_kernel(f64::from(col) - tx);
                     let weight = wx * wy;
                     if weight == 0.0 {
                         continue;
@@ -95,9 +122,9 @@ pub fn perspective_crop(source: &Rgb, quad: &Quad, out_w: usize, out_h: usize) -
                 }
             }
             let value = (
-                sums[0].round().clamp(0.0, 255.0) as u8,
-                sums[1].round().clamp(0.0, 255.0) as u8,
-                sums[2].round().clamp(0.0, 255.0) as u8,
+                quantise_channel(sums[0]),
+                quantise_channel(sums[1]),
+                quantise_channel(sums[2]),
             );
             output.set_pixel(x, y, value);
         }
@@ -107,6 +134,10 @@ pub fn perspective_crop(source: &Rgb, quad: &Quad, out_w: usize, out_h: usize) -
 
 type Homography = [[f64; 3]; 3];
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "the homography runs on the capture's pixel grid, whose dimensions are exactly representable in f64"
+)]
 fn homography_from_quad(quad: &Quad, out_w: usize, out_h: usize) -> Homography {
     let destinations = [
         (quad.0[0].x, quad.0[0].y),
@@ -175,6 +206,10 @@ fn solve_homography(from: &[(f64, f64); 4], to: &[(f64, f64); 4]) -> Homography 
     ]
 }
 
+#[allow(
+    clippy::many_single_char_names,
+    reason = "`h`, `x`, `y`, `u`, `v` are the homography formula's own names"
+)]
 fn apply_homography(h: &Homography, x: f64, y: f64) -> (f64, f64) {
     let denominator = h[2][0] * x + h[2][1] * y + h[2][2];
     let u = (h[0][0] * x + h[0][1] * y + h[0][2]) / denominator;
@@ -182,8 +217,14 @@ fn apply_homography(h: &Homography, x: f64, y: f64) -> (f64, f64) {
     (u, v)
 }
 
-/// Bilinear resize (OpenCV `INTER_LINEAR`): destination pixel centres map back with
+/// Bilinear resize (`OpenCV` `INTER_LINEAR`): destination pixel centres map back with
 /// `src = (dst + 0.5) * scale - 0.5`.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "the resize maps the capture's pixel grid; `pixel_replicate` clamps the source coordinate into the image before it becomes an integer index, and the dimensions are exactly representable in f64"
+)]
 pub fn resize_linear(source: &Rgb, new_width: usize, new_height: usize) -> Rgb {
     if new_width == 0 || new_height == 0 {
         return Rgb::new(0, 0, Vec::new());
@@ -198,11 +239,11 @@ pub fn resize_linear(source: &Rgb, new_width: usize, new_height: usize) -> Rgb {
     for y in 0..new_height {
         let source_y = (y as f64 + 0.5) * scale_y - 0.5;
         let y0 = source_y.floor() as i32;
-        let fy = source_y - y0 as f64;
+        let fy = source_y - f64::from(y0);
         for x in 0..new_width {
             let source_x = (x as f64 + 0.5) * scale_x - 0.5;
             let x0 = source_x.floor() as i32;
-            let fx = source_x - x0 as f64;
+            let fx = source_x - f64::from(x0);
             let mut channels = [0.0f64; 3];
             for (dx, weight_x) in [(0, 1.0 - fx), (1, fx)] {
                 for (dy, weight_y) in [(0, 1.0 - fy), (1, fy)] {
@@ -217,9 +258,9 @@ pub fn resize_linear(source: &Rgb, new_width: usize, new_height: usize) -> Rgb {
                 x,
                 y,
                 (
-                    channels[0].round().clamp(0.0, 255.0) as u8,
-                    channels[1].round().clamp(0.0, 255.0) as u8,
-                    channels[2].round().clamp(0.0, 255.0) as u8,
+                    quantise_channel(channels[0]),
+                    quantise_channel(channels[1]),
+                    quantise_channel(channels[2]),
                 ),
             );
         }
@@ -244,6 +285,13 @@ pub struct RecInput {
 ///   ratio, not a hard width cap, so a wide crop widens the tensor;
 /// - the crop is resized (bilinear) to `min(ceil(48*w/h), width) x 48`, then right-padded with 0.0;
 /// - values are `x * 2/255 - 1`, i.e. mean/std 0.5/0.5, RGB→CHW.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the tensor geometry is derived from the crop's pixel dimensions and the positive 48-px/320-ratio contract, so the rounded widths are positive and bounded by that ratio"
+)]
 pub fn rec_input(crop: &Rgb) -> RecInput {
     const HEIGHT: usize = 48;
     const CONFIG_RATIO: f64 = 320.0 / 48.0;
@@ -280,6 +328,11 @@ pub fn rec_input(crop: &Rgb) -> RecInput {
 /// The detector's input normalisation: CHW RGB with `mean = [0.485,0.456,0.406]`,
 /// `std = [0.229,0.224,0.225]` (the C# library's PP-OCRv4 defaults, *not* the Python package's
 /// 0.5/0.5).
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "an 8-bit channel normalised into f32; the f64 intermediate carries no extra precision, so this cast only narrows the type"
+)]
 pub fn det_input(image: &Rgb) -> Vec<f32> {
     const MEAN: [f64; 3] = [0.485, 0.456, 0.406];
     const STD: [f64; 3] = [0.229, 0.224, 0.225];
@@ -299,6 +352,7 @@ pub fn det_input(image: &Rgb) -> Vec<f32> {
 }
 
 /// Convenience for tests: a point from the detgeom type.
+#[must_use]
 pub fn point(x: f64, y: f64) -> Pt {
     Pt { x, y }
 }

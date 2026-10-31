@@ -21,7 +21,11 @@ fn temp_files(dir: &TestDir) -> Vec<String> {
         .unwrap()
         .flatten()
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".tmp"))
+        .filter(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("tmp"))
+        })
         .collect()
 }
 
@@ -132,7 +136,10 @@ fn a_refused_write_leaves_the_old_file_whole() {
         before,
         "old file untouched"
     );
-    assert!(temp_files(&dir).is_empty());
+    assert!(
+        temp_files(&dir).is_empty(),
+        "no temp file survives a refused write"
+    );
 }
 
 #[test]

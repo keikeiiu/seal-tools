@@ -300,6 +300,7 @@ fn is_under(prefix: &str, path: &str) -> bool {
 /// The most specific file owning `path`, or `None` when no file claims it. Model paths use the
 /// `settings.` spelling of the OLD overlay; callers that walk `seal_domain` should use
 /// [`owner_of_model`], which strips that prefix before lookup.
+#[must_use]
 pub fn owner_of(path: &str) -> Option<&'static FileDef> {
     let mut best: Option<(&'static FileDef, usize)> = None;
     for file in FILES {
@@ -339,6 +340,7 @@ pub fn machine_files() -> impl Iterator<Item = &'static FileDef> {
 /// Pairs of owned prefixes where one is nested under another. Nesting is allowed (the more specific
 /// owner wins), but every such pair is intentional and pinned by a test so a new broad claim cannot
 /// silently shadow a tool file.
+#[must_use]
 pub fn overlapping_owners() -> Vec<(&'static str, &'static str)> {
     let mut overlaps = Vec::new();
     for (index, left) in FILES.iter().enumerate() {

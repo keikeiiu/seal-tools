@@ -84,7 +84,10 @@ fn the_preflight_reports_ready_and_each_mark() {
     assert!(response.ok, "{:?}", response.error);
     let result = response.result.unwrap();
     assert_eq!(result["ready"], true);
-    assert!(result["lines"].as_array().unwrap().is_empty());
+    assert_eq!(
+        result["lines"].as_array().unwrap().as_slice(),
+        [] as [serde_json::Value; 0]
+    );
     assert!(
         result["calibration"]
             .as_array()

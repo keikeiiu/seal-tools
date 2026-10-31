@@ -28,7 +28,7 @@ impl Default for Settings {
             port: None,
             vid: 9025,               // 0x2341, v2's default
             pid: vec![32822, 32823], // 0x8036 / 0x8047
-            baud: 115200,
+            baud: 115_200,
         }
     }
 }
@@ -90,6 +90,7 @@ pub enum BoardFailure {
 /// has always reported that as level 1 (`PROTOCOL.md` §4: absent = level 1). Both cache writers
 /// (`board.probe` and the pet session's opening `V` read) must agree, or the Arduino tab says
 /// "not checked yet" after a pet run for the same board.
+#[must_use]
 pub fn cached_firmware_level(firmware: seal_board::firmware::Firmware) -> u32 {
     firmware.reported().unwrap_or(1)
 }
@@ -204,6 +205,10 @@ fn port_facts(port: &str) -> (Option<u16>, Option<u16>) {
 /// `board.probe`: which port would be opened, at what baud, with which IDs, and what the firmware
 /// answers for `V`. Silence is level 1 (`PROTOCOL.md` §4: "absent = level 1") — a board that predates
 /// version reporting, which cannot drag.
+///
+/// # Errors
+///
+/// Returns the board failure when the configured port cannot be opened or the `V` probe cannot be completed.
 pub fn probe(config: &Value) -> Result<Value, BoardFailure> {
     let settings = Settings::from_config(config);
     let (port, mut transport) = open_board(&settings)?;
@@ -282,6 +287,10 @@ fn command(args: &Value) -> Result<BoardCommand, BoardFailure> {
 }
 
 /// `board.test`: send the named command and answer `{"ok":true,"detail":<the line v2 logs>}`.
+///
+/// # Errors
+///
+/// Returns the board failure when the command name is unknown, the port cannot be opened, or the board refuses the command.
 pub fn test(config: &Value, args: &Value) -> Result<Value, BoardFailure> {
     let command = command(args)?;
     let settings = Settings::from_config(config);
@@ -305,7 +314,7 @@ mod tests {
         let settings = Settings::from_config(&json!({}));
         assert_eq!(settings.vid, 9025);
         assert_eq!(settings.pid, vec![32822, 32823]);
-        assert_eq!(settings.baud, 115200);
+        assert_eq!(settings.baud, 115_200);
         assert_eq!(settings.port, None);
     }
 
@@ -367,7 +376,7 @@ mod tests {
             port: port.map(str::to_owned),
             vid: 0x2341,
             pid: vec![0x8036, 0x8037],
-            baud: 115200,
+            baud: 115_200,
         }
     }
 
@@ -380,7 +389,7 @@ mod tests {
     fn details_marks_the_chosen_board_first_and_its_id_match() {
         let ports = vec![PortInfo::plain("COM3"), leonardo()];
         let details = details(&settings_with_port(None), &ports, None);
-        assert_eq!(details["baud"], 115200);
+        assert_eq!(details["baud"], 115_200);
         assert_eq!(details["expected"]["vid"], "2341");
         assert_eq!(details["expected"]["pids"], json!(["8036", "8037"]));
         assert_eq!(details["expected"]["port"], Value::Null);

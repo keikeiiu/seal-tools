@@ -9,6 +9,7 @@ use crate::error::WinError;
 /// Does a window title match the configured title? Case-insensitive CONTAINS: the game's title bar
 /// carries a version suffix, and v2 matched it the same way. An empty needle matches nothing (an
 /// empty configured title is a config error, not "match every window").
+#[must_use]
 pub fn title_matches(candidate: &str, needle: &str) -> bool {
     if needle.trim().is_empty() {
         return false;
@@ -20,6 +21,11 @@ pub fn title_matches(candidate: &str, needle: &str) -> bool {
 /// not fit inside the client area. A region with a non-positive size, or one whose origin/size runs
 /// past the client, is a bug in the caller (or a stale display measurement) and must not become a
 /// silent empty capture.
+///
+/// # Errors
+///
+/// Returns [`WinError::RegionOutsideClient`] when the region has a non-positive size, a negative
+/// origin, or an edge past the client area.
 pub fn region_to_screen(physical_client: Rect, region: Rect) -> Result<Rect, WinError> {
     if region.w <= 0 || region.h <= 0 || region.x < 0 || region.y < 0 {
         return Err(WinError::RegionOutsideClient);
@@ -39,6 +45,11 @@ pub fn region_to_screen(physical_client: Rect, region: Rect) -> Result<Rect, Win
 ///
 /// The bitmaps Win32 hands back are BGRA in memory; PNG is RGBA, so every pixel's first and third
 /// bytes swap. Doing it here rather than in `window.rs` keeps the encoder testable without a screen.
+///
+/// # Errors
+///
+/// Returns [`WinError::EmptyCapture`] when either dimension is zero, when `bgra` is not exactly
+/// `width * height * 4` bytes, or when the PNG encoder refuses the frame.
 pub fn encode_png(width: u32, height: u32, bgra: &[u8]) -> Result<Vec<u8>, WinError> {
     let expected = width as usize * height as usize * 4;
     if width == 0 || height == 0 || bgra.len() != expected {
@@ -70,6 +81,11 @@ pub fn encode_png(width: u32, height: u32, bgra: &[u8]) -> Result<Vec<u8>, WinEr
 /// The `png` crate already decodes all the colour types a Windows capture can produce; this only
 /// normalises them to the one the pipeline accepts (RGBA8), so there is no second image dependency
 /// in the core.
+///
+/// # Errors
+///
+/// Returns [`WinError::EmptyCapture`] when the bytes are not a decodable PNG, when the frame is
+/// zero-sized, or when its colour type cannot be normalised to RGBA8.
 pub fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), WinError> {
     let mut decoder = png::Decoder::new(bytes);
     decoder.set_transformations(png::Transformations::normalize_to_color8());
@@ -112,6 +128,12 @@ pub fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), WinError> {
 
 /// Crop an RGBA image to `region`, which must fit inside it. Pure: the calibrator's crop is
 /// arithmetic on pixels the capture already produced, so it is testable with a hand-built buffer.
+///
+/// # Errors
+///
+/// Returns [`WinError::EmptyCapture`] when the image has a zero dimension or `rgba` is shorter than
+/// `width * height * 4` bytes, and [`WinError::RegionOutsideClient`] when the crop does not lie
+/// inside the image.
 pub fn crop_rgba(
     width: u32,
     height: u32,
@@ -123,22 +145,25 @@ pub fn crop_rgba(
     if width == 0 || height == 0 || rgba.len() < width * height * 4 {
         return Err(WinError::EmptyCapture);
     }
-    if region.w <= 0
-        || region.h <= 0
-        || region.x < 0
-        || region.y < 0
-        || region.x as usize + region.w as usize > width
-        || region.y as usize + region.h as usize > height
+    // The region is signed because it is compared against measured offsets; every value used below
+    // must be a non-negative index, so the conversions refuse a negative instead of wrapping it.
+    let to_index = |value: i32| usize::try_from(value).map_err(|_| WinError::RegionOutsideClient);
+    let (x, y) = (to_index(region.x)?, to_index(region.y)?);
+    let (crop_w, crop_h) = (to_index(region.w)?, to_index(region.h)?);
+    if crop_w == 0
+        || crop_h == 0
+        || x.checked_add(crop_w).is_none_or(|right| right > width)
+        || y.checked_add(crop_h).is_none_or(|bottom| bottom > height)
     {
         return Err(WinError::RegionOutsideClient);
     }
-    let (crop_w, crop_h) = (region.w as usize, region.h as usize);
     let mut out = Vec::with_capacity(crop_w * crop_h * 4);
     for row in 0..crop_h {
-        let start = ((region.y as usize + row) * width + region.x as usize) * 4;
+        let start = ((y + row) * width + x) * 4;
         out.extend_from_slice(&rgba[start..start + crop_w * 4]);
     }
-    Ok((crop_w as u32, crop_h as u32, out))
+    let to_u32 = |value: usize| u32::try_from(value).map_err(|_| WinError::RegionOutsideClient);
+    Ok((to_u32(crop_w)?, to_u32(crop_h)?, out))
 }
 
 #[cfg(test)]

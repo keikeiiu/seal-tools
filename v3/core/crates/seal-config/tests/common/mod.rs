@@ -121,7 +121,7 @@ pub const EMPTY_LOCAL: &str = "# nothing overridden in this test\n";
 /// Recursively clears the Windows readonly attribute so the directory can be removed on drop.
 ///
 /// The `permissions_set_readonly_false` lint is allowed rather than worked around: this suite is
-/// Windows-only (`AGENTS.md`), `set_readonly(false)` there clears the FILE_ATTRIBUTE_READONLY flag
+/// Windows-only (`AGENTS.md`), `set_readonly(false)` there clears the `FILE_ATTRIBUTE_READONLY` flag
 /// and does not choose a Unix mode at all.
 #[allow(clippy::permissions_set_readonly_false)]
 fn clear_readonly(path: &Path) {

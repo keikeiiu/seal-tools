@@ -3,7 +3,7 @@
 //!
 //! The fixtures are hand-built score maps and point sets, so the expected values are arithmetic, not
 //! a recorded model output. Constants are the ones in `OCR-RESEARCH.md` §3 (the C# library's
-//! PP-OCRv4 defaults): threshold 0.3, dilation 2×2, box_thresh 0.6, unclip 1.5, the 10 px row
+//! PP-OCRv4 defaults): threshold 0.3, dilation 2×2, `box_thresh` 0.6, unclip 1.5, the 10 px row
 //! threshold, 48-px input height, 320-wide rec cap.
 
 use seal_ocr::detgeom::{
@@ -66,7 +66,7 @@ fn dilate_keeps_a_border_touching_pixel_inside_the_map() {
 fn an_empty_map_has_no_contours() {
     let mask = threshold(&score_map(4, 4, vec![0.0; 16]), 0.3);
 
-    assert!(find_contours(&mask).is_empty());
+    assert_eq!(find_contours(&mask), [] as [seal_ocr::detmask::Contour; 0]);
 }
 
 // ── 2. connected components + contours ────────────────────────────────────────────────────────
@@ -143,12 +143,12 @@ fn a_hole_is_a_second_contour_with_the_opposite_orientation() {
     let outer: Vec<(f64, f64)> = contours[0]
         .points
         .iter()
-        .map(|(x, y)| (*x as f64, *y as f64))
+        .map(|(x, y)| (f64::from(*x), f64::from(*y)))
         .collect();
     let hole: Vec<(f64, f64)> = contours[1]
         .points
         .iter()
-        .map(|(x, y)| (*x as f64, *y as f64))
+        .map(|(x, y)| (f64::from(*x), f64::from(*y)))
         .collect();
     assert!(contour_area(&outer) > contour_area(&hole));
     // OpenCV traces outer borders clockwise and holes counter-clockwise (image coordinates, y down).
@@ -198,6 +198,10 @@ fn an_axis_aligned_rectangle_reduces_to_itself() {
 }
 
 #[test]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the fixture's rotated corners round to small integers, well inside i32"
+)]
 fn a_thirty_degree_rotated_rectangle_recovers_its_area() {
     // 10 x 4 rectangle rotated by 30 degrees.
     let (w, h) = (10.0f64, 4.0f64);
@@ -327,10 +331,10 @@ fn the_round_join_offset_moves_each_edge_out_by_the_distance() {
 
     let xs: Vec<f64> = offset.iter().map(|point| point.x).collect();
     let ys: Vec<f64> = offset.iter().map(|point| point.y).collect();
-    let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_x = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let min_y = ys.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_y = ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min_x = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_x = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min_y = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_y = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
     // Round join (Minkowski sum with a disk): edges move out by the distance, corners are rounded.
     assert!((min_x + 3.75).abs() < 1e-6, "{offset:?}");
@@ -353,8 +357,8 @@ fn ramp_image(width: usize, height: usize) -> Rgb {
     let mut pixels = Vec::with_capacity(width * height * 3);
     for y in 0..height {
         for x in 0..width {
-            pixels.push((x * 3) as u8);
-            pixels.push((y * 5) as u8);
+            pixels.push(u8::try_from(x * 3).expect("the fixture ramp fits a byte"));
+            pixels.push(u8::try_from(y * 5).expect("the fixture ramp fits a byte"));
             pixels.push(128u8);
         }
     }
@@ -395,10 +399,10 @@ fn the_warp_recovers_a_known_affine_shift() {
     for y in 0..6 {
         for x in 0..6 {
             let got = crop.pixel(x, y);
-            let expected = ((x + 2) * 3, y * 5, 128);
+            let expected = ((x + 2) * 3, y * 5, 128u8);
             assert!(
-                (got.0 as i32 - expected.0 as i32).abs() <= 1
-                    && (got.1 as i32 - expected.1 as i32).abs() <= 1,
+                usize::from(got.0).abs_diff(expected.0) <= 1
+                    && usize::from(got.1).abs_diff(expected.1) <= 1,
                 "({x},{y}) got {got:?} expected {expected:?}"
             );
             assert_eq!(got.2, 128);

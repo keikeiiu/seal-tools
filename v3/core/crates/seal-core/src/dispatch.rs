@@ -105,12 +105,13 @@ pub struct CoreState {
 impl CoreState {
     /// An empty state, for a dispatcher test that needs no files on disk. The binary uses
     /// [`Self::load`] instead, which is the only constructor that reads the config.
+    #[must_use]
     pub fn new(root: std::path::PathBuf) -> Self {
         let store = ConfigStore::new(root.join("config"));
         Self {
             root,
             store,
-            shared_config: Default::default(),
+            shared_config: Arc::default(),
             rev: 0,
             revision: Arc::new(AtomicU64::new(0)),
             firmware: Arc::new(RwLock::new(None)),
@@ -135,6 +136,10 @@ impl CoreState {
     /// Failing here is fatal rather than a degraded start ??v2 fails loudly for the same reason: a
     /// core with no config cannot run a tool, and a silent empty config would look exactly like a
     /// game that changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the startup refusal when the config or the active dictionary cannot be loaded.
     pub fn load(root: std::path::PathBuf) -> Result<Self, StartupError> {
         let store = ConfigStore::new(root.join("config"));
         let (config, active, attributes) = load_parts(&store)?;
@@ -142,7 +147,7 @@ impl CoreState {
         Ok(Self {
             root,
             store,
-            shared_config: Default::default(),
+            shared_config: Arc::default(),
             rev: 0,
             revision: Arc::new(AtomicU64::new(0)),
             firmware: Arc::new(RwLock::new(None)),
@@ -168,6 +173,10 @@ impl CoreState {
     /// the config is only left switched once that load succeeded"; `LauncherService.cs:723-747`):
     /// a config pointing at a missing dictionary is one that will not start at all, so a failed reload
     /// must leave the previous, working state in place rather than half-switch it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the startup refusal when the re-read config or dictionary cannot be loaded; the previous working state is kept.
     pub fn reload(&mut self) -> Result<(), StartupError> {
         let (config, active, attributes) = load_parts(&self.store)?;
         self.config = config;
@@ -234,23 +243,32 @@ impl CoreState {
     /// The shared revision handle, for the production pet run-state sink. A worker's mid-run write
     /// bumps this counter; the dispatcher re-reads it before each request so the next
     /// `config.apply`/`hello` sees the same revision the event carried.
+    #[must_use]
     pub fn revision_handle(&self) -> Arc<AtomicU64> {
         Arc::clone(&self.revision)
     }
 
     /// The shared memory-only firmware cache, for the production registry's pet opening phase.
+    #[must_use]
     pub fn firmware_handle(&self) -> Arc<RwLock<Option<u32>>> {
         Arc::clone(&self.firmware)
     }
 
     /// The dispatcher-thread view of the memory-only firmware cache. `None` is "not checked yet".
+    #[must_use]
     pub fn firmware(&self) -> Option<u32> {
-        *self.firmware.read().expect("not poisoned")
+        *self
+            .firmware
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Record a firmware level detected by the dispatcher (`board.probe`).
     pub fn set_firmware(&self, level: u32) {
-        *self.firmware.write().expect("not poisoned") = Some(level);
+        *self
+            .firmware
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(level);
     }
 
     /// One revision for a write this dispatcher performed; also publishes it to the shared counter so
@@ -291,6 +309,15 @@ fn load_parts(
     Ok((config, active, attributes))
 }
 
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one protocol handler keeps its ordered read/validate/answer steps in one place"
+)]
 fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     let Some(mode) = request
         .args
@@ -359,7 +386,9 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
             }
         }
     }
-    let pipeline = state.ocr.as_mut().expect("the pipeline is loaded");
+    let Some(pipeline) = state.ocr.as_mut() else {
+        return internal(&request.id, "the OCR pipeline is not loaded");
+    };
     let scan = match pipeline.scan_rgba(width, height, &rgba) {
         Ok(scan) => scan,
         Err(error) => return internal(&request.id, &error.message),
@@ -435,8 +464,7 @@ pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
     let row_height = config
         .pointer("/tuner/ocr/row_height")
         .and_then(Value::as_u64)
-        .map(|value| u32::try_from(value).unwrap_or(10))
-        .unwrap_or(10);
+        .map_or(10, |value| u32::try_from(value).unwrap_or(10));
     seal_ocr::modes::OcrGeometry {
         attr_x: band("attr_x"),
         attr_y: band("attr_y"),
@@ -485,12 +513,16 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
     Ok((width as usize, height as usize, rgba))
 }
 /// Answers one request. Never panics: a bad request is a refusal the client can show.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the protocol entry point owns the decoded request; the frame loop and every test call it with a constructed value"
+)]
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
     // A mid-run pet write can bump the shared revision between requests; every boundary starts from
     // that value so `hello`, conflict checks and echoes never report a pre-write revision.
     state.rev = state.revision.load(Ordering::SeqCst);
     if request.cmd == "hello" {
-        return hello(state, request);
+        return hello(state, &request);
     }
 
     if !state.handshaken {
@@ -589,7 +621,7 @@ impl CoreState {
     }
 }
 
-fn hello(state: &mut CoreState, request: Request) -> Response {
+fn hello(state: &mut CoreState, request: &Request) -> Response {
     let protocol = request
         .args
         .get("protocol")
@@ -708,14 +740,14 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
     if (!owned.is_empty() || sections.contains_key("settings"))
         && let Err(error) = state.store.apply_sections_with_settings(&owned, &effective)
     {
-        return config_error_response(&request.id, error);
+        return config_error_response(&request.id, &error);
     }
 
     // Commit: the files are now the truth, so re-read the merged view; the dictionary was loaded
     // BEFORE the write and lands with the variant, one rev covering both halves.
     let config = match state.store.load() {
         Ok(config) => config,
-        Err(error) => return config_error_response(&request.id, error),
+        Err(error) => return config_error_response(&request.id, &error),
     };
     state.config = config;
     state.variant = active.variant;
@@ -853,7 +885,7 @@ fn ui_window(state: &mut CoreState, request: &Request) -> Response {
             state.queue_config_changed("ui");
             Response::ok(&request.id, json!({}))
         }
-        Err(error) => config_error_response(&request.id, error),
+        Err(error) => config_error_response(&request.id, &error),
     }
 }
 
@@ -888,8 +920,7 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
     };
 
     match supervisor.start_tool(tool, &args) {
-        StartReply::Started => Response::ok(&request.id, json!({})),
-        StartReply::Deferred { .. } => Response::ok(&request.id, json!({})),
+        StartReply::Started | StartReply::Deferred { .. } => Response::ok(&request.id, json!({})),
         StartReply::Refused(refusal) => {
             let line = refusal.line;
             Response::err(
@@ -921,6 +952,10 @@ fn tool_start(state: &mut CoreState, request: &Request) -> Response {
 /// `count` below 1 and an empty/invalid `slots` are refused rather than clamped or defaulted (the
 /// protocol says an explicit value the player gave is not silently changed). The error is
 /// `(message, field)` so the dispatcher can put the field in `detail`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the per-tool argument table is one exhaustive match; splitting it would hide which tool accepts what"
+)]
 fn start_arguments(tool: ToolId, args: &Value) -> Result<Value, (String, String)> {
     let Some(object) = args.as_object() else {
         return Err((
@@ -1166,7 +1201,7 @@ fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
         boarding_running: vec![(row, running)],
         ..seal_config::PetRunStatePatch::default()
     };
-    write_pet_patch(state, request, patch)
+    write_pet_patch(state, request, &patch)
 }
 
 /// `pet.capture_icon {kind,page,cell}`: capture the visible bag page and return ONE cropped icon.
@@ -1289,12 +1324,13 @@ fn pet_scan_page(state: &mut CoreState, request: &Request, queue: bool) -> Respo
             Err(error) => return scan_error_response(&request.id, error),
         }
     } else {
-        match crate::pet_scan::food_scan_with_icon(
-            &state.config,
-            page,
-            &image,
-            food_icon.as_ref().expect("checked before capture"),
-        ) {
+        let Some(food_icon) = food_icon.as_ref() else {
+            return internal(
+                &request.id,
+                "the food icon was validated before the capture",
+            );
+        };
+        match crate::pet_scan::food_scan_with_icon(&state.config, page, &image, food_icon) {
             Ok(result) => result,
             Err(error) => return scan_error_response(&request.id, error),
         }
@@ -1391,7 +1427,9 @@ fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
         Err(message) => return internal(&request.id, &message),
     };
     let lines = {
-        let pipeline = state.ocr.as_mut().expect("the OCR preflight loaded it");
+        let Some(pipeline) = state.ocr.as_mut() else {
+            return internal(&request.id, "the OCR pipeline is not loaded");
+        };
         match pipeline.scan_rgba(width, height, &rgba) {
             Ok(scan) => scan
                 .items
@@ -1468,6 +1506,14 @@ pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
 /// that will not read is `unknown` and never `finished`. `harvest` crops an icon for each feedable
 /// cell out of the CLEAN page image (not a panel-covered one), so a rebuilt queue's icons are the
 /// same pixels a hand capture would produce.
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "the hover delay is clamped to at least 200 before it becomes a u64"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one protocol handler keeps its ordered read/validate/answer steps in one place"
+)]
 fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     let arguments = match crate::pet_scan::feeding_arguments(&request.args) {
         Ok(arguments) => arguments,
@@ -1634,7 +1680,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
                 panel = seal_domain::ocr::PetPanel::parse(&lines);
             }
             if arguments.harvest
-                && let Some(crop_image) = crop_pitch(&page_image, centre, pitch_x, pitch_y)
+                && let Some(crop_image) = crop_pitch(&page_image, *centre, pitch_x, pitch_y)
                 && let Some(png) = encode_icon_png(&crop_image)
             {
                 crop = Some(png);
@@ -1695,9 +1741,13 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     )
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn crop_pitch(
     image: &crate::pet::PetImage,
-    centre: &seal_domain::geometry::Point,
+    centre: seal_domain::geometry::Point,
     pitch_x: f64,
     pitch_y: f64,
 ) -> Option<crate::pet::PetImage> {
@@ -1719,6 +1769,10 @@ fn crop_pitch(
     })
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn encode_icon_png(image: &crate::pet::PetImage) -> Option<String> {
     let mut bgra = Vec::with_capacity(image.rgba.len());
     for pixel in image.rgba.as_chunks::<4>().0 {
@@ -1786,7 +1840,7 @@ fn pet_apply_food_scan(state: &mut CoreState, request: &Request) -> Response {
         food_slots: Some(cells),
         ..seal_config::PetRunStatePatch::default()
     };
-    write_pet_patch(state, request, patch)
+    write_pet_patch(state, request, &patch)
 }
 
 /// The shared A1 command write: validate the sink exists, persist the field patch, refresh the
@@ -1795,7 +1849,7 @@ fn pet_apply_food_scan(state: &mut CoreState, request: &Request) -> Response {
 fn write_pet_patch(
     state: &mut CoreState,
     request: &Request,
-    patch: seal_config::PetRunStatePatch,
+    patch: &seal_config::PetRunStatePatch,
 ) -> Response {
     let Some(sink) = state.pet_state.as_ref() else {
         return internal(
@@ -1803,7 +1857,7 @@ fn write_pet_patch(
             "the pet run-state writer is not attached in this core",
         );
     };
-    let rev = match sink.persist_rev(&patch) {
+    let rev = match sink.persist_rev(patch) {
         Ok(rev) => rev,
         Err(line) => {
             state.logs.error_line(&format!(
@@ -2067,11 +2121,9 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let frame = state
-        .frames
-        .get(&frame_id)
-        .cloned()
-        .expect("the frame was just inserted");
+    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+        return internal(&request.id, "the captured frame left the frame cache");
+    };
     Response::ok(&request.id, json!({"frame": frame, "display": display}))
 }
 
@@ -2088,8 +2140,9 @@ pub(crate) fn win_error_response(id: &str, error: win::CommandError) -> Response
         win::CommandError::NotForeground => {
             Response::err(id, Error::new("game_not_foreground", &line, json!({})))
         }
-        win::CommandError::RegionOutside => bad_request(id, &line, json!({})),
-        win::CommandError::BadRequest(_) => bad_request(id, &line, json!({})),
+        win::CommandError::RegionOutside | win::CommandError::BadRequest(_) => {
+            bad_request(id, &line, json!({}))
+        }
         win::CommandError::Internal(_) => internal(id, &line),
     }
 }
@@ -2187,8 +2240,8 @@ fn refresh_config(state: &mut CoreState) {
 
 /// Maps a store failure to a protocol error: a section the core does not own is a bad request, and
 /// every file failure is `io` with the path in `detail` (`PROTOCOL.md` 禮6).
-fn config_error_response(id: &str, error: ConfigError) -> Response {
-    if let ConfigError::SectionNotOwned(name) = &error {
+fn config_error_response(id: &str, error: &ConfigError) -> Response {
+    if let ConfigError::SectionNotOwned(name) = error {
         return bad_request(
             id,
             &format!("section {name:?} is not owned by the core"),
@@ -2196,7 +2249,7 @@ fn config_error_response(id: &str, error: ConfigError) -> Response {
         );
     }
 
-    let detail = match config_error_path(&error) {
+    let detail = match config_error_path(error) {
         Some(path) => json!({"path": path.to_string_lossy()}),
         None => json!({}),
     };
@@ -2205,8 +2258,8 @@ fn config_error_response(id: &str, error: ConfigError) -> Response {
 
 fn config_error_path(error: &ConfigError) -> Option<&Path> {
     match error {
-        ConfigError::MissingFile(path) => Some(path.as_path()),
-        ConfigError::Read { path, .. }
+        ConfigError::MissingFile(path)
+        | ConfigError::Read { path, .. }
         | ConfigError::Parse { path, .. }
         | ConfigError::Serialize { path, .. }
         | ConfigError::Write { path, .. }
@@ -2221,7 +2274,7 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
 /// as a protocol proposal rather than silently inventing a code.
 fn startup_error_response(id: &str, error: StartupError) -> Response {
     match error {
-        StartupError::Config(error) => config_error_response(id, error),
+        StartupError::Config(error) => config_error_response(id, &error),
         other => Response::err(id, Error::new("io", &other.message(), json!({}))),
     }
 }

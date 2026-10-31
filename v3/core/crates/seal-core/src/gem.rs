@@ -241,6 +241,10 @@ fn result_area(config: &Value) -> Result<Option<Rect>, String> {
 
 /// Resolve and VALIDATE the plan: a missing calibrated point/move surfaces here as the domain's own
 /// player line (the probe asks the domain for its opening turns without performing them).
+///
+/// # Errors
+///
+/// Returns the domain's player-facing line when a grade button, route point or tuned move is missing.
 pub fn plan(config: &Value) -> Result<GemPlan, String> {
     let settings = settings(config)?;
     // The probe is the domain's own start sequence: if a grade button, route point or tuned move is
@@ -266,6 +270,10 @@ pub fn plan(config: &Value) -> Result<GemPlan, String> {
 /// One read: the box's colour composition (the fallback) or the fraction of pixels differing from
 /// the saved empty crop (the primary signal).
 pub trait GemSource {
+    ///
+    /// # Errors
+    ///
+    /// Returns the line explaining why the empty-result read could not be taken.
     fn empty_read(&mut self) -> Result<EmptyRead, String>;
 }
 
@@ -293,6 +301,10 @@ impl GemResultSource {
     /// Open the read side. The reference crop is loaded ONCE at open (v2's `EmptyReference()` loaded
     /// it once too); a crop that exists but cannot be decoded is a start refusal naming the file
     /// rather than a silent fallback, because the primary signal is the one the measurements trust.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason the read side cannot start: a missing window title, an unreadable reference crop, or unavailable OCR models.
     pub fn open(
         config: &Value,
         plan: &GemPlan,
@@ -388,7 +400,8 @@ pub fn record_empty_check(
         )
     });
     if let Some(path) = &capture {
-        line.push_str(&format!(" capture={path}"));
+        line.push_str(" capture=");
+        line.push_str(path);
     }
     logs.tool_line(ToolId::Gem, &line);
     capture
@@ -425,6 +438,10 @@ fn empty_read_from_frame(
 /// v2 `GemColorAnalyzer.DiffFraction`: the fraction of pixels differing by more than `tolerance` on
 /// any channel, ignoring a square `inset` at the border. Channel order is irrelevant here (the
 /// maximum absolute difference is per channel), so RGBA and BGR pairs compare the same way.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "both sides are frame pixel counts, far below 2^53, so this f64 conversion is exact"
+)]
 fn diff_fraction(live: &[u8], width: usize, height: usize, reference: &[u8]) -> Option<f64> {
     if live.len() < width * height * 4 || reference.len() < width * height * 4 {
         return None;
@@ -482,6 +499,10 @@ pub struct GemTool<S: GemSource> {
 }
 
 impl<S: GemSource> GemTool<S> {
+    ///
+    /// # Errors
+    ///
+    /// Returns the domain's line when the plan's start sequence cannot begin.
     pub fn new(plan: GemPlan, source: S) -> Result<Self, String> {
         let run = GemRun::new(plan.settings.clone()).map_err(|reason| reason.message)?;
         Ok(Self {
@@ -497,6 +518,10 @@ impl<S: GemSource> GemTool<S> {
     /// F9: advance the grade BY HAND. The hotkey path does not exist yet (the core polls no
     /// hotkeys), so this is the seam a future poll calls; it uses the domain's own turn, which logs
     /// the move as "left by hand" rather than "finished".
+    ///
+    /// # Errors
+    ///
+    /// Returns the line when the composer has already finished.
     pub fn advance_grade_by_hand(&mut self) -> Result<(), String> {
         if self.phase == Phase::Finished {
             return Err("the composer has already finished".to_owned());
@@ -513,7 +538,7 @@ impl<S: GemSource> GemTool<S> {
 
     fn push_turn(&mut self, turn: GemTurn) {
         for step in turn.steps {
-            self.queue.push_back(map_step(step));
+            self.queue.push_back(map_step(&step));
         }
         if let Some(stop) = turn.stop {
             self.pending_stop = Some(stop);
@@ -526,13 +551,13 @@ impl<S: GemSource> GemTool<S> {
     }
 }
 
-fn map_step(step: GemStep) -> Decision {
+fn map_step(step: &GemStep) -> Decision {
     match step {
-        GemStep::Place(point) => Decision::Place(point),
-        GemStep::Move { dx, dy } => Decision::MoveBy { dx, dy },
+        GemStep::Place(point) => Decision::Place(*point),
+        GemStep::Move { dx, dy } => Decision::MoveBy { dx: *dx, dy: *dy },
         GemStep::ClickLeft => Decision::ClickHere,
         GemStep::ClickRight => Decision::RightClickHere,
-        GemStep::Wait(seconds) => Decision::Wait(seconds),
+        GemStep::Wait(seconds) => Decision::Wait(*seconds),
     }
 }
 
@@ -1021,7 +1046,7 @@ mod tests {
         let mut live = vec![0u8; 16 * 16 * 4];
         // One interior pixel differs by more than the 30/channel tolerance.
         live[(8 * 16 + 8) * 4] = 200;
-        let compared = (16 - 2 * EMPTY_COMPARE_INSET).pow(2) as f64;
+        let compared = f64::from(u32::try_from((16 - 2 * EMPTY_COMPARE_INSET).pow(2)).unwrap());
 
         let fraction = diff_fraction(&live, 16, 16, &reference).expect("same size");
 

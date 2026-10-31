@@ -30,7 +30,7 @@ use crate::config::{
     PurpleMaskConfig, RedMaskConfig, RegionConfig, WhiteMaskConfig, YellowMaskConfig,
 };
 use crate::decision::StopReason;
-use crate::geometry::{Point, Rect};
+use crate::geometry::{Point, Rect, round_ties_even};
 use crate::ocr::{AttrMatcher, MatchedAttr};
 
 /// The Start countdown v2 shows before the first click ("5... 4... ..."), in seconds.
@@ -48,6 +48,7 @@ impl TunerRead {
     /// True when the OCR recognised nothing at all. v2 treats this as a failure and stops: a total
     /// failure produces exactly the empty signature the run starts with, so it would otherwise count
     /// as the first repeat and trip "same result x3" after only two failed reads.
+    #[must_use]
     pub fn is_total_failure(&self) -> bool {
         self.grade.is_none() && self.remaining.is_none() && self.attributes.is_empty()
     }
@@ -55,24 +56,24 @@ impl TunerRead {
     /// The repeat signature v2 compares: grade, remaining, and the attribute lines joined as
     /// `name=value|name=value`. The order is the read order, which is why a changed line breaks the
     /// chain even when the set is the same.
+    #[must_use]
     pub fn signature(&self) -> TunerSignature {
+        let mut attributes = String::new();
+        for attribute in &self.attributes {
+            let value = attribute
+                .value
+                .map(|value| value.to_string())
+                .unwrap_or_default();
+            // Writing into a String cannot fail.
+            let _ = std::fmt::Write::write_fmt(
+                &mut attributes,
+                format_args!("{}={value}", attribute.name),
+            );
+        }
         TunerSignature {
             grade: self.grade.clone(),
             remaining: self.remaining,
-            attributes: self
-                .attributes
-                .iter()
-                .map(|attribute| {
-                    format!(
-                        "{}={}",
-                        attribute.name,
-                        attribute
-                            .value
-                            .map(|value| value.to_string())
-                            .unwrap_or_default()
-                    )
-                })
-                .collect(),
+            attributes,
         }
     }
 }
@@ -96,6 +97,7 @@ pub enum SpringMode {
 
 impl SpringMode {
     /// v2's comparison is `spring_mode == "hid"`, so anything else is manual behaviour.
+    #[must_use]
     pub fn parse(text: &str) -> Self {
         if text == "hid" {
             Self::Hid
@@ -116,6 +118,7 @@ pub enum MouseGuard {
 impl MouseGuard {
     /// v2's if/else: `"off"` never looks, `"stop"` halts, and ANYTHING ELSE takes the recenter
     /// branch — because that is what the final `else` does.
+    #[must_use]
     pub fn parse(text: &str) -> Self {
         match text {
             "off" => Self::Off,
@@ -160,6 +163,7 @@ pub struct TunerOutcome {
 }
 
 impl TunerOutcome {
+    #[must_use]
     pub fn filter_status(&self) -> &str {
         &self.filter_status
     }
@@ -175,6 +179,7 @@ pub struct TunerRun {
 }
 
 impl TunerRun {
+    #[must_use]
     pub fn new(settings: TunerSettings) -> Self {
         Self {
             settings,
@@ -184,16 +189,19 @@ impl TunerRun {
         }
     }
 
+    #[must_use]
     pub fn settings(&self) -> &TunerSettings {
         &self.settings
     }
 
     /// The attempts started so far.
+    #[must_use]
     pub fn attempt(&self) -> i32 {
         self.attempt
     }
 
     /// Repeats of the previous result; `2` means three identical results in a row.
+    #[must_use]
     pub fn consecutive_repeats(&self) -> i32 {
         self.consecutive_repeats
     }
@@ -254,8 +262,7 @@ impl TunerRun {
         let grade_ok = read
             .grade
             .as_deref()
-            .map(|grade| self.grade_index(grade) >= self.grade_index(effective_grade))
-            .unwrap_or(false);
+            .is_some_and(|grade| self.grade_index(grade) >= self.grade_index(effective_grade));
 
         let decision = if grade_ok && filter_ok {
             let grade = read.grade.as_deref().unwrap_or("");
@@ -301,8 +308,7 @@ impl TunerRun {
             .grade_order
             .iter()
             .position(|known| known == grade)
-            .map(|index| index as i32)
-            .unwrap_or(-1)
+            .map_or(-1, |index| i32::try_from(index).unwrap_or(-1))
     }
 }
 
@@ -330,6 +336,7 @@ pub enum MouseGuardStep {
 /// Both `None`s FAIL OPEN, as v2 documents rather than fixes: a window that has gone away turns the
 /// guard off instead of tripping it. The recorded reason is that it needs the window to move
 /// mid-run.
+#[must_use]
 pub fn mouse_guard_step(
     settings: &TunerSettings,
     target: Option<Point>,
@@ -360,6 +367,7 @@ pub fn mouse_guard_step(
 
 /// What the guard decides after a recentre attempt. `recenter_count` is the count AFTER this attempt
 /// (v2 increments before comparing).
+#[must_use]
 pub fn after_recenter(
     settings: &TunerSettings,
     placed: Result<(), &str>,
@@ -392,6 +400,7 @@ pub enum SpringStep {
 }
 
 /// `PlaceOnSpring`, as a pure step.
+#[must_use]
 pub fn spring_step(settings: &TunerSettings, spring_point: Option<Point>) -> SpringStep {
     if settings.spring_mode != SpringMode::Hid {
         return SpringStep::NotNeeded;
@@ -406,11 +415,13 @@ pub fn spring_step(settings: &TunerSettings, spring_point: Option<Point>) -> Spr
 }
 
 /// The game window was not found before the placement.
+#[must_use]
 pub fn spring_window_missing() -> StopReason {
     StopReason::error("game window not found — couldn't place the cursor on the spring")
 }
 
 /// The closed-loop placement failed; `detail` is the placement's own report.
+#[must_use]
 pub fn spring_failed(detail: &str) -> StopReason {
     StopReason::error(format!(
         "couldn't place the cursor on the spring — {detail}"
@@ -428,6 +439,7 @@ pub use crate::tools::grade_cycles::{GradeCycleRow, GradeCycles, describe};
 /// `seal_ocr::modes` reads. `row_height` is the measured line pitch when the caller has one
 /// (`Check OCR`), else v2's fallback `attr.height / 3` — exact only when the attr box hugs its
 /// three lines. The function is pure; the core owns validation, the shell owns drawing.
+#[must_use]
 pub fn geometry_from_boxes(
     grade: Rect,
     attr: Rect,
@@ -440,7 +452,9 @@ pub fn geometry_from_boxes(
     let bottom = grade.bottom().max(attr.bottom()).max(remaining.bottom());
     let row_height = measured_row_height
         .filter(|height| *height > 0)
-        .unwrap_or_else(|| ((f64::from(attr.h)) / 3.0).round().max(1.0) as i32);
+        // v2's `attr.height / 3` fallback rounded with `Math.Round`; an integer height divided by
+        // three never hits a tie, so the crate's round helper reproduces `.round()` without a cast.
+        .unwrap_or_else(|| round_ties_even(f64::from(attr.h) / 3.0).max(1));
     OcrGeometry {
         region: Some(RegionConfig {
             left,
@@ -557,9 +571,10 @@ mod grade_defaults {
 }
 
 /// Count the five colour buckets over `rgba` (the grade box crop only), same masks and default
-/// thresholds as v2. Pixels are BGR-agnostic here because the input is RGBA; v2's OpenCV Mat was
+/// thresholds as v2. Pixels are BGR-agnostic here because the input is RGBA; v2's `OpenCV` Mat was
 /// BGR and its `Item0/1/2` were B,G,R — the caller passes RGB order, and the masks are symmetric
 /// in the only place that matters (they compare channels by name).
+#[must_use]
 pub fn grade_color_scores(
     rgba: &[u8],
     width: usize,
@@ -631,6 +646,7 @@ pub fn grade_color_scores(
 
 /// v2's `DecideGrade`: the dominant colour above its absolute floor wins; white falls through to
 /// "N" only when no colour blob wins. `None` when the box is too empty to decide (v2's `total_min`).
+#[must_use]
 pub fn decide_grade_colour(
     scores: &GradeColorScores,
     colors: &GradeColorsConfig,

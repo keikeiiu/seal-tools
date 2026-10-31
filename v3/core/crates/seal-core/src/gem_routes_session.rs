@@ -118,6 +118,10 @@ fn open_effects(config: &Value, id: &str) -> Result<OpenedEffects, Box<Response>
 }
 
 /// `calibration.gem.test_route {"move":"tuned"|"arduino","from":"N","to":"Register","tuned":{...}?}`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the route test keeps its ordered click sequence and refusal paths together"
+)]
 pub fn test_route(state: &CoreState, request: &Request) -> Response {
     let Some(move_mode) = request.args.get("move").and_then(Value::as_str) else {
         return bad(
@@ -228,7 +232,12 @@ pub fn test_route(state: &CoreState, request: &Request) -> Response {
     );
     match mode {
         MoveMode::Tuned => {
-            let (dx, dy) = tuned.expect("checked above");
+            let Some((dx, dy)) = tuned else {
+                return Response::err(
+                    &request.id,
+                    Error::new("internal", "the tuned move was validated above", json!({})),
+                );
+            };
             std::thread::sleep(std::time::Duration::from_millis(500));
             if let Err(error) = effects.move_by(dx, dy) {
                 return Response::err(
@@ -247,7 +256,16 @@ pub fn test_route(state: &CoreState, request: &Request) -> Response {
             steps.push(json!({"action": "click", "point": to_name}));
         }
         MoveMode::Arduino => {
-            let target = to.expect("checked above");
+            let Some(target) = to else {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "internal",
+                        "the target point was validated above",
+                        json!({}),
+                    ),
+                );
+            };
             std::thread::sleep(std::time::Duration::from_millis(500));
             if let Err(error) = effects.place_at(target) {
                 return Response::err(
@@ -267,11 +285,17 @@ pub fn test_route(state: &CoreState, request: &Request) -> Response {
         }
     }
     let line = match mode {
-        MoveMode::Tuned => format!(
-            "Test move: click \"{from_name}\" then D {} {} then click \"{to_name}\". Does it land?",
-            tuned.expect("checked").0,
-            tuned.expect("checked").1
-        ),
+        MoveMode::Tuned => {
+            let Some((dx, dy)) = tuned else {
+                return Response::err(
+                    &request.id,
+                    Error::new("internal", "the tuned move was validated above", json!({})),
+                );
+            };
+            format!(
+                "Test move: click \"{from_name}\" then D {dx} {dy} then click \"{to_name}\". Does it land?"
+            )
+        }
         MoveMode::Arduino => format!(
             "New move: placed on \"{from_name}\", clicked, then placed on \"{to_name}\", clicked. Does it land?"
         ),
@@ -309,6 +333,7 @@ pub const CYCLE_STEPS: [(&str, &str); 21] = [
 ];
 
 /// `calibration.gem.cycle {"confirm":true}`: every point pre-resolved, then the 21 steps.
+#[must_use]
 pub fn cycle(state: &CoreState, request: &Request) -> Response {
     if request.args.get("confirm") != Some(&Value::Bool(true)) {
         return bad(

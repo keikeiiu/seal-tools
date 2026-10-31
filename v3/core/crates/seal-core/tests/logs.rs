@@ -138,7 +138,12 @@ fn save_captures_writes_the_png_and_returns_a_relative_capture_path() {
         capture_path.starts_with("logs/captures/capture_"),
         "relative, forward slashes: {capture_path}"
     );
-    assert!(capture_path.ends_with(".png"), "{capture_path}");
+    assert!(
+        std::path::Path::new(capture_path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("png")),
+        "{capture_path}"
+    );
     assert_eq!(
         fs::read(dir.path_of(capture_path)).expect("the capture exists"),
         PNG_BYTES,
@@ -165,7 +170,7 @@ fn save_captures_off_writes_no_png_and_a_null_capture_path() {
         !dir.path_of("logs/captures").exists(),
         "no captures directory is created when the flag is off"
     );
-    assert!(read_lines(&dir.path_of("logs/ocr_log.jsonl")).len() == 1);
+    assert_eq!(read_lines(&dir.path_of("logs/ocr_log.jsonl")).len(), 1);
 }
 
 #[test]
@@ -454,7 +459,7 @@ fn a_fake_run_logs_the_start_only_changed_statuses_and_the_finish() {
         "start, CHANGED messages only, then the final line"
     );
     assert_eq!(finished.data["reason"], "done");
-    assert!(logs.write_failures() == 0);
+    assert_eq!(logs.write_failures(), 0);
 }
 
 #[test]
@@ -678,7 +683,12 @@ fn gem_empty_check_saves_the_crop_and_writes_the_detail_to_gem_log() {
         capture.starts_with("logs/captures/empty_check_crop_"),
         "v2's crop name: {capture}"
     );
-    assert!(capture.ends_with(".png"), "{capture}");
+    assert!(
+        std::path::Path::new(&capture)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("png")),
+        "{capture}"
+    );
     assert_eq!(
         fs::read(dir.path_of(&capture)).expect("the crop exists"),
         PNG_BYTES,
@@ -721,7 +731,7 @@ fn cleanup_captures_deletes_only_direct_regular_pngs() {
     // An open handle WITHOUT FILE_SHARE_DELETE makes remove_file fail with a sharing violation,
     // which is the real Windows "cannot delete" case. A read-only attribute does not stop deletion.
     #[cfg(windows)]
-    let _held = {
+    let held = {
         use std::os::windows::fs::OpenOptionsExt;
         fs::OpenOptions::new()
             .read(true)
@@ -751,7 +761,7 @@ fn cleanup_captures_deletes_only_direct_regular_pngs() {
     );
 
     #[cfg(windows)]
-    drop(_held);
+    drop(held);
     // Let the test directory clean itself up.
     let _ = fs::remove_file(&locked);
 }

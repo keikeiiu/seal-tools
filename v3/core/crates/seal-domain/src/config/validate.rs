@@ -11,12 +11,12 @@
 //!
 //! Two layers, in this order (`ConfigValidator.cs:16-68`):
 //!
-//! 1. **DataAnnotations over the whole object graph** (`ConfigValidator.cs:71-100`): v2 walked every
+//! 1. **`DataAnnotations` over the whole object graph** (`ConfigValidator.cs:71-100`): v2 walked every
 //!    property, recursed into class-typed values and skipped `null` ones, running
 //!    `Validator.TryValidateObject(validateAllProperties: true)` on each object. Only ten attributes
 //!    exist in the entire config (`AppConfig.cs`): `window.title` Required, `arduino.vid` Range,
 //!    `tuner.spring_mode`/`tuner.mouse_guard`/`tuner.filter.match_mode`/`gem.move_mode`/
-//!    `gem.empty_mode` AllowedValues, `tuner.ocr.region` width/height Range, and
+//!    `gem.empty_mode` `AllowedValues`, `tuner.ocr.region` width/height Range, and
 //!    `gem.colored_gap_min` Range. Nothing else in the config carries a check — that is a fact about
 //!    v2, not an omission here.
 //! 2. **Relational checks** (`ConfigValidator.cs:27-63`): the tuner section, its OCR geometry, the
@@ -38,7 +38,7 @@
 //! `window:` validates CLEAN in v2 (the recursion skips it), while an absent `window:` produces the
 //! required-title error. This is v2 behaviour, quirks included; the module does not "fix" it.
 //!
-//! `AllowedValues` in DataAnnotations treats `null` as valid (the convention every DataAnnotation
+//! `AllowedValues` in `DataAnnotations` treats `null` as valid (the convention every `DataAnnotation`
 //! except `Required` follows), so a `spring_mode:` with no value passes validation and the runtime
 //! fallback is what runs — again pinned rather than fixed.
 //!
@@ -64,6 +64,7 @@ pub struct ValidationInput {
 impl ValidationInput {
     /// A complete, valid configuration — the shipped `defaults.yaml` shape for every checked field.
     /// Tests start from this and break one thing at a time.
+    #[must_use]
     pub fn clean() -> Self {
         Self {
             window: Some(WindowConfig {
@@ -80,6 +81,7 @@ impl TunerInput {
     /// A calibrated tuner: valid geometry and bands, which is what makes [`ValidationInput::clean`]
     /// pass. The default `OcrGeometry` is deliberately NOT this — an absent geometry is exactly the
     /// failure the relational checks exist to describe.
+    #[must_use]
     pub fn calibrated() -> Self {
         use super::shared::{BoxConfig, RegionConfig};
         Self {
@@ -173,10 +175,12 @@ pub struct ConfigErrors {
 }
 
 impl ConfigErrors {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.lines.is_empty()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.lines.len()
     }
@@ -184,11 +188,13 @@ impl ConfigErrors {
     /// The individual rule lines, unprefixed — `window.title is required`, not the `"Window: "` path
     /// wrapper v2's reflection added (that wrapper IS included in the lines; this doc's example is the
     /// attribute's own message).
+    #[must_use]
     pub fn lines(&self) -> &[String] {
         &self.lines
     }
 
     /// v2's `ConfigException` text (`ConfigValidator.cs:65-68`), or `None` when nothing failed.
+    #[must_use]
     pub fn message(&self) -> Option<String> {
         if self.lines.is_empty() {
             return None;
@@ -205,6 +211,7 @@ impl ConfigErrors {
 }
 
 /// The v2 check set, in v2's order: the annotation walk first, the relational checks after it.
+#[must_use]
 pub fn validate(input: &ValidationInput) -> ConfigErrors {
     let mut errors = ConfigErrors::default();
     annotation_errors(input, &mut errors);
@@ -212,8 +219,8 @@ pub fn validate(input: &ValidationInput) -> ConfigErrors {
     errors
 }
 
-/// The ten DataAnnotations, with the property-path prefix v2's `ValidateObject` produced: the walk
-/// appends the *property name* (PascalCase) to the path (`ConfigValidator.cs:76,118-119`), so a
+/// The ten `DataAnnotations`, with the property-path prefix v2's `ValidateObject` produced: the walk
+/// appends the *property name* (`PascalCase`) to the path (`ConfigValidator.cs:76,118-119`), so a
 /// nested failure reads `Tuner.Filter: tuner.filter.match_mode must be any|all|per_attr`.
 ///
 /// Order: `ValidateObject` validates each object's own properties first, then recurses into its

@@ -44,6 +44,7 @@ pub struct PetRunStatePatch {
 }
 
 impl PetRunStatePatch {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.food_slots_used.is_none()
             && self.food_slots.is_none()
@@ -80,12 +81,14 @@ impl ConfigStore {
     }
 
     /// The `config/` directory this store reads and writes.
+    #[must_use]
     pub fn config_dir(&self) -> &Path {
         &self.dir
     }
 
     /// The path of a named file inside the config folder, for callers that own sibling files (the
     /// calibration PNGs, the OCR models).
+    #[must_use]
     pub fn path_of(&self, name: &str) -> PathBuf {
         self.dir.join(name)
     }
@@ -105,6 +108,12 @@ impl ConfigStore {
     ///
     /// A fresh install seeds `local.yaml` from `local.yaml.example` first, through the same atomic
     /// writer as every other save.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the base/template or `local.yaml` cannot be read or parsed,
+    /// when the one-time fold fails with anything but a write error, or when the portable layout's
+    /// load fails.
     pub fn load(&self) -> Result<Value, ConfigError> {
         // A SHIPPED install (it carries the template) with a legacy local.yaml is migrated on the
         // next boot: the migration backs the folder up and writes the LAST marker, so this is the
@@ -147,8 +156,8 @@ impl ConfigStore {
         if !local_path.is_file() {
             let example = self.path_of(LOCAL_EXAMPLE);
             if example.is_file() {
-                let text = self.read_text(&example)?;
-                self.write_atomically_locked(&local_path, &text)?;
+                let text = Self::read_text(&example)?;
+                Self::write_atomically_locked(&local_path, &text)?;
             }
         }
         if !local_path.is_file() {
@@ -230,6 +239,11 @@ impl ConfigStore {
 
     /// Parses `local.yaml` on its own — the overlay, not the merged config. `Value::Null` for an
     /// empty or comment-only document, exactly as the file reads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::MissingFile`] when `local.yaml` is absent on the legacy layout, and
+    /// [`ConfigError`] when the file (or the portable layout behind it) cannot be read or parsed.
     pub fn load_local(&self) -> Result<Value, ConfigError> {
         if self.is_new_layout() {
             return self.new_layout_view();
@@ -248,19 +262,29 @@ impl ConfigStore {
     /// template either the failure is loud, because an absent dictionary matches nothing and would
     /// read every attribute as "no attribute", silently — indistinguishable from the game having
     /// changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the dictionary cannot be read or parsed, and
+    /// [`ConfigError::MissingFile`] when it is absent and has no `<name>.example` template either.
     pub fn load_attributes(&self) -> Result<Value, ConfigError> {
         self.load_attributes_named(ATTRIBUTES)
     }
 
     /// [`Self::load_attributes`] for a named dictionary (a game variant's, e.g.
     /// `attributes.us.yaml`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the dictionary cannot be read or parsed, and
+    /// [`ConfigError::MissingFile`] when it is absent and has no `<name>.example` template either.
     pub fn load_attributes_named(&self, name: &str) -> Result<Value, ConfigError> {
         let path = self.path_of(name);
         if !path.is_file() {
             let example = self.path_of(&format!("{name}.example"));
             if example.is_file() {
-                let text = self.read_text(&example)?;
-                self.write_atomically_locked(&path, &text)?;
+                let text = Self::read_text(&example)?;
+                Self::write_atomically_locked(&path, &text)?;
             } else {
                 return Err(ConfigError::MissingFile(path));
             }
@@ -279,6 +303,11 @@ impl ConfigStore {
     ///
     /// Everything the application does not own is carried through the save verbatim (see
     /// [`crate::foreign`]), and the constant header is prepended to every write.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the existing file cannot be read or parsed, or when the atomic
+    /// write fails.
     pub fn update_local<F: FnOnce(&mut Value)>(&self, mutate: F) -> Result<(), ConfigError> {
         self.update_local_checked(|local| {
             mutate(local);
@@ -288,6 +317,11 @@ impl ConfigStore {
 
     /// The same one-writer read-modify-write, but the mutator may refuse the write. A refused
     /// mutation leaves the file untouched and the gate still covers the whole read/write.
+    ///
+    /// # Errors
+    ///
+    /// Returns the mutator's own [`ConfigError`] unchanged, or the read/parse/atomic-write error of
+    /// the save it wraps.
     pub fn update_local_checked<F>(&self, mutate: F) -> Result<(), ConfigError>
     where
         F: FnOnce(&mut Value) -> Result<(), ConfigError>,
@@ -298,7 +332,7 @@ impl ConfigStore {
         }
         let path = self.path_of(LOCAL);
         let existing = if path.is_file() {
-            self.read_text(&path)?
+            Self::read_text(&path)?
         } else {
             String::new()
         };
@@ -335,7 +369,7 @@ impl ConfigStore {
         text.push_str(crate::LOCAL_HEADER);
         text.push_str(&body);
         text.push_str(&foreign);
-        self.write_atomically(&path, &text)
+        Self::write_atomically(&path, &text)
     }
 
     /// True when the config folder is the class × domain tree (a migrated install). The marker is
@@ -450,6 +484,11 @@ impl ConfigStore {
     /// Persist one pet run-state update through the same gate/read-modify-write as every other
     /// save. Field-wise by construction: only the fields named in `patch` are touched, inside the
     /// existing `pet` block; the rest of `local.yaml` (foreign text included) is carried as usual.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Parse`] when `local.yaml`'s `pet` shape cannot hold the patch (not a
+    /// mapping, not a list of rows), and the read/atomic-write errors of the save itself.
     pub fn persist_pet_run_state(&self, patch: &PetRunStatePatch) -> Result<(), ConfigError> {
         if patch.is_empty() {
             return Ok(());
@@ -533,6 +572,11 @@ impl ConfigStore {
     /// The text writer carries text only; a screenshot must never be half-written, so this is the
     /// same temp-and-rename shape on the same directory (the rename cannot cross a volume). A name
     /// is a bare file name: the caller says which artifact, never a path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Write`] when `name` is not a bare file name, or when the config
+    /// directory, the temp file, or the rename over the destination fails.
     pub fn write_artifact(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, ConfigError> {
         if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
             return Err(ConfigError::Write {
@@ -565,6 +609,11 @@ impl ConfigStore {
     ///
     /// Only blocks the application owns can be written: a foreign block is carried as raw text, so
     /// rewriting one from JSON would duplicate it. A section the file does not have yet is added.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::SectionNotOwned`] for a block the app does not own (nothing is written
+    /// in that case), and the read/parse/atomic-write errors of the save itself.
     pub fn apply_sections(
         &self,
         sections: &Map<String, Value>,
@@ -609,6 +658,11 @@ impl ConfigStore {
     /// `config` is the effective merged config the caller validated and wants projected — the same
     /// value [`Self::save_settings`] takes. Returns the merged value of each owned block, like
     /// [`Self::apply_sections`], so a caller can answer with it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::SectionNotOwned`] for a block the app does not own (nothing is
+    /// written), when the settings projection cannot read its template, or when the save fails.
     pub fn apply_sections_with_settings(
         &self,
         sections: &Map<String, Value>,
@@ -682,6 +736,11 @@ impl ConfigStore {
     /// copied WHOLE, projected onto the shipped template's shape, so a machine-only field (such as
     /// `tuner.ocr`) can never leak into the portable half — and the spammer block is deliberately
     /// not projected at all: a personal rotation must never reach a released template.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the shipped template cannot be read or parsed, or when the
+    /// `local.yaml` read-modify-write fails.
     pub fn save_settings(&self, config: &Value) -> Result<(), ConfigError> {
         let projection = self.projection_for(config)?;
 
@@ -821,9 +880,9 @@ impl ConfigStore {
             let Some(fresh_object) = fresh.as_object_mut() else {
                 return;
             };
-            if !fresh_object
+            if fresh_object
                 .get("spammer")
-                .is_some_and(|spammer| !spammer.is_null())
+                .is_none_or(serde_json::Value::is_null)
             {
                 fresh_object.insert("spammer".to_owned(), Value::Object(adopted.clone()));
             }
@@ -840,7 +899,7 @@ impl ConfigStore {
         Ok(())
     }
 
-    fn read_text(&self, path: &Path) -> Result<String, ConfigError> {
+    fn read_text(path: &Path) -> Result<String, ConfigError> {
         fs::read_to_string(path).map_err(|source| {
             if source.kind() == io::ErrorKind::NotFound {
                 ConfigError::MissingFile(path.to_owned())
@@ -858,7 +917,7 @@ impl ConfigStore {
         if !path.is_file() {
             return Err(ConfigError::MissingFile(path));
         }
-        let text = self.read_text(&path)?;
+        let text = Self::read_text(&path)?;
         yaml::parse(&text).map_err(|message| ConfigError::Parse { path, message })
     }
 
@@ -868,7 +927,7 @@ impl ConfigStore {
     ///
     /// Callers that do not already hold [`SAVE_GATE`] use [`Self::write_atomically_locked`]; the
     /// gate is not reentrant, so this one is the inner half.
-    fn write_atomically(&self, path: &Path, text: &str) -> Result<(), ConfigError> {
+    fn write_atomically(path: &Path, text: &str) -> Result<(), ConfigError> {
         let temp = temp_path(path);
         let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, path));
         if let Err(source) = result {
@@ -882,9 +941,9 @@ impl ConfigStore {
         Ok(())
     }
 
-    fn write_atomically_locked(&self, path: &Path, text: &str) -> Result<(), ConfigError> {
+    fn write_atomically_locked(path: &Path, text: &str) -> Result<(), ConfigError> {
         let _gate = lock_save_gate();
-        self.write_atomically(path, text)
+        Self::write_atomically(path, text)
     }
 }
 
@@ -894,7 +953,7 @@ impl ConfigStore {
 fn lock_save_gate() -> MutexGuard<'static, ()> {
     SAVE_GATE
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The unique temp name for one write: `<file>.<pid><nanos><sequence>.tmp` beside the destination.

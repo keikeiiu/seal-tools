@@ -42,6 +42,7 @@ impl Held {
     pub const ALL: [Held; 2] = [Self::Space, Self::LeftButton];
 
     /// The name a log or a report uses. The messages below spell it properly.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Space => "space",
@@ -52,6 +53,7 @@ impl Held {
     /// The line the player sees when a press or a hold fails. v2's Hold Space texts, verbatim, for
     /// the spacebar; the same two sentences defined for the button, where v2 only logged (see the
     /// module's report — there was no player-facing line for a failed drag button).
+    #[must_use]
     pub fn press_failure_message(self, error: &BoardError) -> String {
         match self {
             Self::Space => format!("Could not hold the spacebar: {error}"),
@@ -59,6 +61,7 @@ impl Held {
         }
     }
 
+    #[must_use]
     pub fn release_failure_message(self, error: &BoardError) -> String {
         match self {
             Self::Space => {
@@ -85,6 +88,7 @@ impl BoardError {
         }
     }
 
+    #[must_use]
     pub fn detail(&self) -> &str {
         &self.detail
     }
@@ -101,7 +105,18 @@ impl std::error::Error for BoardError {}
 /// The board's press/release surface. `seal-core` implements it over the serial link; the tests
 /// implement it over a recording fake.
 pub trait BoardInput {
+    /// Press one input and hold it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BoardError`] carrying the transport's message when the board write fails.
     fn press(&mut self, input: Held) -> Result<(), BoardError>;
+
+    /// Release one input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BoardError`] carrying the transport's message when the board write fails.
     fn release(&mut self, input: Held) -> Result<(), BoardError>;
 }
 
@@ -121,11 +136,13 @@ impl<'board> HeldInput<'board> {
         }
     }
 
+    #[must_use]
     pub fn is_held(&self, input: Held) -> bool {
         self.held.contains(&input)
     }
 
     /// The inputs currently recorded as held, in press order.
+    #[must_use]
     pub fn held(&self) -> &[Held] {
         &self.held
     }
@@ -133,6 +150,11 @@ impl<'board> HeldInput<'board> {
     /// Presses `input` and records it. The record is made BEFORE the write, so a failed press is
     /// still released on the way out (v2's `finally` behaviour) — the release is idempotent in the
     /// firmware, so the worst case is a harmless no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BoardError`] from the board write; the input stays recorded so the drop still
+    /// attempts its release.
     pub fn press(&mut self, input: Held) -> Result<(), BoardError> {
         if !self.is_held(input) {
             self.held.push(input);
@@ -142,6 +164,10 @@ impl<'board> HeldInput<'board> {
 
     /// Releases one input. The record is dropped on the FIRST attempt whether the write succeeded or
     /// not: a second call — including the drop's — is a no-op rather than a second board write.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BoardError`] from the board write; the input is no longer recorded either way.
     pub fn release(&mut self, input: Held) -> Result<(), BoardError> {
         if !self.is_held(input) {
             return Ok(());
@@ -152,6 +178,11 @@ impl<'board> HeldInput<'board> {
 
     /// Releases everything still held, LIFO. Every input is attempted even if one fails (each write
     /// is independent); the first failure is returned for the caller to report.
+    ///
+    /// # Errors
+    ///
+    /// Returns the FIRST [`BoardError`] a release write produced; the later releases still run and
+    /// their errors are dropped.
     pub fn release_all(&mut self) -> Result<(), BoardError> {
         let mut first_error = None;
         while let Some(input) = self.held.pop() {

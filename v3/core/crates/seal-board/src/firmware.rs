@@ -46,6 +46,7 @@ pub const ATTEMPTS: usize = 2;
 /// `None` when the line is not a version reply at all, which is the case that must not be mistaken
 /// for a level: exact `V` token, exactly two whitespace-separated tokens, digits only (no sign, no
 /// decimal point), and a level above 0 (`FirmwareVersion.Parse`, `FirmwareVersion.cs:34-46`).
+#[must_use]
 pub fn parse(line: &str) -> Option<u32> {
     if line.trim().is_empty() {
         return None;
@@ -71,6 +72,7 @@ pub struct Firmware {
 
 impl Firmware {
     /// A board that never answered: predates version reporting, so it cannot drag.
+    #[must_use]
     pub fn silent() -> Self {
         Self {
             reported: None,
@@ -79,6 +81,7 @@ impl Firmware {
     }
 
     /// A board that reported `level`.
+    #[must_use]
     pub fn reporting(level: u32) -> Self {
         Self {
             reported: Some(level),
@@ -86,27 +89,36 @@ impl Firmware {
         }
     }
 
+    #[must_use]
     pub fn reported(self) -> Option<u32> {
         self.reported
     }
 
+    #[must_use]
     pub fn attempts(self) -> usize {
         self.attempts
     }
 
     /// Whether this board can drag food — the DOMAIN's rule over the reported level
     /// (`food_load::board_can_drag`), so the level-to-feature table has one home.
+    ///
+    /// A level too large for the domain's `i32` is mapped to "no level": it is a newer board this
+    /// build does not understand, and the domain rule treats an unknown level as "cannot drag".
+    #[must_use]
     pub fn can_drag(self) -> bool {
-        food_load::board_can_drag(self.reported.map(|level| level as i32))
+        let level = self.reported.and_then(|level| i32::try_from(level).ok());
+        food_load::board_can_drag(level)
     }
 
     /// The log/bug-report sentence (`FirmwareVersion.Describe`), verbatim.
+    #[must_use]
     pub fn describe(self) -> String {
         describe(self.reported)
     }
 
     /// The player-facing sentence (`FirmwareVersion.Summary`), verbatim: what the level MEANS and the
     /// two ways out. The number is not lost — [`Self::describe`] keeps it for a report.
+    #[must_use]
     pub fn summary(self) -> String {
         summary(self.reported)
     }
@@ -137,6 +149,7 @@ pub fn detect(transport: &mut dyn Transport) -> Firmware {
 }
 
 /// `FirmwareVersion.Describe`: the developer/log sentence, naming the direction of a mismatch.
+#[must_use]
 pub fn describe(level: Option<u32>) -> String {
     match level {
         None => "did not answer — its firmware predates version reporting".to_owned(),
@@ -156,6 +169,7 @@ pub fn describe(level: Option<u32>) -> String {
 ///
 /// A player cannot judge "protocol level 2", and the only thing the level decides today is whether
 /// the board can drag food, so every case says that and gives a way out.
+#[must_use]
 pub fn summary(level: Option<u32>) -> String {
     match level {
         None => "Too old to report a version, so it also predates the drag commands — a food drag would silently do nothing. Reflash the board, or set the load mode back to \"right_click\" on the Pet tab."

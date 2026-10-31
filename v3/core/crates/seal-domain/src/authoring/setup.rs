@@ -26,6 +26,7 @@ pub enum ClientSizeField {
 }
 
 impl ClientSizeField {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Width => "width",
@@ -49,6 +50,7 @@ pub enum ClientSizeError {
 }
 
 impl ClientSizeError {
+    #[must_use]
     pub fn field(&self) -> &'static str {
         match self {
             Self::Blank { field }
@@ -59,6 +61,7 @@ impl ClientSizeError {
 
     /// The line the Setup tab shows. Every variant says what to do instead of only what is wrong:
     /// the values are measurable, and the button that measures them is on the same card.
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Blank { field } => format!(
@@ -90,6 +93,11 @@ impl std::error::Error for ClientSizeError {}
 
 /// Parses the two Setup boxes, or refuses. The first bad box is reported; the player fixes one thing
 /// at a time and the message names which.
+///
+/// # Errors
+///
+/// Returns [`ClientSizeError`] for the first box that is blank, not a number, or not positive — see
+/// [`ClientSizeError::message`] for the player-facing wording.
 pub fn validate_client_size(width: &str, height: &str) -> Result<ClientSize, ClientSizeError> {
     Ok(ClientSize {
         width: parse_side(ClientSizeField::Width, width)?,

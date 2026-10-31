@@ -113,6 +113,7 @@ impl GemRoutes {
 
     /// The calibrated point a route ends on (the arduino set's whole definition), or `None` when the
     /// key isn't a known route.
+    #[must_use]
     pub fn destination(key: &str) -> Option<&'static str> {
         Self::ALL
             .iter()
@@ -124,17 +125,17 @@ impl GemRoutes {
     /// grade/Register/Combine entries in `gem.grade_positions`, and `Resource1..3` in
     /// `gem.resource_gems` (1-based in the name, 0-based in the list). `None` when that point hasn't
     /// been calibrated.
+    #[must_use]
     pub fn resolve(
         grade_positions: &BTreeMap<String, Vec<i32>>,
         resource_gems: &[Vec<i32>],
         name: &str,
     ) -> Option<Point> {
         if let Some(rest) = name.strip_prefix("Resource") {
-            let index: i32 = rest.parse().ok()?;
-            if index < 1 || resource_gems.len() < index as usize {
-                return None;
-            }
-            let resource = &resource_gems[index as usize - 1];
+            // 1-based in the point name, 0-based in the list; a non-number, `0` or an index past the
+            // list all mean "that point isn't calibrated", which is the `None` this function returns.
+            let index = rest.parse::<usize>().ok()?.checked_sub(1)?;
+            let resource = resource_gems.get(index)?;
             return (resource.len() >= 2).then(|| Point {
                 x: resource[0],
                 y: resource[1],
@@ -161,6 +162,7 @@ pub enum MoveMode {
 
 impl MoveMode {
     /// v2's comparison is `== "arduino"`, so anything else is the tuned set.
+    #[must_use]
     pub fn parse(text: &str) -> Self {
         if text == "arduino" {
             Self::Arduino
@@ -181,6 +183,7 @@ pub enum EmptyMode {
 impl EmptyMode {
     /// v2 compares `== "stop"` and `== "advance_grade_clear"`, so an unknown value behaves as plain
     /// `advance_grade`.
+    #[must_use]
     pub fn parse(text: &str) -> Self {
         match text {
             "stop" => Self::Stop,
@@ -210,6 +213,13 @@ pub enum EmptyRead {
 /// Measurement arithmetic, not a decision: the gem run uses it when only the colour signature can be
 /// consulted, and `calibration.save` samples the same six features from the calibrated result box.
 /// Ported verbatim from v2's analyzer; keep the attribution if it ever moves again.
+// The divisor is a pixel count bounded by `rgba.len() / 4`: no real buffer holds more than 2^53
+// pixels, so the widening to f64 is exact.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "the pixel count is bounded by the byte buffer's length, well under f64's exact-integer range"
+)]
+#[must_use]
 pub fn analyze_composition(
     rgba: &[u8],
     width: usize,
@@ -265,6 +275,7 @@ pub fn analyze_composition(
 /// holding a gem differ by only 0.10 as a mean of six absolute differences, so a box full of gem read
 /// as "empty" and the composer advanced the grade. The same pair is 0.29 as a norm, which the
 /// calibrated threshold (0.18) separates cleanly.
+#[must_use]
 pub fn composition_distance(a: &ColorComposition, b: &ColorComposition) -> f64 {
     let dv = a.mean_v - b.mean_v;
     let ds = a.mean_sat - b.mean_sat;
@@ -277,6 +288,7 @@ pub fn composition_distance(a: &ColorComposition, b: &ColorComposition) -> f64 {
 
 /// True when the frame is close enough to the sampled EMPTY reference. A `None` reference means
 /// empty-detection hasn't been calibrated yet, so we conservatively say NOT empty.
+#[must_use]
 pub fn composition_is_empty(
     frame: &ColorComposition,
     empty_reference: Option<&ColorComposition>,
@@ -290,6 +302,7 @@ pub fn composition_is_empty(
 
 /// `IsResultBoxEmpty`, from the reader's evidence: the crop comparison when there is one, the colour
 /// signature only as the fallback, and "not empty" when neither exists.
+#[must_use]
 pub fn result_box_is_empty(
     read: &EmptyRead,
     empty_signature: Option<&ColorComposition>,
@@ -369,6 +382,11 @@ impl GemRun {
     /// Resolves the start grade and settles the state. The one refusal here is an empty grade list:
     /// v2 indexed `grades[gidx]` before its window even opened, so the domain refuses up front
     /// instead of reproducing an out-of-bounds index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopKind::Error`](crate::decision::StopKind::Error) carrying the player-facing line
+    /// when [`GemSettings::grades`] is empty — the composer would have nothing to work through.
     pub fn new(settings: GemSettings) -> Result<Self, StopReason> {
         if settings.grades.is_empty() {
             return Err(StopReason::error(
@@ -391,16 +409,19 @@ impl GemRun {
     }
 
     /// The grade the composer is working on.
+    #[must_use]
     pub fn grade(&self) -> &str {
         &self.settings.grades[self.grade_index]
     }
 
     /// Cycles this run has started.
+    #[must_use]
     pub fn cycle(&self) -> u32 {
         self.cycle
     }
 
     /// The per-grade tally, for the card and the log.
+    #[must_use]
     pub fn tally(&self) -> &GradeCycles {
         &self.tally
     }
@@ -412,6 +433,7 @@ impl GemRun {
     /// and is ported as-is: it is the condition that shipped, and a composer that suddenly starts
     /// advancing on machines that never sampled a signature would be the stricter-behaviour change
     /// this port avoids.
+    #[must_use]
     pub fn empty_check_enabled(&self) -> bool {
         self.settings.empty_mode != EmptyMode::Stop && self.settings.empty_signature.is_some()
     }
@@ -419,6 +441,11 @@ impl GemRun {
     /// Selects the grade and moves to Register (v2's `SelectGradeAndRegister`): the single click on
     /// the grade button both activates the game window and presses it, so there is no separate
     /// focus click.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason`] when the current grade's point is uncalibrated or its route is unknown
+    /// or unsaved; the message names the missing point or move set.
     pub fn select_grade_turn(&self) -> Result<GemTurn, StopReason> {
         let grade = self.grade().to_owned();
         let mut steps = vec![
@@ -441,6 +468,11 @@ impl GemRun {
     ///
     /// The count happens BEFORE the combine, so the tally says where the work went even if the run
     /// dies mid-cycle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason`] when the Register → Combine move cannot be built: an unknown route key
+    /// or an unsaved tuned movement set.
     pub fn combine_turn(&mut self) -> Result<GemTurn, StopReason> {
         self.cycle += 1;
         let grade = self.grade().to_owned();
@@ -459,6 +491,12 @@ impl GemRun {
     /// either the normal deregister/register click pair or the grade-advance flow.
     ///
     /// `empty` is the reader's verdict, or `None` when no read was performed (auto-check disabled).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason`] when the Combine → Register move cannot be built (unknown route or
+    /// unsaved tuned movements), or — when the verdict advances the grade — when the advance flow's
+    /// resource-clear or next-grade route is unknown or uncalibrated.
     pub fn finish_turn(&mut self, empty: Option<bool>) -> Result<GemTurn, StopReason> {
         let tuned = Some(self.settings.movements.combine_register.as_slice());
         let mut steps =
@@ -503,6 +541,11 @@ impl GemRun {
     /// F9: advance to the next grade BY HAND, wrapping back to the first at the end. v2 logs this as
     /// "left by hand" rather than "finished" — the grade did not run out, the player moved on — and
     /// clears no resources here, because the player chose the moment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason`] when the newly selected grade's point or route is uncalibrated or
+    /// unsaved — the same refusals [`Self::select_grade_turn`] can produce.
     pub fn advance_grade_by_hand(&mut self) -> Result<GemTurn, StopReason> {
         self.grade_index = (self.grade_index + 1) % self.settings.grades.len();
         self.select_grade_turn()
@@ -602,6 +645,11 @@ impl GemRun {
     /// either way.
     ///
     /// Public so a caller (and the tests) can ask for a single route without building a whole turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason`] when the route key is unknown, the destination point is uncalibrated,
+    /// or (in `tuned` mode) the movement pair was never saved — the message names which.
     pub fn route_step(
         &self,
         what: &str,
@@ -667,12 +715,14 @@ impl GemRun {
 // ── failures the LOOP reports (the decision half cannot see a window or a board) ───────────
 
 /// The game window was not found (or is minimized) when a placement was attempted.
+#[must_use]
 pub fn window_missing() -> StopReason {
     StopReason::error("Game window not found (or minimized) — open and restore the game first.")
 }
 
 /// A cursor that can't be placed must NOT be clicked through: the click would land wherever the
 /// pointer happens to be. This is the grade-button version of that refusal.
+#[must_use]
 pub fn grade_button_placement_failed(grade: &str, detail: &str) -> StopReason {
     StopReason::error(format!(
         "Couldn't move the cursor onto the {grade} button — {detail}. Stopped instead of clicking \
@@ -681,6 +731,7 @@ pub fn grade_button_placement_failed(grade: &str, detail: &str) -> StopReason {
 }
 
 /// The closed-loop placement for a route's destination failed.
+#[must_use]
 pub fn route_placement_failed(what: &str, point_name: &str, detail: &str) -> StopReason {
     StopReason::error(format!(
         "{what}: couldn't move the cursor to {point_name} — {detail}."

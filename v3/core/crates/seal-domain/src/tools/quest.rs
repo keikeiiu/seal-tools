@@ -77,6 +77,7 @@ pub enum QuestPlanKind {
 
 impl QuestPlan {
     /// The line a finished run reports (`tool.finished.message`), from v2's own log.
+    #[must_use]
     pub fn done_message(&self) -> String {
         match &self.kind {
             QuestPlanKind::Flow { name } => {
@@ -90,6 +91,13 @@ impl QuestPlan {
 
     /// The positioning countdown: one entry per second, e.g. `3` for a 3 s wait and also for 2.3 s
     /// (v2's `Math.Ceiling`). The card shows "move the mouse into place — {n}s" for each.
+    // A configured countdown in seconds; Rust's saturating f64-to-i32 cast matches the C# original on
+    // every value a config can hold, and a nonsense value saturates rather than wrapping.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a configured countdown in seconds; the saturating cast is v2's Math.Ceiling conversion"
+    )]
+    #[must_use]
     pub fn positioning_counts(&self) -> Vec<i32> {
         let mut left = self.positioning_seconds.ceil() as i32;
         let mut counts = Vec::new();
@@ -102,6 +110,7 @@ impl QuestPlan {
 }
 
 /// The positioning line the card shows for one countdown second.
+#[must_use]
 pub fn positioning_text(seconds_left: i32) -> String {
     format!("move the mouse into place — {seconds_left}s")
 }
@@ -116,6 +125,12 @@ pub fn positioning_text(seconds_left: i32) -> String {
 /// Everything is validated BEFORE anything is clicked: a step that sends nothing is
 /// indistinguishable from the game behaving differently today, and at a few hundred loops there is no
 /// way to tell afterwards.
+///
+/// # Errors
+///
+/// Returns [`StopReason::error`] when the chosen sequence or flow does not exist, when a resolved
+/// flow has no sendable step, or when no runnable flow/sequence is configured at all — never a
+/// half-planned run.
 pub fn plan(
     quest: &QuestConfig,
     sequence_override: Option<&str>,
@@ -297,6 +312,7 @@ fn plan_step(step: &QuestStep) -> QuestPlanStep {
 /// `QuestAction.Describe`: how a step reads in a log line or on the card.
 ///
 /// `key {value} ({delay}s)`, `wait ({delay}s)`, or `{action with _ as space} ({delay}s)`.
+#[must_use]
 pub fn step_label(step: &QuestStep) -> String {
     let action = step.action.trim();
     let delay = format_delay(step.delay_seconds);
@@ -331,6 +347,11 @@ fn format_delay(delay: f64) -> String {
 ///
 /// `cursor` is the logical cursor position the core reads (DPI-unaware, so both this and every later
 /// read are in the same space).
+///
+/// # Errors
+///
+/// Returns a guard [`StopReason`] when the cursor could not be read; the run must not start, because
+/// nothing would be watching for the mouse being moved.
 pub fn guard_reference(cursor: Option<Point>) -> Result<Point, StopReason> {
     cursor.ok_or_else(|| {
         StopReason::error(
@@ -344,6 +365,7 @@ pub fn guard_reference(cursor: Option<Point>) -> Result<Point, StopReason> {
 ///
 /// Checked BEFORE every send: the cost of a missed check is a click at the wrong place, the cost of
 /// the check is one cursor read. The threshold is `>`, and both reads are in the same logical space.
+#[must_use]
 pub fn guard_problem(start: Point, cursor: Option<Point>, guard_px: i32) -> Option<StopReason> {
     let Some(now) = cursor else {
         return Some(StopReason::error(
@@ -361,11 +383,13 @@ pub fn guard_problem(start: Point, cursor: Option<Point>, guard_px: i32) -> Opti
 }
 
 /// v2's single-flow stop line: the guard's reason, then where the run was.
+#[must_use]
 pub fn stopped_on_loop(reason: &str, loop_number: i32, loops: i32) -> String {
     format!("{reason} Stopped on loop {loop_number} of {loops}.")
 }
 
 /// v2's sequence stop line: the guard's reason, then the flow and the master loop.
+#[must_use]
 pub fn stopped_in_sequence(
     reason: &str,
     flow: &str,

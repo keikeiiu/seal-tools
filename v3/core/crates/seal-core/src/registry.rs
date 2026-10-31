@@ -59,9 +59,17 @@ pub struct Unavailable {
 /// [`Self::create`] runs in the worker: for a real registry it is the OPENING phase (open the board,
 /// load the OCR models), which is why it is not on the supervisor's thread.
 pub trait ToolRegistry: Send + Sync {
+    ///
+    /// # Errors
+    ///
+    /// Returns the unavailability naming what the tool needs when it cannot start.
     fn available(&self, tool: ToolId) -> Result<(), Unavailable>;
     /// Build one run. The `game` port is the capability a resident tool uses to ask for the game and
     /// give it back; tools that take the game by `start` ignore it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the unavailability naming what the tool needs when its run cannot be built.
     fn create(
         &self,
         tool: ToolId,
@@ -72,6 +80,7 @@ pub trait ToolRegistry: Send + Sync {
 
 /// The line every unavailable tool reports. Defined where v3 has no player-facing text yet: the tool
 /// is known to the protocol, but its loop is not ported in this build.
+#[must_use]
 pub fn not_available_line(tool: ToolId) -> String {
     format!("\"{tool}\" is not available in this build yet — its tool loop is not ported.")
 }
@@ -105,6 +114,7 @@ impl ProductionRegistry {
 
     /// Attach the production pet run-state sink. The binary does this before the supervisor starts;
     /// the registry's tests leave it absent.
+    #[must_use]
     pub fn with_pet_state_sink(mut self, sink: Arc<dyn PetStateSink>) -> Self {
         self.pet_state = Some(sink);
         self
@@ -112,16 +122,17 @@ impl ProductionRegistry {
 
     /// Attach the binary's firmware cache, so the pet session's opening `V` read also feeds
     /// `board.details` (no extra query per open).
+    #[must_use]
     pub fn with_firmware_cache(mut self, cache: Arc<RwLock<Option<u32>>>) -> Self {
         self.firmware = Some(cache);
         self
     }
 
     fn config(&self) -> Value {
-        self.shared
-            .read()
-            .map(|config| config.clone())
-            .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+        self.shared.read().map_or_else(
+            |poisoned| poisoned.into_inner().clone(),
+            |config| config.clone(),
+        )
     }
 
     fn buy_session(&self, args: &Value) -> Result<Session, String> {
@@ -136,7 +147,7 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -162,7 +173,7 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -188,7 +199,7 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -200,17 +211,15 @@ impl ProductionRegistry {
 
     fn tuner_session(&self) -> Result<Session, String> {
         let config = self.config();
-        let root = self
-            .store
-            .config_dir()
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let root = self.store.config_dir().parent().map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
         let plan = crate::tuner::plan(&config)?;
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -240,18 +249,16 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
         // The reference crop lives beside the other calibration artifacts, under the root. The store
         // owns the config directory; its parent is that root (`root::find_root`).
-        let root = self
-            .store
-            .config_dir()
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let root = self.store.config_dir().parent().map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
         let source = GemResultSource::open(&config, &plan, &root, Arc::clone(&self.logs))?;
         let tool = GemTool::new(plan, source)?;
         // The composer clicks calibrated points, so it needs the display the clicks are measured in.
@@ -268,17 +275,15 @@ impl ProductionRegistry {
 
     fn pet_session(&self, game: Arc<dyn GamePort>) -> Result<Session, String> {
         let config = self.config();
-        let root = self
-            .store
-            .config_dir()
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let root = self.store.config_dir().parent().map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
         let plan = crate::pet::plan(&config, &root)?;
         let settings = Settings::from_config(&config);
         let (_port, mut transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -289,10 +294,14 @@ impl ProductionRegistry {
         if let Some(cache) = &self.firmware {
             // Silence is a definite level-1 answer for the CACHE (probe already reports it that
             // way); the run's behaviour still treats it as "no version" via `firmware_level` None.
-            *cache.write().expect("not poisoned") =
+            *cache
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
                 Some(crate::board::cached_firmware_level(firmware));
         }
-        let firmware_level = firmware.reported().map(|level| level as i32);
+        let firmware_level = firmware
+            .reported()
+            .and_then(|level| i32::try_from(level).ok());
         let active = crate::startup::active(&config);
         let attributes = crate::startup::load_dictionary(&self.store, &active.dictionary)
             .map_err(|error| error.to_string())?;
@@ -318,7 +327,7 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -338,7 +347,7 @@ impl ProductionRegistry {
         let settings = Settings::from_config(&config);
         let (_port, transport) = match open_board(&settings) {
             Ok(opened) => opened,
-            Err(BoardFailure::Unavailable(line)) | Err(BoardFailure::BadRequest(line)) => {
+            Err(BoardFailure::Unavailable(line) | BoardFailure::BadRequest(line)) => {
                 return Err(line);
             }
         };
@@ -359,8 +368,10 @@ impl ToolRegistry for ProductionRegistry {
                 .map_err(|line| Unavailable { line }),
             // The hold needs nothing but a board, and the board is the OPENING phase's business
             // (`create`), so this cheap gate always passes: a start with no board gets the opening
-            // phase's own line rather than a refusal invented here.
-            ToolId::HoldSpace => Ok(()),
+            // phase's own line rather than a refusal invented here. Buy is served for the same
+            // reason: a missing run argument is a CREATE-time refusal so it can name the reason
+            // (the domain line for no preset / unknown preset).
+            ToolId::HoldSpace | ToolId::Buy => Ok(()),
             ToolId::Tuner => crate::tuner::plan(&self.config())
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
@@ -378,19 +389,14 @@ impl ToolRegistry for ProductionRegistry {
                 .map(|_| ())
                 .map_err(|line| Unavailable { line }),
             ToolId::Pet => {
-                let root = self
-                    .store
-                    .config_dir()
-                    .parent()
-                    .map(std::path::Path::to_path_buf)
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let root = self.store.config_dir().parent().map_or_else(
+                    || std::path::PathBuf::from("."),
+                    std::path::Path::to_path_buf,
+                );
                 crate::pet::plan(&self.config(), &root)
                     .map(|_| ())
                     .map_err(|line| Unavailable { line })
             }
-            // Buy is served; a missing run argument is a CREATE-time refusal so it can name the
-            // reason (the domain line for no preset / unknown preset).
-            ToolId::Buy => Ok(()), // served; args are a create-time concern
         }
     }
 
@@ -572,24 +578,22 @@ mod tests {
             Ok(()),
             "a saved sell_slots value must not refuse a start that may carry slots"
         );
-        let error = match without_selection.create(
+        let Err(error) = without_selection.create(
             ToolId::Sell,
             Arc::new(seal_tools::game::AllowAll),
             &serde_json::json!({}),
-        ) {
-            Ok(_) => panic!("a selection-less sell start has nothing to sell"),
-            Err(error) => error,
+        ) else {
+            panic!("a selection-less sell start has nothing to sell");
         };
         assert_eq!(error, "No slots are selected to sell.");
 
         let registry = registry(config_with_shop());
-        let error = match registry.create(
+        let Err(error) = registry.create(
             ToolId::Buy,
             Arc::new(seal_tools::game::AllowAll),
             &serde_json::json!({}),
-        ) {
-            Ok(_) => panic!("an argument-less buy start has no preset"),
-            Err(error) => error,
+        ) else {
+            panic!("an argument-less buy start has no preset");
         };
         assert_eq!(error, "No buy preset selected.");
     }
@@ -765,7 +769,7 @@ mod tests {
     fn config_with_spammer() -> Value {
         serde_json::json!({
             "spammer": {"active": "buff", "presets": {"buff": {"1": 1.0}}},
-            "arduino": {"vid": 9025, "pid": [32822], "baud": 115200, "port": ""},
+            "arduino": {"vid": 9025, "pid": [32822], "baud": 115_200, "port": ""},
         })
     }
 
@@ -819,7 +823,7 @@ mod tests {
     fn a_rotation_with_an_unsendable_key_refuses_at_create_before_opening_the_board() {
         let registry = registry(serde_json::json!({
             "spammer": {"active": "buff", "presets": {"buff": {"1": 1.0, "ab": 2.0}}},
-            "arduino": {"vid": 9025, "pid": [32822], "baud": 115200, "port": ""},
+            "arduino": {"vid": 9025, "pid": [32822], "baud": 115_200, "port": ""},
         }));
 
         // `available` only resolves the plan; the key check is the opening phase's.

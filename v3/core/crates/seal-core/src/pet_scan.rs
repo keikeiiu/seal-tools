@@ -15,6 +15,14 @@ use crate::pet::{PetImage, decode_icon, score_all_scores};
 use crate::pet_capture::{IconError, page_grid};
 
 /// A page/cell box argument, 1-based in the protocol (the Pet tab's own numbering).
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `page` is missing or not positive.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "row/page/cell indices are small values validated before use"
+)]
 pub fn page_argument(args: &Value) -> Result<usize, (String, &'static str)> {
     let Some(page) = args.get("page").and_then(Value::as_u64) else {
         return Err((
@@ -33,6 +41,14 @@ pub fn page_argument(args: &Value) -> Result<usize, (String, &'static str)> {
 
 /// Validate an apply selection. Returns ZERO-BASED `(page, cell)` pairs for `pet.food_slots`
 /// (the config's own ordering), after checking the 1-based protocol args against the marks.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when the cells are missing, malformed or out of range.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "row/page/cell indices are small values validated before use"
+)]
 pub fn apply_cells(
     config: &Value,
     args: &Value,
@@ -103,6 +119,10 @@ pub fn apply_cells(
     Ok(output)
 }
 
+///
+/// # Errors
+///
+/// Returns the line when the frame JSON cannot be decoded to RGBA.
 pub fn frame_image(frame: &Value) -> Result<PetImage, String> {
     let (width, height, rgba) = crate::dispatch::frame_rgba(frame)?;
     Ok(PetImage {
@@ -122,6 +142,7 @@ fn icon_error(error: IconError) -> (String, &'static str) {
 /// The two `logs/reads/` names for one page scan. The report carries the page too: the stamp is
 /// second-resolution, so sweeping ITEM1–3 quickly used to let page 2's report overwrite page 1's
 /// while page 1's returned evidence path pointed at the newer file.
+#[must_use]
 pub fn evidence_names(page: usize, stamp: &str) -> (String, String) {
     (
         format!("scan_page{page}_{stamp}.png"),
@@ -131,6 +152,10 @@ pub fn evidence_names(page: usize, stamp: &str) -> (String, String) {
 
 /// The configured food icon, decoded. Kept separate from the scan so the handler can refuse a
 /// missing/corrupt icon BEFORE the foreground capture and evidence write.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when the configured food icon is missing or undecodable.
 pub fn food_icon(config: &Value) -> Result<PetImage, (String, &'static str)> {
     let food_icon_png = config
         .pointer("/pet/food_icon_png")
@@ -152,6 +177,10 @@ pub fn food_icon(config: &Value) -> Result<PetImage, (String, &'static str)> {
 }
 
 /// Food scan with an already-decoded icon (the handler validates it before capturing).
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when a mark is missing or a page read fails.
 pub fn food_scan_with_icon(
     config: &Value,
     page: usize,
@@ -208,6 +237,10 @@ pub fn food_scan_with_icon(
 }
 
 /// Food scan convenience: decode the configured icon then run the body above.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when the food icon cannot be decoded or a mark is missing.
 pub fn food_scan(
     config: &Value,
     page: usize,
@@ -231,8 +264,7 @@ pub fn queue_entries(config: &Value) -> Vec<(String, Option<PetImage>)> {
                         .get("label")
                         .and_then(Value::as_str)
                         .filter(|label| !label.trim().is_empty())
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| "(no name)".to_owned());
+                        .map_or_else(|| "(no name)".to_owned(), str::to_owned);
                     let icon = entry
                         .get("png")
                         .and_then(Value::as_str)
@@ -250,6 +282,10 @@ pub fn queue_entries(config: &Value) -> Vec<(String, Option<PetImage>)> {
 /// Queue scan: every configured queue icon against every cell of the page. `per_entry` keeps the
 /// configured order; `claimed` names cells matched by more than one icon; `deduced` is the v2
 /// player-facing "label ×n" line.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when a mark is missing or a page read fails.
 pub fn queue_scan(
     config: &Value,
     page: usize,
@@ -527,6 +563,10 @@ pub struct FeedingArguments {
     pub harvest: bool,
 }
 
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `page`, `harvest` or the cells are malformed.
 pub fn feeding_arguments(args: &Value) -> Result<FeedingArguments, (String, &'static str)> {
     let page = page_argument(args)?;
     let harvest = match args.get("harvest") {
@@ -544,6 +584,7 @@ pub fn feeding_arguments(args: &Value) -> Result<FeedingArguments, (String, &'st
 /// One swept cell's protocol object. `status` is v2's three-way classification: a panel that did
 /// not read is `unknown` — NEVER `finished`, because a failed read must not hide a pet the run still
 /// has to feed.
+#[must_use]
 pub fn feeding_cell(
     cell: usize,
     label: &str,
@@ -581,6 +622,7 @@ pub fn feeding_cell(
     value
 }
 
+#[must_use]
 pub fn feeding_summary(cells: &[Value]) -> String {
     let count = |status: &str| {
         cells
@@ -599,6 +641,10 @@ pub fn feeding_summary(cells: &[Value]) -> String {
 /// `pet.scan_apply_queue {queue:[{label,png,rect?,species?}]}`: validate the replacement queue. An
 /// EMPTY queue is refused — the same "never clear on nothing" rule the scan side follows, because
 /// replacing a hand-built queue with nothing is one edit away and is the worst outcome here.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `queue` is missing or an entry is malformed.
 pub fn queue_apply_arguments(args: &Value) -> Result<Vec<Value>, (String, &'static str)> {
     let Some(entries) = args.get("queue").and_then(Value::as_array) else {
         return Err((

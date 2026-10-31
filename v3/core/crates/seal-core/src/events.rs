@@ -52,6 +52,7 @@ impl EventBus {
 }
 
 /// An event-only channel, for the in-process supervisor tests.
+#[must_use]
 pub fn event_channel() -> (EventBus, Receiver<Event>) {
     let (sender, receiver) = mpsc::channel();
     (EventBus::Events(sender), receiver)
@@ -67,6 +68,7 @@ pub struct EventWriter {
 impl EventWriter {
     /// Starts the writer thread over `destination`. The returned [`EventBus`] is the handle workers
     /// use; the [`EventWriter`] is kept by the stdio loop for responses and to stop cleanly.
+    #[must_use]
     pub fn spawn(destination: Box<dyn Write + Send>) -> (Self, EventBus) {
         let (outgoing, receiver) = mpsc::channel();
         let join = thread::spawn(move || write_loop(destination, receiver));
@@ -126,6 +128,7 @@ fn write_loop(mut destination: Box<dyn Write + Send>, receiver: Receiver<Outgoin
 /// crate has no calendar, and the shell only counts down, so the moment is expressed relative to the
 /// publish. `PROTOCOL.md` §5 prints `rows: [{...}]` without fixing the inner shape; this is the v2
 /// field set, and it is reported as an ambiguity for the spec.
+#[must_use]
 pub fn state_event(snapshot: &ToolSnapshot) -> Event {
     Event::new("state", state_data(snapshot))
 }
@@ -150,7 +153,7 @@ fn row_data(row: &ToolRow) -> Value {
         "status": row.status,
         "detail": row.detail,
         "next_action_in_seconds": row.next_action_in_seconds,
-        "next_action": row.next_action.map(|action| action.as_str()),
+        "next_action": row.next_action.map(seal_tools::tool::ToolNextAction::as_str),
     })
 }
 
@@ -170,6 +173,7 @@ fn detail_data(detail: &ToolDetail) -> Value {
 /// core's missing fields are null. `ended_at` is the core's UTC clock at the moment the event is
 /// built (the summary says WHAT the run did; this says WHEN) — the shell renders it and never invents
 /// a timestamp from its own clock.
+#[must_use]
 pub fn tool_finished_event(tool: ToolId, reason: &StopReason, summary: Option<&Value>) -> Event {
     Event::new(
         "tool.finished",
@@ -227,6 +231,7 @@ pub fn log_event(level: &str, line: impl Into<String>) -> Event {
 }
 
 /// `core.stopping {reason}`: the core is leaving; the shell shows why and disables its controls.
+#[must_use]
 pub fn core_stopping_event(reason: &str) -> Event {
     Event::new("core.stopping", json!({"reason": reason}))
 }
@@ -239,6 +244,11 @@ pub fn core_stopping_event(reason: &str) -> Event {
 /// emits nothing and the shell cannot mistake its own reload for an external write. The event is
 /// queued during dispatch and sent AFTER the response line, because a shell that sees an event before
 /// the answer to its own request would have to reconcile against itself (`dispatch::CoreState`).
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "public event constructor: the payload is owned by the event and callers hand it over as one Value"
+)]
 pub fn config_changed_event(rev: u64, block: &str, values: Value) -> Event {
     Event::new(
         "config.changed",

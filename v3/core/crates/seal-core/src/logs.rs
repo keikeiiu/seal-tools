@@ -66,6 +66,7 @@ impl Logs {
     }
 
     /// A logger that writes nothing, for states built without a config root.
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             dir: None,
@@ -301,7 +302,7 @@ impl Logs {
         let _guard = self
             .write_lock
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Err(error) = fs::create_dir_all(dir) {
             self.report(&error);
             return;
@@ -345,12 +346,13 @@ fn scan_unconfirmed(mode: Mode, outcome: &ModeResult) -> bool {
         Mode::Attributes => outcome
             .attributes
             .as_ref()
-            .is_none_or(|rows| rows.len() != 3 || rows.iter().any(|row| row.is_empty())),
+            .is_none_or(|rows| rows.len() != 3 || rows.iter().any(std::vec::Vec::is_empty)),
         Mode::Grade => outcome.grade.is_none(),
     }
 }
 
 /// v2's OCR stamp (`OcrEngine.ScanOnce`: `yyyyMMdd_HHmmss_fff`), also used in capture file names.
+#[must_use]
 pub fn scan_stamp() -> String {
     let [year, month, day, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}_{millis:03}")
@@ -358,6 +360,7 @@ pub fn scan_stamp() -> String {
 
 /// v2's bag-scan evidence stamp: `yyyyMMdd_HHmmss`, deliberately the same second-resolution stamp
 /// as `scan_page<N>_<stamp>.png` and `scan_<stamp>.txt` in `logs/reads/`.
+#[must_use]
 pub fn read_stamp() -> String {
     let [year, month, day, hour, minute, second, _] = seal_win::clock::local_now();
     format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}")
@@ -375,6 +378,7 @@ fn hold_stamp() -> String {
 
 /// v2's short stamp for diagnostic capture names (`GemComposer`: `HHmmss_fff`), used by the optional
 /// `gem.save_empty_captures` crop.
+#[must_use]
 pub fn short_stamp() -> String {
     let [_, _, _, hour, minute, second, millis] = seal_win::clock::local_now();
     format!("{hour:02}{minute:02}{second:02}_{millis:03}")

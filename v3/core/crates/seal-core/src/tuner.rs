@@ -70,6 +70,10 @@ fn point(value: &Value, path: &str) -> Option<Point> {
 }
 
 /// Resolve the tuner plan out of the merged config, or the line that says which part is missing.
+///
+/// # Errors
+///
+/// Returns the line naming the first missing part of the tuner's calibration.
 pub fn plan(config: &Value) -> Result<TunerPlan, String> {
     let region = Rect::new(
         number(config, "/tuner/ocr/region/left").ok_or_else(|| {
@@ -139,6 +143,10 @@ pub fn plan(config: &Value) -> Result<TunerPlan, String> {
 /// One scan plus a cursor read: the loop's input seam.
 pub trait TunerSource {
     /// One OCR read of the calibrated region, or the line that says why it could not be read.
+    ///
+    /// # Errors
+    ///
+    /// Returns the line explaining why the calibrated region could not be read.
     fn read(&mut self) -> Result<TunerRead, String>;
     /// The cursor in the LOGICAL screen space, or `None` when unreadable (the guard fails open).
     fn cursor(&mut self) -> Option<Point> {
@@ -168,6 +176,7 @@ pub trait Now {
 pub struct RealNow(Instant);
 
 impl RealNow {
+    #[must_use]
     pub fn start() -> Self {
         Self(Instant::now())
     }
@@ -224,6 +233,7 @@ impl<S: TunerSource> TunerTool<S> {
     }
 
     /// The two delays between C, E and the read (`tuner.timing.click_enter_delay`/`ocr_delay`).
+    #[must_use]
     pub fn with_timings(mut self, click_enter_delay: f64, ocr_delay: f64) -> Self {
         self.pending_click_delay = click_enter_delay;
         self.pending_ocr_delay = ocr_delay;
@@ -287,7 +297,8 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
 
     fn status(&self) -> ToolStatus {
         if self.step == Step::Countdown {
-            let remaining = (START_COUNTDOWN as f64 - (self.now.seconds() - self.started)).max(0.0);
+            let remaining =
+                (f64::from(START_COUNTDOWN) - (self.now.seconds() - self.started)).max(0.0);
             return ToolStatus {
                 message: format!("Starting in {:.0}...", remaining.ceil()),
                 countdown_s: Some(remaining),
@@ -334,7 +345,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
             match self.step {
                 Step::Countdown => {
                     let elapsed = self.now.seconds() - self.started;
-                    if elapsed < START_COUNTDOWN as f64 {
+                    if elapsed < f64::from(START_COUNTDOWN) {
                         return Decision::Wait(1.0);
                     }
                     self.begin_attempt();
@@ -411,7 +422,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
                     // The decision half consumes the read; keep the facts for the card's detail.
                     self.last_read = Some(read.clone());
                     let outcome = self.run.decide(&read);
-                    self.filter_line = outcome.filter_status.clone();
+                    self.filter_line.clone_from(&outcome.filter_status);
                     match outcome.decision {
                         TunerDecision::Stop(reason) => {
                             self.step = Step::Read;
@@ -429,6 +440,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
 }
 
 /// The two delays between the click, the Enter and the read (`tuner.timing.*`), with v2's defaults.
+#[must_use]
 pub fn timings(config: &Value) -> (f64, f64) {
     let get = |path: &str| config.pointer(path).and_then(Value::as_f64);
     (
@@ -458,6 +470,10 @@ pub struct OcrTunerSource {
 
 impl OcrTunerSource {
     /// Open the read side, or name what is missing before the run starts.
+    ///
+    /// # Errors
+    ///
+    /// Returns the startup refusal naming a missing model or calibration.
     pub fn open(
         config: &Value,
         attributes: seal_domain::config::AttributesConfig,
@@ -509,6 +525,12 @@ pub(crate) fn confirmed_read(read: &TunerRead) -> bool {
 }
 
 impl OcrTunerSource {
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation,
+        reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+    )]
     fn read_once(&mut self) -> Result<TunerRead, String> {
         let (frame, _display) =
             crate::win::capture(&self.title, Some(self.region)).map_err(|error| error.line())?;
@@ -611,6 +633,10 @@ mod tests {
     }
 
     impl Now for StepNow {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "both sides are frame pixel counts, far below 2^53, so this f64 conversion is exact"
+        )]
         fn seconds(&self) -> f64 {
             self.0.load(Ordering::SeqCst) as f64 / 1000.0
         }
@@ -654,7 +680,7 @@ mod tests {
             "tuner": {
                 "grade_order": ["N", "G", "DG", "XG", "SG"],
                 "target_grade": "DG",
-                "max_retries": 999999,
+                "max_retries": 999_999,
                 "spring_mode": spring_mode,
                 "mouse_guard": "off",
                 "guard_px": 8,
@@ -683,12 +709,12 @@ mod tests {
         }
     }
 
-    fn plan_of(config: Value) -> TunerPlan {
-        plan(&config).expect("resolves")
+    fn plan_of(config: &Value) -> TunerPlan {
+        plan(config).expect("resolves")
     }
 
     fn tool(
-        config: Value,
+        config: &Value,
         reads: Vec<Result<TunerRead, String>>,
         cursor: Option<Point>,
     ) -> (TunerTool<FakeSource>, Arc<AtomicU64>) {
@@ -701,7 +727,7 @@ mod tests {
 
     #[test]
     fn the_plan_resolves_the_settings_region_and_spring() {
-        let plan = plan_of(config("hid", Some([500, 600])));
+        let plan = plan_of(&config("hid", Some([500, 600])));
 
         assert_eq!(plan.settings.target_grade, "DG");
         assert_eq!(plan.settings.grade_order.len(), 5);
@@ -731,7 +757,7 @@ mod tests {
 
     #[test]
     fn the_status_shows_the_countdown_then_the_filter_line() {
-        let (mut tool, clock) = tool(config("manual", None), vec![Ok(read_target())], None);
+        let (mut tool, clock) = tool(&config("manual", None), vec![Ok(read_target())], None);
 
         let status = tool.status();
         assert_eq!(status.message, "Starting in 5...");
@@ -798,7 +824,7 @@ mod tests {
     #[test]
     fn one_attempt_is_countdown_place_click_enter_wait_read_then_stop() {
         let (mut tool, clock) = tool(
-            config("hid", Some([500, 600])),
+            &config("hid", Some([500, 600])),
             vec![Ok(read_target())],
             None,
         );
@@ -825,7 +851,7 @@ mod tests {
 
     #[test]
     fn manual_mode_clicks_where_the_player_left_the_cursor() {
-        let (mut tool, clock) = tool(config("manual", None), vec![Ok(read_target())], None);
+        let (mut tool, clock) = tool(&config("manual", None), vec![Ok(read_target())], None);
 
         for _ in 0..START_COUNTDOWN {
             assert_eq!(tool.decide(), Decision::Wait(1.0));
@@ -864,7 +890,7 @@ mod tests {
     #[test]
     fn a_below_target_read_retries_the_whole_attempt() {
         let (mut tool, clock) = tool(
-            config("manual", None),
+            &config("manual", None),
             vec![Ok(read_below_target()), Ok(read_target())],
             None,
         );
@@ -888,7 +914,11 @@ mod tests {
 
     #[test]
     fn a_total_read_failure_stops_with_the_v2_line() {
-        let (mut tool, clock) = tool(config("manual", None), vec![Ok(TunerRead::default())], None);
+        let (mut tool, clock) = tool(
+            &config("manual", None),
+            vec![Ok(TunerRead::default())],
+            None,
+        );
 
         for _ in 0..START_COUNTDOWN {
             assert_eq!(tool.decide(), Decision::Wait(1.0));
@@ -910,7 +940,7 @@ mod tests {
     #[test]
     fn a_source_error_stops_with_its_line() {
         let (mut tool, clock) = tool(
-            config("manual", None),
+            &config("manual", None),
             vec![Err("the game window is not in front".to_owned())],
             None,
         );
@@ -937,7 +967,7 @@ mod tests {
         let mut config = config("hid", Some([500, 600]));
         config["tuner"]["mouse_guard"] = serde_json::json!("stop");
         // The cursor is far from the spring's logical point (500,600 at 1:1).
-        let (mut tool, clock) = tool(config, vec![Ok(read_target())], Some(Point::new(10, 10)));
+        let (mut tool, clock) = tool(&config, vec![Ok(read_target())], Some(Point::new(10, 10)));
 
         for _ in 0..START_COUNTDOWN {
             assert_eq!(tool.decide(), Decision::Wait(1.0));

@@ -152,7 +152,11 @@ fn an_impossible_exp_is_clamped_not_trusted() {
 fn the_unboardable_pets_are_dropped_so_species_and_stage_is_a_key() {
     let table = table();
 
-    assert!(!table.iter().any(|line| line.wyz == 33000.0));
+    assert!(
+        !table
+            .iter()
+            .any(|line| (line.wyz - 33_000.0).abs() < f64::EPSILON)
+    );
     assert_eq!(table.len(), 2);
 }
 
@@ -291,7 +295,7 @@ fn without_counts_a_completion_line_beats_the_cycle() {
 }
 
 /// WHICHEVER RUNS OUT FIRST — the pet finishing outranks the food left in the tray, and the source
-/// stays CountRead because a count above zero WAS read.
+/// stays `CountRead` because a count above zero WAS read.
 #[test]
 fn the_pet_finishing_outranks_the_food() {
     let reading = scheduled(&fixture(), true, Some(1500), Some(14.0), None);

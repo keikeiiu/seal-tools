@@ -180,16 +180,19 @@ pub fn test_scroll(state: &CoreState, request: &Request) -> Response {
             "notches",
         );
     };
-    if !(1..=i64::from(ShopGeometry::MAX_SCROLL_NOTCHES)).contains(&notches) {
-        return bad(
-            &request.id,
-            format!(
-                "a test scroll is 1..={} notches; {notches} is beyond the firmware guard",
-                ShopGeometry::MAX_SCROLL_NOTCHES
-            ),
-            "notches",
-        );
-    }
+    let notches = match i32::try_from(notches) {
+        Ok(notches) if (1..=ShopGeometry::MAX_SCROLL_NOTCHES).contains(&notches) => notches,
+        _ => {
+            return bad(
+                &request.id,
+                format!(
+                    "a test scroll is 1..={} notches; {notches} is beyond the firmware guard",
+                    ShopGeometry::MAX_SCROLL_NOTCHES
+                ),
+                "notches",
+            );
+        }
+    };
     let up = request
         .args
         .get("up")
@@ -224,7 +227,7 @@ pub fn test_scroll(state: &CoreState, request: &Request) -> Response {
             Error::new("board_unavailable", error.message(), json!({})),
         );
     }
-    if let Err(error) = effects.wheel(notches as i32, !up) {
+    if let Err(error) = effects.wheel(notches, !up) {
         return Response::err(
             &request.id,
             Error::new("board_unavailable", error.message(), json!({})),

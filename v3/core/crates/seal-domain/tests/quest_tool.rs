@@ -18,7 +18,7 @@ use seal_domain::tools::quest::{
 fn step(action: &str, value: Option<&str>, delay: f64) -> QuestStep {
     QuestStep {
         action: action.to_owned(),
-        value: value.map(|value| value.to_owned()),
+        value: value.map(std::borrow::ToOwned::to_owned),
         delay_seconds: delay,
     }
 }
@@ -366,7 +366,7 @@ fn an_unreadable_reference_cursor_stops_the_run_before_anything_is_clicked() {
 }
 
 /// The drift is the larger axis, in the same logical space as the reference, and it is `>` — a
-/// cursor exactly guard_px away has not moved.
+/// cursor exactly `guard_px` away has not moved.
 #[test]
 fn a_cursor_that_moved_more_than_the_guard_distance_stops_the_run() {
     let start = Point { x: 100, y: 100 };
@@ -414,11 +414,11 @@ fn the_positioning_countdown_counts_whole_seconds_up() {
         "daily".to_owned(),
         preset(1, 0.0, vec![step(quest_action::CLICK, None, 0.25)]),
     );
-    assert!(
+    assert_eq!(
         build_plan(&quest, None, None, None)
             .unwrap()
-            .positioning_counts()
-            .is_empty()
+            .positioning_counts(),
+        [] as [i32; 0]
     );
 }
 

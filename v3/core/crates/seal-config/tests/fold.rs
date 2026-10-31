@@ -37,7 +37,11 @@ fn temp_files(dir: &TestDir) -> Vec<String> {
         .unwrap()
         .flatten()
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".tmp"))
+        .filter(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("tmp"))
+        })
         .collect()
 }
 
@@ -187,7 +191,7 @@ fn the_fold_leaves_the_machine_half_of_local_yaml_alone() {
     let grade_positions = before
         .pointer("/gem/grade_positions")
         .and_then(Value::as_object)
-        .map(|positions| positions.len());
+        .map(serde_json::Map::len);
 
     store.load().unwrap();
 
@@ -199,7 +203,7 @@ fn the_fold_leaves_the_machine_half_of_local_yaml_alone() {
         after
             .pointer("/gem/grade_positions")
             .and_then(Value::as_object)
-            .map(|positions| positions.len()),
+            .map(serde_json::Map::len),
         grade_positions
     );
     assert!(after.get("settings").is_some());
@@ -301,7 +305,7 @@ fn the_fold_carries_only_leaves_the_legacy_file_states() {
     let config = ConfigStore::new(dir.path()).load().unwrap();
     assert_eq!(config.pointer("/tuner/target_grade"), Some(&json!("S")));
     // The leaves the legacy file never stated keep tracking the template.
-    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999999)));
+    assert_eq!(config.pointer("/tuner/max_retries"), Some(&json!(999_999)));
     assert_eq!(config.pointer("/tuner/ocr_retries"), Some(&json!(3)));
 
     let local = parse_yaml(&dir.read("local.yaml"));

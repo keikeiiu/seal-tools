@@ -70,6 +70,7 @@ pub struct AttrMatcher {
 }
 
 impl AttrMatcher {
+    #[must_use]
     pub fn new(config: &AttributesConfig) -> Self {
         Self {
             attributes: config.attributes.clone(),
@@ -83,6 +84,13 @@ impl AttrMatcher {
     /// because its variants are single words ("每", "等級", "力量") and its own rule is stricter. A
     /// score of 1 or less is not a match: one character in common is not evidence the OCR read the
     /// word.
+    // The score is a character count widened to f64; a UTF-16 line is far shorter than 2^53, so the
+    // widening is exact.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the score is a UTF-16 length of a single OCR line, exact in f64 for any real line"
+    )]
+    #[must_use]
     pub fn match_attributes(&self, ocr_lines: &[Vec<String>]) -> Vec<MatchedAttr> {
         let mut results = Vec::new();
 
@@ -192,6 +200,7 @@ impl AttrMatcher {
     ///
     /// In `per_attr` mode each rule needs its own COUNT of matching attributes; in `any`/`all` each
     /// rule needs one passing attribute. An override rule short-circuits everything.
+    #[must_use]
     pub fn check_filter(matched: &[MatchedAttr], filter: &FilterConfig) -> FilterResult {
         if !filter.enabled {
             return FilterResult {
@@ -225,44 +234,7 @@ impl AttrMatcher {
         };
 
         if mode == "per_attr" {
-            let mut rule_counts: BTreeMap<&str, i32> = BTreeMap::new();
-            let mut hits = Vec::new();
-
-            for attribute in matched {
-                for rule in &filter.rules {
-                    if attribute.name != rule.name {
-                        continue;
-                    }
-                    if value_ok(attribute.value, rule) {
-                        *rule_counts.entry(rule.name.as_str()).or_default() += 1;
-                        hits.push(FilterHit {
-                            rule: rule.name.clone(),
-                            found: Some(attribute.name.clone()),
-                            value: attribute.value,
-                            is_override: false,
-                        });
-                        break;
-                    }
-                }
-            }
-
-            for rule in &filter.rules {
-                let need = needed(rule);
-                let got = rule_counts.get(rule.name.as_str()).copied().unwrap_or(0);
-                if got < need {
-                    return FilterResult {
-                        passed: false,
-                        reason: format!("'{}' matched {got} attrs, need {need}", rule.name),
-                        hits,
-                    };
-                }
-            }
-
-            return FilterResult {
-                passed: true,
-                reason: format!("{} attributes matched", hits.len()),
-                hits,
-            };
+            return per_attr_result(matched, filter);
         }
 
         let mut matched_rules = Vec::new();
@@ -322,6 +294,51 @@ impl AttrMatcher {
     }
 }
 
+/// The `per_attr` mode of `check_filter`: each rule needs its OWN count of matching attributes.
+///
+/// Split out of `check_filter` to keep both readable: the count table and the "rules that came up
+/// short" walk are one idea, and the override loop plus the `any`/`all` tail are another.
+fn per_attr_result(matched: &[MatchedAttr], filter: &FilterConfig) -> FilterResult {
+    let mut rule_counts: BTreeMap<&str, i32> = BTreeMap::new();
+    let mut hits = Vec::new();
+
+    for attribute in matched {
+        for rule in &filter.rules {
+            if attribute.name != rule.name {
+                continue;
+            }
+            if value_ok(attribute.value, rule) {
+                *rule_counts.entry(rule.name.as_str()).or_default() += 1;
+                hits.push(FilterHit {
+                    rule: rule.name.clone(),
+                    found: Some(attribute.name.clone()),
+                    value: attribute.value,
+                    is_override: false,
+                });
+                break;
+            }
+        }
+    }
+
+    for rule in &filter.rules {
+        let need = needed(rule);
+        let got = rule_counts.get(rule.name.as_str()).copied().unwrap_or(0);
+        if got < need {
+            return FilterResult {
+                passed: false,
+                reason: format!("'{}' matched {got} attrs, need {need}", rule.name),
+                hits,
+            };
+        }
+    }
+
+    FilterResult {
+        passed: true,
+        reason: format!("{} attributes matched", hits.len()),
+        hits,
+    }
+}
+
 /// A rule's count requirement: a non-positive configured count means one.
 fn needed(rule: &FilterRule) -> i32 {
     if rule.count > 0 { rule.count } else { 1 }
@@ -345,10 +362,13 @@ fn value_ok(value: Option<i32>, rule: &FilterRule) -> bool {
 }
 
 fn count_rule(matched: &[MatchedAttr], rule: &FilterRule) -> i32 {
-    matched
+    let count = matched
         .iter()
         .filter(|attribute| attribute.name == rule.name && value_ok(attribute.value, rule))
-        .count() as i32
+        .count();
+    // A rule's threshold is an i32; a match list that long cannot exist (it would not fit in this
+    // process's memory), so clamping keeps the comparison total without a wrapping cast.
+    i32::try_from(count).unwrap_or(i32::MAX)
 }
 
 /// `ExtractValue`: the number on the row, preferring the cell that carries the attribute's variant.
@@ -537,6 +557,7 @@ fn has_plus_two(text: &str) -> bool {
 ///
 /// The result is the line the matcher sees: the labels first, then the values, in v2's
 /// `labels.Concat(result)` order.
+#[must_use]
 pub fn fix_sign(labels: &[String], values: &[String], negative_markers: &[String]) -> Vec<String> {
     let negative = labels
         .iter()

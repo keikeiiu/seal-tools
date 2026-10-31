@@ -10,7 +10,7 @@
 //! - **Port enumeration**: WMI `Win32_SerialPort` VID/PID match plus the "name mentions Arduino"
 //!   fallback (`Arduino.cs:25-76`). Proving it needs the real driver stack of a machine with and
 //!   without the board.
-//! - **Opening**: `DtrEnable`/`RtsEnable` on the ATmega32U4 and the **2 s boot wait**
+//! - **Opening**: `DtrEnable`/`RtsEnable` on the `ATmega32U4` and the **2 s boot wait**
 //!   (`Arduino.cs:131-145`, `LauncherService.cs:255`), plus the sketch's own 3 s `setup()` delay.
 //!   Proving it needs a cold-plugged, just-flashed board — the reason the firmware query retries past
 //!   that window (`firmware`).
@@ -37,10 +37,12 @@ pub struct Deadline {
 
 impl Deadline {
     /// A deadline `seconds` from now. Seconds — see the type's doc and `DESIGN.md` §2.1.
+    #[must_use]
     pub fn after_seconds(seconds: f64) -> Self {
         Self { seconds }
     }
 
+    #[must_use]
     pub fn seconds(self) -> f64 {
         self.seconds
     }
@@ -64,6 +66,11 @@ pub trait Transport {
     /// Writes `wire` verbatim — the exact text [`crate::command::BoardCommand::encode`] produced,
     /// including its terminating `\n`. The transport must not add, strip or translate terminators:
     /// the grammar owns the wire text, so a `\r` cannot be introduced by a text-mode layer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError`] when the write or its flush fails; the message is the line the
+    /// caller shows instead of pretending the command reached the board.
     fn write_line(&mut self, wire: &str) -> Result<(), TransportError>;
 
     /// Reads one line, waiting at most `deadline`.
@@ -83,6 +90,7 @@ impl TransportError {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -110,11 +118,13 @@ pub struct FakeTransport {
 }
 
 impl FakeTransport {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// A fake whose reads are the given script.
+    #[must_use]
     pub fn with_reads(reads: Vec<LineRead>) -> Self {
         Self {
             reads: reads.into(),
@@ -123,12 +133,14 @@ impl FakeTransport {
     }
 
     /// Every wire line written, in order and verbatim.
+    #[must_use]
     pub fn writes(&self) -> Vec<String> {
         self.writes.clone()
     }
 
     /// The deadlines each read was asked to wait, in seconds, in order — so a test can pin the
     /// firmware window without a board.
+    #[must_use]
     pub fn deadlines(&self) -> Vec<f64> {
         self.deadlines.clone()
     }

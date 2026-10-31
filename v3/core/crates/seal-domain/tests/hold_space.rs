@@ -18,7 +18,10 @@ fn idle_tick() -> HoldSpaceTick {
 fn an_idle_tick_does_nothing() {
     let decided = idle_tick();
 
-    assert!(decided.actions.is_empty());
+    assert_eq!(
+        decided.actions,
+        [] as [seal_domain::tools::hold_space::HoldSpaceStep; 0]
+    );
     assert!(!decided.mirror_running);
     assert_eq!(decided.panel_running, None);
     assert!(!decided.clear_quit);
@@ -97,11 +100,17 @@ fn the_hotkey_rising_while_running_stops_and_tells_the_launcher() {
 #[test]
 fn only_the_rising_edge_of_the_hotkey_acts() {
     let held = tick(false, false, true, true);
-    assert!(held.actions.is_empty());
+    assert_eq!(
+        held.actions,
+        [] as [seal_domain::tools::hold_space::HoldSpaceStep; 0]
+    );
     assert_eq!(held.panel_running, None);
 
     let falling = tick(false, false, false, true);
-    assert!(falling.actions.is_empty());
+    assert_eq!(
+        falling.actions,
+        [] as [seal_domain::tools::hold_space::HoldSpaceStep; 0]
+    );
     assert_eq!(falling.panel_running, None);
 }
 
@@ -144,7 +153,10 @@ fn a_settled_hold_is_not_re_asserted_every_tick() {
     assert_eq!(first.actions.len(), 1);
 
     let second = tick(first.mirror_running, true, false, false);
-    assert!(second.actions.is_empty());
+    assert_eq!(
+        second.actions,
+        [] as [seal_domain::tools::hold_space::HoldSpaceStep; 0]
+    );
     assert!(second.mirror_running);
 }
 

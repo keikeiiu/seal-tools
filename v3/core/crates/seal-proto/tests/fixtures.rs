@@ -183,6 +183,13 @@ fn event_case(name: &'static str, event: &str, data: Value) -> Case {
 
 /// Every fixture, in a stable order. The payloads are synthetic; nothing here comes from a player's
 /// `local.yaml`. The shapes are `PROTOCOL.md` §§3–6's.
+//
+// One flat table IS the point: a reviewer diffs this against PROTOCOL.md §3–6 top to bottom, and a
+// fixture split across helpers is harder to hold in view than the one list it pins.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the fixture table is one linear contract; splitting it hides it"
+)]
 fn cases() -> Vec<Case> {
     vec![
         // ── Requests: every command in §4, one per documented argument shape ────────────────────
@@ -755,7 +762,7 @@ fn cases() -> Vec<Case> {
             "response.ok.board_details",
             "43",
             json!({
-                "baud": 115200,
+                "baud": 115_200,
                 "expected": {"vid": "2341", "pids": ["8036", "8037"], "port": null},
                 "ports": [{
                     "port": "COM5",
@@ -1541,22 +1548,19 @@ fn every_fixture_decodes_into_its_type() {
                     "{}: exactly one of result and error is present",
                     path.display()
                 );
-                match response.error.as_ref() {
-                    Some(error) => {
-                        assert!(!response.ok, "{}", path.display());
-                        assert!(!error.code.is_empty(), "{}", path.display());
-                        assert!(!error.message.is_empty(), "{}", path.display());
-                        let expected_code = format!("response.error.{}", error.code);
-                        assert_eq!(case.name, expected_code, "{}", path.display());
-                    }
-                    None => {
-                        assert!(response.ok, "{}", path.display());
-                        assert!(
-                            case.name.starts_with("response.ok."),
-                            "{}: a success fixture is named response.ok.<shape>",
-                            path.display()
-                        );
-                    }
+                if let Some(error) = response.error.as_ref() {
+                    assert!(!response.ok, "{}", path.display());
+                    assert!(!error.code.is_empty(), "{}", path.display());
+                    assert!(!error.message.is_empty(), "{}", path.display());
+                    let expected_code = format!("response.error.{}", error.code);
+                    assert_eq!(case.name, expected_code, "{}", path.display());
+                } else {
+                    assert!(response.ok, "{}", path.display());
+                    assert!(
+                        case.name.starts_with("response.ok."),
+                        "{}: a success fixture is named response.ok.<shape>",
+                        path.display()
+                    );
                 }
             }
             Kind::Event => {

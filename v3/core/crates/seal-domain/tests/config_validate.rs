@@ -204,7 +204,7 @@ fn the_filter_match_mode_is_one_of_three_exact_values() {
     assert!(validate(&bare).is_empty());
 }
 
-/// The convention every DataAnnotation except `Required` follows: a null value is VALID. So
+/// The convention every `DataAnnotation` except `Required` follows: a null value is VALID. So
 /// `spring_mode:` with no value passes validation and the runtime fallback is what runs — v2
 /// behaviour, pinned rather than "fixed".
 #[test]

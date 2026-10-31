@@ -141,11 +141,10 @@ impl Effects for StatusObservingEffects {
 
 impl StatusObservingEffects {
     fn observe(&mut self) {
-        let message = self
-            .state
-            .read()
-            .map(|snapshot| format!("{}|{:?}", snapshot.message, snapshot.countdown_s))
-            .unwrap_or_else(|| "none".to_owned());
+        let message = self.state.read().map_or_else(
+            || "none".to_owned(),
+            |snapshot| format!("{}|{:?}", snapshot.message, snapshot.countdown_s),
+        );
         self.seen.lock().expect("not poisoned").push(message);
     }
 }
@@ -305,7 +304,10 @@ fn a_stop_during_a_wait_abandons_the_wait_rather_than_finishing_it() {
 
     assert_eq!(reason.kind, StopKind::Cancelled);
     assert_eq!(clock.slept.lock().expect("not poisoned").len(), 1);
-    assert!(effects.calls().is_empty());
+    assert!(
+        effects.calls().is_empty(),
+        "a cancelled run applies no effect"
+    );
 }
 
 #[test]

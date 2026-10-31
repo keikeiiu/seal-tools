@@ -27,6 +27,7 @@ pub enum Mode {
 }
 
 impl Mode {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "lines" => Some(Self::Lines),
@@ -37,6 +38,7 @@ impl Mode {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Lines => "lines",
@@ -107,6 +109,11 @@ impl Default for OcrGeometry {
 /// boxes at nearly the same Y), then take the MEDIAN gap between consecutive lines. `None` when
 /// fewer than two lines were seen, which is v2's own answer and makes the caller keep the configured
 /// `row_height` rather than invent one.
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "item tops are capture pixel coordinates, far inside i32's range; the cast only rounds the measured Y"
+)]
 pub fn measure_line_spacing(items: &[RecognizedLine]) -> Option<u32> {
     let mut collapsed: Vec<i32> = Vec::new();
     let mut tops: Vec<i32> = items
@@ -149,6 +156,7 @@ pub struct GradeImage<'a> {
 
 /// Applies one mode to a scan. `attributes` is the active dictionary (its `negative_attr_markers`
 /// feed the domain's sign fix).
+#[must_use]
 pub fn apply(
     mode: Mode,
     scan: &Scan,
@@ -160,6 +168,7 @@ pub fn apply(
 
 /// [`apply`] plus the grade image, so `mode:"grade"` can use v2's COLOUR fallback when the text
 /// read found no grade letter. `remaining` is read in the same pass (v2's `ScanOnce` returned both).
+#[must_use]
 pub fn apply_with_image(
     mode: Mode,
     scan: &Scan,
@@ -311,6 +320,12 @@ pub fn read_grade(items: &[RecognizedLine], geometry: &OcrGeometry) -> Option<St
 
 /// The launcher's attribute read (`OcrEngine.cs:299-331`): X+Y-band filtered, row-bucketed, each
 /// token classified label/value, then the domain's `fix_sign`.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "row keys are capture pixel-row indices derived from the item Ys: their magnitude is far below f64's exact-integer range and the floor of a non-negative coordinate fits i64"
+)]
 pub fn read_attributes(
     items: &[RecognizedLine],
     attributes: &AttributesConfig,

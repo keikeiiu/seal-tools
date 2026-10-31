@@ -45,10 +45,6 @@ pub struct Captured {
 /// see `pure::title_matches`). Enumeration order is window-manager order, so the first match is the
 /// oldest top-level window with that title — the game has one.
 pub fn find_window(title_contains: &str) -> Option<Hwnd> {
-    if title_contains.trim().is_empty() {
-        return None;
-    }
-
     struct Ctx<'a> {
         needle: &'a str,
         found: Option<isize>,
@@ -71,13 +67,17 @@ pub fn find_window(title_contains: &str) -> Option<Hwnd> {
         }
     }
 
+    if title_contains.trim().is_empty() {
+        return None;
+    }
+
     let mut ctx = Ctx {
         needle: title_contains,
         found: None,
     };
     // SAFETY: the context outlives the synchronous enumeration; the callback only reads it.
     unsafe {
-        EnumWindows(Some(callback), &mut ctx as *mut Ctx<'_> as LPARAM);
+        EnumWindows(Some(callback), &raw mut ctx as LPARAM);
     }
     ctx.found.map(Hwnd)
 }
@@ -85,36 +85,42 @@ pub fn find_window(title_contains: &str) -> Option<Hwnd> {
 fn window_title(hwnd: HWND) -> Option<String> {
     // SAFETY: hwnd is a live top-level window from EnumWindows.
     unsafe {
-        let len = GetWindowTextLengthW(hwnd);
-        if len <= 0 {
+        // The Win32 text calls speak `i32` counts; the checks here are the ones the casts would
+        // otherwise hide, so a negative count is "no text" rather than a wrapped buffer length.
+        let len = usize::try_from(GetWindowTextLengthW(hwnd)).ok()?;
+        if len == 0 {
             return None;
         }
-        let mut buf = vec![0u16; len as usize + 1];
-        let written = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
-        if written <= 0 {
+        let mut buf = vec![0u16; len + 1];
+        let written = GetWindowTextW(hwnd, buf.as_mut_ptr(), i32::try_from(buf.len()).ok()?);
+        let written = usize::try_from(written).ok()?;
+        if written == 0 {
             return None;
         }
-        buf.truncate(written as usize);
+        buf.truncate(written);
         Some(String::from_utf16_lossy(&buf))
     }
 }
 
 /// The title bar text of a window, for the protocol's `window.find` result. `None` for a window
 /// with no text (or one that closed between the find and the read).
+#[must_use]
 pub fn title_text(hwnd: Hwnd) -> Option<String> {
     window_title(hwnd.ptr())
 }
 
 /// The OS cursor position, in the space a DPI-UNAWARE process sees (logical screen pixels) — the
 /// same space the board's placement loop compares against.
+#[must_use]
 pub fn cursor_position() -> Option<Point> {
     let mut point = POINT { x: 0, y: 0 };
     // SAFETY: a read-only query in this process's coordinate space.
-    (unsafe { GetCursorPos(&mut point) } != 0).then(|| Point::new(point.x, point.y))
+    (unsafe { GetCursorPos(&raw mut point) } != 0).then(|| Point::new(point.x, point.y))
 }
 
 /// Is a window the foreground window right now? Capture is refused otherwise: a capture of a covered
 /// game photographs the covering window (`CALIBRATION.md` §3).
+#[must_use]
 pub fn is_foreground(hwnd: Hwnd) -> bool {
     // SAFETY: both calls are read-only queries; no handle is retained.
     unsafe { GetForegroundWindow() == hwnd.ptr() }
@@ -124,6 +130,11 @@ pub fn is_foreground(hwnd: Hwnd) -> bool {
 /// (the process stays unaware), then the logical client is read under the restored context. The
 /// scale is the ratio of client WIDTHS — heights truncate at fractional scale, widths do not
 /// (`CALIBRATION.md` §2).
+///
+/// # Errors
+///
+/// Returns [`WinError`] naming the Win32 call that failed when the window or its client rectangle
+/// cannot be read, and [`WinError::WindowNotFound`] when the client has no area.
 pub fn measure(hwnd: Hwnd) -> Result<DisplayInfo, WinError> {
     // SAFETY: the thread-scoped context is restored on both return paths below; no handle escapes.
     unsafe {
@@ -157,7 +168,7 @@ fn rect_from(raw: RECT) -> Rect {
 fn client_origin(hwnd: HWND) -> Result<POINT, WinError> {
     let mut origin = POINT { x: 0, y: 0 };
     // SAFETY: a read-only query on a live window handle.
-    if unsafe { ClientToScreen(hwnd, &mut origin) } == 0 {
+    if unsafe { ClientToScreen(hwnd, &raw mut origin) } == 0 {
         return Err(WinError::win32("ClientToScreen", unsafe { GetLastError() }));
     }
     Ok(origin)
@@ -177,10 +188,10 @@ fn read_physical(hwnd: Hwnd) -> Result<(Rect, Rect), WinError> {
         bottom: 0,
     };
     // SAFETY: read-only queries on a live window handle.
-    if unsafe { GetWindowRect(hwnd.ptr(), &mut frame) } == 0 {
+    if unsafe { GetWindowRect(hwnd.ptr(), &raw mut frame) } == 0 {
         return Err(WinError::win32("GetWindowRect", unsafe { GetLastError() }));
     }
-    if unsafe { GetClientRect(hwnd.ptr(), &mut client) } == 0 {
+    if unsafe { GetClientRect(hwnd.ptr(), &raw mut client) } == 0 {
         return Err(WinError::win32("GetClientRect", unsafe { GetLastError() }));
     }
     let origin = client_origin(hwnd.ptr())?;
@@ -201,7 +212,7 @@ fn read_logical_client(hwnd: Hwnd) -> Result<Rect, WinError> {
         bottom: 0,
     };
     // SAFETY: read-only query on a live window handle.
-    if unsafe { GetClientRect(hwnd.ptr(), &mut client) } == 0 {
+    if unsafe { GetClientRect(hwnd.ptr(), &raw mut client) } == 0 {
         return Err(WinError::win32("GetClientRect(logical)", unsafe {
             GetLastError()
         }));
@@ -225,6 +236,12 @@ fn screen_size() -> Size {
 /// Capture the client area (or a client-relative physical region of it) as a PNG, refusing unless the
 /// game is in front. `origin` in the result is where the image's top-left sits on the physical
 /// screen, which is what `Frame.origin` carries.
+///
+/// # Errors
+///
+/// Returns [`WinError::NotForeground`] when the window is not in front, [`WinError::RegionOutsideClient`]
+/// when the requested region does not fit the client, and [`WinError`] naming the Win32 call that
+/// failed when a GDI resource or the capture itself cannot be created.
 pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Captured, WinError> {
     let display = measure(hwnd)?;
     if !is_foreground(hwnd) {
@@ -235,6 +252,17 @@ pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Capture
         Some(region) => region_to_screen(client, region)?,
         None => client,
     };
+    // GDI and the buffer arithmetic speak unsigned/native widths; the rect was validated above, so a
+    // failed conversion is a measurement bug rather than a caller error.
+    let width = usize::try_from(screen_rect.w).map_err(|_| WinError::WindowNotFound)?;
+    let height = usize::try_from(screen_rect.h).map_err(|_| WinError::WindowNotFound)?;
+    let (width_u32, height_u32) = (
+        u32::try_from(width).map_err(|_| WinError::WindowNotFound)?,
+        u32::try_from(height).map_err(|_| WinError::WindowNotFound)?,
+    );
+    // The header's size field is Win32's `DWORD`; the struct is a fixed few dozen bytes, so the
+    // fallback below is unreachable rather than a clamp.
+    let header_size = u32::try_from(std::mem::size_of::<BITMAPINFOHEADER>()).unwrap_or(u32::MAX);
 
     // SAFETY: every GDI handle is released before returning, on the success and error paths alike.
     unsafe {
@@ -266,10 +294,10 @@ pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Capture
             screen_rect.y,
             SRCCOPY | CAPTUREBLT,
         );
-        let mut pixels = vec![0u8; screen_rect.w as usize * screen_rect.h as usize * 4];
+        let mut pixels = vec![0u8; width * height * 4];
         let mut info: BITMAPINFO = std::mem::zeroed();
         info.bmiHeader = BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biSize: header_size,
             biWidth: screen_rect.w,
             biHeight: -screen_rect.h, // negative = top-down rows
             biPlanes: 1,
@@ -292,9 +320,9 @@ pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Capture
                 mem_dc,
                 bitmap,
                 0,
-                screen_rect.h as u32,
+                height_u32,
                 pixels.as_mut_ptr().cast::<c_void>(),
-                &mut info,
+                &raw mut info,
                 DIB_RGB_COLORS,
             )
         } else {
@@ -313,7 +341,7 @@ pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Capture
             return Err(WinError::win32("GetDIBits", GetLastError()));
         }
 
-        let png = encode_png(screen_rect.w as u32, screen_rect.h as u32, &pixels)?;
+        let png = encode_png(width_u32, height_u32, &pixels)?;
         Ok(Captured {
             width: screen_rect.w,
             height: screen_rect.h,

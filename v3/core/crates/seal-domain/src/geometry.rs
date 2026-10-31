@@ -21,17 +21,20 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[must_use]
     pub const fn new(x: i32, y: i32, w: i32, h: i32) -> Self {
         Self { x, y, w, h }
     }
 
     /// One past the last covered column. Exclusive, like every pixel-rect convention the tools
     /// already use (`BagGrid`, the OCR sub-bands).
+    #[must_use]
     pub const fn right(&self) -> i32 {
         self.x + self.w
     }
 
     /// One past the last covered row.
+    #[must_use]
     pub const fn bottom(&self) -> i32 {
         self.y + self.h
     }
@@ -39,16 +42,19 @@ impl Rect {
     /// The point a click aims at. Integer division truncates; v2's `ResultGemCenter` and the bag-cell
     /// derivations do the same, and a half-pixel disagreement between two of them is exactly the
     /// drift this type exists to stop.
+    #[must_use]
     pub const fn center(&self) -> Point {
         Point::new(self.x + self.w / 2, self.y + self.h / 2)
     }
 
     /// Half-open containment: the origin is inside, `right()`/`bottom()` are not.
+    #[must_use]
     pub const fn contains(&self, point: Point) -> bool {
         point.x >= self.x && point.x < self.right() && point.y >= self.y && point.y < self.bottom()
     }
 
     /// Nothing to read or click. A drag that produced zero width is not a calibrated box.
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.w <= 0 || self.h <= 0
     }
@@ -62,6 +68,7 @@ pub struct Size {
 }
 
 impl Size {
+    #[must_use]
     pub const fn new(w: i32, h: i32) -> Self {
         Self { w, h }
     }
@@ -75,6 +82,7 @@ pub struct Point {
 }
 
 impl Point {
+    #[must_use]
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
@@ -116,6 +124,7 @@ impl DisplayInfo {
     ///
     /// A zero-width logical client cannot yield a ratio; v2 answers 1.0 there rather than infinity,
     /// which keeps a minimised window measurable instead of poisoning every later division.
+    #[must_use]
     pub fn from_rects(
         frame: Rect,
         physical_client: Rect,
@@ -130,7 +139,10 @@ impl DisplayInfo {
 
         Self {
             scale,
-            monitor_dpi: (96.0 * scale).round() as u32,
+            // A measured client width is positive, so 96 * scale is a normal DPI (96-384); a nonsense
+            // negative ratio answers 0 rather than wrapping to a huge u32. Checked rather than cast so
+            // the diagnostic field cannot silently describe a different monitor.
+            monitor_dpi: u32::try_from(round_ties_even(96.0 * scale)).unwrap_or(0),
             screen,
             frame,
             physical_client,
@@ -148,6 +160,7 @@ impl DisplayInfo {
     /// `f64::round` rounds half away from zero, so it would move a cursor to a pixel v2 never
     /// clicked; the difference is one pixel on a 2× monitor, which is the size of the errors this
     /// contract exists to prevent.
+    #[must_use]
     pub fn cursor_target(&self, physical_x: i32, physical_y: i32) -> CursorTarget {
         CursorTarget {
             logical: Point::new(
@@ -170,6 +183,13 @@ pub struct CursorTarget {
 }
 
 /// `(int)Math.Round(x)`: nearest integer, ties to even, saturating at the i32 bounds.
+// Rust's float-to-int `as` conversion SATURATES at the i32 bounds, which is exactly the documented
+// contract here (C#'s unchecked cast is the one that is unspecified); an explicit clamp plus a cast
+// would spell the same conversion less directly.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the saturating f64-to-i32 cast is the documented (int)Math.Round behaviour"
+)]
 pub(crate) fn round_ties_even(value: f64) -> i32 {
     // A non-finite value cannot arise from real rects; treating it as 0 keeps the function total
     // rather than panicking on an unrepresentable input.

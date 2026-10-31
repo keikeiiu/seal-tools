@@ -96,7 +96,10 @@ fn a_guard_with_nothing_held_releases_nothing() {
         let _held = HeldInput::new(&mut board);
     }
 
-    assert!(board.releases.is_empty());
+    assert!(
+        board.releases.is_empty(),
+        "a guard with nothing held releases nothing"
+    );
 }
 
 #[test]
@@ -232,7 +235,10 @@ fn releasing_something_that_was_never_held_is_a_harmless_no_op() {
         assert!(!held.is_held(Held::LeftButton));
     }
 
-    assert!(board.releases.is_empty());
+    assert!(
+        board.releases.is_empty(),
+        "releasing an input that was never held sends nothing"
+    );
 }
 
 #[test]

@@ -41,18 +41,16 @@ pub const WHEEL_GAP_SECONDS: f64 = 0.025;
 /// worse than a long one here — the HID moves that follow queue behind the scroll on the board, so
 /// placing the cursor too early reads a cursor that has not moved yet and keeps correcting against a
 /// stale position.
+#[must_use]
 pub fn scroll_settle(notches: i32) -> f64 {
     f64::from(notches) * WHEEL_GAP_SECONDS + 0.4
 }
 
-fn is_point(point: &Option<Vec<i32>>) -> bool {
-    match point {
-        Some(values) => values.len() == 2,
-        None => false,
-    }
+fn is_point(point: Option<&[i32]>) -> bool {
+    point.is_some_and(|values| values.len() == 2)
 }
 
-fn as_point(point: &Option<Vec<i32>>) -> Option<Point> {
+fn as_point(point: Option<&[i32]>) -> Option<Point> {
     match point {
         Some(values) if values.len() == 2 => Some(Point {
             x: values[0],
@@ -73,6 +71,7 @@ impl BagGrid {
     pub const SLOT_COUNT: usize = Self::COLS * Self::ROWS;
 
     /// A calibrated rectangle is `[x, y, w, h]` in client-relative physical pixels.
+    #[must_use]
     pub fn is_valid_rect(rect: Option<&[i32]>) -> bool {
         match rect {
             Some(rect) => rect.len() == 4 && rect[2] > 0 && rect[3] > 0,
@@ -82,17 +81,35 @@ impl BagGrid {
 
     /// Horizontal pitch the whole-grid rectangle implies — a slot plus its gap. The rectangle must be
     /// valid ([`Self::is_valid_rect`]).
+    // The divisor is the compile-time column count (8): widening it to f64 is exact.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the grid dimension is a small compile-time constant, exact when widened to f64"
+    )]
+    #[must_use]
     pub fn pitch_x(grid: &[i32]) -> f64 {
         f64::from(grid[2]) / Self::COLS as f64
     }
 
     /// Vertical pitch the whole-grid rectangle implies.
+    // The divisor is the compile-time row count (8): widening it to f64 is exact.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the grid dimension is a small compile-time constant, exact when widened to f64"
+    )]
+    #[must_use]
     pub fn pitch_y(grid: &[i32]) -> f64 {
         f64::from(grid[3]) / Self::ROWS as f64
     }
 
     /// The 64 slot CENTRES as client-relative physical offsets, row-major — index 0 is the top-left
     /// slot, index 63 the bottom-right. Centres, not corners, because that is where a click lands.
+    // The loop indices are below a compile-time 8×8 grid, so widening them to f64 is exact.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the loop index is below the compile-time grid dimensions, exact when widened to f64"
+    )]
+    #[must_use]
     pub fn centres(grid: Option<&[i32]>) -> Vec<Point> {
         let Some(grid) = grid.filter(|grid| Self::is_valid_rect(Some(grid))) else {
             return Vec::new();
@@ -113,14 +130,18 @@ impl BagGrid {
     }
 
     /// The rounded pitch the run uses for a bag cell: `(pitch_x, pitch_y)`, both positive.
+    #[must_use]
     pub fn pitch(grid: &[i32]) -> Option<(i32, i32)> {
-        let x = Self::pitch_x(grid).round() as i32;
-        let y = Self::pitch_y(grid).round() as i32;
+        // A width divided by 8 has a fractional part in eighths, so `round()` never meets a tie and
+        // the crate's `(int)Math.Round` helper rounds to the same integer without a truncating cast.
+        let x = round_ties_even(Self::pitch_x(grid));
+        let y = round_ties_even(Self::pitch_y(grid));
         (x > 0 && y > 0).then_some((x, y))
     }
 
     /// The bag-cell box around `centre`: the rounded pitch rectangle the run captures and the
     /// Pet tab previews. The single source of the `centre - pitch/2` rule.
+    #[must_use]
     pub fn pitch_box(grid: &[i32], centre: Point) -> Option<Rect> {
         let (pitch_x, pitch_y) = Self::pitch(grid)?;
         Some(Rect::new(
@@ -133,6 +154,7 @@ impl BagGrid {
 
     /// The box for zero-based `cell` of the grid. The index is the run's own cell order
     /// (`BagGrid::centres`).
+    #[must_use]
     pub fn cell_box(grid: Option<&[i32]>, cell: usize) -> Option<Rect> {
         let grid = grid.filter(|grid| Self::is_valid_rect(Some(grid)))?;
         let centre = *Self::centres(Some(grid)).get(cell)?;
@@ -147,6 +169,7 @@ impl BagGrid {
     /// gap, while the slot box measures the slot itself — so an exact match is the wrong expectation.
     /// The tolerance allows a gap of up to a quarter of a cell and still catches a gross mis-drag,
     /// like a slot box drawn around two slots or the grid box around half the bag.
+    #[must_use]
     pub fn disagreement(grid: Option<&[i32]>, slot: Option<&[i32]>) -> Option<String> {
         let Some(grid) = grid.filter(|grid| Self::is_valid_rect(Some(grid))) else {
             return Some("the grid area isn't set".to_owned());
@@ -178,6 +201,7 @@ impl BagGrid {
 
     /// The gap between slots implied by the two rectangles, for display. Not used in the derivation —
     /// the slot box is evidence, not a second source of truth.
+    #[must_use]
     pub fn implied_gap(grid: &[i32], slot: Option<&[i32]>) -> f64 {
         match slot {
             Some(slot) if Self::is_valid_rect(Some(grid)) && Self::is_valid_rect(Some(slot)) => {
@@ -204,11 +228,13 @@ impl ShopGeometry {
     /// the reach: a preset's scroll is applied from wherever the list already is.
     pub const MAX_SCROLL_NOTCHES: i32 = 400;
 
+    #[must_use]
     pub fn is_valid_region(region: Option<&[i32]>) -> bool {
         BagGrid::is_valid_rect(region)
     }
 
     /// Centre-to-centre row spacing implied by the region and the row count.
+    #[must_use]
     pub fn row_pitch(region: Option<&[i32]>, rows: i32) -> f64 {
         match region {
             Some(region) if Self::is_valid_region(Some(region)) && rows > 0 => {
@@ -221,6 +247,7 @@ impl ShopGeometry {
     /// Centre of the row at `index` in the visible list, or `None` when the region isn't drawn. Row 0
     /// is the top one. Deliberately NOT clamped: asking for a row past the bottom means the preset is
     /// wrong, and that is the caller's to report, not to round off.
+    #[must_use]
     pub fn row_centre(region: Option<&[i32]>, rows: i32, index: i32) -> Option<Point> {
         let region = region.filter(|region| Self::is_valid_region(Some(region)))?;
         if rows < 1 || index < 0 {
@@ -237,9 +264,11 @@ impl ShopGeometry {
     }
 
     /// Every row centre, for the calibrator's overlay.
+    #[must_use]
     pub fn row_centres(region: Option<&[i32]>, rows: i32) -> Vec<Point> {
-        let mut centres = Vec::with_capacity(rows.max(0) as usize);
-        for index in 0..rows.max(0) {
+        let rows = rows.max(0);
+        let mut centres = Vec::with_capacity(usize::try_from(rows).unwrap_or(0));
+        for index in 0..rows {
             if let Some(centre) = Self::row_centre(region, rows, index) {
                 centres.push(centre);
             }
@@ -248,6 +277,7 @@ impl ShopGeometry {
     }
 
     /// Why the row geometry can't be used, or `None` when it can.
+    #[must_use]
     pub fn problem(region: Option<&[i32]>, rows: i32) -> Option<&'static str> {
         if !Self::is_valid_region(region) {
             return Some("the shop list region isn't drawn");
@@ -319,6 +349,12 @@ impl ShopPlan {
     ///
     /// `count` comes from the RUN, not the preset: a preset's own count is its usual amount, and
     /// asking for a different number should not mean editing it. It is clamped to at least one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason::error`] when the buy preset is missing or unknown, when the shop row
+    /// geometry/region is uncalibrated, or when the focus point or MAX button is unmarked — every
+    /// refusal names the mark to save.
     pub fn buy(
         settings: &ShopSettings,
         preset_name: Option<&str>,
@@ -342,7 +378,7 @@ impl ShopPlan {
             preset.row,
         )
         .ok_or_else(row_unknown)?;
-        let Some(max) = as_point(&settings.max_button) else {
+        let Some(max) = as_point(settings.max_button.as_deref()) else {
             return Err(max_button_missing());
         };
 
@@ -358,18 +394,27 @@ impl ShopPlan {
 
     /// One SELL pass: focus, then per selected slot — highest index first — right-click the bag cell
     /// and run the same MAX/Enter/Enter transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StopReason::error`] when the bag grid is uncalibrated, the focus point or MAX button
+    /// is unmarked, no sell slots are selected, or the selection exceeds the per-run cap.
     pub fn sell(settings: &ShopSettings) -> Result<Self, StopReason> {
         ready_sell(settings)?;
 
         let slots = sell_slots_to_sell(settings);
         let centres = BagGrid::centres(settings.bag_grid.as_deref());
-        let Some(max) = as_point(&settings.max_button) else {
+        let Some(max) = as_point(settings.max_button.as_deref()) else {
             return Err(max_button_missing());
         };
 
         let mut steps = focus_steps(settings)?;
         for slot in &slots {
-            steps.extend(transaction(centres[*slot as usize], max));
+            // `sell_slots_to_sell` already filtered to real bag cells; the checked index and lookup
+            // keep a future change to that filter from panicking the loop that destroys things.
+            let index = usize::try_from(*slot).map_err(|_| row_unknown())?;
+            let centre = centres.get(index).copied().ok_or_else(row_unknown)?;
+            steps.extend(transaction(centre, max));
         }
 
         Ok(Self {
@@ -385,9 +430,10 @@ impl ShopPlan {
 /// Highest first is correct whether or not the bag compacts after a sale — ascending would silently
 /// skip items if it does, because removing slot 0 shifts slot 1 into it. The cap is re-applied here
 /// even though readiness checked it, because this is the loop that destroys things.
+#[must_use]
 pub fn sell_slots_to_sell(settings: &ShopSettings) -> Vec<i32> {
     let mut slots = valid_selection(settings);
-    let cap = settings.sell_cap.max(0) as usize;
+    let cap = usize::try_from(settings.sell_cap.max(0)).unwrap_or(0);
     slots.truncate(cap);
     slots
 }
@@ -401,8 +447,11 @@ fn valid_selection(settings: &ShopSettings) -> Vec<i32> {
 
     let mut slots: Vec<i32> = Vec::new();
     for slot in &settings.sell_slots {
-        let valid = *slot >= 0 && (*slot as usize) < centres.len();
-        if valid && !slots.contains(slot) {
+        let Ok(index) = usize::try_from(*slot) else {
+            // A negative slot number is not a bag cell.
+            continue;
+        };
+        if index < centres.len() && !slots.contains(slot) {
             slots.push(*slot);
         }
     }
@@ -417,10 +466,10 @@ fn ready_sell(settings: &ShopSettings) -> Result<(), StopReason> {
             "The bag grid isn't calibrated — save the Bag grid on the Calibrate tab.",
         ));
     }
-    if !is_point(&settings.max_button) {
+    if !is_point(settings.max_button.as_deref()) {
         return Err(max_button_missing());
     }
-    if !is_point(&settings.scroll_point) {
+    if !is_point(settings.scroll_point.as_deref()) {
         // A DIFFERENT sentence from the mid-run focus failure: at Start the explanation is why the
         // first click will be ignored, and it ends by telling the player where the mark is.
         return Err(StopReason::error(
@@ -432,7 +481,7 @@ fn ready_sell(settings: &ShopSettings) -> Result<(), StopReason> {
     if settings.sell_slots.is_empty() {
         return Err(StopReason::error("No slots are selected to sell."));
     }
-    let selected = valid_selection(settings).len() as i32;
+    let selected = i32::try_from(valid_selection(settings).len()).unwrap_or(i32::MAX);
     if selected > settings.sell_cap {
         return Err(StopReason::error(format!(
             "{selected} slots selected but the per-run cap is {}. Raise the cap on purpose, or \
@@ -463,12 +512,12 @@ fn ready_buy<'a>(
             "Shop rows aren't calibrated — {problem}."
         )));
     }
-    if !is_point(&settings.scroll_point) {
+    if !is_point(settings.scroll_point.as_deref()) {
         return Err(StopReason::error(
             "The scroll point isn't calibrated — save the Focus / scroll point on the Calibrate tab.",
         ));
     }
-    if !is_point(&settings.max_button) {
+    if !is_point(settings.max_button.as_deref()) {
         return Err(max_button_missing());
     }
     Ok(preset)
@@ -480,7 +529,7 @@ fn ready_buy<'a>(
 /// which the game ignores a wheel notch AND a right-click. So it must be a real click, which is why
 /// the point has to be inert.
 fn focus_steps(settings: &ShopSettings) -> Result<Vec<ShopStep>, StopReason> {
-    let Some(point) = as_point(&settings.scroll_point) else {
+    let Some(point) = as_point(settings.scroll_point.as_deref()) else {
         return Err(focus_point_missing());
     };
     Ok(vec![
@@ -515,6 +564,7 @@ fn transaction(target: Point, max: Point) -> Vec<ShopStep> {
 // ── the messages for failures the LOOP reports (the decision half cannot see the board) ─────
 
 /// The focus point was missing when the pass tried to use it.
+#[must_use]
 pub fn focus_point_missing() -> StopReason {
     StopReason::error(
         "The focus point isn't calibrated — the game has to be focused before it will take a click \
@@ -528,6 +578,7 @@ fn max_button_missing() -> StopReason {
 }
 
 /// The shop row could not be derived from the region.
+#[must_use]
 pub fn row_unknown() -> StopReason {
     StopReason::error(
         "Couldn't work out the shop row — save the Shop list region on the Calibrate tab.",
@@ -535,12 +586,14 @@ pub fn row_unknown() -> StopReason {
 }
 
 /// The game window was not found (or is minimized) when a placement was attempted.
+#[must_use]
 pub fn window_missing() -> StopReason {
     StopReason::error("Game window not found (or minimized) — open and restore the game first.")
 }
 
 /// The closed-loop placement failed. `detail` is the placement's own error when it has one;
 /// otherwise the message names the point, as v2 does.
+#[must_use]
 pub fn placement_failed(target: Point, detail: Option<&str>) -> StopReason {
     StopReason::error(match detail {
         Some(detail) => detail.to_owned(),

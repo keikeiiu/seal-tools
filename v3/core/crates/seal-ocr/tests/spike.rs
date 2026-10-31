@@ -21,24 +21,21 @@ const DICTIONARY_SHA256: &str = "28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a
 
 /// The directory named by `SEAL_OCR_MODELS`, or `None` with the skip reason printed.
 fn models_dir() -> Option<PathBuf> {
-    match std::env::var_os("SEAL_OCR_MODELS") {
-        Some(path) => {
-            let path = PathBuf::from(path);
-            if path.is_dir() {
-                Some(path)
-            } else {
-                panic!(
-                    "SEAL_OCR_MODELS is set but is not a directory: {}",
-                    path.display()
-                );
-            }
-        }
-        None => {
-            eprintln!(
-                "skipping: set SEAL_OCR_MODELS to the directory holding the three PP-OCRv4 .onnx files"
+    if let Some(path) = std::env::var_os("SEAL_OCR_MODELS") {
+        let path = PathBuf::from(path);
+        if path.is_dir() {
+            Some(path)
+        } else {
+            panic!(
+                "SEAL_OCR_MODELS is set but is not a directory: {}",
+                path.display()
             );
-            None
         }
+    } else {
+        eprintln!(
+            "skipping: set SEAL_OCR_MODELS to the directory holding the three PP-OCRv4 .onnx files"
+        );
+        None
     }
 }
 
@@ -160,6 +157,11 @@ fn the_rec_model_exposes_the_model_owned_dictionary() {
 }
 
 #[test]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap,
+    reason = "the fixture tensor is 48x320, so its dimensions are small integers exactly representable as f32 and i64"
+)]
 fn one_inference_is_deterministic_and_reports_the_models_class_count() {
     let Some(dir) = models_dir() else {
         return;
@@ -192,7 +194,8 @@ fn one_inference_is_deterministic_and_reports_the_models_class_count() {
     );
     assert_eq!(first.shape[0], 1);
     assert_eq!(
-        first.shape[2] as usize, class_count,
+        usize::try_from(first.shape[2]).expect("the class axis is a length"),
+        class_count,
         "the model's class axis must equal the decorated dictionary's slot count"
     );
     assert_eq!(

@@ -26,8 +26,8 @@ fn sections(pairs: &[(&str, Value)]) -> Map<String, Value> {
         .collect()
 }
 
-fn seed(dir: &TestDir, path: &str, content: Value) {
-    file::write(dir.path(), def(path), &content).expect("seeds a file");
+fn seed(dir: &TestDir, path: &str, content: &Value) {
+    file::write(dir.path(), def(path), content).expect("seeds a file");
 }
 
 #[test]
@@ -36,9 +36,9 @@ fn one_save_routes_each_field_to_its_file_and_leaves_every_other_file_alone() {
     seed(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "OLD"}, "hotkeys": {"start": 123}}),
+        &json!({"window": {"title": "OLD"}, "hotkeys": {"start": 123}}),
     );
-    seed(&dir, "machine/ui.yaml", json!({"ui": {"left": 10.0}}));
+    seed(&dir, "machine/ui.yaml", &json!({"ui": {"left": 10.0}}));
 
     let written = write_sections(
         dir.path(),
@@ -148,7 +148,7 @@ fn an_unowned_path_is_refused_before_anything_is_written() {
 fn an_empty_payload_writes_nothing() {
     let dir = TestDir::new();
     let written: ChangeSummary = write_sections(dir.path(), &Map::new()).unwrap();
-    assert!(written.files.is_empty());
+    assert!(written.files.is_empty(), "an empty payload touches no file");
     assert!(
         registry::FILES.iter().all(|file| !dir.exists(file.path)),
         "nothing was created"

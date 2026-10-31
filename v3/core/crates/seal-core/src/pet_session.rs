@@ -18,6 +18,16 @@ use crate::pet::setup;
 /// The read-only preflight answer. `ready` is the overall run readiness: v2's Ready-to-run lines are
 /// empty AND the run's calibration marks are present. The two lists are facts, never error codes; a
 /// malformed/absent block still answers cleanly with `ok:false` items.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "row/page/cell indices are small values validated before use"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the preflight keeps the tab's whole ordered checklist in one place; the shell shows its lines in order"
+)]
 pub fn preflight(config: &Value) -> Value {
     let setup = setup(config);
     let food_used = config
@@ -31,45 +41,45 @@ pub fn preflight(config: &Value) -> Value {
         calibration.push(item(ok, label, detail));
     };
     mark(
-        point_ok(&setup.menu_button),
+        point_ok(setup.menu_button.as_deref()),
         "Pet menu point",
-        Some(if point_ok(&setup.menu_button) {
+        Some(if point_ok(setup.menu_button.as_deref()) {
             "marked".to_owned()
         } else {
             "not marked — save it on the Calibrate tab".to_owned()
         }),
     );
     mark(
-        point_ok(&setup.feed_icon),
+        point_ok(setup.feed_icon.as_deref()),
         "Pet feed icon point",
-        Some(if point_ok(&setup.feed_icon) {
+        Some(if point_ok(setup.feed_icon.as_deref()) {
             "marked".to_owned()
         } else {
             "not marked — save it on the Calibrate tab".to_owned()
         }),
     );
     mark(
-        point_ok(&setup.close_button),
+        point_ok(setup.close_button.as_deref()),
         "Boarding X point",
-        Some(if point_ok(&setup.close_button) {
+        Some(if point_ok(setup.close_button.as_deref()) {
             "marked".to_owned()
         } else {
             "not marked — save it on the Calibrate tab".to_owned()
         }),
     );
     mark(
-        rect_ok(&setup.bag_grid),
+        rect_ok(setup.bag_grid.as_deref()),
         "Boarding bag grid",
-        Some(if rect_ok(&setup.bag_grid) {
+        Some(if rect_ok(setup.bag_grid.as_deref()) {
             "marked".to_owned()
         } else {
             "not marked — save it on the Calibrate tab".to_owned()
         }),
     );
     mark(
-        rect_ok(&setup.bag_slot),
+        rect_ok(setup.bag_slot.as_deref()),
         "Boarding bag slot",
-        Some(if rect_ok(&setup.bag_slot) {
+        Some(if rect_ok(setup.bag_slot.as_deref()) {
             "marked".to_owned()
         } else {
             "not marked — save it on the Calibrate tab".to_owned()
@@ -142,13 +152,13 @@ pub fn preflight(config: &Value) -> Value {
             continue;
         }
         mark(
-            rect_ok(&row.toggle_label),
+            rect_ok(row.toggle_label.as_deref()),
             &format!("Row {} start/end button", index + 1),
             Some(row_mark_detail(row.toggle_label.as_deref())),
         );
         let slot = row_rect(config, index, "boarding_pet_slot");
         mark(
-            rect_ok(&slot),
+            rect_ok(slot.as_deref()),
             &format!("Row {} boarding slot", index + 1),
             Some(row_mark_detail(slot.as_deref())),
         );
@@ -195,24 +205,24 @@ pub fn preflight(config: &Value) -> Value {
         .slots
         .iter()
         .filter(|row| row.enabled)
-        .all(|row| rect_ok(&row.toggle_label));
+        .all(|row| rect_ok(row.toggle_label.as_deref()));
     let row_strips_ok =
         !drag
             || setup.slots.iter().filter(|row| row.enabled).all(|row| {
                 FeederLayout::slot_boxes(row.feeder_strip.as_deref(), row.stacks).is_some()
             });
-    let calibration_ok = point_ok(&setup.menu_button)
-        && point_ok(&setup.feed_icon)
-        && point_ok(&setup.close_button)
-        && rect_ok(&setup.bag_grid)
-        && rect_ok(&setup.bag_slot)
+    let calibration_ok = point_ok(setup.menu_button.as_deref())
+        && point_ok(setup.feed_icon.as_deref())
+        && point_ok(setup.close_button.as_deref())
+        && rect_ok(setup.bag_grid.as_deref())
+        && rect_ok(setup.bag_slot.as_deref())
         && pages_ok
         && (setup.max_button.is_some() || setup.buy_sell_max_button.is_some())
         && row_toggles_ok
         && row_strips_ok;
 
     let mut session = Vec::new();
-    let return_ok = point_ok(&setup.return_slot);
+    let return_ok = point_ok(setup.return_slot.as_deref());
     session.push(item(
         return_ok,
         "return slot",
@@ -347,6 +357,10 @@ pub fn preflight(config: &Value) -> Value {
 }
 
 /// The boarding-tick arguments, 1-BASED row per the protocol. The caller checks the row exists.
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `row` or `boarding` is malformed.
 pub fn boarding_arguments(args: &Value) -> Result<(usize, bool), (String, String)> {
     let Some(row) = args.get("row").and_then(Value::as_i64) else {
         return Err((
@@ -382,13 +396,12 @@ fn item(ok: bool, label: &str, detail: Option<String>) -> Value {
     }
 }
 
-fn point_ok(point: &Option<Vec<i32>>) -> bool {
-    point.as_ref().is_some_and(|point| point.len() == 2)
+fn point_ok(point: Option<&[i32]>) -> bool {
+    point.is_some_and(|point| point.len() == 2)
 }
 
-fn rect_ok(rect: &Option<Vec<i32>>) -> bool {
-    rect.as_ref()
-        .is_some_and(|rect| rect.len() == 4 && rect[2] > 0 && rect[3] > 0)
+fn rect_ok(rect: Option<&[i32]>) -> bool {
+    rect.is_some_and(|rect| rect.len() == 4 && rect[2] > 0 && rect[3] > 0)
 }
 
 fn row_rect(config: &Value, index: usize, field: &str) -> Option<Vec<i32>> {

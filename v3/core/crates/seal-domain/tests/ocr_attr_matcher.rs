@@ -142,9 +142,9 @@ fn an_override_rule_passes_without_consulting_the_normal_rules() {
 /// of the matcher where nothing on the path caught it. An overflowing run is "no value" now.
 #[test]
 fn an_overflowing_number_is_no_value_rather_than_an_exception() {
-    let matcher = matcher(vec![attribute("增加傷害", "attack", &["增加傷害"])]);
+    let engine = matcher(vec![attribute("增加傷害", "attack", &["增加傷害"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["增加傷害", "99999999999999999999"]]));
+    let matched = engine.match_attributes(&lines(&[&["增加傷害", "99999999999999999999"]]));
 
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].name, "增加傷害");
@@ -213,9 +213,9 @@ fn a_rule_counts_once_in_the_any_and_all_modes() {
 
 #[test]
 fn an_exact_variant_matches_and_its_value_is_read() {
-    let matcher = matcher(vec![attribute("攻擊力", "atk", &["攻擊力", "攻擎力"])]);
+    let engine = matcher(vec![attribute("攻擊力", "atk", &["攻擊力", "攻擎力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["攻擊力", "+3"]]));
+    let matched = engine.match_attributes(&lines(&[&["攻擊力", "+3"]]));
 
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].name, "攻擊力");
@@ -229,11 +229,11 @@ fn an_exact_variant_matches_and_its_value_is_read() {
 /// word" and "the OCR probably read this word".
 #[test]
 fn a_one_character_containment_is_not_enough_to_match() {
-    let matcher = matcher_of(vec![attribute("力", "str", &["力"])]);
+    let engine = matcher_of(vec![attribute("力", "str", &["力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["力量"]]));
+    let matched = engine.match_attributes(&lines(&[&["力量"]]));
 
-    assert!(matched.is_empty());
+    assert_eq!(matched, [] as [seal_domain::ocr::MatchedAttr; 0]);
 }
 
 fn matcher_of(attributes: Vec<AttributeDef>) -> AttrMatcher {
@@ -248,9 +248,9 @@ fn matcher_of(attributes: Vec<AttributeDef>) -> AttrMatcher {
 /// whose characters were read in the wrong order from being dropped.
 #[test]
 fn a_garbled_order_matches_through_the_character_containment_fallback() {
-    let matcher = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["擊攻力"]]));
+    let matched = engine.match_attributes(&lines(&[&["擊攻力"]]));
 
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].name, "攻擊力");
@@ -262,9 +262,9 @@ fn a_garbled_order_matches_through_the_character_containment_fallback() {
 /// inserts them inside a word.
 #[test]
 fn the_fuzzy_fallback_ignores_noise_characters_and_spacing() {
-    let matcher = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["攻|擊 力"]]));
+    let matched = engine.match_attributes(&lines(&[&["攻|擊 力"]]));
 
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].name, "攻擊力");
@@ -274,12 +274,12 @@ fn the_fuzzy_fallback_ignores_noise_characters_and_spacing() {
 /// attribute that shares its prefix.
 #[test]
 fn the_best_scoring_attribute_wins() {
-    let matcher = matcher_of(vec![
+    let engine = matcher_of(vec![
         attribute("攻擊", "short", &["攻擊"]),
         attribute("攻擊速度", "aspd", &["攻擊速度"]),
     ]);
 
-    let matched = matcher.match_attributes(&lines(&[&["攻擊速度"]]));
+    let matched = engine.match_attributes(&lines(&[&["攻擊速度"]]));
 
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].name, "攻擊速度");
@@ -290,14 +290,14 @@ fn the_best_scoring_attribute_wins() {
 /// finds one — v2 falls back rather than answering "no value".
 #[test]
 fn the_value_is_read_preferentially_from_the_cell_that_names_the_attribute() {
-    let matcher = matcher_of(vec![attribute("減少傷害", "dmg-", &["減少傷害"])]);
+    let engine = matcher_of(vec![attribute("減少傷害", "dmg-", &["減少傷害"])]);
 
     // The naming cell carries 2; the neighbour carries -3. The naming cell wins.
-    let preferred = matcher.match_attributes(&lines(&[&["減少傷害 2", "-3"]]));
+    let preferred = engine.match_attributes(&lines(&[&["減少傷害 2", "-3"]]));
     assert_eq!(preferred[0].value, Some(2));
 
     // The naming cell has no number, so the whole-row pass reads the neighbour's signed number.
-    let fallback = matcher.match_attributes(&lines(&[&["foo -4", "減少傷害"]]));
+    let fallback = engine.match_attributes(&lines(&[&["foo -4", "減少傷害"]]));
     assert_eq!(fallback[0].value, Some(-4));
 }
 
@@ -305,30 +305,30 @@ fn the_value_is_read_preferentially_from_the_cell_that_names_the_attribute() {
 /// value (the whole-number pattern is anchored).
 #[test]
 fn an_unsigned_number_must_be_the_whole_cell() {
-    let matcher = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
 
-    let whole_cell = matcher.match_attributes(&lines(&[&["攻擊力", "7"]]));
+    let whole_cell = engine.match_attributes(&lines(&[&["攻擊力", "7"]]));
     assert_eq!(whole_cell[0].value, Some(7));
 
-    let embedded = matcher.match_attributes(&lines(&[&["攻擊力", "bar 9"]]));
+    let embedded = engine.match_attributes(&lines(&[&["攻擊力", "bar 9"]]));
     assert_eq!(embedded[0].value, None);
 }
 
 /// An ambiguous number is the first signed one, as v2's `Regex.Match` takes the first match.
 #[test]
 fn the_first_signed_number_wins() {
-    let matcher = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&["攻擊力", "+2", "+5"]]));
+    let matched = engine.match_attributes(&lines(&[&["攻擊力", "+2", "+5"]]));
 
     assert_eq!(matched[0].value, Some(2));
 }
 
 #[test]
 fn empty_lines_are_skipped() {
-    let matcher = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
 
-    let matched = matcher.match_attributes(&lines(&[&[], &["攻擊力"]]));
+    let matched = engine.match_attributes(&lines(&[&[], &["攻擊力"]]));
 
     assert_eq!(matched.len(), 1);
 }
@@ -386,7 +386,7 @@ fn a_plus_two_per_level_attribute_is_renamed() {
 fn a_stat_name_without_the_interval_is_not_per_level() {
     let matched = per_level_matcher().match_attributes(&lines(&[&["力量"]]));
 
-    assert!(matched.is_empty());
+    assert_eq!(matched, [] as [seal_domain::ocr::MatchedAttr; 0]);
 }
 
 /// A per-level line with the stat but no parsable level keeps the plain extracted value rather than

@@ -25,6 +25,7 @@ pub struct DanglingEntry {
 
 impl DanglingEntry {
     /// One line of the refusal.
+    #[must_use]
     pub fn message(&self) -> String {
         if self.flow.is_empty() {
             format!(
@@ -75,6 +76,7 @@ impl std::error::Error for QuestSaveError {}
 /// `preset: " name "` still runs, so refusing it here would block a Save for a sequence that works.
 /// A name whose body is null is repaired at decode ([`crate::config`]), so "present but empty" cannot
 /// reach here — the invariant v2 needed `NormaliseNullBodies()` to establish.
+#[must_use]
 pub fn dangling_sequence_entries(quest: &QuestConfig) -> Vec<DanglingEntry> {
     let mut sequences: Vec<(&str, &crate::config::QuestSequence)> = quest
         .sequences
@@ -108,6 +110,11 @@ pub fn dangling_sequence_entries(quest: &QuestConfig) -> Vec<DanglingEntry> {
 ///
 /// Save writes the WHOLE quest block, so every sequence is checked, not the active one: a dangling
 /// entry in a sequence the player is not looking at is still about to be saved.
+///
+/// # Errors
+///
+/// Returns [`QuestSaveError`] carrying every dangling entry (see
+/// [`dangling_sequence_entries`]) so the tab can refuse the Save and list all of them at once.
 pub fn check_saveable(quest: &QuestConfig) -> Result<(), QuestSaveError> {
     let dangling = dangling_sequence_entries(quest);
     if dangling.is_empty() {
@@ -127,6 +134,7 @@ pub fn check_saveable(quest: &QuestConfig) -> Result<(), QuestSaveError> {
 ///
 /// The action list is checked exactly (the values are lowercase and the picker writes them); the
 /// `key` comparison ignores case, as v2's does.
+#[must_use]
 pub fn quest_step_complaint(step: &QuestStep) -> Option<String> {
     let action = step.action.trim();
 
@@ -177,6 +185,7 @@ pub enum PresetAction {
 }
 
 impl PresetAction {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Rename => "rename",
@@ -201,6 +210,7 @@ pub enum PresetError {
 }
 
 impl PresetError {
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Missing { noun, action } => {
@@ -235,6 +245,11 @@ impl From<NameError> for PresetError {
 /// quietly doubles the list is not a rename. The active flow's target is a NAME, so it follows too,
 /// or Start would run a different flow; and every sequence entry that named the old name follows,
 /// compared trimmed and case-sensitively exactly as the runner looks it up (v2's `AfterRename`).
+///
+/// # Errors
+///
+/// Returns [`PresetError::Missing`] when `from` is not a flow in play, and the naming refusal from
+/// [`validate_name`] (wrapped in [`PresetError::Name`]) when `to` is empty or already taken.
 pub fn rename_flow(quest: &mut QuestConfig, from: &str, to: &str) -> Result<usize, PresetError> {
     if !quest.presets.contains_key(from) {
         return Err(PresetError::Missing {
@@ -253,10 +268,14 @@ pub fn rename_flow(quest: &mut QuestConfig, from: &str, to: &str) -> Result<usiz
         return Ok(0);
     }
 
-    let body = quest
-        .presets
-        .remove(from)
-        .expect("presence was checked above");
+    let Some(body) = quest.presets.remove(from) else {
+        // The presence check above makes this unreachable; returning the same refusal keeps a future
+        // edit to that check from panicking in the tab's handler.
+        return Err(PresetError::Missing {
+            noun: PresetNoun::Flow,
+            action: PresetAction::Rename,
+        });
+    };
     quest.presets.insert(name.clone(), body);
 
     if quest.active == from {
@@ -278,6 +297,11 @@ pub fn rename_flow(quest: &mut QuestConfig, from: &str, to: &str) -> Result<usiz
 
 /// Renames a sequence. Nothing references a sequence by name except the active choice, which follows
 /// — entries inside it name FLOWS, which this must not touch.
+///
+/// # Errors
+///
+/// Returns [`PresetError::Missing`] when `from` is not a sequence in play, and the naming refusal from
+/// [`validate_name`] (wrapped in [`PresetError::Name`]) when `to` is empty or already taken.
 pub fn rename_sequence(quest: &mut QuestConfig, from: &str, to: &str) -> Result<(), PresetError> {
     if !quest.sequences.contains_key(from) {
         return Err(PresetError::Missing {
@@ -296,10 +320,14 @@ pub fn rename_sequence(quest: &mut QuestConfig, from: &str, to: &str) -> Result<
         return Ok(());
     }
 
-    let body = quest
-        .sequences
-        .remove(from)
-        .expect("presence was checked above");
+    let Some(body) = quest.sequences.remove(from) else {
+        // The presence check above makes this unreachable; returning the same refusal keeps a future
+        // edit to that check from panicking in the tab's handler.
+        return Err(PresetError::Missing {
+            noun: PresetNoun::Sequence,
+            action: PresetAction::Rename,
+        });
+    };
     quest.sequences.insert(name.clone(), body);
 
     // The picker's active value is trimmed (`ActiveSequenceOrNull` trims too), so a padded
@@ -322,6 +350,11 @@ pub fn rename_sequence(quest: &mut QuestConfig, from: &str, to: &str) -> Result<
 /// its insertion-ordered dictionary's first key and a `BTreeMap` has no insertion order, so the choice
 /// here is deterministic-but-sorted instead of insertion-ordered — the active flow is a UI selection,
 /// not a stored calibration, and a stable order beats an arbitrary one.
+///
+/// # Errors
+///
+/// Returns [`PresetError::Missing`] when `name` is not a flow in play, and [`PresetError::LastFlow`]
+/// when it is the only flow left.
 pub fn remove_flow(quest: &mut QuestConfig, name: &str) -> Result<(), PresetError> {
     if !quest.presets.contains_key(name) {
         return Err(PresetError::Missing {
@@ -345,6 +378,11 @@ pub fn remove_flow(quest: &mut QuestConfig, name: &str) -> Result<(), PresetErro
 /// The copy is independent of the source. In Rust that is `Clone` (every field is owned), which is
 /// why there is no `CopyQuestPreset` here: the v2 function exists only because C# would have shared
 /// the step list.
+///
+/// # Errors
+///
+/// Returns [`PresetError::Missing`] when `from` is not a flow in play — the only refusal, because the
+/// generated name is always free.
 pub fn duplicate_flow(quest: &mut QuestConfig, from: &str) -> Result<String, PresetError> {
     let source = quest
         .presets
@@ -366,6 +404,11 @@ pub fn duplicate_flow(quest: &mut QuestConfig, from: &str) -> Result<String, Pre
 ///
 /// Its entries still name the SAME flows: duplicating a sequence is not a reason for every flow in it
 /// to be duplicated too, and pointing a sequence at a copy is one edit in its entry editor.
+///
+/// # Errors
+///
+/// Returns [`PresetError::Missing`] when `from` is not a sequence in play — the only refusal, because
+/// the generated name is always free.
 pub fn duplicate_sequence(quest: &mut QuestConfig, from: &str) -> Result<String, PresetError> {
     let source = quest
         .sequences

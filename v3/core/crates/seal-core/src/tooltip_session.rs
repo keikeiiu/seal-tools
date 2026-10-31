@@ -222,11 +222,16 @@ pub fn hover_capture(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let frame = state
-        .frames
-        .get(&frame_id)
-        .cloned()
-        .expect("the frame was just inserted");
+    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+        return Response::err(
+            &request.id,
+            Error::new(
+                "internal",
+                "the captured frame left the frame cache",
+                json!({}),
+            ),
+        );
+    };
     Response::ok(
         &request.id,
         json!({
@@ -308,6 +313,10 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
 /// `calibration.tooltip.test {"point":{x,y},"hover_delay_ms":700,"debug":true}`: hover the point again
 /// and OCR the configured panel region. Read-only; the answer is what the player needs to tune the
 /// delay or see the offset is wrong BEFORE anything is built on it.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the tooltip test keeps its capture, scan and evidence sequence together"
+)]
 pub fn test(state: &mut CoreState, request: &Request) -> Response {
     let tooltip = tooltip_config(&state.config);
     if !tooltip.is_set() {
@@ -368,7 +377,12 @@ pub fn test(state: &mut CoreState, request: &Request) -> Response {
         }
     };
     let lines = {
-        let pipeline = state.ocr.as_mut().expect("the OCR preflight loaded it");
+        let Some(pipeline) = state.ocr.as_mut() else {
+            return Response::err(
+                &request.id,
+                Error::new("internal", "the OCR pipeline is not loaded", json!({})),
+            );
+        };
         match pipeline.scan_rgba(width, height, &rgba) {
             Ok(scan) => scan
                 .lines

@@ -227,7 +227,7 @@ impl ToolRegistry for FakeRegistry {
             .lock()
             .expect("not poisoned")
             .contains(&tool);
-        let gate = self
+        let release_gate = self
             .release_gates
             .lock()
             .expect("not poisoned")
@@ -239,7 +239,7 @@ impl ToolRegistry for FakeRegistry {
                 game,
                 script,
                 decisions,
-                gate,
+                gate: release_gate,
                 requested: false,
                 count: 0,
             }) as Box<dyn Tool + Send>

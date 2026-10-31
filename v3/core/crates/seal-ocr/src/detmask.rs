@@ -1,10 +1,10 @@
 //! The detector's binary map: threshold, 2×2 dilate, and the `FindContours` equivalent.
 //!
 //! Constants and call shapes are `DetPreprocess.cs`/`DetPostprocess.cs` as recorded in
-//! `OCR-RESEARCH.md` §3. Two OpenCV details are documented rather than guessed:
+//! `OCR-RESEARCH.md` §3. Two `OpenCV` details are documented rather than guessed:
 //!
 //! - `THRESH_BINARY` is **strictly greater** than the threshold (`src > thresh`), not `>=`.
-//! - The 2×2 dilation uses OpenCV's default anchor for a 2×2 kernel, `(1,1)`, so the window ends at
+//! - The 2×2 dilation uses `OpenCV`'s default anchor for a 2×2 kernel, `(1,1)`, so the window ends at
 //!   the output pixel. A 0-anchored kernel would shift every box by one pixel.
 //!
 //! # Contour order
@@ -13,11 +13,11 @@
 //! non-component pixel is followed with the component on the right, so one cycle is one closed
 //! boundary. A component's cycles are emitted **largest area first** (the outer boundary before its
 //! holes), components themselves in raster order of their first pixel — the `RETR_LIST` reading that
-//! matters for the row sort. OpenCV's exact diagonal 8-connectivity tie-breaking on self-touching
+//! matters for the row sort. `OpenCV`'s exact diagonal 8-connectivity tie-breaking on self-touching
 //! contours is not reproduced; that is the documented ambiguity.
 //!
-//! Orientation follows OpenCV's `contourArea` sign convention: outer boundaries are
-//! counter-clockwise (positive area under OpenCV's convention; the opposite shoelace sign in image
+//! Orientation follows `OpenCV`'s `contourArea` sign convention: outer boundaries are
+//! counter-clockwise (positive area under `OpenCV`'s convention; the opposite shoelace sign in image
 //! coordinates) and holes the other way, which is what `detgeom::polygon_is_counter_clockwise`
 //! exposes.
 
@@ -32,6 +32,10 @@ pub struct ScoreMap {
 }
 
 impl ScoreMap {
+    /// # Panics
+    ///
+    /// Panics when `scores.len()` is not `width * height`.
+    #[must_use]
     pub fn new(width: usize, height: usize, scores: Vec<f32>) -> Self {
         assert_eq!(scores.len(), width * height, "score map size");
         Self {
@@ -41,6 +45,7 @@ impl ScoreMap {
         }
     }
 
+    #[must_use]
     pub fn get(&self, x: usize, y: usize) -> f32 {
         self.scores[y * self.width + x]
     }
@@ -55,6 +60,7 @@ pub struct Mask {
 }
 
 impl Mask {
+    #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
@@ -63,6 +69,7 @@ impl Mask {
         }
     }
 
+    #[must_use]
     pub fn get(&self, x: usize, y: usize) -> bool {
         self.bits[y * self.width + x]
     }
@@ -73,6 +80,7 @@ impl Mask {
 }
 
 /// `Cv2.Threshold(..., thresh, 255, Binary)`: strictly greater becomes foreground.
+#[must_use]
 pub fn threshold(map: &ScoreMap, thresh: f32) -> Mask {
     Mask {
         width: map.width,
@@ -81,8 +89,15 @@ pub fn threshold(map: &ScoreMap, thresh: f32) -> Mask {
     }
 }
 
-/// `Cv2.Dilate` with a 2×2 rectangle kernel and OpenCV's default anchor `(1,1)`: the window covering
+/// `Cv2.Dilate` with a 2×2 rectangle kernel and `OpenCV`'s default anchor `(1,1)`: the window covering
 /// input `(x-1..x, y-1..y)` ends at the output pixel.
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "the mask's pixel coordinates come from the detector map, whose dimensions fit i32, and every i32-to-usize conversion is guarded by a non-negative check"
+)]
 pub fn dilate(mask: &Mask) -> Mask {
     let mut grown = Mask::new(mask.width, mask.height);
     for y in 0..mask.height {
@@ -116,6 +131,13 @@ pub struct Contour {
 type Cluster = (BTreeSet<(i32, i32)>, (i32, i32));
 
 /// Eight-neighbour offsets in screen-clockwise order starting east (y down).
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "the mask's pixel coordinates come from the detector map, whose dimensions fit i32, and every i32-to-usize conversion is preceded by a non-negative check"
+)]
 pub fn find_contours(mask: &Mask) -> Vec<Contour> {
     // 1. 4-connected foreground components, raster order of their first pixel.
     let mut labels = vec![usize::MAX; mask.width * mask.height];
@@ -195,7 +217,7 @@ fn shoelace(points: &[(i32, i32)]) -> f64 {
     for index in 0..points.len() {
         let (x1, y1) = points[index];
         let (x2, y2) = points[(index + 1) % points.len()];
-        sum += (x1 as f64) * (y2 as f64) - (x2 as f64) * (y1 as f64);
+        sum += f64::from(x1) * f64::from(y2) - f64::from(x2) * f64::from(y1);
     }
     sum / 2.0
 }
@@ -227,11 +249,10 @@ fn boundary_cycles(component: &BTreeSet<(i32, i32)>, start: (i32, i32)) -> Vec<V
     // Start from the top edge of the scan-first pixel, then walk; remaining edges are further cycles.
     let mut unvisited: BTreeSet<(i32, i32)> = edges.keys().copied().collect();
     let mut cycles = Vec::new();
-    while !unvisited.is_empty() {
-        let vertex_start = unvisited.iter().next().copied().unwrap();
+    while let Some(&vertex_start) = unvisited.iter().next() {
         let mut vertex = vertex_start;
         let mut pixels: Vec<(i32, i32)> = Vec::new();
-        for _ in 0..(edges.len() + 1) {
+        for _ in 0..=edges.len() {
             unvisited.remove(&vertex);
             let Some(&next) = edges.get(&vertex) else {
                 break;

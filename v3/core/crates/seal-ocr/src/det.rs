@@ -25,14 +25,14 @@
 //! and rotating calipers would port them); the masked mean is easy; `InflatePaths` maps to a polygon
 //! offsetting crate (e.g. `i_overlay`/`geo`-style offsetting, or a small port of the clipper offset);
 //! the perspective warp is a per-pixel inverse mapping. The alternative is the `opencv` crate, which
-//! pulls a native OpenCV build — the v3 design deliberately does not have one. This weighting is the
-//! spike's job to settle; nothing here should be read as "port it with OpenCV".
+//! pulls a native `OpenCV` build — the v3 design deliberately does not have one. This weighting is the
+//! spike's job to settle; nothing here should be read as "port it with `OpenCV`".
 
 use std::path::Path;
 
 use ort::session::Session;
 
-use crate::model::{ModelIo, OcrError};
+use crate::model::{ModelIo, OcrError, tensor_len};
 
 /// The detector session: enough to load the model and record its shapes.
 pub struct DetModel {
@@ -41,11 +41,15 @@ pub struct DetModel {
 }
 
 impl DetModel {
+    /// # Errors
+    ///
+    /// Returns [`OcrError`] when the model file is not readable or the runtime rejects the session.
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
         let (session, io) = crate::model::open_session(path, threads)?;
         Ok(Self { session, io })
     }
 
+    #[must_use]
     pub fn io(&self) -> &ModelIo {
         &self.io
     }
@@ -56,12 +60,21 @@ impl DetModel {
     }
 
     /// One detector inference: row-major f32 `[N, C, H, W]` in, output shape + row-major f32 out.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OcrError::Ort`] when `shape` has a negative or overflowing dimension, when `data`
+    /// does not match `shape`, or when the runtime rejects the tensor or the inference.
     pub fn infer(
         &mut self,
         data: &[f32],
         shape: [i64; 4],
     ) -> Result<(Vec<i64>, Vec<f32>), OcrError> {
-        let expected: usize = shape.iter().map(|dim| *dim as usize).product();
+        let Some(expected) = tensor_len(&shape) else {
+            return Err(OcrError::Ort(format!(
+                "det input shape {shape:?} has a negative or overflowing dimension"
+            )));
+        };
         if data.len() != expected {
             return Err(OcrError::Ort(format!(
                 "det input has {} values but shape {shape:?} needs {expected}",

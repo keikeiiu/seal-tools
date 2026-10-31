@@ -20,7 +20,6 @@
 use seal_domain::config::OcrGeometry;
 use seal_domain::geometry::Rect;
 use seal_domain::ocr::AttrMatcher;
-use seal_ocr::pipeline::OcrPipeline;
 use seal_proto::{Error, Request, Response};
 use serde_json::{Value, json};
 
@@ -108,6 +107,10 @@ fn frame_origin(frame: &Value) -> Option<seal_domain::geometry::Point> {
 
 /// The pixels of `region` inside `frame`, which may be the whole client or a region capture: the
 /// frame's origin says where it starts, and the crop is refused when the region falls outside it.
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn region_pixels(frame: &Value, region: Rect) -> Result<(u32, u32, Vec<u8>), String> {
     let encoded = frame
         .get("data")
@@ -264,7 +267,9 @@ fn check_frame(
     );
     let (width, height, rgba) =
         region_pixels(frame, region).map_err(|message| Box::new(fail(id, message, json!({}))))?;
-    let pipeline: &mut OcrPipeline = state.ocr.as_mut().expect("the OCR preflight loaded it");
+    let Some(pipeline) = state.ocr.as_mut() else {
+        return Err(Box::new(internal(id, "the OCR pipeline is not loaded")));
+    };
     let scan = match pipeline.scan_rgba(width as usize, height as usize, &rgba) {
         Ok(scan) => scan,
         Err(error) => return Err(Box::new(internal(id, &error.message))),
@@ -275,7 +280,7 @@ fn check_frame(
     let remaining = read_remaining(&scan.items, geometry);
     let measured_row_height = seal_ocr::modes::measure_line_spacing(&scan.items);
     let matcher = AttrMatcher::new(&state.attributes);
-    let matched = matcher.match_attributes(&attributes);
+    let hits = matcher.match_attributes(&attributes);
     let filter = filter_config(&state.config);
 
     let mut warnings: Vec<String> = Vec::new();
@@ -299,8 +304,8 @@ fn check_frame(
         "grade": grade,
         "remaining": remaining,
         "attributes": attributes,
-        "matched": matched_json(&matched),
-        "filter": filter_json(&filter, &matched),
+        "matched": matched_json(&hits),
+        "filter": filter_json(&filter, &hits),
         "warnings": warnings,
     }))
 }
@@ -364,6 +369,10 @@ fn environment(display: Option<&Value>, frame: &Value) -> Option<Value> {
 /// `calibration.tuner.save`: derive the geometry, annotate the frame, write `tuner.ocr` /
 /// `tuner.spring_point` / the calibration environment in ONE local write, bump the revision, echo
 /// the written block and queue the `config.changed` events after the response.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one calibration command keeps its validation, path resolution and write in one place"
+)]
 pub fn save(state: &mut CoreState, request: &Request) -> Response {
     let (geometry, grade, attr, remaining) = match derive(&request.args) {
         Ok(parts) => parts,

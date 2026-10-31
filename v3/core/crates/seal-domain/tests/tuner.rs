@@ -30,7 +30,7 @@ fn settings() -> TunerSettings {
 
 fn read(grade: Option<&str>, remaining: Option<i32>) -> TunerRead {
     TunerRead {
-        grade: grade.map(|g| g.to_owned()),
+        grade: grade.map(std::borrow::ToOwned::to_owned),
         remaining,
         attributes: Vec::new(),
     }
@@ -148,7 +148,7 @@ fn reaching_the_target_grade_with_no_filter_ends_the_run() {
 
     let stop = match outcome.decision {
         TunerDecision::Stop(stop) => stop,
-        other => panic!("expected a stop, got {other:?}"),
+        TunerDecision::Retry => panic!("expected a stop, got a retry"),
     };
     assert_eq!(stop.kind, StopKind::Done);
     assert_eq!(stop.message, ">>> DG REACHED (no filter) <<<");
@@ -421,7 +421,7 @@ fn the_guard_cannot_judge_without_a_point_or_a_cursor_and_fails_open() {
 }
 
 /// The drift is measured in the LOGICAL cursor space against the harness's logical target, and it is
-/// `>` the guard distance, not `>=` — a cursor sitting exactly guard_px away has not drifted.
+/// `>` the guard distance, not `>=` — a cursor sitting exactly `guard_px` away has not drifted.
 #[test]
 fn a_cursor_within_the_guard_distance_has_not_drifted() {
     let settings = guard_settings(MouseGuard::Stop);
@@ -458,11 +458,11 @@ fn stop_mode_halts_on_the_first_drift_with_its_message() {
         0,
     );
 
-    let MouseGuardStep::Stop(stop) = step else {
+    let MouseGuardStep::Stop(halt) = step else {
         panic!("expected a stop, got {step:?}");
     };
-    assert_eq!(stop.kind, StopKind::Guard);
-    assert_eq!(stop.message, "mouse moved — stopped");
+    assert_eq!(halt.kind, StopKind::Guard);
+    assert_eq!(halt.message, "mouse moved — stopped");
 }
 
 #[test]
@@ -485,10 +485,10 @@ fn a_failed_recentre_stops_with_the_reason() {
 
     let step = seal_domain::tools::tuner::after_recenter(&settings, Err("no such window"), 1);
 
-    let MouseGuardStep::Stop(stop) = step else {
+    let MouseGuardStep::Stop(halt) = step else {
         panic!("expected a stop, got {step:?}");
     };
-    assert_eq!(stop.message, "cursor wouldn't re-centre — no such window");
+    assert_eq!(halt.message, "cursor wouldn't re-centre — no such window");
 }
 
 /// A cursor that has to be put back more than `recenter_max` times in a row is a fight the run should
@@ -535,11 +535,11 @@ fn hid_mode_without_a_calibrated_point_refuses_with_the_instruction() {
     let settings = guard_settings(MouseGuard::Off);
     let step = seal_domain::tools::tuner::spring_step(&settings, None);
 
-    let SpringStep::Stop(stop) = step else {
+    let SpringStep::Stop(halt) = step else {
         panic!("expected a stop, got {step:?}");
     };
     assert_eq!(
-        stop.message,
+        halt.message,
         "spring_mode is hid but tuner.spring_point isn't calibrated — save the Spring point on the Calibrate tab"
     );
 }
@@ -567,6 +567,6 @@ fn the_two_placement_failures_carry_v2s_messages() {
 fn stop_of(outcome: TunerOutcome) -> StopReason {
     match outcome.decision {
         TunerDecision::Stop(stop) => stop,
-        other => panic!("expected a stop, got {other:?}"),
+        TunerDecision::Retry => panic!("expected a stop, got a retry"),
     }
 }

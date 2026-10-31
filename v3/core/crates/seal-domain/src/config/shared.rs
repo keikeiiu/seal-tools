@@ -3,7 +3,7 @@
 //!
 //! Null-tolerance policy (see [`crate::config::de`]): a field whose v2 property is a REFERENCE type
 //! tolerates a key with no value — a bare `title:` is `""`, a bare `rules:` is `[]` — because
-//! YamlDotNet hands those reads a null and v2 either treats it as nothing or crashes on it later.
+//! `YamlDotNet` hands those reads a null and v2 either treats it as nothing or crashes on it later.
 //! A field whose v2 property is a VALUE type (`int`, `double`, `bool`) is left strict: a null there
 //! fails v2's load too, and a silent zero would be a setting that means something different from
 //! absent.
@@ -136,6 +136,7 @@ impl GameConfig {
     /// The client the active name points at, or `None` when it is unset or names something unknown —
     /// in which case the configured `window.title` stands, which is the safe direction: an
     /// unrecognised name must not blank the target.
+    #[must_use]
     pub fn active(&self) -> Option<&GameVariant> {
         self.variant_named(&self.variant)
     }
@@ -144,10 +145,11 @@ impl GameConfig {
     ///
     /// The lookup ignores case even though the map is keyed case-sensitively, because v2's dictionary
     /// is `StringComparer.OrdinalIgnoreCase` and a hand-typed `TW` has to work. (A *loaded* v2 config
-    /// loses that comparer — YamlDotNet builds a case-sensitive dictionary — but the v2 test that
+    /// loses that comparer — `YamlDotNet` builds a case-sensitive dictionary — but the v2 test that
     /// pins the rule builds the initialiser and expects `TW` to resolve, so case-insensitivity is the
     /// intended behaviour and the port keeps it.) Variant names are ASCII today (`tw`, `us`), which is
     /// why the ASCII fold is enough here.
+    #[must_use]
     pub fn variant_named(&self, name: &str) -> Option<&GameVariant> {
         let wanted = name.trim();
         if wanted.is_empty() {
@@ -243,6 +245,7 @@ impl Default for TooltipConfig {
 
 impl TooltipConfig {
     /// True once a box has been dragged.
+    #[must_use]
     pub fn is_set(&self) -> bool {
         self.width > 0 && self.height > 0
     }

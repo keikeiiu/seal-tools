@@ -9,3 +9,6 @@ seal-domain = { path = "../seal-domain" }
 
 [target.'cfg(windows)'.dependencies]
 serialport = "4"
+
+[lints]
+workspace = true

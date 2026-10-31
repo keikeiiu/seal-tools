@@ -32,6 +32,7 @@ use serde_json::Value;
 /// run's selection comes only from `tool.start`'s `slots` argument. `ShopSettings::sell_slots` is
 /// therefore left empty here and filled at the run seam; the typed model keeps the config field for
 /// compatibility only.
+#[must_use]
 pub fn settings(config: &Value) -> ShopSettings {
     let block = config.get("buy_sell");
     let ints = |name: &str| -> Option<Vec<i32>> {
@@ -72,6 +73,10 @@ pub fn settings(config: &Value) -> ShopSettings {
 
 /// One SELL pass with no run argument: an EMPTY selection, never the persisted config field, so the
 /// domain's own "No slots are selected to sell." line is the answer.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when the shop grid or one of its marks is not calibrated.
 pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
     sell_plan_with_slots(config, None)
 }
@@ -82,6 +87,10 @@ pub fn sell_plan(config: &Value) -> Result<ShopPlan, StopReason> {
 /// `slots` is the per-run selection from `tool.start` (`PROTOCOL.md` §4 / §12.6 ruling 6). It is the
 /// ONLY source of a sell run's selection: absent means empty, not the migrated config field, and
 /// nothing is ever written back. The domain does the filtering, dedupe, sort and `sell_cap`.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when the shop grid or one of its marks is not calibrated.
 pub fn sell_plan_with_slots(config: &Value, slots: Option<&[i32]>) -> Result<ShopPlan, StopReason> {
     let mut settings = settings(config);
     settings.sell_slots = slots.unwrap_or_default().to_vec();
@@ -93,6 +102,10 @@ pub fn sell_plan_with_slots(config: &Value, slots: Option<&[i32]>) -> Result<Sho
 /// consulting the config's `sell_slots`: the selection is run data, not availability. A start with
 /// no selection still reaches `create`, where the domain answers its own "No slots are selected to
 /// sell." line.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when no selection can be sold.
 pub fn sell_available(config: &Value) -> Result<(), StopReason> {
     let mut settings = settings(config);
     settings.sell_slots = vec![0];
@@ -107,6 +120,10 @@ pub fn sell_available(config: &Value) -> Result<(), StopReason> {
 ///
 /// A `count` present and below 1 is refused HERE: the domain clamps to one for its own callers, but
 /// the protocol says an explicit number the player gave is refused rather than silently changed.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when the preset, the count or one of the marks is not usable.
 pub fn buy_plan(
     config: &Value,
     preset: Option<&str>,
@@ -133,6 +150,7 @@ pub struct ShopTool {
 }
 
 impl ShopTool {
+    #[must_use]
     pub fn new(id: ToolId, plan: ShopPlan) -> Self {
         Self {
             id,

@@ -303,22 +303,24 @@ fn queue_icons(config: &Value) -> Result<Vec<Option<PetImage>>, String> {
     config
         .pointer("/pet/queue")
         .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .enumerate()
-                .map(
-                    |(index, entry)| match entry.get("png").and_then(Value::as_str) {
-                        Some(png) if !png.trim().is_empty() => Ok(Some(decode_icon(
-                            png,
-                            &format!("Queue pet {}'s icon", index + 1),
-                        )?)),
-                        _ => Ok(None),
-                    },
-                )
-                .collect()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))
+        .map_or_else(
+            || Ok(Vec::new()),
+            |entries| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(index, entry)| match entry.get("png").and_then(Value::as_str) {
+                            Some(png) if !png.trim().is_empty() => Ok(Some(decode_icon(
+                                png,
+                                &format!("Queue pet {}'s icon", index + 1),
+                            )?)),
+                            _ => Ok(None),
+                        },
+                    )
+                    .collect()
+            },
+        )
 }
 
 /// The feeding table, loaded once per plan. A missing/unreadable table costs the COMPUTED schedule
@@ -383,6 +385,10 @@ fn queue(config: &Value) -> Vec<PetQueuePlan> {
 /// is present but cannot be decoded is a start refusal naming the row, and `pet.food_load_mode` is
 /// resolved for the board check ([`check_board`], which the opening phase calls with the firmware
 /// level it read).
+///
+/// # Errors
+///
+/// Returns the line when an inline crop reference cannot be resolved.
 pub fn plan(config: &Value, root: &Path) -> Result<PetPlan, String> {
     // Increment 6: inline crops may now be rtifacts/... references. Resolve them before any
     // decoder sees the values, so the run itself is unaware of the file layout.
@@ -436,6 +442,10 @@ pub fn plan(config: &Value, root: &Path) -> Result<PetPlan, String> {
 /// The board/food-load compatibility check the opening phase runs. A drag needs firmware 2; a board
 /// that never answered counts as a DEFINITE no (the sketch that predates version reporting also
 /// predates the drag commands), and the sentence is the domain's [`food_load::complaint`].
+///
+/// # Errors
+///
+/// Returns the domain's complaint when the configured food-load mode needs a newer board.
 pub fn check_board(plan: &PetPlan, firmware_level: Option<i32>) -> Result<(), String> {
     match food_load::complaint(Some(plan.setup.food_load_mode.as_str()), firmware_level) {
         Some(line) => Err(line),
@@ -447,6 +457,7 @@ pub fn check_board(plan: &PetPlan, firmware_level: Option<i32>) -> Result<(), St
 
 /// The opening card: one line per configured row, so the player sees all four conditions rather than
 /// only the soonest (`build_card`'s own rule) before the run has read anything.
+#[must_use]
 pub fn initial_card(plan: &PetPlan) -> PetCard {
     let views = plan
         .rows
@@ -466,12 +477,13 @@ pub fn initial_card(plan: &PetPlan) -> PetCard {
 
 /// `PetCard` → the runner's standing rows (`ToolStatus.rows`). The shell renders
 /// `ToolRow { name, status, detail, next_action_in_seconds, next_action }`.
+#[must_use]
 pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
     card.rows
         .iter()
         .map(|row| {
             let mut tool_row = ToolRow::new(row.name.clone(), row.status.clone());
-            tool_row.detail = row.detail.clone();
+            tool_row.detail.clone_from(&row.detail);
             tool_row.next_action_in_seconds = row.next_minutes.map(|minutes| minutes * 60.0);
             // What the next moment MEANS, from the row's own state: a boarding row's next moment is
             // its food reload; a row that is waiting for a reload is waiting to be fed/boarded. A row
@@ -488,6 +500,7 @@ pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
 
 /// The card as a `ToolStatus`: the schedule line as the message (the caller supplies the formatted
 /// `HH:mm` because the decision half has no clock) plus the standing rows.
+#[must_use]
 pub fn status(card: &PetCard, next_label: &str) -> seal_tools::runner::ToolStatus {
     seal_tools::runner::ToolStatus {
         message: card.schedule_line(next_label),
@@ -498,12 +511,14 @@ pub fn status(card: &PetCard, next_label: &str) -> seal_tools::runner::ToolStatu
 }
 
 /// The visit's opening line, for the loop and the tests: one row names itself, a batch says how many.
+#[must_use]
 pub fn opening_message(batch: &[String]) -> String {
     visit_opening_message(batch)
 }
 
 /// The tally wording shared with the tuner/gem card (`GradeCycles::describe`'s sibling): kept here so
 /// a card line and a log line cannot drift.
+#[must_use]
 pub fn describe_cycles(cycles: i32) -> String {
     describe(cycles)
 }
@@ -520,6 +535,7 @@ pub struct PetImage {
 }
 
 impl PetImage {
+    #[must_use]
     pub fn pixel(&self, x: usize, y: usize) -> Option<[u8; 4]> {
         if x >= self.width || y >= self.height {
             return None;
@@ -544,6 +560,7 @@ pub struct FeederCounts {
 
 impl FeederCounts {
     /// The domain's sum: `None` when no slot read, otherwise the sum of the readable slots.
+    #[must_use]
     pub fn total(&self) -> Option<i32> {
         let readable: Vec<i32> = self.counts.iter().flatten().copied().collect();
         (!readable.is_empty()).then(|| readable.iter().sum())
@@ -564,17 +581,41 @@ pub struct SlotState {
 pub trait PetSource {
     /// One OCR pass over a row's time band: the raw lines (the domain's [`FeederEta::parse`] and
     /// [`FeederEta::parse_rate`] consume them). Empty when the row has no strip.
+    ///
+    /// # Errors
+    ///
+    /// Returns the OCR failure when the row's time band cannot be read into lines.
     fn row_lines(&mut self, row: &PetRowPlan) -> Result<Vec<String>, String>;
     /// The counts drawn on a row's food slots.
+    ///
+    /// # Errors
+    ///
+    /// Returns the OCR failure when the row's food counts cannot be read.
     fn feeder_counts(&mut self, row: &PetRowPlan) -> Result<FeederCounts, String>;
     /// The hover panel's OCR lines for a point (client-relative physical). Empty when the tooltip is
     /// not calibrated — the caller fails open on an unparsed panel.
+    ///
+    /// # Errors
+    ///
+    /// Returns the OCR failure when the hover panel cannot be read.
     fn hover_panel(&mut self, at: Point) -> Result<Vec<String>, String>;
     /// The row's boarding slot versus its saved empty crop.
+    ///
+    /// # Errors
+    ///
+    /// Returns the OCR failure when the boarding slot cannot be compared with its saved empty crop.
     fn slot_state(&mut self, row: &PetRowPlan) -> Result<SlotState, String>;
     /// The whole client, for increment 2's bag-page icon sweep.
+    ///
+    /// # Errors
+    ///
+    /// Returns the capture failure when the game client cannot be captured.
     fn client_capture(&mut self) -> Result<PetImage, String>;
     /// One client-relative region, for increment 2's bag-cell checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns the capture failure when the client-relative region cannot be captured.
     fn region_capture(&mut self, region: Rect) -> Result<PetImage, String>;
     /// The cursor in the process's own logical space (`None` when unreadable).
     fn cursor(&mut self) -> Option<Point>;
@@ -597,6 +638,10 @@ pub struct PetReadSource {
 impl PetReadSource {
     /// Open the read side, or name what is missing before the run starts: a level-1 board with drag
     /// configured (the domain's complaint), a missing `window.title`, or unavailable OCR models.
+    ///
+    /// # Errors
+    ///
+    /// Returns the startup refusal naming a missing board level, window title, OCR model or calibration.
     pub fn open(
         config: &Value,
         plan: &PetPlan,
@@ -676,17 +721,14 @@ impl PetSource for PetReadSource {
                 continue;
             };
             let (image, lines) = self.capture_lines(region)?;
-            match FeederCount::parse(&lines, self.feeder_count_min_score) {
-                Some(count) => {
-                    digits_read = true;
-                    counts.push(Some(count));
-                }
-                None => {
-                    // v2's pixel verdict for the ambiguity the OCR cannot settle: an empty slot has
-                    // no digits, exactly like a failed crop. Colour settles it.
-                    let empty = warm_fraction(&image) < FeederCount::EMPTY_SLOT_BELOW;
-                    counts.push(empty.then_some(0));
-                }
+            if let Some(count) = FeederCount::parse(&lines, self.feeder_count_min_score) {
+                digits_read = true;
+                counts.push(Some(count));
+            } else {
+                // v2's pixel verdict for the ambiguity the OCR cannot settle: an empty slot has
+                // no digits, exactly like a failed crop. Colour settles it.
+                let empty = warm_fraction(&image) < FeederCount::EMPTY_SLOT_BELOW;
+                counts.push(empty.then_some(0));
             }
         }
         Ok(FeederCounts {
@@ -743,6 +785,10 @@ impl PetSource for PetReadSource {
 /// [`ICON_TOLERANCE`], after insetting both images by [`ICON_INSET`]. `None` when the sizes cannot be
 /// compared (the two crops are taken in the same calibrated region, so a mismatch means a stale
 /// reference — "unknown" is safer than a resized comparison).
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "both sides are frame pixel counts, far below 2^53, so this f64 conversion is exact"
+)]
 fn differing_fraction(reference: &ReferenceCrop, live: &PetImage) -> Option<f64> {
     if reference.width != live.width
         || reference.height != live.height
@@ -780,6 +826,10 @@ fn differing_fraction(reference: &ReferenceCrop, live: &PetImage) -> Option<f64>
 /// v2 `FeederCount.WarmFraction`: the fraction of the (inset) crop that looks strongly red-over-blue
 /// — the one question the OCR cannot answer, because an empty slot and a failed crop both have no
 /// digits.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "both sides are frame pixel counts, far below 2^53, so this f64 conversion is exact"
+)]
 fn warm_fraction(image: &PetImage) -> f64 {
     let inset = WARM_INSET;
     if inset * 2 >= image.width.min(image.height) {
@@ -853,6 +903,12 @@ fn inset_bounds(width: usize, height: usize, inset: usize) -> Option<(usize, usi
 
 /// v2 `Cv2.Resize(..., InterpolationFlags.Area)`: box-average downscale, nearest upscale (icons are
 /// compared against a cell crop that is normally larger, so the downscale is the path that matters).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn area_resize(image: &PetImage, width: usize, height: usize) -> PetImage {
     if width == 0 || height == 0 {
         return PetImage {
@@ -887,6 +943,10 @@ fn area_resize(image: &PetImage, width: usize, height: usize) -> PetImage {
 /// v2 `IconMatch.DifferingFraction`: the fraction of pixels whose worst channel differs by more than
 /// `tolerance`, after insetting both, with `b` resized to `a`'s size first (v2 resizes the CELL crop
 /// down to the reference).
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "both sides are frame pixel counts, far below 2^53, so this f64 conversion is exact"
+)]
 fn differing_fraction_images(
     a: &PetImage,
     b: &PetImage,
@@ -923,6 +983,10 @@ fn differing_fraction_images(
     (compared > 0).then(|| differing as f64 / compared as f64)
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn pitch(grid: &[i32]) -> Option<(i32, i32)> {
     let x = BagGrid::pitch_x(grid).round() as i32;
     let y = BagGrid::pitch_y(grid).round() as i32;
@@ -931,6 +995,10 @@ fn pitch(grid: &[i32]) -> Option<(i32, i32)> {
 
 /// v2 `IconMatch.BestOffsetScore`: the lowest differing fraction over every offset within
 /// `SEARCH_RADIUS` of `centre`, comparing `icon` with the bag region at the cell pitch.
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 fn best_offset_score(
     bag: &PetImage,
     centre: Point,
@@ -938,7 +1006,7 @@ fn best_offset_score(
     pitch_y: i32,
     icon: &PetImage,
 ) -> Option<f64> {
-    let mut best = f64::MAX;
+    let mut best: Option<f64> = None;
     for dy in -SEARCH_RADIUS..=SEARCH_RADIUS {
         for dx in -SEARCH_RADIUS..=SEARCH_RADIUS {
             let left = centre.x + dx - pitch_x / 2;
@@ -963,14 +1031,15 @@ fn best_offset_score(
             }
             if let Some(score) = differing_fraction_images(icon, &crop, ICON_INSET, ICON_TOLERANCE)
             {
-                best = best.min(score);
-                if best == 0.0 {
+                let score = best.map_or(score, |best| best.min(score));
+                best = Some(score);
+                if score == 0.0 {
                     return Some(0.0);
                 }
             }
         }
     }
-    (best != f64::MAX).then_some(best)
+    best
 }
 
 /// v2 `IconMatch.ScoreAll` WITHOUT the match-limit filter, best first. The scan commands need
@@ -1003,6 +1072,12 @@ fn score_all(bag: &PetImage, grid: &[i32], icon: &PetImage) -> Vec<(usize, f64)>
 /// tolerance and ±radius search. The crop must be a cell plus the radius on every side (v2's
 /// null-when-too-tight rule), so a caller comparing a smaller window fails loudly instead of
 /// silently scoring a different comparison than the sweep.
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
+)]
 pub fn score_cell(crop: &PetImage, icon: &PetImage, pitch_x: i32, pitch_y: i32) -> Option<f64> {
     if pitch_x <= 0 || pitch_y <= 0 {
         return None;
@@ -1018,6 +1093,7 @@ pub fn score_cell(crop: &PetImage, icon: &PetImage, pitch_x: i32, pitch_y: i32) 
 
 /// v2 `IconMatch.CellsHolding`: every cell holding `icon`, in CELL order (the order the food walk
 /// relies on; score order is arbitrary for near-identical instances).
+#[must_use]
 pub fn cells_holding(bag: &PetImage, grid: &[i32], icon: &PetImage, limit: f64) -> Vec<usize> {
     let Some((pitch_x, pitch_y)) = pitch(grid) else {
         return Vec::new();
@@ -1193,14 +1269,15 @@ impl<S: PetSource> PetTool<S> {
 
     /// Attach the mid-run state sink (production only). Returns `self` so the registry can build the
     /// tool chain without a second constructor.
+    #[must_use]
     pub fn with_state_sink(mut self, sink: Arc<dyn PetStateSink>) -> Self {
         self.state_sink = Some(sink);
         self
     }
 
-    fn persist_state(&self, patch: seal_config::PetRunStatePatch) {
+    fn persist_state(&self, patch: &seal_config::PetRunStatePatch) {
         if let Some(sink) = &self.state_sink {
-            sink.persist(&patch);
+            sink.persist(patch);
         }
     }
 
@@ -1263,7 +1340,7 @@ impl<S: PetSource> PetTool<S> {
     }
 
     fn action_wait(&self) -> f64 {
-        (self.plan.action_wait_ms.max(200) as f64) / 1000.0
+        f64::from(self.plan.action_wait_ms.max(200)) / 1000.0
     }
 
     fn schedule_settings(&self) -> PetScheduleSettings {
@@ -1289,7 +1366,7 @@ impl<S: PetSource> PetTool<S> {
                         let was_boarding = self.state[index].boarding;
                         self.state[index].boarding = false;
                         if was_boarding {
-                            self.persist_state(seal_config::PetRunStatePatch {
+                            self.persist_state(&seal_config::PetRunStatePatch {
                                 boarding_running: vec![(index, false)],
                                 ..seal_config::PetRunStatePatch::default()
                             });
@@ -1303,7 +1380,7 @@ impl<S: PetSource> PetTool<S> {
                         let was_boarding = self.state[index].boarding;
                         self.state[index].boarding = true;
                         if !was_boarding {
-                            self.persist_state(seal_config::PetRunStatePatch {
+                            self.persist_state(&seal_config::PetRunStatePatch {
                                 boarding_running: vec![(index, true)],
                                 ..seal_config::PetRunStatePatch::default()
                             });
@@ -1363,16 +1440,15 @@ impl<S: PetSource> PetTool<S> {
             return;
         }
         if unread {
-            self.message =
-                "One or more slots couldn't be read — carrying on with the configured cycle."
-                    .to_owned();
+            "One or more slots couldn't be read — carrying on with the configured cycle."
+                .clone_into(&mut self.message);
         }
         if due.is_empty() {
             self.close_window();
             self.phase = Phase::Wait;
             self.message = self
                 .card()
-                .schedule_line(&self.next_label(self.soonest_minutes()));
+                .schedule_line(&Self::next_label(self.soonest_minutes()));
         } else {
             self.message = visit_opening_message(
                 &due.iter()
@@ -1425,7 +1501,7 @@ impl<S: PetSource> PetTool<S> {
             .fold(f64::INFINITY, f64::min)
     }
 
-    fn next_label(&self, minutes: f64) -> String {
+    fn next_label(minutes: f64) -> String {
         if minutes.is_finite() {
             format!("{minutes:.0} min from now")
         } else {
@@ -1440,7 +1516,7 @@ impl<S: PetSource> PetTool<S> {
         }
     }
 
-    fn fold(&mut self, index: usize, outcome: RowOutcome) {
+    fn fold(&mut self, index: usize, outcome: &RowOutcome) {
         let row = &self.plan.rows[index];
         let loaded = seal_domain::tools::pet::load_minutes(
             row.stacks,
@@ -1451,7 +1527,7 @@ impl<S: PetSource> PetTool<S> {
         let label = format!("+{} min", loaded + self.plan.wait_after_empty_minutes);
         let folded = fold_back(
             &row.name,
-            &outcome,
+            outcome,
             self.state[index].failures,
             loaded,
             self.plan.wait_after_empty_minutes,
@@ -1460,19 +1536,27 @@ impl<S: PetSource> PetTool<S> {
         let state = &mut self.state[index];
         state.failures = folded.failures;
         state.next_minutes = folded.next_minutes;
-        match &outcome {
+        match outcome {
             RowOutcome::Reloaded { .. } => state.boarding = true,
             RowOutcome::Failed { .. } => {}
             RowOutcome::Deferred | RowOutcome::NothingToBoard => state.boarding = false,
         }
         let running = state.boarding;
-        self.persist_state(seal_config::PetRunStatePatch {
+        self.persist_state(&seal_config::PetRunStatePatch {
             boarding_running: vec![(index, running)],
             ..seal_config::PetRunStatePatch::default()
         });
         self.message = folded.message;
     }
 
+    #[allow(
+        clippy::cast_sign_loss,
+        reason = "row/page/cell indices are small values validated before use"
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the pet visit is one state machine; splitting it would scatter the stage transitions and their ordering"
+    )]
     fn visit_step(&mut self) {
         let Some(mut visit) = self.visit.take() else {
             self.phase = Phase::Wait;
@@ -1483,7 +1567,7 @@ impl<S: PetSource> PetTool<S> {
             self.phase = Phase::Wait;
             self.message = self
                 .card()
-                .schedule_line(&self.next_label(self.soonest_minutes()));
+                .schedule_line(&Self::next_label(self.soonest_minutes()));
             self.visit = None;
             return;
         }
@@ -1601,7 +1685,9 @@ impl<S: PetSource> PetTool<S> {
                     if self.plan.tooltip.is_set() {
                         if let Some(candidate) = &visit.candidate {
                             self.queue.push_back(Decision::Place(candidate.point));
-                            self.wait(self.plan.tooltip.hover_delay_ms.max(100) as f64 / 1000.0);
+                            self.wait(
+                                f64::from(self.plan.tooltip.hover_delay_ms.max(100)) / 1000.0,
+                            );
                         }
                         visit.stage = Stage::HoverRead;
                     } else {
@@ -1618,7 +1704,7 @@ impl<S: PetSource> PetTool<S> {
                 {
                     finished = panel.is_finished();
                     self.state[index].panel = Some(panel);
-                    self.state[index].species = candidate.species.clone();
+                    self.state[index].species.clone_from(&candidate.species);
                 }
                 if finished {
                     self.message = seal_domain::tools::pet::all_refused_message(&[candidate
@@ -1660,36 +1746,29 @@ impl<S: PetSource> PetTool<S> {
                 }
                 if visit.stack >= row.stacks.max(1) {
                     visit.stage = Stage::StartToggle;
-                } else {
-                    match self.plan.food_slots.get(visit.food_used as usize) {
-                        Some(cell) => {
-                            let page = cell.first().copied().unwrap_or(0);
-                            let cell_index = cell.get(1).copied().unwrap_or(0);
-                            let tabs = self.plan.setup.page_tabs.clone();
-                            if let Some(tab) = tabs.get(page as usize).and_then(|tab| point_of(tab))
-                            {
-                                self.click(tab);
-                                self.wait(PAGE_WAIT);
-                            }
-                            visit.food_cell =
-                                self.plan.setup.bag_grid.as_deref().and_then(|grid| {
-                                    BagGrid::centres(Some(grid))
-                                        .get(cell_index as usize)
-                                        .copied()
-                                });
-                            visit.stage = Stage::FoodPlace;
-                        }
-                        None => {
-                            visit.outcome = Some(RowOutcome::Failed {
-                                error: format!(
-                                    "No food cells left — {} of {} used. Mark the cells holding food again on the Pet tab.",
-                                    visit.food_used,
-                                    self.plan.food_slots.len()
-                                ),
-                            });
-                            visit.stage = Stage::Fold;
-                        }
+                } else if let Some(cell) = self.plan.food_slots.get(visit.food_used as usize) {
+                    let page = cell.first().copied().unwrap_or(0);
+                    let cell_index = cell.get(1).copied().unwrap_or(0);
+                    let tabs = self.plan.setup.page_tabs.clone();
+                    if let Some(tab) = tabs.get(page as usize).and_then(|tab| point_of(tab)) {
+                        self.click(tab);
+                        self.wait(PAGE_WAIT);
                     }
+                    visit.food_cell = self.plan.setup.bag_grid.as_deref().and_then(|grid| {
+                        BagGrid::centres(Some(grid))
+                            .get(cell_index as usize)
+                            .copied()
+                    });
+                    visit.stage = Stage::FoodPlace;
+                } else {
+                    visit.outcome = Some(RowOutcome::Failed {
+                        error: format!(
+                            "No food cells left — {} of {} used. Mark the cells holding food again on the Pet tab.",
+                            visit.food_used,
+                            self.plan.food_slots.len()
+                        ),
+                    });
+                    visit.stage = Stage::Fold;
                 }
             }
             Stage::FoodPlace => {
@@ -1786,7 +1865,7 @@ impl<S: PetSource> PetTool<S> {
             }
             Stage::FoodDone => {
                 visit.food_used += 1;
-                self.persist_state(seal_config::PetRunStatePatch {
+                self.persist_state(&seal_config::PetRunStatePatch {
                     food_slots_used: Some(visit.food_used),
                     ..seal_config::PetRunStatePatch::default()
                 });
@@ -1804,12 +1883,7 @@ impl<S: PetSource> PetTool<S> {
             Stage::VerifyStarted => {
                 let started =
                     matches!(self.source.slot_state(&row), Ok(slot) if slot.empty == Some(false));
-                if !started {
-                    visit.outcome = Some(RowOutcome::Failed {
-                        error: pet_did_not_go_in(),
-                    });
-                    visit.stage = Stage::Fold;
-                } else {
+                if started {
                     let landed = match self.source.row_lines(&row) {
                         Ok(lines) => {
                             FeederEta::completion_minutes(FeederEta::parse(&lines).as_ref())
@@ -1834,11 +1908,16 @@ impl<S: PetSource> PetTool<S> {
                         landed_line_minutes: landed,
                     });
                     visit.stage = Stage::Fold;
+                } else {
+                    visit.outcome = Some(RowOutcome::Failed {
+                        error: pet_did_not_go_in(),
+                    });
+                    visit.stage = Stage::Fold;
                 }
             }
             Stage::Fold => {
                 let outcome = visit.outcome.take().unwrap_or(RowOutcome::Deferred);
-                self.fold(index, outcome);
+                self.fold(index, &outcome);
                 visit.pos += 1;
                 visit.stage = Stage::Begin;
                 visit.attempts = 0;
@@ -1854,7 +1933,7 @@ impl<S: PetSource> PetTool<S> {
                     self.phase = Phase::Wait;
                     self.message = self
                         .card()
-                        .schedule_line(&self.next_label(self.soonest_minutes()));
+                        .schedule_line(&Self::next_label(self.soonest_minutes()));
                     self.visit = None;
                     return;
                 }
@@ -1903,15 +1982,15 @@ impl<S: PetSource> PetTool<S> {
                         self.pending_stop = Some(StopReason::done(every_row_failed_message()));
                         continue;
                     }
-                    let soonest = scheduled
-                        .into_iter()
-                        .min_by(|a, b| {
-                            self.state[*a]
-                                .next_minutes
-                                .unwrap_or(f64::INFINITY)
-                                .total_cmp(&self.state[*b].next_minutes.unwrap_or(f64::INFINITY))
-                        })
-                        .expect("scheduled is non-empty");
+                    let Some(soonest) = scheduled.into_iter().min_by(|a, b| {
+                        self.state[*a]
+                            .next_minutes
+                            .unwrap_or(f64::INFINITY)
+                            .total_cmp(&self.state[*b].next_minutes.unwrap_or(f64::INFINITY))
+                    }) else {
+                        // `scheduled` was just checked non-empty, so this is unreachable.
+                        continue;
+                    };
                     let minutes = self.state[soonest].next_minutes.unwrap_or(0.0);
                     if minutes <= 0.0 {
                         self.phase = Phase::Open;
@@ -1919,7 +1998,7 @@ impl<S: PetSource> PetTool<S> {
                             visit_opening_message(&[self.plan.rows[soonest].name.clone()]);
                     } else {
                         let seconds = minutes * 60.0;
-                        let label = self.next_label(minutes);
+                        let label = Self::next_label(minutes);
                         self.countdown_s = Some(seconds);
                         self.message = self.card().schedule_line(&label);
                         self.phase = Phase::Open;
@@ -2013,9 +2092,9 @@ mod tests {
     fn slot_json(index: usize) -> Value {
         serde_json::json!({
             "enabled": true,
-            "toggle_label": [5, 5 + index as i64, 40, 20],
-            "boarding_pet_slot": [50, 60 + 40 * index as i64, 30, 40],
-            "feeder_strip": [100, 200 + 40 * index as i64, 300, 50],
+            "toggle_label": [5, 5 + i64::try_from(index).unwrap(), 40, 20],
+            "boarding_pet_slot": [50, 60 + 40 * i64::try_from(index).unwrap(), 30, 40],
+            "feeder_strip": [100, 200 + 40 * i64::try_from(index).unwrap(), 300, 50],
             "stacks": 2,
             "pet_slot_empty_png": png_of(2, 2, &[0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255]),
             "boarding_running": false,
@@ -2054,8 +2133,13 @@ mod tests {
         PetRowPlan {
             name: format!("Row {}", index + 1),
             enabled: true,
-            toggle_label: Some(vec![5, 5 + index as i32, 40, 20]),
-            boarding_pet_slot: Some(Rect::new(50, 60 + 40 * index as i32, 30, 40)),
+            toggle_label: Some(vec![5, 5 + i32::try_from(index).unwrap(), 40, 20]),
+            boarding_pet_slot: Some(Rect::new(
+                50,
+                60 + 40 * i32::try_from(index).unwrap(),
+                30,
+                40,
+            )),
             feeder_strip: Some(vec![100, 200, 300, 50]),
             stacks: 2,
             empty_reference: Some(red_crop(2, 2)),
@@ -2492,7 +2576,7 @@ mod tests {
         let reference = red_crop(16, 16);
         let mut live = red_crop(16, 16);
         live.rgba[(8 * 16 + 8) * 4] = 0; // one interior pixel, > tolerance
-        let compared = (16 - 2 * ICON_INSET).pow(2) as f64;
+        let compared = f64::from(u32::try_from((16 - 2 * ICON_INSET).pow(2)).unwrap());
 
         let fraction = differing_fraction(
             &reference,
@@ -2550,15 +2634,14 @@ mod tests {
         let mut config_without_title = config;
         config_without_title["window"] = serde_json::json!({});
 
-        let line = match PetReadSource::open(
+        let Err(line) = PetReadSource::open(
             &config_without_title,
             &plan,
             &AttributesConfig::default(),
             Some(2),
             Path::new("C:/root"),
-        ) {
-            Ok(_) => panic!("a missing title must refuse the opening phase"),
-            Err(line) => line,
+        ) else {
+            panic!("a missing title must refuse the opening phase");
         };
 
         assert_eq!(line, "window.title is not configured");
@@ -2582,9 +2665,9 @@ mod loop_tests {
     fn empty_row(index: usize) -> Value {
         serde_json::json!({
             "enabled": true,
-            "toggle_label": [5, 5 + index as i64, 40, 20],
-            "boarding_pet_slot": [50, 60 + 40 * index as i64, 30, 40],
-            "feeder_strip": [100, 200 + 40 * index as i64, 300, 50],
+            "toggle_label": [5, 5 + i64::try_from(index).unwrap(), 40, 20],
+            "boarding_pet_slot": [50, 60 + 40 * i64::try_from(index).unwrap(), 30, 40],
+            "feeder_strip": [100, 200 + 40 * i64::try_from(index).unwrap(), 300, 50],
             "stacks": 1,
             "pet_slot_empty_png": png(2, 2, &[0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255]),
             "boarding_running": false,
@@ -3237,7 +3320,7 @@ mod loop_tests {
 
         tool.fold(
             0,
-            seal_domain::tools::pet::RowOutcome::Reloaded {
+            &seal_domain::tools::pet::RowOutcome::Reloaded {
                 pet_minutes: None,
                 landed_line_minutes: None,
             },

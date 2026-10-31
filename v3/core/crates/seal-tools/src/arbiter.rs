@@ -159,6 +159,7 @@ pub struct Arbiter {
 }
 
 impl Arbiter {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -167,44 +168,53 @@ impl Arbiter {
 
     /// The lifecycle phase the card should render, read from the published snapshot — the arbiter
     /// and the tool loop publish to one cell, so there is one answer rather than two.
+    #[must_use]
     pub fn phase_of(&self, tool: ToolId) -> Option<ToolPhase> {
         self.snapshot(tool).map(|snapshot| snapshot.phase)
     }
 
     /// The foreground tool the Stop buttons mean.
+    #[must_use]
     pub fn current(&self) -> Option<ToolId> {
         self.current
     }
 
     /// The tool holding the game, for a card's "waiting for …" line.
+    #[must_use]
     pub fn game_owner(&self) -> Option<ToolId> {
         self.game
     }
 
     /// The announced waiter, for the card and for `should_stand_down`.
+    #[must_use]
     pub fn waiting(&self) -> Option<ToolId> {
         self.waiting
     }
 
     /// The foreground start waiting behind the feeder's reload.
+    #[must_use]
     pub fn pending(&self) -> Option<ToolId> {
         self.pending
     }
 
+    #[must_use]
     pub fn is_running(&self, tool: ToolId) -> bool {
         self.runs.contains_key(&tool)
     }
 
     /// True between `stop` and `finished`: the loop is still leaving.
+    #[must_use]
     pub fn is_stopping(&self, tool: ToolId) -> bool {
         self.runs.get(&tool).is_some_and(|run| run.stopping)
     }
 
+    #[must_use]
     pub fn running(&self) -> Vec<ToolId> {
         self.runs.keys().copied().collect()
     }
 
     /// The published snapshot for a tool, if it has one.
+    #[must_use]
     pub fn snapshot(&self, tool: ToolId) -> Option<Arc<ToolSnapshot>> {
         self.runs.get(&tool).and_then(|run| run.handle.state.read())
     }
@@ -213,6 +223,7 @@ impl Arbiter {
     /// steps aside, and only while somebody else is actually waiting (`SkillSpammer`'s `[YIELD]`
     /// path). Every other tool holds the game for its whole bounded run and does not poll, so a
     /// `true` for them would be a promise nobody keeps.
+    #[must_use]
     pub fn should_stand_down(&self, tool: ToolId) -> bool {
         tool == ToolId::Spammer
             && self.game == Some(tool)
@@ -320,7 +331,7 @@ impl Arbiter {
             self.waiting = None;
         }
 
-        let final_snapshot = finish_snapshot(&run.handle, &reason);
+        let final_snapshot = finish_snapshot(&run.handle, reason);
         let game = if self.game == Some(tool) {
             self.release_game_inner()
         } else {
@@ -440,7 +451,7 @@ fn publish_phase(handle: &RunHandle, phase: ToolPhase) {
 /// The final snapshot of a run: idle, not running, the reason's message, and (for a failure) the
 /// error beside it. v2's card fell through to a bare "stopped" when the registry entry vanished
 /// before it read the state; the reason is published here so it cannot.
-fn finish_snapshot(handle: &RunHandle, reason: &StopReason) -> Arc<ToolSnapshot> {
+fn finish_snapshot(handle: &RunHandle, reason: StopReason) -> Arc<ToolSnapshot> {
     let error = if reason.kind == StopKind::Error {
         Some(reason.message.clone())
     } else {
@@ -450,7 +461,7 @@ fn finish_snapshot(handle: &RunHandle, reason: &StopReason) -> Arc<ToolSnapshot>
     };
     let snapshot = Arc::new(
         ToolSnapshot::new(handle.tool)
-            .stopped(reason.message.clone())
+            .stopped(reason.message)
             .countdown_s(None)
             .rows(Vec::new())
             .error(error),

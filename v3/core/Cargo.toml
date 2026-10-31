@@ -24,3 +24,9 @@ serde = { version = "1", features = ["derive"] }
 # through serde_norway, so this adds no new crate to fetch.
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_norway = "0.9"
+
+# The workspace-wide quality bar. `clippy::pedantic` is enforced on every target (lib, bins, tests,
+# benches) so the code stays at the level the lint cleanup reached; narrow, reasoned `#[allow]`s in
+# the source are the only exceptions. Run with `-D warnings` in the gate.
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }

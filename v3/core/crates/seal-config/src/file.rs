@@ -30,6 +30,7 @@ use crate::yaml;
 pub const SCHEMA_KEY: &str = "schema_version";
 
 /// The on-disk path of `file` under `root` (a config folder).
+#[must_use]
 pub fn path_of(root: &Path, file: &FileDef) -> PathBuf {
     root.join(file.path)
 }
@@ -37,6 +38,11 @@ pub fn path_of(root: &Path, file: &FileDef) -> PathBuf {
 /// Read one data file. `Ok(None)` means the file is absent (a file that is missing contributes
 /// nothing; missing is "not stated", exactly like today's overlay). A present file must be a
 /// mapping; a newer `schema_version` is [`ConfigError::SchemaTooNew`] and writes nothing.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] when the file exists but cannot be read, when its text is not a YAML
+/// mapping, or when its `schema_version` is zero or newer than [`SCHEMA_VERSION`].
 pub fn read(root: &Path, file: &FileDef) -> Result<Option<Value>, ConfigError> {
     let path = path_of(root, file);
     if !path.is_file() {
@@ -90,6 +96,11 @@ pub fn read(root: &Path, file: &FileDef) -> Result<Option<Value>, ConfigError> {
 /// Write one data file atomically, with its header and `schema_version: 1`. Unknown keys are kept
 /// because the whole mapping is written; a reserved `schema_version` supplied by the caller is
 /// replaced by the current one.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::Serialize`] when `content` is not a JSON object, and [`ConfigError::Write`]
+/// when the directory cannot be created or the temp-file write, sync, or rename fails.
 pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigError> {
     let path = path_of(root, file);
     let text = encode(file, content)?;
@@ -99,6 +110,11 @@ pub fn write(root: &Path, file: &FileDef, content: &Value) -> Result<(), ConfigE
 /// Serialise one data file exactly as `write` will: header, reserved `schema_version`, then the
 /// caller's mapping. The two-file transaction needs the bytes WITHOUT writing, so the format lives
 /// here once for both paths.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::Serialize`] when `content` is not a JSON object or the YAML emitter
+/// refuses the mapping.
 pub fn encode(file: &FileDef, content: &Value) -> Result<String, ConfigError> {
     let path = path_of(Path::new(""), file);
     let Some(mapping) = content.as_object() else {
@@ -180,6 +196,7 @@ pub(crate) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> 
 
 /// The header a file carries. It names the file's class and domain, so opening it in an editor
 /// answers both questions without the docs.
+#[must_use]
 pub fn header(file: &FileDef) -> String {
     let (label, sentence) = match file.class {
         Class::Defaults => (
@@ -251,6 +268,7 @@ fn temp_path(path: &Path) -> PathBuf {
 }
 
 /// The registry entry for one path, for callers that route by path.
+#[must_use]
 pub fn file_for(path: &str) -> Option<&'static FileDef> {
     registry::FILES.iter().find(|file| file.path == path)
 }

@@ -51,7 +51,10 @@ fn a_sequence_that_names_real_flows_is_not_dangling() {
         .sequences
         .insert("run".to_owned(), sequence_of(&["a", "b"]));
 
-    assert!(dangling_sequence_entries(&quest).is_empty());
+    assert_eq!(
+        dangling_sequence_entries(&quest),
+        [] as [seal_domain::authoring::DanglingEntry; 0]
+    );
     assert!(check_saveable(&quest).is_ok());
 }
 
@@ -105,7 +108,10 @@ fn a_padded_name_the_runner_would_trim_is_not_dangling() {
         .sequences
         .insert("run".to_owned(), sequence_of(&[" a "]));
 
-    assert!(dangling_sequence_entries(&quest).is_empty());
+    assert_eq!(
+        dangling_sequence_entries(&quest),
+        [] as [seal_domain::authoring::DanglingEntry; 0]
+    );
 }
 
 /// The check covers EVERY sequence, not the active one: Save writes the whole quest block, so a
@@ -364,7 +370,7 @@ fn renaming_a_sequence_onto_an_existing_name_is_refused() {
 // ── delete ───────────────────────────────────────────────────────────────────────────────────────
 
 /// The last flow cannot be deleted: the Quest tab would have nothing to run, and v2 refused with this
-/// exact line before the MessageBox.
+/// exact line before the `MessageBox`.
 #[test]
 fn the_last_flow_cannot_be_deleted() {
     let mut quest = quest_with_flows(&["only"]);

@@ -165,7 +165,7 @@ fn meta(folded: bool) -> Value {
 
 /// True when `meta.yaml` already says the tree was migrated.
 fn already_migrated(root: &Path) -> Result<bool, ConfigError> {
-    let Some(meta) = file::read(root, def(META))? else {
+    let Some(meta) = file::read(root, def(META)?)? else {
         return Ok(false);
     };
     Ok(meta
@@ -174,11 +174,13 @@ fn already_migrated(root: &Path) -> Result<bool, ConfigError> {
         .is_some_and(|version| version >= LAYOUT_VERSION))
 }
 
-fn def(path: &str) -> &'static registry::FileDef {
+/// The registry entry for one of this module's constant file names. `MissingFile` is the honest
+/// error if the registry ever loses one: the migration names only files it ships.
+fn def(path: &str) -> Result<&'static registry::FileDef, ConfigError> {
     registry::FILES
         .iter()
         .find(|file| file.path == path)
-        .expect("the path is in the registry")
+        .ok_or_else(|| ConfigError::MissingFile(PathBuf::from(path)))
 }
 
 fn setup_files_exist(root: &Path) -> bool {
@@ -205,6 +207,12 @@ fn write_user_blocks(root: &Path, blocks: &Map<String, Value>) -> Result<(), Con
 
 /// Migrate one config root. `base` is the parsed shipped default template, used to verify the new
 /// tree loads exactly as the old one did. Returns `None` when the tree was already migrated.
+///
+/// # Errors
+///
+/// Returns [`ConfigError`] when the backup copy, a read or parse of `local.yaml`/the template, a
+/// routed write, or the verify-before-retire load fails. A crop that cannot be decoded does not
+/// fail the migration: it stays inline and is reported in [`MigrationReport::warnings`].
 pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, ConfigError> {
     if already_migrated(root)? {
         return Ok(None);
@@ -213,7 +221,7 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
     if !local_path.is_file() {
         // A crash after retirement but before the marker: the tree exists, only tag it.
         if setup_files_exist(root) {
-            file::write(root, def(META), &meta(true))?;
+            file::write(root, def(META)?, &meta(true))?;
         }
         return Ok(None);
     }
@@ -275,7 +283,7 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         path: local_path,
         source,
     })?;
-    file::write(root, def(META), &meta(true))?;
+    file::write(root, def(META)?, &meta(true))?;
     let mut files = written.files;
     files.push(META);
     if !foreign.is_empty() {

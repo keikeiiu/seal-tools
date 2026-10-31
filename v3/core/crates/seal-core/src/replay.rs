@@ -20,7 +20,7 @@ use seal_proto::framing::{decode_line, encode_line};
 use seal_proto::{Error, Event, PROTOCOL_VERSION, Request, Response};
 use serde_json::{Map, Value, json};
 
-/// The largest `delay_ms` a script may ask for (§13: 0..=10_000).
+/// The largest `delay_ms` a script may ask for (§13: `0..=10_000`).
 const MAX_DELAY_MS: u64 = 10_000;
 
 /// One parsed replay script. Every validation happens in [`Script::load`], before the first request,
@@ -239,6 +239,10 @@ impl Expect {
 
 /// Runs the replay loop on stdin/stdout. Load/validation errors are boot refusals (nothing has been
 /// written); a drift writes its internal answer + fatal event before returning the reason.
+///
+/// # Errors
+///
+/// Returns the reason a scripted replay could not load, or the reason the live protocol drifted from the recording.
 pub fn run(path: &Path) -> Result<(), String> {
     let script = Script::load(path)?;
     let stdin = io::stdin();

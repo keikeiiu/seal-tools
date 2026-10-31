@@ -8,7 +8,7 @@
 //! 2. **`substring`** — in file order. A pure-ASCII `from` is replaced on WORD BOUNDARIES, because a
 //!    plain replace turned a correct "GRADE" into "GGRADE" (v1 matched with a `\b` regex); every
 //!    other `from` is a plain replace.
-//! 3. **`simplified_traditional`** — plain replaces; RapidOCR defaults to simplified Chinese.
+//! 3. **`simplified_traditional`** — plain replaces; `RapidOCR` defaults to simplified Chinese.
 //! 4. **`final`** — plain replaces, after the conversion.
 //! 5. **`regex`** — the dictionary's own `.NET` regular expressions.
 //!
@@ -37,6 +37,7 @@ pub enum TextFixError {
 }
 
 impl TextFixError {
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::EmptyFrom { table } => format!(
@@ -135,7 +136,11 @@ impl RegexFix {
                 lookaheads.push(body.to_owned());
                 rest = &after_open[close + 1..];
             } else {
-                let character = rest.chars().next().expect("rest is non-empty");
+                let Some(character) = rest.chars().next() else {
+                    // The loop condition says `rest` is non-empty; refusing rather than panicking
+                    // keeps a dictionary problem a reportable error even if that condition changes.
+                    return Err(unsupported());
+                };
                 if is_regex_meta(character) {
                     return Err(unsupported());
                 }
@@ -260,6 +265,12 @@ pub struct TextCleaner {
 impl TextCleaner {
     /// Compiles the tables. Fails when an entry cannot be honoured, which is a dictionary problem to
     /// report at load rather than a wrong reading to discover later.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TextFixError::UnsupportedRegex`] when one of the dictionary's regex fixes is not in
+    /// the supported `literal*` + negative-lookahead grammar (see `RegexFix`), so the caller can
+    /// refuse the dictionary instead of silently mis-cleaning text.
     pub fn new(fixes: &TextFixesConfig) -> Result<Self, TextFixError> {
         let mut substring = Vec::with_capacity(fixes.substring.len());
         for fix in &fixes.substring {
@@ -299,6 +310,7 @@ impl TextCleaner {
     }
 
     /// One OCR line in, the text the matcher would see out.
+    #[must_use]
     pub fn clean(&self, text: &str) -> String {
         let cleaned = text.trim().to_owned();
 

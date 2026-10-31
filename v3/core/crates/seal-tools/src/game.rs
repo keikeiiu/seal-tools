@@ -24,6 +24,11 @@ use crate::tool::ToolId;
 pub trait GamePort: Send + Sync {
     /// Ask for the game and BLOCK until the arbiter grants it, or return the line explaining why it
     /// cannot be granted (the core is shutting down, or the port is gone).
+    ///
+    /// # Errors
+    ///
+    /// Returns the line to show when the game cannot be granted: the core is shutting down, or the
+    /// supervisor port is gone.
     fn request(&self, tool: ToolId) -> Result<(), String>;
     /// Give the game back. Idempotent and fire-and-forget: a release for a game the caller no longer
     /// holds is harmless (the arbiter answers `Freed`).

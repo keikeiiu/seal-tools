@@ -20,9 +20,16 @@ use seal_domain::config::{
 use serde_json::{Value, json};
 
 /// A fully populated `local.yaml`, in the exact field spellings v2 writes via
-/// UnderscoredNamingConvention. Every field is present so the round-trip below proves the model
+/// `UnderscoredNamingConvention`. Every field is present so the round-trip below proves the model
 /// keeps all of them — the "silently dropped field" bug this file's doc comment says it paid for
 /// four times.
+///
+/// One `json!` table by design: the point is a single hand-checkable mirror of the file, and splitting
+/// it would hide which block a missing field came from.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the fixture is one hand-checkable mirror of the whole local.yaml file"
+)]
 fn full_local_shape() -> Value {
     json!({
         "calibration": {
@@ -163,12 +170,12 @@ fn full_local_shape() -> Value {
                     "us": {"title": "US_LIVE", "attributes": "attributes.us.yaml"}
                 }
             },
-            "arduino": {"vid": 9025, "pid": [32822, 32823], "baud": 115200},
+            "arduino": {"vid": 9025, "pid": [32822, 32823], "baud": 115_200},
             "hotkeys": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20},
             "tuner": {
                 "grade_order": ["N", "G", "DG"],
                 "target_grade": "DG",
-                "max_retries": 999999,
+                "max_retries": 999_999,
                 "save_captures": false,
                 "ocr_retries": 3,
                 "spring_mode": "hid",
@@ -359,16 +366,19 @@ fn value_less_quest_bodies_load_as_empty_bodies_not_nulls() {
 
     assert_eq!(quest.presets.len(), 1);
     let run = &quest.presets["run"];
-    assert!(run.steps.is_empty());
+    assert_eq!(run.steps, [] as [seal_domain::config::QuestStep; 0]);
     assert_eq!(run.loops, 1);
 
     assert_eq!(quest.sequences.len(), 1);
-    assert!(quest.sequences["seq"].entries.is_empty());
+    assert_eq!(
+        quest.sequences["seq"].entries,
+        [] as [seal_domain::config::QuestSequenceEntry; 0]
+    );
     // The key is KEPT rather than dropped: dropping would rename the player's flow.
     assert!(quest.presets.contains_key("run"));
 }
 
-/// A bare `entries:` list and a bare `-` list item are both nulls YamlDotNet produces from a
+/// A bare `entries:` list and a bare `-` list item are both nulls `YamlDotNet` produces from a
 /// hand-edited file. The list is "no entries"; an entry is reported as a blank name by the Save gate
 /// rather than crashing the load (`QuestConfigTests` pins both).
 #[test]
@@ -382,11 +392,17 @@ fn value_less_sequence_lists_and_entries_load_as_blanks() {
     }))
     .unwrap();
 
-    assert!(quest.sequences["null_list"].entries.is_empty());
+    assert_eq!(
+        quest.sequences["null_list"].entries,
+        [] as [seal_domain::config::QuestSequenceEntry; 0]
+    );
     assert_eq!(quest.sequences["null_entry"].entries.len(), 2);
     assert_eq!(quest.sequences["null_entry"].entries[0].preset, "");
     assert_eq!(quest.sequences["null_entry"].entries[1].preset, "a");
-    assert!(quest.presets["a"].steps.is_empty());
+    assert_eq!(
+        quest.presets["a"].steps,
+        [] as [seal_domain::config::QuestStep; 0]
+    );
 }
 
 /// v2's initializers, ported: a config file that omits a key gets the value the C# property starts
@@ -397,7 +413,7 @@ fn omitted_fields_keep_the_initialisers_v2_gives_them() {
     let preset: QuestPreset = serde_json::from_value(json!({})).unwrap();
     assert_eq!(preset.initial_wait_seconds, 10.0);
     assert_eq!(preset.loops, 1);
-    assert!(preset.steps.is_empty());
+    assert_eq!(preset.steps, [] as [seal_domain::config::QuestStep; 0]);
 
     let step: QuestStep = serde_json::from_value(json!({})).unwrap();
     assert_eq!(step.action, "click");

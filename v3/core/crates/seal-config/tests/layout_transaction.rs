@@ -22,8 +22,8 @@ fn def(path: &str) -> &'static FileDef {
         .expect("a registry entry")
 }
 
-fn seed(dir: &TestDir, path: &str, content: Value) {
-    file::write(dir.path(), def(path), &content).expect("seeds a file");
+fn seed(dir: &TestDir, path: &str, content: &Value) {
+    file::write(dir.path(), def(path), content).expect("seeds a file");
 }
 
 fn sections(pairs: &[(&str, Value)]) -> Map<String, Value> {
@@ -79,9 +79,9 @@ fn a_two_file_save_writes_both_files_and_leaves_no_journal() {
     seed(
         &dir,
         "setup/pet.yaml",
-        json!({"pet": {"items_per_minute": 3}}),
+        &json!({"pet": {"items_per_minute": 3}}),
     );
-    seed(&dir, "machine/pet.yaml", json!({"pet": {"slots": []}}));
+    seed(&dir, "machine/pet.yaml", &json!({"pet": {"slots": []}}));
 
     let written = write_sections(
         dir.path(),
@@ -113,12 +113,12 @@ fn a_crash_after_the_first_rename_rolls_both_files_back() {
     seed(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "OLD"}}),
+        &json!({"window": {"title": "OLD"}}),
     );
     seed(
         &dir,
         "machine/tuner.yaml",
-        json!({"tuner": {"ocr": {"row_height": 10}}}),
+        &json!({"tuner": {"ocr": {"row_height": 10}}}),
     );
     let old_common = bytes(&dir, "setup/common.yaml");
     let old_tuner = bytes(&dir, "machine/tuner.yaml");
@@ -156,7 +156,7 @@ fn a_crash_before_any_rename_rolls_back_to_the_same_bytes() {
     seed(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "OLD"}}),
+        &json!({"window": {"title": "OLD"}}),
     );
     let old = bytes(&dir, "setup/common.yaml");
     interrupted(
@@ -177,7 +177,7 @@ fn recovery_removes_a_target_that_did_not_exist_before_the_transaction() {
     seed(
         &dir,
         "machine/tuner.yaml",
-        json!({"tuner": {"ocr": {"row_height": 19}}}),
+        &json!({"tuner": {"ocr": {"row_height": 19}}}),
     );
     fs::write(
         directory.join("journal.json"),
@@ -206,12 +206,12 @@ fn a_loader_read_heals_an_interrupted_save_first() {
     seed(
         &dir,
         "setup/common.yaml",
-        json!({"window": {"title": "OLD"}}),
+        &json!({"window": {"title": "OLD"}}),
     );
     seed(
         &dir,
         "machine/tuner.yaml",
-        json!({"tuner": {"ocr": {"row_height": 10}}}),
+        &json!({"tuner": {"ocr": {"row_height": 10}}}),
     );
     interrupted(
         &dir,

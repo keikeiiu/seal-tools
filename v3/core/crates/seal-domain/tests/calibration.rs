@@ -9,20 +9,30 @@ use seal_domain::calibration::differences;
 use seal_domain::config::CalibrationInfo;
 use seal_domain::geometry::{DisplayInfo, Rect, Size};
 
+/// `(int)Math.Round` for the fixtures below; the values are the reference machine's measurement.
+// The fixtures round small measured pixel values; the saturating cast cannot truncate a real one.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the fixtures round small measured pixel values, which the saturating cast cannot truncate"
+)]
+fn rounded(value: f64) -> i32 {
+    value.round() as i32
+}
+
 /// v2's `Display()` helper: the reference machine's measurement (1.5 scale, 2865×1789 client,
 /// 3840×2160 screen), with a frame and a logical client in the same shape `Dpi.Measure` produces.
 fn display(scale: f64, screen_w: i32, screen_h: i32, client_w: i32, client_h: i32) -> DisplayInfo {
     DisplayInfo {
         scale,
-        monitor_dpi: (96.0 * scale).round() as u32,
+        monitor_dpi: u32::try_from(rounded(96.0 * scale)).unwrap_or(0),
         screen: Size::new(screen_w, screen_h),
         frame: Rect::new(100, 100, client_w + 16, client_h + 39),
         physical_client: Rect::new(108, 131, client_w, client_h),
         logical_client: Rect::new(
             72,
             87,
-            (f64::from(client_w) / scale).round() as i32,
-            (f64::from(client_h) / scale).round() as i32,
+            rounded(f64::from(client_w) / scale),
+            rounded(f64::from(client_h) / scale),
         ),
     }
 }
@@ -39,7 +49,7 @@ fn stored(
 ) -> CalibrationInfo {
     CalibrationInfo {
         dpi_scale: scale,
-        monitor_dpi: scale.map(|scale| (96.0 * scale).round() as u32),
+        monitor_dpi: scale.map(|scale| u32::try_from(rounded(96.0 * scale)).unwrap_or(0)),
         screen: screen.map(|[w, h]| vec![w, h]),
         client_size: client.map(|[w, h]| vec![w, h]),
         measured_at: None,
@@ -53,7 +63,10 @@ fn stored_reference() -> CalibrationInfo {
 /// `AMatchingMachineReportsNothing`.
 #[test]
 fn a_matching_machine_reports_nothing() {
-    assert!(differences(&stored_reference(), &reference()).is_empty());
+    assert_eq!(
+        differences(&stored_reference(), &reference()),
+        [] as [std::string::String; 0]
+    );
 }
 
 /// `AScaleThatOnlyDiffersInTheLastDigitsIsNotAMismatch` — the stored scale is rounded to four places
@@ -62,12 +75,12 @@ fn a_matching_machine_reports_nothing() {
 fn a_scale_that_only_differs_in_the_last_digits_is_not_a_mismatch() {
     let live = display(1.50003, 3840, 2160, 2865, 1789);
 
-    assert!(
+    assert_eq!(
         differences(
             &stored(Some(1.5), Some([2865, 1789]), Some([3840, 2160])),
             &live
-        )
-        .is_empty()
+        ),
+        [] as [std::string::String; 0]
     );
 }
 
@@ -119,7 +132,10 @@ fn every_moved_field_is_reported_together() {
 fn what_the_stored_calibration_does_not_carry_is_not_a_mismatch() {
     let never_calibrated = stored(None, None, None);
 
-    assert!(differences(&never_calibrated, &reference()).is_empty());
+    assert_eq!(
+        differences(&never_calibrated, &reference()),
+        [] as [std::string::String; 0]
+    );
 }
 
 // ── the rules v2 relies on without a test (AUTHORED) ─────────────────────────────────────
@@ -138,7 +154,10 @@ fn a_stored_pair_that_is_not_two_long_is_ignored() {
         stored.screen = screen;
 
         // The scale still matches, and the malformed pairs must produce nothing.
-        assert!(differences(&stored, &reference()).is_empty());
+        assert_eq!(
+            differences(&stored, &reference()),
+            [] as [std::string::String; 0]
+        );
     }
 }
 
@@ -149,7 +168,10 @@ fn a_stored_pair_that_is_not_two_long_is_ignored() {
 fn an_empty_stored_calibration_is_silent_against_any_live_measurement() {
     let stored = stored(None, None, None);
 
-    assert!(differences(&stored, &display(1.0, 1920, 1080, 800, 600)).is_empty());
+    assert_eq!(
+        differences(&stored, &display(1.0, 1920, 1080, 800, 600)),
+        [] as [std::string::String; 0]
+    );
 }
 
 /// AUTHORED: `Math.Abs(scale - live) > 0.001` is a strict comparison, so exactly the tolerance is not a

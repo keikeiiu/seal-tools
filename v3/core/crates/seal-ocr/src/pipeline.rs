@@ -117,6 +117,12 @@ fn missing_models(dir: &Path) -> Vec<&'static str> {
 /// error names every directory attempted (and why) because the line is the player-readable
 /// `ocr_unavailable` detail. `env`, `root` and `exe_dir` are injected so the resolver is a pure
 /// function over paths and can be unit-tested without a machine.
+///
+/// # Errors
+///
+/// Returns a [`PipelineError`] when the env var is set but unusable (it is never silently ignored)
+/// or when no candidate directory holds all three [`MODEL_FILES`]; the message names every directory
+/// tried and why.
 pub fn resolve_models_dir(
     env: Option<&Path>,
     root: Option<&Path>,
@@ -186,15 +192,20 @@ pub fn resolve_models_dir(
 
 impl OcrPipeline {
     /// Loads det+rec from `models_dir` and builds the cleaner from the dictionary's `text_fixes`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`PipelineError`] when a model fails to load or the dictionary's `text_fixes` are
+    /// refused.
     pub fn load(
         models_dir: &Path,
         attributes: &AttributesConfig,
         row_height: u32,
     ) -> Result<Self, PipelineError> {
         let det = DetModel::load(&models_dir.join("ch_PP-OCRv4_det_infer.onnx"), 1)
-            .map_err(|error| load_error("det", error))?;
+            .map_err(|error| load_error("det", &error))?;
         let rec = RecModel::load(&models_dir.join("ch_PP-OCRv4_rec_infer.onnx"), 1)
-            .map_err(|error| load_error("rec", error))?;
+            .map_err(|error| load_error("rec", &error))?;
         let cleaner = TextCleaner::new(&attributes.text_fixes).map_err(|error| PipelineError {
             reason: "text_fixes_invalid",
             message: error.message(),
@@ -210,6 +221,10 @@ impl OcrPipeline {
     /// The one entry point the core uses: resolve the models directory for this install (env, then
     /// `<root>/models`, then beside the exe) and load the pipeline. [`Self::load`] remains the
     /// low-level "open this directory" step used by tests and by [`Self::load_for_root`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the resolver's error when no models directory is found, otherwise [`Self::load`]'s.
     pub fn load_for_root(
         root: &Path,
         attributes: &AttributesConfig,
@@ -223,12 +238,18 @@ impl OcrPipeline {
         Self::load(&dir, attributes, row_height)
     }
 
+    #[must_use]
     pub fn row_height(&self) -> u32 {
         self.row_height
     }
 
     /// One full pass over an RGBA8 image. Alpha is ignored (the captures are opaque); an empty image
     /// is an empty scan, not an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`PipelineError`] when the RGBA buffer is shorter than `width * height * 4`, or when
+    /// a detection or recognition inference fails.
     pub fn scan_rgba(
         &mut self,
         width: usize,
@@ -254,17 +275,18 @@ impl OcrPipeline {
         Ok(Scan { items, lines })
     }
 
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the clamp bounds are the capture's own pixel dimensions, exactly representable in f64"
+    )]
     fn detect_and_read(&mut self, image: &Rgb) -> Result<Vec<RecognizedLine>, PipelineError> {
         let (resized, scale_x, scale_y) = det_resize(image);
         let (shape, probs) = self.run_det(&resized)?;
-        let (map_h, map_w) = match shape.as_slice() {
-            [1, 1, h, w] => (*h as usize, *w as usize),
-            _ => {
-                return Err(PipelineError {
-                    reason: "det_output_shape",
-                    message: format!("det output is {shape:?}, expected [1,1,H,W]"),
-                });
-            }
+        let Some((map_h, map_w)) = det_map_shape(&shape) else {
+            return Err(PipelineError {
+                reason: "det_output_shape",
+                message: format!("det output is {shape:?}, expected [1,1,H,W]"),
+            });
         };
         if map_w == 0 || map_h == 0 || probs.len() < map_w * map_h {
             return Ok(Vec::new());
@@ -299,14 +321,25 @@ impl OcrPipeline {
         Ok(items)
     }
 
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "the detector input dimensions are the capture's pixel size, far below i64::MAX"
+    )]
     fn run_det(&mut self, image: &Rgb) -> Result<(Vec<i64>, Vec<f32>), PipelineError> {
         let data = det_input(image);
         let shape = [1i64, 3, image.height as i64, image.width as i64];
         self.det
             .infer(&data, shape)
-            .map_err(|error| runtime_error("det", error))
+            .map_err(|error| runtime_error("det", &error))
     }
 
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap,
+        reason = "REC_HEIGHT is 48 and the tensor width is the crop's positive aspect ratio times it, clamped to 4..=4096; the capture dimensions fit i64"
+    )]
     fn read_quad(
         &mut self,
         image: &Rgb,
@@ -324,7 +357,7 @@ impl OcrPipeline {
         let output = self
             .rec
             .infer(&input.data, &shape)
-            .map_err(|error| runtime_error("rec", error))?;
+            .map_err(|error| runtime_error("rec", &error))?;
         let decoded: Decoded = self.rec.decode(&output);
         let text = self.cleaner.clean(&decoded.text);
         if text.is_empty() {
@@ -338,14 +371,14 @@ impl OcrPipeline {
     }
 }
 
-fn load_error(which: &str, error: OcrError) -> PipelineError {
+fn load_error(which: &str, error: &OcrError) -> PipelineError {
     PipelineError {
         reason: "model_load_failed",
         message: format!("{which} model: {error}"),
     }
 }
 
-fn runtime_error(which: &str, error: OcrError) -> PipelineError {
+fn runtime_error(which: &str, error: &OcrError) -> PipelineError {
     PipelineError {
         reason: "runtime_failed",
         message: format!("{which}: {error}"),
@@ -364,6 +397,12 @@ fn rgba_to_rgb(width: usize, height: usize, rgba: &[u8]) -> Rgb {
 
 /// Resize the detector input so the SHORT side reaches 736, round dims up to a multiple of 32, and
 /// return the x/y scale factors from detector pixels back to original pixels.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the resize works on the capture's own pixel dimensions and a positive scale ratio, so the rounded dimensions are positive and then rounded up to the 32 multiple"
+)]
 fn det_resize(image: &Rgb) -> (Rgb, f64, f64) {
     let short = image.width.min(image.height).max(1) as f64;
     let ratio = if short < DET_LIMIT_SIDE {
@@ -384,12 +423,30 @@ fn quad_points(quad: &Quad) -> Vec<(f64, f64)> {
     quad.0.iter().map(|point| (point.x, point.y)).collect()
 }
 
+/// The detector map's `(height, width)` from the model's `[1,1,H,W]` output shape; `None` for any
+/// other shape or a dimension that is not a non-negative length.
+fn det_map_shape(shape: &[i64]) -> Option<(usize, usize)> {
+    match shape {
+        [1, 1, height, width] => Some((
+            usize::try_from(*height).ok()?,
+            usize::try_from(*width).ok()?,
+        )),
+        _ => None,
+    }
+}
+
 fn quad_width(quad: &Quad) -> f64 {
-    (distance(quad.0[0], quad.0[1]) + distance(quad.0[2], quad.0[3])) / 2.0
+    f64::midpoint(
+        distance(quad.0[0], quad.0[1]),
+        distance(quad.0[2], quad.0[3]),
+    )
 }
 
 fn quad_height(quad: &Quad) -> f64 {
-    (distance(quad.0[1], quad.0[2]) + distance(quad.0[3], quad.0[0])) / 2.0
+    f64::midpoint(
+        distance(quad.0[1], quad.0[2]),
+        distance(quad.0[3], quad.0[0]),
+    )
 }
 
 fn distance(a: Pt, b: Pt) -> f64 {
@@ -399,6 +456,11 @@ fn distance(a: Pt, b: Pt) -> f64 {
 /// v2 `BuildLines` (`OcrEngine.cs:220-240`): bucket by `y / rowHeight`, order rows by key, order items
 /// in a row by left edge, concatenate their text, average confidence. Items whose text became empty
 /// after cleaning do not start a line.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "row keys are capture pixel rows (far below 2^52, so they convert to f64 and back exactly) and `row.len()` is the handful of items in one row"
+)]
 pub fn build_lines(items: &[RecognizedLine], row_height: u32) -> Vec<Line> {
     use std::collections::BTreeMap;
     let row_height = row_height.max(1);
@@ -410,7 +472,7 @@ pub fn build_lines(items: &[RecognizedLine], row_height: u32) -> Vec<Line> {
             .iter()
             .map(|point| point.y)
             .fold(f64::INFINITY, f64::min);
-        rows.entry((y / row_height as f64).floor() as i64)
+        rows.entry((y / f64::from(row_height)).floor() as i64)
             .or_default()
             .push(item);
     }
@@ -449,6 +511,7 @@ fn left_x(item: &RecognizedLine) -> f64 {
 }
 
 /// `DetBox` convenience for the report/tests: the unclipped box filter path.
+#[must_use]
 pub fn accepted_box(map: &ScoreMap, quad: &Quad) -> Option<DetBox> {
     crate::detgeom::accept_box(map, quad, BOX_THRESH)
 }
@@ -521,6 +584,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the fixture's image dimensions are small integers, exactly representable in f64"
+    )]
     fn det_resize_rounds_to_multiples_of_32_and_keeps_the_scale() {
         let image = crate::imageops::Rgb::new(100, 50, vec![0; 100 * 50 * 3]);
         let (resized, scale_x, scale_y) = det_resize(&image);

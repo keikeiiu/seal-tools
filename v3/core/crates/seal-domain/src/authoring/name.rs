@@ -7,6 +7,11 @@
 
 use std::fmt;
 
+/// The suffix [`copy_name`] appends for the first copy.
+const COPY_SUFFIX: &str = " (copy)";
+/// The prefix [`copy_name`] appends for the second and later copies, before the number.
+const NUMBERED_PREFIX: &str = " (copy ";
+
 /// What a name belongs to. The noun is part of the RULE, not decoration: it is what the refusal says,
 /// and three lists share the rule — "A flow needs a name." versus "A preset needs a name.".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +22,7 @@ pub enum PresetNoun {
 }
 
 impl PresetNoun {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Flow => "flow",
@@ -36,7 +42,8 @@ pub enum NameError {
 }
 
 impl NameError {
-    /// The line the picker's InfoBar shows.
+    /// The line the picker's `InfoBar` shows.
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::NeedsName { noun } => format!("A {} needs a name.", noun.as_str()),
@@ -69,6 +76,11 @@ impl std::error::Error for NameError {}
 /// are keyed case-sensitively, so "Mine" beside "mine" is accepted, and only the GENERATED copy name
 /// below refuses a case-only difference (the picker sorts ignore-case, so a generated name is the one
 /// place a player would see two indistinguishable rows).
+///
+/// # Errors
+///
+/// Returns [`NameError::NeedsName`] when the name is empty after trimming, and
+/// [`NameError::Duplicate`] when another name in `taken` is already exactly this one.
 pub fn validate_name<I, S>(
     noun: PresetNoun,
     requested: &str,
@@ -124,9 +136,6 @@ where
 
     let mut stem = source;
     let mut start: i64 = 0;
-
-    const COPY_SUFFIX: &str = " (copy)";
-    const NUMBERED_PREFIX: &str = " (copy ";
 
     if let Some(stripped) = stem.strip_suffix(COPY_SUFFIX) {
         stem = stripped;

@@ -72,21 +72,25 @@ pub struct ToolStatus {
 }
 
 impl ToolStatus {
+    #[must_use]
     pub fn message(mut self, message: impl Into<String>) -> Self {
         self.message = message.into();
         self
     }
 
+    #[must_use]
     pub fn countdown_s(mut self, countdown_s: Option<f64>) -> Self {
         self.countdown_s = countdown_s;
         self
     }
 
+    #[must_use]
     pub fn rows(mut self, rows: Vec<crate::tool::ToolRow>) -> Self {
         self.rows = rows;
         self
     }
 
+    #[must_use]
     pub fn detail(mut self, detail: Vec<crate::tool::ToolDetail>) -> Self {
         self.detail = detail;
         self
@@ -96,12 +100,29 @@ impl ToolStatus {
 /// The effects one decision needs. `seal-core` implements it over the board and the cursor; the
 /// tests record calls.
 pub trait Effects {
+    /// Click at `at`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] carrying the sentence the tool's card shows when the click cannot be
+    /// performed.
     fn click(&mut self, at: Point) -> Result<(), EffectError>;
+
+    /// Press `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] carrying the sentence the tool's card shows when the press cannot be
+    /// performed.
     fn key(&mut self, key: Key) -> Result<(), EffectError>;
 
     /// Press one key as the fast tap. The default is the ordinary press, so an effects
     /// implementation that does not model the distinction still sends the key rather than dropping
     /// it — the slower tap is a visible-but-working outcome, a dropped key is an invisible bug.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] from [`Self::key`], or the implementation's own fast-tap failure.
     fn key_fast(&mut self, key: Key) -> Result<(), EffectError> {
         self.key(key)
     }
@@ -109,6 +130,11 @@ pub trait Effects {
     /// Press and hold the spacebar. The default REFUSES rather than approximating with a tap: a tap
     /// would look like the hold worked while auto-pickup never happens, which is the silent failure
     /// class this project keeps paying for. Only the Hold Space effects implement it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot hold the spacebar (the default) or the
+    /// board write fails.
     fn hold_space(&mut self) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot hold the spacebar",
@@ -116,12 +142,21 @@ pub trait Effects {
     }
 
     /// Release the spacebar. The default is a no-op: nothing was held, so nothing needs releasing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the release write fails; the default is `Ok(())`.
     fn release_space(&mut self) -> Result<(), EffectError> {
         Ok(())
     }
 
     /// Press Enter. The default REFUSES rather than approximating with a printable `K E`: those are
     /// different wires (`E` vs `K E`) and the firmware's Enter is the one a game dialog accepts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot press Enter (the default) or the board
+    /// write fails.
     fn enter(&mut self) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot press Enter",
@@ -131,6 +166,11 @@ pub trait Effects {
     /// Move the cursor to a client-relative PHYSICAL offset without clicking. The default REFUSES: an
     /// implementation that cannot place must not click instead, because the click is what the caller
     /// deliberately did not ask for.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot place the cursor (the default) or the
+    /// move fails.
     fn place(&mut self, _at: Point) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot place the cursor",
@@ -139,6 +179,11 @@ pub trait Effects {
 
     /// Click wherever the cursor already is (the board's bare `C`). The default REFUSES rather than
     /// trying to place at an origin: a bare click at the wrong spot is worse than a card line.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot click without a target (the default) or
+    /// the board write fails.
     fn click_here(&mut self) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot click without a target",
@@ -146,6 +191,11 @@ pub trait Effects {
     }
 
     /// Right-click wherever the cursor already is (the board's bare `R`). Default refuses, as above.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot right-click without a target (the
+    /// default) or the board write fails.
     fn right_click_here(&mut self) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot right-click without a target",
@@ -154,6 +204,11 @@ pub trait Effects {
 
     /// One wheel scroll. Default refuses rather than silently skipping: a skipped scroll would make a
     /// buy pass click the wrong row, which is a wrong PURCHASE, not a cosmetic failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot scroll the wheel (the default) or the
+    /// board write fails.
     fn wheel(&mut self, _notches: i32, _down: bool) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot scroll the wheel",
@@ -162,6 +217,11 @@ pub trait Effects {
 
     /// One raw HID move. Default refuses: the counts are measured per machine, and approximating them
     /// with a placement would be a different move, not the measured one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot make a raw HID move (the default) or
+    /// the board write fails.
     fn move_by(&mut self, _dx: i32, _dy: i32) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot make a raw HID move",
@@ -170,6 +230,11 @@ pub trait Effects {
 
     /// Press and hold the left button. Default refuses rather than approximating: a drag that does
     /// not hold drops the item somewhere else.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the implementation cannot hold the left button (the default) or
+    /// the board write fails.
     fn hold_left(&mut self) -> Result<(), EffectError> {
         Err(EffectError::new(
             "this effects implementation cannot hold the left button",
@@ -177,6 +242,10 @@ pub trait Effects {
     }
 
     /// Release the left button. Default is a no-op: nothing was held through this seam.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectError`] when the release write fails; the default is `Ok(())`.
     fn release_left(&mut self) -> Result<(), EffectError> {
         Ok(())
     }
@@ -196,6 +265,7 @@ impl EffectError {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }

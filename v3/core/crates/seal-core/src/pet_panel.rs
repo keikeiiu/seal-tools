@@ -25,6 +25,14 @@ pub struct PanelArguments {
 pub const DEFAULT_DELAY_MS: u64 = 700;
 pub const MAX_DELAY_MS: u64 = 5_000;
 
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when `page` or `cell` is malformed.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "row/page/cell indices are small values validated before use"
+)]
 pub fn arguments(args: &Value) -> Result<PanelArguments, (String, &'static str)> {
     let page = args
         .get("page")
@@ -77,6 +85,10 @@ pub struct PanelGeometry {
     pub region: Rect,
 }
 
+///
+/// # Errors
+///
+/// Returns the player-facing line and the field name when the panel's marks are not calibrated.
 pub fn geometry(
     config: &Value,
     arguments: &PanelArguments,
@@ -122,6 +134,7 @@ pub fn geometry(
 /// the number tokens it saw and an explicit `null` panel — never invented numbers (the diagnostic's
 /// point). `line` is the parser's own description, so the shell renders one authoritative sentence
 /// instead of re-deriving stage/growth/EXP.
+#[must_use]
 pub fn panel_result(lines: &[String]) -> Value {
     let panel = PetPanel::parse(lines).map(|panel| {
         json!({

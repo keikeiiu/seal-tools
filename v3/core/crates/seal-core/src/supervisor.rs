@@ -164,6 +164,7 @@ impl Supervisor {
         }
     }
 
+    #[must_use]
     pub fn start_tool(&self, tool: ToolId, args: &Value) -> StartReply {
         let (reply, answer) = mpsc::channel();
         if self
@@ -184,6 +185,7 @@ impl Supervisor {
         })
     }
 
+    #[must_use]
     pub fn stop_tool(&self, tool: Option<ToolId>) -> StopReply {
         let (reply, answer) = mpsc::channel();
         if self
@@ -202,6 +204,10 @@ impl Supervisor {
     /// otherwise the same busy/still-stopping line a tool start would answer. This is a SNAPSHOT,
     /// not a held lease — session-wide leases and queueing belong to the calibration session
     /// increments; a pointer action only refuses while a tool already owns the game.
+    ///
+    /// # Errors
+    ///
+    /// Returns the line when the supervisor is not running or its worker does not answer.
     pub fn input_lease(&self) -> Result<Option<String>, String> {
         let (reply, answer) = mpsc::channel();
         self.incoming
@@ -276,6 +282,11 @@ impl GamePort for SupervisorPort {
     }
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "the supervisor thread's owned capture set cannot be borrowed across the spawn, and its sequence is the arbitration state machine"
+)]
 fn supervise(
     registry: Arc<dyn ToolRegistry>,
     bus: EventBus,
@@ -547,8 +558,7 @@ fn handle_game_release(
                 .borrow_mut()
                 .take()
                 .filter(|(tool, _)| *tool == handle.tool)
-                .map(|(_, args)| args)
-                .unwrap_or(Value::Null);
+                .map_or(Value::Null, |(_, args)| args);
             spawn_worker(handle, plumbing, args, workers);
         }
     }
@@ -629,6 +639,10 @@ fn spawn_worker(
 }
 
 /// One run. Sends `Opened` once the session exists, runs the loop, and sends `Done` as its last act.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the worker thread's owned capture set cannot be borrowed across the spawn"
+)]
 fn worker_loop(
     handle: RunHandle,
     registry: Arc<dyn ToolRegistry>,
@@ -723,7 +737,7 @@ impl Tool for LoggedTool {
         let status = self.inner.status();
         if !status.message.is_empty() && status.message != *self.last_message.borrow() {
             self.logs.tool_line(self.inner.id(), &status.message);
-            *self.last_message.borrow_mut() = status.message.clone();
+            self.last_message.borrow_mut().clone_from(&status.message);
         }
         status
     }

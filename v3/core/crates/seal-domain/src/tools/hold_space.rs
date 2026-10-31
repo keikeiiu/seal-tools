@@ -66,6 +66,7 @@ impl HoldSpaceAction {
     /// The byte the board understands (`P\n` / `U\n`). Kept here as the decision's own encoding so the
     /// effect side and the tests cannot disagree about which write an action means; the board crate
     /// owns the transport.
+    #[must_use]
     pub const fn wire(self) -> &'static str {
         match self {
             Self::Hold => "P\n",
@@ -112,6 +113,7 @@ pub struct HoldSpaceTick {
 
 impl HoldSpaceTick {
     /// Nothing to do, nothing to report.
+    #[must_use]
     pub fn idle(mirror_running: bool) -> Self {
         Self {
             mirror_running,
@@ -158,6 +160,13 @@ impl HoldSpaceTick {
 /// set it; `hotkey_down` is this tick's read and `hotkey_was_down` the previous tick's. The loop's
 /// stop checks (quit flag, cancellation) happen BEFORE this call in v2 (`HoldSpace.cs:39-40`) and stay
 /// in the loop: a stop abandons the work and the teardown still releases.
+// The four booleans ARE v2's three inputs plus its hotkey memory, and this is a public entry point:
+// grouping them into a struct would rename every caller for no behaviour change.
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "the signature is v2's loop inputs verbatim and is public; grouping them would only rename callers"
+)]
+#[must_use]
 pub fn tick(
     mirror_running: bool,
     panel_running: bool,
@@ -219,18 +228,21 @@ pub fn tick(
 /// The teardown's owed action: v2's `finally { Release(); }` (`HoldSpace.cs:70-74`), "never leave the
 /// spacebar stuck down". A loop must perform this on every exit path, including after a cancellation;
 /// the held-input guard enforces the same independently.
+#[must_use]
 pub const fn cleanup() -> HoldSpaceAction {
     HoldSpaceAction::Release
 }
 
 /// The card line when pressing/holding the spacebar failed (`HoldSpace.cs:32`). The run continues: a
 /// press that failed leaves nothing down, so it is a message, not a fatal error.
+#[must_use]
 pub fn hold_failed(error: &str) -> String {
     format!("Could not hold the spacebar: {error}")
 }
 
 /// The card line when RELEASING failed (`HoldSpace.cs:33`). This is the dangerous case — the host may
 /// be left with the spacebar down — so the message also says what to do about it.
+#[must_use]
 pub fn release_failed(error: &str) -> String {
     format!("Could not release the spacebar — tap it once in game ({error})")
 }

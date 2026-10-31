@@ -113,7 +113,7 @@ fn save_derives_the_geometry_writes_the_block_and_annotates_the_frame() {
 
 #[test]
 fn save_accepts_a_measured_row_height_and_an_optional_spring_point() {
-    let (_dir, mut state, frame_id) = harness(800, 600);
+    let (dir, mut state, frame_id) = harness(800, 600);
     let response = call(
         &mut state,
         "2",
@@ -129,7 +129,7 @@ fn save_accepts_a_measured_row_height_and_an_optional_spring_point() {
     let result = response.result.expect("a result");
     assert_eq!(result["derived"]["row_height"], 19);
     assert_eq!(result["block"]["spring_point"], json!([500, 400]));
-    let local = _dir.read("config/local.yaml");
+    let local = dir.read("config/local.yaml");
     assert!(local.contains("spring_point"), "{local}");
 }
 

@@ -51,6 +51,10 @@ impl QuestSource for WinQuestSource {
 }
 
 /// Resolve the run's plan out of the merged config, or the line that refuses the start.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when the quest plan cannot be resolved.
 pub fn resolve(config: &Value) -> Result<QuestPlan, StopReason> {
     resolve_with(config, None)
 }
@@ -58,6 +62,10 @@ pub fn resolve(config: &Value) -> Result<QuestPlan, StopReason> {
 /// [`resolve`] with an optional master-loop override. `Some(1)` is the Quest tab's **Test one
 /// loop**: the same validated plan, run exactly once, so a wrong flow cannot do its whole loop
 /// count before the player sees it.
+///
+/// # Errors
+///
+/// Returns the domain's stop reason when the quest block is malformed or a flow/sequence references a missing step.
 pub fn resolve_with(config: &Value, loops_override: Option<i32>) -> Result<QuestPlan, StopReason> {
     let quest: QuestConfig = match config.get("quest").cloned() {
         Some(block) => serde_json::from_value(block).map_err(|error| {
@@ -165,6 +173,11 @@ impl<S: QuestSource> QuestTool<S> {
     }
 
     /// `(flow, pass number, how many passes of that flow)`, for v2's sequence stop line.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "row/page/cell indices are small values validated before use"
+    )]
     fn sequence_position(&self) -> (String, i32, i32) {
         let passes = &self.plan.passes;
         let current = passes[self.pass_index].flow.clone();
@@ -344,7 +357,7 @@ mod tests {
         }
     }
 
-    fn config(steps: Value, loops: i32) -> Value {
+    fn config(steps: &Value, loops: i32) -> Value {
         serde_json::json!({
             "quest": {
                 "active": "run1",
@@ -369,14 +382,14 @@ mod tests {
         ])
     }
 
-    fn run(config: Value, source: ScriptedCursor) -> QuestTool<ScriptedCursor> {
-        let plan = resolve(&config).expect("the plan resolves");
+    fn run(config: &Value, source: ScriptedCursor) -> QuestTool<ScriptedCursor> {
+        let plan = resolve(config).expect("the plan resolves");
         QuestTool::new(plan, source)
     }
 
     #[test]
     fn the_plan_resolves_the_flow_schedule_and_labels() {
-        let plan = resolve(&config(simple_steps(), 2)).expect("a plan");
+        let plan = resolve(&config(&simple_steps(), 2)).expect("a plan");
 
         assert!(plan.schedule.contains("flow \"run1\""), "{}", plan.schedule);
         assert_eq!(plan.loops, 2);
@@ -387,7 +400,7 @@ mod tests {
 
     #[test]
     fn a_flow_with_no_steps_is_refused_with_the_v2_line() {
-        let reason = resolve(&config(serde_json::json!([]), 1)).expect_err("no steps");
+        let reason = resolve(&config(&serde_json::json!([]), 1)).expect_err("no steps");
 
         assert!(
             reason.message.contains("has no steps"),
@@ -399,7 +412,7 @@ mod tests {
     #[test]
     fn positioning_runs_once_then_the_steps_send_in_order() {
         let mut tool = run(
-            config(simple_steps(), 1),
+            &config(&simple_steps(), 1),
             ScriptedCursor::always(Some(Point::new(5, 5))),
         );
 
@@ -427,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_one_loop_overrides_the_configured_count() {
-        let plan = resolve_with(&config(simple_steps(), 5), Some(1)).expect("resolves");
+        let plan = resolve_with(&config(&simple_steps(), 5), Some(1)).expect("resolves");
         assert_eq!(
             plan.loops, 1,
             "Test one loop runs the same plan exactly once"
@@ -437,7 +450,7 @@ mod tests {
     #[test]
     fn loops_repeat_the_pass_the_configured_number_of_times() {
         let mut tool = run(
-            config(simple_steps(), 2),
+            &config(&simple_steps(), 2),
             ScriptedCursor::always(Some(Point::new(5, 5))),
         );
 
@@ -464,7 +477,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_cursor_at_start_stops_before_anything_is_clicked() {
-        let mut tool = run(config(simple_steps(), 1), ScriptedCursor::always(None));
+        let mut tool = run(&config(&simple_steps(), 1), ScriptedCursor::always(None));
 
         match tool.decide() {
             Decision::Stop(reason) => {
@@ -486,7 +499,7 @@ mod tests {
             Some(Point::new(5, 5)),   // before the first step: still in place
             Some(Point::new(50, 50)), // before the third step: drifted
         ]);
-        let mut tool = run(config(simple_steps(), 1), source);
+        let mut tool = run(&config(&simple_steps(), 1), source);
 
         tool.decide(); // positioning
         assert_eq!(tool.decide(), Decision::ClickHere);
