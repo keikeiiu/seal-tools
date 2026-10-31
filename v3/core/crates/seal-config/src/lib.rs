@@ -26,10 +26,12 @@
 
 pub mod error;
 pub mod foreign;
+pub mod registry;
 pub mod store;
 pub mod yaml;
 
 pub use error::ConfigError;
+pub use registry::{Class, Domain, FILES, FileDef, SCHEMA_VERSION};
 pub use store::{ConfigStore, PetRunStatePatch};
 
 /// The top-level blocks of `local.yaml` this application owns and rewrites, ported verbatim from
