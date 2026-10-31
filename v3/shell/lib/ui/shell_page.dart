@@ -25,6 +25,7 @@ import 'card_grid.dart';
 import 'components/log_drawer.dart';
 import 'components/nav_rail.dart';
 import 'crash_view.dart';
+import 'mini_mode.dart';
 import 'status_strip.dart';
 import 'tabs/arduino_tab.dart';
 import 'tabs/attributes_tab.dart';
@@ -52,6 +53,10 @@ class ShellPage extends StatefulWidget {
 class _ShellPageState extends State<ShellPage> {
   int _selected = 0;
   bool _logsVisible = false;
+
+  /// The full shell's subtree key: the mini bar keeps the shell mounted (and every tab's draft
+  /// alive) by reparenting this keyed subtree offstage while the window is collapsed.
+  final GlobalKey _shellKey = GlobalKey(debugLabel: 'full-shell');
 
   /// Destinations built at least once; the rest stay placeholders so opening a tab is lazy.
   final Set<int> _visited = {0};
@@ -121,83 +126,117 @@ class _ShellPageState extends State<ShellPage> {
       listenable: widget.model,
       builder: (context, _) {
         final model = widget.model;
-        final connection = model.connection;
-        final ready = connection.status == ConnectionStatus.ready;
-
-        if (!ready) {
-          return Scaffold(
-            body: switch (connection.status) {
-              ConnectionStatus.failed => CrashView(model: model),
-              _ => _ConnectingView(
-                status: connection.status,
-                stderrTail: model.logs.stderrTail,
-              ),
-            },
-          );
+        // The full shell is always built for the same keyed subtree. While the mini bar is shown it
+        // is reparented offstage inside a full-size OverflowBox (the 360×96 window would otherwise
+        // force the shell's layout); expanding moves the same subtree back, so tab drafts survive.
+        final full = KeyedSubtree(
+          key: _shellKey,
+          child: _buildFullShell(context, model),
+        );
+        if (!model.miniMode) {
+          return full;
         }
-
-        final pages = _pages;
-        return Scaffold(
-          body: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.keyL, control: true):
-                  _toggleLogs,
-              const SingleActivator(LogicalKeyboardKey.escape): _closeLogs,
-            },
-            child: Focus(
-              autofocus: true,
-              child: Column(
-                children: [
-                  _TopBar(
-                    model: model,
-                    logsVisible: _logsVisible,
-                    onToggleLogs: _toggleLogs,
-                    onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
-                  ),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        ShellRail(
-                          selected: _selected,
-                          onSelect: _select,
-                          runningCount: cardRunningCount(model),
-                        ),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: IndexedStack(
-                                  index: _selected,
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < pages.length;
-                                      index++
-                                    )
-                                      _visited.contains(index)
-                                          ? pages[index]
-                                          : const SizedBox.shrink(),
-                                  ],
-                                ),
-                              ),
-                              if (_logsVisible)
-                                LogDrawer(
-                                  entries: model.logs.entries,
-                                  onClose: _toggleLogs,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  StatusStrip(model: model, logsVisible: _logsVisible),
-                ],
+        return Stack(
+          children: [
+            Offstage(
+              offstage: true,
+              child: ExcludeFocus(
+                excluding: true,
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  minWidth: 1120,
+                  maxWidth: 1120,
+                  minHeight: 680,
+                  maxHeight: 680,
+                  child: full,
+                ),
               ),
             ),
-          ),
+            Positioned.fill(child: MiniRunningCard(model: model)),
+          ],
         );
       },
+    );
+  }
+
+  /// The full tab shell: the crash/connecting surfaces until `ready`, then rail + top bar + content +
+  /// status strip. Kept separate from [build] only so the mini bar can park it offstage.
+  Widget _buildFullShell(BuildContext context, ShellModel model) {
+    final connection = model.connection;
+    final ready = connection.status == ConnectionStatus.ready;
+
+    if (!ready) {
+      return Scaffold(
+        body: switch (connection.status) {
+          ConnectionStatus.failed => CrashView(model: model),
+          _ => _ConnectingView(
+            status: connection.status,
+            stderrTail: model.logs.stderrTail,
+          ),
+        },
+      );
+    }
+
+    final pages = _pages;
+    return Scaffold(
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+              _toggleLogs,
+          const SingleActivator(LogicalKeyboardKey.escape): _closeLogs,
+        },
+        child: Focus(
+          autofocus: true,
+          child: Column(
+            children: [
+              _TopBar(
+                model: model,
+                logsVisible: _logsVisible,
+                onToggleLogs: _toggleLogs,
+                onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
+              ),
+              Expanded(
+                child: Row(
+                  children: [
+                    ShellRail(
+                      selected: _selected,
+                      onSelect: _select,
+                      runningCount: cardRunningCount(model),
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: IndexedStack(
+                              index: _selected,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < pages.length;
+                                  index++
+                                )
+                                  _visited.contains(index)
+                                      ? pages[index]
+                                      : const SizedBox.shrink(),
+                              ],
+                            ),
+                          ),
+                          if (_logsVisible)
+                            LogDrawer(
+                              entries: model.logs.entries,
+                              onClose: _toggleLogs,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              StatusStrip(model: model, logsVisible: _logsVisible),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -240,6 +279,13 @@ class _TopBar extends StatelessWidget {
               // with the core's state instead of repeating the product name.
               _CoreStatus(model: model),
               const Spacer(),
+              if (ready && model.miniCandidate != null)
+                IconButton(
+                  key: const ValueKey('app-bar-mini'),
+                  tooltip: 'Collapse to the mini window',
+                  icon: const Icon(Icons.picture_in_picture_alt_outlined),
+                  onPressed: () => unawaited(model.collapseToMini()),
+                ),
               TextButton.icon(
                 key: const ValueKey('logs-toggle'),
                 onPressed: onToggleLogs,

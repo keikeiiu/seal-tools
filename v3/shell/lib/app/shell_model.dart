@@ -163,6 +163,30 @@ class ShellModel extends ChangeNotifier {
   WindowRect? _lastSavedWindow;
   WindowRect? _pendingWindow;
 
+  // ── mini running card ────────────────────────────────────────────────────────────────────────
+  // A foreground run collapses the window to the 360×96 bar beside the game. The full placement is
+  // read from the runner before the collapse and restored when the player expands; window moves
+  // while mini are ignored so a resize cannot overwrite the player's remembered placement. The
+  // resident Pet Feeder never collapses the window (Pet is excluded from `_foregroundTool`).
+  static const WindowRect _fullMinimum = WindowRect(
+    left: 0,
+    top: 0,
+    width: 1120,
+    height: 680,
+  );
+  static const int _miniWidth = 360;
+  static const int _miniHeight = 96;
+  bool _miniActive = false;
+  bool _miniSuppressed = false;
+  bool _miniSyncing = false;
+  ToolId? _miniTool;
+  WindowRect? _miniRestoreRect;
+  WindowRect? _miniRect;
+
+  /// The mini bar's last position (session memory; snapped to an edge when it was left).
+  WindowRect? _miniBarRect;
+  WindowRect? _miniWorkArea;
+
   /// The placement the shell last applied or saved. A move event that reports the SAME rect is not
   /// news — the restore's own `SetWindowPos` reports one too — so it never schedules a write.
   WindowRect? get windowPlacement => _lastSavedWindow;
@@ -233,7 +257,7 @@ class ShellModel extends ChangeNotifier {
   }
 
   void _onWindowMoved(WindowRect rect) {
-    if (!isReady || _closing || _disposed) {
+    if (!isReady || _closing || _disposed || _miniActive) {
       return;
     }
     if (rect == _lastSavedWindow || rect == _pendingWindow) {
@@ -1178,10 +1202,243 @@ class ShellModel extends ChangeNotifier {
     await logLines?.cancel();
   }
 
+  // ── mini running card ────────────────────────────────────────────────────────────────────────
+
+  /// True while the window is collapsed to the running tool's compact card.
+  bool get miniMode => _miniActive;
+
+  /// The tool the mini bar is following, or null when the full shell is shown.
+  ToolId? get miniTool => _miniTool;
+
+  /// The compact rect applied by the last collapse/move, for tests/diagnostics.
+  WindowRect? get miniRect => _miniRect;
+
+  /// The foreground tool a manual "Mini" action could collapse onto, or null.
+  ToolId? get miniCandidate => _miniActive ? null : _foregroundTool();
+
+  /// The tool a foreground run is showing, if any. Pet is excluded: the resident feeder runs
+  /// alongside a foreground tool and the full window must stay usable for it. Hold Space and every
+  /// foreground card do collapse.
+  ToolId? _foregroundTool() {
+    for (final tool in ToolId.values) {
+      if (tool == ToolId.pet) continue;
+      final phase = tools.snapshot(tool)?.phase ?? ToolPhase.idle;
+      if (phase != ToolPhase.idle) {
+        return tool;
+      }
+    }
+    return null;
+  }
+
+  /// Collapse when a foreground tool starts. When the run ends the bar STAYS (Finished/Error) until
+  /// the player presses its "Full window" action; it never pops the shell over the game on its own.
+  /// [exitMiniMode]'s `suppress` keeps the full window for the rest of the current run.
+  void _syncMiniMode() {
+    if (!isReady || _closing || _disposed || _miniSyncing) {
+      return;
+    }
+    final active = _foregroundTool();
+    if (active == null) {
+      // A new run may collapse again; if the bar is showing a finished run, it stays until expanded.
+      if (!_miniActive) {
+        _miniSuppressed = false;
+      }
+      return;
+    }
+    if (_miniActive) {
+      if (_miniTool != active) {
+        _miniTool = active;
+        notifyListeners();
+      }
+      return;
+    }
+    if (_miniSuppressed) {
+      return;
+    }
+    _miniSyncing = true;
+    unawaited(enterMiniMode(active).whenComplete(() => _miniSyncing = false));
+  }
+
+  /// The full window's "Mini" action: collapse onto the current foreground run, if there is one.
+  Future<void> collapseToMini() async {
+    final tool = _foregroundTool();
+    if (tool != null) {
+      await enterMiniMode(tool);
+    }
+  }
+
+  /// Collapse the window to [tool]'s compact bar: remember the full placement, lower the runner's
+  /// minimum size, switch to borderless non-activating chrome, move to the remembered/default edge
+  /// position and pin the window on top.
+  Future<void> enterMiniMode(ToolId tool) async {
+    if (_miniActive || _disposed || tool == ToolId.pet) {
+      return;
+    }
+    _miniActive = true;
+    _miniTool = tool;
+    notifyListeners();
+    try {
+      _miniRestoreRect = await host.windowRect();
+      final work = await host.primaryWorkArea();
+      _miniWorkArea = work;
+      await host.setWindowMinSize(_miniWidth, _miniHeight);
+      await host.setMiniChrome(true);
+      final rect = _miniStartRect(work);
+      _miniRect = rect;
+      await host.setWindowRect(rect);
+      await host.setAlwaysOnTop(true);
+    } catch (error) {
+      logs.addShellNote('cannot collapse to the mini bar: $error');
+      await exitMiniMode();
+    }
+  }
+
+  /// Restore the full window. [suppress] keeps the full window until the current run ends (the mini
+  /// bar's "Full window" action); the bar's last position is remembered for the next collapse.
+  Future<void> exitMiniMode({bool suppress = false}) async {
+    if (suppress) {
+      _miniSuppressed = true;
+    }
+    if (!_miniActive) {
+      return;
+    }
+    final work = _miniWorkArea;
+    if (work != null) {
+      try {
+        final current = await host.windowRect();
+        _miniBarRect = _snappedRect(current, work);
+      } catch (_) {
+        // Keeping the previous remembered position is harmless.
+      }
+    }
+    _miniActive = false;
+    _miniTool = null;
+    notifyListeners();
+    final restore = _miniRestoreRect;
+    _miniRestoreRect = null;
+    try {
+      await host.setMiniChrome(false);
+      await host.setWindowMinSize(_fullMinimum.width, _fullMinimum.height);
+      if (restore != null) {
+        await host.setWindowRect(restore);
+      }
+      await host.setAlwaysOnTop(alwaysOnTop);
+    } catch (error) {
+      logs.addShellNote('cannot restore the full window: $error');
+    }
+    _miniRect = null;
+  }
+
+  /// The mini bar's "Full window" button: leave the bar for this run, without re-collapsing until
+  /// the next start.
+  Future<void> showFullWindow() => exitMiniMode(suppress: true);
+
+  /// Moves the mini bar while the player drags it (clamped to the work area; the snap happens on
+  /// release via [settleMiniWindow]).
+  Future<void> moveMiniWindow(WindowRect target) async {
+    if (!_miniActive) {
+      return;
+    }
+    final work = _miniWorkArea;
+    final rect = work == null
+        ? target
+        : WindowRect(
+            left: target.left,
+            top: target.top,
+            width: _miniWidth,
+            height: _miniHeight,
+          ).clampedTo(work);
+    if (rect == _miniRect) {
+      return;
+    }
+    _miniRect = rect;
+    try {
+      await host.setWindowRect(rect);
+    } catch (error) {
+      logs.addShellNote('cannot move the mini bar: $error');
+    }
+  }
+
+  /// Snaps the mini bar to its nearest work-area edge after a drag (16 px margin, 28 px threshold).
+  Future<void> settleMiniWindow() async {
+    final work = _miniWorkArea;
+    if (!_miniActive || work == null) {
+      return;
+    }
+    try {
+      final current = await host.windowRect();
+      final snapped = _snappedRect(current, work);
+      _miniBarRect = snapped;
+      if (snapped == _miniRect) {
+        return;
+      }
+      _miniRect = snapped;
+      await host.setWindowRect(snapped);
+    } catch (error) {
+      logs.addShellNote('cannot settle the mini bar: $error');
+    }
+  }
+
+  /// The bar's initial rect: the last dragged position when it still fits, else the default dock —
+  /// right edge, 16 px margin, about a fifth down (below a typical minimap).
+  WindowRect _miniStartRect(WindowRect work) {
+    final saved = _miniBarRect;
+    if (saved != null) {
+      return _snappedRect(saved.clampedTo(work), work);
+    }
+    final left = work.left + work.width - _miniWidth - 16;
+    final top = work.top + (work.height * 18 ~/ 100);
+    return _snappedRect(
+      WindowRect(
+        left: left,
+        top: top,
+        width: _miniWidth,
+        height: _miniHeight,
+      ).clampedTo(work),
+      work,
+    );
+  }
+
+  /// Clamps [rect] into [work] and snaps it to an edge when it is within 28 px of one.
+  WindowRect _snappedRect(WindowRect rect, WindowRect work) {
+    const margin = 16;
+    const threshold = 28;
+    var left = rect.left;
+    var top = rect.top;
+    final rightGap = work.left + work.width - (left + rect.width);
+    final leftGap = left - work.left;
+    if (rightGap <= threshold) {
+      left = work.left + work.width - rect.width - margin;
+    } else if (leftGap <= threshold) {
+      left = work.left + margin;
+    }
+    final bottomGap = work.top + work.height - (top + rect.height);
+    final topGap = top - work.top;
+    if (bottomGap <= threshold) {
+      top = work.top + work.height - rect.height - margin;
+    } else if (topGap <= threshold) {
+      top = work.top + margin;
+    }
+    return WindowRect(
+      left: _clampInt(left, work.left, work.left + work.width - rect.width),
+      top: _clampInt(top, work.top, work.top + work.height - rect.height),
+      width: rect.width,
+      height: rect.height,
+    );
+  }
+
+  static int _clampInt(int value, int lower, int upper) {
+    if (upper < lower) return lower;
+    if (value < lower) return lower;
+    if (value > upper) return upper;
+    return value;
+  }
+
   void _onSubmodelChanged() {
     if (_disposed) {
       return;
     }
+    _syncMiniMode();
     notifyListeners();
   }
 

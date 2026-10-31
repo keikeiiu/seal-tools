@@ -118,6 +118,14 @@ the card, so the collapsed tile stays one line. When nothing runs, a banner show
 runs yet" on a fresh start, "Everything is idle" otherwise. A card's phase moves only when the core
 publishes `state`: a Start shows an in-flight label, never an optimistic phase.
 
+**Mini mode.** A foreground run collapses the window to a 360×96 bar beside the game: the tool name
+and phase, the core's latest message, the next moment and **Stop**; when the run finishes the bar
+switches to **Full window** instead of popping back over the game. The bar stays on top, remembers
+the screen edge you dragged it to for the next run, and the resident Pet Feeder keeps the full
+window (it is shown as a paw badge beside the foreground tool). Press **Full window** to return for
+the rest of this run; the next run collapses again. While a tool runs, the app bar's
+picture-in-picture button collapses manually.
+
 ### 2.3 Hold Space
 
 Hold Space is its own card now (it used to be a top-bar toggle) because it is a run like any other:
@@ -756,8 +764,6 @@ repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "p
 unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
-- **Mini mode / hide-the-cards.** v2's card-window chrome is gone; v3's window is the tab shell, and a
-  compact mode is a later layout decision.
 - **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
   geometry is hand-edited from config until the session exists.
 - **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.

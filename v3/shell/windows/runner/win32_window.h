@@ -52,6 +52,15 @@ class Win32Window {
   // If true, closing this window will quit the application.
   void SetQuitOnClose(bool quit_on_close);
 
+  // The minimum logical size the user can drag the window to. The default is the full shell's
+  // rail + content minimum; the mini running card lowers it while a tool runs and restores it.
+  void SetMinimumSize(double width, double height);
+
+  // The mini running card's chrome: borderless, non-activating (so a Stop click never takes the
+  // game's keyboard focus) and window-corner rounded where Windows supports it. Restoring the shell
+  // re-applies the saved style/EX style. Idempotent.
+  void SetMiniChrome(bool mini);
+
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
@@ -91,6 +100,16 @@ class Win32Window {
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
+
+  // Minimum logical (DIP) window size enforced by WM_GETMINMAXINFO. The mini running card lowers
+  // this while a foreground tool runs; the full shell restores the default afterwards.
+  double min_width_ = 1120.0;
+  double min_height_ = 680.0;
+
+  // The style/EX style saved when the mini chrome was applied; LONG_PTR for 64-bit Windows.
+  bool mini_chrome_ = false;
+  LONG_PTR saved_style_ = 0;
+  LONG_PTR saved_ex_style_ = 0;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

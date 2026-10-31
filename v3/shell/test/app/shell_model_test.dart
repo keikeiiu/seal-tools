@@ -750,4 +750,164 @@ void main() {
       );
     },
   );
+
+  group('mini running bar', () {
+    test('a foreground run collapses; the resident pet never does', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+
+      harness.emitState(tool: ToolId.pet, message: 'feeding');
+      await settle();
+      expect(
+        harness.model.miniMode,
+        isFalse,
+        reason: 'the resident feeder keeps the full window',
+      );
+      expect(host.miniChromeCalls, isEmpty);
+
+      harness.emitState(tool: ToolId.tuner, message: 'reading the grade');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(harness.model.miniTool, ToolId.tuner);
+      expect(host.minSizeCalls, [(360, 96)]);
+      expect(host.miniChromeCalls, [true]);
+      expect(
+        host.appliedRects.last,
+        _rect(1920 - 360 - 16, 1040 * 18 ~/ 100, 360, 96),
+        reason: 'default dock: right edge, 16 px margin, a fifth down',
+      );
+      expect(host.alwaysOnTopCalls.last, isTrue);
+    });
+
+    test('the bar stays on the finished run until "Full window"', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+
+      // The core's exit path publishes the final idle snapshot, then tool.finished.
+      harness.emitState(
+        tool: ToolId.tuner,
+        phase: ToolPhase.idle,
+        message: 'DONE',
+      );
+      harness.emitToolFinished(
+        tool: ToolId.tuner,
+        message: 'Reached DG after 7 attempts',
+        summary: {'grade': 'DG', 'attempts': 7},
+        endedAt: '2026-10-30T12:34:56Z',
+      );
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(harness.model.miniTool, ToolId.tuner);
+      expect(host.miniChromeCalls, [
+        true,
+      ], reason: 'a finished run does not pop the full window over the game');
+
+      await harness.model.showFullWindow();
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(host.miniChromeCalls, [true, false]);
+      expect(host.minSizeCalls.last, (1120, 680));
+      expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
+      expect(host.alwaysOnTopCalls.last, isFalse);
+    });
+
+    test('the bar remembers its last snapped position', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+
+      await harness.model.moveMiniWindow(_rect(5, 5, 360, 96));
+      await settle();
+      expect(host.currentWindowRect, _rect(5, 5, 360, 96));
+      await harness.model.settleMiniWindow();
+      await settle();
+      expect(
+        host.currentWindowRect,
+        _rect(16, 16, 360, 96),
+        reason: 'a drag near the corner snaps to the 16 px edge inset',
+      );
+
+      await harness.model.showFullWindow();
+      await settle();
+      // Finish that run, then the next start reuses the remembered edge position.
+      harness.emitState(
+        tool: ToolId.tuner,
+        phase: ToolPhase.idle,
+        message: 'DONE',
+      );
+      harness.emitToolFinished(tool: ToolId.tuner);
+      await settle();
+      harness.emitState(tool: ToolId.tuner, message: 'another run');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(host.currentWindowRect, _rect(16, 16, 360, 96));
+    });
+
+    test('"Full window" suppresses collapsing until the next run', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+
+      await harness.model.showFullWindow();
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+
+      // More events from the SAME run do not re-collapse.
+      harness.emitState(tool: ToolId.tuner, message: 'still running');
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+
+      // The run ends; the next start collapses again.
+      harness.emitState(
+        tool: ToolId.tuner,
+        phase: ToolPhase.idle,
+        message: 'DONE',
+      );
+      harness.emitToolFinished(tool: ToolId.tuner);
+      await settle();
+      harness.emitState(tool: ToolId.tuner, message: 'next run');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+    });
+
+    test('a manual collapse uses the running foreground tool', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      expect(harness.model.miniCandidate, isNull);
+
+      harness.emitState(tool: ToolId.pet, message: 'feeding');
+      await settle();
+      expect(harness.model.miniCandidate, isNull);
+
+      harness.emitState(tool: ToolId.holdspace, message: 'holding');
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      // "Full window" suppresses auto-collapse; the top-bar Mini action still collapses on demand.
+      await harness.model.showFullWindow();
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(harness.model.miniCandidate, ToolId.holdspace);
+      await harness.model.collapseToMini();
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(harness.model.miniTool, ToolId.holdspace);
+    });
+  });
 }

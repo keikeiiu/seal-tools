@@ -169,6 +169,31 @@ bool FlutterWindow::OnCreate() {
           rect.bottom = rect.top + ::GetSystemMetrics(SM_CYVIRTUALSCREEN);
           result->Success(flutter::EncodableValue(PhysicalRectToLogical(
               rect, DpiScaleForWindow(GetHandle()))));
+        } else if (call.method_name() == "setWindowMinSize") {
+          // The mini running card needs a window smaller than the full shell's 1120x680 minimum.
+          // Dart lowers this before resizing and restores it when the run ends.
+          const auto* arguments =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          double width = 0;
+          double height = 0;
+          if (arguments == nullptr ||
+              !ReadNumber(*arguments, "width", &width) ||
+              !ReadNumber(*arguments, "height", &height)) {
+            result->Error("bad_arguments",
+                          "setWindowMinSize expects width/height");
+            return;
+          }
+          SetMinimumSize(width, height);
+          result->Success();
+        } else if (call.method_name() == "setMiniChrome") {
+          // Borderless, non-activating mini running card; `false` restores the full shell's chrome.
+          const auto* mini = std::get_if<bool>(call.arguments());
+          if (mini == nullptr) {
+            result->Error("bad_arguments", "setMiniChrome expects a bool");
+            return;
+          }
+          SetMiniChrome(*mini);
+          result->Success();
         } else if (call.method_name() == "setWindowRect") {
           const auto* arguments =
               std::get_if<flutter::EncodableMap>(call.arguments());

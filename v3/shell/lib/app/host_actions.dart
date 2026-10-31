@@ -139,6 +139,14 @@ abstract class HostActions {
   /// Put the shell window above (or back below) other windows.
   Future<void> setAlwaysOnTop(bool enabled);
 
+  /// Lower/restore the user-resizable minimum window size, in logical pixels. The mini running card
+  /// needs a small window; hosts that do not implement it keep the full-shell minimum (a no-op).
+  Future<void> setWindowMinSize(int width, int height) async {}
+
+  /// Borderless, non-activating chrome for the mini running card (`false` restores the shell).
+  /// A no-op on hosts that cannot change the window style.
+  Future<void> setMiniChrome(bool mini) async {}
+
   /// The shell window's current rect in logical screen coordinates.
   Future<WindowRect> windowRect();
 
@@ -209,6 +217,17 @@ class MethodChannelHostActions implements HostActions {
   @override
   Future<void> setAlwaysOnTop(bool enabled) =>
       _channel.invokeMethod<void>('setAlwaysOnTop', enabled);
+
+  @override
+  Future<void> setWindowMinSize(int width, int height) =>
+      _channel.invokeMethod<void>('setWindowMinSize', {
+        'width': width,
+        'height': height,
+      });
+
+  @override
+  Future<void> setMiniChrome(bool mini) =>
+      _channel.invokeMethod<void>('setMiniChrome', mini);
 
   @override
   Future<WindowRect> windowRect() async {

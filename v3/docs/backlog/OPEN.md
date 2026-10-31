@@ -67,8 +67,6 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
   canonical protocol command that returns the comparison, and Setup has no Detect surface; until then
   an environment change is handled by the workspace's warning plus a manual recalibration (the ledger
   row is §6 G09).
-- **Mini mode / shell layout questions** — the shell has a stub; the ⚑ questions in
-  [PLAN-V3-SHELL.md](../plans/PLAN-V3-SHELL.md) still decide the layout.
 
 ## 5. Parity gaps from the v2-to-v3 audit (2026-10-28)
 

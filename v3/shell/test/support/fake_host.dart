@@ -76,6 +76,12 @@ class FakeHost implements HostActions {
   /// Every rect the shell applied through `setWindowRect`, in order.
   final List<WindowRect> appliedRects = <WindowRect>[];
 
+  /// Every minimum-size change the shell asked for, in order.
+  final List<(int, int)> minSizeCalls = <(int, int)>[];
+
+  /// Every mini-chrome toggle the shell asked for, in order.
+  final List<bool> miniChromeCalls = <bool>[];
+
   /// How many times `windowRect()` was asked (the restore's baseline read).
   int windowRectQueries = 0;
 
@@ -120,6 +126,19 @@ class FakeHost implements HostActions {
       throw StateError('the host refused setAlwaysOnTop');
     }
     alwaysOnTopCalls.add(enabled);
+  }
+
+  @override
+  Future<void> setWindowMinSize(int width, int height) async {
+    minSizeCalls.add((width, height));
+  }
+
+  @override
+  Future<void> setMiniChrome(bool mini) async {
+    if (failWindowCalls) {
+      throw StateError('the host refused setMiniChrome');
+    }
+    miniChromeCalls.add(mini);
   }
 
   @override

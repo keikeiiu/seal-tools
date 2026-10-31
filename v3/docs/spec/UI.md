@@ -55,7 +55,8 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
   dot, not a pill) on the left, the outlined **Logs (N)** button (a list icon), the always-on-top pin
   (`app-bar-always-on-top`) and the product version on the right. There is **no in-app "Seal Tools"
   brand**: the native Win32 caption already carries the window title, so repeating it in the bar only
-  competed with the status. **There is no Hold Space toggle.**
+  competed with the status. **There is no Hold Space toggle.** While a foreground tool runs (Pet
+  excluded) an `app-bar-mini` picture-in-picture action appears to collapse into the mini bar.
 - **Status strip (28 px):** a top hairline, core version/rev on the left, the core's root, and
   `Ctrl+L logs` (or `Ctrl+L logs · Esc close` while the drawer is open) on the right. It advertises the
   shortcut; the drawer is opened from the top bar or Ctrl+L.
@@ -64,6 +65,53 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
   line (info/warn/error, `note` for shell notes, stderr = error), a fixed origin column (stderr/shell),
   an **All / Errors** filter and a close button. Monospace body. Ctrl+L toggles it; **Esc closes it**
   (the status strip advertises both while open).
+
+## Mini running window (landed 2026-11-01)
+
+A foreground run (every tool except the resident Pet Feeder) collapses the whole window to a
+**360 × 96 borderless, always-on-top bar** (`MiniRunningCard`, `lib/ui/mini_mode.dart`). Approved
+design demo: `v3/.scratch/ui-audit/ui-demo-mini.html`; real-build evidence
+`v3/.scratch/ui-audit/mini-real-*.png`. The core and protocol are unchanged: every bar value is an
+existing `state` / `tool.finished` fact.
+
+- **Window chrome** — `setMiniChrome` (shell channel) → `Win32Window::SetMiniChrome`: saves the
+  style/EX style, applies `WS_POPUP` (no caption/thick frame/min/max/system menu),
+  `WS_EX_NOACTIVATE` and always-on-top, and rounds the popup on Windows 11; "Full window" restores the
+  saved chrome, the saved full rect and the saved pin. The minimum size is lowered to 360 × 96 while
+  mini and restored to 1120 × 680 on expand. `WS_EX_NOACTIVATE` keeps the game's keyboard focus when
+  Stop is clicked while the click is still delivered to Flutter (verified on the real 150 % build:
+  540 × 144 px, `has_caption=False`, `ex_noactivate=True`, foreground window unchanged after a Stop
+  click).
+- **Content, ranked** — row 1: drag grip, tool icon + name, phase chip (dot **and** word), resident-pet
+  paw badge, expand icon. Row 2: the core's action line (one line, full text on hover), the compact
+  countdown (`in 11 s`), then exactly one primary action. Rail, tabs, header, save bar, logs, detail
+  rows, finished summaries and the native caption are deliberately absent: Stop first, then tool +
+  phase, then the current action, then the next moment, nothing else.
+- **Actions** — an active run shows **Stop** (88 × 32, one click, no confirmation; enabled while
+  `running` and `starting`; disabled with a spinner while `stopping` or while a stop command is in
+  flight, so the bar never invents a phase). A finished/error/lost bar shows **Full window**
+  (112 × 32); the expand icon is always present.
+- **States** — `running`, `starting`, `stopping`, `finished`, `stopped` (cancelled), `error`, and
+  `core lost`; colour is always paired with the chip word. The bar stays on Finished/Error until
+  "Full window"; it never pops the shell over the game on its own. Expanding restores the exact full
+  rect; the full shell stays mounted offstage behind the bar, so the current tab and its draft survive
+  the collapse.
+- **Resident Pet Feeder** — Pet never collapses the window; it is the resident feeder and keeps the
+  full window usable. If pet runs while a foreground tool is mini'd, the bar shows a paw badge
+  (tooltip "Pet Feeder is running in the background"); Stop stops only the foreground tool and the
+  pet keeps running. The full window still shows both running cards.
+- **Placement** — default dock right edge, 16 px inset, 18 % down the work area (below a typical
+  minimap). Drag is a Flutter pan that moves the window through `setWindowRect`, clamped to the work
+  area; on release the bar snaps to an edge within 28 px (16 px inset). The position is remembered for
+  the session and re-clamped when the next run collapses; it is not persisted across restarts (a
+  machine-state `ui` field would be the follow-up).
+- **Entry/exit** — automatic on the foreground tool's first non-idle `state`, plus the top-bar
+  `app-bar-mini` action while a foreground run is active. "Full window" suppresses auto-collapse for
+  the rest of that run; the next start collapses again. The bar has no Esc/Tab contract: with
+  `WS_EX_NOACTIVATE` it is pointer-only by design (keyboard would mean taking focus from the game).
+- **Not built** — cross-restart position persistence; a native `HTCAPTION` drag strip (the Flutter pan
+  above is the implementation); a topmost fallback for exclusive-fullscreen games (the usual Windows
+  topmost limitation).
 
 ## Cards screen
 
@@ -235,6 +283,8 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 271/271; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 303/303; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
-(`.scratch/ui-audit/shots/final-*.png`) with no layout overflow.
+(`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
+on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
+Stop click and expand restore exercised).

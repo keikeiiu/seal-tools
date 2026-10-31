@@ -184,19 +184,17 @@ Win32Window::MessageHandler(HWND hwnd,
       // The shell's minimum logical size (PLAN-V3-UI-UX §3: the rail plus the widest rigid row).
       // MINMAXINFO is expressed in physical pixels for a DPI-aware window, so scale by the current
       // monitor DPI; the plan asks the runner to enforce this because the layout itself must not
-      // shrink below the rail + content.
+      // shrink below the rail + content. The mini running card lowers the stored minimum first.
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-      constexpr double kMinWidth = 1120.0;
-      constexpr double kMinHeight = 680.0;
       UINT dpi = ::GetDpiForWindow(hwnd);
       if (dpi == 0) {
         dpi = 96;
       }
       const double scale = static_cast<double>(dpi) / 96.0;
       info->ptMinTrackSize.x =
-          static_cast<LONG>(std::lround(kMinWidth * scale));
+          static_cast<LONG>(std::lround(min_width_ * scale));
       info->ptMinTrackSize.y =
-          static_cast<LONG>(std::lround(kMinHeight * scale));
+          static_cast<LONG>(std::lround(min_height_ * scale));
       return 0;
     }
 
@@ -282,6 +280,58 @@ HWND Win32Window::GetHandle() {
 
 void Win32Window::SetQuitOnClose(bool quit_on_close) {
   quit_on_close_ = quit_on_close;
+}
+
+void Win32Window::SetMinimumSize(double width, double height) {
+  // The caller (the mini-mode channel) has already decided the size is sane; guard against a
+  // degenerate call so a bad argument cannot make the window unresizable or invisible. The mini bar
+  // is 96 logical tall, so the floor is the bar's height rather than the full shell's 680.
+  if (width >= 200.0 && height >= 56.0) {
+    min_width_ = width;
+    min_height_ = height;
+  }
+}
+
+void Win32Window::SetMiniChrome(bool mini) {
+  HWND window = GetHandle();
+  if (window == nullptr || mini == mini_chrome_) {
+    return;
+  }
+  if (mini) {
+    saved_style_ = ::GetWindowLongPtr(window, GWL_STYLE);
+    saved_ex_style_ = ::GetWindowLongPtr(window, GWL_EXSTYLE);
+    LONG_PTR style = saved_style_;
+    // A 96 px bar cannot afford a caption; WS_EX_NOACTIVATE keeps the game's keyboard focus when
+    // the player clicks Stop (the click is still delivered to Flutter).
+    style &= ~static_cast<LONG_PTR>(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
+                                     WS_MAXIMIZEBOX | WS_SYSMENU | WS_BORDER |
+                                     WS_DLGFRAME);
+    style |= WS_POPUP;
+    ::SetWindowLongPtr(window, GWL_STYLE, style);
+    ::SetWindowLongPtr(window, GWL_EXSTYLE,
+                       saved_ex_style_ | WS_EX_NOACTIVATE);
+    // Windows 11 rounds the popup; older Windows keeps square corners (same values as
+    // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND when the SDK knows them).
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+    const int round = 2;
+    ::DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, &round,
+                            sizeof(round));
+    mini_chrome_ = true;
+  } else {
+    ::SetWindowLongPtr(window, GWL_STYLE, saved_style_);
+    ::SetWindowLongPtr(window, GWL_EXSTYLE, saved_ex_style_);
+    const int square = 0;
+    ::DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, &square,
+                            sizeof(square));
+    mini_chrome_ = false;
+  }
+  // The frame changed: Windows must recompute the non-client area before/after the client rect is
+  // set by `setWindowRect`.
+  ::SetWindowPos(window, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
 }
 
 bool Win32Window::OnCreate() {
