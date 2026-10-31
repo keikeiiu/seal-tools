@@ -2229,4 +2229,21 @@ void main() {
     expect(find.textContaining('next feed in 30 m'), findsWidgets);
     expect(find.textContaining('next reload in 12 m'), findsWidgets);
   });
+
+  testWidgets("both pet bag grids use the Sell tab's 26 px cells", (
+    tester,
+  ) async {
+    await _pumpPet(tester, pet: _machinePet());
+
+    final food = find.byKey(const ValueKey('pet-food-cell-0-0'));
+    final source = find.byKey(const ValueKey('pet-add-cell-0-0'));
+    await tester.ensureVisible(food);
+    expect(
+      tester.getSize(food),
+      const ui.Size(30, 30),
+      reason: '26 px cell + 2 px margin each side, the Sell-tab size',
+    );
+    await tester.ensureVisible(source);
+    expect(tester.getSize(source), const ui.Size(30, 30));
+  });
 }

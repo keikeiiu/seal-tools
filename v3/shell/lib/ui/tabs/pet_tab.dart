@@ -1841,22 +1841,34 @@ class _PetTabState extends State<PetTab>
 
   /// One selectable bag cell of the Add form's source grid (single selection; the page comes from
   /// the chips above it).
+  /// One bag cell, drawn like the Sell tab's grid: 26 px, rounded, and a check when selected so
+  /// colour is not the only selected-state channel.
+  Widget _bagCellVisual(ThemeData theme, {required bool selected}) {
+    final colors = theme.colorScheme;
+    return Container(
+      width: 26,
+      height: 26,
+      margin: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: selected ? colors.primary : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(ShellRadius.s - 2),
+        border: Border.all(
+          color: selected ? colors.primary : colors.outlineVariant,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: selected
+          ? Icon(Icons.check, size: 13, color: colors.onPrimary)
+          : null,
+    );
+  }
+
   Widget _sourceCell(ThemeData theme, int cell) {
     final selected = _addCell == cell;
     return InkWell(
       key: ValueKey('pet-add-cell-$_addPage-$cell'),
       onTap: () => _setAddCell(cell),
-      child: Container(
-        width: 20,
-        height: 20,
-        margin: const EdgeInsets.all(1),
-        decoration: BoxDecoration(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-      ),
+      child: _bagCellVisual(theme, selected: selected),
     );
   }
 
@@ -2648,17 +2660,7 @@ class _PetTabState extends State<PetTab>
     return InkWell(
       key: ValueKey('pet-food-cell-$_foodPage-$cell'),
       onTap: () => _toggleFoodCell(cell),
-      child: Container(
-        width: 20,
-        height: 20,
-        margin: const EdgeInsets.all(1),
-        decoration: BoxDecoration(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-      ),
+      child: _bagCellVisual(theme, selected: selected),
     );
   }
 }
