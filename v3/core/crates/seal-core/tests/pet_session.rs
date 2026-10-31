@@ -107,11 +107,13 @@ fn save_writes_the_calibration_half_and_crops_the_empty_slot() {
     let result = response.result.expect("a result");
     assert_eq!(result["rev"], 1);
     assert_eq!(result["block"]["slots"][0]["stacks"], 4);
+    assert_eq!(
+        result["block"]["slots"][0]["pet_slot_empty_png"], "artifacts/pet_slot_empty_1.png",
+        "the empty-slot crop is a file reference"
+    );
     assert!(
-        result["block"]["slots"][0]["pet_slot_empty_png"]
-            .as_str()
-            .is_some(),
-        "the empty-slot crop is inline base64"
+        dir.exists("config/artifacts/pet_slot_empty_1.png"),
+        "the crop was written under config/artifacts/"
     );
     assert_eq!(result["block"]["page_tabs"][0], json!([300, 20]));
     assert_eq!(result["artifacts"][0]["file"], "calib_pet.png");

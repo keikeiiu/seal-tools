@@ -42,6 +42,8 @@ pub struct MigrationReport {
     pub backup: PathBuf,
     pub files: Vec<&'static str>,
     pub user_blocks: Vec<String>,
+    /// Crops that could not be decoded and stayed inline (lossless fallback, never silent).
+    pub warnings: Vec<String>,
 }
 
 fn stamp() -> String {
@@ -71,6 +73,86 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Increment 6: move the four inline crop groups into `config/artifacts/*.png` and leave small
+/// `artifacts/<name>.png` references in the config. A crop whose base64 does not decode is LEFT
+/// INLINE and named in the warnings: losing a player's picture to a broken transition is worse than
+/// a large machine file.
+fn extract_crops(root: &Path, local: &mut Map<String, Value>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let Some(pet) = local.get_mut("pet").and_then(Value::as_object_mut) else {
+        return warnings;
+    };
+    for (field, name) in [
+        ("close_button_png", "pet_close_button.png"),
+        ("food_icon_png", "pet_food_icon.png"),
+    ] {
+        extract_one(root, pet, field, name, &mut warnings);
+    }
+    if let Some(slots) = pet.get_mut("slots").and_then(Value::as_array_mut) {
+        for (index, slot) in slots.iter_mut().enumerate() {
+            if let Some(object) = slot.as_object_mut() {
+                extract_one(
+                    root,
+                    object,
+                    "pet_slot_empty_png",
+                    &format!("pet_slot_empty_{}.png", index + 1),
+                    &mut warnings,
+                );
+            }
+        }
+    }
+    if let Some(queue) = pet.get_mut("queue").and_then(Value::as_array_mut) {
+        for (index, entry) in queue.iter_mut().enumerate() {
+            if let Some(object) = entry.as_object_mut() {
+                extract_one(
+                    root,
+                    object,
+                    "png",
+                    &format!("pet_queue_{}.png", index + 1),
+                    &mut warnings,
+                );
+            }
+        }
+    }
+    warnings
+}
+
+fn extract_one(
+    root: &Path,
+    object: &mut Map<String, Value>,
+    field: &str,
+    name: &str,
+    warnings: &mut Vec<String>,
+) {
+    let Some(value) = object.get(field).and_then(Value::as_str) else {
+        return;
+    };
+    let value = value.to_owned();
+    if value.trim().is_empty() || value.starts_with(crate::ARTIFACT_PREFIX) {
+        return;
+    }
+    let payload = value.rsplit(',').next().unwrap_or(&value).trim();
+    let Ok(bytes) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, payload)
+    else {
+        warnings.push(format!(
+            "pet.{field} is not valid base64; it was kept inline in machine/pet.yaml"
+        ));
+        return;
+    };
+    let path = root.join(crate::ARTIFACT_PREFIX).join(name);
+    match file::write_bytes(&path, &bytes) {
+        Ok(()) => {
+            object.insert(
+                field.to_owned(),
+                Value::String(format!("{}{name}", crate::ARTIFACT_PREFIX)),
+            );
+        }
+        Err(error) => warnings.push(format!(
+            "pet.{field} could not be written to artifacts/{name}: {error}; it was kept inline"
+        )),
+    }
 }
 
 fn meta(folded: bool) -> Value {
@@ -150,7 +232,7 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         path: local_path.clone(),
         message,
     })?;
-    let local = match local {
+    let mut local = match local {
         Value::Null => Map::new(),
         Value::Object(local) => local,
         _ => {
@@ -161,6 +243,7 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         }
     };
 
+    let warnings = extract_crops(root, &mut local);
     let owned = crate::OWNED_LOCAL_BLOCKS;
     let mut sections = Map::new();
     let mut foreign = Map::new();
@@ -203,5 +286,6 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         backup,
         files,
         user_blocks: foreign.keys().cloned().collect(),
+        warnings,
     }))
 }

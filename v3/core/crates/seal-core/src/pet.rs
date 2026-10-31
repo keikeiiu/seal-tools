@@ -384,6 +384,11 @@ fn queue(config: &Value) -> Vec<PetQueuePlan> {
 /// resolved for the board check ([`check_board`], which the opening phase calls with the firmware
 /// level it read).
 pub fn plan(config: &Value, root: &Path) -> Result<PetPlan, String> {
+    // Increment 6: inline crops may now be rtifacts/... references. Resolve them before any
+    // decoder sees the values, so the run itself is unaware of the file layout.
+    let mut resolved = config.clone();
+    crate::pet_artifacts::resolve_config(&mut resolved, root);
+    let config = &resolved;
     let setup = setup(config);
     seal_domain::tools::pet::ready(&setup).map_err(|reason| reason.message)?;
 

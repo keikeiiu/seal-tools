@@ -41,6 +41,10 @@ pub use registry::{Class, Domain, FILES, FileDef, SCHEMA_VERSION};
 pub use store::{ConfigStore, PetRunStatePatch};
 pub use transaction::{PendingWrite, recover};
 
+/// The folder under the config root that holds per-PC images: the reference every
+/// `artifacts/<name>.png` config value means (PLAN-PORTABLE-SETUP §2/§6).
+pub const ARTIFACT_PREFIX: &str = "artifacts/";
+
 /// The top-level blocks of `local.yaml` this application owns and rewrites, ported verbatim from
 /// `ConfigLoader.OwnedLocalBlocks`. Every other top-level block is foreign: carried through a save
 /// verbatim, comments included, so a hand-added or future block survives (`CONFIG.md`).

@@ -342,8 +342,29 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
         }
         if crop {
             match crop_rgba(&frame, boarding) {
-                Ok((_, _, _, encoded)) => {
-                    entry["pet_slot_empty_png"] = Value::String(encoded);
+                Ok((_, _, png, _)) => {
+                    // Increment 6: crops live in config/artifacts/ and the config carries a small
+                    // reference; a failed artifact write refuses the save rather than leaving a
+                    // row whose reference picture is missing.
+                    match crate::pet_artifacts::write_reference(
+                        state.store.config_dir(),
+                        &format!("pet_slot_empty_{}.png", index + 1),
+                        &png,
+                    ) {
+                        Ok(reference) => {
+                            entry["pet_slot_empty_png"] = Value::String(reference);
+                        }
+                        Err(error) => {
+                            return Response::err(
+                                &request.id,
+                                Error::new(
+                                    "io",
+                                    &format!("the pet-slot crop could not be written: {error}"),
+                                    json!({}),
+                                ),
+                            );
+                        }
+                    }
                 }
                 Err(message) => return fail(&request.id, message, json!({"field": "rows"})),
             }

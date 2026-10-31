@@ -346,6 +346,14 @@ Why it is **not** the recommended store (reasons, in the player's terms):
 - **Increment 0 landed:** `seal-config::registry` is the one table (file, class, domain,
   `schema_version`, owned paths); the coverage test decodes the real v2-era fixture through
   `LocalOverrides` and fails on an unowned typed leaf. No loader/writer behaviour changed yet.
+- **Increment 6 landed:** the migration extracts the four inline crop groups into
+  `config/artifacts/*.png` and leaves small `artifacts/<name>.png` references in `machine/pet.yaml`
+  (`pet.close_button_png`, `food_icon_png`, `slots[].pet_slot_empty_png`, `queue[].png`); a crop
+  that does not decode stays inline with a warning. The pet plan resolves references back to base64
+  before any decoder sees them, so the run, the wire and the tools are unaware of the file layout;
+  legacy inline/data-URI values pass through. The remaining image move (annotated screenshots and
+  the learned close/food/queue writers writing references instead of inline values) is part of the
+  save-path follow-up; the live store switch still awaits the packaging/acceptance increments.
 - **Increment 5 landed:** `seal-config::migrate` performs the one-time split of today's
   `local.yaml` — whole-`config/` backup under `.migration-backup-<stamp>/`, owned blocks through the
   increment-3 routing (machine vs portable vs the calibration environment), foreign blocks moved to

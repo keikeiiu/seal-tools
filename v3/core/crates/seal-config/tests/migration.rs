@@ -39,6 +39,17 @@ buy_sell:
   presets:
     Potion: {scroll: 0, row: 2, count: 2}
   sell_cap: 12
+pet:
+  close_button_png: iVBORw0KGgo=
+  slots:
+    - enabled: true
+      stacks: 2
+      feeder_strip: [100, 320, 400, 40]
+      pet_slot_empty_png: iVBORw0KGgo=
+  queue:
+    - label: pet a
+      species: S
+      png: iVBORw0KGgo=
 spammer:
   active: buffs
   presets:
@@ -108,6 +119,27 @@ fn the_migration_splits_the_old_file_into_the_new_tree_and_keeps_a_backup() {
     let meta = file::read(&root, def("meta.yaml")).unwrap().unwrap();
     assert_eq!(meta["layout_version"], LAYOUT_VERSION);
     assert_eq!(meta["legacy_folded"], true);
+
+    // Increment 6: the inline crops are files and the config holds references.
+    let pet = file::read(&root, def("machine/pet.yaml")).unwrap().unwrap();
+    assert_eq!(
+        pet["pet"]["close_button_png"],
+        "artifacts/pet_close_button.png"
+    );
+    assert_eq!(
+        pet["pet"]["slots"][0]["pet_slot_empty_png"],
+        "artifacts/pet_slot_empty_1.png"
+    );
+    assert_eq!(pet["pet"]["queue"][0]["png"], "artifacts/pet_queue_1.png");
+    for name in [
+        "artifacts/pet_close_button.png",
+        "artifacts/pet_slot_empty_1.png",
+        "artifacts/pet_queue_1.png",
+    ] {
+        assert!(root.join(name).is_file(), "{name} was extracted");
+    }
+    let report_warnings = migrate(&root, &base()).unwrap();
+    assert!(report_warnings.is_none());
 
     let user = fs::read_to_string(root.join("user.yaml")).unwrap();
     assert!(
