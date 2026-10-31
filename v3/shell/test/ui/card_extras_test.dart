@@ -124,6 +124,55 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a count saved in the Buy screen reaches the card even after a per-run step',
+    (tester) async {
+      final harness = await _pumpCards(
+        tester,
+        _config(
+          buySell: {
+            'presets': {
+              'Potion': {'scroll': 0, 'row': 2, 'count': 2},
+            },
+            'sell_cap': 10,
+          },
+        ),
+      );
+
+      // The player touches the card's run choice first…
+      await tester.tap(find.byKey(const ValueKey('buy-card-count-plus')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('buy-card-count-value')))
+            .data,
+        '3',
+      );
+
+      // …then saves a new configured count on the Buy/Sell screen. The card must follow the
+      // SAVED config: a per-run step is not a persisted value, so a config change wins.
+      harness.emitConfigChanged(
+        rev: 9,
+        block: 'buy_sell',
+        values: {
+          'presets': {
+            'Potion': {'scroll': 0, 'row': 2, 'count': 7},
+          },
+          'sell_cap': 10,
+        },
+      );
+      await _flush(tester);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('buy-card-count-value')))
+            .data,
+        '7',
+        reason: 'the Buy-screen save is the configured truth',
+      );
+      await _unmount(tester);
+    },
+  );
+
   testWidgets('Start sends the selected buy preset and count exactly', (
     tester,
   ) async {

@@ -58,10 +58,20 @@ class _CardGridState extends State<CardGrid> {
   String? _buyPreset;
   int? _buyCount;
 
+  /// The saved `(preset, configured count)` the run choice above was last reconciled against. A
+  /// per-run step is NOT persisted, so when the Buy/Sell screen saves a new configured count the
+  /// saved value wins: without this, a stale step made the card keep a count the player had already
+  /// changed on the Buy screen.
+  String? _buyConfigSignature;
+
+  String _buySignature(String? preset) =>
+      '$preset:${_configuredBuyCount(preset)}';
+
   @override
   void initState() {
     super.initState();
     _adoptSnapshots();
+    _syncBuyChoiceWithConfig();
     _syncTimer();
   }
 
@@ -69,6 +79,7 @@ class _CardGridState extends State<CardGrid> {
   void didUpdateWidget(covariant CardGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     _adoptSnapshots();
+    _syncBuyChoiceWithConfig();
     _syncTimer();
   }
 
@@ -113,11 +124,30 @@ class _CardGridState extends State<CardGrid> {
     setState(() {
       _buyPreset = preset;
       _buyCount = _configuredBuyCount(preset);
+      _buyConfigSignature = _buySignature(preset);
     });
   }
 
   void _onBuyCountChanged(int count) {
     setState(() => _buyCount = count < 1 ? 1 : count);
+  }
+
+  /// Discard a per-run count override when the SAVED config it was based on changes (the Buy/Sell
+  /// screen's Save). An explicit preset choice is kept as long as that preset still exists; only the
+  /// count returns to the configured value. Unrelated config changes keep the run choice, because the
+  /// signature covers only the selected preset and its configured count.
+  void _syncBuyChoiceWithConfig() {
+    final preset = _resolvedBuyPreset;
+    final signature = _buySignature(preset);
+    final previous = _buyConfigSignature;
+    _buyConfigSignature = signature;
+    if (previous == null || previous == signature) {
+      return;
+    }
+    _buyCount = null;
+    if (_buyPreset != null && !_buyPresets.containsKey(_buyPreset)) {
+      _buyPreset = null;
+    }
   }
 
   void _toggleOptions(ToolId tool) {
