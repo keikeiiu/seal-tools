@@ -89,6 +89,7 @@ class CalibrationSaveResult {
     this.pitchW,
     this.pitchH,
     this.artifact,
+    this.calibration,
   });
 
   final int rev;
@@ -103,6 +104,10 @@ class CalibrationSaveResult {
   final double? pitchH;
 
   final CalibrationArtifact? artifact;
+
+  /// The core's `calibration` environment echo (dpi_scale/monitor_dpi/screen/client_size/measured_at)
+  /// written with this save. G07: the shell renders THIS instead of re-deriving it from the capture.
+  final JsonMap? calibration;
 
   factory CalibrationSaveResult.fromJson(JsonMap map) {
     final derived = asJsonMap(map['derived']);
@@ -119,6 +124,9 @@ class CalibrationSaveResult {
       pitchH: asNumber(pitch['h'])?.toDouble(),
       artifact: artifact is Map<String, dynamic>
           ? CalibrationArtifact.fromJson(artifact)
+          : null,
+      calibration: map['calibration'] is Map
+          ? asJsonMap(map['calibration'])
           : null,
     );
   }

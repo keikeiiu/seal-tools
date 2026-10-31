@@ -560,6 +560,9 @@ class _CalibrateTabState extends State<CalibrateTab>
       // The save carries the SELECTED CAPTURE's own measurement — never the newest capture's or a
       // cached one.
       display: capture.display,
+      // G06: the rev the shell last read for this kind/instance. A mark saved by another writer
+      // makes this stale and the core refuses with `conflict` rather than overwriting it.
+      rev: _stored[_currentStoredKey]?.rev,
     );
     if (!mounted) {
       return;
@@ -569,13 +572,25 @@ class _CalibrateTabState extends State<CalibrateTab>
     setState(() {
       _saving = false;
       _save = result;
+      if (!result.ok && result.error?.code == proto.ErrorCode.conflict) {
+        // Another writer changed the calibration: re-read the mark this kind now has, so the
+        // player sees the current value the core refused against.
+        unawaited(_fetch(kind.name, target: kind.isTargeted ? _target : null));
+      }
       if (result.ok) {
         _draftTouched = false;
-        _savedEnvironment = StoredCalibrationEnvironment.fromSave(
-          capture.display,
-          capture.frame.width,
-          capture.frame.height,
-        );
+        // G07: prefer the core's environment echo (it carries the authoritative measured_at).
+        final echo = result.value!.calibration;
+        final fromEcho = echo == null
+            ? null
+            : StoredCalibrationEnvironment.fromCoreEcho(echo);
+        _savedEnvironment = fromEcho != null && !fromEcho.isEmpty
+            ? fromEcho
+            : StoredCalibrationEnvironment.fromSave(
+                capture.display,
+                capture.frame.width,
+                capture.frame.height,
+              );
       }
       if (refusedFrame) {
         _refusedFrameIds.add(capture.frame.frameId);
@@ -844,7 +859,9 @@ class _CalibrateTabState extends State<CalibrateTab>
             line: displaySummary(display),
           ),
           Text(
-            'Stored environment: ${storedEnvironment.summary} — from $source. A save writes '
+            'Stored environment: ${storedEnvironment.summary}'
+            '${storedEnvironment.measuredAt != null ? ' · measured ${storedEnvironment.measuredAt}' : ''}'
+            ' — from $source. A save writes '
             '`calibration.{dpi_scale, monitor_dpi, screen, client_size}`; the mirror only '
             'refreshes on `hello`/`config.reload`.',
             key: const ValueKey('calibrate-stored-environment'),

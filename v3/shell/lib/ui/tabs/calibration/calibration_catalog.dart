@@ -316,6 +316,7 @@ class StoredCalibrationEnvironment {
     this.clientHeight,
     this.screenWidth,
     this.screenHeight,
+    this.measuredAt,
   });
 
   /// Parses the config mirror's `calibration` block. Fields the block does not carry are null and
@@ -331,6 +332,24 @@ class StoredCalibrationEnvironment {
       clientHeight: client.length > 1 ? asNumber(client[1])?.round() : null,
       screenWidth: asNumber(screen['w'])?.round(),
       screenHeight: asNumber(screen['h'])?.round(),
+      measuredAt: asString(map['measured_at']),
+    );
+  }
+
+  /// The environment the CORE echoed from a save (`result.calibration`). G07: the shell shows the
+  /// core's stamp — including `measured_at` — rather than inventing one from the capture.
+  factory StoredCalibrationEnvironment.fromCoreEcho(Object? block) {
+    final map = asJsonMap(block);
+    final client = asJsonList(map['client_size']);
+    final screen = asJsonMap(map['screen']);
+    return StoredCalibrationEnvironment(
+      scale: asNumber(map['dpi_scale'])?.toDouble(),
+      monitorDpi: asNumber(map['monitor_dpi'])?.round(),
+      clientWidth: client.isNotEmpty ? asNumber(client[0])?.round() : null,
+      clientHeight: client.length > 1 ? asNumber(client[1])?.round() : null,
+      screenWidth: asNumber(screen['w'])?.round(),
+      screenHeight: asNumber(screen['h'])?.round(),
+      measuredAt: asString(map['measured_at']),
     );
   }
 
@@ -355,6 +374,9 @@ class StoredCalibrationEnvironment {
   final int? clientHeight;
   final int? screenWidth;
   final int? screenHeight;
+
+  /// The core's `measured_at` stamp for this environment (null for old/mirror-only blocks).
+  final String? measuredAt;
 
   /// True when the shell has no stored environment to compare (never calibrated, or the mirror does
   /// not carry the block).

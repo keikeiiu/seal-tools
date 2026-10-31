@@ -646,6 +646,7 @@ class ShellModel extends ChangeNotifier {
     bool? empty,
     String? target,
     DisplayInfo? display,
+    int? rev,
   }) => _coreAction(
     'calibration.save',
     CalibrationSaveResult.fromJson,
@@ -661,6 +662,9 @@ class ShellModel extends ChangeNotifier {
       // the signature, false samples the signature only. Omitted for every other kind.
       'empty': ?empty,
       if (display != null) 'display': calibrationDisplayJson(display),
+      // G06: optimistic concurrency. A stale rev is refused as `conflict` instead of quietly
+      // overwriting another writer's mark.
+      'rev': ?rev,
     },
   );
 

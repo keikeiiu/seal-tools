@@ -1542,4 +1542,119 @@ void main() {
     expect(find.text('game window not open'), findsOneWidget);
     expect(find.byKey(const ValueKey('detect-error')), findsNothing);
   });
+
+  testWidgets(
+    'a save sends the fetched rev and shows the core measured_at echo',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer()},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+              mark: [10, 20],
+            ),
+          },
+          'calibration.save' => {
+            'result': {
+              'rev': 8,
+              'kind': 'max_button',
+              'mark': [10, 20],
+              'derived': <String, dynamic>{},
+              'artifact': null,
+              'calibration': {
+                'dpi_scale': 1.5,
+                'monitor_dpi': 144,
+                'screen': {'w': 2560, 'h': 1440},
+                'client_size': [4, 3],
+                'measured_at': '2026-11-01T00:00:00Z',
+              },
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      await _selectKind(tester, 'max_button');
+      await tester.enterText(_field('calibrate-x'), '10');
+      await tester.enterText(_field('calibrate-y'), '20');
+      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _flush(tester);
+
+      final args = _saveArgs(harness);
+      expect(
+        args['rev'],
+        7,
+        reason: 'the rev from the fetch travels with the save',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('calibrate-stored-environment')),
+            )
+            .data,
+        contains('measured 2026-11-01T00:00:00Z'),
+        reason: 'the shell shows the core echo, not a re-derived stamp',
+      );
+    },
+  );
+
+  testWidgets('a conflict refuses the save and re-fetches the current mark', (
+    tester,
+  ) async {
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer()},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+            mark: [10, 20],
+          ),
+        },
+        'calibration.save' => {
+          'error': {
+            'code': 'conflict',
+            'message': 'calibration changed while you were editing',
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await _selectKind(tester, 'max_button');
+    await tester.enterText(_field('calibrate-x'), '10');
+    await tester.enterText(_field('calibrate-y'), '20');
+    final fetchesBefore = harness.sentMessages
+        .where(
+          (message) =>
+              message['cmd'] == 'calibration.fetch' &&
+              (message['args'] as Map<String, dynamic>)['kind'] == 'max_button',
+        )
+        .length;
+    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _flush(tester);
+
+    expect(
+      find.textContaining('calibration changed while you were editing'),
+      findsWidgets,
+    );
+    final fetchesAfter = harness.sentMessages
+        .where(
+          (message) =>
+              message['cmd'] == 'calibration.fetch' &&
+              (message['args'] as Map<String, dynamic>)['kind'] == 'max_button',
+        )
+        .length;
+    expect(
+      fetchesAfter,
+      greaterThan(fetchesBefore),
+      reason: 'a conflict refreshes the mark the core refused against',
+    );
+  });
 }
