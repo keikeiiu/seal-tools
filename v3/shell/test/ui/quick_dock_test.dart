@@ -161,6 +161,40 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
+  testWidgets('the Sell menu selects and clears a whole bag line', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-sell')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-sell-row-0')));
+    await tester.pump();
+    expect(harness.model.sellSlots, [0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(
+      find.byKey(const ValueKey('dock-sell-count')),
+      findsOneWidget,
+      reason: 'the live count stays visible next to the row shortcuts',
+    );
+
+    // A second click on the row clears it again (v2 ToggleSellRow).
+    await tester.tap(find.byKey(const ValueKey('dock-sell-row-0')));
+    await tester.pump();
+    expect(harness.model.sellSlots, isEmpty);
+
+    await tester.tap(find.byKey(const ValueKey('dock-sell-row-3')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-menu-start')));
+    await tester.pump();
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'sell',
+      'slots': [24, 25, 26, 27, 28, 29, 30, 31],
+    });
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('the dock can be moved between the five placements', (
     tester,
   ) async {

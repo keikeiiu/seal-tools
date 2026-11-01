@@ -132,7 +132,8 @@ picture-in-picture button collapses manually.
 Open quick dock**) collapses the window into a small always-on-top launcher. It has five quick starts —
 Spammer, Buy, Sell, Quest Hand-in and Hold Space — a chevron per tile for that tool's per-run options,
 and status-only rows for Pet/Tuner/Gem Composer that open the full window. Buy picks a preset/count and
-Sell marks bag cells (both apply to the next run only); Spammer and Quest choices save the active
+Sell marks bag cells — click individual slots, or a row's **row N** button to fill/clear that whole
+bag line — both apply to the next run only; Spammer and Quest choices save the active
 preset, exactly like the Cards pickers; Hold Space is an on/off toggle. Starting a tool turns the same
 window into the mini run bar; when the run finishes, the bar's dock button returns to the launcher.
 Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the dock's

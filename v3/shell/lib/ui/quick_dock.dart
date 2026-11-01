@@ -692,44 +692,24 @@ class _QuickDockState extends State<QuickDock> {
           ],
         ),
         const SizedBox(height: ShellSpace.xs),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 8,
-            mainAxisSpacing: 2,
-            crossAxisSpacing: 2,
-          ),
-          itemCount: 64,
-          itemBuilder: (context, index) {
-            final isSelected = selected.contains(index);
-            return InkWell(
-              key: ValueKey('dock-sell-cell-$index'),
-              onTap: () {
-                model.toggleSellSlot(index);
-                setState(() {});
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? theme.colorScheme.primaryContainer
-                      : theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isSelected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outlineVariant.withValues(
-                            alpha: 0.4,
-                          ),
-                  ),
+        for (var row = 0; row < 8; row++)
+          Row(
+            children: [
+              for (var column = 0; column < 8; column++) ...[
+                if (column > 0) const SizedBox(width: 2),
+                _sellCell(
+                  theme,
+                  row * 8 + column,
+                  selected.contains(row * 8 + column),
                 ),
-              ),
-            );
-          },
-        ),
+              ],
+              const Spacer(),
+              _rowButton(theme, row, selected),
+            ],
+          ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'Per-run bag cells; the selection survives this dock session.',
+          'Click a cell, or the row button to fill/clear all 8 slots of that bag line.',
           style: theme.textTheme.labelSmall?.copyWith(
             fontSize: 9.5,
             color: theme.colorScheme.onSurfaceVariant,
@@ -737,6 +717,75 @@ class _QuickDockState extends State<QuickDock> {
         ),
       ],
     );
+  }
+
+  /// One bag slot in the compact grid. 24 px keeps the whole 8 × 8 grid plus its per-row shortcut
+  /// column inside the 300 px dock.
+  Widget _sellCell(ThemeData theme, int slot, bool selected) {
+    return InkWell(
+      key: ValueKey('dock-sell-cell-$slot'),
+      onTap: () {
+        model.toggleSellSlot(slot);
+        setState(() {});
+      },
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The full Sell screen's `row N` shortcut: one click fills the whole bag line when any cell is
+  /// off, clears it when every cell is on. Same in-memory selection, never config.
+  Widget _rowButton(ThemeData theme, int row, List<int> selected) {
+    final cells = [for (var column = 0; column < 8; column++) row * 8 + column];
+    final allOn = cells.every(selected.contains);
+    return Tooltip(
+      message: 'Select or clear all 8 slots of bag row ${row + 1}',
+      child: TextButton(
+        key: ValueKey('dock-sell-row-$row'),
+        onPressed: () => _toggleSellRow(row),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(40, 24),
+          padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xxs),
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          'row ${row + 1}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 9.5,
+            color: allOn
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSellRow(int row) {
+    final cells = [for (var column = 0; column < 8; column++) row * 8 + column];
+    final selected = model.sellSlots.toSet();
+    final allOn = cells.every(selected.contains);
+    setState(() {
+      for (final cell in cells) {
+        if (allOn || !selected.contains(cell)) {
+          model.toggleSellSlot(cell);
+        }
+      }
+    });
   }
 
   Widget _presetMenu(ThemeData theme, ToolId tool) {

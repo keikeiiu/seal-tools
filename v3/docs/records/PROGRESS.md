@@ -38,7 +38,8 @@ the existing `config.apply` rule.
   window". Tile body = Start with the current options; chevron opens one **in-window** secondary menu
   (Back closes; Start pinned in the footer as the only filled action):
   - Buy preset chips + count → per-run `tool.start {preset,count}`;
-  - Sell 8 × 8 bag-cell grid → per-run `tool.start {slots}`;
+  - Sell 8 × 8 bag-cell grid with the full screen's `row N` per-line shortcuts (fill/clear the row) →
+    per-run `tool.start {slots}`;
   - Spammer rotation / Quest flow → saves the active preset, with a note saying so;
   - Hold Space is an on/off toggle.
 - **Model** (`shell_model.dart`): `enterDock`/`exitDock`, `setDockPlacement`, drag/settle helpers,

@@ -139,7 +139,9 @@ the full shell restores its saved placement and pin.
   footer:
   - **Buy** — preset chips + count, sent as the existing per-run `tool.start {preset,count}`; nothing
     saved.
-  - **Sell** — an 8×8 bag grid (All/None, live count) sent as per-run `tool.start {slots}`.
+  - **Sell** — an 8×8 bag grid with the full screen's **per-line shortcuts**: every row has a
+    `row N` button that fills all 8 cells when any are off and clears them when all are on, beside
+    All/None and the live count. Sent as per-run `tool.start {slots}`.
   - **Spammer** — rotation list; picking one saves the active preset with `config.apply`, exactly like
     the Cards picker, and the menu says so.
   - **Quest** — flow list, same saved-active rule.
@@ -322,7 +324,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 315/315; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 316/316; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
