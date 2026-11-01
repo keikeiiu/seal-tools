@@ -134,7 +134,11 @@ the full shell restores its saved placement and pin.
   **session-only in this build** — persisting it needs a machine/config field (follow-up).
 - **Content** — five quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Hold Space), then three
   setup-only rows (Gem Composer, Magic Tuner, Pet Feeder) that open the full window; footer "Open full
-  window". Tile body = Start with current/last-used options; chevron = one in-window secondary menu.
+  window". Each quick tile has a **dedicated Start button** and a **separate ⋮ options** button — the
+  row itself is not a Start target, and the chevron that used to mean options was replaced by ⋮ because
+  it read as navigation. Idle rows show no phase chip; a running/starting row shows its chip and the
+  button becomes Stop. Hold Space uses that same Start/Stop button and has no options menu or extra
+  "toggle" label.
 - **Secondary menus** — one at a time, Back closes; Start is the single filled action pinned in the
   footer:
   - **Buy** — preset chips + count, sent as the existing per-run `tool.start {preset,count}`; nothing
@@ -324,7 +328,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 316/316; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 318/318; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

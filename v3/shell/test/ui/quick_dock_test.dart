@@ -109,9 +109,43 @@ void main() {
   testWidgets('a tile body starts with the current options', (tester) async {
     final harness = await _pumpDock(tester);
 
-    await tester.tap(find.byKey(const ValueKey('dock-tile-spammer')));
+    await tester.tap(find.byKey(const ValueKey('dock-start-spammer')));
     await tester.pump();
     expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'spammer'});
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('start and options are separate, unambiguous targets', (
+    tester,
+  ) async {
+    await _pumpDock(tester);
+
+    expect(find.byKey(const ValueKey('dock-start-buy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dock-menu-buy')), findsOneWidget);
+    final options = tester.widget<IconButton>(
+      find.byKey(const ValueKey('dock-menu-buy')),
+    );
+    expect(
+      (options.icon as Icon).icon,
+      Icons.more_vert,
+      reason: 'a ⋮ reads as options; the old chevron read as navigation',
+    );
+
+    // Hold Space is just a Start/Stop action now: no separate "Toggle" label, no options menu.
+    expect(find.byKey(const ValueKey('dock-menu-holdspace')), findsNothing);
+    expect(find.text('Toggle'), findsNothing);
+  });
+
+  testWidgets('Hold Space starts from its own action', (tester) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-start-holdspace')));
+    await tester.pump();
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'holdspace',
+    });
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));

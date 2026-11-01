@@ -33,10 +33,13 @@ the existing `config.apply` rule.
   dock** and in the dock header's placement menu; the dock can be dragged/snapped like the run bar.
   Placement is **session-only in this build** (a machine/config field is the follow-up); the dock is
   always expanded (no edge-tab state yet).
-- **Content, ranked**: five quick tiles (Spammer, Buy, Sell, Quest, Hold Space) with live phase chips,
-  then three setup-only rows (Gem Composer, Tuner, Pet) that open the full window, footer "Open full
-  window". Tile body = Start with the current options; chevron opens one **in-window** secondary menu
-  (Back closes; Start pinned in the footer as the only filled action):
+- **Content, ranked**: five quick tiles (Spammer, Buy, Sell, Quest, Hold Space) with live phase chips
+  only while active, then three setup-only rows (Gem Composer, Tuner, Pet) that open the full window.
+  Each tile has a dedicated **Start/Stop button** plus a separate **⋮ options** button; the whole-row
+  start and the ambiguous `>` chevron were removed after play feedback (⋮ is also the full Sell screen's
+  row-button style). Hold Space uses the same Start/Stop button with no options or extra toggle label.
+  Footer "Open full window"; the options menu opens in-window (Back closes; Start pinned in the footer
+  as the only filled action):
   - Buy preset chips + count → per-run `tool.start {preset,count}`;
   - Sell 8 × 8 bag-cell grid with the full screen's `row N` per-line shortcuts (fill/clear the row) →
     per-run `tool.start {slots}`;

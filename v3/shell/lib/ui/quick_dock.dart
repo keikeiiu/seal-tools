@@ -362,92 +362,127 @@ class _QuickDockState extends State<QuickDock> {
       ToolPhase.running => StatusKind.success,
       ToolPhase.stopping => StatusKind.warning,
     };
-    final canStart = enabled && !busy && !running;
-    final label = holdSpace && running ? 'Stop' : 'Toggle';
-    return InkWell(
+    final canAct = enabled && !busy;
+    return Padding(
       key: ValueKey('dock-tile-${tool.wire}'),
-      borderRadius: BorderRadius.circular(ShellRadius.m),
-      onTap: canStart || (holdSpace && running && enabled && !busy)
-          ? () => _activate(tool)
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: ShellSpace.xs,
-          vertical: ShellSpace.xxs + ShellSpace.xs,
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: running
-                    ? theme.colorScheme.primaryContainer
-                    : theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(ShellRadius.s),
-              ),
-              child: Icon(
-                toolIcon(tool),
-                size: 16,
-                color: running
-                    ? theme.colorScheme.onPrimaryContainer
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: ShellSpace.xs,
+        vertical: ShellSpace.xxs + ShellSpace.xs,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: running
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(ShellRadius.s),
             ),
-            const SizedBox(width: ShellSpace.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    toolDisplayName(tool),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(fontSize: 13),
-                  ),
-                  Text(
-                    _summary(tool),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 10.5,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+            child: Icon(
+              toolIcon(tool),
+              size: 16,
+              color: running
+                  ? theme.colorScheme.onPrimaryContainer
+                  : theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(width: ShellSpace.xs),
+          ),
+          const SizedBox(width: ShellSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  toolDisplayName(tool),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(fontSize: 13),
+                ),
+                Text(
+                  _summary(tool),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10.5,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: ShellSpace.xs),
+          if (running) ...[
             StatusChip(kind: phaseKind, label: phaseLabel),
-            if (hasMenu)
-              IconButton(
-                key: ValueKey('dock-menu-${tool.wire}'),
-                tooltip: '${toolDisplayName(tool)} options',
-                visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(26, 30),
-                  padding: EdgeInsets.zero,
-                ),
-                onPressed: enabled && !busy
-                    ? () => setState(() {
-                        _menu = tool;
-                        _presetError = null;
-                      })
-                    : null,
-                icon: const Icon(Icons.chevron_right, size: 16),
-              ),
-            if (holdSpace)
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: running
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.primary,
-                ),
-              ),
+            const SizedBox(width: ShellSpace.xs),
           ],
+          _tileAction(theme, tool, running: running, enabled: canAct),
+          if (hasMenu)
+            IconButton(
+              key: ValueKey('dock-menu-${tool.wire}'),
+              tooltip: '${toolDisplayName(tool)} options',
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                minimumSize: const Size(28, 30),
+                padding: EdgeInsets.zero,
+              ),
+              onPressed: enabled && !busy
+                  ? () => setState(() {
+                      _menu = tool;
+                      _presetError = null;
+                    })
+                  : null,
+              icon: const Icon(Icons.more_vert, size: 17),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The dedicated Start/Stop control: the tile body itself is NOT a start target, so the two
+  /// affordances are unambiguous — this button starts, the separate ⋮ icon opens the options.
+  Widget _tileAction(
+    ThemeData theme,
+    ToolId tool, {
+    required bool running,
+    required bool enabled,
+  }) {
+    final background = running
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.primaryContainer;
+    final foreground = running
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onPrimaryContainer;
+    return SizedBox(
+      height: 28,
+      child: FilledButton(
+        key: ValueKey('dock-start-${tool.wire}'),
+        onPressed: !enabled
+            ? null
+            : () {
+                if (running) {
+                  unawaited(model.stopTool(tool));
+                } else {
+                  _activate(tool);
+                }
+              },
+        style: FilledButton.styleFrom(
+          backgroundColor: background,
+          foregroundColor: foreground,
+          disabledBackgroundColor: theme.colorScheme.surfaceContainerHighest,
+          disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
+          minimumSize: const Size(44, 28),
+          padding: const EdgeInsets.symmetric(horizontal: ShellSpace.sm),
+          textStyle: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ShellRadius.s),
+          ),
         ),
+        child: Text(running ? 'Stop' : 'Start'),
       ),
     );
   }
@@ -492,8 +527,8 @@ class _QuickDockState extends State<QuickDock> {
             ),
             const SizedBox(width: ShellSpace.xs),
             Icon(
-              Icons.chevron_right,
-              size: 14,
+              Icons.open_in_new,
+              size: 13,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
