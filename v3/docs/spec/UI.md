@@ -60,7 +60,8 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
   (`app-bar-always-on-top`) and the product version on the right. There is **no in-app "Seal Tools"
   brand**: the native Win32 caption already carries the window title, so repeating it in the bar only
   competed with the status. **There is no Hold Space toggle.** While a foreground tool runs (Pet
-  excluded) an `app-bar-mini` picture-in-picture action appears to collapse into the mini bar.
+  excluded) an `app-bar-mini` picture-in-picture action appears to collapse into the mini bar; when
+  idle, the `app-bar-dock` action opens the quick dock.
 - **Status strip (28 px):** a top hairline, core version/rev on the left, the core's root, and
   `Ctrl+B sidebar · Ctrl+L logs` (plus `· Esc close` while the drawer is open) on the right. It
   advertises the shortcuts; the drawer and rail are opened from the top bar or their shortcut.
@@ -116,6 +117,40 @@ existing `state` / `tool.finished` fact.
 - **Not built** — cross-restart position persistence; a native `HTCAPTION` drag strip (the Flutter pan
   above is the implementation); a topmost fallback for exclusive-fullscreen games (the usual Windows
   topmost limitation).
+
+## Quick dock (landed 2026-11-02)
+
+The idle companion window: a compact launcher for between runs, not the full Cards page in miniature.
+It is the idle state of the same borderless, non-activating window that becomes the run bar; opening
+the full shell restores its saved placement and pin.
+
+- **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
+  into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
+  drafts survive. "Open full window" in the dock restores the exact full rect.
+- **Five placements, same content** — `DockPlacement` gives **right rail**, **left rail**, **bottom
+  right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
+  The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
+  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. Placement is
+  **session-only in this build** — persisting it needs a machine/config field (follow-up).
+- **Content** — five quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Hold Space), then three
+  setup-only rows (Gem Composer, Magic Tuner, Pet Feeder) that open the full window; footer "Open full
+  window". Tile body = Start with current/last-used options; chevron = one in-window secondary menu.
+- **Secondary menus** — one at a time, Back closes; Start is the single filled action pinned in the
+  footer:
+  - **Buy** — preset chips + count, sent as the existing per-run `tool.start {preset,count}`; nothing
+    saved.
+  - **Sell** — an 8×8 bag grid (All/None, live count) sent as per-run `tool.start {slots}`.
+  - **Spammer** — rotation list; picking one saves the active preset with `config.apply`, exactly like
+    the Cards picker, and the menu says so.
+  - **Quest** — flow list, same saved-active rule.
+  - **Hold Space** — no menu; the tile is an on/off toggle (Start/Stop).
+- **Run transition** — a foreground tool's first non-idle `state` turns the same compact window into
+  the run bar (with the same full-window restore target). A finished/error bar offers the
+  `mini-dock` action back to the launcher in addition to "Full window".
+- **Not built in this increment** — editing/reassigning the five tiles, pinned Sell selections, a
+  collapsed edge-tab state, per-session Buy/Sell defaults across dock re-entries, and placement
+  persistence. The dock is always expanded; those are the next increments from the design study
+  (`.scratch/ui-audit/ui-demo-quickdock.html`).
 
 ## Cards screen
 
@@ -287,8 +322,10 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 304/304; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 315/315; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
-Stop click and expand restore exercised).
+Stop click and expand restore exercised). The quick dock was verified on the real runner at all three
+form factors (right rail 450 × 720 physical, bottom-right bay 510 × 690, top-centre island 570 × 750 —
+all borderless, `WS_EX_NOACTIVATE|TOPMOST`), including opening a secondary menu.

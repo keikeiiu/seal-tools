@@ -22,9 +22,12 @@
 /// [PLAN-V3-UI-UX.md]: ../../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
+import '../../app/dock_placement.dart';
 import '../../protocol/protocol.dart';
 import '../components/info_row.dart';
 import '../components/shell_prose.dart';
@@ -238,6 +241,41 @@ class _SetupTabState extends State<SetupTab>
                 options: _variantNames(),
                 width: ShellWidth.picker,
                 onChanged: (value) => _set(_gameDraft, 'variant', value),
+              ),
+            ],
+          ),
+          EditorSection(
+            title: 'Quick dock',
+            children: [
+              const ShellProse(
+                'A compact launcher between runs: five quick starts, one chevron each for the '
+                'per-run options, and the long-running tools left to the full window. Choose where '
+                'it sits here or from the dock header. The choice is session-only in this build '
+                '(persisting it needs a machine/config field).',
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final placement in DockPlacement.values)
+                    ChoiceChip(
+                      key: ValueKey('setup-dock-${placement.wire}'),
+                      label: Text(placement.label),
+                      selected: model.dockPlacement == placement,
+                      onSelected: (_) =>
+                          unawaited(model.setDockPlacement(placement)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.md),
+              OutlinedButton.icon(
+                key: const ValueKey('setup-open-dock'),
+                onPressed: model.isReady
+                    ? () => unawaited(model.enterDock())
+                    : null,
+                icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
+                label: const Text('Open quick dock'),
               ),
             ],
           ),

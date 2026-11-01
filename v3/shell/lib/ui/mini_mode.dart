@@ -328,7 +328,24 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                             onPressed: () =>
                                 unawaited(widget.model.stopTool(tool)),
                           )
-                        else
+                        else ...[
+                          IconButton(
+                            key: const ValueKey('mini-dock'),
+                            tooltip: 'Quick dock',
+                            visualDensity: VisualDensity.compact,
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size(28, 32),
+                              padding: EdgeInsets.zero,
+                            ),
+                            onPressed: () =>
+                                unawaited(widget.model.openDockFromMini()),
+                            icon: Icon(
+                              Icons.dashboard_customize_outlined,
+                              size: 15,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(width: ShellSpace.xs),
                           FilledButton.icon(
                             key: const ValueKey('mini-full'),
                             onPressed: () =>
@@ -349,6 +366,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                             icon: const Icon(Icons.open_in_full, size: 14),
                             label: const Text('Full window'),
                           ),
+                        ],
                       ],
                     ),
                   ),

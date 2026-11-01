@@ -26,6 +26,7 @@ import 'components/log_drawer.dart';
 import 'components/nav_rail.dart';
 import 'crash_view.dart';
 import 'mini_mode.dart';
+import 'quick_dock.dart';
 import 'status_strip.dart';
 import 'tabs/arduino_tab.dart';
 import 'tabs/attributes_tab.dart';
@@ -139,7 +140,7 @@ class _ShellPageState extends State<ShellPage> {
           key: _shellKey,
           child: _buildFullShell(context, model),
         );
-        if (!model.miniMode) {
+        if (!model.miniMode && !model.dockMode) {
           return full;
         }
         return Stack(
@@ -158,7 +159,11 @@ class _ShellPageState extends State<ShellPage> {
                 ),
               ),
             ),
-            Positioned.fill(child: MiniRunningCard(model: model)),
+            Positioned.fill(
+              child: model.miniMode
+                  ? MiniRunningCard(model: model)
+                  : QuickDock(model: model),
+            ),
           ],
         );
       },
@@ -307,6 +312,13 @@ class _TopBar extends StatelessWidget {
               const SizedBox(width: ShellSpace.xs),
               _CoreStatus(model: model),
               const Spacer(),
+              if (ready)
+                IconButton(
+                  key: const ValueKey('app-bar-dock'),
+                  tooltip: 'Open the quick dock',
+                  icon: const Icon(Icons.dashboard_customize_outlined),
+                  onPressed: () => unawaited(model.enterDock()),
+                ),
               if (ready && model.miniCandidate != null)
                 IconButton(
                   key: const ValueKey('app-bar-mini'),

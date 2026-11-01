@@ -29,6 +29,7 @@ import 'config.dart';
 import 'config_json.dart';
 import 'connection.dart';
 import 'core_actions.dart';
+import 'dock_placement.dart';
 import 'host_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
@@ -186,6 +187,16 @@ class ShellModel extends ChangeNotifier {
   /// The mini bar's last position (session memory; snapped to an edge when it was left).
   WindowRect? _miniBarRect;
   WindowRect? _miniWorkArea;
+
+  // ── quick dock ───────────────────────────────────────────────────────────────────────────────
+  // The idle companion window: a launcher, not a second dashboard. It owns the same compact chrome
+  // as the run bar; when a run starts it hands the window to the mini bar, and the finished bar can
+  // hand it back. Placement is session/v1 only (a config field is the documented follow-up).
+  bool _dockActive = false;
+  DockPlacement _dockPlacement = DockPlacement.rightRail;
+  WindowRect? _dockRestoreRect;
+  WindowRect? _dockWorkArea;
+  WindowRect? _dockRectValue;
 
   /// The placement the shell last applied or saved. A move event that reports the SAME rect is not
   /// news — the restore's own `SetWindowPos` reports one too — so it never schedules a write.
@@ -1255,6 +1266,13 @@ class ShellModel extends ChangeNotifier {
     if (_miniSuppressed) {
       return;
     }
+    // The dock is the idle launcher: when something starts, the same compact window becomes the
+    // run bar (it must never show two windows, or a duplicate Stop).
+    if (_dockActive) {
+      _miniSyncing = true;
+      unawaited(_dockToMini(active).whenComplete(() => _miniSyncing = false));
+      return;
+    }
     _miniSyncing = true;
     unawaited(enterMiniMode(active).whenComplete(() => _miniSyncing = false));
   }
@@ -1377,6 +1395,239 @@ class ShellModel extends ChangeNotifier {
     } catch (error) {
       logs.addShellNote('cannot settle the mini bar: $error');
     }
+  }
+
+  // ── quick dock ───────────────────────────────────────────────────────────────────────────────
+
+  /// True while the compact window is the idle launcher rather than the run bar.
+  bool get dockMode => _dockActive;
+
+  /// The player's chosen form factor / side. Session-only for now: persisting it needs a config or
+  /// machine field owned by the core (documented in UI.md as the follow-up).
+  DockPlacement get dockPlacement => _dockPlacement;
+
+  /// The dock's current rect, for tests/diagnostics.
+  WindowRect? get dockRect => _dockRectValue;
+
+  /// Open the idle launcher: remember the full placement, lower the minimum size to the dock,
+  /// switch to borderless non-activating chrome and place it at [dockPlacement].
+  Future<void> enterDock() async {
+    if (_dockActive || _miniActive || !isReady || _closing || _disposed) {
+      return;
+    }
+    // The dock is the idle launcher; a foreground run owns the compact window (the run bar).
+    if (_foregroundTool() != null) {
+      return;
+    }
+    _dockActive = true;
+    notifyListeners();
+    try {
+      _dockRestoreRect = await host.windowRect();
+      final work = await host.primaryWorkArea();
+      _dockWorkArea = work;
+      final (width, height) = _dockPlacement.size;
+      await host.setWindowMinSize(width, height);
+      await host.setMiniChrome(true);
+      final rect = _dockRectFor(work);
+      _dockRectValue = rect;
+      await host.setWindowRect(rect);
+      await host.setAlwaysOnTop(true);
+    } catch (error) {
+      logs.addShellNote('cannot open the quick dock: $error');
+      await exitDock();
+    }
+  }
+
+  /// Leave the dock for the full window, restoring the remembered full rect, chrome and pin.
+  Future<void> exitDock() async {
+    if (!_dockActive) {
+      return;
+    }
+    _dockActive = false;
+    notifyListeners();
+    final restore = _dockRestoreRect;
+    _dockRestoreRect = null;
+    try {
+      await host.setMiniChrome(false);
+      await host.setWindowMinSize(_fullMinimum.width, _fullMinimum.height);
+      if (restore != null) {
+        await host.setWindowRect(restore);
+      }
+      await host.setAlwaysOnTop(alwaysOnTop);
+    } catch (error) {
+      logs.addShellNote('cannot restore the full window from the dock: $error');
+    }
+    _dockRectValue = null;
+  }
+
+  /// Change the dock's form factor/side. Safe while the dock is closed (the next [enterDock] uses
+  /// it) and while it is open (the window moves and resizes immediately).
+  Future<void> setDockPlacement(DockPlacement placement) async {
+    if (placement == _dockPlacement) {
+      return;
+    }
+    _dockPlacement = placement;
+    notifyListeners();
+    if (!_dockActive) {
+      return;
+    }
+    final work = _dockWorkArea;
+    if (work == null) {
+      return;
+    }
+    final (width, height) = placement.size;
+    final rect = _dockRectFor(work);
+    try {
+      await host.setWindowMinSize(width, height);
+      _dockRectValue = rect;
+      await host.setWindowRect(rect);
+    } catch (error) {
+      logs.addShellNote('cannot move the quick dock: $error');
+    }
+  }
+
+  /// Moves the dock while the player drags its header. The content is fixed-size, so only the
+  /// top-left corner changes; the snap happens on release.
+  Future<void> moveDockWindow(WindowRect target) async {
+    if (!_dockActive) {
+      return;
+    }
+    final work = _dockWorkArea;
+    final (width, height) = _dockPlacement.size;
+    final rect = _clampDock(target.left, target.top, width, height, work);
+    if (rect == _dockRectValue) {
+      return;
+    }
+    _dockRectValue = rect;
+    try {
+      await host.setWindowRect(rect);
+    } catch (error) {
+      logs.addShellNote('cannot move the quick dock: $error');
+    }
+  }
+
+  /// Snaps the dragged dock to its nearest edge, like the run bar.
+  Future<void> settleDockWindow() async {
+    final work = _dockWorkArea;
+    if (!_dockActive || work == null) {
+      return;
+    }
+    final current = _dockRectValue;
+    if (current == null) {
+      return;
+    }
+    final snapped = _snappedRect(current, work);
+    _dockRectValue = snapped;
+    try {
+      await host.setWindowRect(snapped);
+    } catch (error) {
+      logs.addShellNote('cannot settle the quick dock: $error');
+    }
+  }
+
+  /// The dock's "Open full window" action.
+  Future<void> showFullWindowFromDock() => exitDock();
+
+  /// The finished run bar's "Dock" action: hand the compact window back to the launcher.
+  Future<void> openDockFromMini() async {
+    if (!_miniActive) {
+      await enterDock();
+      return;
+    }
+    if (_disposed) {
+      return;
+    }
+    _dockRestoreRect = _miniRestoreRect;
+    _miniRestoreRect = null;
+    _miniActive = false;
+    _miniTool = null;
+    _dockActive = true;
+    _dockWorkArea ??= _miniWorkArea;
+    notifyListeners();
+    try {
+      final work = _dockWorkArea ?? await host.primaryWorkArea();
+      _dockWorkArea = work;
+      final (width, height) = _dockPlacement.size;
+      await host.setWindowMinSize(width, height);
+      final rect = _dockRectFor(work);
+      _dockRectValue = rect;
+      await host.setWindowRect(rect);
+      await host.setAlwaysOnTop(true);
+    } catch (error) {
+      logs.addShellNote('cannot open the quick dock from the run bar: $error');
+      await exitDock();
+    }
+  }
+
+  /// Dock → run bar when a foreground tool starts. The full-window restore target is carried over, so
+  /// "Full window" from the run bar still returns exactly where the shell came from.
+  Future<void> _dockToMini(ToolId tool) async {
+    if (!_dockActive) {
+      await enterMiniMode(tool);
+      return;
+    }
+    _miniRestoreRect = _dockRestoreRect ?? _miniRestoreRect;
+    _dockRestoreRect = null;
+    _dockActive = false;
+    _miniActive = true;
+    _miniTool = tool;
+    _miniWorkArea ??= _dockWorkArea;
+    notifyListeners();
+    try {
+      await host.setWindowMinSize(_miniWidth, _miniHeight);
+      final work = _miniWorkArea;
+      final rect = work == null
+          ? (_miniRect ?? _clampDock(16, 16, _miniWidth, _miniHeight, null))
+          : _miniStartRect(work);
+      _miniRect = rect;
+      await host.setWindowRect(rect);
+      await host.setAlwaysOnTop(true);
+    } catch (error) {
+      logs.addShellNote('cannot collapse the dock to the run bar: $error');
+      await exitMiniMode();
+    }
+  }
+
+  WindowRect _dockRectFor(WindowRect work) {
+    final (width, height) = _dockPlacement.size;
+    const margin = 16;
+    final int left;
+    final int top;
+    switch (_dockPlacement) {
+      case DockPlacement.rightRail:
+        left = work.left + work.width - width - margin;
+        top = work.top + (work.height - height) ~/ 2;
+      case DockPlacement.leftRail:
+        left = work.left + margin;
+        top = work.top + (work.height - height) ~/ 2;
+      case DockPlacement.bottomRight:
+        left = work.left + work.width - width - margin;
+        top = work.top + work.height - height - margin;
+      case DockPlacement.bottomLeft:
+        left = work.left + margin;
+        top = work.top + work.height - height - margin;
+      case DockPlacement.topCentre:
+        left = work.left + (work.width - width) ~/ 2;
+        top = work.top + margin;
+    }
+    return _clampDock(left, top, width, height, work);
+  }
+
+  WindowRect _clampDock(
+    int left,
+    int top,
+    int width,
+    int height,
+    WindowRect? work,
+  ) {
+    final area =
+        work ?? const WindowRect(left: 0, top: 0, width: 1920, height: 1080);
+    return WindowRect(
+      left: _clampInt(left, area.left, area.left + area.width - width),
+      top: _clampInt(top, area.top, area.top + area.height - height),
+      width: width,
+      height: height,
+    );
   }
 
   /// The bar's initial rect: the last dragged position when it still fits, else the default dock —

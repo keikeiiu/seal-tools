@@ -8,6 +8,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/app/app.dart';
+import 'package:seal_shell/app/dock_placement.dart';
 import 'package:seal_shell/protocol/protocol.dart';
 
 import '../support/app_harness.dart';
@@ -908,6 +909,113 @@ void main() {
       await settle();
       expect(harness.model.miniMode, isTrue);
       expect(harness.model.miniTool, ToolId.holdspace);
+    });
+  });
+
+  group('quick dock', () {
+    test('opens as a right rail and remembers the full placement', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+
+      await harness.model.enterDock();
+      await settle();
+      expect(harness.model.dockMode, isTrue);
+      expect(host.minSizeCalls, [(300, 480)]);
+      expect(host.miniChromeCalls, [true]);
+      expect(host.appliedRects.last, _rect(1604, 280, 300, 480));
+      expect(host.alwaysOnTopCalls.last, isTrue);
+
+      await harness.model.exitDock();
+      await settle();
+      expect(harness.model.dockMode, isFalse);
+      expect(host.miniChromeCalls, [true, false]);
+      expect(host.minSizeCalls.last, (1120, 680));
+      expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
+      expect(host.alwaysOnTopCalls.last, isFalse);
+    });
+
+    test('all five placements resize and move the same dock window', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      await harness.model.enterDock();
+      await settle();
+
+      await harness.model.setDockPlacement(DockPlacement.bottomRight);
+      await settle();
+      expect(host.minSizeCalls.last, (340, 460));
+      expect(host.appliedRects.last, _rect(1564, 564, 340, 460));
+
+      await harness.model.setDockPlacement(DockPlacement.leftRail);
+      await settle();
+      expect(host.minSizeCalls.last, (300, 480));
+      expect(host.appliedRects.last, _rect(16, 280, 300, 480));
+
+      await harness.model.setDockPlacement(DockPlacement.topCentre);
+      await settle();
+      expect(host.minSizeCalls.last, (380, 500));
+      expect(host.appliedRects.last, _rect(770, 16, 380, 500));
+
+      await harness.model.setDockPlacement(DockPlacement.bottomLeft);
+      await settle();
+      expect(host.appliedRects.last, _rect(16, 564, 340, 460));
+    });
+
+    test('a dock start hands the window to the run bar', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      await harness.model.enterDock();
+      await settle();
+      expect(harness.model.dockMode, isTrue);
+
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.dockMode, isFalse);
+      expect(harness.model.miniMode, isTrue);
+      expect(harness.model.miniTool, ToolId.tuner);
+      expect(host.minSizeCalls.last, (360, 96));
+      expect(host.appliedRects.last, _rect(1544, 187, 360, 96));
+
+      await harness.model.showFullWindow();
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
+      expect(host.miniChromeCalls.last, isFalse);
+    });
+
+    test('the finished run bar can hand the window back to the dock', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      await harness.model.enterDock();
+      await settle();
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      harness.emitState(
+        tool: ToolId.tuner,
+        phase: ToolPhase.idle,
+        message: 'DONE',
+      );
+      harness.emitToolFinished(tool: ToolId.tuner);
+      await settle();
+
+      await harness.model.openDockFromMini();
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(harness.model.dockMode, isTrue);
+      expect(host.minSizeCalls.last, (300, 480));
+      expect(host.appliedRects.last, _rect(1604, 280, 300, 480));
+
+      await harness.model.showFullWindowFromDock();
+      await settle();
+      expect(harness.model.dockMode, isFalse);
+      expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
     });
   });
 }

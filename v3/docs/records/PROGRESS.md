@@ -19,6 +19,47 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-02 (32) — the quick dock: three dock form factors in one launcher
+
+The player asked for a minimal between-runs mode and then for **all three docks from the study** to be
+built and selectable. This increment lands the launcher: the compact window that was the 360 × 96 run
+bar now has an idle **Quick dock** state, and the same window hands over when a run starts and takes
+the window back when a finished bar's dock button is pressed. There is no second topmost window and
+no core/protocol change: every Start is the existing `tool.start`, and the Spammer/Quest pickers use
+the existing `config.apply` rule.
+
+- **Five placements** (`DockPlacement`): right rail (300 × 480), left rail (300 × 480), bottom right
+  (340 × 460), bottom left (340 × 460), top centre (380 × 500). The choice lives in **Setup → Quick
+  dock** and in the dock header's placement menu; the dock can be dragged/snapped like the run bar.
+  Placement is **session-only in this build** (a machine/config field is the follow-up); the dock is
+  always expanded (no edge-tab state yet).
+- **Content, ranked**: five quick tiles (Spammer, Buy, Sell, Quest, Hold Space) with live phase chips,
+  then three setup-only rows (Gem Composer, Tuner, Pet) that open the full window, footer "Open full
+  window". Tile body = Start with the current options; chevron opens one **in-window** secondary menu
+  (Back closes; Start pinned in the footer as the only filled action):
+  - Buy preset chips + count → per-run `tool.start {preset,count}`;
+  - Sell 8 × 8 bag-cell grid → per-run `tool.start {slots}`;
+  - Spammer rotation / Quest flow → saves the active preset, with a note saying so;
+  - Hold Space is an on/off toggle.
+- **Model** (`shell_model.dart`): `enterDock`/`exitDock`, `setDockPlacement`, drag/settle helpers,
+  `openDockFromMini()` and `_dockToMini()`; the full-window restore target and chrome are carried
+  across dock → run bar → full window. `ShellPage` parks the full shell offstage for both compact
+  states (tab drafts survive), the top bar gained `app-bar-dock`, and the finished run bar gained
+  `mini-dock`.
+- **Real-build verification** (150 %): right rail 450 × 720 physical (= 300 × 480 logical) at 16 px
+  from the right edge; bottom-right bay 510 × 690 (= 340 × 460); top-centre island 570 × 750
+  (= 380 × 500). Each was borderless with `exstyle = WS_EX_NOACTIVATE | WS_EX_TOPMOST`; the right-rail
+  capture opened a secondary menu through a real mouse click. Captures:
+  `.scratch/ui-audit/dock-real-*.png`.
+- **Deferred**: editing/reassigning the five tiles, pinned Sell quick actions, collapsed edge tab,
+  persistent placement and per-session Buy/Sell defaults. Those remain the design study's next
+  increments.
+
+Gates: shell `flutter analyze` No issues, `flutter test` **315/315** (new `quick_dock_test.dart` covers
+tiles, Buy/Sell menus, five placements, top-bar entry, full-window return and run-bar hand-back; model
+tests cover geometry, chrome and both transitions), `dart format` clean, Windows debug build OK.
+Truth: [UI.md §Quick dock](../spec/UI.md#quick-dock-landed-2026-11-02).
+
 ## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)
 
 The player asked for the harness-style hideable sidebar. `_ShellPageState` now carries

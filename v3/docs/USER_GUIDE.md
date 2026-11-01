@@ -128,6 +128,16 @@ window (it is shown as a paw badge beside the foreground tool). Press **Full win
 the rest of this run; the next run collapses again. While a tool runs, the app bar's
 picture-in-picture button collapses manually.
 
+**Quick dock.** When nothing is running, the app bar's dashboard button (or **Setup → Quick dock →
+Open quick dock**) collapses the window into a small always-on-top launcher. It has five quick starts —
+Spammer, Buy, Sell, Quest Hand-in and Hold Space — a chevron per tile for that tool's per-run options,
+and status-only rows for Pet/Tuner/Gem Composer that open the full window. Buy picks a preset/count and
+Sell marks bag cells (both apply to the next run only); Spammer and Quest choices save the active
+preset, exactly like the Cards pickers; Hold Space is an on/off toggle. Starting a tool turns the same
+window into the mini run bar; when the run finishes, the bar's dock button returns to the launcher.
+Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the dock's
+placement menu, and drag the dock to fine-tune it. The placement is remembered for this session only.
+
 ### 2.3 Hold Space
 
 Hold Space is its own card now (it used to be a top-bar toggle) because it is a run like any other:
