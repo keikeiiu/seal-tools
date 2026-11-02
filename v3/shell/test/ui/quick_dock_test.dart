@@ -58,8 +58,20 @@ Future<AppHarness> _pumpDock(WidgetTester tester) async {
   await connecting;
   harness.onWrite = (line, fake) {
     final message = fake.sentJson(fake.sent.length - 1);
-    if (message['cmd'] == 'tool.start' || message['cmd'] == 'tool.stop') {
-      fake.emitJson(okResponse(message['id'] as String, {}));
+    final id = message['id'] as String;
+    switch (message['cmd']) {
+      case 'tool.start' || 'tool.stop':
+        fake.emitJson(okResponse(id, {}));
+      case 'config.validate':
+        fake.emitJson(
+          okResponse(id, {'errors': <String>[], 'warnings': <String>[]}),
+        );
+      case 'config.apply':
+        final args = message['args'];
+        final sections = args is Map<String, dynamic>
+            ? args['sections']
+            : <String, dynamic>{};
+        fake.emitJson(okResponse(id, {'rev': 8, 'sections': sections}));
     }
   };
   await harness.model.enterDock();

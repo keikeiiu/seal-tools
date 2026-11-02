@@ -134,8 +134,11 @@ the full shell restores its saved placement and pin.
 - **Five placements, same content** — `DockPlacement` gives **right rail**, **left rail**, **bottom
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
   The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
-  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. Placement is
-  **session-only in this build** — persisting it needs a machine/config field (follow-up).
+  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. The **placement and
+  collapsed/expanded state are persisted** in the portable `settings.ui.quick_dock` block
+  (`{placement, collapsed}`) through the normal validate → apply path; the core's portable projection
+  carries the field (seal-config `ensure_portable_ui`). A dragged offset inside a placement is
+  session-only — the preset is what survives a restart.
 - **Content** — seven quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner,
   Hold Space), then one setup-only row (Pet Feeder) that opens the full window; footer "Open full
   window". Each quick tile has a **dedicated Start button** and a **separate ⋮ options** button — the
@@ -158,7 +161,7 @@ the full shell restores its saved placement and pin.
   the run bar (with the same full-window restore target). A finished/error bar offers the
   `mini-dock` action back to the launcher in addition to "Full window".
 - **Not built in this increment** — editing/reassigning the seven tiles, pinned Sell selections,
-  per-session Buy/Sell defaults across dock re-entries, auto-collapse, and placement/size persistence.
+  per-session Buy/Sell defaults across dock re-entries, and auto-collapse.
   Those are the next increments from the design study
   (`.scratch/ui-audit/ui-demo-quickdock.html`).
 
@@ -332,7 +335,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 321/321; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 322/322; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

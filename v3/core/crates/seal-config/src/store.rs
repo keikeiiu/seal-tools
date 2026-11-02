@@ -1033,18 +1033,33 @@ fn portable_sections(base: &Value) -> Vec<String> {
     sections
 }
 
-/// The portable shape of the one post-template setting section: `ui.always_on_top: false`. The
-/// projection still reduces the merged config to these leaves, so the machine `ui` block's geometry
-/// can never enter the portable `settings:` half.
+/// The portable shape of the two post-template setting leaves: `ui.always_on_top` and the shell's
+/// `ui.quick_dock` preference. The projection still reduces the merged config to these leaves, so
+/// the machine `ui` block's geometry can never enter the portable `settings:` half.
 fn ensure_portable_ui(base: &mut Value) {
     let Some(object) = base.as_object_mut() else {
         return;
     };
-    object.entry("ui".to_owned()).or_insert_with(|| {
+    let ui = object
+        .entry("ui".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(ui_object) = ui.as_object_mut() else {
+        return;
+    };
+    ui_object
+        .entry("always_on_top".to_owned())
+        .or_insert(Value::Bool(false));
+    ui_object.entry("quick_dock".to_owned()).or_insert_with(|| {
         let mut shape = Map::new();
-        shape.insert("always_on_top".to_owned(), Value::Bool(false));
+        shape.insert(
+            "placement".to_owned(),
+            Value::String("right_rail".to_owned()),
+        );
+        shape.insert("collapsed".to_owned(), Value::Bool(false));
         Value::Object(shape)
     });
+    // A hand-edited/malformed scalar here is not repaired: the projection simply has no destination
+    // below it, so a broken `quick_dock` stays out of the portable half like any other bad value.
 }
 
 fn is_portable_section(name: &str) -> bool {

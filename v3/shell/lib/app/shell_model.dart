@@ -397,6 +397,9 @@ class ShellModel extends ChangeNotifier {
       'core ${hello.coreVersion} connected '
       '(rev ${hello.rev}, root ${hello.root})',
     );
+    // The shell owns its own placement preference in the portable `settings.ui.quick_dock` block
+    // (`placement` + `collapsed`); take it before any compact window is shown.
+    _restoreDockPreference();
     // The config mirror is now the truth; apply the persisted pin exactly once. Hide/show stays
     // untouched: this is one SetWindowPos, not part of the capture's frame lifecycle.
     await _applyAlwaysOnTopFromMirror();
@@ -1410,6 +1413,47 @@ class ShellModel extends ChangeNotifier {
   /// True while the dock is the small resting form (edge tab / pill / island).
   bool get dockCollapsed => _dockCollapsed;
 
+  /// Reads the portable `settings.ui.quick_dock` preference; absent/invalid values keep the defaults
+  /// (right rail, expanded). The merged top-level `ui` is read too, for cores that flatten the overlay.
+  void _restoreDockPreference() {
+    final settings = asJsonMap(config.config['settings']);
+    var dock = asJsonMap(asJsonMap(settings['ui'])['quick_dock']);
+    if (dock.isEmpty) {
+      dock = asJsonMap(asJsonMap(config.config['ui'])['quick_dock']);
+    }
+    final wire = asString(dock['placement']);
+    _dockPlacement = DockPlacement.values.firstWhere(
+      (placement) => placement.wire == wire,
+      orElse: () => DockPlacement.rightRail,
+    );
+    _dockCollapsed = asBool(dock['collapsed']) ?? false;
+  }
+
+  /// Persists the placement/collapsed choice through the normal validate → apply path. A refusal is
+  /// logged but does not fight the player's choice in the running window; the next connect re-reads
+  /// the core's mirror.
+  Future<void> _saveDockPreference() async {
+    if (!isReady || _closing || _disposed) {
+      return;
+    }
+    final outcome = await saveConfig({
+      'settings': {
+        'ui': {
+          'quick_dock': {
+            'placement': _dockPlacement.wire,
+            'collapsed': _dockCollapsed,
+          },
+        },
+      },
+    });
+    if (!outcome.saved) {
+      logs.addShellNote(
+        'quick dock preference was not saved: '
+        '${outcome.errorLines.join(' · ')}',
+      );
+    }
+  }
+
   /// The dock's current rect, for tests/diagnostics.
   WindowRect? get dockRect => _dockRectValue;
 
@@ -1468,29 +1512,27 @@ class ShellModel extends ChangeNotifier {
   }
 
   /// Change the dock's form factor/side. Safe while the dock is closed (the next [enterDock] uses
-  /// it) and while it is open (the window moves and resizes immediately).
+  /// it) and while it is open (the window moves and resizes immediately). The choice is written to
+  /// the portable `settings.ui.quick_dock` block through the normal save path.
   Future<void> setDockPlacement(DockPlacement placement) async {
     if (placement == _dockPlacement) {
       return;
     }
     _dockPlacement = placement;
     notifyListeners();
-    if (!_dockActive) {
-      return;
-    }
     final work = _dockWorkArea;
-    if (work == null) {
-      return;
+    if (_dockActive && work != null) {
+      final (width, height) = _dockWindowSize;
+      final rect = _dockRectFor(work);
+      try {
+        await host.setWindowMinSize(width, height);
+        _dockRectValue = rect;
+        await host.setWindowRect(rect);
+      } catch (error) {
+        logs.addShellNote('cannot move the quick dock: $error');
+      }
     }
-    final (width, height) = _dockWindowSize;
-    final rect = _dockRectFor(work);
-    try {
-      await host.setWindowMinSize(width, height);
-      _dockRectValue = rect;
-      await host.setWindowRect(rect);
-    } catch (error) {
-      logs.addShellNote('cannot move the quick dock: $error');
-    }
+    await _saveDockPreference();
   }
 
   /// Collapse the dock to its resting edge tab/pill/island, or expand it again. The same full-window
@@ -1501,22 +1543,19 @@ class ShellModel extends ChangeNotifier {
     }
     _dockCollapsed = collapsed;
     notifyListeners();
-    if (!_dockActive) {
-      return;
-    }
     final work = _dockWorkArea;
-    if (work == null) {
-      return;
+    if (_dockActive && work != null) {
+      final (width, height) = _dockWindowSize;
+      final rect = _dockRectFor(work);
+      try {
+        await host.setWindowMinSize(width, height);
+        _dockRectValue = rect;
+        await host.setWindowRect(rect);
+      } catch (error) {
+        logs.addShellNote('cannot resize the quick dock: $error');
+      }
     }
-    final (width, height) = _dockWindowSize;
-    final rect = _dockRectFor(work);
-    try {
-      await host.setWindowMinSize(width, height);
-      _dockRectValue = rect;
-      await host.setWindowRect(rect);
-    } catch (error) {
-      logs.addShellNote('cannot resize the quick dock: $error');
-    }
+    await _saveDockPreference();
   }
 
   Future<void> toggleDockCollapsed() => setDockCollapsed(!_dockCollapsed);

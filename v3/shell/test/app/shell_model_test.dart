@@ -941,6 +941,7 @@ void main() {
       final harness = AppHarness(host: host);
       addTearDown(harness.dispose);
       await harness.connect();
+      harness.answerConfigCommands();
       await harness.model.enterDock();
       await settle();
 
@@ -962,6 +963,39 @@ void main() {
       await harness.model.setDockPlacement(DockPlacement.bottomLeft);
       await settle();
       expect(host.appliedRects.last, _rect(16, 564, 340, 460));
+      final saved =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final settings =
+          (saved['sections'] as Map<String, dynamic>)['settings']
+              as Map<String, dynamic>;
+      final ui = (settings['ui'] as Map<String, dynamic>);
+      final dock = ui['quick_dock'] as Map<String, dynamic>;
+      expect(dock['placement'], 'bottom_left');
+      expect(dock['collapsed'], false);
+    });
+
+    test('a saved dock preference is restored at connect', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {
+              'quick_dock': {'placement': 'bottom_right', 'collapsed': true},
+            },
+          },
+        },
+      );
+      expect(harness.model.dockPlacement, DockPlacement.bottomRight);
+      expect(harness.model.dockCollapsed, isTrue);
+
+      await harness.model.enterDock();
+      await settle();
+      expect(host.minSizeCalls.last, (220, 44));
+      expect(host.appliedRects.last, _rect(1684, 980, 220, 44));
     });
 
     test('the dock collapses to each placement\'s resting form', () async {
@@ -969,6 +1003,7 @@ void main() {
       final harness = AppHarness(host: host);
       addTearDown(harness.dispose);
       await harness.connect();
+      harness.answerConfigCommands();
       await harness.model.enterDock();
       await settle();
 

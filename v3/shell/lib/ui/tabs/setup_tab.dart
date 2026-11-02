@@ -250,8 +250,8 @@ class _SetupTabState extends State<SetupTab>
               const ShellProse(
                 'A compact launcher between runs: seven quick starts, each with its own Start '
                 'button and a separate ⋮ options control, plus a setup-only row for the Pet Feeder. '
-                'Choose where it sits here or from the dock header. The choice is session-only in '
-                'this build (persisting it needs a machine/config field).',
+                'Choose where it sits here or from the dock header; the placement and its '
+                'collapsed/expanded state are saved with the config and survive restarts.',
               ),
               const SizedBox(height: ShellSpace.sm),
               Wrap(

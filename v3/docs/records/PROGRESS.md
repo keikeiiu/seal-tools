@@ -31,8 +31,10 @@ the existing `config.apply` rule.
 - **Five placements** (`DockPlacement`): right rail (300 × 480), left rail (300 × 480), bottom right
   (340 × 460), bottom left (340 × 460), top centre (380 × 500). The choice lives in **Setup → Quick
   dock** and in the dock header's placement menu; the dock can be dragged/snapped like the run bar.
-  Placement is **session-only in this build** (a machine/config field is the follow-up); the dock is
-  always expanded (no edge-tab state yet).
+  Placement and collapsed state are now persisted through the portable `settings.ui.quick_dock` block
+  (`placement` + `collapsed`); the core's `ensure_portable_ui` projection carries the field, verified
+  by a seal-core config test (write, preserve, reload, hand-written read). A dragged offset is
+  session-only; the preset is what survives.
 - **Content, ranked**: seven quick tiles (Spammer, Buy, Sell, Quest, Gem Composer, Magic Tuner,
   Hold Space) with live phase chips only while active, then the Pet Feeder as the only setup-only row
   (Gem Composer and Tuner now quick-start the configured job; Pet remains the long-running
@@ -60,11 +62,11 @@ the existing `config.apply` rule.
 - **Collapsed resting form** (2026-11-02 follow-up): the header's collapse action shrinks the dock to a
   46 × 150 rail tab, a 220 × 44 bottom pill or a 200 × 36 top island; it keeps three tool icons and the
   running dot glanceable, and clicking it/unfold expands. Manual only (no auto-collapse timer).
-- **Deferred**: editing/reassigning the seven tiles, pinned Sell quick actions, auto-collapse,
-  persistent placement/collapsed state and per-session Buy/Sell defaults. Those remain the design
-  study's next increments.
+- **Deferred**: editing/reassigning the seven tiles, pinned Sell quick actions, auto-collapse and
+  per-session Buy/Sell defaults, plus persisting the dragged offset inside a placement. Those remain
+  the design study's next increments.
 
-Gates: shell `flutter analyze` No issues, `flutter test` **321/321** (new `quick_dock_test.dart` covers
+Gates: shell `flutter analyze` No issues, `flutter test` **322/322** (new `quick_dock_test.dart` covers
 tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, top-bar entry, full-window
 return and run-bar hand-back; model tests cover geometry, chrome and both transitions),
 `dart format` clean, Windows debug build OK.

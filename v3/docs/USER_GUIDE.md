@@ -139,7 +139,8 @@ active preset, exactly like the Cards pickers; Hold Space uses the same Start/St
 options. A running tile shows its phase and the button becomes **Stop**. Use **Collapse to edge** in the dock header to shrink it to a small tab (rail, pill or island); click the tab to expand it again. Starting a tool turns the same
 window into the mini run bar; when the run finishes, the bar's dock button returns to the launcher.
 Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the dock's
-placement menu, and drag the dock to fine-tune it. The placement is remembered for this session only.
+placement menu, and drag the dock to fine-tune it. The placement and its collapsed/expanded state are
+remembered across restarts; a dragged offset inside that placement is session-only.
 
 ### 2.3 Hold Space
 
