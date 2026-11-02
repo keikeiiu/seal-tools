@@ -274,6 +274,27 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
+  testWidgets('the dock collapses to its resting form and expands again', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-collapse')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
+    expect(find.byKey(const ValueKey('dock-collapsed')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dock-start-spammer')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('dock-expand')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+    expect(find.byKey(const ValueKey('dock-collapsed')), findsNothing);
+    expect(find.byKey(const ValueKey('dock-start-spammer')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('the top bar opens the dock and the dock opens the full shell', (
     tester,
   ) async {

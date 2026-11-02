@@ -193,6 +193,7 @@ class ShellModel extends ChangeNotifier {
   // as the run bar; when a run starts it hands the window to the mini bar, and the finished bar can
   // hand it back. Placement is session/v1 only (a config field is the documented follow-up).
   bool _dockActive = false;
+  bool _dockCollapsed = false;
   DockPlacement _dockPlacement = DockPlacement.rightRail;
   WindowRect? _dockRestoreRect;
   WindowRect? _dockWorkArea;
@@ -1406,8 +1407,14 @@ class ShellModel extends ChangeNotifier {
   /// machine field owned by the core (documented in UI.md as the follow-up).
   DockPlacement get dockPlacement => _dockPlacement;
 
+  /// True while the dock is the small resting form (edge tab / pill / island).
+  bool get dockCollapsed => _dockCollapsed;
+
   /// The dock's current rect, for tests/diagnostics.
   WindowRect? get dockRect => _dockRectValue;
+
+  (int, int) get _dockWindowSize =>
+      _dockCollapsed ? _dockPlacement.collapsedSize : _dockPlacement.size;
 
   /// Open the idle launcher: remember the full placement, lower the minimum size to the dock,
   /// switch to borderless non-activating chrome and place it at [dockPlacement].
@@ -1425,7 +1432,7 @@ class ShellModel extends ChangeNotifier {
       _dockRestoreRect = await host.windowRect();
       final work = await host.primaryWorkArea();
       _dockWorkArea = work;
-      final (width, height) = _dockPlacement.size;
+      final (width, height) = _dockWindowSize;
       await host.setWindowMinSize(width, height);
       await host.setMiniChrome(true);
       final rect = _dockRectFor(work);
@@ -1475,7 +1482,7 @@ class ShellModel extends ChangeNotifier {
     if (work == null) {
       return;
     }
-    final (width, height) = placement.size;
+    final (width, height) = _dockWindowSize;
     final rect = _dockRectFor(work);
     try {
       await host.setWindowMinSize(width, height);
@@ -1485,6 +1492,34 @@ class ShellModel extends ChangeNotifier {
       logs.addShellNote('cannot move the quick dock: $error');
     }
   }
+
+  /// Collapse the dock to its resting edge tab/pill/island, or expand it again. The same full-window
+  /// restore target is kept, so collapsing never loses the full placement.
+  Future<void> setDockCollapsed(bool collapsed) async {
+    if (collapsed == _dockCollapsed) {
+      return;
+    }
+    _dockCollapsed = collapsed;
+    notifyListeners();
+    if (!_dockActive) {
+      return;
+    }
+    final work = _dockWorkArea;
+    if (work == null) {
+      return;
+    }
+    final (width, height) = _dockWindowSize;
+    final rect = _dockRectFor(work);
+    try {
+      await host.setWindowMinSize(width, height);
+      _dockRectValue = rect;
+      await host.setWindowRect(rect);
+    } catch (error) {
+      logs.addShellNote('cannot resize the quick dock: $error');
+    }
+  }
+
+  Future<void> toggleDockCollapsed() => setDockCollapsed(!_dockCollapsed);
 
   /// Moves the dock while the player drags its header. The content is fixed-size, so only the
   /// top-left corner changes; the snap happens on release.
@@ -1547,7 +1582,7 @@ class ShellModel extends ChangeNotifier {
     try {
       final work = _dockWorkArea ?? await host.primaryWorkArea();
       _dockWorkArea = work;
-      final (width, height) = _dockPlacement.size;
+      final (width, height) = _dockWindowSize;
       await host.setWindowMinSize(width, height);
       final rect = _dockRectFor(work);
       _dockRectValue = rect;
@@ -1589,7 +1624,7 @@ class ShellModel extends ChangeNotifier {
   }
 
   WindowRect _dockRectFor(WindowRect work) {
-    final (width, height) = _dockPlacement.size;
+    final (width, height) = _dockWindowSize;
     const margin = 16;
     final int left;
     final int top;

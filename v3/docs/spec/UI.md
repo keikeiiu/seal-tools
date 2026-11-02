@@ -124,6 +124,10 @@ The idle companion window: a compact launcher for between runs, not the full Car
 It is the idle state of the same borderless, non-activating window that becomes the run bar; opening
 the full shell restores its saved placement and pin.
 
+- **Collapsed resting form** — the header's `dock-collapse` action shrinks the dock to its form-factor
+  tab: a 46 × 150 vertical rail tab, a 220 × 44 bottom pill or a 200 × 36 top island. It keeps three
+  tool icons and a running dot glanceable; clicking the tab or its `dock-expand` button returns to the
+  full launcher. The choice is manual only — there is no auto-collapse timer in this build.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
@@ -153,9 +157,9 @@ the full shell restores its saved placement and pin.
 - **Run transition** — a foreground tool's first non-idle `state` turns the same compact window into
   the run bar (with the same full-window restore target). A finished/error bar offers the
   `mini-dock` action back to the launcher in addition to "Full window".
-- **Not built in this increment** — editing/reassigning the five tiles, pinned Sell selections, a
-  collapsed edge-tab state, per-session Buy/Sell defaults across dock re-entries, and placement
-  persistence. The dock is always expanded; those are the next increments from the design study
+- **Not built in this increment** — editing/reassigning the seven tiles, pinned Sell selections,
+  per-session Buy/Sell defaults across dock re-entries, auto-collapse, and placement/size persistence.
+  Those are the next increments from the design study
   (`.scratch/ui-audit/ui-demo-quickdock.html`).
 
 ## Cards screen
@@ -328,7 +332,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 319/319; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 321/321; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

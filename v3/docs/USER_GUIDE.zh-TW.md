@@ -117,7 +117,7 @@ Quest Hand-in、Gem Composer、Magic Tuner、Hold Space —— 每個磚塊都�
 （整列不是啟動區），Pet Feeder 則是狀態列，按一下回到完整視窗設定。Buy 選預設與數量、
 Sell 勾選背包格子（可點單格，或按某一列的 **row N** 一鍵填滿/清除整列；都只套用下一次執行）；
 Spammer/Quest 的選擇會儲存為使用中的預設（與 Cards 的選法相同）；Hold Space 使用同一個 Start/Stop
-按鈕，沒有選項。執行中的磚塊會顯示階段，按鈕變成 **Stop**。啟動工具後，
+按鈕，沒有選項。執行中的磚塊會顯示階段，按鈕變成 **Stop**。面板標頭的 **Collapse to edge** 可縮成小型分頁（rail／pill／island），再點一下即展開。啟動工具後，
 同一個視窗會變成迷你執行列；執行結束後，列上的 dock 按鈕會回到啟動器。可在 Setup 或面板的放置選單
 選擇**右側、左側、右下、左下、上方中央**，也可以直接拖動微調。放置位置只在本次工作階段記住。
 

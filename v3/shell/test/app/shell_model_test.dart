@@ -964,6 +964,31 @@ void main() {
       expect(host.appliedRects.last, _rect(16, 564, 340, 460));
     });
 
+    test('the dock collapses to each placement\'s resting form', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      await harness.model.enterDock();
+      await settle();
+
+      await harness.model.setDockCollapsed(true);
+      await settle();
+      expect(harness.model.dockCollapsed, isTrue);
+      expect(host.minSizeCalls.last, (46, 150));
+      expect(host.appliedRects.last, _rect(1858, 445, 46, 150));
+
+      await harness.model.setDockPlacement(DockPlacement.bottomRight);
+      await settle();
+      expect(host.minSizeCalls.last, (220, 44));
+      expect(host.appliedRects.last, _rect(1684, 980, 220, 44));
+
+      await harness.model.setDockCollapsed(false);
+      await settle();
+      expect(harness.model.dockCollapsed, isFalse);
+      expect(host.minSizeCalls.last, (340, 460));
+    });
+
     test('a dock start hands the window to the run bar', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);

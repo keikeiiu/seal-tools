@@ -82,31 +82,133 @@ class _QuickDockState extends State<QuickDock> {
                       ),
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      _header(theme),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(
-                            ShellSpace.sm,
-                            0,
-                            ShellSpace.sm,
-                            ShellSpace.sm,
-                          ),
-                          child: _menu == null
-                              ? _launcher(theme)
-                              : _secondaryMenu(theme, _menu!),
+                  child: model.dockCollapsed
+                      ? _collapsed(theme)
+                      : Column(
+                          children: [
+                            _header(theme),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  ShellSpace.sm,
+                                  0,
+                                  ShellSpace.sm,
+                                  ShellSpace.sm,
+                                ),
+                                child: _menu == null
+                                    ? _launcher(theme)
+                                    : _secondaryMenu(theme, _menu!),
+                              ),
+                            ),
+                            _footer(theme),
+                          ],
                         ),
-                      ),
-                      _footer(theme),
-                    ],
-                  ),
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  // ── collapsed resting form ───────────────────────────────────────────────────────────────────
+
+  /// The dock's resting form: a vertical tab on the rails, a status pill for the bays and a slim
+  /// island at the top. It keeps three tool icons (and the running dot) glanceable; a click or the
+  /// unfold button returns to the full launcher.
+  Widget _collapsed(ThemeData theme) {
+    final rail = model.dockPlacement.isRail;
+    final running = _runningCount();
+    final tools = <Widget>[
+      for (final tool in const [ToolId.spammer, ToolId.buy, ToolId.sell])
+        Padding(
+          padding: const EdgeInsets.all(1),
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Stack(
+              children: [
+                Center(
+                  child: Icon(
+                    toolIcon(tool),
+                    size: 15,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (tool == ToolId.spammer && running > 0)
+                  Positioned(
+                    right: 1,
+                    top: 1,
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+    ];
+    final expand = IconButton(
+      key: const ValueKey('dock-expand'),
+      tooltip: 'Expand quick dock',
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        minimumSize: const Size(26, 26),
+        padding: EdgeInsets.zero,
+      ),
+      onPressed: () => unawaited(model.setDockCollapsed(false)),
+      icon: Icon(
+        Icons.unfold_more,
+        size: 16,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+    return InkWell(
+      key: const ValueKey('dock-collapsed'),
+      onTap: () => unawaited(model.setDockCollapsed(false)),
+      child: Center(
+        child: rail
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.drag_indicator,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.6,
+                    ),
+                  ),
+                  ...tools,
+                  expand,
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  expand,
+                  const SizedBox(width: ShellSpace.xxs),
+                  ...tools,
+                  if (running > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(left: ShellSpace.xs),
+                      child: Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+      ),
     );
   }
 
@@ -205,6 +307,24 @@ class _QuickDockState extends State<QuickDock> {
                   ),
                 ),
             ],
+          ),
+          IconButton(
+            key: const ValueKey('dock-collapse'),
+            tooltip: 'Collapse to edge',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(26, 26),
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: () {
+              setState(() => _menu = null);
+              unawaited(model.setDockCollapsed(true));
+            },
+            icon: Icon(
+              Icons.unfold_less,
+              size: 15,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           IconButton(
             key: const ValueKey('dock-full'),

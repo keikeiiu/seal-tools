@@ -136,7 +136,7 @@ target), plus a status-only row for the Pet Feeder that opens the full window. B
 preset/count and Sell marks bag cells — click individual slots, or a row's **row N** button to
 fill/clear that whole bag line — both apply to the next run only; Spammer and Quest choices save the
 active preset, exactly like the Cards pickers; Hold Space uses the same Start/Stop button and has no
-options. A running tile shows its phase and the button becomes **Stop**. Starting a tool turns the same
+options. A running tile shows its phase and the button becomes **Stop**. Use **Collapse to edge** in the dock header to shrink it to a small tab (rail, pill or island); click the tab to expand it again. Starting a tool turns the same
 window into the mini run bar; when the run finishes, the bar's dock button returns to the launcher.
 Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the dock's
 placement menu, and drag the dock to fine-tune it. The placement is remembered for this session only.

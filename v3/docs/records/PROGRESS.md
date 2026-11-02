@@ -57,13 +57,17 @@ the existing `config.apply` rule.
   (= 380 × 500). Each was borderless with `exstyle = WS_EX_NOACTIVATE | WS_EX_TOPMOST`; the right-rail
   capture opened a secondary menu through a real mouse click. Captures:
   `.scratch/ui-audit/dock-real-*.png`.
-- **Deferred**: editing/reassigning the five tiles, pinned Sell quick actions, collapsed edge tab,
-  persistent placement and per-session Buy/Sell defaults. Those remain the design study's next
-  increments.
+- **Collapsed resting form** (2026-11-02 follow-up): the header's collapse action shrinks the dock to a
+  46 × 150 rail tab, a 220 × 44 bottom pill or a 200 × 36 top island; it keeps three tool icons and the
+  running dot glanceable, and clicking it/unfold expands. Manual only (no auto-collapse timer).
+- **Deferred**: editing/reassigning the seven tiles, pinned Sell quick actions, auto-collapse,
+  persistent placement/collapsed state and per-session Buy/Sell defaults. Those remain the design
+  study's next increments.
 
-Gates: shell `flutter analyze` No issues, `flutter test` **315/315** (new `quick_dock_test.dart` covers
-tiles, Buy/Sell menus, five placements, top-bar entry, full-window return and run-bar hand-back; model
-tests cover geometry, chrome and both transitions), `dart format` clean, Windows debug build OK.
+Gates: shell `flutter analyze` No issues, `flutter test` **321/321** (new `quick_dock_test.dart` covers
+tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, top-bar entry, full-window
+return and run-bar hand-back; model tests cover geometry, chrome and both transitions),
+`dart format` clean, Windows debug build OK.
 Truth: [UI.md §Quick dock](../spec/UI.md#quick-dock-landed-2026-11-02).
 
 ## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)

@@ -25,4 +25,12 @@ enum DockPlacement {
     DockPlacement.bottomRight || DockPlacement.bottomLeft => (340, 460),
     DockPlacement.topCentre => (380, 500),
   };
+
+  /// The collapsed resting form: a vertical edge tab for the rails, a status pill for the bays and a
+  /// slim top island. Clicking it expands the launcher again.
+  (int, int) get collapsedSize => switch (this) {
+    DockPlacement.rightRail || DockPlacement.leftRail => (46, 150),
+    DockPlacement.bottomRight || DockPlacement.bottomLeft => (220, 44),
+    DockPlacement.topCentre => (200, 36),
+  };
 }
