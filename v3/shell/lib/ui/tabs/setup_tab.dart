@@ -248,10 +248,10 @@ class _SetupTabState extends State<SetupTab>
             title: 'Quick dock',
             children: [
               const ShellProse(
-                'A compact launcher between runs: five quick starts, one chevron each for the '
-                'per-run options, and the long-running tools left to the full window. Choose where '
-                'it sits here or from the dock header. The choice is session-only in this build '
-                '(persisting it needs a machine/config field).',
+                'A compact launcher between runs: seven quick starts, each with its own Start '
+                'button and a separate ⋮ options control, plus a setup-only row for the Pet Feeder. '
+                'Choose where it sits here or from the dock header. The choice is session-only in '
+                'this build (persisting it needs a machine/config field).',
               ),
               const SizedBox(height: ShellSpace.sm),
               Wrap(

@@ -96,9 +96,9 @@ void main() {
       'dock-tile-buy',
       'dock-tile-sell',
       'dock-tile-quest',
+      'dock-tile-gem',
+      'dock-tile-tuner',
       'dock-tile-holdspace',
-      'dock-long-gem',
-      'dock-long-tuner',
       'dock-long-pet',
     ]) {
       expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
@@ -150,6 +150,29 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
   });
+
+  testWidgets(
+    'Gem Composer and Tuner are short-run tiles; only Pet is setup-only',
+    (tester) async {
+      final harness = await _pumpDock(tester);
+
+      // No options menus: these start with their configured behaviour.
+      expect(find.byKey(const ValueKey('dock-menu-gem')), findsNothing);
+      expect(find.byKey(const ValueKey('dock-menu-tuner')), findsNothing);
+      expect(find.byKey(const ValueKey('dock-long-pet')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('dock-start-tuner')));
+      await tester.pump();
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'tuner'});
+
+      await tester.tap(find.byKey(const ValueKey('dock-start-gem')));
+      await tester.pump();
+      expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'gem'});
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 2));
+    },
+  );
 
   testWidgets('the Buy menu sends per-run preset and count', (tester) async {
     final harness = await _pumpDock(tester);

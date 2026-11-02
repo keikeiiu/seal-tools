@@ -112,9 +112,9 @@ Cards 畫面先是 **Run** 標頭（右側顯示執行中的數量），並優�
 頂端列的子母畫面按鈕手動收起。
 
 **快速面板（Quick dock）。** 沒有工具在執行時，按頂端列的儀表板按鈕（或 **Setup → Quick dock →
-Open quick dock**）會把視窗收成小型的常駐最上層啟動器：五個快速啟動 —— Spammer、Buy、Sell、
-Quest Hand-in、Hold Space —— 每個磚塊都有自己的 **Start** 按鈕，以及獨立的 **⋮ 選項** 按鈕
-（整列不是啟動區），Pet/Tuner/Gem Composer 則是狀態列，按一下回到完整視窗設定。Buy 選預設與數量、
+Open quick dock**）會把視窗收成小型的常駐最上層啟動器：七個快速啟動 —— Spammer、Buy、Sell、
+Quest Hand-in、Gem Composer、Magic Tuner、Hold Space —— 每個磚塊都有自己的 **Start** 按鈕，以及獨立的 **⋮ 選項** 按鈕
+（整列不是啟動區），Pet Feeder 則是狀態列，按一下回到完整視窗設定。Buy 選預設與數量、
 Sell 勾選背包格子（可點單格，或按某一列的 **row N** 一鍵填滿/清除整列；都只套用下一次執行）；
 Spammer/Quest 的選擇會儲存為使用中的預設（與 Cards 的選法相同）；Hold Space 使用同一個 Start/Stop
 按鈕，沒有選項。執行中的磚塊會顯示階段，按鈕變成 **Stop**。啟動工具後，

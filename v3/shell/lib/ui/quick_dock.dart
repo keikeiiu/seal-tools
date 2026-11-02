@@ -291,6 +291,8 @@ class _QuickDockState extends State<QuickDock> {
           ToolId.buy,
           ToolId.sell,
           ToolId.quest,
+          ToolId.gem,
+          ToolId.tuner,
           ToolId.holdspace,
         ])
           _tile(theme, tool, enabled: ready),
@@ -305,7 +307,7 @@ class _QuickDockState extends State<QuickDock> {
             children: [
               Expanded(
                 child: Text(
-                  'SET UP IN FULL WINDOW',
+                  'LONG-RUNNING',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -316,7 +318,7 @@ class _QuickDockState extends State<QuickDock> {
                 ),
               ),
               Text(
-                'LONG-RUNNING',
+                'SET UP IN FULL WINDOW',
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontSize: 9.5,
                   letterSpacing: 0.06,
@@ -326,8 +328,7 @@ class _QuickDockState extends State<QuickDock> {
             ],
           ),
         ),
-        for (final tool in const [ToolId.gem, ToolId.tuner, ToolId.pet])
-          _longRow(theme, tool),
+        _longRow(theme, ToolId.pet),
         if (!ready)
           Padding(
             padding: const EdgeInsets.only(top: ShellSpace.sm),
@@ -348,8 +349,11 @@ class _QuickDockState extends State<QuickDock> {
     final phase = snapshot?.phase ?? ToolPhase.idle;
     final running = phase != ToolPhase.idle;
     final busy = model.tools.isPending(tool);
-    final holdSpace = tool == ToolId.holdspace;
-    final hasMenu = !holdSpace;
+    final hasMenu =
+        tool == ToolId.spammer ||
+        tool == ToolId.buy ||
+        tool == ToolId.sell ||
+        tool == ToolId.quest;
     final phaseLabel = switch (phase) {
       ToolPhase.idle => 'idle',
       ToolPhase.starting => 'starting',
@@ -1017,6 +1021,10 @@ class _QuickDockState extends State<QuickDock> {
             : '${model.sellSlots.length} bag cells',
       ToolId.quest =>
         asString(asJsonMap(config['quest'])['active']) ?? 'No flow',
+      ToolId.gem =>
+        '${asString(asJsonMap(config['gem'])['start_grade']) ?? 'start grade'} · ${asString(asJsonMap(config['gem'])['empty_mode']) ?? 'empty mode'}',
+      ToolId.tuner =>
+        '${asString(asJsonMap(config['tuner'])['target_grade']) ?? 'no target'} · grade run',
       ToolId.holdspace =>
         (model.tools.snapshot(tool)?.phase ?? ToolPhase.idle) == ToolPhase.idle
             ? 'Spacebar auto-pickup'

@@ -132,8 +132,8 @@ the full shell restores its saved placement and pin.
   The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
   also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. Placement is
   **session-only in this build** — persisting it needs a machine/config field (follow-up).
-- **Content** — five quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Hold Space), then three
-  setup-only rows (Gem Composer, Magic Tuner, Pet Feeder) that open the full window; footer "Open full
+- **Content** — seven quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner,
+  Hold Space), then one setup-only row (Pet Feeder) that opens the full window; footer "Open full
   window". Each quick tile has a **dedicated Start button** and a **separate ⋮ options** button — the
   row itself is not a Start target, and the chevron that used to mean options was replaced by ⋮ because
   it read as navigation. Idle rows show no phase chip; a running/starting row shows its chip and the
@@ -328,7 +328,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 318/318; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 319/319; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
