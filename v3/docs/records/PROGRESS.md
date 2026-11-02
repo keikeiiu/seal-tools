@@ -69,15 +69,21 @@ the existing `config.apply` rule.
   `settings.ui.quick_dock {tiles, pins}` (core shape + config test extended), so the layout survives a
   restart. Last-used Buy preset/count is remembered for the dock session, and the Pet setup row asks
   the full shell to select the Pet tab when it returns.
+- **Gem/Tuner secondary options** (2026-11-02 follow-up): both tiles now carry a ⋮ menu. Gem Composer
+  picks the start grade and empty-slot behaviour (Stop / Advance grade / Advance + clear); Magic Tuner
+  picks the target grade and a max-retries stepper. Each pick saves the portable `settings.gem` /
+  `settings.tuner` field through `config.apply` (the other editable keys are carried so a partial save
+  cannot blank them), and Start then runs the saved configuration.
 - **Remaining**: only the dragged offset inside a placement is session-only (the preset, collapsed
   state, order and pins persist); live-game Start/Stop verification is still manual.
 
-Gates: shell `flutter analyze` No issues, `flutter test` **328/328** (new `quick_dock_test.dart` covers
+Gates: shell `flutter analyze` No issues, `flutter test` **329/329** (new `quick_dock_test.dart` covers
 tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, auto-collapse, edit
-remove/reorder/add-back, pinned Sell creation/start, top-bar entry, full-window return and run-bar
-hand-back; model tests cover geometry, chrome, preferences/layout restore and both transitions),
-`dart format` clean, Windows debug build OK; core `quick_dock_preference_is_accepted_written_and_preserved`
-green, `cargo fmt --check` clean, clippy clean for seal-config.
+remove/reorder/add-back, pinned Sell creation/start, Gem/Tuner option saves, top-bar entry, full-window
+return and run-bar hand-back; model tests cover geometry, chrome, preferences/layout restore and both
+transitions), `dart format` clean, Windows debug build OK; core
+`quick_dock_preference_is_accepted_written_and_preserved` green, `cargo fmt --check` clean, clippy clean
+for seal-config.
 Truth: [UI.md §Quick dock](../spec/UI.md#quick-dock-landed-2026-11-02).
 
 ## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)

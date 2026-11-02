@@ -1,4 +1,4 @@
-/// The quick dock v1: the idle launcher (five quick starts, one secondary menu per tool, five
+/// The quick dock v1: the idle launcher (seven quick starts, secondary menus per tool, five
 /// placements) and its transitions to/from the existing run bar.
 library;
 
@@ -36,6 +36,16 @@ Map<String, dynamic> _dockConfig() => {
       'Cave run': <String, dynamic>{},
       'Tower run': <String, dynamic>{},
     },
+  },
+  'tuner': {
+    'target_grade': 'N',
+    'grade_order': ['N', 'G', 'DG', 'XG', 'SG'],
+    'max_retries': 3,
+  },
+  'gem': {
+    'start_grade': 'N',
+    'grades': ['N', 'G', 'DG'],
+    'empty_mode': 'stop',
   },
 };
 
@@ -168,9 +178,9 @@ void main() {
     (tester) async {
       final harness = await _pumpDock(tester);
 
-      // No options menus: these start with their configured behaviour.
-      expect(find.byKey(const ValueKey('dock-menu-gem')), findsNothing);
-      expect(find.byKey(const ValueKey('dock-menu-tuner')), findsNothing);
+      // Their ⋮ options edit the saved run config; the tiles still start directly.
+      expect(find.byKey(const ValueKey('dock-menu-gem')), findsOneWidget);
+      expect(find.byKey(const ValueKey('dock-menu-tuner')), findsOneWidget);
       expect(find.byKey(const ValueKey('dock-long-pet')), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('dock-start-tuner')));
@@ -185,6 +195,64 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     },
   );
+
+  testWidgets('Tuner and Gem options save the config before starting', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    Map<String, dynamic> savedSettings(String block) {
+      final args =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final sections = (args['sections'] as Map<String, dynamic>);
+      final settings = sections['settings'] as Map<String, dynamic>;
+      return settings[block] as Map<String, dynamic>;
+    }
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-tuner')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-tuner-grade-DG')));
+    await tester.pump();
+    await tester.pump();
+    final tuner = savedSettings('tuner');
+    expect(tuner['target_grade'], 'DG');
+    expect(
+      tuner['max_retries'],
+      3,
+      reason: 'a partial save keeps the other keys',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('dock-tuner-retries-plus')));
+    await tester.pump();
+    await tester.pump();
+    expect(savedSettings('tuner')['max_retries'], 4);
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-start')));
+    await tester.pump();
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'tuner'});
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-gem')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-gem-start-G')));
+    await tester.pump();
+    await tester.pump();
+    expect(savedSettings('gem')['start_grade'], 'G');
+
+    await tester.tap(
+      find.byKey(const ValueKey('dock-gem-empty-advance_grade')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(savedSettings('gem')['empty_mode'], 'advance_grade');
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-start')));
+    await tester.pump();
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {'tool': 'gem'});
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
 
   testWidgets('the dock auto-collapses after eight idle seconds', (
     tester,

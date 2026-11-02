@@ -118,8 +118,9 @@ Quest Hand-in、Gem Composer、Magic Tuner、Hold Space —— 每個磚塊都�
 Buy 選預設與數量，並記住本次面板工作階段的最後選擇；Sell 勾選背包格子（可點單格，或按某一列的
 **row N** 一鍵填滿/清除整列）。在 Sell 選單輸入名稱後按 **Pin**，會把目前的選取變成一個
 **Sell · 名稱** 的一鍵磚塊；釘選會隨面板儲存，按它的 chip 也能把選取載回來。Spammer/Quest 的選擇
-會儲存為使用中的預設（與 Cards 的選法相同）；Hold Space 使用同一個 Start/Stop 按鈕，沒有選項。
-執行中的磚塊會顯示階段，按鈕變成 **Stop**。
+會儲存為使用中的預設（與 Cards 的選法相同）；Gem Composer 的選單可選起始等級與空格處理方式，
+Magic Tuner 可選目標等級與重試次數 —— 兩者都會立即寫入設定，Start 使用儲存值。Hold Space 使用同一個
+Start/Stop 按鈕，沒有選項。執行中的磚塊會顯示階段，按鈕變成 **Stop**。
 
 面板標頭的 **Edit**（鉛筆）可用上下箭頭排序、移除任何磚塊，或把移除的工具加回。**Collapse to
 edge** 可把面板縮成小型分頁（rail／pill／island），再點一下即展開；閒置八秒也會自動收合，任何點擊

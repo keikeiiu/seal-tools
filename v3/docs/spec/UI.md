@@ -164,14 +164,17 @@ the full shell restores its saved placement and pin.
   - **Spammer** — rotation list; picking one saves the active preset with `config.apply`, exactly like
     the Cards picker, and the menu says so.
   - **Quest** — flow list, same saved-active rule.
+  - **Gem Composer** — start-grade chips (from the fixed grade ladder) and the empty-slot behaviour
+    (Stop / Advance grade / Advance + clear); each pick saves that portable field with `config.apply`,
+    then Start runs the saved job.
+  - **Magic Tuner** — target-grade chips (from `grade_order`) and a max-retries stepper; both save the
+    portable `settings.tuner` fields before Start.
   - **Hold Space** — no menu; the tile is an on/off toggle (Start/Stop).
 - **Run transition** — a foreground tool's first non-idle `state` turns the same compact window into
   the run bar (with the same full-window restore target). A finished/error bar offers the
   `mini-dock` action back to the launcher in addition to "Full window".
 - **Verification note** — every behaviour above is covered by widget/model tests and the core config
   test; the live game path (real Start/Stop clicks against the game) is still a manual check.
-  Those are the next increments from the design study
-  (`.scratch/ui-audit/ui-demo-quickdock.html`).
 
 ## Cards screen
 
@@ -343,7 +346,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 328/328; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 329/329; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

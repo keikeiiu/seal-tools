@@ -131,14 +131,16 @@ picture-in-picture button collapses manually.
 **Quick dock.** When nothing is running, the app bar's dashboard button (or **Setup → Quick dock →
 Open quick dock**) collapses the window into a small always-on-top launcher. It has seven quick starts —
 Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner and Hold Space — each tile with its own
-**Start** button and a separate **⋮ options** button for that tool's per-run options (the tile row
+**Start** button and a separate **⋮ options** button for that tool's options (the tile row
 itself is not a start target), plus a status-only row for the Pet Feeder that opens the full window on
 the Pet tab. Buy picks a preset/count and remembers the last choice for this dock session; Sell marks
 bag cells — click individual slots, or a row's **row N** button to fill/clear that whole bag line.
 Name the current Sell selection and press **Pin** in the Sell menu to turn it into its own
 one-click **Sell · <name>** tile; pinned selections are saved with the dock and can be loaded back by
 clicking their chip. Spammer and Quest choices save the active preset, exactly like the Cards pickers;
-Hold Space uses the same Start/Stop button and has no options. A running tile shows its phase and the
+Gem Composer's menu picks the start grade and empty-slot behaviour, and Magic Tuner's picks the target
+grade and max retries — those save to the config immediately, then Start uses them. Hold Space uses the
+same Start/Stop button and has no options. A running tile shows its phase and the
 button becomes **Stop**.
 
 The header's **Edit** (pencil) action reorders tiles with the up/down arrows, removes any tile and adds

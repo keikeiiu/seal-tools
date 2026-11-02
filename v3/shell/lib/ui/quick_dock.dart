@@ -27,6 +27,28 @@ import 'components/status_chip.dart';
 import 'theme.dart';
 import 'tool_labels.dart';
 
+const Set<String> _gemOptionKeys = {
+  'start_grade',
+  'empty_mode',
+  'empty_streak',
+  'colored_gap_min',
+  'save_empty_captures',
+  'move_mode',
+};
+
+const Set<String> _tunerOptionKeys = {
+  'target_grade',
+  'max_retries',
+  'ocr_retries',
+  'save_captures',
+  'spring_mode',
+  'mouse_guard',
+  'guard_px',
+  'recenter_max',
+  'timing',
+  'filter',
+};
+
 class QuickDock extends StatefulWidget {
   const QuickDock({super.key, required this.model});
 
@@ -152,9 +174,9 @@ class _QuickDockState extends State<QuickDock> {
                               Expanded(
                                 child: SingleChildScrollView(
                                   padding: const EdgeInsets.fromLTRB(
-                                    ShellSpace.sm,
+                                    ShellSpace.xs,
                                     0,
-                                    ShellSpace.sm,
+                                    ShellSpace.xs,
                                     ShellSpace.sm,
                                   ),
                                   child: _menu == null
@@ -571,7 +593,9 @@ class _QuickDockState extends State<QuickDock> {
         (tool == ToolId.spammer ||
             tool == ToolId.buy ||
             tool == ToolId.sell ||
-            tool == ToolId.quest);
+            tool == ToolId.quest ||
+            tool == ToolId.gem ||
+            tool == ToolId.tuner);
     final title = pin == null ? toolDisplayName(tool) : 'Sell · ${pin.name}';
     final summary = pin == null
         ? _summary(tool)
@@ -992,6 +1016,8 @@ class _QuickDockState extends State<QuickDock> {
           ToolId.sell => [_sellMenu(theme)],
           ToolId.spammer => [_presetMenu(theme, tool)],
           ToolId.quest => [_presetMenu(theme, tool)],
+          ToolId.gem => [_gemMenu(theme)],
+          ToolId.tuner => [_tunerMenu(theme)],
           _ => [const SizedBox.shrink()],
         },
         if (_presetError != null)
@@ -1378,6 +1404,207 @@ class _QuickDockState extends State<QuickDock> {
     });
   }
 
+  Widget _gemMenu(ThemeData theme) {
+    final block = asJsonMap(model.config.config['gem']);
+    final grades = asStringList(block['grades']);
+    final startGrade = asString(block['start_grade']);
+    final emptyMode = asString(block['empty_mode']) ?? 'stop';
+    if (grades.isEmpty) {
+      return _emptyMenu(
+        theme,
+        'No gem grades configured. Set them up in the full window.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _optionLabel(theme, 'START GRADE'),
+        Wrap(
+          spacing: ShellSpace.xs,
+          runSpacing: ShellSpace.xxs,
+          children: [
+            for (final grade in grades)
+              _optionChip(
+                theme,
+                'dock-gem-start-$grade',
+                grade,
+                grade == startGrade,
+                _savingPreset
+                    ? null
+                    : () => _savePortableOption('gem', {'start_grade': grade}),
+              ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        _optionLabel(theme, 'EMPTY SLOT BEHAVIOUR'),
+        Wrap(
+          spacing: ShellSpace.xs,
+          runSpacing: ShellSpace.xxs,
+          children: [
+            for (final entry in const [
+              ('stop', 'Stop'),
+              ('advance_grade', 'Advance grade'),
+              ('advance_grade_clear', 'Advance + clear'),
+            ])
+              _optionChip(
+                theme,
+                'dock-gem-empty-${entry.$1}',
+                entry.$2,
+                emptyMode == entry.$1,
+                _savingPreset
+                    ? null
+                    : () =>
+                          _savePortableOption('gem', {'empty_mode': entry.$1}),
+              ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        _optionNote(
+          theme,
+          'Both choices save to the config; Start runs with them.',
+        ),
+      ],
+    );
+  }
+
+  Widget _tunerMenu(ThemeData theme) {
+    final block = asJsonMap(model.config.config['tuner']);
+    var grades = asStringList(block['grade_order']);
+    if (grades.isEmpty) {
+      grades = const ['N', 'G', 'DG', 'XG', 'SG'];
+    }
+    final active = asString(block['target_grade']);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _optionLabel(theme, 'TARGET GRADE'),
+        Wrap(
+          spacing: ShellSpace.xs,
+          runSpacing: ShellSpace.xxs,
+          children: [
+            for (final grade in grades)
+              _optionChip(
+                theme,
+                'dock-tuner-grade-$grade',
+                grade,
+                grade == active,
+                _savingPreset
+                    ? null
+                    : () =>
+                          _savePortableOption('tuner', {'target_grade': grade}),
+              ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        _optionLabel(theme, 'RUN LIMIT'),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Max retries',
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('dock-tuner-retries-minus'),
+              visualDensity: VisualDensity.compact,
+              onPressed: _savingPreset
+                  ? null
+                  : () => _saveTunerRetries(
+                      (asNumber(block['max_retries']) ?? 1).toInt() - 1,
+                    ),
+              icon: const Icon(Icons.remove, size: 14),
+            ),
+            Text(
+              '${(asNumber(block['max_retries']) ?? 1).toInt()}',
+              key: const ValueKey('dock-tuner-retries'),
+              style: ShellText.mono.copyWith(fontSize: 12),
+            ),
+            IconButton(
+              key: const ValueKey('dock-tuner-retries-plus'),
+              visualDensity: VisualDensity.compact,
+              onPressed: _savingPreset
+                  ? null
+                  : () => _saveTunerRetries(
+                      (asNumber(block['max_retries']) ?? 1).toInt() + 1,
+                    ),
+              icon: const Icon(Icons.add, size: 14),
+            ),
+          ],
+        ),
+        _optionNote(
+          theme,
+          'The target and retry limit save to the config; Start uses them.',
+        ),
+      ],
+    );
+  }
+
+  Widget _optionLabel(ThemeData theme, String text) => Text(
+    text,
+    style: theme.textTheme.labelSmall?.copyWith(
+      fontSize: 9.5,
+      letterSpacing: 0.06,
+      color: theme.colorScheme.onSurfaceVariant,
+    ),
+  );
+
+  Widget _optionNote(ThemeData theme, String text) => Text(
+    text,
+    style: theme.textTheme.labelSmall?.copyWith(
+      fontSize: 9.5,
+      color: theme.colorScheme.onSurfaceVariant,
+    ),
+  );
+
+  Widget _optionChip(
+    ThemeData theme,
+    String key,
+    String label,
+    bool selected,
+    VoidCallback? onSelected,
+  ) => ChoiceChip(
+    key: ValueKey(key),
+    label: Text(label),
+    selected: selected,
+    showCheckmark: false,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    onSelected: onSelected == null ? null : (_) => onSelected(),
+    visualDensity: VisualDensity.compact,
+    labelStyle: theme.textTheme.labelSmall?.copyWith(fontSize: 10.5),
+  );
+
+  Future<void> _saveTunerRetries(int count) async {
+    await _savePortableOption('tuner', {'max_retries': count.clamp(1, 99)});
+  }
+
+  Future<void> _savePortableOption(
+    String block,
+    Map<String, dynamic> changes,
+  ) async {
+    final merged = asJsonMap(model.config.config[block]);
+    final keys = block == 'gem' ? _gemOptionKeys : _tunerOptionKeys;
+    final values = <String, dynamic>{
+      for (final key in keys)
+        if (merged[key] != null) key: merged[key],
+    };
+    values.addAll(changes);
+    setState(() {
+      _savingPreset = true;
+      _presetError = null;
+    });
+    final outcome = await model.saveConfig({
+      'settings': {block: values},
+    });
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savingPreset = false;
+      _presetError = outcome.saved ? null : outcome.errorLines.join(' · ');
+    });
+  }
+
   Widget _presetMenu(ThemeData theme, ToolId tool) {
     final block = tool == ToolId.spammer
         ? asJsonMap(model.config.config['spammer'])
@@ -1611,6 +1838,8 @@ class _QuickDockState extends State<QuickDock> {
     ToolId.sell => 'bag cells for this run',
     ToolId.spammer => 'active rotation',
     ToolId.quest => 'active flow',
+    ToolId.gem => 'saved start & empty mode',
+    ToolId.tuner => 'saved target grade',
     _ => '',
   };
 
