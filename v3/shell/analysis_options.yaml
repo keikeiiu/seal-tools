@@ -1,0 +1,41 @@
+# The shell's lint gate. `flutter_lints` is the baseline; the additions below are deliberate:
+#
+# - strict casts/inference/raw-types are cheap here because the protocol layer already narrows JSON
+#   with explicit parsers, so the analyzer can demand it everywhere instead of letting `dynamic`
+#   silently spread through the UI.
+# - `directives_ordering` keeps the import blocks readable as the files grow.
+# - `prefer_final_locals` / `prefer_single_quotes` / `always_declare_return_types` are zero-noise
+#   consistency rules already followed by the code.
+# - `unawaited_futures` + `discarded_futures` make fire-and-forget calls explicit: a `Future` that is
+#   intentionally not awaited must say `unawaited(...)`, which is how a later reader tells it apart
+#   from a forgotten await.
+# - `use_build_context_synchronously` catches the one real async-UI hazard in this app (a tab using
+#   `context` after an awaited core command).
+#
+# Deliberately NOT enabled: `sort_constructors_first` and `avoid_redundant_argument_values` (pure
+# style churn across 100+ model classes), and `avoid_dynamic_calls` (the JSON boundary is dynamic by
+# design and is narrowed by the typed decoders in `lib/protocol/`).
+#
+# Gate: `flutter analyze --fatal-infos` (see `tool/check.ps1`).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - windows/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    - always_declare_return_types
+    - directives_ordering
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - discarded_futures
+    - use_build_context_synchronously
+    - avoid_print
+    - no_leading_underscores_for_local_identifiers

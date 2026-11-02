@@ -1,0 +1,20 @@
+{
+  "case": "event.tool.finished.summary",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "tool.finished",
+    "data": {
+      "tool": "tuner",
+      "reason": "done",
+      "message": "Reached DG after 7 attempts",
+      "summary": {
+        "grade": "DG",
+        "attempts": 7,
+        "captures_saved": 0,
+        "stopped_by": "done"
+      },
+      "ended_at": "2026-10-30T12:34:56Z"
+    }
+  }
+}

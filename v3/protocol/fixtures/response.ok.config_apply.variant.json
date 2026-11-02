@@ -1,0 +1,29 @@
+{
+  "case": "response.ok.config_apply.variant",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "34",
+    "ok": true,
+    "result": {
+      "rev": 8,
+      "sections": {
+        "settings": {
+          "game": {
+            "variant": "us",
+            "variants": [
+              {
+                "name": "tw",
+                "attributes": "attributes.tw.yaml"
+              },
+              {
+                "name": "us",
+                "attributes": "attributes.us.yaml"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

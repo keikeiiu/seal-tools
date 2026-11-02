@@ -1,0 +1,25 @@
+{
+  "case": "response.ok.gem_cycle",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "75",
+    "ok": true,
+    "result": {
+      "steps": [
+        {
+          "index": 1,
+          "action": "click",
+          "point": "N"
+        },
+        {
+          "index": 2,
+          "action": "click",
+          "point": "Register"
+        }
+      ],
+      "done": true,
+      "log": "arduino_debug.txt: cycle done (21 steps)"
+    }
+  }
+}

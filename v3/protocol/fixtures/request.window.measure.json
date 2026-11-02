@@ -1,0 +1,10 @@
+{
+  "case": "request.window.measure",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "6",
+    "cmd": "window.measure",
+    "args": {}
+  }
+}

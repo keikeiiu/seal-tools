@@ -1,0 +1,20 @@
+{
+  "case": "request.calibration.save.with_rev",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "52",
+    "cmd": "calibration.save",
+    "args": {
+      "frame_id": "f1",
+      "kind": "bag_grid",
+      "rev": 10,
+      "region": {
+        "x": 12,
+        "y": 47,
+        "w": 300,
+        "h": 200
+      }
+    }
+  }
+}

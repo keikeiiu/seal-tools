@@ -1,0 +1,16 @@
+{
+  "case": "response.error.tool_busy",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "28",
+    "ok": false,
+    "error": {
+      "code": "tool_busy",
+      "message": "another tool is running",
+      "detail": {
+        "tool": "pet"
+      }
+    }
+  }
+}

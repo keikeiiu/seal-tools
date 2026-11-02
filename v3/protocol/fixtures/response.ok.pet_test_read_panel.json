@@ -1,0 +1,31 @@
+{
+  "case": "response.ok.pet_test_read_panel",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "51",
+    "ok": true,
+    "result": {
+      "region": {
+        "x": 33,
+        "y": 88,
+        "width": 120,
+        "height": 80
+      },
+      "lines": [
+        "(6階) 真蔚藍鳳凰 +7 [52.18%]"
+      ],
+      "panel": {
+        "growth": 7,
+        "exp": 52.18,
+        "line": "stage 6, +7, 52.18%"
+      },
+      "numbers": [
+        "6",
+        "7",
+        "52.18"
+      ],
+      "evidence": "logs/reads/petpanel_20261030_120000.png"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "case": "request.tool.start.quest_test",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "69",
+    "cmd": "tool.start",
+    "args": {
+      "tool": "quest",
+      "test": true
+    }
+  }
+}

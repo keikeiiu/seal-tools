@@ -1,0 +1,24 @@
+{
+  "case": "request.calibration.pet.test_read",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "63",
+    "cmd": "calibration.pet.test_read",
+    "args": {
+      "rows": [
+        {
+          "feeder_strip": {
+            "x": 100,
+            "y": 320,
+            "w": 400,
+            "h": 40
+          },
+          "stacks": 4
+        }
+      ],
+      "feeder_count_left_fraction": 0.4,
+      "feeder_count_min_score": 0.75
+    }
+  }
+}

@@ -1,0 +1,762 @@
+/// The Buy/Sell tab: the `buy_sell` block's editable half — the named buy presets (item name →
+/// scroll/row/count) and the sell cap — plus the calibrated geometry read-only, and the 8×8 bag-slot
+/// picker for the NEXT Sell run.
+///
+/// The block mixes both halves: `presets` and `sell_cap` are the player's settings (the form's Save
+/// sends exactly those), while `bag_grid`/`bag_slot`/`shop_rows`/`shop_region`/`scroll_point`/
+/// `max_button` are machine calibration (drawn on the Calibrate tab, never sent — PROTOCOL §7's
+/// field-wise merge keeps it).
+///
+/// The slot picker is NOT config: it is the Sell run's per-run selection, held in memory by
+/// [ShellModel] and sent as `tool.start`'s `slots` argument (PROTOCOL §12.6). The selection can
+/// differ every sell, so it must never be written to `local.yaml` — a saved selection can sell the
+/// slots chosen last time, which is data loss rather than convenience.
+///
+/// The buy preset's row is a LABELLED picker, not a number (v2's `BuyRowPicker`): the preset stores
+/// the 0-based row index the geometry works in, the label says "Row N" (1-based), and a stored row
+/// outside the calibrated list gets its own marked entry rather than a blank. v2 removed its free
+/// numeric field after a "1" bought the second item down — there is nothing here to get off by one.
+library;
+
+import 'package:flutter/material.dart';
+
+import '../../app/app.dart';
+import '../components/info_row.dart';
+import '../components/read_only_panel.dart';
+import '../components/shell_prose.dart';
+import '../components/surface_panel.dart';
+import '../theme.dart';
+import 'config_tab_scaffold.dart';
+import 'fields.dart';
+
+/// The fields the form's Save sends. The sell-slot selection is not here: it is per-run state, not
+/// config (see the library doc).
+const Set<String> _editableBuySellKeys = {'presets', 'sell_cap'};
+
+/// The bag is an 8×8 grid, row-major: index 0 is the top-left slot, 63 the bottom-right
+/// (`BagGrid::SLOT_COUNT`/`centres` in `seal-domain`).
+const int _bagColumns = 8;
+const int _bagSlots = _bagColumns * _bagColumns;
+
+/// Which half of the `buy_sell` block a [BuySellTab] presents.
+///
+/// Phase 2 of [PLAN-V3-UI-UX.md] splits the old combined tab into two screens: Buy owns the saved
+/// presets, Sell owns the per-run slot selection (and the saved cap). [both] keeps the pre-split
+/// layout for the widget tests and is not used by the shell.
+enum BuySellSection { both, buy, sell }
+
+class BuySellTab extends StatefulWidget {
+  const BuySellTab({
+    super.key,
+    required this.model,
+    this.section = BuySellSection.both,
+  });
+
+  final ShellModel model;
+  final BuySellSection section;
+
+  @override
+  State<BuySellTab> createState() => _BuySellTabState();
+}
+
+class _BuySellTabState extends State<BuySellTab>
+    with ConfigTabState<BuySellTab>, AutomaticKeepAliveClientMixin<BuySellTab> {
+  @override
+  ShellModel get model => widget.model;
+
+  /// Keep the tab alive when the player switches away: an unsaved draft (and its conflict
+  /// banner) must survive the switch. The sell selection is kept by the model, not the tab.
+  @override
+  bool get wantKeepAlive => true;
+
+  /// The two screens save disjoint fields of one block: Buy writes `presets`, Sell writes `sell_cap`.
+  /// The combined (test) layout keeps both.
+  Set<String> get _editableKeys => switch (widget.section) {
+    BuySellSection.both => _editableBuySellKeys,
+    BuySellSection.buy => const {'presets'},
+    BuySellSection.sell => const {'sell_cap'},
+  };
+
+  @override
+  late final ConfigDraft draft = ConfigDraft(
+    blockName: 'buy_sell',
+    scope: ConfigScope.ownedBlock,
+    editableKeys: _editableKeys,
+  );
+
+  final _newPresetName = TextEditingController();
+  String? _selectedPreset;
+
+  @override
+  void dispose() {
+    _newPresetName.dispose();
+    super.dispose();
+  }
+
+  // ── readers ──────────────────────────────────────────────────────────────────────────────
+
+  Map<String, dynamic> _presets() => asJsonMap(draft.value['presets']);
+
+  List<String> _presetNames() => _presets().keys.toList()..sort();
+
+  String? _currentPreset() {
+    final names = _presetNames();
+    if (names.isEmpty) {
+      return null;
+    }
+    final selected = _selectedPreset;
+    if (selected != null && names.contains(selected)) {
+      return selected;
+    }
+    return names.first;
+  }
+
+  Map<String, dynamic> _preset(String name) => asJsonMap(_presets()[name]);
+
+  /// The calibrated half, from the merged mirror's top-level `buy_sell` block.
+  Map<String, dynamic> _calibrated() =>
+      asJsonMap(model.config.config['buy_sell']);
+
+  /// The calibrated bag rectangle when the core would accept it — `BagGrid::is_valid_rect`'s rule:
+  /// `[x, y, w, h]` with a positive width and height. Null means a Sell run refuses, so the grid is
+  /// disabled and the player is pointed at the Calibrate tab.
+  List<int>? _bagGridRect() {
+    final values = asJsonList(_calibrated()['bag_grid']);
+    if (values.length != 4) {
+      return null;
+    }
+    final rect = <int>[];
+    for (final value in values) {
+      final number = asNumber(value);
+      if (number == null) {
+        return null;
+      }
+      rect.add(number.round());
+    }
+    if (rect[2] <= 0 || rect[3] <= 0) {
+      return null;
+    }
+    return rect;
+  }
+
+  /// `ShopGeometry::DEFAULT_ROWS`: the core's visible-row count when `buy_sell.shop_rows` is unset.
+  static const int _defaultShopRows = 10;
+
+  /// How many shop-list rows the picker can label: the calibrated count, or the core's default when
+  /// the config states none ([ShopGeometry::DEFAULT_ROWS]); a zero count is an uncalibrated geometry
+  /// the core refuses the run for, so it falls back here too rather than rendering an empty picker.
+  int _shopRowCount() {
+    final rows = asNumber(_calibrated()['shop_rows'])?.round();
+    return rows != null && rows > 0 ? rows : _defaultShopRows;
+  }
+
+  // ── writers ──────────────────────────────────────────────────────────────────────────────
+
+  Map<String, dynamic> _ensureMap(Map<String, dynamic> parent, String key) {
+    final existing = parent[key];
+    if (existing is Map<String, dynamic>) {
+      return existing;
+    }
+    final created = <String, dynamic>{};
+    parent[key] = created;
+    return created;
+  }
+
+  void _setPresetField(String name, String field, num value) =>
+      draft.edit((block) {
+        _ensureMap(_ensureMap(block, 'presets'), name)[field] = value;
+      });
+
+  void _addPreset() {
+    final name = _newPresetName.text.trim();
+    if (name.isEmpty) {
+      return;
+    }
+    draft.edit((block) {
+      _ensureMap(
+        _ensureMap(block, 'presets'),
+        name,
+      ).addAll({'scroll': 0, 'row': 0, 'count': 1});
+    });
+    _newPresetName.clear();
+    setState(() => _selectedPreset = name);
+  }
+
+  void _deletePreset(String name) {
+    draft.edit((block) {
+      asJsonMap(block['presets']).remove(name);
+    });
+    setState(() => _selectedPreset = null);
+  }
+
+  /// Edits the form's sell cap and rebuilds the tab: the status line under the grid quotes the cap,
+  /// and content built in this `build()` does not repaint from the draft's own notification alone.
+  void _setSellCap(num value) {
+    setState(() {
+      draft.edit((block) {
+        block['sell_cap'] = value;
+      });
+    });
+  }
+
+  /// Toggles one bag cell in the model's in-memory selection. `setState` is what redraws the grid:
+  /// the model is not a draft and does not notify (nothing else renders the selection).
+  void _toggleSlot(int slot) {
+    setState(() => model.toggleSellSlot(slot));
+  }
+
+  // ── v2's row shortcuts and bulk actions (the same memory selection) ─────────────────────────
+  //
+  // The model owns only a per-cell toggle, so the bulk actions are compositions of it in ONE
+  // setState: no config command, no per-cell notification storm.
+
+  /// v2 `ToggleSellRow`: selects all 8 cells of [row] when any are off, clears them when all are on.
+  void _toggleRow(int row) {
+    final cells = [
+      for (var column = 0; column < _bagColumns; column++)
+        row * _bagColumns + column,
+    ];
+    final selected = model.sellSlots.toSet();
+    final allOn = cells.every(selected.contains);
+    setState(() {
+      for (final cell in cells) {
+        if (allOn || !selected.contains(cell)) {
+          model.toggleSellSlot(cell);
+        }
+      }
+    });
+  }
+
+  /// v2 "Select all": every bag cell is selected for the next run.
+  void _selectAll() {
+    final selected = model.sellSlots.toSet();
+    setState(() {
+      for (var cell = 0; cell < _bagSlots; cell++) {
+        if (!selected.contains(cell)) {
+          model.toggleSellSlot(cell);
+        }
+      }
+    });
+  }
+
+  /// v2 "Clear": nothing is selected for the next run.
+  void _clearSelection() {
+    setState(() {
+      for (final cell in model.sellSlots) {
+        model.toggleSellSlot(cell);
+      }
+    });
+  }
+
+  // ── UI ───────────────────────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
+    final theme = Theme.of(context);
+    final preset = _currentPreset();
+    final names = _presetNames();
+    final calibrated = _calibrated();
+    final values = preset == null ? const <String, dynamic>{} : _preset(preset);
+
+    final section = widget.section;
+    final showBuy = section != BuySellSection.sell;
+    final showSell = section != BuySellSection.buy;
+
+    // The split screens put the calibrated geometry and the run contract in the aside; the combined
+    // (test-only) layout keeps its trailing read-only block so its finders do not move.
+    final aside = section == BuySellSection.both
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ReadOnlyPanel(
+                title: 'Calibrated geometry',
+                subtitle: 'Drawn on the Calibrate screen',
+                openHint: 'read-only',
+                rows: [
+                  InfoRow(
+                    label: 'Bag grid',
+                    value: readOnlyText(calibrated['bag_grid']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Bag slot',
+                    value: readOnlyText(calibrated['bag_slot']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Shop region',
+                    value: readOnlyText(calibrated['shop_region']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Shop rows',
+                    value: readOnlyText(calibrated['shop_rows']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'Scroll point',
+                    value: readOnlyText(calibrated['scroll_point']),
+                    mono: true,
+                  ),
+                  InfoRow(
+                    label: 'MAX button',
+                    value: readOnlyText(calibrated['max_button']),
+                    mono: true,
+                  ),
+                ],
+              ),
+              SurfacePanel(
+                title: 'How the run uses it',
+                description: section == BuySellSection.buy
+                    ? 'The Buy card picks one preset saved here and sends the '
+                          'count with tool.start. Nothing on this screen is '
+                          'per-run.'
+                    : 'The Sell card sells exactly the slots armed here. The core '
+                          'sells the highest selected index first and applies the '
+                          'cap at run time.',
+                child: const SizedBox.shrink(),
+              ),
+            ],
+          );
+
+    return buildConfigTab(
+      title: switch (section) {
+        BuySellSection.both => 'Buy / Sell',
+        BuySellSection.buy => 'Buy',
+        BuySellSection.sell => 'Sell',
+      },
+      description: switch (section) {
+        BuySellSection.both =>
+          'Buy presets (item name → scroll, row, count), the sell cap, and '
+              'which bag slots the next Sell run sells — the selection is kept '
+              'for the run and is not saved. The geometry is drawn on the '
+              'Calibrate tab and shown read-only here.',
+        BuySellSection.buy =>
+          'Saved buy presets: item, shop row, scroll notches and the usual '
+              'count. The run choice — which preset and how many — is picked on '
+              'the Buy card. Geometry is drawn on the Calibrate screen.',
+        BuySellSection.sell =>
+          'Arms the bag slots for the next sell run. The cap is saved with this '
+              'screen; the slot selection is never saved and the run starts from '
+              'the Sell card. Geometry is drawn on the Calibrate screen.',
+      },
+      readOnly: [
+        if (section == BuySellSection.both)
+          EditorSection(
+            title: 'Calibrated geometry — read-only (Calibrate tab)',
+            children: [
+              ReadOnlyValue(
+                label: 'Bag grid [x, y, w, h]',
+                value: readOnlyText(calibrated['bag_grid']),
+              ),
+              ReadOnlyValue(
+                label: 'Bag slot [x, y, w, h]',
+                value: readOnlyText(calibrated['bag_slot']),
+              ),
+              ReadOnlyValue(
+                label: 'Shop region [x, y, w, h]',
+                value: readOnlyText(calibrated['shop_region']),
+              ),
+              ReadOnlyValue(
+                label: 'Shop rows',
+                value: readOnlyText(calibrated['shop_rows']),
+              ),
+              ReadOnlyValue(
+                label: 'Focus / scroll point',
+                value: readOnlyText(calibrated['scroll_point']),
+              ),
+              ReadOnlyValue(
+                label: 'MAX button',
+                value: readOnlyText(calibrated['max_button']),
+              ),
+            ],
+          ),
+      ],
+      aside: aside,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showBuy)
+            EditorSection(
+              title: 'Buy presets',
+              children: [
+                Row(
+                  children: [
+                    DraftDropdownField(
+                      key: const ValueKey('buy-preset-picker'),
+                      label: 'Item (preset)',
+                      value: preset,
+                      options: names,
+                      width: ShellWidth.picker,
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedPreset = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: ShellSpace.sm),
+                    OutlinedButton(
+                      key: const ValueKey('delete-buy-preset'),
+                      onPressed: preset == null
+                          ? null
+                          : () => _deletePreset(preset),
+                      child: const Text('Delete item'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: ShellSpace.sm),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: ShellWidth.picker,
+                      child: TextField(
+                        key: const ValueKey('new-buy-preset'),
+                        controller: _newPresetName,
+                        decoration: const InputDecoration(
+                          labelText: 'New item name',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: ShellSpace.sm),
+                    FilledButton(
+                      key: const ValueKey('add-buy-preset'),
+                      onPressed: _addPreset,
+                      child: const Text('Add item'),
+                    ),
+                  ],
+                ),
+                if (preset == null)
+                  const Padding(
+                    key: ValueKey('buy-sell-empty'),
+                    padding: EdgeInsets.only(top: ShellSpace.sm),
+                    child: Text(
+                      'No buy presets yet — add the item names the player buys.',
+                    ),
+                  )
+                else ...[
+                  const SizedBox(height: ShellSpace.sm),
+                  Text(
+                    'Preset: $preset',
+                    key: const ValueKey('buy-selected-preset'),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
+                  Wrap(
+                    spacing: ShellSpace.md,
+                    runSpacing: ShellSpace.sm,
+                    children: [
+                      DraftFieldSlot(
+                        slotKey: 'buy-scroll',
+                        syncToken: draft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Scroll notches',
+                          integer: true,
+                          value: asNumber(values['scroll']),
+                          width: ShellWidth.labelColumn,
+                          onChanged: (value) =>
+                              _setPresetField(preset, 'scroll', value),
+                        ),
+                      ),
+                      _rowPicker(preset, values),
+                      DraftFieldSlot(
+                        slotKey: 'buy-count',
+                        syncToken: draft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Count per run',
+                          integer: true,
+                          value: asNumber(values['count']),
+                          width: 150,
+                          onChanged: (value) =>
+                              _setPresetField(preset, 'count', value),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _rowWarning(values),
+                ],
+              ],
+            ),
+          if (showSell)
+            EditorSection(
+              title: section == BuySellSection.both
+                  ? 'Sell'
+                  : 'Selection & cap',
+              children: [
+                DraftFieldSlot(
+                  slotKey: 'sell-cap',
+                  syncToken: draft.seedRevision,
+                  child: DraftNumberField(
+                    label: 'Max slots per run (sell cap)',
+                    integer: true,
+                    value: asNumber(draft.value['sell_cap']),
+                    width: ShellWidth.picker,
+                    onChanged: _setSellCap,
+                  ),
+                ),
+                const SizedBox(height: ShellSpace.md),
+                _sellGrid(theme),
+                const SizedBox(height: ShellSpace.xs),
+                _selectionStatus(theme),
+                const SizedBox(height: ShellSpace.sm),
+                ShellProse(
+                  'This selection is for the next run only — it is not saved.',
+                  key: const ValueKey('sell-selection-caption'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: ShellSpace.xs),
+                ShellProse(
+                  'Selling removes items from the game: the cap is the hard '
+                  'per-run ceiling. Start Sell from its card; the core sells '
+                  'the highest selected slot first and applies the cap at run '
+                  'time.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// v2's labelled buy-row picker (`BuyRowPicker`/`SyncBuyRowPicker`): the config stores the 0-BASED
+  /// row index the geometry works in, while the picker labels it 1-based ("Row 1" is index 0). v2
+  /// replaced its free numeric field with this picker after a "1" bought the second item down — there
+  /// is no number to type here, so a row cannot be off by one.
+  Widget _rowPicker(String preset, Map<String, dynamic> values) {
+    final rows = _shopRowCount();
+    final stored = asNumber(values['row'])?.round();
+    final options = _rowOptions(rows, stored);
+    return DraftDropdownField(
+      key: const ValueKey('buy-row'),
+      label: 'Row',
+      value: stored == null ? null : _rowLabel(stored, rows: rows),
+      options: options,
+      width: ShellWidth.fieldLg,
+      onChanged: (label) {
+        if (label == null) {
+          return;
+        }
+        final index = options.indexOf(label);
+        // A legacy row outside the list is DISPLAYED (its own marked entry) but is not a choice:
+        // selecting it would store an index the calibrated list does not have.
+        if (index < 0 || index >= rows) {
+          return;
+        }
+        // `setState` because the picker is built in this State's `build()`: a draft edit alone does
+        // not repaint content handed to `buildConfigTab(child:)` (the Pet-tab count-line rule).
+        setState(() => _setPresetField(preset, 'row', index));
+      },
+    );
+  }
+
+  /// The 1-based label for a stored 0-based row; v2 marks a row outside the configured list rather
+  /// than blanking it (blanking would make the next Save write the wrong row).
+  String _rowLabel(int row, {required int rows}) {
+    if (row >= 0 && row < rows) {
+      return 'Row ${row + 1}';
+    }
+    return 'Row ${row + 1} — past the bottom of the list';
+  }
+
+  /// The picker's entries: every row the calibrated list has, plus the legacy out-of-range row when
+  /// the preset stores one.
+  List<String> _rowOptions(int rows, int? stored) => [
+    for (var index = 0; index < rows; index++) 'Row ${index + 1}',
+    if (stored != null && (stored < 0 || stored >= rows))
+      _rowLabel(stored, rows: rows),
+  ];
+
+  /// v2's row warning (its `ShopRowOk` line), shown while the preset's stored row is outside the
+  /// calibrated list: the geometry would click below the list, so the player must pick a lower row.
+  /// A refusal of this kind is the shell's advisory here, not a core Save rule (the core does not
+  /// re-validate buy presets on apply).
+  Widget _rowWarning(Map<String, dynamic> values) {
+    final rows = _shopRowCount();
+    final stored = asNumber(values['row'])?.round();
+    if (stored == null || (stored >= 0 && stored < rows)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: ShellSpace.xs),
+      child: Text(
+        'Row ${stored + 1} is past the bottom of the list — only $rows '
+        'rows are visible at once. Scroll further and pick a lower row.',
+        key: const ValueKey('buy-row-warning'),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.error),
+      ),
+    );
+  }
+
+  /// The 8×8 selector. Every cell is one bag slot; the geometry comes from the calibrated
+  /// `bag_grid` exactly as the read-only map did (`w/8, h/8` pitch). Disabled with the core's own
+  /// refusal line when the grid is not calibrated, because a Sell run could not run either.
+  ///
+  /// The bulk actions and the per-row shortcut buttons are v2 parity (`BuildSellTab`'s pick row and
+  /// `MakeBagPicker(onRow:)`): they touch only the in-memory selection, never config.
+  Widget _sellGrid(ThemeData theme) {
+    final rect = _bagGridRect();
+    if (rect == null) {
+      return Text(
+        "The bag grid isn't calibrated — save the Bag grid on the "
+        'Calibrate tab.',
+        key: const ValueKey('sell-grid-not-calibrated'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    final selected = model.sellSlots.toSet();
+    final pitch =
+        ' · bag pitch ${(rect[2] / _bagColumns).toStringAsFixed(1)}×'
+        '${(rect[3] / _bagColumns).toStringAsFixed(1)} px';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select the bag slots to sell$pitch',
+          key: const ValueKey('sell-grid-pitch'),
+          style: theme.textTheme.labelLarge,
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        Row(
+          children: [
+            Text(
+              '${selected.length} of $_bagSlots slots selected',
+              key: const ValueKey('sell-grid-count'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              key: const ValueKey('sell-select-all'),
+              onPressed: _selectAll,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 28),
+              ),
+              child: const Text('Select all'),
+            ),
+            TextButton(
+              key: const ValueKey('sell-clear'),
+              onPressed: _clearSelection,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 28),
+              ),
+              child: const Text('Clear'),
+            ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        for (var row = 0; row < _bagColumns; row++)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var column = 0; column < _bagColumns; column++)
+                _sellCell(
+                  theme,
+                  row * _bagColumns + column,
+                  selected.contains(row * _bagColumns + column),
+                ),
+              const SizedBox(width: ShellSpace.sm),
+              _rowButton(row),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// v2's `row N` shortcut column: one click fills or clears the whole bag row.
+  Widget _rowButton(int row) => Tooltip(
+    key: ValueKey('sell-row-$row'),
+    message: 'Select or clear all 8 slots of bag row ${row + 1}',
+    child: TextButton(
+      onPressed: () => _toggleRow(row),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: ShellSpace.xs),
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(48, 24),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(
+        'row ${row + 1}',
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
+    ),
+  );
+
+  /// v2 `PaintSellSlots`' status line: none / within the cap / over the cap. The over-cap state is
+  /// the error colour and says what is true — the run refuses either way (the core enforces the cap
+  /// in its plan).
+  Widget _selectionStatus(ThemeData theme) {
+    final count = model.sellSlots.length;
+    final cap = asNumber(draft.value['sell_cap'])?.round();
+    final over = cap != null && count > cap;
+    final String text;
+    if (count == 0) {
+      text = 'No slots selected — click the grid to choose what to sell.';
+    } else if (cap == null) {
+      text = '$count slot(s) selected.';
+    } else if (count > cap) {
+      text =
+          '$count slots selected, which is over the cap of $cap. Raise the '
+          'cap on purpose, or narrow the selection — the run refuses either '
+          'way.';
+    } else {
+      text = '$count slot(s) selected (cap $cap).';
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+      child: Text(
+        text,
+        key: const ValueKey('sell-selection-status'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: over ? theme.colorScheme.error : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _sellCell(ThemeData theme, int slot, bool selected) {
+    final colors = theme.colorScheme;
+    return InkWell(
+      key: ValueKey('sell-cell-$slot'),
+      onTap: () => _toggleSlot(slot),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: 'Bag slot ${slot + 1}',
+        child: Tooltip(
+          message: 'Bag slot ${slot + 1}',
+          child: Container(
+            width: 26,
+            height: 26,
+            margin: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: selected ? colors.primary : colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(ShellRadius.s - 2),
+              border: Border.all(
+                color: selected ? colors.primary : colors.outlineVariant,
+              ),
+            ),
+            alignment: Alignment.center,
+            // Colour is reinforcement, not the only channel: the selected cell carries a check.
+            child: selected
+                ? Icon(Icons.check, size: 13, color: colors.onPrimary)
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}

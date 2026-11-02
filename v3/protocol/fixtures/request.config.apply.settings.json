@@ -1,0 +1,19 @@
+{
+  "case": "request.config.apply.settings",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "32",
+    "cmd": "config.apply",
+    "args": {
+      "rev": 7,
+      "sections": {
+        "settings": {
+          "hotkeys": {
+            "start": 66
+          }
+        }
+      }
+    }
+  }
+}

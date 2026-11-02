@@ -1,0 +1,22 @@
+{
+  "case": "response.ok.config_apply.mixed",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "33",
+    "ok": true,
+    "result": {
+      "rev": 8,
+      "sections": {
+        "tuner": {
+          "guard_px": 9
+        },
+        "settings": {
+          "hotkeys": {
+            "start": 66
+          }
+        }
+      }
+    }
+  }
+}

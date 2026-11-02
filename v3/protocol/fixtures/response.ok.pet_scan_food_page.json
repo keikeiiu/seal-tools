@@ -1,0 +1,23 @@
+{
+  "case": "response.ok.pet_scan_food_page",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "48",
+    "ok": true,
+    "result": {
+      "page": 1,
+      "cells": [
+        13,
+        36
+      ],
+      "report": [
+        "page 1: 2 cell(s) — 13, 36"
+      ],
+      "evidence": [
+        "logs/reads/scan_page1_20261028_120000.png",
+        "logs/reads/scan_page1_20261028_120000.txt"
+      ]
+    }
+  }
+}

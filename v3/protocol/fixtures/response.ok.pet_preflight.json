@@ -1,0 +1,29 @@
+{
+  "case": "response.ok.pet_preflight",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "44",
+    "ok": true,
+    "result": {
+      "ready": false,
+      "calibration": [
+        {
+          "ok": true,
+          "label": "Pet menu point",
+          "detail": "marked"
+        }
+      ],
+      "session": [
+        {
+          "ok": true,
+          "label": "food cells",
+          "detail": "4 marked, 1 used (one round loads 2)"
+        }
+      ],
+      "lines": [
+        "no pet icon queued — the tool will use the return slot instead of looking for the pet by icon"
+      ]
+    }
+  }
+}

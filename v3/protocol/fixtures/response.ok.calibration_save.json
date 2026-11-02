@@ -1,0 +1,29 @@
+{
+  "case": "response.ok.calibration_save",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "8",
+    "ok": true,
+    "result": {
+      "rev": 10,
+      "kind": "bag_grid",
+      "mark": [
+        12,
+        47,
+        300,
+        200
+      ],
+      "derived": {
+        "pitch": {
+          "w": 37.5,
+          "h": 25.0
+        }
+      },
+      "artifact": null,
+      "calibration": {
+        "measured_at": "2026-10-30T12:00:00Z"
+      }
+    }
+  }
+}

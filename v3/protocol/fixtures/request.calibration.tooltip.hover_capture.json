@@ -1,0 +1,16 @@
+{
+  "case": "request.calibration.tooltip.hover_capture",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "56",
+    "cmd": "calibration.tooltip.hover_capture",
+    "args": {
+      "point": {
+        "x": 120,
+        "y": 240
+      },
+      "hover_delay_ms": 700
+    }
+  }
+}

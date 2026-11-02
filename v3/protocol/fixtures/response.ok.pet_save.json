@@ -1,0 +1,157 @@
+{
+  "case": "response.ok.pet_save",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "62",
+    "ok": true,
+    "result": {
+      "rev": 17,
+      "block": {
+        "menu_button": [
+          10,
+          10,
+          20,
+          20
+        ],
+        "feed_icon": [
+          40,
+          10,
+          20,
+          20
+        ],
+        "close_button": [
+          70,
+          10,
+          20,
+          20
+        ],
+        "page_tabs": [
+          [
+            300,
+            20
+          ],
+          [
+            340,
+            20
+          ],
+          [
+            380,
+            20
+          ]
+        ],
+        "bag_grid": [
+          0,
+          0,
+          240,
+          240
+        ],
+        "bag_slot": [
+          0,
+          0,
+          30,
+          30
+        ],
+        "feeder_count_left_fraction": 0.4,
+        "feeder_count_min_score": 0.75,
+        "slots": [
+          {
+            "enabled": true,
+            "toggle_label": [
+              10,
+              200,
+              60,
+              20
+            ],
+            "boarding_pet_slot": [
+              100,
+              200,
+              100,
+              100
+            ],
+            "feeder_strip": [
+              100,
+              320,
+              400,
+              40
+            ],
+            "stacks": 4,
+            "pet_slot_empty_png": "iVBORw0KGgo="
+          }
+        ]
+      },
+      "artifacts": [
+        {
+          "file": "calib_pet.png",
+          "path": "config/calib_pet.png"
+        }
+      ],
+      "derived": {
+        "rows": [
+          {
+            "slot_boxes": [
+              [
+                100,
+                320,
+                100,
+                40
+              ],
+              [
+                200,
+                320,
+                100,
+                40
+              ],
+              [
+                300,
+                320,
+                100,
+                40
+              ],
+              [
+                400,
+                320,
+                100,
+                40
+              ]
+            ],
+            "count_regions": [
+              [
+                140,
+                320,
+                60,
+                40
+              ],
+              [
+                240,
+                320,
+                60,
+                40
+              ],
+              [
+                340,
+                320,
+                60,
+                40
+              ],
+              [
+                440,
+                320,
+                60,
+                40
+              ]
+            ],
+            "eta_region": [
+              96,
+              360,
+              188,
+              48
+            ],
+            "problems": []
+          }
+        ]
+      },
+      "warnings": []
+    }
+  }
+}

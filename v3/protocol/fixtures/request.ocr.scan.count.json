@@ -1,0 +1,18 @@
+{
+  "case": "request.ocr.scan.count",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "19",
+    "cmd": "ocr.scan",
+    "args": {
+      "region": {
+        "x": 12,
+        "y": 47,
+        "w": 300,
+        "h": 200
+      },
+      "mode": "count"
+    }
+  }
+}

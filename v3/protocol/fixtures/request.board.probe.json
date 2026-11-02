@@ -1,0 +1,10 @@
+{
+  "case": "request.board.probe",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "10",
+    "cmd": "board.probe",
+    "args": {}
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "case": "response.ok.tooltip_hover_capture",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "56",
+    "ok": true,
+    "result": {
+      "frame": {
+        "format": "png",
+        "width": 1200,
+        "height": 600,
+        "origin": {
+          "x": 10,
+          "y": 20
+        },
+        "data": "iVBORw0KGgo=",
+        "frame_id": "f5"
+      },
+      "display": {
+        "scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": {
+          "w": 1920,
+          "h": 1080
+        },
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "w": 1200,
+          "h": 640
+        },
+        "physical_client": {
+          "x": 10,
+          "y": 20,
+          "w": 1200,
+          "h": 600
+        },
+        "logical_client": {
+          "x": 10,
+          "y": 20,
+          "w": 800,
+          "h": 400
+        }
+      },
+      "placed": {
+        "x": 120,
+        "y": 240
+      },
+      "line": "Placed the cursor at (120, 240) and captured the panel."
+    }
+  }
+}

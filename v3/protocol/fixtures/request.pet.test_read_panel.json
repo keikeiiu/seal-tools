@@ -1,0 +1,14 @@
+{
+  "case": "request.pet.test_read_panel",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "51",
+    "cmd": "pet.test_read_panel",
+    "args": {
+      "page": 1,
+      "cell": 34,
+      "delay_ms": 700
+    }
+  }
+}

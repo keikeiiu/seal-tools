@@ -1,0 +1,27 @@
+{
+  "case": "request.calibration.gem.moves.save",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "64",
+    "cmd": "calibration.gem.moves.save",
+    "args": {
+      "movements": {
+        "register_combine": [
+          18,
+          -4
+        ],
+        "radio_to_register": {
+          "N": [
+            10,
+            20
+          ],
+          "G": [
+            -5,
+            6
+          ]
+        }
+      }
+    }
+  }
+}

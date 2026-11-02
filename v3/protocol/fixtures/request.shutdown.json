@@ -1,0 +1,10 @@
+{
+  "case": "request.shutdown",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "20",
+    "cmd": "shutdown",
+    "args": {}
+  }
+}

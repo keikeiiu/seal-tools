@@ -1,0 +1,14 @@
+{
+  "case": "request.pet.capture_icon.queue",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "46",
+    "cmd": "pet.capture_icon",
+    "args": {
+      "kind": "queue",
+      "page": 1,
+      "cell": 34
+    }
+  }
+}

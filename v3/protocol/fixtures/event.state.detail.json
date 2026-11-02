@@ -1,0 +1,39 @@
+{
+  "case": "event.state.detail",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "state",
+    "data": {
+      "tool": "tuner",
+      "running": true,
+      "phase": "running",
+      "message": "",
+      "countdown_s": null,
+      "rows": [],
+      "detail": [
+        {
+          "label": "Grade",
+          "value": "DG"
+        },
+        {
+          "label": "Remaining",
+          "value": "10"
+        },
+        {
+          "label": "Attempt",
+          "value": "7"
+        },
+        {
+          "label": null,
+          "value": "attack speed=+10"
+        },
+        {
+          "label": "Filter",
+          "value": "disabled"
+        }
+      ],
+      "error": null
+    }
+  }
+}

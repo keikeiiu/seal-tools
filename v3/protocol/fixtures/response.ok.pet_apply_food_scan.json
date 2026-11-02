@@ -1,0 +1,25 @@
+{
+  "case": "response.ok.pet_apply_food_scan",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "50",
+    "ok": true,
+    "result": {
+      "rev": 1,
+      "block": {
+        "food_slots": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            33
+          ]
+        ],
+        "food_slots_used": 0
+      }
+    }
+  }
+}

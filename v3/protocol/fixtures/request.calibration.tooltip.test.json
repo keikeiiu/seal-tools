@@ -1,0 +1,17 @@
+{
+  "case": "request.calibration.tooltip.test",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "58",
+    "cmd": "calibration.tooltip.test",
+    "args": {
+      "point": {
+        "x": 120,
+        "y": 240
+      },
+      "hover_delay_ms": 700,
+      "debug": true
+    }
+  }
+}

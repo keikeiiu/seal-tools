@@ -1,0 +1,17 @@
+{
+  "case": "response.ok.config_apply",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "3",
+    "ok": true,
+    "result": {
+      "rev": 8,
+      "sections": {
+        "quest": {
+          "active": "run1"
+        }
+      }
+    }
+  }
+}

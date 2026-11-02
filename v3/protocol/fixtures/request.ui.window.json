@@ -1,0 +1,16 @@
+{
+  "case": "request.ui.window",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "14",
+    "cmd": "ui.window",
+    "args": {
+      "left": 100,
+      "top": 100,
+      "width": 900,
+      "height": 700,
+      "pinned": false
+    }
+  }
+}

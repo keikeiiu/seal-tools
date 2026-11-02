@@ -1,0 +1,15 @@
+{
+  "case": "event.config.changed",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "config.changed",
+    "data": {
+      "rev": 11,
+      "block": "pet",
+      "values": {
+        "boarding_window_may_be_open": true
+      }
+    }
+  }
+}

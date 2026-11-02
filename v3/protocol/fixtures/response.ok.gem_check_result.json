@@ -1,0 +1,24 @@
+{
+  "case": "response.ok.gem_check_result",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "65",
+    "ok": true,
+    "result": {
+      "composition": {
+        "mean_v": 0.9,
+        "mean_sat": 0.1,
+        "colored_fraction": 0.0,
+        "mean_r": 0.88,
+        "mean_g": 0.9,
+        "mean_b": 0.92
+      },
+      "distance": 0.012,
+      "verdict": "empty",
+      "spread": 0.04,
+      "dominant": "neutral / pale",
+      "crop_png_base64": "iVBORw0KGgo="
+    }
+  }
+}

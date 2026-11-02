@@ -1,0 +1,16 @@
+{
+  "case": "response.error.window_not_found",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "25",
+    "ok": false,
+    "error": {
+      "code": "window_not_found",
+      "message": "the game window was not found",
+      "detail": {
+        "title": "Seal Online"
+      }
+    }
+  }
+}

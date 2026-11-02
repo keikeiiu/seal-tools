@@ -1,0 +1,12 @@
+{
+  "case": "response.ok.shop_test_scroll",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "67",
+    "ok": true,
+    "result": {
+      "line": "clicked the focus point at (1000, 420) and scrolled 3 notch(es) up through COM5"
+    }
+  }
+}

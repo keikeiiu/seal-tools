@@ -1,0 +1,36 @@
+{
+  "case": "response.ok.pet_test_read",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "63",
+    "ok": true,
+    "result": {
+      "rows": [
+        {
+          "row": 1,
+          "slots": [
+            {
+              "index": 1,
+              "reads": [
+                {
+                  "text": "138",
+                  "score": 0.99,
+                  "upscale": 3
+                }
+              ],
+              "count": 138
+            }
+          ],
+          "eta_region": [
+            96,
+            360,
+            188,
+            48
+          ]
+        }
+      ],
+      "hidden_ms": 420
+    }
+  }
+}

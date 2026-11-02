@@ -1,0 +1,78 @@
+{
+  "case": "response.ok.tuner_check",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "59",
+    "ok": true,
+    "result": {
+      "geometry": {
+        "region": {
+          "left": 100,
+          "top": 100,
+          "width": 200,
+          "height": 120
+        },
+        "grade_area": {
+          "x1": 20,
+          "y1": 0,
+          "x2": 60,
+          "y2": 20
+        },
+        "grade_y": [
+          0,
+          20
+        ],
+        "attr_y": [
+          30,
+          90
+        ],
+        "remaining_y": [
+          100,
+          120
+        ],
+        "attr_x": [
+          0,
+          200
+        ],
+        "remaining_x": [
+          10,
+          160
+        ],
+        "row_height": 19
+      },
+      "measured_row_height": 19,
+      "grade": "DG",
+      "remaining": 25000,
+      "attributes": [
+        [
+          "力量",
+          "+7"
+        ],
+        [
+          "敏捷",
+          "+5"
+        ],
+        []
+      ],
+      "matched": [
+        {
+          "name": "力量",
+          "category": "stat",
+          "value": 7,
+          "raw": [
+            "力量",
+            "+7"
+          ]
+        }
+      ],
+      "filter": {
+        "enabled": true,
+        "passed": false,
+        "reason": "力量 7 is below the 10 minimum",
+        "hits": []
+      },
+      "warnings": []
+    }
+  }
+}

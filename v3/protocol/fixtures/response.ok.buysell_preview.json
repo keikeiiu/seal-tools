@@ -1,0 +1,33 @@
+{
+  "case": "response.ok.buysell_preview",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "66",
+    "ok": true,
+    "result": {
+      "bag_centres": [
+        [
+          50,
+          25
+        ],
+        [
+          150,
+          25
+        ]
+      ],
+      "row_centres": [
+        [
+          300,
+          320
+        ]
+      ],
+      "pitch": {
+        "w": 100,
+        "h": 50
+      },
+      "row_pitch": 40.0,
+      "problem": null
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "case": "response.ok.attributes_get",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "39",
+    "ok": true,
+    "result": {
+      "variant": "tw",
+      "dictionary": "attributes.yaml",
+      "attributes": {
+        "attributes": [],
+        "per_level_stats": [],
+        "negative_attr_markers": [],
+        "text_fixes": {
+          "whole": [],
+          "substring": [],
+          "simplified_traditional": [],
+          "final": [],
+          "regex": []
+        }
+      }
+    }
+  }
+}

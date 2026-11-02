@@ -1,0 +1,55 @@
+{
+  "case": "response.ok.calibration_kinds",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "54",
+    "ok": true,
+    "result": {
+      "kinds": [
+        {
+          "name": "bag_grid",
+          "shape": "rect",
+          "block": "buy_sell",
+          "path": [
+            "buy_sell",
+            "bag_grid"
+          ],
+          "artifact": null,
+          "targets": "none",
+          "row_key": null
+        },
+        {
+          "name": "pet_toggle",
+          "shape": "rect",
+          "block": "pet",
+          "path": [
+            "pet",
+            "slots"
+          ],
+          "artifact": null,
+          "targets": "pet_row",
+          "row_key": "toggle_label"
+        },
+        {
+          "name": "result_gem_area",
+          "shape": "rect",
+          "block": "gem",
+          "path": [
+            "gem",
+            "result_gem_area"
+          ],
+          "artifact": "calib_gem_result.png",
+          "targets": "none",
+          "row_key": null
+        }
+      ],
+      "withdrawn": [
+        {
+          "name": "tuner_region",
+          "reason": "the three-box session is not built yet"
+        }
+      ]
+    }
+  }
+}

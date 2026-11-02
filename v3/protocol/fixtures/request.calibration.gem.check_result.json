@@ -1,0 +1,18 @@
+{
+  "case": "request.calibration.gem.check_result",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "65",
+    "cmd": "calibration.gem.check_result",
+    "args": {
+      "frame_id": "f1",
+      "area": {
+        "x": 10,
+        "y": 10,
+        "w": 20,
+        "h": 20
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "case": "request.config.reload",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "4",
+    "cmd": "config.reload",
+    "args": {}
+  }
+}

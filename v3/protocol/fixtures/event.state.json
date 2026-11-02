@@ -1,0 +1,33 @@
+{
+  "case": "event.state",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "state",
+    "data": {
+      "tool": "pet",
+      "running": true,
+      "phase": "running",
+      "message": "row 2: looking",
+      "countdown_s": null,
+      "rows": [
+        {
+          "name": "row 1",
+          "status": "boarding",
+          "detail": "藍天 · 3/min",
+          "next_action_in_seconds": 1800.0,
+          "next_action": "reload"
+        },
+        {
+          "name": "row 2",
+          "status": "waiting for a reload",
+          "detail": null,
+          "next_action_in_seconds": null,
+          "next_action": null
+        }
+      ],
+      "detail": [],
+      "error": null
+    }
+  }
+}

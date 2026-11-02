@@ -1,0 +1,10 @@
+{
+  "case": "request.buy_sell.preflight",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "68",
+    "cmd": "buy_sell.preflight",
+    "args": {}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "case": "event.tool.finished",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "tool.finished",
+    "data": {
+      "tool": "pet",
+      "reason": "done",
+      "message": "DONE — 4 row(s)",
+      "summary": null,
+      "ended_at": "2026-10-30T12:00:00Z"
+    }
+  }
+}

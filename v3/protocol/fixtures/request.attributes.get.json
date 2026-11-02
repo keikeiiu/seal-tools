@@ -1,0 +1,10 @@
+{
+  "case": "request.attributes.get",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "39",
+    "cmd": "attributes.get",
+    "args": {}
+  }
+}

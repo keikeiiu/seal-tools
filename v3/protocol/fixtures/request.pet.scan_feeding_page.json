@@ -1,0 +1,13 @@
+{
+  "case": "request.pet.scan_feeding_page",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "72",
+    "cmd": "pet.scan_feeding_page",
+    "args": {
+      "page": 1,
+      "harvest": true
+    }
+  }
+}

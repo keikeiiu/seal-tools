@@ -1,0 +1,41 @@
+//! The headless v3 core: root discovery, the request dispatcher (handshake, shutdown, the config
+//! commands and the authoring-rule gate every save runs), the event writer, and (later) the Win32,
+//! board, OCR and tool subsystems. The shell never links this crate; it talks to the binary over the
+//! protocol in `v3/docs/spec/PROTOCOL.md`.
+
+pub mod artifacts;
+pub mod board;
+pub mod buysell_session;
+pub mod calibration;
+pub mod dispatch;
+pub mod dry_run;
+pub mod effects;
+pub mod events;
+pub mod gem;
+pub mod gem_routes_session;
+pub mod gem_save;
+pub mod gem_session;
+pub mod holdspace;
+pub mod logs;
+pub mod pet;
+pub mod pet_artifacts;
+pub mod pet_calibration;
+pub mod pet_capture;
+pub mod pet_panel;
+pub mod pet_scan;
+pub mod pet_session;
+pub mod pet_state;
+pub mod pointer;
+pub mod quest;
+pub mod registry;
+pub mod replay;
+pub mod root;
+pub mod shop;
+pub mod spammer;
+pub mod startup;
+pub mod supervisor;
+pub mod tooltip_session;
+pub mod tuner;
+pub mod tuner_session;
+pub mod validate;
+pub mod win;

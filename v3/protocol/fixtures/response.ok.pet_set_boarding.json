@@ -1,0 +1,23 @@
+{
+  "case": "response.ok.pet_set_boarding",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "45",
+    "ok": true,
+    "result": {
+      "rev": 1,
+      "block": {
+        "return_slot": [
+          0,
+          5
+        ],
+        "slots": [
+          {
+            "boarding_running": true
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "case": "response.ok.calibration_check",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "55",
+    "ok": true,
+    "result": {
+      "live": {
+        "scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": {
+          "w": 1920,
+          "h": 1080
+        },
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "w": 1200,
+          "h": 640
+        },
+        "physical_client": {
+          "x": 10,
+          "y": 20,
+          "w": 1200,
+          "h": 600
+        },
+        "logical_client": {
+          "x": 10,
+          "y": 20,
+          "w": 800,
+          "h": 400
+        }
+      },
+      "stored": {
+        "scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": [
+          1920,
+          1080
+        ],
+        "client_size": [
+          1200,
+          600
+        ],
+        "measured_at": "2026-10-30T12:00:00Z"
+      },
+      "differences": [],
+      "matches": true,
+      "note": null
+    }
+  }
+}

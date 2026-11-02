@@ -1,0 +1,30 @@
+{
+  "case": "request.calibration.pet.preview",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "61",
+    "cmd": "calibration.pet.preview",
+    "args": {
+      "draft": {
+        "rows": [
+          {
+            "feeder_strip": {
+              "x": 100,
+              "y": 320,
+              "w": 400,
+              "h": 40
+            },
+            "stacks": 4
+          }
+        ],
+        "bag_grid": [
+          0,
+          0,
+          240,
+          240
+        ]
+      }
+    }
+  }
+}

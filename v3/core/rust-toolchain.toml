@@ -1,0 +1,7 @@
+[toolchain]
+# MSVC is the canonical Windows target. It links against the Visual Studio C++ toolchain, which is
+# installed on this machine (VS Build Tools 2022 with the VCTools workload and the Windows SDK), so
+# the workspace builds for the same ABI the Win32, OCR and serial-adapter crates need — and the GNU
+# `dlltool` limit that forced the earlier `stable-x86_64-pc-windows-gnu` pin is gone.
+channel = "stable"
+profile = "minimal"

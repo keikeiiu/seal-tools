@@ -1,0 +1,26 @@
+{
+  "case": "response.ok.pet_scan_apply_queue",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "73",
+    "ok": true,
+    "result": {
+      "rev": 3,
+      "block": {
+        "queue": [
+          {
+            "label": "page 1, cell 7",
+            "png": "iVBORw0KGgo=",
+            "rect": [
+              10,
+              20,
+              30,
+              40
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

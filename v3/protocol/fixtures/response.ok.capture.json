@@ -1,0 +1,48 @@
+{
+  "case": "response.ok.capture",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "7",
+    "ok": true,
+    "result": {
+      "frame": {
+        "format": "png",
+        "width": 2865,
+        "height": 1789,
+        "origin": {
+          "x": 12,
+          "y": 47
+        },
+        "data": "iVBORw0KGgo=",
+        "frame_id": "f1"
+      },
+      "display": {
+        "scale": 1.5,
+        "monitor_dpi": 144,
+        "screen": {
+          "w": 3840,
+          "h": 2160
+        },
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "w": 2865,
+          "h": 1789
+        },
+        "physical_client": {
+          "x": 12,
+          "y": 47,
+          "w": 2865,
+          "h": 1789
+        },
+        "logical_client": {
+          "x": 8,
+          "y": 31,
+          "w": 1910,
+          "h": 1193
+        }
+      }
+    }
+  }
+}

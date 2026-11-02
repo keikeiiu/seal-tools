@@ -1,0 +1,32 @@
+{
+  "case": "response.ok.gem_test_route",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "74",
+    "ok": true,
+    "result": {
+      "steps": [
+        {
+          "action": "click",
+          "point": "N",
+          "placement": {
+            "x": 10,
+            "y": 20
+          }
+        },
+        {
+          "action": "move",
+          "dx": 40,
+          "dy": -12
+        },
+        {
+          "action": "click",
+          "point": "Register"
+        }
+      ],
+      "line": "Test move: click \"N\" then D 40 -12 then click \"Register\". Does it land?",
+      "move": "tuned"
+    }
+  }
+}

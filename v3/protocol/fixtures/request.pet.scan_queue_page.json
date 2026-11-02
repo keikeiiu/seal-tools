@@ -1,0 +1,12 @@
+{
+  "case": "request.pet.scan_queue_page",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "49",
+    "cmd": "pet.scan_queue_page",
+    "args": {
+      "page": 1
+    }
+  }
+}

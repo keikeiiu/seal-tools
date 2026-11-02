@@ -1,0 +1,14 @@
+{
+  "case": "response.error.not_running",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "29",
+    "ok": false,
+    "error": {
+      "code": "not_running",
+      "message": "nothing is running",
+      "detail": {}
+    }
+  }
+}

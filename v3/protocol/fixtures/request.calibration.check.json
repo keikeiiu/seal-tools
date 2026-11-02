@@ -1,0 +1,10 @@
+{
+  "case": "request.calibration.check",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "55",
+    "cmd": "calibration.check",
+    "args": {}
+  }
+}

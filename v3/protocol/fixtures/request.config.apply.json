@@ -1,0 +1,17 @@
+{
+  "case": "request.config.apply",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "3",
+    "cmd": "config.apply",
+    "args": {
+      "rev": 7,
+      "sections": {
+        "quest": {
+          "active": "run1"
+        }
+      }
+    }
+  }
+}

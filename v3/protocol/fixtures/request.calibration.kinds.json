@@ -1,0 +1,10 @@
+{
+  "case": "request.calibration.kinds",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "54",
+    "cmd": "calibration.kinds",
+    "args": {}
+  }
+}

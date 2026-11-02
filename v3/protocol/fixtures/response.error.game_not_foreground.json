@@ -1,0 +1,14 @@
+{
+  "case": "response.error.game_not_foreground",
+  "kind": "response",
+  "message": {
+    "v": 1,
+    "id": "26",
+    "ok": false,
+    "error": {
+      "code": "game_not_foreground",
+      "message": "capture refused because another window is in front",
+      "detail": {}
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "case": "request.tool.stop.any",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "17",
+    "cmd": "tool.stop",
+    "args": {}
+  }
+}

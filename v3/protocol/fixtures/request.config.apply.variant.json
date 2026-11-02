@@ -1,0 +1,19 @@
+{
+  "case": "request.config.apply.variant",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "34",
+    "cmd": "config.apply",
+    "args": {
+      "rev": 7,
+      "sections": {
+        "settings": {
+          "game": {
+            "variant": "us"
+          }
+        }
+      }
+    }
+  }
+}

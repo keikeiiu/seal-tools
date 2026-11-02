@@ -1,0 +1,13 @@
+{
+  "case": "request.pet.set_boarding",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "45",
+    "cmd": "pet.set_boarding",
+    "args": {
+      "row": 1,
+      "running": true
+    }
+  }
+}

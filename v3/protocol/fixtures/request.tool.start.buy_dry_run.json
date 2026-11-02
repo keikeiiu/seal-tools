@@ -1,0 +1,13 @@
+{
+  "case": "request.tool.start.buy_dry_run",
+  "kind": "request",
+  "message": {
+    "v": 1,
+    "id": "71",
+    "cmd": "tool.start",
+    "args": {
+      "tool": "buy",
+      "dry_run": true
+    }
+  }
+}

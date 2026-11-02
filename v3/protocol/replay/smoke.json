@@ -1,0 +1,52 @@
+{
+  "protocol": 1,
+  "turns": [
+    {
+      "expect": {"cmd": "hello", "protocol": 1},
+      "response": {
+        "result": {
+          "protocol": 1,
+          "core_version": "0.1.0",
+          "root": "replay",
+          "rev": 0,
+          "config": {}
+        }
+      }
+    },
+    {
+      "expect": {"cmd": "config.reload"},
+      "response": {"result": {"rev": 1, "config": {}}}
+    },
+    {
+      "expect": {"cmd": "tool.start", "tool": "pet"},
+      "response": {"result": {}},
+      "events": [
+        {
+          "v": 1,
+          "event": "state",
+          "data": {
+            "tool": "pet",
+            "running": true,
+            "phase": "running",
+            "message": "row 1: starting",
+            "countdown_s": null,
+            "rows": [],
+            "error": null
+          }
+        },
+        {
+          "v": 1,
+          "event": "tool.finished",
+          "data": {"tool": "pet", "reason": "done", "message": "DONE — 4 row(s)"}
+        }
+      ]
+    },
+    {
+      "expect": {"cmd": "shutdown"},
+      "response": {"result": {}},
+      "events": [
+        {"v": 1, "event": "core.stopping", "data": {"reason": "shutdown"}}
+      ]
+    }
+  ]
+}

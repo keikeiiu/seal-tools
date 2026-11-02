@@ -1,0 +1,193 @@
+{
+  "calibration": {
+    "dpi_scale": 1.0,
+    "monitor_dpi": 96,
+    "screen": [1920, 1080],
+    "client_size": [1926, 1232],
+    "measured_at": "2026-01-01T00:00:00"
+  },
+  "tuner": {
+    "ocr": {
+      "region": {"left": 100, "top": 200, "width": 280, "height": 232},
+      "grade_area": {"x1": 10, "y1": 5, "x2": 100, "y2": 45},
+      "grade_y": [5, 45],
+      "attr_y": [60, 200],
+      "remaining_y": [210, 230],
+      "attr_x": [5, 275],
+      "remaining_x": [5, 275],
+      "row_height": 19
+    },
+    "spring_point": [500, 400],
+    "grade_order": ["N", "G", "DG"],
+    "target_grade": "DG",
+    "save_captures": false,
+    "spring_mode": "hid",
+    "mouse_guard": "stop",
+    "guard_px": 8,
+    "recenter_max": 20,
+    "max_retries": 3,
+    "ocr_retries": 3,
+    "filter": {
+      "enabled": false,
+      "match_mode": "any",
+      "rules": [],
+      "override_rules": []
+    },
+    "timing": {"click_enter_delay": 0.4, "ocr_delay": 0.8}
+  },
+  "gem": {
+    "grades": ["N", "G", "DG"],
+    "start_grade": "N",
+    "empty_mode": "stop",
+    "colored_gap_min": 40,
+    "move_mode": "arduino",
+    "save_empty_captures": false,
+    "grade_positions": {
+      "N": [10, 10],
+      "G": [20, 10],
+      "DG": [30, 10],
+      "Register": [40, 10],
+      "Combine": [50, 10]
+    },
+    "movements": {
+      "register_combine": [1, 2],
+      "combine_register": [3, 4]
+    },
+    "result_gem_area": [100, 100, 200, 60],
+    "resource_gems": [[60, 10], [70, 10], [80, 10]],
+    "empty_signature": {
+      "mean_v": 0.3,
+      "mean_sat": 0.1,
+      "colored_fraction": 0.05,
+      "mean_r": 0.3,
+      "mean_g": 0.3,
+      "mean_b": 0.3
+    },
+    "empty_distance": 0.18
+  },
+  "arduino": {"port": "COM5"},
+  "ui": {"left": 10, "top": 10, "width": 900, "height": 700, "expanded_height": 300, "pinned": false},
+  "spammer": {
+    "active": "run",
+    "presets": {"run": {"E": 1.0, "Q": 2.0}},
+    "priority": {"run": ["E", "Q"]},
+    "combos": {"run": [{"keys": ["E", "Q"], "gap": 0.1}]},
+    "startup": {"run": {"lead_in": 0.5, "step": 0.1}}
+  },
+  "buy_sell": {
+    "bag_grid": [0, 0, 800, 600],
+    "bag_slot": [0, 0, 100, 75],
+    "shop_rows": 5,
+    "shop_region": [900, 400, 300, 250],
+    "scroll_point": [1000, 420],
+    "max_button": [1200, 700],
+    "presets": {
+      "potion": {"scroll": 2, "row": 1, "count": 3}
+    },
+    "sell_slots": [1, 2],
+    "sell_cap": 5
+  },
+  "pet": {
+    "menu_button": [1, 2],
+    "feed_icon": [3, 4],
+    "close_button": [5, 6],
+    "page_tabs": [[10, 10], [20, 10], [30, 10]],
+    "bag_grid": [0, 0, 800, 600],
+    "bag_slot": [0, 0, 100, 75],
+    "food_slots": [[0, 1], [0, 2]],
+    "food_slots_used": 0,
+    "action_wait_ms": 1200,
+    "wait_after_empty_minutes": 5,
+    "food_load_mode": "right_click",
+    "feeder_count_left_fraction": 0.5,
+    "feeder_count_min_score": 0.4,
+    "reload_on_start": false,
+    "return_slot": [0, 5],
+    "max_button": null,
+    "slots": [
+      {
+        "enabled": true,
+        "toggle_label": [10, 20, 100, 30],
+        "boarding_pet_slot": [10, 60, 100, 80],
+        "feeder_strip": [110, 20, 200, 80],
+        "stacks": 2,
+        "boarding_running": false
+      },
+      {
+        "enabled": true,
+        "toggle_label": [10, 200, 100, 30],
+        "boarding_pet_slot": [10, 240, 100, 80],
+        "feeder_strip": [110, 200, 200, 80],
+        "stacks": 5,
+        "boarding_running": false
+      }
+    ],
+    "queue": [
+      {"label": "pet one", "rect": [0, 0, 32, 32], "species": "Knight"},
+      {"label": "pet two", "rect": [32, 0, 32, 32], "species": "Knight"}
+    ],
+    "items_per_minute": 3,
+    "pet_slot_occupied_above": 0.05
+  },
+  "tooltip": {
+    "offset_x": 0,
+    "offset_y": 0,
+    "width": 200,
+    "height": 120,
+    "hover_delay_ms": 1200,
+    "is_set": true
+  },
+  "quest": {
+    "active": "god8",
+    "active_sequence": "",
+    "guard_px": 8,
+    "presets": {
+      "god8": {
+        "initial_wait_seconds": 10.0,
+        "loops": 1,
+        "steps": [
+          {"action": "key", "value": 1, "delay_seconds": 0.25},
+          {"action": "enter", "value": null, "delay_seconds": 0.25}
+        ]
+      }
+    },
+    "sequences": {}
+  },
+  "settings": {
+    "window": {"title": "TW_LIVE"},
+    "reference_window": {"width": 1926, "height": 1232},
+    "game": {
+      "variant": "tw",
+      "variants": {"tw": {"title": "TW_LIVE", "attributes": "attributes.yaml"}}
+    },
+    "arduino": {"vid": 9025, "pid": [32822], "baud": 115200},
+    "hotkeys": {"start": 123, "quit": 122, "advance_grade": 71, "pause": 20},
+    "tuner": {
+      "grade_order": ["N", "G", "DG"],
+      "target_grade": "DG",
+      "guard_px": 8,
+      "max_retries": 3,
+      "ocr_retries": 3,
+      "save_captures": false,
+      "spring_mode": "hid",
+      "mouse_guard": "stop",
+      "recenter_max": 20,
+      "models": {
+        "detector": "models/det.onnx",
+        "recognizer": "models/rec.onnx",
+        "classifier": "models/cls.onnx"
+      },
+      "timing": {"click_enter_delay": 0.4, "ocr_delay": 0.8}
+    },
+    "gem": {
+      "grades": ["N", "G", "DG"],
+      "start_grade": "N",
+      "empty_mode": "stop",
+      "colored_gap_min": 40,
+      "move_mode": "arduino",
+      "save_empty_captures": false
+    },
+    "pet": {"items_per_minute": 3, "pet_slot_occupied_above": 0.05},
+    "legacy_folded": true
+  }
+}

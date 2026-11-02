@@ -1,0 +1,20 @@
+[package]
+name = "seal-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+seal-proto = { path = "../seal-proto" }
+seal-config = { path = "../seal-config" }
+seal-domain = { path = "../seal-domain" }
+seal-tools = { path = "../seal-tools" }
+seal-board = { path = "../seal-board" }
+seal-win = { path = "../seal-win" }
+seal-ocr = { path = "../seal-ocr" }
+base64 = "0.23"
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

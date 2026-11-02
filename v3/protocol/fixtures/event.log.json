@@ -1,0 +1,12 @@
+{
+  "case": "event.log",
+  "kind": "event",
+  "message": {
+    "v": 1,
+    "event": "log",
+    "data": {
+      "level": "warn",
+      "line": "ocr scan retried"
+    }
+  }
+}

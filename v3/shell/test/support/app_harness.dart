@@ -1,0 +1,282 @@
+/// Test support: a [ShellModel] wired to a fake transport, plus JSON event/response builders that
+/// go through the REAL protocol decoder (the client), so the model tests exercise the seam, not a
+/// mocked client.
+library;
+
+import 'package:seal_shell/app/app.dart';
+import 'package:seal_shell/protocol/protocol.dart';
+
+import 'fake_host.dart';
+import 'fake_transport.dart';
+
+/// The raw response/hello builders the harness and its tests share, so a test that hand-writes a
+/// `hello` answer (e.g. the `bad_version` case) does not need a second support import.
+export 'fake_host.dart' show FakeHost;
+export 'fake_transport.dart' show errorResponse, helloResult, okResponse;
+
+class AppHarness {
+  AppHarness({
+    this.shellVersion = '0.1.0',
+    Duration requestTimeout = const Duration(seconds: 10),
+    this.windowSaveDebounce = const Duration(milliseconds: 600),
+    FakeHost? host,
+  }) : host = host ?? FakeHost() {
+    model = ShellModel(
+      transportFactory: _spawn,
+      host: this.host,
+      shellVersion: shellVersion,
+      requestTimeout: requestTimeout,
+      windowSaveDebounce: windowSaveDebounce,
+    );
+  }
+
+  final String shellVersion;
+
+  /// The placement save's debounce, short in tests so a move settles without a real 600 ms wait.
+  final Duration windowSaveDebounce;
+
+  late final ShellModel model;
+
+  /// The fake runner the model talks to for hide/show and always-on-top; the harness supplies one
+  /// by default so no test reaches a real method channel.
+  final FakeHost host;
+
+  /// Every transport the model created, oldest first (restart appends a new one).
+  final List<FakeTransport> transports = [];
+
+  /// Set before [connect]; receives every non-`hello` line the model writes. If it throws at spawn
+  /// time (before creating a transport), the harness simulates a missing core.
+  void Function(String line, FakeTransport transport)? onWrite;
+
+  /// When set, the transport factory throws it — the spawn-failure path.
+  Object? spawnError;
+
+  int spawnAttempts = 0;
+
+  FakeTransport get transport => transports.last;
+
+  Map<String, dynamic> get lastRequest =>
+      transport.sentJson(transport.sent.length - 1);
+
+  String get lastCommandId => lastRequest['id'] as String;
+
+  Future<Transport> _spawn() async {
+    spawnAttempts++;
+    final error = spawnError;
+    if (error != null) {
+      throw error;
+    }
+    final fake = FakeTransport();
+    fake.onWrite = (line) => onWrite?.call(line, fake);
+    transports.add(fake);
+    return fake;
+  }
+
+  /// Connects, answering `hello` with [hello] (or the standard test payload; [config] supplies a
+  /// config block set for tab tests). Any other command is routed to [onWrite] as it was when this
+  /// was called.
+  Future<void> connect({
+    Map<String, dynamic>? hello,
+    Map<String, dynamic>? config,
+    int rev = 7,
+  }) async {
+    final extra = onWrite;
+    onWrite = (line, fake) {
+      final message = fake.sentJson(fake.sent.length - 1);
+      if (message['cmd'] == 'hello') {
+        fake.emitJson(
+          okResponse(
+            message['id'] as String,
+            hello ?? helloResult(config: config, rev: rev),
+          ),
+        );
+        return;
+      }
+      extra?.call(line, fake);
+    };
+    await model.connect();
+  }
+
+  /// Every line the model has sent so far, parsed.
+  List<Map<String, dynamic>> get sentMessages => [
+    for (var index = 0; index < transport.sent.length; index++)
+      transport.sentJson(index),
+  ];
+
+  /// The last request sent with [cmd], or null.
+  Map<String, dynamic>? lastSentWithCmd(String cmd) {
+    for (var index = transport.sent.length - 1; index >= 0; index--) {
+      final message = transport.sentJson(index);
+      if (message['cmd'] == cmd) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  /// Answers a tab's Save: `config.validate` with [errors] (clean by default), then
+  /// `config.apply` with `rev`/the requested sections echoed — or a `conflict` when asked.
+  ///
+  /// This makes the fake core behave like the real one for the Save order without re-implementing
+  /// its rules: the accepted/refused decision is set by the test.
+  void answerConfigCommands({
+    List<String> errors = const [],
+    int rev = 8,
+    bool conflict = false,
+    int conflictRev = 12,
+    Map<String, dynamic>? conflictSections,
+    Map<String, dynamic>? reloadedConfig,
+    int reloadRev = 9,
+  }) {
+    onWrite = (line, fake) {
+      final message = fake.sentJson(fake.sent.length - 1);
+      final id = message['id'] as String;
+      switch (message['cmd']) {
+        case 'config.validate':
+          fake.emitJson(
+            okResponse(id, {'errors': errors, 'warnings': <String>[]}),
+          );
+        case 'config.apply':
+          if (conflict) {
+            fake.emitJson(
+              errorResponse(
+                id,
+                'conflict',
+                message: 'config changed while you were editing',
+                detail: {
+                  'rev': conflictRev,
+                  'sections': conflictSections ?? <String, dynamic>{},
+                },
+              ),
+            );
+            return;
+          }
+          final args = message['args'];
+          final sections = args is Map<String, dynamic>
+              ? args['sections']
+              : null;
+          fake.emitJson(
+            okResponse(id, {
+              'rev': rev,
+              'sections': sections ?? <String, dynamic>{},
+            }),
+          );
+        case 'config.reload':
+          fake.emitJson(
+            okResponse(id, {
+              'rev': reloadRev,
+              'config': reloadedConfig ?? <String, dynamic>{},
+            }),
+          );
+        default:
+          break;
+      }
+    };
+  }
+
+  /// Emits a protocol event through the transport.
+  void emitEvent(String name, Map<String, dynamic> data) {
+    transport.emitJson({'v': 1, 'event': name, 'data': data});
+  }
+
+  void emitState({
+    required ToolId tool,
+    bool running = true,
+    ToolPhase phase = ToolPhase.running,
+    String message = 'running',
+    double? countdown,
+    List<Map<String, dynamic>> rows = const [],
+    List<Map<String, dynamic>> detail = const [],
+    String? error,
+  }) {
+    emitEvent('state', {
+      'tool': tool.wire,
+      'running': running,
+      'phase': phase.wire,
+      'message': message,
+      'countdown_s': countdown,
+      'rows': rows,
+      'detail': detail,
+      'error': error,
+    });
+  }
+
+  void emitToolFinished({
+    required ToolId tool,
+    ToolStopKind reason = ToolStopKind.done,
+    String message = 'run finished',
+    Map<String, dynamic>? summary,
+    String? endedAt,
+  }) {
+    emitEvent('tool.finished', {
+      'tool': tool.wire,
+      'reason': reason.wire,
+      'message': message,
+      'summary': ?summary,
+      'ended_at': ?endedAt,
+    });
+  }
+
+  void emitLog(String level, String line) {
+    emitEvent('log', {'level': level, 'line': line});
+  }
+
+  void emitCoreStopping([CoreStoppingReason reason = CoreStoppingReason.eof]) {
+    emitEvent('core.stopping', {'reason': reason.wire});
+  }
+
+  void emitConfigChanged({
+    required int rev,
+    required String block,
+    Map<String, dynamic> values = const {},
+  }) {
+    emitEvent('config.changed', {'rev': rev, 'block': block, 'values': values});
+  }
+
+  /// Answers the request the model last wrote.
+  void respondOk([Map<String, dynamic> result = const {}]) =>
+      transport.emitJson(okResponse(lastCommandId, result));
+
+  void respondError(
+    String code, {
+    String message = 'failed',
+    Map<String, dynamic> detail = const {},
+  }) => transport.emitJson(
+    errorResponse(lastCommandId, code, message: message, detail: detail),
+  );
+
+  /// The core's output ends (crash / boot refusal / kill).
+  void crash() => transport.closeIncoming();
+
+  void emitStderr(String line) => transport.emitDiagnostic(line);
+
+  /// A row object for a `state` event, matching the pinned shape ([PROTOCOL.md] §5).
+  static Map<String, dynamic> row({
+    required String name,
+    required String status,
+    String? detail,
+    double? nextActionInSeconds,
+    String? nextAction,
+  }) => {
+    'name': name,
+    'status': status,
+    'detail': detail,
+    'next_action_in_seconds': nextActionInSeconds,
+    'next_action': ?nextAction,
+  };
+
+  Future<void> dispose() async {
+    model.dispose();
+    await host.closeMoves();
+    for (final fake in transports) {
+      await fake.dispose();
+    }
+  }
+}
+
+/// Waits until the model's async stream plumbing has run (event delivery, command completion).
+Future<void> settle() async {
+  for (var i = 0; i < 4; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
