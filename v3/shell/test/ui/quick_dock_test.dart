@@ -266,6 +266,53 @@ void main() {
     expect(find.byKey(const ValueKey('dock-collapsed')), findsOneWidget);
   });
 
+  testWidgets('Keep open disables the idle auto-collapse', (tester) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-placement')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep open'));
+    await tester.pumpAndSettle();
+    expect(harness.model.dockBehavior, DockBehavior.alwaysOpen);
+    final apply =
+        harness.lastSentWithCmd('config.apply')!['args']
+            as Map<String, dynamic>;
+    final sections = apply['sections'] as Map<String, dynamic>;
+    final settings = sections['settings'] as Map<String, dynamic>;
+    final dock =
+        ((settings['ui'] as Map<String, dynamic>)['quick_dock']
+            as Map<String, dynamic>);
+    expect(dock['behavior'], 'always_open');
+
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+    expect(find.byKey(const ValueKey('dock-start-spammer')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('hovering the tiny tab expands the dock', (tester) async {
+    final harness = await _pumpDock(tester);
+    await tester.tap(find.byKey(const ValueKey('dock-collapse')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
+
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(20, 20));
+    await tester.pump();
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('dock-collapsed'))),
+    );
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+
+    await mouse.removePointer();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('last-used Buy options survive closing the menu', (tester) async {
     final harness = await _pumpDock(tester);
 

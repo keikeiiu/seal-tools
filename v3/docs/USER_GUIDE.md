@@ -145,12 +145,15 @@ button becomes **Stop**.
 
 The header's **Edit** (pencil) action reorders tiles with the up/down arrows, removes any tile and adds
 back removed tools. Use **Collapse to edge** in the header to shrink the launcher to a small rail tab,
-pill or island; click the tab to expand it again. It also auto-collapses after eight idle seconds;
-any click resets that timer. Starting a tool turns the same window into the mini run bar; when the run
-finishes, the bar's dock button returns to the launcher. Choose **right rail, left rail, bottom right,
-bottom left or top centre** in Setup or from the dock's placement menu, and drag the dock to fine-tune
-it. Placement, collapsed state, tile order and pinned Sell selections are remembered across restarts;
-a dragged offset inside that placement is session-only.
+pill or island; click the tab or **hover it with the mouse** to expand it again. The dock's idle
+behaviour is selectable in **Setup → Quick dock** or the dock header's placement menu: **Auto-collapse**
+shrinks it after eight idle seconds, while **Keep open** leaves the full launcher up until you collapse
+it yourself. Hovering pauses the auto-collapse and any click resets its timer. Starting a tool turns the
+same window into the mini run bar; when the run finishes, the bar's dock button returns to the
+launcher. Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the
+dock's placement menu, and drag the dock to fine-tune it. Placement, collapsed state, idle behaviour,
+tile order and pinned Sell selections are remembered across restarts; a dragged offset inside that
+placement is session-only.
 
 ### 2.3 Hold Space
 

@@ -998,6 +998,37 @@ void main() {
       expect(host.appliedRects.last, _rect(1684, 980, 220, 44));
     });
 
+    test(
+      'Keep open is restored and expands a manually collapsed dock',
+      () async {
+        final host = FakeHost();
+        final harness = AppHarness(host: host);
+        addTearDown(harness.dispose);
+        await harness.connect(
+          config: {
+            'window': {'title': 'TW_LIVE'},
+            'settings': {
+              'ui': {
+                'quick_dock': {
+                  'placement': 'bottom_right',
+                  'collapsed': true,
+                  'behavior': 'always_open',
+                },
+              },
+            },
+          },
+        );
+        expect(harness.model.dockBehavior, DockBehavior.alwaysOpen);
+        expect(harness.model.dockCollapsed, isTrue);
+
+        await harness.model.enterDock();
+        await settle();
+        expect(harness.model.dockCollapsed, isFalse);
+        expect(host.minSizeCalls.last, (340, 460));
+        expect(host.appliedRects.last, _rect(1564, 564, 340, 460));
+      },
+    );
+
     test('pinned Sell actions and tile order persist and restore', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);

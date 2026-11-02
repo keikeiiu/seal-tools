@@ -61,8 +61,13 @@ the existing `config.apply` rule.
   `.scratch/ui-audit/dock-real-*.png`.
 - **Collapsed resting form** (2026-11-02 follow-up): the header's collapse action shrinks the dock to a
   46 × 150 rail tab, a 220 × 44 bottom pill or a 200 × 36 top island; it keeps three tool icons and the
-  running dot glanceable, and clicking it/unfold expands. It also auto-collapses after eight idle
-  seconds (cancelled by pointer input, an open menu or edit mode).
+  running dot glanceable, and clicking, unfolding or hovering it expands.
+- **Idle behaviour + hover** (2026-11-02 follow-up): Setup and the dock header's placement menu select
+  **Auto-collapse** (eight idle seconds) or **Keep open** (no timer); the choice persists as
+  `settings.ui.quick_dock.behavior`. Auto-collapse pauses while the pointer is over the dock; hover
+  expansion is transient (`persist: false`) so it never overwrites the player's explicit collapsed
+  preference. The timer also no longer persists its own collapse, so a restart opens the dock in the
+  chosen mode instead of always starting tiny.
 - **Editable tiles + pinned Sell** (2026-11-02 follow-up): the header's Edit action opens an in-window
   editor with up/down reorder, remove and "Add back" for every quick tool; the Sell menu's name field +
   Pin turns the current slot selection into a one-click `Sell · <name>` tile. Tiles and pins persist in
@@ -74,16 +79,16 @@ the existing `config.apply` rule.
   picks the target grade and a max-retries stepper. Each pick saves the portable `settings.gem` /
   `settings.tuner` field through `config.apply` (the other editable keys are carried so a partial save
   cannot blank them), and Start then runs the saved configuration.
-- **Remaining**: only the dragged offset inside a placement is session-only (the preset, collapsed
-  state, order and pins persist); live-game Start/Stop verification is still manual.
+- **Remaining**: only the dragged offset inside a placement is session-only (placement, collapsed
+  state, idle behaviour, order and pins persist); live-game Start/Stop verification is still manual.
 
-Gates: shell `flutter analyze` No issues, `flutter test` **329/329** (new `quick_dock_test.dart` covers
-tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, auto-collapse, edit
-remove/reorder/add-back, pinned Sell creation/start, Gem/Tuner option saves, top-bar entry, full-window
-return and run-bar hand-back; model tests cover geometry, chrome, preferences/layout restore and both
-transitions), `dart format` clean, Windows debug build OK; core
-`quick_dock_preference_is_accepted_written_and_preserved` green, `cargo fmt --check` clean, clippy clean
-for seal-config.
+Gates: shell `flutter analyze` No issues, `flutter test` **333/333** (new `quick_dock_test.dart` covers
+tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, auto-collapse and Keep open,
+hover expansion, edit remove/reorder/add-back, pinned Sell creation/start, Gem/Tuner option saves,
+top-bar entry, full-window return and run-bar hand-back; model tests cover geometry, chrome,
+behaviour/preferences/layout restore and both transitions), `dart format` clean, Windows debug build OK;
+core `quick_dock_preference_is_accepted_written_and_preserved` green (now includes behaviour),
+`cargo fmt --check` clean, clippy clean for seal-config and the core config test.
 Truth: [UI.md §Quick dock](../spec/UI.md#quick-dock-landed-2026-11-02).
 
 ## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)

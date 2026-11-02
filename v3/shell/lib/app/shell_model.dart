@@ -194,6 +194,7 @@ class ShellModel extends ChangeNotifier {
   // hand it back. Placement is session/v1 only (a config field is the documented follow-up).
   bool _dockActive = false;
   bool _dockCollapsed = false;
+  DockBehavior _dockBehavior = DockBehavior.autoCollapse;
   DockPlacement _dockPlacement = DockPlacement.rightRail;
   WindowRect? _dockRestoreRect;
   WindowRect? _dockWorkArea;
@@ -1433,6 +1434,25 @@ class ShellModel extends ChangeNotifier {
   /// True while the dock is the small resting form (edge tab / pill / island).
   bool get dockCollapsed => _dockCollapsed;
 
+  /// Whether the idle dock auto-collapses after a pause or stays open until the player collapses it.
+  DockBehavior get dockBehavior => _dockBehavior;
+
+  /// Choose the idle behaviour; "Keep open" also expands a collapsed dock immediately and is
+  /// remembered for the next launch.
+  Future<void> setDockBehavior(DockBehavior behavior) async {
+    if (behavior == _dockBehavior) {
+      return;
+    }
+    _dockBehavior = behavior;
+    notifyListeners();
+    if (behavior == DockBehavior.alwaysOpen && _dockCollapsed) {
+      _dockCollapsed = false;
+      notifyListeners();
+      await _resizeDockGeometry();
+    }
+    await _saveDockPreference();
+  }
+
   /// Last-used Buy preset/count, kept for the dock session so reopening the dock after a run does
   /// not silently fall back to the configured defaults.
   String? get dockBuyPreset => _dockBuyPreset;
@@ -1565,6 +1585,11 @@ class ShellModel extends ChangeNotifier {
       orElse: () => DockPlacement.rightRail,
     );
     _dockCollapsed = asBool(dock['collapsed']) ?? false;
+    final behaviorWire = asString(dock['behavior']);
+    _dockBehavior = DockBehavior.values.firstWhere(
+      (behavior) => behavior.wire == behaviorWire,
+      orElse: () => DockBehavior.autoCollapse,
+    );
     _restoreDockLayout(dock);
   }
 
@@ -1581,6 +1606,7 @@ class ShellModel extends ChangeNotifier {
           'quick_dock': {
             'placement': _dockPlacement.wire,
             'collapsed': _dockCollapsed,
+            'behavior': _dockBehavior.wire,
             'tiles': _dockTiles,
             'pins': [for (final pin in _dockPins) pin.toJson()],
           },
@@ -1610,6 +1636,10 @@ class ShellModel extends ChangeNotifier {
     // The dock is the idle launcher; a foreground run owns the compact window (the run bar).
     if (_foregroundTool() != null) {
       return;
+    }
+    // "Keep open" means the launcher comes back expanded even if it was manually collapsed earlier.
+    if (_dockBehavior == DockBehavior.alwaysOpen) {
+      _dockCollapsed = false;
     }
     _dockActive = true;
     notifyListeners();
@@ -1678,25 +1708,38 @@ class ShellModel extends ChangeNotifier {
 
   /// Collapse the dock to its resting edge tab/pill/island, or expand it again. The same full-window
   /// restore target is kept, so collapsing never loses the full placement.
-  Future<void> setDockCollapsed(bool collapsed) async {
+  ///
+  /// [persist] is false for the transient auto-collapse and hover expansions: they resize the window
+  /// but do not rewrite the player's explicit collapsed preference.
+  Future<void> setDockCollapsed(bool collapsed, {bool persist = true}) async {
     if (collapsed == _dockCollapsed) {
       return;
     }
     _dockCollapsed = collapsed;
     notifyListeners();
-    final work = _dockWorkArea;
-    if (_dockActive && work != null) {
-      final (width, height) = _dockWindowSize;
-      final rect = _dockRectFor(work);
-      try {
-        await host.setWindowMinSize(width, height);
-        _dockRectValue = rect;
-        await host.setWindowRect(rect);
-      } catch (error) {
-        logs.addShellNote('cannot resize the quick dock: $error');
-      }
+    await _resizeDockGeometry();
+    if (persist) {
+      await _saveDockPreference();
     }
-    await _saveDockPreference();
+  }
+
+  Future<void> _resizeDockGeometry() async {
+    if (!_dockActive) {
+      return;
+    }
+    final work = _dockWorkArea;
+    if (work == null) {
+      return;
+    }
+    final (width, height) = _dockWindowSize;
+    final rect = _dockRectFor(work);
+    try {
+      await host.setWindowMinSize(width, height);
+      _dockRectValue = rect;
+      await host.setWindowRect(rect);
+    } catch (error) {
+      logs.addShellNote('cannot resize the quick dock: $error');
+    }
   }
 
   Future<void> toggleDockCollapsed() => setDockCollapsed(!_dockCollapsed);

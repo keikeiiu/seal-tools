@@ -126,9 +126,12 @@ the full shell restores its saved placement and pin.
 
 - **Collapsed resting form** — the header's `dock-collapse` action shrinks the dock to its form-factor
   tab: a 46 × 150 vertical rail tab, a 220 × 44 bottom pill or a 200 × 36 top island. It keeps three
-  tool icons and a running dot glanceable; clicking the tab or its `dock-expand` button returns to the
-  full launcher. It also auto-collapses after **eight idle seconds** (no pointer input, no open menu,
-  not in edit mode); any interaction resets the timer.
+  tool icons and a running dot glanceable; clicking the tab, its `dock-expand` button, or **hovering
+  the tab with the mouse** returns to the full launcher.
+- **Idle behaviour selectable** — Setup → Quick dock and the dock header's placement menu both offer
+  **Auto-collapse** (collapse after eight idle seconds) and **Keep open** (stay expanded until the
+  player collapses it). The choice is persisted. Auto-collapse is paused while the pointer is over
+  the dock and resets on any interaction; a collapsed tab hover-expands temporarily in either mode.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
@@ -136,8 +139,8 @@ the full shell restores its saved placement and pin.
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
   The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
   also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. **Placement, collapsed
-  state, tile order and pinned Sell selections are persisted** in the portable
-  `settings.ui.quick_dock` block (`{placement, collapsed, tiles, pins}`) through the normal
+  state, idle behaviour, tile order and pinned Sell selections are persisted** in the portable
+  `settings.ui.quick_dock` block (`{placement, collapsed, behavior, tiles, pins}`) through the normal
   validate → apply path; the core's portable projection carries the fields (seal-config
   `ensure_portable_ui`). A dragged offset inside a placement is session-only — the preset is what
   survives a restart.
@@ -346,7 +349,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 329/329; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 333/333; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

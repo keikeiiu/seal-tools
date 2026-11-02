@@ -18,6 +18,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../app/app.dart';
@@ -75,6 +76,10 @@ class _QuickDockState extends State<QuickDock> {
   static const _autoCollapseAfter = Duration(seconds: 8);
   Timer? _autoCollapse;
 
+  // Hover state: hovering pauses the auto-collapse, and hovering the collapsed tab expands it.
+  bool _hovering = false;
+  bool _hoverExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -95,11 +100,36 @@ class _QuickDockState extends State<QuickDock> {
     if (!mounted) {
       return;
     }
-    if (widget.model.dockCollapsed || _menu != null || _editing) {
+    if (widget.model.dockCollapsed ||
+        _menu != null ||
+        _editing ||
+        _hovering ||
+        widget.model.dockBehavior != DockBehavior.autoCollapse) {
       _cancelAutoCollapse();
     } else {
       _armAutoCollapse();
     }
+  }
+
+  void _onHoverEnter(PointerEnterEvent event) {
+    _hovering = true;
+    _cancelAutoCollapse();
+    if (model.dockCollapsed) {
+      _hoverExpanded = true;
+      unawaited(model.setDockCollapsed(false, persist: false));
+    }
+  }
+
+  void _onHoverExit(PointerExitEvent event) {
+    _hovering = false;
+    if (_hoverExpanded) {
+      _hoverExpanded = false;
+      if (model.dockBehavior == DockBehavior.alwaysOpen) {
+        unawaited(model.setDockCollapsed(true, persist: false));
+        return;
+      }
+    }
+    _resetAutoCollapse();
   }
 
   void _cancelAutoCollapse() {
@@ -111,16 +141,22 @@ class _QuickDockState extends State<QuickDock> {
     if (_autoCollapse != null ||
         !widget.model.dockMode ||
         widget.model.dockCollapsed ||
+        widget.model.dockBehavior != DockBehavior.autoCollapse ||
+        _hovering ||
         _menu != null ||
         _editing) {
       return;
     }
     _autoCollapse = Timer(_autoCollapseAfter, () {
       _autoCollapse = null;
-      if (!mounted || _menu != null || _editing || widget.model.dockCollapsed) {
+      if (!mounted ||
+          _hovering ||
+          _menu != null ||
+          _editing ||
+          widget.model.dockCollapsed) {
         return;
       }
-      unawaited(widget.model.setDockCollapsed(true));
+      unawaited(widget.model.setDockCollapsed(true, persist: false));
     });
   }
 
@@ -145,48 +181,52 @@ class _QuickDockState extends State<QuickDock> {
         final theme = Theme.of(context);
         return Semantics(
           label: 'Quick dock',
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(ShellRadius.l),
-            child: Material(
-              key: const ValueKey('quick-dock'),
-              color: theme.colorScheme.surfaceContainerHigh,
-              child: Listener(
-                onPointerDown: (_) => _resetAutoCollapse(),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onPanStart: _onDragStart,
-                  onPanUpdate: _onDragUpdate,
-                  onPanEnd: _onDragEnd,
-                  onPanCancel: _onDragEnd,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant.withValues(
-                          alpha: 0.5,
+          child: MouseRegion(
+            onEnter: _onHoverEnter,
+            onExit: _onHoverExit,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(ShellRadius.l),
+              child: Material(
+                key: const ValueKey('quick-dock'),
+                color: theme.colorScheme.surfaceContainerHigh,
+                child: Listener(
+                  onPointerDown: (_) => _resetAutoCollapse(),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onPanStart: _onDragStart,
+                    onPanUpdate: _onDragUpdate,
+                    onPanEnd: _onDragEnd,
+                    onPanCancel: _onDragEnd,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.5,
+                          ),
                         ),
                       ),
-                    ),
-                    child: model.dockCollapsed
-                        ? _collapsed(theme)
-                        : Column(
-                            children: [
-                              _header(theme),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    ShellSpace.xs,
-                                    0,
-                                    ShellSpace.xs,
-                                    ShellSpace.sm,
+                      child: model.dockCollapsed
+                          ? _collapsed(theme)
+                          : Column(
+                              children: [
+                                _header(theme),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      ShellSpace.xs,
+                                      0,
+                                      ShellSpace.xs,
+                                      ShellSpace.sm,
+                                    ),
+                                    child: _menu == null
+                                        ? _launcher(theme)
+                                        : _secondaryMenu(theme, _menu!),
                                   ),
-                                  child: _menu == null
-                                      ? _launcher(theme)
-                                      : _secondaryMenu(theme, _menu!),
                                 ),
-                              ),
-                              _footer(theme),
-                            ],
-                          ),
+                                _footer(theme),
+                              ],
+                            ),
+                    ),
                   ),
                 ),
               ),
@@ -379,20 +419,25 @@ class _QuickDockState extends State<QuickDock> {
                   : theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          PopupMenuButton<DockPlacement>(
+          PopupMenuButton<Object>(
             key: const ValueKey('dock-placement'),
-            tooltip: 'Where the dock sits',
+            tooltip: 'Dock placement and behaviour',
             padding: EdgeInsets.zero,
             icon: Icon(
               Icons.dashboard_customize_outlined,
               size: 16,
               color: theme.colorScheme.onSurfaceVariant,
             ),
-            onSelected: (placement) =>
-                unawaited(model.setDockPlacement(placement)),
+            onSelected: (choice) {
+              if (choice is DockPlacement) {
+                unawaited(model.setDockPlacement(choice));
+              } else if (choice is DockBehavior) {
+                unawaited(model.setDockBehavior(choice));
+              }
+            },
             itemBuilder: (context) => [
               for (final placement in DockPlacement.values)
-                PopupMenuItem(
+                PopupMenuItem<Object>(
                   key: ValueKey('dock-placement-${placement.wire}'),
                   value: placement,
                   child: Row(
@@ -405,6 +450,33 @@ class _QuickDockState extends State<QuickDock> {
                       const SizedBox(width: ShellSpace.sm),
                       Text(placement.label),
                       if (placement == model.dockPlacement) ...[
+                        const Spacer(),
+                        Icon(
+                          Icons.check,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              const PopupMenuDivider(),
+              for (final behavior in DockBehavior.values)
+                PopupMenuItem<Object>(
+                  key: ValueKey('dock-behavior-${behavior.wire}'),
+                  value: behavior,
+                  child: Row(
+                    children: [
+                      Icon(
+                        behavior == DockBehavior.autoCollapse
+                            ? Icons.timer_outlined
+                            : Icons.lock_open_outlined,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: ShellSpace.sm),
+                      Text(behavior.label),
+                      if (behavior == model.dockBehavior) ...[
                         const Spacer(),
                         Icon(
                           Icons.check,

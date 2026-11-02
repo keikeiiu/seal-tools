@@ -35,6 +35,18 @@ enum DockPlacement {
   };
 }
 
+/// How the dock behaves while it sits idle. The player can pick either; the choice is persisted with
+/// the rest of the dock preference.
+enum DockBehavior {
+  autoCollapse('auto_collapse', 'Auto-collapse'),
+  alwaysOpen('always_open', 'Keep open');
+
+  const DockBehavior(this.wire, this.label);
+
+  final String wire;
+  final String label;
+}
+
 /// A named, reusable Sell selection pinned as a quick action. It is per-run data (the cells the
 /// next Sell run sells), not a config block; the dock persists the name + cells as part of its own
 /// portable preference so the tile survives a restart.

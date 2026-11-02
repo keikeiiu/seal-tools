@@ -269,6 +269,26 @@ class _SetupTabState extends State<SetupTab>
                     ),
                 ],
               ),
+              const SizedBox(height: ShellSpace.sm),
+              const ShellProse(
+                'Idle behaviour: auto-collapse after eight seconds, or keep the full dock open '
+                'until you collapse it. Hovering the tiny tab expands it in either mode.',
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final behavior in DockBehavior.values)
+                    ChoiceChip(
+                      key: ValueKey('setup-dock-behavior-${behavior.wire}'),
+                      label: Text(behavior.label),
+                      selected: model.dockBehavior == behavior,
+                      onSelected: (_) =>
+                          unawaited(model.setDockBehavior(behavior)),
+                    ),
+                ],
+              ),
               const SizedBox(height: ShellSpace.md),
               OutlinedButton.icon(
                 key: const ValueKey('setup-open-dock'),

@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:seal_shell/app/dock_placement.dart';
 import 'package:seal_shell/ui/tabs/setup_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -309,4 +310,29 @@ void main() {
       expect(window['title'], 'DETECTED_TITLE');
     },
   );
+
+  testWidgets('Quick dock behaviour chips save the choice', (tester) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final keepOpen = find.byKey(
+      const ValueKey('setup-dock-behavior-always_open'),
+    );
+    await tester.ensureVisible(keepOpen);
+    await tester.pump();
+    await tester.tap(keepOpen);
+    await _flush(tester);
+
+    expect(harness.model.dockBehavior, DockBehavior.alwaysOpen);
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final dock =
+        ((sections['settings'] as Map<String, dynamic>)['ui']
+                as Map<String, dynamic>)['quick_dock']
+            as Map<String, dynamic>;
+    expect(dock['behavior'], 'always_open');
+  });
 }
