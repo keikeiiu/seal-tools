@@ -1955,13 +1955,13 @@ class ShellModel extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _windowSaveTimer?.cancel();
-    _windowMoveSubscription?.cancel();
+    unawaited(_windowMoveSubscription?.cancel());
     connection.removeListener(_onSubmodelChanged);
     tools.removeListener(_onSubmodelChanged);
     config.removeListener(_onSubmodelChanged);
     logs.removeListener(_onSubmodelChanged);
-    _eventSubscription?.cancel();
-    _logSubscription?.cancel();
+    unawaited(_eventSubscription?.cancel());
+    unawaited(_logSubscription?.cancel());
     _setupRequest.dispose();
     super.dispose();
   }

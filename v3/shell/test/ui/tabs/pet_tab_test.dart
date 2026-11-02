@@ -874,7 +874,13 @@ void main() {
       // The core's ONE config.changed is what updates the tick: the tab renders the mirror.
       final pet = Map<String, dynamic>.of(_machinePet());
       final slots = (pet['slots'] as List).cast<Map<String, dynamic>>();
-      slots[1] = <String, Object>{...slots[1], 'boarding_running': false};
+      pet['slots'] = <Map<String, dynamic>>[
+        for (var index = 0; index < slots.length; index++)
+          if (index == 1)
+            <String, dynamic>{...slots[index], 'boarding_running': false}
+          else
+            slots[index],
+      ];
       harness.emitConfigChanged(rev: 9, block: 'pet', values: pet);
       await _flush(tester);
       expect(_tickValue(tester, 2), isFalse);

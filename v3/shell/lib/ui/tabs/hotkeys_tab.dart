@@ -17,6 +17,8 @@
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
@@ -67,7 +69,7 @@ class _HotkeysTabState extends State<HotkeysTab>
     super.initState();
     _seenRev = model.config.rev;
     model.config.addListener(_onConfigChanged);
-    _loadNames();
+    unawaited(_loadNames());
   }
 
   @override
@@ -88,7 +90,7 @@ class _HotkeysTabState extends State<HotkeysTab>
     }
     _seenRev = rev;
     if (!draft.isDirty) {
-      _loadNames();
+      unawaited(_loadNames());
     }
   }
 
@@ -200,7 +202,7 @@ class _HotkeysTabState extends State<HotkeysTab>
     super.cancel();
     _edited.clear();
     _fieldErrors.clear();
-    _loadNames();
+    unawaited(_loadNames());
   }
 
   @override

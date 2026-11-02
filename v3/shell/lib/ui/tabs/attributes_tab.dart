@@ -13,6 +13,8 @@
 /// [PLAN-V3-UI-UX.md]: ../../../../docs/plans/PLAN-V3-UI-UX.md
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
@@ -49,7 +51,7 @@ class _AttributesTabState extends State<AttributesTab>
     super.initState();
     widget.model.config.addListener(_onConfigChanged);
     _seenRev = widget.model.config.rev;
-    _refresh();
+    unawaited(_refresh());
   }
 
   @override
@@ -67,7 +69,7 @@ class _AttributesTabState extends State<AttributesTab>
       return;
     }
     _seenRev = rev;
-    _refresh();
+    unawaited(_refresh());
   }
 
   Future<void> _refresh() async {

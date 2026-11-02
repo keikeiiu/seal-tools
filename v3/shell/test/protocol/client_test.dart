@@ -262,7 +262,7 @@ void main() {
       expect((event as StateEvent).snapshot.tool, ToolId.pet);
 
       core.transport.emitJson(
-        okResponse(core.idAt(1), {'rev': 9, 'config': {}}),
+        okResponse(core.idAt(1), {'rev': 9, 'config': <String, dynamic>{}}),
       );
       await expectLater(pending, completes);
 
@@ -390,7 +390,9 @@ void main() {
               }),
             );
           case 'config.reload':
-            core.transport.emitJson(okResponse(id, {'rev': 9, 'config': {}}));
+            core.transport.emitJson(
+              okResponse(id, {'rev': 9, 'config': <String, dynamic>{}}),
+            );
           case 'tool.start':
             if (failStart) {
               core.transport.emitJson(
@@ -413,7 +415,11 @@ void main() {
         }
       };
 
-      expect((await core.client.configValidate({'quest': {}})).isClean, isTrue);
+      expect(
+        (await core.client.configValidate({'quest': <String, dynamic>{}}))
+            .isClean,
+        isTrue,
+      );
 
       final applied = await core.client.configApply(
         rev: 7,

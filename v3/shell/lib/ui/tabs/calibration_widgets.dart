@@ -6,9 +6,9 @@
 library;
 
 import 'dart:convert';
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';

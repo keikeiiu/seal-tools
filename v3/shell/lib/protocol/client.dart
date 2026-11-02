@@ -486,13 +486,13 @@ class ProtocolClient {
     }
     _closed = true;
     _failPending(reason);
-    _linesSubscription.cancel();
-    _diagnosticsSubscription.cancel();
+    unawaited(_linesSubscription.cancel());
+    unawaited(_diagnosticsSubscription.cancel());
     if (!_events.isClosed) {
-      _events.close();
+      unawaited(_events.close());
     }
     if (!_logs.isClosed) {
-      _logs.close();
+      unawaited(_logs.close());
     }
   }
 

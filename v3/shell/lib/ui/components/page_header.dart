@@ -9,8 +9,8 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'shell_prose.dart';
 import '../theme.dart';
+import 'shell_prose.dart';
 
 class PageHeader extends StatelessWidget {
   const PageHeader({

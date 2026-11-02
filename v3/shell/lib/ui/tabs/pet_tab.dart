@@ -42,8 +42,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
-import '../../app/pet_species.dart';
 import '../../app/pet_preflight.dart';
+import '../../app/pet_species.dart';
 import '../../protocol/protocol.dart';
 import '../components/empty_state.dart';
 import '../components/info_row.dart';

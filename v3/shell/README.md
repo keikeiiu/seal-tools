@@ -20,13 +20,25 @@ irrelevant/warnings for this Windows-only project.
 ## Gates (the same three, every change)
 
 ```powershell
-$env:FLUTTER_SUPPRESS_ANALYTICS = "true"
-C:\src\flutter\bin\flutter.bat analyze
-C:\src\flutter\bin\flutter.bat test
-C:\src\flutter\bin\dart.bat format --output=none --set-exit-if-changed lib test
+# From v3/shell. Windows PowerShell needs the policy bypass; PowerShell 7 users can run:
+#   pwsh -File tool/check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/check.ps1
 ```
 
-All three must be clean, matching the Rust side's fmt/clippy/test rule.
+The script runs, in order: `dart format --set-exit-if-changed lib test`,
+`flutter analyze --fatal-infos`, `flutter test`, and `flutter build windows --debug`. All must be clean,
+matching the Rust side's fmt/clippy/test rule. The analyzer is stricter than stock Flutter: see
+[`analysis_options.yaml`](analysis_options.yaml) for the strict cast/inference/raw-type modes and the
+async-hygiene rules (`discarded_futures` makes fire-and-forget calls spell `unawaited(...)`).
+
+For a narrower loop while editing:
+
+```powershell
+$dart = 'C:\src\flutter\bin\dart.bat'
+& $dart format lib test
+C:\src\flutter\bin\flutter.bat analyze --fatal-infos
+C:\src\flutter\bin\flutter.bat test
+```
 
 ## Layout
 

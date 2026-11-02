@@ -21,6 +21,8 @@
 /// overflowing a fixed Row.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app/app.dart';
@@ -334,7 +336,7 @@ class _QuestCardExtrasState extends State<QuestCardExtras> {
           ? null
           : (value) {
               if (value != null) {
-                _save('active', value);
+                unawaited(_save('active', value));
               }
             },
     );
@@ -359,7 +361,7 @@ class _QuestCardExtrasState extends State<QuestCardExtras> {
           ? null
           : (value) {
               if (value != null) {
-                _save('active_sequence', value);
+                unawaited(_save('active_sequence', value));
               }
             },
     );

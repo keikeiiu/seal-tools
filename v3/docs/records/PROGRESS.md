@@ -19,6 +19,30 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-02 (33) — the shell lint/quality gate gets sharper
+
+Asked what could be done for lint/code quality on the Flutter frontend. The answer was to make the
+analyzer stricter where it is cheap and to make intentional fire-and-forget calls explicit — not to add
+a third-party lint stack.
+
+- `analysis_options.yaml`: `strict-casts`, `strict-inference`, `strict-raw-types`, plus
+  `directives_ordering`, `prefer_final_locals`, `prefer_single_quotes`,
+  `always_declare_return_types`, `unawaited_futures`, `discarded_futures`,
+  `use_build_context_synchronously`, `avoid_print`, and
+  `no_leading_underscores_for_local_identifiers`. Deliberately not enabled:
+  `sort_constructors_first` / `avoid_redundant_argument_values` (style churn across the model classes)
+  and `avoid_dynamic_calls` (the JSON boundary is dynamic by design and narrowed by the typed
+  decoders).
+- `tool/check.ps1`: one command runs `dart format --set-exit-if-changed`, `flutter analyze
+  --fatal-infos`, `flutter test` and `flutter build windows --debug`; the shell README documents the
+  Windows PowerShell fallback and the shorter inner loop.
+- Fixed the findings the stricter gate exposed: three import-order blocks, three strict empty-map
+  inferences in `client_test.dart`, one strict-cast map assignment in the Pet test fixture, and 15
+  discarded futures made explicit with `unawaited(...)` (dispose cancellations, `initState`
+  refresh/load calls, and fire-and-forget card saves).
+- No runtime behaviour change. `flutter analyze --fatal-infos` clean, shell **333/333** tests, format
+  clean, Windows debug build OK.
+
 ## 2026-11-02 (32) — the quick dock: three dock form factors in one launcher
 
 The player asked for a minimal between-runs mode and then for **all three docks from the study** to be

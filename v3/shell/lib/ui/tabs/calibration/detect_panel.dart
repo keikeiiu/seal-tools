@@ -5,6 +5,8 @@
 /// rendered verbatim (G09), including the four states: game closed, nothing stored, matches, differs.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../app/core_actions.dart';
@@ -30,7 +32,7 @@ class _DetectPanelState extends State<DetectPanel> {
   @override
   void initState() {
     super.initState();
-    _run();
+    unawaited(_run());
   }
 
   Future<void> _run() async {
