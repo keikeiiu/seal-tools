@@ -186,6 +186,121 @@ void main() {
     },
   );
 
+  testWidgets('the dock auto-collapses after eight idle seconds', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+    expect(harness.model.dockCollapsed, isFalse);
+
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
+    expect(find.byKey(const ValueKey('dock-collapsed')), findsOneWidget);
+  });
+
+  testWidgets('last-used Buy options survive closing the menu', (tester) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-buy')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-buy-plus')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-buy-plus')));
+    await tester.pump();
+    expect(harness.model.dockBuyCount, 22);
+
+    await tester.tap(find.byKey(const ValueKey('dock-back')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-menu-buy')));
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('dock-buy-count'))).data,
+      '22',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the Pet setup row asks the full shell for its tab', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-long-pet')));
+    await tester.pump();
+    expect(harness.model.setupRequest.value, ToolId.pet);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a pinned Sell selection becomes a one-click tile', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-menu-sell')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-sell-row-0')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('dock-pin-name')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('dock-pin-name')),
+      'Junk row',
+    );
+    await tester.ensureVisible(find.byKey(const ValueKey('dock-pin')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-pin')));
+    await tester.pump();
+    expect(harness.model.dockPins.single.name, 'Junk row');
+    expect(harness.model.dockTileIds, contains('pin:Junk row'));
+
+    await tester.tap(find.byKey(const ValueKey('dock-back')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-start-pin:Junk row')));
+    await tester.pump();
+    expect(harness.lastSentWithCmd('tool.start')!['args'], {
+      'tool': 'sell',
+      'slots': [0, 1, 2, 3, 4, 5, 6, 7],
+    });
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('edit mode removes, reorders and re-adds quick actions', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+
+    await tester.tap(find.byKey(const ValueKey('dock-edit')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('dock-edit-row-spammer')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('dock-edit-remove-spammer')));
+    await tester.pump();
+    expect(harness.model.dockTileIds, isNot(contains('spammer')));
+    expect(find.byKey(const ValueKey('dock-tile-spammer')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('dock-add-spammer')));
+    await tester.pump();
+    expect(harness.model.dockTileIds, contains('spammer'));
+
+    final before = harness.model.dockTileIds.indexOf('buy');
+    await tester.tap(find.byKey(const ValueKey('dock-edit-down-buy')));
+    await tester.pump();
+    expect(harness.model.dockTileIds.indexOf('buy'), before + 1);
+
+    await tester.tap(find.byKey(const ValueKey('dock-edit')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('dock-tile-buy')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('the Buy menu sends per-run preset and count', (tester) async {
     final harness = await _pumpDock(tester);
 

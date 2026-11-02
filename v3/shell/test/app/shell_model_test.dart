@@ -998,6 +998,52 @@ void main() {
       expect(host.appliedRects.last, _rect(1684, 980, 220, 44));
     });
 
+    test('pinned Sell actions and tile order persist and restore', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.answerConfigCommands();
+
+      expect(await harness.model.addDockPin('Junk row', [0, 1, 2, 3]), isTrue);
+      expect(
+        await harness.model.addDockPin('Junk row', [9]),
+        isFalse,
+        reason: 'names are unique',
+      );
+      await harness.model.moveDockTile('pin:Junk row', -1);
+      await harness.model.removeDockTile('buy');
+      expect(harness.model.dockTileIds, contains('pin:Junk row'));
+      expect(harness.model.dockTileIds, isNot(contains('buy')));
+      expect(harness.model.dockPins.single.slots, [0, 1, 2, 3]);
+
+      final saved =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final settings =
+          (saved['sections'] as Map<String, dynamic>)['settings']
+              as Map<String, dynamic>;
+      final dock =
+          ((settings['ui'] as Map<String, dynamic>)['quick_dock']
+              as Map<String, dynamic>);
+      expect(dock['tiles'], harness.model.dockTileIds);
+      expect((dock['pins'] as List).single['name'], 'Junk row');
+
+      final restored = AppHarness(host: FakeHost());
+      addTearDown(restored.dispose);
+      await restored.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {'quick_dock': dock},
+          },
+        },
+      );
+      expect(restored.model.dockTileIds, harness.model.dockTileIds);
+      expect(restored.model.dockPins.single.name, 'Junk row');
+      expect(restored.model.dockPins.single.slots, [0, 1, 2, 3]);
+    });
+
     test('the dock collapses to each placement\'s resting form', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);

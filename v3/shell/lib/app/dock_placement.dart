@@ -34,3 +34,43 @@ enum DockPlacement {
     DockPlacement.topCentre => (200, 36),
   };
 }
+
+/// A named, reusable Sell selection pinned as a quick action. It is per-run data (the cells the
+/// next Sell run sells), not a config block; the dock persists the name + cells as part of its own
+/// portable preference so the tile survives a restart.
+class DockPin {
+  const DockPin({required this.name, required this.slots});
+
+  final String name;
+
+  /// Bag cells, 0-based, ascending and unique.
+  final List<int> slots;
+
+  String get tileId => 'pin:$name';
+
+  Map<String, dynamic> toJson() => {'name': name, 'slots': slots};
+
+  static DockPin? fromJson(Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+    final name = value['name'];
+    final rawSlots = value['slots'];
+    if (name is! String || name.trim().isEmpty || rawSlots is! List) {
+      return null;
+    }
+    final slots = <int>{};
+    for (final raw in rawSlots) {
+      if (raw is num) {
+        final slot = raw.round();
+        if (slot >= 0 && slot < 64) {
+          slots.add(slot);
+        }
+      }
+    }
+    if (slots.isEmpty) {
+      return null;
+    }
+    return DockPin(name: name.trim(), slots: slots.toList()..sort());
+  }
+}

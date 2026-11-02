@@ -66,6 +66,32 @@ class _ShellPageState extends State<ShellPage> {
   /// Destinations built at least once; the rest stay placeholders so opening a tab is lazy.
   final Set<int> _visited = {0};
 
+  @override
+  void initState() {
+    super.initState();
+    widget.model.setupRequest.addListener(_onSetupRequest);
+  }
+
+  @override
+  void dispose() {
+    widget.model.setupRequest.removeListener(_onSetupRequest);
+    super.dispose();
+  }
+
+  void _onSetupRequest() {
+    final tool = widget.model.setupRequest.value;
+    if (tool == null) {
+      return;
+    }
+    widget.model.setupRequest.value = null;
+    final index = shellDestinations.indexWhere(
+      (destination) => destination.key == tool.wire,
+    );
+    if (index >= 0) {
+      _select(index);
+    }
+  }
+
   void _select(int index) {
     if (index == _selected) {
       return;

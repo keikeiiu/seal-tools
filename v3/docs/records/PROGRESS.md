@@ -61,15 +61,23 @@ the existing `config.apply` rule.
   `.scratch/ui-audit/dock-real-*.png`.
 - **Collapsed resting form** (2026-11-02 follow-up): the header's collapse action shrinks the dock to a
   46 × 150 rail tab, a 220 × 44 bottom pill or a 200 × 36 top island; it keeps three tool icons and the
-  running dot glanceable, and clicking it/unfold expands. Manual only (no auto-collapse timer).
-- **Deferred**: editing/reassigning the seven tiles, pinned Sell quick actions, auto-collapse and
-  per-session Buy/Sell defaults, plus persisting the dragged offset inside a placement. Those remain
-  the design study's next increments.
+  running dot glanceable, and clicking it/unfold expands. It also auto-collapses after eight idle
+  seconds (cancelled by pointer input, an open menu or edit mode).
+- **Editable tiles + pinned Sell** (2026-11-02 follow-up): the header's Edit action opens an in-window
+  editor with up/down reorder, remove and "Add back" for every quick tool; the Sell menu's name field +
+  Pin turns the current slot selection into a one-click `Sell · <name>` tile. Tiles and pins persist in
+  `settings.ui.quick_dock {tiles, pins}` (core shape + config test extended), so the layout survives a
+  restart. Last-used Buy preset/count is remembered for the dock session, and the Pet setup row asks
+  the full shell to select the Pet tab when it returns.
+- **Remaining**: only the dragged offset inside a placement is session-only (the preset, collapsed
+  state, order and pins persist); live-game Start/Stop verification is still manual.
 
-Gates: shell `flutter analyze` No issues, `flutter test` **322/322** (new `quick_dock_test.dart` covers
-tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, top-bar entry, full-window
-return and run-bar hand-back; model tests cover geometry, chrome and both transitions),
-`dart format` clean, Windows debug build OK.
+Gates: shell `flutter analyze` No issues, `flutter test` **328/328** (new `quick_dock_test.dart` covers
+tiles, Buy/Sell menus, seven quick tiles, five placements, collapse/expand, auto-collapse, edit
+remove/reorder/add-back, pinned Sell creation/start, top-bar entry, full-window return and run-bar
+hand-back; model tests cover geometry, chrome, preferences/layout restore and both transitions),
+`dart format` clean, Windows debug build OK; core `quick_dock_preference_is_accepted_written_and_preserved`
+green, `cargo fmt --check` clean, clippy clean for seal-config.
 Truth: [UI.md §Quick dock](../spec/UI.md#quick-dock-landed-2026-11-02).
 
 ## 2026-11-01 (31) — the navigation rail collapses (top-bar button + Ctrl+B)

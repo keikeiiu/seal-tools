@@ -645,6 +645,8 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     let sections = json!({"settings": {"ui": {"quick_dock": {
         "placement": "bottom_right",
         "collapsed": true,
+        "tiles": ["spammer", "buy", "pin:Junk row"],
+        "pins": [{"name": "Junk row", "slots": [0, 1, 2, 3]}],
     }}}});
     let validated = session.result("config.validate", json!({"sections": sections}));
     assert_eq!(validated["errors"], json!([]));
@@ -658,6 +660,14 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["collapsed"],
         true
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["quick_dock"]["tiles"],
+        json!(["spammer", "buy", "pin:Junk row"])
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["quick_dock"]["pins"][0]["slots"],
+        json!([0, 1, 2, 3])
     );
     let event = session.event();
     assert_eq!(event["event"], "config.changed");
@@ -673,6 +683,27 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         "the field is written into the portable settings overlay"
     );
     assert_eq!(local["settings"]["ui"]["quick_dock"]["collapsed"], true);
+    assert_eq!(
+        local["settings"]["ui"]["quick_dock"]["tiles"],
+        json!(["spammer", "buy", "pin:Junk row"])
+    );
+
+    // Another portable ui save (the always-on-top pin) must not drop the dock layout.
+    let next_rev = applied["rev"].as_u64().expect("apply carries the rev");
+    session.result(
+        "config.apply",
+        json!({"rev": next_rev, "sections": {"settings": {"ui": {"always_on_top": true}}}}),
+    );
+    session.event();
+    let local_after = yaml_file(&root, "config/local.yaml");
+    assert_eq!(
+        local_after["settings"]["ui"]["quick_dock"]["tiles"],
+        json!(["spammer", "buy", "pin:Junk row"])
+    );
+    assert_eq!(
+        local_after["settings"]["ui"]["quick_dock"]["pins"][0]["name"],
+        "Junk row"
+    );
 
     let reloaded = session.result("config.reload", json!({}));
     assert_eq!(

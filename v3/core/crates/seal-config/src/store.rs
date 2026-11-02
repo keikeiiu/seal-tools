@@ -1056,6 +1056,27 @@ fn ensure_portable_ui(base: &mut Value) {
             Value::String("right_rail".to_owned()),
         );
         shape.insert("collapsed".to_owned(), Value::Bool(false));
+        // Lists are a single leaf to the projection. The tiles default mirrors the shell's shipped
+        // quick-action list so a config that never customised the dock still exposes all of them;
+        // an explicit empty list is the player's own choice and is preserved as written.
+        shape.insert(
+            "tiles".to_owned(),
+            Value::Array(
+                [
+                    "spammer",
+                    "buy",
+                    "sell",
+                    "quest",
+                    "gem",
+                    "tuner",
+                    "holdspace",
+                ]
+                .into_iter()
+                .map(|id| Value::String(id.to_owned()))
+                .collect(),
+            ),
+        );
+        shape.insert("pins".to_owned(), Value::Array(Vec::new()));
         Value::Object(shape)
     });
     // A hand-edited/malformed scalar here is not repaired: the projection simply has no destination

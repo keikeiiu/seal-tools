@@ -199,6 +199,27 @@ class ShellModel extends ChangeNotifier {
   WindowRect? _dockWorkArea;
   WindowRect? _dockRectValue;
 
+  // Last-used Buy choice for the dock's next run (per-run args; session state, not config).
+  String? _dockBuyPreset;
+  int? _dockBuyCount;
+
+  /// A setup-row request from the dock: the full shell selects the matching tab when it returns.
+  final ValueNotifier<ToolId?> _setupRequest = ValueNotifier<ToolId?>(null);
+
+  /// The dock's editable quick-action list: tool ids (`spammer`, `buy`, …) and pinned Sell ids
+  /// (`pin:<name>`). Persisted with the placement preference.
+  static const List<String> _defaultDockTiles = [
+    'spammer',
+    'buy',
+    'sell',
+    'quest',
+    'gem',
+    'tuner',
+    'holdspace',
+  ];
+  List<String> _dockTiles = [..._defaultDockTiles];
+  List<DockPin> _dockPins = const [];
+
   /// The placement the shell last applied or saved. A move event that reports the SAME rect is not
   /// news — the restore's own `SetWindowPos` reports one too — so it never schedules a write.
   WindowRect? get windowPlacement => _lastSavedWindow;
@@ -1406,12 +1427,129 @@ class ShellModel extends ChangeNotifier {
   /// True while the compact window is the idle launcher rather than the run bar.
   bool get dockMode => _dockActive;
 
-  /// The player's chosen form factor / side. Session-only for now: persisting it needs a config or
-  /// machine field owned by the core (documented in UI.md as the follow-up).
+  /// The player's chosen form factor / side (persisted with the layout below).
   DockPlacement get dockPlacement => _dockPlacement;
 
   /// True while the dock is the small resting form (edge tab / pill / island).
   bool get dockCollapsed => _dockCollapsed;
+
+  /// Last-used Buy preset/count, kept for the dock session so reopening the dock after a run does
+  /// not silently fall back to the configured defaults.
+  String? get dockBuyPreset => _dockBuyPreset;
+  int? get dockBuyCount => _dockBuyCount;
+
+  void rememberDockBuyChoice({String? preset, int? count}) {
+    _dockBuyPreset = preset;
+    _dockBuyCount = count;
+  }
+
+  /// The dock's setup row asks the full shell to open this tool's tab.
+  ValueNotifier<ToolId?> get setupRequest => _setupRequest;
+
+  void requestSetup(ToolId tool) {
+    _setupRequest.value = tool;
+  }
+
+  /// The dock's ordered quick-action ids (tool wires and `pin:<name>` entries).
+  List<String> get dockTileIds => List.unmodifiable(_dockTiles);
+
+  /// The pinned Sell selections available to the dock.
+  List<DockPin> get dockPins => List.unmodifiable(_dockPins);
+
+  /// Add/keep a pinned Sell selection as a quick action. Returns false for an empty/duplicate name.
+  Future<bool> addDockPin(String name, List<int> slots) async {
+    final clean = name.trim();
+    if (clean.isEmpty || slots.isEmpty) {
+      return false;
+    }
+    if (_dockPins.any((pin) => pin.name.toLowerCase() == clean.toLowerCase())) {
+      return false;
+    }
+    final pin = DockPin(name: clean, slots: List<int>.of(slots)..sort());
+    _dockPins = [..._dockPins, pin];
+    _dockTiles = [..._dockTiles, pin.tileId];
+    notifyListeners();
+    await _saveDockPreference();
+    return true;
+  }
+
+  /// Remove a tool or pinned action from the dock; removing a pin deletes the pin itself.
+  Future<void> removeDockTile(String id) async {
+    if (!_dockTiles.contains(id)) {
+      return;
+    }
+    _dockTiles = [..._dockTiles]..remove(id);
+    if (id.startsWith('pin:')) {
+      final name = id.substring(4);
+      _dockPins = [
+        for (final pin in _dockPins)
+          if (pin.name != name) pin,
+      ];
+    }
+    notifyListeners();
+    await _saveDockPreference();
+  }
+
+  /// Move a quick action one slot up (-1) or down (+1).
+  Future<void> moveDockTile(String id, int delta) async {
+    final from = _dockTiles.indexOf(id);
+    if (from < 0) {
+      return;
+    }
+    final to = from + delta;
+    if (to < 0 || to >= _dockTiles.length) {
+      return;
+    }
+    final next = [..._dockTiles];
+    final item = next.removeAt(from);
+    next.insert(to, item);
+    _dockTiles = next;
+    notifyListeners();
+    await _saveDockPreference();
+  }
+
+  /// Re-add a tool that was removed from the dock (appended at the end).
+  Future<void> addDockTool(ToolId tool) async {
+    if (tool == ToolId.pet || _dockTiles.contains(tool.wire)) {
+      return;
+    }
+    _dockTiles = [..._dockTiles, tool.wire];
+    notifyListeners();
+    await _saveDockPreference();
+  }
+
+  bool _isDockTool(String id) =>
+      ToolId.values.any((tool) => tool != ToolId.pet && tool.wire == id);
+
+  void _restoreDockLayout(Map<String, dynamic> dock) {
+    final pins = <DockPin>[];
+    final names = <String>{};
+    for (final raw in asJsonList(dock['pins'])) {
+      final pin = DockPin.fromJson(raw);
+      if (pin != null && names.add(pin.name)) {
+        pins.add(pin);
+      }
+    }
+    _dockPins = pins;
+    final rawTiles = dock['tiles'];
+    if (rawTiles is! List) {
+      _dockTiles = [..._defaultDockTiles];
+      return;
+    }
+    final tiles = <String>[];
+    for (final raw in rawTiles) {
+      final id = asString(raw);
+      if (id == null || tiles.contains(id)) {
+        continue;
+      }
+      if (_isDockTool(id)) {
+        tiles.add(id);
+      } else if (id.startsWith('pin:') && pins.any((pin) => pin.tileId == id)) {
+        tiles.add(id);
+      }
+    }
+    _dockTiles = tiles;
+  }
 
   /// Reads the portable `settings.ui.quick_dock` preference; absent/invalid values keep the defaults
   /// (right rail, expanded). The merged top-level `ui` is read too, for cores that flatten the overlay.
@@ -1427,9 +1565,10 @@ class ShellModel extends ChangeNotifier {
       orElse: () => DockPlacement.rightRail,
     );
     _dockCollapsed = asBool(dock['collapsed']) ?? false;
+    _restoreDockLayout(dock);
   }
 
-  /// Persists the placement/collapsed choice through the normal validate → apply path. A refusal is
+  /// Persists the placement/collapsed/layout through the normal validate → apply path. A refusal is
   /// logged but does not fight the player's choice in the running window; the next connect re-reads
   /// the core's mirror.
   Future<void> _saveDockPreference() async {
@@ -1442,6 +1581,8 @@ class ShellModel extends ChangeNotifier {
           'quick_dock': {
             'placement': _dockPlacement.wire,
             'collapsed': _dockCollapsed,
+            'tiles': _dockTiles,
+            'pins': [for (final pin in _dockPins) pin.toJson()],
           },
         },
       },
@@ -1778,6 +1919,7 @@ class ShellModel extends ChangeNotifier {
     logs.removeListener(_onSubmodelChanged);
     _eventSubscription?.cancel();
     _logSubscription?.cancel();
+    _setupRequest.dispose();
     super.dispose();
   }
 }

@@ -127,29 +127,37 @@ the full shell restores its saved placement and pin.
 - **Collapsed resting form** — the header's `dock-collapse` action shrinks the dock to its form-factor
   tab: a 46 × 150 vertical rail tab, a 220 × 44 bottom pill or a 200 × 36 top island. It keeps three
   tool icons and a running dot glanceable; clicking the tab or its `dock-expand` button returns to the
-  full launcher. The choice is manual only — there is no auto-collapse timer in this build.
+  full launcher. It also auto-collapses after **eight idle seconds** (no pointer input, no open menu,
+  not in edit mode); any interaction resets the timer.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
 - **Five placements, same content** — `DockPlacement` gives **right rail**, **left rail**, **bottom
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
   The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
-  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. The **placement and
-  collapsed/expanded state are persisted** in the portable `settings.ui.quick_dock` block
-  (`{placement, collapsed}`) through the normal validate → apply path; the core's portable projection
-  carries the field (seal-config `ensure_portable_ui`). A dragged offset inside a placement is
-  session-only — the preset is what survives a restart.
-- **Content** — seven quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner,
-  Hold Space), then one setup-only row (Pet Feeder) that opens the full window; footer "Open full
-  window". Each quick tile has a **dedicated Start button** and a **separate ⋮ options** button — the
-  row itself is not a Start target, and the chevron that used to mean options was replaced by ⋮ because
-  it read as navigation. Idle rows show no phase chip; a running/starting row shows its chip and the
-  button becomes Stop. Hold Space uses that same Start/Stop button and has no options menu or extra
-  "toggle" label.
+  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. **Placement, collapsed
+  state, tile order and pinned Sell selections are persisted** in the portable
+  `settings.ui.quick_dock` block (`{placement, collapsed, tiles, pins}`) through the normal
+  validate → apply path; the core's portable projection carries the fields (seal-config
+  `ensure_portable_ui`). A dragged offset inside a placement is session-only — the preset is what
+  survives a restart.
+- **Content** — the quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner,
+  Hold Space by default), then one setup-only row (Pet Feeder) that opens the full window **on its
+  Pet tab**; footer "Open full window". Each quick tile has a **dedicated Start button** and, where it
+  has options, a **separate ⋮ options** button — the row itself is not a Start target. The header's
+  **Edit** action opens an in-window editor: up/down reorder, Remove, and "Add back" for removed
+  tools; pinned Sell tiles appear there too. The dock remembers the order (empty is allowed). Idle rows
+  show no phase chip; a running/starting row shows its chip and the button becomes Stop. Hold Space
+  uses that same Start/Stop button and has no options menu or extra "toggle" label.
+- **Pinned Sell actions** — in the Sell menu a name field + **Pin** turns the current per-run bag
+  selection into a named tile (`Sell · <name>`); tapping the tile starts Sell with that exact `slots`
+  list. Pins are saved in the dock preference, load into the current selection from the menu chips, and
+  are removed through Edit. Names must be non-empty and unique.
 - **Secondary menus** — one at a time, Back closes; Start is the single filled action pinned in the
   footer:
-  - **Buy** — preset chips + count, sent as the existing per-run `tool.start {preset,count}`; nothing
-    saved.
+  - **Buy** — preset chips + count, sent as the existing per-run `tool.start {preset,count}`; the
+    last-used preset/count is remembered for the dock session (not config), so a re-entry after a run
+    keeps it.
   - **Sell** — an 8×8 bag grid with the full screen's **per-line shortcuts**: every row has a
     `row N` button that fills all 8 cells when any are off and clears them when all are on, beside
     All/None and the live count. Sent as per-run `tool.start {slots}`.
@@ -160,8 +168,8 @@ the full shell restores its saved placement and pin.
 - **Run transition** — a foreground tool's first non-idle `state` turns the same compact window into
   the run bar (with the same full-window restore target). A finished/error bar offers the
   `mini-dock` action back to the launcher in addition to "Full window".
-- **Not built in this increment** — editing/reassigning the seven tiles, pinned Sell selections,
-  per-session Buy/Sell defaults across dock re-entries, and auto-collapse.
+- **Verification note** — every behaviour above is covered by widget/model tests and the core config
+  test; the live game path (real Start/Stop clicks against the game) is still a manual check.
   Those are the next increments from the design study
   (`.scratch/ui-audit/ui-demo-quickdock.html`).
 
@@ -335,7 +343,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze` No issues; `flutter test` 322/322; `dart format` clean. Every
+Gates for this build: `flutter analyze` No issues; `flutter test` 328/328; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

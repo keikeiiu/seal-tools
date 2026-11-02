@@ -40,12 +40,72 @@ class _QuickDockState extends State<QuickDock> {
   /// The open secondary menu, if any. One at a time, exactly like the design.
   ToolId? _menu;
 
+  /// True while the quick-action list is being edited (remove/reorder/add, pins included).
+  bool _editing = false;
+
   bool _savingPreset = false;
   String? _presetError;
+  String? _pinError;
+  late final TextEditingController _pinName;
 
-  /// Last-used Buy options for this dock session (per-run args; nothing is saved).
-  String? _buyPreset;
-  int? _buyCount;
+  /// Auto-collapse the launcher after this much idle time (design study: 8 s). Any pointer
+  /// interaction, an open menu or the collapsed state cancels it.
+  static const _autoCollapseAfter = Duration(seconds: 8);
+  Timer? _autoCollapse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pinName = TextEditingController();
+    widget.model.addListener(_onDockModelChanged);
+    _armAutoCollapse();
+  }
+
+  @override
+  void dispose() {
+    widget.model.removeListener(_onDockModelChanged);
+    _autoCollapse?.cancel();
+    _pinName.dispose();
+    super.dispose();
+  }
+
+  void _onDockModelChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (widget.model.dockCollapsed || _menu != null || _editing) {
+      _cancelAutoCollapse();
+    } else {
+      _armAutoCollapse();
+    }
+  }
+
+  void _cancelAutoCollapse() {
+    _autoCollapse?.cancel();
+    _autoCollapse = null;
+  }
+
+  void _armAutoCollapse() {
+    if (_autoCollapse != null ||
+        !widget.model.dockMode ||
+        widget.model.dockCollapsed ||
+        _menu != null ||
+        _editing) {
+      return;
+    }
+    _autoCollapse = Timer(_autoCollapseAfter, () {
+      _autoCollapse = null;
+      if (!mounted || _menu != null || _editing || widget.model.dockCollapsed) {
+        return;
+      }
+      unawaited(widget.model.setDockCollapsed(true));
+    });
+  }
+
+  void _resetAutoCollapse() {
+    _cancelAutoCollapse();
+    _armAutoCollapse();
+  }
 
   WindowRect? _dragOrigin;
   Offset _dragDelta = Offset.zero;
@@ -68,41 +128,44 @@ class _QuickDockState extends State<QuickDock> {
             child: Material(
               key: const ValueKey('quick-dock'),
               color: theme.colorScheme.surfaceContainerHigh,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onPanStart: _onDragStart,
-                onPanUpdate: _onDragUpdate,
-                onPanEnd: _onDragEnd,
-                onPanCancel: _onDragEnd,
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant.withValues(
-                        alpha: 0.5,
+              child: Listener(
+                onPointerDown: (_) => _resetAutoCollapse(),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onPanStart: _onDragStart,
+                  onPanUpdate: _onDragUpdate,
+                  onPanEnd: _onDragEnd,
+                  onPanCancel: _onDragEnd,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                     ),
-                  ),
-                  child: model.dockCollapsed
-                      ? _collapsed(theme)
-                      : Column(
-                          children: [
-                            _header(theme),
-                            Expanded(
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.fromLTRB(
-                                  ShellSpace.sm,
-                                  0,
-                                  ShellSpace.sm,
-                                  ShellSpace.sm,
+                    child: model.dockCollapsed
+                        ? _collapsed(theme)
+                        : Column(
+                            children: [
+                              _header(theme),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    ShellSpace.sm,
+                                    0,
+                                    ShellSpace.sm,
+                                    ShellSpace.sm,
+                                  ),
+                                  child: _menu == null
+                                      ? _launcher(theme)
+                                      : _secondaryMenu(theme, _menu!),
                                 ),
-                                child: _menu == null
-                                    ? _launcher(theme)
-                                    : _secondaryMenu(theme, _menu!),
                               ),
-                            ),
-                            _footer(theme),
-                          ],
-                        ),
+                              _footer(theme),
+                            ],
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -214,26 +277,30 @@ class _QuickDockState extends State<QuickDock> {
 
   // ── chrome ────────────────────────────────────────────────────────────────────────────────────
 
+  void _toggleEditing() {
+    setState(() {
+      _editing = !_editing;
+      _menu = null;
+      _presetError = null;
+    });
+    if (_editing) {
+      _cancelAutoCollapse();
+    } else {
+      _resetAutoCollapse();
+    }
+  }
+
   Widget _header(ThemeData theme) {
     final running = _runningCount();
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        ShellSpace.sm,
-        ShellSpace.sm,
         ShellSpace.xs,
+        ShellSpace.sm,
+        ShellSpace.xxs,
         ShellSpace.xs,
       ),
       child: Row(
         children: [
-          Tooltip(
-            message: 'Drag to move',
-            child: Icon(
-              Icons.drag_indicator,
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(width: ShellSpace.xs),
           if (_menu != null)
             IconButton(
               key: const ValueKey('dock-back'),
@@ -243,10 +310,13 @@ class _QuickDockState extends State<QuickDock> {
                 minimumSize: const Size(26, 26),
                 padding: EdgeInsets.zero,
               ),
-              onPressed: () => setState(() {
-                _menu = null;
-                _presetError = null;
-              }),
+              onPressed: () {
+                setState(() {
+                  _menu = null;
+                  _presetError = null;
+                });
+                _resetAutoCollapse();
+              },
               icon: Icon(
                 Icons.arrow_back,
                 size: 16,
@@ -255,7 +325,7 @@ class _QuickDockState extends State<QuickDock> {
             )
           else
             Text(
-              'Quick start',
+              _editing ? 'Edit dock' : 'Quick start',
               style: theme.textTheme.labelSmall?.copyWith(
                 letterSpacing: 0.08,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -270,6 +340,23 @@ class _QuickDockState extends State<QuickDock> {
                 label: '$running running',
               ),
             ),
+          IconButton(
+            key: const ValueKey('dock-edit'),
+            tooltip: _editing ? 'Done editing' : 'Edit quick actions',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(26, 26),
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: _toggleEditing,
+            icon: Icon(
+              _editing ? Icons.check : Icons.edit_outlined,
+              size: 15,
+              color: _editing
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
           PopupMenuButton<DockPlacement>(
             key: const ValueKey('dock-placement'),
             tooltip: 'Where the dock sits',
@@ -403,19 +490,24 @@ class _QuickDockState extends State<QuickDock> {
 
   Widget _launcher(ThemeData theme) {
     final ready = model.isReady;
+    if (_editing) {
+      return _editView(theme);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final tool in const [
-          ToolId.spammer,
-          ToolId.buy,
-          ToolId.sell,
-          ToolId.quest,
-          ToolId.gem,
-          ToolId.tuner,
-          ToolId.holdspace,
-        ])
-          _tile(theme, tool, enabled: ready),
+        for (final id in model.dockTileIds) _tile(theme, id, enabled: ready),
+        if (model.dockTileIds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: ShellSpace.sm),
+            child: Text(
+              'No quick actions — use Edit to add one.',
+              key: const ValueKey('dock-empty-tiles'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             ShellSpace.xs,
@@ -464,16 +556,26 @@ class _QuickDockState extends State<QuickDock> {
     );
   }
 
-  Widget _tile(ThemeData theme, ToolId tool, {required bool enabled}) {
+  Widget _tile(ThemeData theme, String id, {required bool enabled}) {
+    final pin = _pinForId(id);
+    final tool = pin == null ? _toolForId(id) : ToolId.sell;
+    if (tool == null) {
+      return const SizedBox.shrink();
+    }
     final snapshot = model.tools.snapshot(tool);
     final phase = snapshot?.phase ?? ToolPhase.idle;
     final running = phase != ToolPhase.idle;
     final busy = model.tools.isPending(tool);
     final hasMenu =
-        tool == ToolId.spammer ||
-        tool == ToolId.buy ||
-        tool == ToolId.sell ||
-        tool == ToolId.quest;
+        pin == null &&
+        (tool == ToolId.spammer ||
+            tool == ToolId.buy ||
+            tool == ToolId.sell ||
+            tool == ToolId.quest);
+    final title = pin == null ? toolDisplayName(tool) : 'Sell · ${pin.name}';
+    final summary = pin == null
+        ? _summary(tool)
+        : '${pin.slots.length} bag cells · pinned';
     final phaseLabel = switch (phase) {
       ToolPhase.idle => 'idle',
       ToolPhase.starting => 'starting',
@@ -488,10 +590,10 @@ class _QuickDockState extends State<QuickDock> {
     };
     final canAct = enabled && !busy;
     return Padding(
-      key: ValueKey('dock-tile-${tool.wire}'),
+      key: ValueKey('dock-tile-$id'),
       padding: const EdgeInsets.symmetric(
         horizontal: ShellSpace.xs,
-        vertical: ShellSpace.xxs + ShellSpace.xs,
+        vertical: ShellSpace.xxs,
       ),
       child: Row(
         children: [
@@ -519,13 +621,13 @@ class _QuickDockState extends State<QuickDock> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  toolDisplayName(tool),
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(fontSize: 13),
                 ),
                 Text(
-                  _summary(tool),
+                  summary,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -541,10 +643,17 @@ class _QuickDockState extends State<QuickDock> {
             StatusChip(kind: phaseKind, label: phaseLabel),
             const SizedBox(width: ShellSpace.xs),
           ],
-          _tileAction(theme, tool, running: running, enabled: canAct),
+          _tileAction(
+            theme,
+            tool,
+            running: running,
+            enabled: canAct,
+            keyId: pin?.tileId,
+            onStart: pin == null ? null : () => _startPin(pin),
+          ),
           if (hasMenu)
             IconButton(
-              key: ValueKey('dock-menu-${tool.wire}'),
+              key: ValueKey('dock-menu-$id'),
               tooltip: '${toolDisplayName(tool)} options',
               visualDensity: VisualDensity.compact,
               style: IconButton.styleFrom(
@@ -552,13 +661,184 @@ class _QuickDockState extends State<QuickDock> {
                 padding: EdgeInsets.zero,
               ),
               onPressed: enabled && !busy
-                  ? () => setState(() {
-                      _menu = tool;
-                      _presetError = null;
-                    })
+                  ? () {
+                      setState(() {
+                        _menu = tool;
+                        _presetError = null;
+                      });
+                      _cancelAutoCollapse();
+                    }
                   : null,
               icon: const Icon(Icons.more_vert, size: 17),
             ),
+        ],
+      ),
+    );
+  }
+
+  ToolId? _toolForId(String id) {
+    for (final tool in ToolId.values) {
+      if (tool != ToolId.pet && tool.wire == id) {
+        return tool;
+      }
+    }
+    return null;
+  }
+
+  DockPin? _pinForId(String id) {
+    for (final pin in model.dockPins) {
+      if (pin.tileId == id) {
+        return pin;
+      }
+    }
+    return null;
+  }
+
+  void _startPin(DockPin pin) {
+    unawaited(model.startTool(ToolId.sell, runArgs: {'slots': pin.slots}));
+  }
+
+  Widget _editView(ThemeData theme) {
+    final ids = model.dockTileIds;
+    final missing = [
+      for (final tool in ToolId.values)
+        if (tool != ToolId.pet && !ids.contains(tool.wire)) tool,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'QUICK ACTIONS',
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 9.5,
+            letterSpacing: 0.06,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xxs),
+        for (var index = 0; index < ids.length; index++)
+          _editRow(theme, ids[index], index, ids.length),
+        if (ids.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: ShellSpace.sm),
+            child: Text(
+              'No quick actions. Add one below.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (missing.isNotEmpty) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            'ADD BACK',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 9.5,
+              letterSpacing: 0.06,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: ShellSpace.xxs),
+          Wrap(
+            spacing: ShellSpace.xs,
+            runSpacing: ShellSpace.xxs,
+            children: [
+              for (final tool in missing)
+                OutlinedButton(
+                  key: ValueKey('dock-add-${tool.wire}'),
+                  onPressed: () => unawaited(model.addDockTool(tool)),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 26),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: ShellSpace.sm,
+                    ),
+                    textStyle: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 11,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(ShellRadius.s),
+                    ),
+                  ),
+                  child: Text(toolDisplayName(tool)),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _editRow(ThemeData theme, String id, int index, int count) {
+    final pin = _pinForId(id);
+    final tool = pin == null ? _toolForId(id) : ToolId.sell;
+    if (tool == null) {
+      return const SizedBox.shrink();
+    }
+    final label = pin == null ? toolDisplayName(tool) : 'Sell · ${pin.name}';
+    final detail = pin == null ? null : '${pin.slots.length} bag cells';
+    return Padding(
+      key: ValueKey('dock-edit-row-$id'),
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Icon(
+            toolIcon(tool),
+            size: 15,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: ShellSpace.xs),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: theme.textTheme.bodyMedium),
+                if (detail != null)
+                  Text(
+                    detail,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 9.5,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            key: ValueKey('dock-edit-up-$id'),
+            tooltip: 'Move up',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(24, 24),
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: index == 0
+                ? null
+                : () => unawaited(model.moveDockTile(id, -1)),
+            icon: const Icon(Icons.arrow_upward, size: 13),
+          ),
+          IconButton(
+            key: ValueKey('dock-edit-down-$id'),
+            tooltip: 'Move down',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(24, 24),
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: index == count - 1
+                ? null
+                : () => unawaited(model.moveDockTile(id, 1)),
+            icon: const Icon(Icons.arrow_downward, size: 13),
+          ),
+          IconButton(
+            key: ValueKey('dock-edit-remove-$id'),
+            tooltip: 'Remove from dock',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(24, 24),
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: () => unawaited(model.removeDockTile(id)),
+            icon: const Icon(Icons.close, size: 13),
+          ),
         ],
       ),
     );
@@ -571,6 +851,8 @@ class _QuickDockState extends State<QuickDock> {
     ToolId tool, {
     required bool running,
     required bool enabled,
+    String? keyId,
+    VoidCallback? onStart,
   }) {
     final background = running
         ? theme.colorScheme.errorContainer
@@ -581,12 +863,14 @@ class _QuickDockState extends State<QuickDock> {
     return SizedBox(
       height: 28,
       child: FilledButton(
-        key: ValueKey('dock-start-${tool.wire}'),
+        key: ValueKey('dock-start-${keyId ?? tool.wire}'),
         onPressed: !enabled
             ? null
             : () {
                 if (running) {
                   unawaited(model.stopTool(tool));
+                } else if (onStart != null) {
+                  onStart();
                 } else {
                   _activate(tool);
                 }
@@ -617,7 +901,10 @@ class _QuickDockState extends State<QuickDock> {
     return InkWell(
       key: ValueKey('dock-long-${tool.wire}'),
       borderRadius: BorderRadius.circular(ShellRadius.s),
-      onTap: () => unawaited(model.showFullWindowFromDock()),
+      onTap: () {
+        model.requestSetup(tool);
+        unawaited(model.showFullWindowFromDock());
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: ShellSpace.xs,
@@ -727,8 +1014,8 @@ class _QuickDockState extends State<QuickDock> {
   Widget _buyMenu(ThemeData theme) {
     final presets = _buyPresets();
     final names = presets.keys.toList();
-    final preset = _buyPreset ?? (names.isEmpty ? null : names.first);
-    final count = _buyCount ?? _configuredBuyCount(preset);
+    final preset = model.dockBuyPreset ?? (names.isEmpty ? null : names.first);
+    final count = model.dockBuyCount ?? _configuredBuyCount(preset);
     if (names.isEmpty) {
       return _emptyMenu(
         theme,
@@ -756,8 +1043,10 @@ class _QuickDockState extends State<QuickDock> {
                 label: Text(name),
                 selected: name == preset,
                 onSelected: (_) => setState(() {
-                  _buyPreset = name;
-                  _buyCount = _configuredBuyCount(name);
+                  model.rememberDockBuyChoice(
+                    preset: name,
+                    count: _configuredBuyCount(name),
+                  );
                 }),
                 visualDensity: VisualDensity.compact,
                 labelStyle: theme.textTheme.labelSmall?.copyWith(
@@ -777,8 +1066,12 @@ class _QuickDockState extends State<QuickDock> {
             IconButton(
               key: const ValueKey('dock-buy-minus'),
               visualDensity: VisualDensity.compact,
-              onPressed: () =>
-                  setState(() => _buyCount = (count > 1 ? count - 1 : 1)),
+              onPressed: () => setState(
+                () => model.rememberDockBuyChoice(
+                  preset: preset,
+                  count: count > 1 ? count - 1 : 1,
+                ),
+              ),
               icon: const Icon(Icons.remove, size: 14),
             ),
             Text(
@@ -789,13 +1082,18 @@ class _QuickDockState extends State<QuickDock> {
             IconButton(
               key: const ValueKey('dock-buy-plus'),
               visualDensity: VisualDensity.compact,
-              onPressed: () => setState(() => _buyCount = count + 1),
+              onPressed: () => setState(
+                () => model.rememberDockBuyChoice(
+                  preset: preset,
+                  count: count + 1,
+                ),
+              ),
               icon: const Icon(Icons.add, size: 14),
             ),
           ],
         ),
         Text(
-          'Per-run only — nothing is saved.',
+          'Per-run only; the dock remembers this choice for the session.',
           style: theme.textTheme.labelSmall?.copyWith(
             fontSize: 9.5,
             color: theme.colorScheme.onSurfaceVariant,
@@ -874,8 +1172,141 @@ class _QuickDockState extends State<QuickDock> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        const SizedBox(height: ShellSpace.sm),
+        Text(
+          'PINNED QUICK ACTIONS',
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 9.5,
+            letterSpacing: 0.06,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xxs),
+        if (model.dockPins.isNotEmpty)
+          Wrap(
+            spacing: ShellSpace.xs,
+            runSpacing: ShellSpace.xxs,
+            children: [
+              for (final pin in model.dockPins)
+                ActionChip(
+                  key: ValueKey('dock-pin-chip-${pin.name}'),
+                  label: Text(pin.name),
+                  onPressed: () => _applyPin(pin),
+                  visualDensity: VisualDensity.compact,
+                  labelStyle: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10.5,
+                  ),
+                ),
+            ],
+          ),
+        const SizedBox(height: ShellSpace.xs),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 30,
+                child: TextField(
+                  key: const ValueKey('dock-pin-name'),
+                  controller: _pinName,
+                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 11.5),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Name this selection',
+                    hintStyle: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10.5,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: ShellSpace.xs,
+                      vertical: ShellSpace.xxs,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(ShellRadius.s),
+                    ),
+                  ),
+                  onSubmitted: (_) => unawaited(_pinSelection()),
+                ),
+              ),
+            ),
+            const SizedBox(width: ShellSpace.xs),
+            SizedBox(
+              height: 28,
+              child: FilledButton(
+                key: const ValueKey('dock-pin'),
+                onPressed: selected.isEmpty
+                    ? null
+                    : () => unawaited(_pinSelection()),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.sm,
+                  ),
+                  textStyle: theme.textTheme.labelSmall?.copyWith(fontSize: 11),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(ShellRadius.s),
+                  ),
+                ),
+                child: const Text('Pin'),
+              ),
+            ),
+          ],
+        ),
+        if (_pinError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: ShellSpace.xxs),
+            child: Text(
+              _pinError!,
+              key: const ValueKey('dock-pin-error'),
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 9.5,
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(top: ShellSpace.xxs),
+          child: Text(
+            'A pinned selection becomes a tile you can start in one click.',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 9.5,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _pinSelection() async {
+    if (model.sellSlots.isEmpty) {
+      setState(() => _pinError = 'Select at least one bag cell first.');
+      return;
+    }
+    final ok = await model.addDockPin(_pinName.text, model.sellSlots);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (ok) {
+        _pinName.clear();
+        _pinError = null;
+      } else {
+        _pinError = 'Enter a new name that is not already pinned.';
+      }
+    });
+  }
+
+  void _applyPin(DockPin pin) {
+    setState(() {
+      for (final slot in model.sellSlots.toList()) {
+        model.toggleSellSlot(slot);
+      }
+      for (final slot in pin.slots) {
+        if (!model.sellSlots.contains(slot)) {
+          model.toggleSellSlot(slot);
+        }
+      }
+    });
   }
 
   /// One bag slot in the compact grid. 24 px keeps the whole 8 × 8 grid plus its per-row shortcut
@@ -1032,11 +1463,12 @@ class _QuickDockState extends State<QuickDock> {
     if (tool == ToolId.buy) {
       final presets = _buyPresets();
       final names = presets.keys.toList();
-      final preset = _buyPreset ?? (names.isEmpty ? null : names.first);
+      final preset =
+          model.dockBuyPreset ?? (names.isEmpty ? null : names.first);
       if (preset != null) {
         runArgs = {
           'preset': preset,
-          'count': _buyCount ?? _configuredBuyCount(preset),
+          'count': model.dockBuyCount ?? _configuredBuyCount(preset),
         };
       }
     } else if (tool == ToolId.sell) {
@@ -1158,8 +1590,8 @@ class _QuickDockState extends State<QuickDock> {
     if (names.isEmpty) {
       return 'No buy presets';
     }
-    final preset = _buyPreset ?? names.first;
-    return '$preset × ${_buyCount ?? _configuredBuyCount(preset)}';
+    final preset = model.dockBuyPreset ?? names.first;
+    return '$preset × ${model.dockBuyCount ?? _configuredBuyCount(preset)}';
   }
 
   String _longState(ToolId tool, ToolPhase phase) {
