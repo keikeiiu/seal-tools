@@ -457,8 +457,9 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 所有工具共用的校正介面。第 6 節是完整流程：拍下遊戲視窗、選**種類**、必要時選**目標實例**、繪製標記、
 **Save mark**，然後在下方讀核心回報的已存標記/衍生值/產物。已存表格下方的 **Session-shaped
-calibrations** 包含 Tuner OCR 三框、Tooltip 位移與寵物列等分步會談（見 §6.5、§6.6）。分頁上的說明也再次
-說明拍攝行為：殼層會為了擷取隱藏自己、等一個影格、再開回來。
+calibrations** 包含 Tuner OCR 三框、Tooltip 位移與寵物列等分步會談（見 §6.5、§6.6）。頁首的
+**Sessions** 會跳到該面板，Targets 裡的 **SESSIONS** 列也和種類列一樣是可選目標，選了會把對應的會談卡
+帶進畫面。分頁上的說明也再次說明拍攝行為：殼層會為了擷取隱藏自己、等一個影格、再開回來。
 
 ---
 
@@ -547,11 +548,12 @@ calibrations** 包含 Tuner OCR 三框、Tooltip 位移與寵物列等分步會�
 
 ### 6.5 Tuner OCR 三框會談
 
-1. 在 **Calibrate → Session-shaped calibrations** 找到 **Tuner OCR 3-box**，讓遊戲裡的改造師狀態視窗可見，
-   按 **Capture screen**。
-2. 依序畫三個框：**Grade letter**（綠）、**Attribute rows**（藍）、**Remaining count**（琥珀）。在畫面上拖曳
-   會填入目前卡片並自動跳到下一個；要回頭可點卡片上的 chip 或畫面標題。`x / y / w / h` 欄位仍是權威，
-   也可以直接輸入。
+1. 在 **Calibrate → Session-shaped calibrations** 找到 **Tuner OCR 3-box**。用頁首的 **Sessions**，或在
+   Targets 的 **SESSIONS** 選 **Tuner OCR 3-box**，就會跳到它。讓遊戲裡的改造師狀態視窗可見，按卡片最上方的
+   **Capture screen**（或 **Recapture screen**）；拍攝按鈕與 **Target to drag** chip 刻意放在一起。
+2. 選一個 **Target to drag** chip —— **Grade letter**（綠）、**Attribute rows**（藍）、**Remaining count**
+   （琥珀）或 **Spring point** —— 然後直接在畫面上拖曳。拖曳會填入目前的框並自動跳到下一個；要回頭可點卡片
+   標題或 chip。`x / y / w / h` 欄位是替代方式，仍是權威。
 3. 選用：點 **Spring point** 目標後在畫面上點它的位置；若不想讓 Check 量測列高，可在 **row height** 指定。
 4. 按 **Check boxes**。結果卡片會列出推導出的 region、列高、grade、remaining、filter 判定與符合的屬性列數；
    與遊戲畫面不符就修正框再 Check。

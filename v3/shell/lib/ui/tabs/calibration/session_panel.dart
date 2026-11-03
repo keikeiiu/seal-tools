@@ -37,10 +37,18 @@ class SessionCalibrationsPanel extends StatefulWidget {
     super.key,
     required this.model,
     required this.host,
+    this.tooltipKey,
+    this.tunerKey,
+    this.petKey,
   });
 
   final ShellModel model;
   final HostActions host;
+
+  /// Section anchors the Calibrate page uses for its Sessions shortcut / target-tree selection.
+  final Key? tooltipKey;
+  final Key? tunerKey;
+  final Key? petKey;
 
   @override
   State<SessionCalibrationsPanel> createState() =>
@@ -924,6 +932,61 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           done: [captured, allDrawn, _tunerCheck != null],
         ),
         const SizedBox(height: ShellSpace.sm),
+        _sessionCard(
+          theme,
+          key: const ValueKey('session-tuner-capture-bar'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('session-tuner-capture'),
+                    onPressed: _busy ? null : _captureTuner,
+                    icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                    label: Text(
+                      captured ? 'Recapture screen' : 'Capture screen',
+                    ),
+                  ),
+                  Text(
+                    'Game foreground · full client · tuner status window visible',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 9.5,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Text(
+                'Target to drag',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 0.05,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xxs),
+              Wrap(
+                spacing: ShellSpace.xs,
+                runSpacing: ShellSpace.xs,
+                children: [
+                  for (final name in _tunerTargetNames.keys)
+                    ChoiceChip(
+                      key: ValueKey('session-tuner-target-$name'),
+                      label: Text(_tunerTargetNames[name]!),
+                      selected: _tunerTarget == name,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _tunerTarget = name),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xs),
         Text(
           'Drag directly on the captured picture to draw the selected box — the x/y/w/h fields '
           'below are an alternative, not a replacement. The drag advances to the next box.',
@@ -997,12 +1060,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           runSpacing: ShellSpace.xs,
           children: [
             OutlinedButton.icon(
-              key: const ValueKey('session-tuner-capture'),
-              onPressed: _busy ? null : _captureTuner,
-              icon: const Icon(Icons.photo_camera_outlined, size: 16),
-              label: const Text('Capture screen'),
-            ),
-            OutlinedButton.icon(
               key: const ValueKey('session-tuner-check'),
               onPressed: _busy ? null : _checkTuner,
               icon: const Icon(Icons.fact_check_outlined, size: 16),
@@ -1054,12 +1111,21 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: ShellSpace.xs),
-              ChoiceChip(
-                key: ValueKey('session-tuner-target-$name'),
-                label: Text(_tunerTargetNames[name]!),
-                selected: selected,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => setState(() => _tunerTarget = name),
+              InkWell(
+                onTap: () => setState(() => _tunerTarget = name),
+                borderRadius: BorderRadius.circular(ShellRadius.s),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.xxs,
+                    vertical: ShellSpace.xxs,
+                  ),
+                  child: Text(
+                    _tunerTargetNames[name]!,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: selected ? color : null,
+                    ),
+                  ),
+                ),
               ),
               const Spacer(),
               Text(
@@ -1621,11 +1687,17 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _tooltipSection(theme, colors),
+          KeyedSubtree(
+            key: widget.tooltipKey,
+            child: _tooltipSection(theme, colors),
+          ),
           const SizedBox(height: ShellSpace.md),
-          _tunerSection(theme, colors),
+          KeyedSubtree(
+            key: widget.tunerKey,
+            child: _tunerSection(theme, colors),
+          ),
           const SizedBox(height: ShellSpace.md),
-          _petSection(theme, colors),
+          KeyedSubtree(key: widget.petKey, child: _petSection(theme, colors)),
         ],
       ),
     );

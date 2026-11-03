@@ -292,7 +292,10 @@ widths and stacks them under the prose when the window is narrow.
   auto-recaptures. The hide → one frame → show flow and its status are unchanged.
 - **Target tree:** all 18 kinds / 35 marks grouped by tool (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1)
   with saved/partial/not-set dots and counts; named-instance kinds expand their targets (N/G/DG/
-  Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and editor.
+  Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and editor. The
+  **SESSIONS** rows (Tuner OCR 3-box, Tooltip offset, Pet rows) use the same selection logic: they are
+  selectable targets that bring the matching session card into view, and the page header's
+  **Sessions** action jumps straight to the panel (or to the selected section).
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single.
@@ -311,12 +314,14 @@ widths and stacks them under the prose when the window is narrow.
 - **Session-shaped calibrations:** the panel below the stored table is a designed three-session
   surface, not three rows of raw fields. Every session starts with a numbered step strip
   (Capture → measure → save), states what it needs, and keeps the typed fields authoritative.
-  - **Tuner OCR 3-box** — after **Capture screen**, the picture shows every drawn box in its own colour
-    (grade green, attributes blue, remaining amber) with labels. A card per box carries the colour
-    dot, a target chip and its x/y/w/h fields; dragging on the picture writes the selected box and
-    advances grade → attributes → remaining (v2 order). **Check boxes** adds a result card with the
-    derived region, row pitch, grade, remaining count and filter verdict plus the matched-row count;
-    **Save tuner** writes `tuner.ocr`/`spring_point`.
+  - **Tuner OCR 3-box** — the top of the card pairs **Capture screen / Recapture screen** with the
+    required capture state and the **Target to drag** chips (grade, attributes, remaining, spring).
+    After capture, the picture shows every drawn box in its own colour (grade green, attributes blue,
+    remaining amber) with labels. A card per box carries the colour dot, label and its x/y/w/h fields;
+    dragging on the picture writes the selected box and advances grade → attributes → remaining (v2
+    order). **Check boxes** adds a result card with the derived region, row pitch, grade, remaining
+    count and filter verdict plus the matched-row count; **Save tuner** writes
+    `tuner.ocr`/`spring_point`.
   - **Tooltip offset + shape** — two step cards: **1 · Hover point** (x/y/delay + *Capture hover*;
     the core places the cursor and captures the panel) and **2 · Panel box & offset** (offset and
     panel size; a mono formula line shows `cursor + offset = panel top-left`). The picture overlays
@@ -363,7 +368,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 351/351; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 353/353; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

@@ -29,6 +29,8 @@ class TargetTreePanel extends StatelessWidget {
     required this.stored,
     required this.onSelectKind,
     required this.onSelectTarget,
+    this.selectedSession,
+    this.onSelectSession,
   });
 
   final String selectedKind;
@@ -36,6 +38,12 @@ class TargetTreePanel extends StatelessWidget {
   final Map<String, CalibrationFetchResult> stored;
   final ValueChanged<String> onSelectKind;
   final void Function(CalibrationKind kind, String target) onSelectTarget;
+
+  /// The session-shaped calibration selected in the target tree (`tuner`, `tooltip` or `pet`), or
+  /// null. Selecting one jumps to its card below and marks the row, exactly like selecting a kind
+  /// selects the canvas/editor.
+  final String? selectedSession;
+  final ValueChanged<String>? onSelectSession;
 
   @override
   Widget build(BuildContext context) {
@@ -124,19 +132,41 @@ class TargetTreePanel extends StatelessWidget {
               ),
             ),
           ),
-          const _SessionOnlyRow(
-            key: ValueKey('calibrate-tree-session-tuner'),
+          _SessionOnlyRow(
+            key: const ValueKey('calibrate-tree-session-tuner'),
+            id: 'tuner',
             label: 'Tuner OCR 3-box',
+            selected: selectedSession == 'tuner',
+            onTap: onSelectSession == null
+                ? null
+                : () => onSelectSession!('tuner'),
             reason:
                 'Opened by the Tuner OCR session below — grade area, attribute band and '
                 'remaining band save together, so it is not a single target mark.',
           ),
-          const _SessionOnlyRow(
-            key: ValueKey('calibrate-tree-session-tooltip'),
+          _SessionOnlyRow(
+            key: const ValueKey('calibrate-tree-session-tooltip'),
+            id: 'tooltip',
             label: 'Tooltip offset',
+            selected: selectedSession == 'tooltip',
+            onTap: onSelectSession == null
+                ? null
+                : () => onSelectSession!('tooltip'),
             reason:
                 'Opened by the Tooltip session below — a hover capture plus a box, not a '
                 'target mark.',
+          ),
+          _SessionOnlyRow(
+            key: const ValueKey('calibrate-tree-session-pet'),
+            id: 'pet',
+            label: 'Pet rows / crops',
+            selected: selectedSession == 'pet',
+            onTap: onSelectSession == null
+                ? null
+                : () => onSelectSession!('pet'),
+            reason:
+                'Opened by the Pet session below — one row and the shared points, then '
+                'preview/save/test read.',
           ),
         ],
       ),
@@ -259,10 +289,20 @@ class _TargetRow extends StatelessWidget {
 }
 
 class _SessionOnlyRow extends StatelessWidget {
-  const _SessionOnlyRow({super.key, required this.label, required this.reason});
+  const _SessionOnlyRow({
+    super.key,
+    required this.id,
+    required this.label,
+    required this.reason,
+    required this.selected,
+    required this.onTap,
+  });
 
+  final String id;
   final String label;
   final String reason;
+  final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -270,34 +310,52 @@ class _SessionOnlyRow extends StatelessWidget {
     final colors = theme.colorScheme;
     return Tooltip(
       message: reason,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          ShellSpace.md,
-          ShellSpace.xxs,
-          ShellSpace.xs,
-          ShellSpace.xxs,
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.lock_outline, size: 11, color: colors.outline),
-            const SizedBox(width: ShellSpace.xs),
-            Expanded(
-              child: Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.outline,
-                  fontStyle: FontStyle.italic,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(ShellRadius.s),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: ShellSpace.xxs),
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.sm,
+            ShellSpace.xxs,
+            ShellSpace.xs,
+            ShellSpace.xxs,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? colors.primaryContainer.withValues(alpha: 0.5)
+                : null,
+            borderRadius: BorderRadius.circular(ShellRadius.s),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.play_circle_fill : Icons.play_circle_outline,
+                size: 12,
+                color: selected ? colors.primary : colors.outline,
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: selected ? colors.primary : colors.onSurface,
+                    fontStyle: selected ? null : FontStyle.italic,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              'session',
-              style: ShellText.mono.copyWith(
-                fontSize: 10.5,
-                color: colors.outline,
+              Text(
+                selected ? 'selected' : 'session',
+                key: selected
+                    ? ValueKey('calibrate-tree-session-$id-selected')
+                    : null,
+                style: ShellText.mono.copyWith(
+                  fontSize: 10.5,
+                  color: selected ? colors.primary : colors.outline,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

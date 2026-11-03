@@ -1784,6 +1784,61 @@ void main() {
     expect(find.textContaining('10, 20, 30, 40'), findsWidgets);
   });
 
+  testWidgets('the Sessions shortcut scrolls to the session cards', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (_) => {'result': <String, dynamic>{}},
+    );
+    await _flush(tester);
+
+    final shortcut = find.byKey(const ValueKey('calibrate-sessions'));
+    expect(shortcut, findsOneWidget);
+    await tester.tap(shortcut);
+    await tester.pumpAndSettle();
+
+    final note = find.byKey(const ValueKey('calibrate-tooltip-note'));
+    expect(note, findsOneWidget);
+    final top = tester.getTopLeft(note).dy;
+    final height =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(top, greaterThanOrEqualTo(0));
+    expect(top, lessThan(height), reason: 'the sessions are on screen now');
+  });
+
+  testWidgets('choosing a session in Targets selects and scrolls to its card', (
+    tester,
+  ) async {
+    await _pumpCalibrate(
+      tester,
+      answer: (_) => {'result': <String, dynamic>{}},
+    );
+    await _flush(tester);
+
+    final tunerRow = find.byKey(const ValueKey('calibrate-tree-session-tuner'));
+    await tester.ensureVisible(tunerRow);
+    await tester.pump();
+    await tester.tap(tunerRow);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('calibrate-tree-session-tuner-selected')),
+      findsOneWidget,
+      reason: 'the session row uses the same selected state as a kind row',
+    );
+    final bar = find.byKey(const ValueKey('session-tuner-capture-bar'));
+    expect(bar, findsOneWidget);
+    final top = tester.getTopLeft(bar).dy;
+    final height =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(
+      top,
+      lessThan(height),
+      reason: 'the tuner session is brought into view',
+    );
+  });
+
   testWidgets('the tooltip session drives hover, save and test over the core', (
     tester,
   ) async {

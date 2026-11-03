@@ -551,8 +551,10 @@ The one calibration surface for every tool. Section 6 is the full walkthrough: c
 window, choose a **kind**, optionally a **target instance**, draw the mark, **Save mark**, and read the
 core's stored mark / derived values / artifact below. Below the stored table, **Session-shaped
 calibrations** holds the two-step/three-step sessions (Tuner OCR 3-box, Tooltip offset, Pet rows); see
-§6.5 and §6.6. The tab's panel caption repeats the capture behaviour: the shell hides itself for the
-grab, waits one frame, and reopens.
+§6.5 and §6.6. The **Sessions** action in the page header jumps to that panel, and the **SESSIONS**
+rows in Targets are selectable targets that bring the matching session card into view. The tab's panel
+caption repeats the capture behaviour: the shell hides itself for the grab, waits one frame, and
+reopens.
 
 ---
 
@@ -661,12 +663,14 @@ and the tooltip panel have their sessions in §6.5–§6.6; these are the remain
 
 ### 6.5 Tuner OCR three-box session
 
-1. In **Calibrate → Session-shaped calibrations**, find **Tuner OCR 3-box** and press **Capture
-   screen** with the tuner's status window visible in the game.
-2. Draw the three boxes **in order**: **Grade letter** (green), **Attribute rows** (blue), then
-   **Remaining count** (amber). A drag on the picture fills the selected card and advances to the
-   next box; click a card's chip or picture title to go back. The typed `x / y / w / h` fields are
-   authoritative — type them if you prefer.
+1. In **Calibrate → Session-shaped calibrations**, find **Tuner OCR 3-box**. Use **Sessions** in the
+   page header or select the **Tuner OCR 3-box** row under **SESSIONS** in Targets to jump to it. Set
+   the game to the tuner's status window and press **Capture screen** (or **Recapture screen**) at the
+   top of the card; the capture and the **Target to drag** chips are deliberately visible together.
+2. Pick a **Target to drag** chip — **Grade letter** (green), **Attribute rows** (blue), **Remaining
+   count** (amber) or **Spring point** — then drag directly on the picture. Drags fill the selected
+   box and advance grade → attributes → remaining; click a card title or chip to go back. The typed
+   `x / y / w / h` fields are an alternative and stay authoritative.
 3. Optional: click the **Spring point** target and click its point on the picture; set **row height**
    if you want to pin the pitch instead of letting the check measure it.
 4. Press **Check boxes**. The result card reports the derived region, row pitch, grade, remaining

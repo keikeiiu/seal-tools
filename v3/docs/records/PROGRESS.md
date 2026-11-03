@@ -37,9 +37,14 @@ increment keeps the payloads and tests and rebuilds the presentation:
   and a bordered **Read result** card for Test read lines.
 - **Discoverability:** the same numbered step strips and cards make both sessions read as guided flows
   under Calibrate's stored table; typed fields stay authoritative and the existing element keys remain.
+- **Follow-up — selection and recapture:** the **SESSIONS** rows in Targets are now selectable exactly
+  like kind rows (selected state + jump to the matching card), the page header gained a **Sessions**
+  shortcut, and the tuner's **Capture/Recapture screen** button moved to the top of its card beside the
+  **Target to drag** chips. The selected tuner box also stays drawn after a drag (the first pass hid
+  it), and the card carries an explicit drag-on-picture hint.
 - Tests pin the new box cards, step chips, all-box/cursor overlays, the 19 px pitch + 300×200 region
-  summary and the Read-result card; the full shell gate is **351/351**, analyze `--fatal-infos` clean,
-  format clean and the Windows debug build OK.
+  summary, the Read-result card and the session target selection/scroll; the full shell gate is
+  **353/353**, analyze `--fatal-infos` clean, format clean and the Windows debug build OK.
 
 ## 2026-11-02 (33) — the shell lint/quality gate gets sharper
 

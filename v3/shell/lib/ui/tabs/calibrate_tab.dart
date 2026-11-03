@@ -95,6 +95,11 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   /// The captures this screen took, newest first; the core keeps the last four, so 4 is the cap.
   final List<CalibrationCapture> _captures = <CalibrationCapture>[];
+  final GlobalKey _sessionsKey = GlobalKey();
+  final GlobalKey _tooltipSessionKey = GlobalKey();
+  final GlobalKey _tunerSessionKey = GlobalKey();
+  final GlobalKey _petSessionKey = GlobalKey();
+  String? _selectedSession;
   String? _selectedFrameId;
   int _captureSequence = 0;
 
@@ -713,6 +718,10 @@ class _CalibrateTabState extends State<CalibrateTab>
                 ),
                 const SizedBox(height: ShellSpace.md),
                 SessionCalibrationsPanel(
+                  key: _sessionsKey,
+                  tooltipKey: _tooltipSessionKey,
+                  tunerKey: _tunerSessionKey,
+                  petKey: _petSessionKey,
                   model: widget.model,
                   host: widget.host,
                 ),
@@ -722,6 +731,49 @@ class _CalibrateTabState extends State<CalibrateTab>
           ),
         ),
       ],
+    );
+  }
+
+  /// The header shortcut: the session panel is below the long stored-marks table, so scrolling to it
+  /// by hand is the one step players should not have to discover. `ensureVisible` uses the page's own
+  /// scroll view; nothing is recreated on the way.
+  void _jumpToSessions() {
+    final key = switch (_selectedSession) {
+      'tooltip' => _tooltipSessionKey,
+      'tuner' => _tunerSessionKey,
+      'pet' => _petSessionKey,
+      _ => _sessionsKey,
+    };
+    _scrollTo(key);
+  }
+
+  /// The target tree's session rows use the same selection rule as its kind rows: pick what to
+  /// calibrate, remember it, and bring its card into view.
+  void _selectSession(String session) {
+    setState(() => _selectedSession = session);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = switch (session) {
+        'tooltip' => _tooltipSessionKey,
+        'tuner' => _tunerSessionKey,
+        'pet' => _petSessionKey,
+        _ => _sessionsKey,
+      };
+      _scrollTo(key);
+    });
+  }
+
+  void _scrollTo(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) {
+      return;
+    }
+    unawaited(
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: 0.02,
+      ),
     );
   }
 
@@ -817,6 +869,12 @@ class _CalibrateTabState extends State<CalibrateTab>
           spacing: ShellSpace.sm,
           runSpacing: ShellSpace.sm,
           children: [
+            OutlinedButton.icon(
+              key: const ValueKey('calibrate-sessions'),
+              onPressed: _jumpToSessions,
+              icon: const Icon(Icons.tune, size: ShellSize.iconMd),
+              label: const Text('Sessions'),
+            ),
             OutlinedButton.icon(
               key: const ValueKey('calibrate-refresh'),
               onPressed: _loadingStored ? null : _loadStoredAll,
@@ -1017,8 +1075,10 @@ class _CalibrateTabState extends State<CalibrateTab>
     selectedKind: _kindName,
     selectedTarget: _target,
     stored: _stored,
+    selectedSession: _selectedSession,
     onSelectKind: _selectKind,
     onSelectTarget: _selectTreeTarget,
+    onSelectSession: _selectSession,
   );
 
   Widget _buildCanvasPanel(ThemeData theme, CalibrationCapture? capture) {
