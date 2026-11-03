@@ -36,6 +36,13 @@ use crate::ocr::{AttrMatcher, MatchedAttr};
 /// The Start countdown v2 shows before the first click ("5... 4... ..."), in seconds.
 pub const START_COUNTDOWN: i32 = 5;
 
+/// The line a read that only partly recognised the tuner window ends with. The core's OCR layer
+/// re-captures an unconfirmed read up to `tuner.ocr_retries` times; when that budget is gone the
+/// decision half refuses the partial read instead of acting on it. Counting such a read in the repeat
+/// chain is what produced issue #16's false "same result x3" while springs were still on the panel.
+pub const UNCONFIRMED_READ_MESSAGE: &str =
+    "Couldn't confirm the read — the OCR missed part of the tuner window (see logs/ocr_log.jsonl).";
+
 /// Where one scan came from, as the decision half needs it.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TunerRead {
@@ -51,6 +58,17 @@ impl TunerRead {
     #[must_use]
     pub fn is_total_failure(&self) -> bool {
         self.grade.is_none() && self.remaining.is_none() && self.attributes.is_empty()
+    }
+
+    /// v2's `IsConfirmed`: a usable read has a grade, a spring count and exactly three attribute rows
+    /// with names. Anything less is a PARTIAL read: the core re-captures it, and once
+    /// `tuner.ocr_retries` is spent [`TunerRun::decide`] stops rather than deciding on it.
+    #[must_use]
+    pub fn is_confirmed(&self) -> bool {
+        self.grade.is_some()
+            && self.remaining.is_some()
+            && self.attributes.len() == 3
+            && self.attributes.iter().all(|row| !row.name.is_empty())
     }
 
     /// The repeat signature v2 compares: grade, remaining, and the attribute lines joined as
@@ -217,6 +235,11 @@ impl TunerRun {
     /// The stop conditions are checked in v2's order, which is load-bearing: reaching the target (or
     /// matching the filter) outranks running out of springs; out of springs outranks the repeat
     /// counter; the retry ceiling is last.
+    ///
+    /// A PARTIAL read never reaches those conditions or the repeat chain: the core already spent
+    /// `tuner.ocr_retries` re-capturing it, and acting on it (or counting it as a repeat) is what
+    /// produced issue #16's false "same result x3" with springs still on the panel. It stops with
+    /// [`UNCONFIRMED_READ_MESSAGE`] instead.
     pub fn decide(&mut self, read: &TunerRead) -> TunerOutcome {
         let filter_result = AttrMatcher::check_filter(&read.attributes, &self.settings.filter);
         let filter_status = if self.settings.filter.enabled {
@@ -230,6 +253,13 @@ impl TunerRun {
                 decision: TunerDecision::Stop(StopReason::error(
                     "Read failed — nothing recognised in the OCR region.",
                 )),
+                filter_status,
+            };
+        }
+
+        if !read.is_confirmed() {
+            return TunerOutcome {
+                decision: TunerDecision::Stop(StopReason::error(UNCONFIRMED_READ_MESSAGE)),
                 filter_status,
             };
         }
