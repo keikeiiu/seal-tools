@@ -29,13 +29,18 @@ import 'types.dart';
 ///
 /// `lines` completing (onDone) means the transport is CLOSED; the client turns that into a typed
 /// [ProtocolClosedException] for every pending request. `diagnostics` carries stderr only — the core's
-/// logs — and is never protocol data.
+/// logs — and is never protocol data. `writeFailures` carries the async write side: a `stdin.done`
+/// error (a dead core) must fail pending requests at once, not after the request timeout (SHELL-F1).
 abstract interface class Transport {
   /// Complete lines from the core, terminator stripped.
   Stream<String> get lines;
 
   /// stderr lines, for the status surface and the crash tail. Not protocol messages.
   Stream<String> get diagnostics;
+
+  /// Errors from the write side (the core's stdin): the request path is broken, not the output path.
+  /// Completes the client's pending requests immediately on the first error.
+  Stream<Object> get writeFailures;
 
   /// Writes one line; the transport adds the newline.
   void writeLine(String line);
@@ -164,6 +169,10 @@ class ProtocolClient {
       _onDiagnostic,
       onError: (Object _) {},
     );
+    _writeFailuresSubscription = _transport.writeFailures.listen(
+      _onWriteFailure,
+      onError: (Object _) {},
+    );
   }
 
   final Transport _transport;
@@ -180,9 +189,15 @@ class ProtocolClient {
   final _stderrTail = <String>[];
   late final StreamSubscription<IncomingMessage> _linesSubscription;
   late final StreamSubscription<String> _diagnosticsSubscription;
+  late final StreamSubscription<Object> _writeFailuresSubscription;
 
   int _nextId = 0;
   bool _closed = false;
+  bool _protocolFailure = false;
+  String? _closeReason;
+
+  /// The single termination of the transport; every close path shares it (SHELL-F1).
+  Future<void>? _termination;
   bool _handshaken = false;
   HelloResult? _hello;
 
@@ -204,6 +219,14 @@ class ProtocolClient {
 
   /// Whether the connection is closed (by the core, the transport, or [close]).
   bool get isClosed => _closed;
+
+  /// Whether the connection ended because the core's output could not be understood (an undecodable
+  /// RESPONSE, a broken write path) rather than because the core exited. The shell reports this as
+  /// `ConnectionFailure.protocol` instead of a fake "the core exited" (SHELL-F1).
+  bool get protocolFailure => _protocolFailure;
+
+  /// Why the connection closed, or null while it is open.
+  String? get closeReason => _closeReason;
 
   /// Performs `hello` and validates the result.
   ///
@@ -337,10 +360,13 @@ class ProtocolClient {
   /// ([PROTOCOL.md] §1/§2).
   ///
   /// Every pending request fails with [ProtocolClosedException], the event/log streams close, and a
-  /// second call is a no-op. A core that does not acknowledge `shutdown` inside the timeout is still
-  /// closed by EOF — the safe stop is the EOF, not the acknowledgement.
+  /// second call still TERMINATES the transport — a close after a crash is the caller saying "make
+  /// sure it is gone", and a live process must never be left unreferenced (SHELL-F1). A core that
+  /// does not acknowledge `shutdown` inside the timeout is still closed by EOF — the safe stop is the
+  /// EOF, not the acknowledgement.
   Future<void> close({Duration timeout = const Duration(seconds: 2)}) async {
     if (_closed) {
+      await _terminateTransport();
       return;
     }
     if (_handshaken) {
@@ -351,18 +377,18 @@ class ProtocolClient {
       }
     }
     await _transport.closeInput();
-    _markClosed('the shell closed the connection');
+    _markClosed('the shell closed the connection', clean: true);
   }
 
   /// Kills the transport — the restart path after a wedged core ([PLAN-V3-SHELL.md] §2).
   Future<void> terminate({
     String reason = 'the shell terminated the core',
   }) async {
-    if (_closed) {
-      return;
+    if (!_closed) {
+      _markClosed(reason);
     }
-    _markClosed(reason);
-    await _transport.terminate();
+    // Already closed (a crash/refusal path): still make sure the process is gone.
+    await _terminateTransport();
   }
 
   Future<T> _requestTyped<T>(
@@ -428,7 +454,7 @@ class ProtocolClient {
     } catch (error) {
       timer.cancel();
       _pending.remove(request.id);
-      _markClosed('could not write to the core: $error');
+      _markClosed('could not write to the core: $error', protocol: true);
       return Future<Response>.error(
         ProtocolClosedException('could not write to the core: $error'),
       );
@@ -455,11 +481,38 @@ class ProtocolClient {
         if (!_events.isClosed) {
           _events.add(event);
         }
+      case IncomingMalformedEvent(
+        :final error,
+        :final eventName,
+        :final eventData,
+      ):
+        // One undecodable EVENT is informational: log it, forward it as an unknown event and keep
+        // reading — a newer core's addition must not end the connection and leave the core running
+        // unreferenced (SHELL-F1). A response that cannot be correlated stays fatal: decodeLines
+        // rethrows it into [_onStreamError].
+        _log(
+          'ignoring undecodable event'
+          '${eventName == null ? '' : ' "$eventName"'}: ${error.message}',
+        );
+        if (!_events.isClosed) {
+          _events.add(
+            UnknownEvent(
+              eventName ?? 'malformed',
+              eventData ?? <String, dynamic>{'error': error.message},
+            ),
+          );
+        }
     }
   }
 
   void _onStreamError(Object error, StackTrace _) {
-    _markClosed('the core output could not be decoded: $error');
+    _markClosed('the core output could not be decoded: $error', protocol: true);
+  }
+
+  /// The write side failed (`stdin.done`): the connection is dead, so fail pending requests NOW rather
+  /// than letting them wait out the request timeout (SHELL-F1).
+  void _onWriteFailure(Object error) {
+    _markClosed('could not write to the core: $error', protocol: true);
   }
 
   void _onStreamDone() {
@@ -480,20 +533,34 @@ class ProtocolClient {
     }
   }
 
-  void _markClosed(String reason) {
+  void _markClosed(String reason, {bool clean = false, bool protocol = false}) {
     if (_closed) {
       return;
     }
     _closed = true;
+    _closeReason = reason;
+    _protocolFailure = protocol;
     _failPending(reason);
     unawaited(_linesSubscription.cancel());
     unawaited(_diagnosticsSubscription.cancel());
+    unawaited(_writeFailuresSubscription.cancel());
+    if (!clean) {
+      // A non-clean close means nobody else will reap the process: terminate it, so a malformed line
+      // or a broken pipe can never leave a live core running with an open stdin (SHELL-F1).
+      unawaited(_terminateTransport());
+    }
     if (!_events.isClosed) {
       unawaited(_events.close());
     }
     if (!_logs.isClosed) {
       unawaited(_logs.close());
     }
+  }
+
+  /// Terminates the transport exactly once; later callers join the same future. Failures are
+  /// swallowed — the connection is already gone either way.
+  Future<void> _terminateTransport() {
+    return _termination ??= _transport.terminate().catchError((Object _) {});
   }
 
   void _failPending(String reason) {

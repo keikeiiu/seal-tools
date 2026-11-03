@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # The v3 Rust workspace.
+  - package-ecosystem: cargo
+    directory: /v3/core
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The Flutter shell.
+  - package-ecosystem: pub
+    directory: /v3/shell
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The workflows themselves (including the v2 build workflow).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

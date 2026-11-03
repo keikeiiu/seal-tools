@@ -203,15 +203,6 @@ fn read_remaining(
     None
 }
 
-fn filter_config(config: &Value) -> seal_domain::config::FilterConfig {
-    config
-        .get("tuner")
-        .and_then(|tuner| tuner.get("filter"))
-        .cloned()
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
-}
-
 fn matched_json(matched: &[seal_domain::ocr::MatchedAttr]) -> Vec<Value> {
     matched
         .iter()
@@ -281,7 +272,8 @@ fn check_frame(
     let measured_row_height = seal_ocr::modes::measure_line_spacing(&scan.items);
     let matcher = AttrMatcher::new(&state.attributes);
     let hits = matcher.match_attributes(&attributes);
-    let filter = filter_config(&state.config);
+    let filter = crate::tuner::filter_config(&state.config)
+        .map_err(|message| Box::new(fail(id, message, json!({}))))?;
 
     let mut warnings: Vec<String> = Vec::new();
     if measured_row_height.is_none() {

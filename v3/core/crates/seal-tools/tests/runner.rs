@@ -440,3 +440,43 @@ fn the_arbiter_publishes_the_runners_reason_as_the_final_snapshot() {
     assert!(!arbiter.is_running(ToolId::Quest));
     assert_eq!(arbiter.game_owner(), None);
 }
+
+#[test]
+fn a_stop_during_decide_abandons_the_decisions_effect() {
+    // TOOL-F8: `decide` can be slow (the tuner's capture + OCR pass), so a Stop pressed while it
+    // runs arrives AFTER the loop's first `control.check()` and BEFORE the effect. The decision is
+    // discarded instead of being performed: no click after the player pressed Stop.
+    struct CancelDuringDecide {
+        token: seal_tools::cancel::CancelToken,
+    }
+
+    impl Tool for CancelDuringDecide {
+        fn id(&self) -> ToolId {
+            ToolId::Tuner
+        }
+
+        fn decide(&mut self) -> Decision {
+            self.token.cancel();
+            Decision::click(point(1, 1))
+        }
+    }
+
+    let mut arbiter = Arbiter::new();
+    let handle = match arbiter.start(ToolId::Tuner) {
+        seal_tools::arbiter::Start::Started(handle) => handle,
+        other => panic!("expected a start, got {other:?}"),
+    };
+    let mut tool = CancelDuringDecide {
+        token: handle.token.clone(),
+    };
+    let mut effects = RecordingEffects::default();
+
+    let reason = run(&mut tool, &handle, &RecordingClock::default(), &mut effects);
+
+    assert_eq!(reason.kind, StopKind::Cancelled);
+    assert_eq!(reason.message, STOPPED_MESSAGE);
+    assert!(
+        effects.calls().is_empty(),
+        "the click the stopped decision asked for never ran"
+    );
+}

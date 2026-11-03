@@ -9,10 +9,11 @@
 //! The one seam is [`QuestSource`]: the cursor read. Everything else is the plan, which is validated
 //! BEFORE the first click (a wrong flow does `loops` wrong actions and the game accepts every one).
 //!
-//! The command stream is v2's: guard → send → wait the step's own `delay_seconds`, per step; passes
-//! repeat inside master loops; a guard trip composes v2's "Stopped on loop N of M." / "Stopped during
-//! `<flow>` p/t of master loop m/M." lines. A failed send ends the run with the effects' own sentence.
-//! A failed placement never applies: the quest sends only bare C/R/E/K, so it never moves the cursor.
+//! The command stream is v2's: the positioning countdown, then the guard reference, then guard →
+//! send → wait the step's own `delay_seconds`, per step; passes repeat inside master loops; a guard
+//! trip composes v2's "Stopped on loop N of M." / "Stopped during `<flow>` p/t of master loop m/M."
+//! lines. A failed send ends the run with the effects' own sentence. A failed placement never
+//! applies: the quest sends only bare C/R/E/K, so it never moves the cursor.
 
 use std::collections::VecDeque;
 
@@ -136,10 +137,12 @@ impl<T: Transport> Effects for QuestEffects<T> {
 /// The run's position in the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    /// The first cursor read: it fails CLOSED, because clicking at an unwatched place is the one
-    /// thing this tool must not do.
-    GuardReference,
+    /// The countdown the player uses to move the cursor onto the game button. The guard reference
+    /// is read AFTER it, so that move is not mistaken for a drift (TOOL-F2).
     Positioning(usize),
+    /// The first cursor read, taken once positioning is over. It fails CLOSED, because clicking at
+    /// an unwatched place is the one thing this tool must not do.
+    GuardReference,
     Steps,
     Done,
 }
@@ -163,7 +166,7 @@ impl<S: QuestSource> QuestTool<S> {
             plan,
             source,
             start: None,
-            phase: Phase::GuardReference,
+            phase: Phase::Positioning(0),
             queue: VecDeque::new(),
             message: String::new(),
             loop_index: 0,
@@ -242,16 +245,6 @@ impl<S: QuestSource + Send> Tool for QuestTool<S> {
 
         loop {
             match self.phase {
-                Phase::GuardReference => match guard_reference(self.source.cursor()) {
-                    Ok(start) => {
-                        self.start = Some(start);
-                        self.phase = Phase::Positioning(0);
-                    }
-                    Err(reason) => {
-                        self.phase = Phase::Done;
-                        return Decision::Stop(reason);
-                    }
-                },
                 Phase::Positioning(index) => {
                     let counts = self.plan.positioning_counts();
                     if index < counts.len() {
@@ -259,8 +252,22 @@ impl<S: QuestSource + Send> Tool for QuestTool<S> {
                         self.phase = Phase::Positioning(index + 1);
                         return Decision::Wait(POSITIONING_TICK_SECONDS);
                     }
-                    self.phase = Phase::Steps;
+                    // v2 reads the guard reference AFTER the positioning countdown
+                    // (`QuestTool.cs:99` positions, then `:102` reads the reference): by now the
+                    // player has moved the mouse into place, so the reference is the point the
+                    // steps are checked against rather than the shell window (TOOL-F2).
+                    self.phase = Phase::GuardReference;
                 }
+                Phase::GuardReference => match guard_reference(self.source.cursor()) {
+                    Ok(start) => {
+                        self.start = Some(start);
+                        self.phase = Phase::Steps;
+                    }
+                    Err(reason) => {
+                        self.phase = Phase::Done;
+                        return Decision::Stop(reason);
+                    }
+                },
                 Phase::Steps => {
                     let loops = self.plan.loops.max(1);
                     if self.loop_index >= loops {
@@ -324,6 +331,9 @@ impl<S: QuestSource + Send> Tool for QuestTool<S> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
 
     /// A scripted cursor: each call takes the next scripted read, repeating the last one.
@@ -354,6 +364,22 @@ mod tests {
                 .flatten();
             self.index += 1;
             read
+        }
+    }
+
+    /// The cursor one TOOL-F2 test needs: it still reads the Start point until the player has
+    /// moved it, so the reference read can be shown to happen AFTER positioning.
+    struct MovingCursor {
+        moved: Arc<AtomicBool>,
+    }
+
+    impl QuestSource for MovingCursor {
+        fn cursor(&mut self) -> Option<Point> {
+            Some(if self.moved.load(Ordering::SeqCst) {
+                Point::new(500, 500)
+            } else {
+                Point::new(0, 0)
+            })
         }
     }
 
@@ -476,9 +502,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unreadable_cursor_at_start_stops_before_anything_is_clicked() {
+    fn an_unreadable_cursor_when_positioning_ends_stops_before_anything_is_clicked() {
         let mut tool = run(&config(&simple_steps(), 1), ScriptedCursor::always(None));
 
+        // The countdown comes first; the guard reference read that follows it is the one that fails.
+        assert_eq!(tool.decide(), Decision::Wait(POSITIONING_TICK_SECONDS));
         match tool.decide() {
             Decision::Stop(reason) => {
                 assert_eq!(reason.kind, StopKind::Error);
@@ -493,9 +521,31 @@ mod tests {
     }
 
     #[test]
+    fn the_guard_reference_is_taken_after_positioning_not_while_the_player_moves() {
+        // TOOL-F2: the player clicks Start with the mouse over the shell window and moves it onto the
+        // game button during the countdown. Taking the reference BEFORE the countdown records the
+        // shell window, so the first step's guard sees the player's own move and stops every run.
+        let moved = Arc::new(AtomicBool::new(false));
+        let plan = resolve(&config(&simple_steps(), 1)).expect("the plan resolves");
+        let mut tool = QuestTool::new(
+            plan,
+            MovingCursor {
+                moved: moved.clone(),
+            },
+        );
+
+        // The countdown: the cursor is still wherever Start was pressed. No reference is read yet.
+        assert_eq!(tool.decide(), Decision::Wait(POSITIONING_TICK_SECONDS));
+        moved.store(true, Ordering::SeqCst);
+        // The reference is the moved-to point, so the first step's guard agrees with it: click,
+        // not "The mouse moved".
+        assert_eq!(tool.decide(), Decision::ClickHere);
+    }
+
+    #[test]
     fn a_cursor_that_moves_mid_run_stops_with_the_loop_line() {
         let source = ScriptedCursor::sequence(vec![
-            Some(Point::new(5, 5)),   // guard reference
+            Some(Point::new(5, 5)),   // the reference, read once positioning is over
             Some(Point::new(5, 5)),   // before the first step: still in place
             Some(Point::new(50, 50)), // before the third step: drifted
         ]);

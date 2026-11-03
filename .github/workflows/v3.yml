@@ -1,0 +1,87 @@
+name: v3
+
+# The v3 core + shell are a separate product from the .NET v2 launcher. This workflow is the
+# mandatory gate for every change under v3/ and mirrors the hand-run checks in v3/core/README.md
+# and v3/shell/tool/check.ps1; the old build.yml still covers v2.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'v3/**'
+      - '.github/workflows/v3.yml'
+      - '.github/dependabot.yml'
+  pull_request:
+    paths:
+      - 'v3/**'
+      - '.github/workflows/v3.yml'
+      - '.github/dependabot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v3-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  core:
+    name: Rust core (fmt, clippy, test)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: v3/core
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel; the components are added on top of it.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3/core
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (workspace pedantic, warnings are errors)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
+      - name: Rustdoc (warnings are errors)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  shell:
+    name: Flutter shell (format, analyze, test, build)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.8'
+          channel: stable
+          cache: true
+
+      - name: Shell quality gate
+        run: pwsh -File v3/shell/tool/check.ps1 -FlutterRoot $env:FLUTTER_ROOT
+
+  publish-selftest:
+    name: Release packaging guards
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: publish.ps1 -Selftest
+        run: pwsh -File v3/publish.ps1 -Selftest

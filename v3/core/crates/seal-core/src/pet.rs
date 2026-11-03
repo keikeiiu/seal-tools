@@ -894,6 +894,12 @@ const DRAG_GRAB_WAIT: f64 = 0.35;
 const START_WAIT: f64 = 2.0;
 const RETRY_MINUTES: f64 = 5.0;
 
+/// The floor between two opens when the pass acted on NOTHING (PET-F6). An unreadable row falls back
+/// to the configured cycle, but a zero-minute schedule with no reload in between would reopen at once
+/// — menu, feed icon, close button, every few seconds, forever. The review's invariant is 60 s: two
+/// `Open` phases are always separated by a `Wait` of at least a minute unless a reload happened.
+const MIN_NO_ACTION_WAIT_MINUTES: f64 = 1.0;
+
 fn inset_bounds(width: usize, height: usize, inset: usize) -> Option<(usize, usize, usize, usize)> {
     if inset * 2 >= width || inset * 2 >= height {
         return None;
@@ -1190,9 +1196,15 @@ struct Visit {
     page: usize,
     candidates: Vec<Candidate>,
     candidate: Option<Candidate>,
+    /// Whether the fallback return-slot candidate has been offered for this row (PET-F5). It is a
+    /// fixed cell, so offering it once is the whole rule: a finished pet found there must fold the
+    /// row, not push the same candidate again forever.
+    return_slot_tried: bool,
+    /// Labels of candidates the hover panel refused (+9/100 %), for the domain's collect-refused
+    /// line (`all_refused_message`), as v2 collected them.
+    refused: Vec<String>,
     attempts: i32,
     stack: i32,
-    food_used: i32,
     food_cell: Option<Point>,
     slot_centre: Option<Point>,
     before: Option<PetImage>,
@@ -1208,9 +1220,10 @@ impl Visit {
             page: 0,
             candidates: Vec::new(),
             candidate: None,
+            return_slot_tried: false,
+            refused: Vec::new(),
             attempts: 0,
             stack: 0,
-            food_used: 0,
             food_cell: None,
             slot_centre: None,
             before: None,
@@ -1232,6 +1245,19 @@ pub struct PetTool<S: PetSource> {
     queue: VecDeque<Decision>,
     pending_stop: Option<StopReason>,
     visit: Option<Visit>,
+    /// The next unused `pet.food_slots` cell index. RUN state, not plan data: it advances as cells are
+    /// loaded (and is persisted per cell), so a later row or visit picks the NEXT cell instead of
+    /// re-clicking the first ones. v2 mutated the live config the same way (`PetTool.cs:3375`
+    /// `cfg.FoodSlotsUsed++`). PET-F1.
+    food_used: i32,
+    /// `pet.reload_on_start` is a one-shot override: true until the first Look has scheduled from it.
+    /// Every later look schedules from the readings, so the option cannot force a reload on every wake
+    /// — and, with an unreadable row, cannot turn the loop into a zero-delay click cycle. PET-F6.
+    start_override_pending: bool,
+    /// Whether the pass that is about to schedule acted on a row (found due rows and started a visit).
+    /// A zero-minute schedule with nothing acted on waits [`MIN_NO_ACTION_WAIT_MINUTES`] instead of
+    /// reopening immediately. PET-F6.
+    acted_this_pass: bool,
     message: String,
     countdown_s: Option<f64>,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
@@ -1251,6 +1277,8 @@ impl<S: PetSource> PetTool<S> {
                 .map(|row| row.name.clone())
                 .collect::<Vec<_>>(),
         );
+        let food_used = plan.food_slots_used;
+        let start_override_pending = plan.reload_on_start;
         Self {
             plan,
             source,
@@ -1261,6 +1289,9 @@ impl<S: PetSource> PetTool<S> {
             queue: VecDeque::new(),
             pending_stop: None,
             visit: None,
+            food_used,
+            start_override_pending,
+            acted_this_pass: false,
             message,
             countdown_s: None,
             state_sink: None,
@@ -1347,7 +1378,7 @@ impl<S: PetSource> PetTool<S> {
         PetScheduleSettings {
             items_per_minute: self.plan.items_per_minute.max(1),
             wait_after_empty_minutes: self.plan.wait_after_empty_minutes,
-            reload_on_start: self.plan.reload_on_start,
+            reload_on_start: self.start_override_pending,
         }
     }
 
@@ -1405,21 +1436,8 @@ impl<S: PetSource> PetTool<S> {
                         }
                     }
                     None => {
-                        // Unknown keeps the previous belief (v2's rule) and schedules from the
-                        // configured cycle rather than acting on a guess.
                         unread = true;
-                        let fallback = schedule_for(
-                            &ScheduleRead {
-                                boarding_running: true,
-                                items_left: None,
-                                completion_minutes: None,
-                                rate: self.plan.items_per_minute.max(1),
-                                stacks: row.stacks,
-                                slot_occupied: false,
-                            },
-                            &self.schedule_settings(),
-                        );
-                        self.state[index].next_minutes = Some(fallback.next_minutes);
+                        self.schedule_unread_row(index, row.stacks);
                     }
                 },
                 Err(line) => {
@@ -1429,6 +1447,14 @@ impl<S: PetSource> PetTool<S> {
                 }
             }
         }
+        // The start override is ONE-SHOT: this Look has scheduled from it, so every later look
+        // schedules from its readings (PET-F6). Cleared even on a retry/early break — the override is
+        // about the run's first pass, not about the read succeeding.
+        self.start_override_pending = false;
+        // A pass acts only when it found due rows. If it did not, a zero-minute soonest must wait the
+        // floor rather than reopen at once — that is what broke the unknown-reading case into a
+        // zero-delay click loop (PET-F6; the floor is applied in `Phase::Wait`).
+        self.acted_this_pass = !due.is_empty();
         if retry {
             for index in self.active_rows() {
                 if self.state[index].next_minutes.is_some() {
@@ -1458,6 +1484,24 @@ impl<S: PetSource> PetTool<S> {
             self.phase = Phase::Visit;
             self.visit = Some(Visit::new(due));
         }
+    }
+
+    /// Schedule a row whose slot could not be read: keep the previous boarding belief (v2's rule) and
+    /// assume the configured cycle rather than acting on a guess. Extracted from [`Self::look`] so the
+    /// pass itself stays one readable state machine.
+    fn schedule_unread_row(&mut self, index: usize, stacks: i32) {
+        let fallback = schedule_for(
+            &ScheduleRead {
+                boarding_running: true,
+                items_left: None,
+                completion_minutes: None,
+                rate: self.plan.items_per_minute.max(1),
+                stacks,
+                slot_occupied: false,
+            },
+            &self.schedule_settings(),
+        );
+        self.state[index].next_minutes = Some(fallback.next_minutes);
     }
 
     /// Read a boarding row: the game's own time line and rate, then the feeder counts; the three feed
@@ -1603,9 +1647,11 @@ impl<S: PetSource> PetTool<S> {
             Stage::PickPage => {
                 visit.page = 0;
                 visit.candidates.clear();
+                visit.candidate = None;
+                visit.return_slot_tried = false;
+                visit.refused.clear();
                 visit.attempts = 0;
                 visit.stack = 0;
-                visit.food_used = self.plan.food_slots_used;
                 visit.stage = Stage::CapturePage;
             }
             Stage::CapturePage => {
@@ -1654,9 +1700,14 @@ impl<S: PetSource> PetTool<S> {
                 visit.stage = Stage::CapturePage;
             }
             Stage::ChooseCandidate => {
-                if visit.candidates.is_empty() && self.plan.setup.return_slot.is_some() {
+                if visit.candidates.is_empty()
+                    && !visit.return_slot_tried
+                    && self.plan.setup.return_slot.is_some()
+                {
                     // The return slot holds the pet this row just finished feeding; it has no queue
-                    // entry, so no icon is needed and no species line is known.
+                    // entry, so no icon is needed and no species line is known. Offered ONCE per row:
+                    // the hover can refuse it (+9/100 %), and re-pushing the same fixed cell would
+                    // loop Place + hover forever (PET-F5).
                     let slot = self.plan.setup.return_slot.clone().unwrap_or_default();
                     let cell = slot.get(1).copied().unwrap_or(0);
                     if let Some(centre) =
@@ -1664,15 +1715,22 @@ impl<S: PetSource> PetTool<S> {
                             BagGrid::centres(Some(grid)).get(cell as usize).copied()
                         })
                     {
+                        visit.return_slot_tried = true;
                         visit.candidates.push(Candidate {
                             point: centre,
-                            label: String::new(),
+                            // v2 labels this candidate "the return slot", and the label is what the
+                            // collect-refused line names.
+                            label: "the return slot".to_owned(),
                             species: None,
                         });
                     }
                 }
                 if visit.candidates.is_empty() {
-                    let reason = if self.plan.queue.is_empty() {
+                    let reason = if !visit.refused.is_empty() {
+                        // Every candidate was found and refused (+9/100 %), which is a different fix
+                        // from "nothing found" — the domain owns both sentences.
+                        seal_domain::tools::pet::all_refused_message(&visit.refused)
+                    } else if self.plan.queue.is_empty() {
                         seal_domain::tools::pet::no_way_to_find_pet_message()
                     } else {
                         seal_domain::tools::pet::nothing_matched_message()
@@ -1707,9 +1765,12 @@ impl<S: PetSource> PetTool<S> {
                     self.state[index].species.clone_from(&candidate.species);
                 }
                 if finished {
-                    self.message = seal_domain::tools::pet::all_refused_message(&[candidate
-                        .map(|candidate| candidate.label)
-                        .unwrap_or_default()]);
+                    // Collect the refusal and try the NEXT candidate; when the list is exhausted the
+                    // row folds to `NothingToBoard` with the domain's collect-refused line (PET-F5).
+                    if let Some(candidate) = &candidate {
+                        visit.refused.push(candidate.label.clone());
+                    }
+                    self.message = seal_domain::tools::pet::all_refused_message(&visit.refused);
                     visit.stage = Stage::ChooseCandidate;
                 } else {
                     visit.stage = Stage::ClickCandidate;
@@ -1746,7 +1807,7 @@ impl<S: PetSource> PetTool<S> {
                 }
                 if visit.stack >= row.stacks.max(1) {
                     visit.stage = Stage::StartToggle;
-                } else if let Some(cell) = self.plan.food_slots.get(visit.food_used as usize) {
+                } else if let Some(cell) = self.plan.food_slots.get(self.food_used as usize) {
                     let page = cell.first().copied().unwrap_or(0);
                     let cell_index = cell.get(1).copied().unwrap_or(0);
                     let tabs = self.plan.setup.page_tabs.clone();
@@ -1764,7 +1825,7 @@ impl<S: PetSource> PetTool<S> {
                     visit.outcome = Some(RowOutcome::Failed {
                         error: format!(
                             "No food cells left — {} of {} used. Mark the cells holding food again on the Pet tab.",
-                            visit.food_used,
+                            self.food_used,
                             self.plan.food_slots.len()
                         ),
                     });
@@ -1864,9 +1925,12 @@ impl<S: PetSource> PetTool<S> {
                 }
             }
             Stage::FoodDone => {
-                visit.food_used += 1;
+                // The cell is consumed: the cursor lives on the TOOL, so the next stack, the next row
+                // and every later visit start from the following cell (PET-F1). Persisted per cell so
+                // a restart resumes where the run stopped.
+                self.food_used += 1;
                 self.persist_state(&seal_config::PetRunStatePatch {
-                    food_slots_used: Some(visit.food_used),
+                    food_slots_used: Some(self.food_used),
                     ..seal_config::PetRunStatePatch::default()
                 });
                 visit.stack += 1;
@@ -1922,9 +1986,10 @@ impl<S: PetSource> PetTool<S> {
                 visit.stage = Stage::Begin;
                 visit.attempts = 0;
                 visit.stack = 0;
-                visit.food_used = self.plan.food_slots_used;
                 visit.candidate = None;
                 visit.candidates.clear();
+                visit.return_slot_tried = false;
+                visit.refused.clear();
                 visit.food_cell = None;
                 visit.slot_centre = None;
                 visit.before = None;
@@ -1991,7 +2056,14 @@ impl<S: PetSource> PetTool<S> {
                         // `scheduled` was just checked non-empty, so this is unreachable.
                         continue;
                     };
-                    let minutes = self.state[soonest].next_minutes.unwrap_or(0.0);
+                    let mut minutes = self.state[soonest].next_minutes.unwrap_or(0.0);
+                    if minutes <= 0.0 && !self.acted_this_pass {
+                        // A pass that reloaded nothing must not reopen at once: an unreadable row falls
+                        // back to a zero-minute "reload now" on the first pass, and reopening there
+                        // clicked menu/feed/close every few seconds forever (PET-F6). The review's
+                        // invariant is a one-minute floor between such opens.
+                        minutes = MIN_NO_ACTION_WAIT_MINUTES;
+                    }
                     if minutes <= 0.0 {
                         self.phase = Phase::Open;
                         self.message =
@@ -2913,6 +2985,51 @@ mod loop_tests {
         );
     }
 
+    /// PET-F5: a finished pet (+9/100 %) in the return slot used to be re-pushed as a candidate
+    /// forever — `ChooseCandidate` pushed it whenever the list was empty and `HoverRead` sent the
+    /// refusal straight back. It is offered ONCE now: refused, then the row folds to `NothingToBoard`
+    /// (a WAIT) with no click, instead of hovering for the rest of time.
+    #[test]
+    fn a_finished_pet_in_the_return_slot_folds_the_row_instead_of_hovering_forever() {
+        let mut config = config(1, false, true, false);
+        // The hover is the only defence against boarding a spent pet, so this fixture needs a box.
+        config["tooltip"] = serde_json::json!({
+            "offset_x": 0,
+            "offset_y": 0,
+            "width": 200,
+            "height": 100,
+            "hover_delay_ms": 100
+        });
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![empty(), empty()]);
+        source.hover = vec!["(6階) +9 [100%]".to_owned()];
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        // `run_to_wait` is bounded: before the fix this never reached a scheduled wait at all.
+        let (decisions, _messages) = run_to_wait(&mut tool);
+
+        let return_point = BagGrid::centres(Some(&[0, 0, 400, 400]))[1];
+        assert_eq!(
+            decisions
+                .iter()
+                .filter(|decision| **decision == Decision::Place(return_point))
+                .count(),
+            1,
+            "the return slot is hovered once, not re-placed forever: {decisions:?}"
+        );
+        assert!(
+            !decisions.contains(&Decision::RightClickHere),
+            "a finished pet is never right-clicked: {decisions:?}"
+        );
+        let card = tool.card();
+        assert_eq!(card.rows[0].status, "waiting for a reload");
+        assert_eq!(
+            card.rows[0].next_minutes,
+            Some(seal_domain::tools::pet::NO_PET_RETRY_MINUTES),
+            "NothingToBoard is a WAIT with the domain's retry interval, not a failure"
+        );
+    }
+
     #[test]
     fn the_food_drag_holds_and_releases_exactly_once_in_order() {
         let config = config(1, true, true, false);
@@ -2961,6 +3078,107 @@ mod loop_tests {
                 .iter()
                 .any(|message| message.contains("loading the food")),
             "{messages:?}"
+        );
+    }
+
+    /// PET-F1: the food cursor is RUN state. Two rows of two stacks in right-click mode: the four
+    /// loads must take four DISTINCT cells in order, and the sink must persist 1, 2, 3, 4. The old code
+    /// reset the cursor from the plan at every `PickPage`, so row 2 re-clicked row 1's first two cells
+    /// (loaded them into a pet that already had food) and the persisted count never passed 2.
+    #[test]
+    fn the_food_cursor_advances_across_rows_and_stacks_within_a_run() {
+        let mut config = config(2, false, true, false);
+        // Page 0 cells 2-5, so the food points cannot collide with the return slot (cell 1).
+        config["pet"]["food_slots"] = serde_json::json!([[0, 2], [0, 3], [0, 4], [0, 5]]);
+        for index in 0..2 {
+            config["pet"]["slots"][index]["stacks"] = serde_json::json!(2);
+        }
+        let plan = plan_of(&config);
+        // The opening look, then per row: verify-empty, pet-in, boarding-started.
+        let source = FakeSource::new(vec![
+            empty(),
+            empty(),
+            empty(),
+            populated(),
+            populated(),
+            empty(),
+            populated(),
+            populated(),
+        ]);
+        let sink = RecordingSink::new();
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll))
+            .with_state_sink(Arc::clone(&sink) as Arc<dyn crate::pet_state::PetStateSink>);
+
+        let (decisions, _messages) = run_to_wait(&mut tool);
+
+        let centres = BagGrid::centres(Some(&[0, 0, 400, 400]));
+        let return_slot = centres[1];
+        let food_places: Vec<Point> = decisions
+            .iter()
+            .filter_map(|decision| match decision {
+                Decision::Place(point) if *point != return_slot => Some(*point),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            food_places,
+            vec![centres[2], centres[3], centres[4], centres[5]],
+            "row 2 must continue the cursor instead of re-clicking row 1's cells: {decisions:?}"
+        );
+        let mut distinct = food_places.clone();
+        distinct.sort_by_key(|point| (point.x, point.y));
+        distinct.dedup();
+        assert_eq!(distinct.len(), 4, "four distinct food cells were loaded");
+
+        let persisted: Vec<i32> = sink
+            .patches()
+            .iter()
+            .filter_map(|patch| patch.food_slots_used)
+            .collect();
+        assert_eq!(
+            persisted,
+            vec![1, 2, 3, 4],
+            "the run-state cursor is persisted after each cell"
+        );
+    }
+
+    /// PET-F6: `reload_on_start` is ONE-SHOT (the first Look consumes it) and a pass that acted on
+    /// nothing cannot reopen immediately. With a row whose slot always reads unknown, the old code
+    /// re-scheduled "now" on every wake and clicked menu/feed/close in a zero-delay loop.
+    #[test]
+    fn reload_on_start_is_one_shot_and_an_unknown_pass_waits_before_reopening() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(true);
+        let plan = plan_of(&config);
+        let unknown = SlotState {
+            difference: None,
+            empty: None,
+        };
+        let source = FakeSource::new(vec![unknown]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let mut waits = Vec::new();
+        for _ in 0..500 {
+            match tool.decide() {
+                // The UI waits (window/click settles) are sub-second; only the queue's scheduled waits
+                // are the F6 subject.
+                Decision::Wait(seconds) if seconds >= 60.0 => waits.push(seconds),
+                Decision::Wait(_) => {}
+                decision => assert!(!decision.is_terminal(), "unexpected stop: {decision:?}"),
+            }
+            if waits.len() == 2 {
+                break;
+            }
+        }
+
+        assert_eq!(
+            waits.first().copied(),
+            Some(60.0),
+            "a no-action pass waits the review's 60 s floor instead of reopening at once: {waits:?}"
+        );
+        assert!(
+            waits.get(1).is_some_and(|seconds| *seconds > 60.0),
+            "the start override is one-shot; the second pass waits the configured cycle: {waits:?}"
         );
     }
 
