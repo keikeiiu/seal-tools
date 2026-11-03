@@ -431,6 +431,10 @@ class ShellModel extends ChangeNotifier {
   }
 
   /// One click, one new process, one new handshake ([PLAN-V3-SHELL.md] §2) — never an auto loop.
+  ///
+  /// The previous process is stopped BEFORE the new one spawns: a graceful [ProtocolClient.close]
+  /// first (EOF is the safe stop), then an explicit terminate so a wedged or already-crashed core can
+  /// never outlive the restart and keep driving the board beside the new one (SHELL-F1).
   Future<void> restart() async {
     if (_closing || _disposed) {
       return;
@@ -443,6 +447,11 @@ class ShellModel extends ChangeNotifier {
         await previous.close();
       } catch (_) {
         // The old connection is dead or dying either way; the new process is the point.
+      }
+      try {
+        await previous.terminate(reason: 'the shell restarted the core');
+      } catch (_) {
+        // Termination is idempotent; a process that refused to die cannot block the restart forever.
       }
     }
     // Cards keep the last rendered state (PLAN-V3-SHELL §2) — nothing is cleared here.
@@ -1052,13 +1061,24 @@ class ShellModel extends ChangeNotifier {
     }
     final tail = List<String>.of(client.stderrTail);
     logs.captureStderrTail(tail);
-    _fail(
-      ConnectionFailure.coreExit,
-      tail.isEmpty
-          ? 'the core exited'
-          : 'the core exited — last line on stderr: ${tail.last}',
-      stderrTail: tail,
-    );
+    if (client.protocolFailure) {
+      // The output could not be understood (an undecodable RESPONSE or a broken write path): report a
+      // protocol failure, not a fake "the core exited"; the client has already terminated the process
+      // so a live core is never left running unreferenced (SHELL-F1).
+      _fail(
+        ConnectionFailure.protocol,
+        client.closeReason ?? 'the core output could not be decoded',
+        stderrTail: tail,
+      );
+    } else {
+      _fail(
+        ConnectionFailure.coreExit,
+        tail.isEmpty
+            ? 'the core exited'
+            : 'the core exited — last line on stderr: ${tail.last}',
+        stderrTail: tail,
+      );
+    }
     // The last rendered state is deliberately kept (PLAN §2): the crash view replaces the grid but a
     // restart starts from the same cards.
   }
@@ -1218,6 +1238,10 @@ class ShellModel extends ChangeNotifier {
     );
   }
 
+  /// Drops a client whose connection never became the shell's own (handshake failure, or a connect
+  /// that finished while the shell was shutting down). Closing is the graceful EOF; the explicit
+  /// terminate then guarantees the half-started process is gone — nothing holds a reference to it
+  /// afterwards, so leaving it alive would be an orphan (SHELL-F1).
   Future<void> _detachClient(ProtocolClient client) async {
     if (identical(_client, client)) {
       _client = null;
@@ -1227,6 +1251,11 @@ class ShellModel extends ChangeNotifier {
       await client.close();
     } catch (_) {
       // Already closed or the process is gone; nothing to recover.
+    }
+    try {
+      await client.terminate(reason: 'the shell dropped the connection');
+    } catch (_) {
+      // Termination is idempotent; a process that refused to die cannot block the teardown.
     }
   }
 

@@ -51,6 +51,10 @@ class AppHarness {
   /// When set, the transport factory throws it — the spawn-failure path.
   Object? spawnError;
 
+  /// Called with the attempt number BEFORE a new transport is created; a restart test uses it to
+  /// observe whether the previous process was already terminated when the next one spawns (SHELL-F1).
+  void Function(int attempt)? onSpawn;
+
   int spawnAttempts = 0;
 
   FakeTransport get transport => transports.last;
@@ -62,6 +66,7 @@ class AppHarness {
 
   Future<Transport> _spawn() async {
     spawnAttempts++;
+    onSpawn?.call(spawnAttempts);
     final error = spawnError;
     if (error != null) {
       throw error;

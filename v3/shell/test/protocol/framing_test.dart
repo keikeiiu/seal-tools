@@ -143,6 +143,52 @@ void main() {
     });
   });
 
+  group('SHELL-F1: an undecodable event is not fatal', () {
+    test(
+      'a malformed known EVENT becomes a marker and the stream continues',
+      () async {
+        final messages = await decodeLines(
+          Stream.fromIterable([
+            '{"v":1,"event":"state","data":{"tool":"pet"}}',
+            '{"v":1,"event":"log","data":{"level":"info","line":"after"}}',
+          ]),
+        ).toList();
+
+        expect(messages, hasLength(2));
+        final marker = messages[0];
+        expect(marker, isA<IncomingMalformedEvent>());
+        final malformed = marker as IncomingMalformedEvent;
+        expect(malformed.eventName, 'state');
+        expect(malformed.error, isA<ProtocolDecodeException>());
+
+        final event = (messages[1] as IncomingEvent).event;
+        expect(event, isA<LogEvent>());
+        expect((event as LogEvent).log.line, 'after');
+      },
+    );
+
+    test(
+      'a malformed RESPONSE is still fatal: its request could never settle',
+      () async {
+        await expectLater(
+          decodeLines(
+            Stream.fromIterable([
+              '{"v":1,"id":"1","ok":true,"result":"not-a-map"}',
+            ]),
+          ).toList(),
+          throwsA(isA<ProtocolDecodeException>()),
+        );
+      },
+    );
+
+    test('garbage that cannot be attributed to an event stays fatal', () async {
+      await expectLater(
+        decodeLines(Stream.fromIterable(['not json'])).toList(),
+        throwsA(isA<ProtocolDecodeException>()),
+      );
+    });
+  });
+
   group('byte stream decoding', () {
     test(
       'splits lines and keeps multi-byte UTF-8 intact across chunks',

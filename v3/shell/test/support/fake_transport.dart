@@ -13,6 +13,7 @@ class FakeTransport implements Transport {
   // client's decoder has subscribed is not lost, which a broadcast stream would drop.
   final _incoming = StreamController<String>();
   final _diagnostics = StreamController<String>();
+  final _writeFailures = StreamController<Object>.broadcast();
 
   /// Every line the client wrote, as sent.
   final sent = <String>[];
@@ -23,11 +24,21 @@ class FakeTransport implements Transport {
   bool inputClosed = false;
   bool terminated = false;
 
+  /// How many times the client asked for the transport to be killed (the restart path).
+  int terminateCalls = 0;
+
   @override
   Stream<String> get lines => _incoming.stream;
 
   @override
   Stream<String> get diagnostics => _diagnostics.stream;
+
+  @override
+  Stream<Object> get writeFailures => _writeFailures.stream;
+
+  /// Simulates a broken stdin (`stdin.done` error on the real transport): the client fails pending
+  /// requests at once and terminates the transport (SHELL-F1).
+  void failWrites(Object error) => _writeFailures.add(error);
 
   @override
   void writeLine(String line) {
@@ -42,6 +53,7 @@ class FakeTransport implements Transport {
 
   @override
   Future<void> terminate() async {
+    terminateCalls++;
     terminated = true;
   }
 
@@ -65,6 +77,9 @@ class FakeTransport implements Transport {
     }
     if (!_diagnostics.isClosed) {
       await _diagnostics.close();
+    }
+    if (!_writeFailures.isClosed) {
+      await _writeFailures.close();
     }
   }
 

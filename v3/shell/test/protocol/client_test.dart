@@ -310,6 +310,12 @@ void main() {
         throwsA(isA<ProtocolClosedException>()),
       );
       expect(core.client.isClosed, isTrue);
+      await pumpEventQueue();
+      expect(
+        core.transport.terminated,
+        isTrue,
+        reason: 'a closed output must never leave a live process unreferenced',
+      );
 
       await core.dispose();
     });
@@ -348,9 +354,15 @@ void main() {
       expect(core.transport.inputClosed, isTrue);
       expect(core.client.isClosed, isTrue);
       expect(eventsDone, isTrue);
+      expect(
+        core.transport.terminated,
+        isFalse,
+        reason: 'a clean close is a graceful EOF, not a kill',
+      );
 
-      // Second close is a no-op; nothing throws.
+      // A close after the client is already closed still makes sure the process is gone (SHELL-F1).
       await core.client.close();
+      expect(core.transport.terminated, isTrue);
       await core.dispose();
     });
 
@@ -362,6 +374,124 @@ void main() {
 
       expect(core.transport.terminated, isTrue);
       expect(core.client.isClosed, isTrue);
+
+      await core.dispose();
+    });
+  });
+
+  group('SHELL-F1: a closed client never leaves the core unreferenced', () {
+    test(
+      'garbage output is a protocol failure and terminates the transport',
+      () async {
+        final core = _Core();
+        await core.connect();
+        var eventsDone = false;
+        core.client.events.listen(null, onDone: () => eventsDone = true);
+
+        core.transport.emit('this is not the protocol');
+        await pumpEventQueue();
+
+        expect(core.client.isClosed, isTrue);
+        expect(eventsDone, isTrue);
+        expect(
+          core.client.protocolFailure,
+          isTrue,
+          reason: 'this is not a core EXIT and must not be reported as one',
+        );
+        expect(core.client.closeReason, contains('could not be decoded'));
+        expect(core.transport.terminated, isTrue);
+        expect(core.transport.terminateCalls, 1);
+
+        await core.dispose();
+      },
+    );
+
+    test(
+      'one undecodable event is logged and skipped, the connection stays open',
+      () async {
+        final core = _Core();
+        await core.connect();
+        final events = <ProtocolEvent>[];
+        core.client.events.listen(events.add);
+        final logs = <String>[];
+        core.client.logs.listen(logs.add);
+
+        core.transport.emit('{"v":1,"event":"state","data":{"tool":"pet"}}');
+        await pumpEventQueue();
+
+        expect(core.client.isClosed, isFalse);
+        expect(core.transport.terminated, isFalse);
+        expect(events, hasLength(1));
+        expect(events.single, isA<UnknownEvent>());
+        expect((events.single as UnknownEvent).name, 'state');
+        expect(
+          logs.any(
+            (line) => line.contains('ignoring undecodable event "state"'),
+          ),
+          isTrue,
+        );
+
+        // The connection still answers a request.
+        core.transport.onWrite = (line) {
+          final message = core.transport.sentJson(
+            core.transport.sent.length - 1,
+          );
+          core.transport.emitJson(
+            okResponse(message['id'] as String, {
+              'rev': 9,
+              'config': <String, dynamic>{},
+            }),
+          );
+        };
+        final response = await core.client.request('config.reload');
+        expect(response, isA<OkResponse>());
+
+        await core.dispose();
+      },
+    );
+
+    test(
+      'a failed write fails pending requests at once and terminates',
+      () async {
+        final core = _Core();
+        await core.connect();
+        final pending = core.client.request('config.reload');
+
+        core.transport.failWrites(StateError('broken pipe'));
+        await expectLater(pending, throwsA(isA<ProtocolClosedException>()));
+        await pumpEventQueue();
+
+        expect(
+          core.client.protocolFailure,
+          isTrue,
+          reason: 'a broken write path is reported as protocol, not as the core exiting',
+        );
+        expect(
+          core.client.closeReason,
+          contains('could not write to the core'),
+        );
+        expect(core.transport.terminated, isTrue);
+
+        await core.dispose();
+      },
+    );
+
+    test('a close after the client already closed still terminates', () async {
+      final core = _Core();
+      await core.connect();
+      core.transport.closeIncoming();
+      await pumpEventQueue();
+
+      expect(core.client.isClosed, isTrue);
+      expect(core.transport.terminated, isTrue);
+      expect(core.transport.terminateCalls, 1);
+
+      await core.client.close();
+      expect(
+        core.transport.terminateCalls,
+        1,
+        reason: 'termination is cached, not repeated',
+      );
 
       await core.dispose();
     });

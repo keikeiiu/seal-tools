@@ -47,6 +47,29 @@ final class IncomingEvent extends IncomingMessage {
   final ProtocolEvent event;
 }
 
+/// An event line whose payload could not be decoded, kept as a NON-FATAL marker (SHELL-F1).
+///
+/// A newer core may add a phase, stop reason or field this shell predates; one such event must not
+/// end the connection and leave the core running unreferenced. The client logs this and forwards it
+/// as an [UnknownEvent]; only a RESPONSE that cannot be correlated stays fatal, because nothing else
+/// will ever settle its request.
+final class IncomingMalformedEvent extends IncomingMessage {
+  const IncomingMalformedEvent({
+    required this.error,
+    this.eventName,
+    this.eventData,
+  });
+
+  /// The decode error, for the status log.
+  final ProtocolDecodeException error;
+
+  /// The event's wire name when the envelope itself was readable.
+  final String? eventName;
+
+  /// The event's `data` object when it was an object.
+  final JsonMap? eventData;
+}
+
 /// Decodes one line of the protocol.
 ///
 /// Throws [ProtocolDecodeException] for a blank line, invalid JSON, a non-object, a wrong `v`, or an
@@ -107,13 +130,59 @@ IncomingMessage decodeLine(String line) {
   );
 }
 
-/// Decodes a stream of lines into messages, stopping at the first malformed line.
+/// When a decoded line fails and the line is identifiably an EVENT, returns a non-fatal marker for it.
 ///
-/// A protocol violation ends the stream — the caller (the client) turns that into a closed connection
-/// with the decode error as the reason, rather than limping on with a partially understood core.
+/// Only an `event` envelope qualifies: its payload is informational, so the shell can log it and keep
+/// reading. Everything else — invalid JSON, a non-object, a wrong version, a malformed RESPONSE —
+/// returns null and the caller rethrows, because a response that cannot be correlated leaves a pending
+/// request hanging and is the one case that must end the connection (SHELL-F1).
+IncomingMalformedEvent? classifyMalformedEvent(
+  String line,
+  ProtocolDecodeException error,
+) {
+  final trimmed = line.endsWith('\r')
+      ? line.substring(0, line.length - 1)
+      : line;
+  if (trimmed.trim().isEmpty) {
+    return null;
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(trimmed);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) {
+    return null;
+  }
+  if (!decoded.containsKey('event')) {
+    return null;
+  }
+  final name = decoded['event'];
+  final data = decoded['data'];
+  return IncomingMalformedEvent(
+    error: error,
+    eventName: name is String ? name : null,
+    eventData: data is Map<String, dynamic> ? data : null,
+  );
+}
+
+/// Decodes a stream of lines into messages.
+///
+/// A malformed line that is identifiably an EVENT is delivered as [IncomingMalformedEvent] and the
+/// stream continues; any other protocol violation ends the stream (see [classifyMalformedEvent]), so a
+/// response that cannot be correlated never leaves its request pending forever.
 Stream<IncomingMessage> decodeLines(Stream<String> lines) async* {
   await for (final line in lines) {
-    yield decodeLine(line);
+    try {
+      yield decodeLine(line);
+    } on ProtocolDecodeException catch (error) {
+      final malformed = classifyMalformedEvent(line, error);
+      if (malformed == null) {
+        rethrow;
+      }
+      yield malformed;
+    }
   }
 }
 

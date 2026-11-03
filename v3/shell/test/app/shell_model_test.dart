@@ -224,6 +224,81 @@ void main() {
     expect(harness.model.tools.snapshot(ToolId.pet)?.message, 'feeding');
   });
 
+  test('a malformed line is a protocol failure, not a core exit', () async {
+    final harness = AppHarness();
+    addTearDown(harness.dispose);
+    await harness.connect();
+
+    harness.transport.emit('this is not the protocol');
+    await settle();
+
+    expect(harness.model.connection.status, ConnectionStatus.failed);
+    expect(
+      harness.model.connection.failure,
+      ConnectionFailure.protocol,
+      reason:
+          'undecodable output is a protocol failure, never "the core exited"',
+    );
+    expect(
+      harness.model.connection.failureMessage,
+      contains('could not be decoded'),
+    );
+    expect(
+      harness.transport.terminated,
+      isTrue,
+      reason: 'the closed client must not leave a live core unreferenced',
+    );
+    expect(harness.model.connection.canRestart, isTrue);
+  });
+
+  test(
+    'restart terminates the old transport before spawning a new one',
+    () async {
+      final harness = AppHarness();
+      addTearDown(harness.dispose);
+      await harness.connect();
+      final old = harness.transport;
+      var oldTerminatedAtSecondSpawn = false;
+      harness.onSpawn = (attempt) {
+        if (attempt == 2) {
+          oldTerminatedAtSecondSpawn = old.terminated;
+        }
+      };
+
+      harness.crash();
+      await settle();
+      await harness.model.restart();
+      await settle();
+
+      expect(harness.spawnAttempts, 2);
+      expect(old.terminated, isTrue);
+      expect(
+        oldTerminatedAtSecondSpawn,
+        isTrue,
+        reason: 'the old process is gone before the new one spawns (SHELL-F1)',
+      );
+      expect(harness.model.connection.status, ConnectionStatus.ready);
+    },
+  );
+
+  test('restart after a protocol failure reaps the old process', () async {
+    final harness = AppHarness();
+    addTearDown(harness.dispose);
+    await harness.connect();
+    final old = harness.transport;
+
+    old.emit('this is not the protocol');
+    await settle();
+    expect(harness.model.connection.failure, ConnectionFailure.protocol);
+
+    await harness.model.restart();
+    await settle();
+
+    expect(old.terminated, isTrue);
+    expect(harness.spawnAttempts, 2);
+    expect(harness.model.connection.status, ConnectionStatus.ready);
+  });
+
   test('bad_version fails the connection and does not offer Restart', () async {
     final harness = AppHarness();
     addTearDown(harness.dispose);
@@ -253,6 +328,11 @@ void main() {
     );
     expect(harness.model.connection.failureMessage, contains('speaks 1'));
     expect(harness.model.connection.failureMessage, contains('expects 1'));
+    expect(
+      harness.transport.terminated,
+      isTrue,
+      reason: 'the half-started core is reaped: nothing holds it after the handshake fails (SHELL-F1)',
+    );
   });
 
   test('a spawn failure is a rendered state, not a thrown exception', () async {
