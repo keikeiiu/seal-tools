@@ -1033,9 +1033,10 @@ fn portable_sections(base: &Value) -> Vec<String> {
     sections
 }
 
-/// The portable shape of the two post-template setting leaves: `ui.always_on_top` and the shell's
-/// `ui.quick_dock` preference. The projection still reduces the merged config to these leaves, so
-/// the machine `ui` block's geometry can never enter the portable `settings:` half.
+/// The portable shape of the post-template setting leaves: `ui.always_on_top`, the shell's
+/// `ui.quick_dock` preference and the two run-window preferences (`collapse_on_run_start`,
+/// `return_after_run`). The projection still reduces the merged config to these leaves, so the
+/// machine `ui` block's geometry can never enter the portable `settings:` half.
 fn ensure_portable_ui(base: &mut Value) {
     let Some(object) = base.as_object_mut() else {
         return;
@@ -1048,6 +1049,12 @@ fn ensure_portable_ui(base: &mut Value) {
     };
     ui_object
         .entry("always_on_top".to_owned())
+        .or_insert(Value::Bool(false));
+    ui_object
+        .entry("collapse_on_run_start".to_owned())
+        .or_insert(Value::Bool(true));
+    ui_object
+        .entry("return_after_run".to_owned())
         .or_insert(Value::Bool(false));
     ui_object.entry("quick_dock".to_owned()).or_insert_with(|| {
         let mut shape = Map::new();

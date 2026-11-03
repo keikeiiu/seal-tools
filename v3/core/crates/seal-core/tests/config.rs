@@ -636,6 +636,45 @@ fn always_on_top_is_accepted_written_and_preserved() {
 }
 
 #[test]
+fn run_window_preferences_are_accepted_written_and_preserved() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let sections = json!({"settings": {"ui": {
+        "collapse_on_run_start": false,
+        "return_after_run": true,
+    }}});
+    let validated = session.result("config.validate", json!({"sections": sections}));
+    assert_eq!(validated["errors"], json!([]));
+    assert_eq!(validated["warnings"], json!([]));
+
+    let applied = session.result("config.apply", json!({"rev": rev, "sections": sections}));
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["collapse_on_run_start"], false,
+        "apply echoes the portable run-window fields"
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["return_after_run"],
+        true
+    );
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["block"], "ui");
+    assert_eq!(event["data"]["values"]["collapse_on_run_start"], false);
+    assert_eq!(event["data"]["values"]["return_after_run"], true);
+
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(local["settings"]["ui"]["collapse_on_run_start"], false);
+    assert_eq!(local["settings"]["ui"]["return_after_run"], true);
+
+    let reloaded = session.result("config.reload", json!({}));
+    assert_eq!(reloaded["config"]["ui"]["collapse_on_run_start"], false);
+    assert_eq!(reloaded["config"]["ui"]["return_after_run"], true);
+}
+
+#[test]
 fn quick_dock_preference_is_accepted_written_and_preserved() {
     let root = config_root();
     let mut session = Session::start(root.path());
