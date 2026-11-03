@@ -131,7 +131,7 @@ pub fn measure(title: &str) -> Result<Value, CommandError> {
 ///
 /// The capture stays foreground-gated exactly as `seal_win::window::capture_client_region` defines
 /// it: a covered game is never photographed. When that gate first refuses, the core allows itself at
-/// most [`FOREGROUND_WAIT`] to get the game back in front — one `SetForegroundWindow` nudge (the
+/// most `FOREGROUND_WAIT` to get the game back in front — one `SetForegroundWindow` nudge (the
 /// shell's own Start/collapse/re-show can be the foreground thief) and then the same gated capture on
 /// a short poll — before it reports the existing refusal. So a momentary foreground loss does not
 /// consume the player's read, while a genuinely covered game still fails with the unchanged
