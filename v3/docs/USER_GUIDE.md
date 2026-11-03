@@ -549,8 +549,10 @@ section 8.
 
 The one calibration surface for every tool. Section 6 is the full walkthrough: capture the game
 window, choose a **kind**, optionally a **target instance**, draw the mark, **Save mark**, and read the
-core's stored mark / derived values / artifact below. The tab's panel caption repeats the capture
-behaviour: the shell hides itself for the grab, waits one frame, and reopens.
+core's stored mark / derived values / artifact below. Below the stored table, **Session-shaped
+calibrations** holds the two-step/three-step sessions (Tuner OCR 3-box, Tooltip offset, Pet rows); see
+§6.5 and §6.6. The tab's panel caption repeats the capture behaviour: the shell hides itself for the
+grab, waits one frame, and reopens.
 
 ---
 
@@ -629,17 +631,11 @@ never be saved against the wrong instance by accident.
 One answer is not "which is better": it is "what is in the box at the moment you captured". You can
 re-save the same kind later with the box empty to add the crop.
 
-### 6.4 What is not calibratable yet
+### 6.4 What still needs another kind of session
 
-These are **not missing marks you can hand-wave**: each needs a different kind of session, and v3.0
-deliberately offers no fake one.
+These are **not missing marks you can hand-wave**: each needs a different kind of session. Tuner OCR
+and the tooltip panel have their sessions in §6.5–§6.6; these are the remaining ones.
 
-- **The tuner's three-box geometry** — v2 dragged a grade area, an attribute band and a remaining band
-  and the core *derived* the OCR region, the bands and the row height from them. v3.0 has only the
-  **Spring point** kind; there is no `tuner_region`, and the tuner OCR geometry is still configured in
-  `local.yaml` (`tuner.ocr`) until that session exists. The Calibrate tab says so in its tuner note.
-- **The tooltip panel** — a hover offset measured by parking, hovering and capturing cannot be
-  expressed as one frame mark; hand-edited from v2 config.
 - **The pet's reference crops and row entries** — live-screen session features (the close-X crop is
   even learned by the run), not frame marks. The Pet tab adds queue pets by icon capture, but adding
   rows and re-capturing the row reference crops needs the pet capture session (section 11).
@@ -650,6 +646,36 @@ deliberately offers no fake one.
   do not show a "your display moved" result yet. If you change monitor, scale, window size or move to a
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
   not applied (the game UI does not scale linearly).
+
+### 6.5 Tuner OCR three-box session
+
+1. In **Calibrate → Session-shaped calibrations**, find **Tuner OCR 3-box** and press **Capture
+   screen** with the tuner's status window visible in the game.
+2. Draw the three boxes **in order**: **Grade letter** (green), **Attribute rows** (blue), then
+   **Remaining count** (amber). A drag on the picture fills the selected card and advances to the
+   next box; click a card's chip or picture title to go back. The typed `x / y / w / h` fields are
+   authoritative — type them if you prefer.
+3. Optional: click the **Spring point** target and click its point on the picture; set **row height**
+   if you want to pin the pitch instead of letting the check measure it.
+4. Press **Check boxes**. The result card reports the derived region, row pitch, grade, remaining
+   count, filter verdict and how many attribute rows matched. Fix the boxes and check again if it
+   is not what the game shows.
+5. Press **Save tuner**. It writes `tuner.ocr` + `tuner.spring_point` and the annotated
+   `calib_tuner.png`; the status line shows the core's revision.
+
+### 6.6 Tooltip offset + shape session
+
+1. Put the game in front with the item or pet whose hover panel you want to measure. In the
+   **Tooltip offset + shape** card set the **hover x / y** point and delay, then press **Capture
+   hover**. The shell hides itself, the core places the cursor on that point and captures the panel;
+   the picture returns with the cursor shown as a pink crosshair.
+2. Drag a box around the panel on the picture (the core requires at least 20×20 px), or type the
+   **offset x / y** and **width / height**. The formula line shows `cursor + offset = panel top-left`;
+   the panel box is drawn over the cursor.
+3. Press **Save tooltip** — it writes the machine `tooltip` block (offset, size, delay).
+4. Press **Test read** to hover again at the same point and read the panel at the saved offset. The
+   **Read result** card lists the OCR lines; the result and its debug crop are also written under
+   `logs/reads/`.
 
 ---
 

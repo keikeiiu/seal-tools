@@ -27,6 +27,25 @@ Uint8List? decodePngBase64(String data) {
   }
 }
 
+/// One non-selected mark drawn on the calibration picture in its own colour (the tuner's three
+/// boxes, or the tooltip's placed cursor point). The selected/editable mark stays [CalibrationMark]
+/// on the picture so the gesture layer and its label keep one owner.
+@immutable
+class CalibrationOverlayMark {
+  const CalibrationOverlayMark({
+    required this.id,
+    required this.mark,
+    required this.label,
+    required this.color,
+  });
+
+  /// Stable widget-key suffix; two overlays on one picture must have distinct ids.
+  final String id;
+  final CalibrationMark mark;
+  final String label;
+  final Color color;
+}
+
 /// The captured frame on the workspace canvas, with a real zoom control (`fit`, `1:1`, `pan`), an
 /// OPTIONAL gesture overlay (a click sets a point mark, a drag sets a rect) and the selected mark
 /// drawn with its label.
@@ -47,6 +66,7 @@ class CalibrationFramePicture extends StatefulWidget {
     this.maxHeight = 320,
     this.mark,
     this.markLabel,
+    this.overlayMarks = const <CalibrationOverlayMark>[],
     this.clientOrigin = ui.Offset.zero,
     this.onPointMark,
     this.onRectMark,
@@ -62,6 +82,9 @@ class CalibrationFramePicture extends StatefulWidget {
 
   /// The label drawn on the canvas with the mark (`Bag grid · x 700 · y 400 · 900×500`), or null.
   final String? markLabel;
+
+  /// Extra marks drawn beneath the selected [mark]; each keeps its own colour and short label.
+  final List<CalibrationOverlayMark> overlayMarks;
 
   /// Screen origin of the client (`display.physical_client`). A full-client capture has the same
   /// origin as the frame, so the offset is zero; a sub-region capture subtracts it.
@@ -214,6 +237,35 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
                           child: _pictureArea(theme, bytes, pictureSize),
                         ),
                       ),
+                      for (final overlay in widget.overlayMarks)
+                        if (scale > 0)
+                          Positioned(
+                            left: position.dx,
+                            top: position.dy,
+                            width: pictureSize.width,
+                            height: pictureSize.height,
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                key: ValueKey(
+                                  'calibrate-overlay-${overlay.id}',
+                                ),
+                                painter: _MarkPainter(
+                                  mark: overlay.mark,
+                                  scale: scale,
+                                  frameOrigin: ui.Offset(
+                                    frame.origin.x.toDouble(),
+                                    frame.origin.y.toDouble(),
+                                  ),
+                                  clientOrigin: widget.clientOrigin,
+                                  marquee: null,
+                                  color: overlay.color,
+                                  label: overlay.label,
+                                  labelBackground: overlay.color,
+                                  labelForeground: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
                       if (widget.mark != null && scale > 0)
                         Positioned(
                           left: position.dx,

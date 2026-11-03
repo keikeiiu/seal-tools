@@ -19,6 +19,28 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (34) — the Tuner 3-box and Tooltip sessions get a real UI design
+
+The two session-shaped calibrations were already wired to the core, but their panel read as three
+anonymous rows of x/y/w/h fields with one mark on the picture. Asked for the missing UI design, this
+increment keeps the payloads and tests and rebuilds the presentation:
+
+- **Canvas overlay:** `CalibrationFramePicture` gained `overlayMarks` (id, mark, label, colour), painted
+  under the selected/editable mark. It is generic: the tuner passes the two non-selected boxes and the
+  tooltip passes the placed cursor point.
+- **Tuner OCR 3-box:** numbered Capture → Draw → Check/Save steps; one card per box with its colour dot,
+  target chip, status size and x/y/w/h fields; green/blue/amber overlays on the picture. Check now
+  renders a result card (region, derived row pitch, grade, remaining, filter verdict, matched rows)
+  instead of only a status line.
+- **Tooltip offset + shape:** two step cards (hover point, then panel box/offset), the offset formula
+  as a mono line (`cursor + offset = panel top-left`), a pink cursor crosshair on the captured frame,
+  and a bordered **Read result** card for Test read lines.
+- **Discoverability:** the same numbered step strips and cards make both sessions read as guided flows
+  under Calibrate's stored table; typed fields stay authoritative and the existing element keys remain.
+- Tests pin the new box cards, step chips, all-box/cursor overlays, the 19 px pitch + 300×200 region
+  summary and the Read-result card; the full shell gate is **351/351**, analyze `--fatal-infos` clean,
+  format clean and the Windows debug build OK.
+
 ## 2026-11-02 (33) — the shell lint/quality gate gets sharper
 
 Asked what could be done for lint/code quality on the Flutter frontend. The answer was to make the

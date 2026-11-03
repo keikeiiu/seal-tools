@@ -1865,6 +1865,24 @@ void main() {
       find.byKey(const ValueKey('session-tooltip-preview')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-step-hover')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-step-box')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-offset-summary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tooltip-cursor')),
+      findsOneWidget,
+      reason:
+          'the placed cursor is visible on the picture, not only in a field',
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey('session-tooltip-offset-x')),
@@ -1899,6 +1917,11 @@ void main() {
     await tester.tap(test);
     await _flush(tester);
     expect(find.text('panel line one'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('session-tooltip-read')),
+      findsOneWidget,
+      reason: 'the Test read lines live in their own result card',
+    );
   });
 
   testWidgets('the tuner session captures, checks and saves three boxes', (
@@ -1961,6 +1984,21 @@ void main() {
     await tester.tap(capture);
     await _flush(tester);
 
+    expect(
+      find.byKey(const ValueKey('session-tuner-box-grade')),
+      findsOneWidget,
+      reason: 'each box has its own card instead of one anonymous field row',
+    );
+    expect(find.byKey(const ValueKey('session-tuner-step-1')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-attr')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-remaining')),
+      findsOneWidget,
+    );
+
     final check = find.byKey(const ValueKey('session-tuner-check'));
     await tester.ensureVisible(check);
     await tester.tap(check);
@@ -1974,6 +2012,22 @@ void main() {
     final boxes = checkArgs['boxes'] as Map<String, dynamic>;
     expect((boxes['grade'] as Map<String, dynamic>)['w'], 100);
     expect(find.byKey(const ValueKey('session-tuner-matched')), findsOneWidget);
+    expect(find.byKey(const ValueKey('session-tuner-summary')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('session-tuner-summary-pitch')),
+        matching: find.text('19 px'),
+      ),
+      findsOneWidget,
+      reason: 'the derived pitch is shown as a result, not only a status line',
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('session-tuner-summary-region')),
+        matching: find.textContaining('300×200'),
+      ),
+      findsOneWidget,
+    );
 
     final save = find.byKey(const ValueKey('session-tuner-save'));
     await tester.ensureVisible(save);

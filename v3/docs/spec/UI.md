@@ -308,8 +308,22 @@ widths and stacks them under the prose when the window is narrow.
 - **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
   `StatusBanner` "recalibrate before running a tool" (client-size/screen invalidates every point, scale
   alone does not; no auto-anchor, no proportional transform).
-- **Session-shaped calibrations:** tooltip offset (two captures), tuner OCR 3-box and pet crops, each
-  stating what it needs with a disabled **Run session** — these need protocol work (Phase 5).
+- **Session-shaped calibrations:** the panel below the stored table is a designed three-session
+  surface, not three rows of raw fields. Every session starts with a numbered step strip
+  (Capture → measure → save), states what it needs, and keeps the typed fields authoritative.
+  - **Tuner OCR 3-box** — after **Capture screen**, the picture shows every drawn box in its own colour
+    (grade green, attributes blue, remaining amber) with labels. A card per box carries the colour
+    dot, a target chip and its x/y/w/h fields; dragging on the picture writes the selected box and
+    advances grade → attributes → remaining (v2 order). **Check boxes** adds a result card with the
+    derived region, row pitch, grade, remaining count and filter verdict plus the matched-row count;
+    **Save tuner** writes `tuner.ocr`/`spring_point`.
+  - **Tooltip offset + shape** — two step cards: **1 · Hover point** (x/y/delay + *Capture hover*;
+    the core places the cursor and captures the panel) and **2 · Panel box & offset** (offset and
+    panel size; a mono formula line shows `cursor + offset = panel top-left`). The picture overlays
+    the placed cursor as a pink crosshair under the selected panel box; a **Read result** card shows
+    the Test read lines in a bordered surface instead of loose prose.
+  - **Pet rows/crops** keeps its preview/Preview rows/Save/Test steps with the same step strip and
+    card treatment.
 
 ## System surfaces (landed 2026-10-30)
 
@@ -349,7 +363,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 333/333; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 351/351; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
