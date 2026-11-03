@@ -69,11 +69,33 @@ fn point(value: &Value, path: &str) -> Option<Point> {
     ))
 }
 
+/// The tuner's keep/reroll filter, read from the REAL merged config's `tuner.filter` — the path the
+/// config registry owns (`seal-config/src/registry.rs`) and the Tuner tab edits. A filter that is
+/// absent is the disabled default (the merged config always carries the shipped block, so absent
+/// means a caller passed a partial fixture), but a present filter that cannot be deserialised is
+/// REFUSED instead of silently becoming "filter off" (TOOL-F1).
+///
+/// `tuner_session`'s read side resolves the same block for its Test read; this function is
+/// `pub(crate)` so that copy can adopt it without another filter-shape change.
+///
+/// # Errors
+///
+/// Returns the player-facing line naming the block when `tuner.filter` cannot be read as a
+/// [`FilterConfig`].
+pub(crate) fn filter_config(config: &Value) -> Result<FilterConfig, String> {
+    let Some(block) = config.pointer("/tuner/filter") else {
+        return Ok(FilterConfig::default());
+    };
+    serde_json::from_value(block.clone())
+        .map_err(|error| format!("tuner.filter isn't usable — {error}. Fix it in the Tuner tab."))
+}
+
 /// Resolve the tuner plan out of the merged config, or the line that says which part is missing.
 ///
 /// # Errors
 ///
-/// Returns the line naming the first missing part of the tuner's calibration.
+/// Returns the line naming the first missing part of the tuner's calibration, or the line refusing a
+/// malformed `tuner.filter`.
 pub fn plan(config: &Value) -> Result<TunerPlan, String> {
     let region = Rect::new(
         number(config, "/tuner/ocr/region/left").ok_or_else(|| {
@@ -104,12 +126,7 @@ pub fn plan(config: &Value) -> Result<TunerPlan, String> {
                 .collect()
         })
         .unwrap_or_default();
-    let filter: FilterConfig = match config.get("filter").cloned() {
-        Some(filter) => serde_json::from_value(filter).map_err(|error| {
-            format!("tuner.filter isn't usable — {error}. Fix it in the Tuner tab.")
-        })?,
-        None => FilterConfig::default(),
-    };
+    let filter = filter_config(config)?;
 
     let settings = TunerSettings {
         grade_order,
@@ -252,12 +269,13 @@ impl<S: TunerSource> TunerTool<S> {
                 detail.push(ToolDetail::labeled("Remaining", remaining.to_string()));
             }
         }
-        if self.run.attempt() > 0 || self.last_read.is_some() {
-            // v2 numbers the first attempt 1 while TunerRun counts retries, so a read that happened
-            // is at least attempt 1 on the card.
+        if self.run.attempt() > 0 {
+            // v2 numbers the first attempt 1; `TunerRun` counts attempts STARTED, and the countdown
+            // now begins the first one, so this is v2's number rather than a display clamp
+            // (TOOL-F6 removed the `.max(1)` that used to hide the gap).
             detail.push(ToolDetail::labeled(
                 "Attempt",
-                self.run.attempt().max(1).to_string(),
+                self.run.attempt().to_string(),
             ));
         }
         if let Some(read) = &self.last_read {
@@ -330,7 +348,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
         };
         Some(json!({
             "grade": self.last_read.as_ref().and_then(|read| read.grade.clone()),
-            "attempts": if self.last_read.is_some() { self.run.attempt().max(1) } else { 0 },
+            "attempts": self.run.attempt(),
             "captures_saved": 0,
             "stopped_by": stopped_by,
         }))
@@ -348,6 +366,11 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
                     if elapsed < f64::from(START_COUNTDOWN) {
                         return Decision::Wait(1.0);
                     }
+                    // v2 counts the attempt BEFORE the click (`SealTuner.cs:121` `attempt++`, then
+                    // `:253`), so the countdown starting the first attempt is what makes
+                    // `max_retries` an exact spring ceiling instead of one over (TOOL-F6). The retry
+                    // path below begins each following attempt the same way.
+                    self.run.begin_attempt();
                     self.begin_attempt();
                 }
                 Step::PlaceSpring => {
@@ -688,8 +711,11 @@ mod tests {
                 "ocr": {"region": {"left": 100, "top": 200, "width": 300, "height": 320}},
                 "spring_point": spring,
                 "timing": {"click_enter_delay": 0.4, "ocr_delay": 0.8},
+                // The REAL merged shape: the config registry owns `tuner.filter` and the Tuner tab
+                // edits it inside the tuner block. A top-level `filter` in a fixture is exactly what
+                // hid TOOL-F1, so the fixture no longer has one.
+                "filter": {"enabled": false},
             },
-            "filter": {"enabled": false},
         })
     }
 
@@ -734,6 +760,60 @@ mod tests {
         assert_eq!(plan.settings.spring_mode, SpringMode::Hid);
         assert_eq!(plan.region, Rect::new(100, 200, 300, 320));
         assert_eq!(plan.spring, Some(Point::new(500, 600)));
+        assert!(
+            !plan.settings.filter.enabled,
+            "the fixture's tuner.filter is disabled"
+        );
+    }
+
+    #[test]
+    fn the_plan_reads_the_filter_from_inside_the_tuner_block() {
+        // TOOL-F1: the live merged config puts the filter under `tuner`; a plan that reads a
+        // top-level `filter` always gets the disabled default and ignores require_grade/rules.
+        let mut config = config("manual", None);
+        config["tuner"]["filter"] = serde_json::json!({
+            "enabled": true,
+            "match_mode": "any",
+            "rules": [{"name": "STR"}],
+        });
+
+        let plan = plan_of(&config);
+
+        assert!(
+            plan.settings.filter.enabled,
+            "tuner.filter is the real path"
+        );
+        assert_eq!(plan.settings.filter.rules.len(), 1);
+    }
+
+    #[test]
+    fn a_malformed_filter_is_refused_instead_of_defaulting_to_disabled() {
+        let mut config = config("manual", None);
+        config["tuner"]["filter"] = serde_json::json!("not a filter block");
+
+        let line = plan(&config).expect_err("a malformed filter must not load as filter-off");
+
+        assert!(line.contains("tuner.filter"), "{line}");
+        assert!(line.contains("isn't usable"), "{line}");
+    }
+
+    #[test]
+    fn the_shipped_defaults_put_the_filter_inside_the_tuner_block() {
+        // The bug TOOL-F1 describes was visible in the committed config and hidden by the fixtures:
+        // `defaults.yaml` turns the filter ON with a DG requirement INSIDE `tuner:`. Pin the real
+        // file so a later edit that moves it again fails here.
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../config/defaults.yaml");
+        let text = std::fs::read_to_string(&path).expect("the repo's defaults.yaml is readable");
+        let defaults = seal_config::yaml::parse(&text).expect("defaults.yaml parses");
+        assert!(
+            defaults.get("filter").is_none(),
+            "the filter is not a top-level key"
+        );
+        let filter = filter_config(&defaults).expect("the shipped filter block resolves");
+        assert!(filter.enabled, "the shipped filter is ON");
+        assert_eq!(filter.require_grade.as_deref(), Some("DG"));
+        assert_eq!(filter.rules.len(), 1, "the shipped rule table resolves");
     }
 
     #[test]
@@ -981,5 +1061,95 @@ mod tests {
             }
             other => panic!("expected the guard stop, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_filtered_run_stops_with_filter_matched_even_below_the_target_grade() {
+        // TOOL-F1's live symptom: a filter-only setup ("stop when the attributes match, at any grade")
+        // ran on to the target because the run never saw the filter. Here the read is below
+        // target_grade but passes the rule, so the domain stops with FILTER MATCHED.
+        let mut config = config("manual", None);
+        config["tuner"]["filter"] = serde_json::json!({
+            "enabled": true,
+            "match_mode": "any",
+            "rules": [{"name": "STR", "count": 1}],
+        });
+        let read = TunerRead {
+            grade: Some("G".to_owned()),
+            remaining: Some(10),
+            attributes: vec![seal_domain::ocr::MatchedAttr {
+                name: "STR".to_owned(),
+                category: String::new(),
+                value: Some(1),
+                extra: None,
+                raw: vec!["STR +1".to_owned()],
+            }],
+        };
+        let (mut tool, clock) = tool(&config, vec![Ok(read)], None);
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        // One whole attempt leads to the read, and the read ends the run.
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        match tool.decide() {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Done);
+                assert!(
+                    reason.message.contains("FILTER MATCHED at grade G"),
+                    "{}",
+                    reason.message
+                );
+            }
+            other => panic!("expected the filter match, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn max_retries_two_gives_exactly_two_clicks() {
+        // TOOL-F6: v2 counts the attempt BEFORE the click. With the countdown beginning the run,
+        // `max_retries: 2` is exactly two springs; before the fix the counter started at 0, so the
+        // same config spent a third spring.
+        let mut config = config("manual", None);
+        config["tuner"]["max_retries"] = serde_json::json!(2);
+        let reads = vec![
+            Ok(TunerRead {
+                grade: Some("G".to_owned()),
+                remaining: Some(10),
+                attributes: Vec::new(),
+            }),
+            Ok(TunerRead {
+                grade: Some("N".to_owned()),
+                remaining: Some(10),
+                attributes: Vec::new(),
+            }),
+        ];
+        let (mut tool, clock) = tool(&config, reads, None);
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        let mut clicks = 0;
+        let mut stop = None;
+        for _ in 0..20 {
+            match tool.decide() {
+                Decision::ClickHere => clicks += 1,
+                Decision::Stop(reason) => {
+                    stop = Some(reason);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(clicks, 2, "max_retries 2 means two attempts, not three");
+        let stop = stop.expect("the run stops on the ceiling");
+        assert_eq!(stop.kind, StopKind::Done);
+        assert!(stop.message.contains("Max 2"), "{}", stop.message);
     }
 }

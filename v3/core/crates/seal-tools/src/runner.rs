@@ -290,7 +290,9 @@ pub const EFFECT_FAILED_MESSAGE: &str = "A board or capture action failed.";
 
 /// Runs a tool to its end and returns the reason it stopped.
 ///
-/// The loop, in order: publish `running`; check the stop; ask for a decision; perform it; repeat.
+/// The loop, in order: publish `running`; check the stop; ask for a decision; check the stop
+/// AGAIN (a slow `decide` — the tuner's OCR pass — can outlast a Stop press, and the effect a
+/// pending non-terminal decision asks for must not run after it); perform it; repeat.
 /// `Wait` sleeps through [`RunControl`]'s ticked sleep, so a stop is noticed DURING a long wait (the
 /// pet feeder's ~30 s reload) rather than after it. A failed effect ends the run as an error; a
 /// cancelled token ends it as cancelled; `Decision::Stop` ends it with its own reason and message.
@@ -317,20 +319,18 @@ pub fn run(
 
         let decision = tool.decide();
 
+        // TOOL-F8: a Stop pressed during a slow `decide` (the tuner can spend a second in capture +
+        // OCR between the check above and here) must not be followed by the click/Enter/placement the
+        // decision asks for. The token is one-way, so a non-terminal decision whose effect has not
+        // run yet is abandoned; a TERMINAL decision still wins, because it is the tool's own answer
+        // and carries the line the card must show.
+        if control.check().is_err() && !decision.is_terminal() {
+            return StopReason::cancelled(STOPPED_MESSAGE);
+        }
+
         // Publish the tool's own card state BEFORE performing the decision, so a countdown shows
         // while its wait runs and a message caused by a read is visible as soon as it exists.
-        let status = tool.status();
-        if status != published_status {
-            published_status = status.clone();
-            handle.state.publish(
-                ToolSnapshot::new(tool.id())
-                    .running(ToolPhase::Running)
-                    .message(status.message)
-                    .countdown_s(status.countdown_s)
-                    .rows(status.rows)
-                    .detail(status.detail),
-            );
-        }
+        publish_status(handle, tool, &mut published_status);
         match decision {
             Decision::Click(at) => {
                 if let Err(error) = effects.click(at) {
@@ -408,6 +408,25 @@ pub fn run(
             }
         }
     }
+}
+
+/// Publishes the tool's own card state when it changed since the last publish. Pulled out of
+/// [`run`] so the loop's line count stays readable: the countdown/message/rows/detail replacement is
+/// one concern, and the decision/effect dispatch is another.
+fn publish_status(handle: &RunHandle, tool: &dyn Tool, published: &mut ToolStatus) {
+    let status = tool.status();
+    if *published == status {
+        return;
+    }
+    *published = status.clone();
+    handle.state.publish(
+        ToolSnapshot::new(tool.id())
+            .running(ToolPhase::Running)
+            .message(status.message)
+            .countdown_s(status.countdown_s)
+            .rows(status.rows)
+            .detail(status.detail),
+    );
 }
 
 fn effect_message(error: &EffectError) -> String {
