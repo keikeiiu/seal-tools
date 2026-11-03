@@ -459,11 +459,21 @@ fn finish_snapshot(handle: &RunHandle, reason: StopReason) -> Arc<ToolSnapshot> 
         // reason in the message only (the card shows it as the stop line, not an error).
         None
     };
+    let last = handle.state.read();
     let snapshot = Arc::new(
         ToolSnapshot::new(handle.tool)
             .stopped(reason.message)
             .countdown_s(None)
-            .rows(Vec::new())
+            .rows(
+                last.as_ref()
+                    .map(|snapshot| snapshot.rows.clone())
+                    .unwrap_or_default(),
+            )
+            .detail(
+                last.as_ref()
+                    .map(|snapshot| snapshot.detail.clone())
+                    .unwrap_or_default(),
+            )
             .error(error),
     );
     handle.state.publish((*snapshot).clone());
