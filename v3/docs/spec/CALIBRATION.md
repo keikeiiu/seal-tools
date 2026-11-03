@@ -9,6 +9,12 @@ values on the wire is [PROTOCOL.md](PROTOCOL.md) §3; which file they live in is
 [CONFIG.md](CONFIG.md) §1; where a side is not built yet is [OPEN.md](../backlog/OPEN.md). One fact
 lives in one place: this file does not repeat those.
 
+The core's `calibration.save`/`fetch` table still has **18 kinds**; the v3.0.8 **UI presents 17
+marks** and folds `spring_point` into the Tuner OCR session (`calibration.tuner.save`), so one tuner
+capture covers the three OCR boxes and the spring point. The Pet crops/rows session was removed from
+the UI because it duplicated the nine Pet marks; the core commands remain for compatibility. The
+presentation rule lives in [UI.md](UI.md) §Calibrate.
+
 ---
 
 ## 1. One canonical space

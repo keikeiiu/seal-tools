@@ -1,7 +1,7 @@
 # v3 校正實作指南
 
 這是 **USER_GUIDE §6** 的逐步操作版，假設你用的是 v3.0.8 的 **Calibrate** 分頁，重點放在最容易出錯的
-地方：**拍攝、點選拍攝結果，以及在畫面上畫標記**。標記的定義見 `spec/CALIBRATION.md`；18 種標記的清單
+地方：**拍攝、點選拍攝結果，以及在畫面上畫標記**。標記的定義見 `spec/CALIBRATION.md`；17 種標記的清單
 見 USER_GUIDE §6.2。
 
 ---
@@ -19,10 +19,10 @@
 | 區域 | 用途 |
 |---|---|
 | **Captures**（左上方） | 這次 Calibrate 拍下的影格。可拍攝、選影格、看 `n / 4` 快取數量。 |
-| **Targets**（Captures 下方） | 18 種標記，依工具分組；具名實例會展開目標。最下方的 **SESSIONS** 列只是指向下方多標記面板的入口。 |
+| **Targets**（Captures 下方） | 17 種標記，依工具分組；具名實例會展開目標。會談列位在各自工具的群組內，標示 `session`。 |
 | **圖片/畫布**（中間） | 拍到的遊戲畫面。**點擊或拖曳標記就是在這裡做。** 上方有 Fit / 1:1 / 縮放 / 平移。 |
 | **標記編輯器**（畫布下方） | **Surface**、**Target instance**、`x / y / w / h` 欄位、寶石空結果問題、**Save mark**。 |
-| **Session-shaped calibrations**（最下方） | 三個多標記會談：Tooltip、Tuner OCR 3-box、Pet crops/rows。它們有自己的拍攝按鈕，不使用 Captures 貨架。 |
+| **Sessions**（最下方） | 兩個多標記會談：Tuner OCR 3-box + Spring point、Pet tooltip offset。它們有自己的拍攝按鈕，不使用 Captures 貨架。 |
 
 ## 3. 拍攝，然後點選拍攝結果（最常漏掉的一步）
 
@@ -56,7 +56,7 @@ Captures 下方出現的拒絕句子是核心的回答，不是點擊失效。
 
 形狀會標在 surface 旁邊；圖片只接受該形狀的操作。
 
-**點類型（Point）**（例如 Focus/scroll point、MAX button、grade point、Spring point）：
+**點類型（Point）**（例如 Focus/scroll point、MAX button、grade point、寵物 menu/feed 點）：
 
 1. 在圖片上**點一下**正確位置。
 2. 標記出現，`x / y` 欄位被填入；需要精確值時直接改欄位。
@@ -95,32 +95,35 @@ Captures 下方出現的拒絕句子是核心的回答，不是點擊失效。
 1. **Shop：** Bag grid → Bag slot → Shop list region → MAX button → Focus/scroll point。
 2. **Gem：** Result gem area（回答空結果問題）→ 會用到的 grade point → 會用到的 resource slot point。
 3. **Pet：** menu point、feed point、Boarding X point、bag page tab point，接著 boarding bag grid + slot，
-   再來是會用到的每一列 row 矩形。Pet crops/rows 會談可一次做一列的五个矩形與四个共用点（見 §8.3）。
-4. **Tuner：** Spring point（若用 `spring_mode: hid`）與 Tuner OCR 3-box 會談（§8.1）。
-5. **Tooltip：** hover offset + shape 會談（§8.2）。
+   再來是會用到的每一列 row 矩形。全部用上方標記編輯器逐個做 —— 已經沒有獨立的 Pet rows/crops 會談
+   （那只會重複這些標記）。
+4. **Tuner：** **Tuner OCR 3-box + Spring point** 會談（§8.1）—— 一次拍攝涵蓋四個 tuner 目標。
+5. **Pet tooltip：** hover offset + shape 會談（§8.2）。
 
 先校正工具真的會讀的標記，再啟動該工具；缺標記時工具會回報，不會亂猜。
 
-## 8. 三個 Session-shaped 校正
+## 8. 兩個 Session-shaped 校正
 
-這些面板在 Calibrate 最下方的 **Session-shaped calibrations**。每個都會**自己拍攝**（Captures 貨架是給
-上面一般標記用的），一次儲存多個相關值；畫面會畫出影格，欄位仍是權威。
+這些面板在 Calibrate 最下方的 **Sessions**。每個都會**自己拍攝**（Captures 貨架是給上面一般標記用的），
+一次儲存多個相關值；畫面會畫出影格，欄位仍是權威。
 
-### 8.1 Tuner OCR 3-box
+### 8.1 Tuner OCR 3-box + Spring point
 
-用途：改造師的三處讀取（grade letter、三列 attribute、remaining count）與選用的 Spring point。
+用途：改造師的三處讀取（grade letter、三列 attribute、remaining count）與選用的 Spring point ——
+**全部用同一次改造師拍攝**，和 v2 一樣。
 
-1. 遊戲中打開改造師狀態視窗，在 **Tuner OCR 3-box** 卡片按 **Capture screen**。
+1. 遊戲中打開改造師狀態視窗，在 **Tuner OCR 3-box + Spring point** 卡片按 **Capture screen**。這一次
+   拍攝同時用於三個 OCR 框與 Spring point，不需要為發條點再拍一次。
 2. **依序**拖三個框：**Grade letter**（綠）→ **Attribute rows**（藍）→ **Remaining count**（琥珀）。拖曳
    會填入目前卡片並自動跳下一張；要回頭可點卡片/chip。每張卡片有自己的 `x / y / w / h` 與像素尺寸；
    拖曳小於 4 px 會被忽略。
-3. 選用：選 **Spring point** 後在畫面上點它；只有在不想讓 Check 量測列高時才手動設 **row height**。
+3. 選用：選 **Spring point** 後在同一張畫面上點它；只有在不想讓 Check 量測列高時才手動設 **row height**。
 4. 按 **Check boxes**。結果卡片顯示推導出的 region、列高、grade、remaining、filter 判定與符合的屬性列
    數；與遊戲不符就修框再 Check。
 5. 按 **Save tuner**：寫入 `tuner.ocr` + `tuner.spring_point` 與標註過的 `calib_tuner.png`；狀態列顯示核心
    revision。
 
-### 8.2 Tooltip offset + shape
+### 8.2 Pet tooltip offset + shape
 
 用途：提示面板相對於游標的位置與大小。
 
@@ -131,21 +134,8 @@ Captures 下方出現的拒絕句子是核心的回答，不是點擊失效。
 3. 按 **Save tooltip**（寫入 machine 的 `tooltip` 區塊：offset、size、delay）。
 4. 按 **Test read** 用已存值再 hover 讀一次。**Read result** 卡片列出 OCR 行；除錯裁切圖在 `logs/reads/`。
 
-### 8.3 Pet crops / rows
-
-用途：一列寵物的五个矩形、四个共用点，以及對應的參考裁切圖。
-
-1. 打開寵物選單/代養畫面並讓某一列可見，在 **Pet crops / rows** 卡片按 **Capture screen**。
-2. 選一個 target chip，然後在畫面上做它的標記：
-   - **矩形（拖曳）：** Toggle row、Boarding pet slot、Feeder strip、Bag grid、Bag slot。
-   - **點（單擊）：** Menu point、Feed point、Boarding X point、ITEM tab point。
-   每次手勢會填入該 target 的欄位並自動跳下一個；也可以直接輸入欄位。若該列的食物條依堆疊數分割，
-   設定 **stacks**。
-3. 按 **Preview**，它會回報推導出的列數/ETA 區域；把列數與遊戲畫面核對。
-4. 按 **Save pet**，寫入校正資料與參考裁切圖。
-5. 按 **Test read**，用已存值跑一次格子計數讀取，會回報每個格子的數量。
-
-列的新增/調整在 **Pet** 分頁；這個會談校正的是餵食器讀取的列幾何。
+九個 Pet 標記（menu/feed/close/page 點、bag grid/slot、列矩形）就是上方標記編輯器的一般標記 —— 沒有
+另一個 Pet rows/crops 會談。列與佇列寵物在 **Pet** 分頁編輯。
 
 ## 9. 疑難排解
 
@@ -168,5 +158,5 @@ Captures 下方出現的拒絕句子是核心的回答，不是點擊失效。
 3. 選 **Surface**（需要時再選 **Target instance**）。
 4. 在大圖片上：**點類型 = 單擊；矩形 = 拖曳**，或直接輸入 `x / y / w / h`。
 5. 有問寶石空結果就回答 → **Save mark**。
-6. 多標記工作改用 **Session-shaped calibrations**：Tuner OCR 3-box、Tooltip offset + shape、
-   Pet crops/rows，各自有自己的 Capture 按鈕。
+6. 多標記工作改用 **Sessions** 卡：Tuner OCR 3-box + Spring point（一次拍攝）或 Pet tooltip offset；
+   其他全部都是上方的一般標記。

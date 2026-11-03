@@ -1,11 +1,13 @@
-/// The Calibrate workspace's target tree: all 18 served kinds grouped by the tool that consumes their
-/// marks (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1 = 35 marks), each row carrying a semantic status dot
-/// and a count, and a targeted kind expanding to its named instances (PROTOCOL §12.8).
+/// The Calibrate workspace's target tree: the 17 presentation marks (34 instances) grouped by the
+/// tool that consumes them (Shop 5/5, Gem 3/9, Pet 9/20, Tuner session-only), each mark row carrying
+/// a semantic status dot and a count, and a targeted kind expanding to its named instances
+/// (PROTOCOL §12.8).
 ///
-/// The two multi-mark calibrations (the Tuner OCR three-box set and the Tooltip hover box) are NOT
-/// target rows: they have their own session command + panel below the tree. They used to be appended
-/// under the Tuner group with a stale "not in the protocol yet" reason, which read as two broken
-/// Tuner targets; they now sit in their own SESSIONS section as pointers to those panels.
+/// Multi-mark calibrations are listed INSIDE their tool's group with a `session` label, not in a
+/// separate global section: Pet's hover tooltip and Tuner's OCR+spring session. Spring point is not
+/// a normal mark any more — it is set inside the Tuner session, so one tuner capture covers all four
+/// tuner targets (v2's flow). The Pet session was removed because it duplicated the nine Pet marks
+/// already in the upper editor.
 ///
 /// Selecting a kind or instance calls the tab's selection callbacks, which drive the canvas and the
 /// mark editor. The tree decides nothing: the core owns which targets exist and every validity rule;
@@ -49,12 +51,10 @@ class TargetTreePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final saved = calibrationSavedMarks(stored);
     return SurfacePanel(
       title: 'Targets',
       trailing: Text(
-        '${calibrationKinds.length} kinds · ${calibrationMarkSlots().length} marks '
-        '($saved saved)',
+        '${calibrationMarkSlots().length} marks · ${calibrationSessions.length} sessions',
         style: theme.textTheme.labelSmall?.copyWith(
           color: colors.onSurfaceVariant,
         ),
@@ -64,35 +64,13 @@ class TargetTreePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final group in calibrationToolGroups) ...[
-            Padding(
+            _GroupHeader(
               key: ValueKey('calibrate-tree-group-${group.tool}'),
-              padding: const EdgeInsets.fromLTRB(
-                ShellSpace.xs,
-                ShellSpace.xs,
-                ShellSpace.xs,
-                ShellSpace.xxs,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      group.tool,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                        letterSpacing: 0.7,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${group.kinds.fold(0, (n, kind) => n + calibrationSavedCount(kind, stored))}'
-                    ' / ${group.markCount}',
-                    style: ShellText.mono.copyWith(
-                      fontSize: 11,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+              group: group,
+              stored: stored,
+              sessions: calibrationSessions
+                  .where((session) => session.tool == group.tool)
+                  .toList(growable: false),
             ),
             for (final kind in group.kinds) ...[
               _KindRow(
@@ -114,59 +92,74 @@ class TargetTreePanel extends StatelessWidget {
                     onTap: () => onSelectTarget(kind, target),
                   ),
             ],
+            for (final session in calibrationSessions.where(
+              (session) => session.tool == group.tool,
+            ))
+              _SessionOnlyRow(
+                key: ValueKey('calibrate-tree-session-${session.id}'),
+                id: session.id,
+                label: session.label,
+                selected: selectedSession == session.id,
+                onTap: onSelectSession == null
+                    ? null
+                    : () => onSelectSession!(session.id),
+                reason: session.reason,
+              ),
           ],
-          const SizedBox(height: ShellSpace.sm),
-          Padding(
-            key: const ValueKey('calibrate-tree-sessions'),
-            padding: const EdgeInsets.fromLTRB(
-              ShellSpace.xs,
-              ShellSpace.xs,
-              ShellSpace.xs,
-              ShellSpace.xxs,
-            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One tool's header: its saved/mark count, or `session` when the tool has no single marks (Tuner).
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({
+    super.key,
+    required this.group,
+    required this.stored,
+    required this.sessions,
+  });
+
+  final CalibrationToolGroup group;
+  final Map<String, CalibrationFetchResult> stored;
+  final List<CalibrationSession> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final saved = group.kinds.fold(
+      0,
+      (n, kind) => n + calibrationSavedCount(kind, stored),
+    );
+    final meta = group.kinds.isEmpty
+        ? '${sessions.length} session${sessions.length == 1 ? '' : 's'}'
+        : '$saved / ${group.markCount}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        ShellSpace.xs,
+        ShellSpace.xs,
+        ShellSpace.xs,
+        ShellSpace.xxs,
+      ),
+      child: Row(
+        children: [
+          Expanded(
             child: Text(
-              'SESSIONS — multi-mark calibrations',
+              group.tool,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.onSurfaceVariant,
                 letterSpacing: 0.7,
               ),
             ),
           ),
-          _SessionOnlyRow(
-            key: const ValueKey('calibrate-tree-session-tuner'),
-            id: 'tuner',
-            label: 'Tuner OCR 3-box',
-            selected: selectedSession == 'tuner',
-            onTap: onSelectSession == null
-                ? null
-                : () => onSelectSession!('tuner'),
-            reason:
-                'Opened by the Tuner OCR session below — grade area, attribute band and '
-                'remaining band save together, so it is not a single target mark.',
-          ),
-          _SessionOnlyRow(
-            key: const ValueKey('calibrate-tree-session-tooltip'),
-            id: 'tooltip',
-            label: 'Tooltip offset',
-            selected: selectedSession == 'tooltip',
-            onTap: onSelectSession == null
-                ? null
-                : () => onSelectSession!('tooltip'),
-            reason:
-                'Opened by the Tooltip session below — a hover capture plus a box, not a '
-                'target mark.',
-          ),
-          _SessionOnlyRow(
-            key: const ValueKey('calibrate-tree-session-pet'),
-            id: 'pet',
-            label: 'Pet rows / crops',
-            selected: selectedSession == 'pet',
-            onTap: onSelectSession == null
-                ? null
-                : () => onSelectSession!('pet'),
-            reason:
-                'Opened by the Pet session below — one row and the shared points, then '
-                'preview/save/test read.',
+          Text(
+            meta,
+            style: ShellText.mono.copyWith(
+              fontSize: 11,
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
       ),

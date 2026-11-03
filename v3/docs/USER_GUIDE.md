@@ -26,7 +26,7 @@ runs the v2 firmware keeps working. The firmware zip is there for a new board, n
 3. [First run: configure, then calibrate](#3-first-run-configure-then-calibrate)
 4. [The cards: eight tools and what a run is](#4-the-cards-eight-tools-and-what-a-run-is)
 5. [The tool tabs](#5-the-tool-tabs)
-6. [Calibration: the 18 marks](#6-calibration-the-18-marks)
+6. [Calibration: the 17 marks](#6-calibration-the-17-marks)
 7. [Logs and files](#7-logs-and-files)
 8. [Hotkeys in v3.0](#8-hotkeys-in-v30)
 9. [Typical workflows](#9-typical-workflows)
@@ -548,17 +548,16 @@ section 8.
 ### 5.11 Calibrate
 
 The one calibration surface for every tool. Section 6 is the full walkthrough: capture the game
-window, choose a **kind**, optionally a **target instance**, draw the mark, **Save mark**, and read the
-core's stored mark / derived values / artifact below. Below the stored table, **Session-shaped
-calibrations** holds the two-step/three-step sessions (Tuner OCR 3-box, Tooltip offset, Pet rows); see
-§6.5 and §6.6. The **Sessions** action in the page header jumps to that panel, and the **SESSIONS**
-rows in Targets are selectable targets that bring the matching session card into view. The tab's panel
-caption repeats the capture behaviour: the shell hides itself for the grab, waits one frame, and
-reopens.
+window, choose a **Surface**, optionally a **target instance**, draw the mark, **Save mark**, and read
+the core's stored mark / derived values / artifact below. Below the stored table, **Sessions** holds
+only the two calibrations that need more than one mark: **Tuner OCR 3-box + Spring point** and the
+**Pet tooltip offset + shape**. The **Sessions** action in the page header jumps to that panel, and
+each session row sits inside its tool's group in Targets. The tab's panel caption repeats the capture
+behaviour: the shell hides itself for the grab, waits one frame, and reopens.
 
 ---
 
-## 6. Calibration: the 18 marks
+## 6. Calibration: the 17 marks
 
 A calibration mark is stored in **physical pixels relative to the game window's CLIENT area** (origin
 = the client's top-left, no title bar), so moving the window does not invalidate it. It is **not**
@@ -567,7 +566,7 @@ scaled by the Windows display scale. The contract and the why are in the reposit
 
 > **New to this screen?** [CALIBRATION-GUIDE.md](CALIBRATION-GUIDE.md) is the click-by-click
 > walkthrough: how to capture, **click the capture tile you want to edit**, draw points vs
-> rectangles, and run the three session calibrations.
+> rectangles, and run the two session calibrations.
 
 ### 6.1 Saving a mark
 
@@ -603,7 +602,7 @@ refused, and an unsaved mark writes nothing.
 
 ### 6.2 The kinds, grouped
 
-The picker groups them so 18 entries stay readable. **One tool each:**
+The picker groups them so 17 entries stay readable. **One tool each:**
 
 | Group | Kind | Shape | Used by |
 |---|---|---|---|
@@ -624,7 +623,10 @@ The picker groups them so 18 entries stay readable. **One tool each:**
 | Pet — rows | **Row start/end button** | rect | Pet Feeder — targets "1".."4" |
 | Pet — rows | **Row boarding pet slot** | rect | Pet Feeder — targets "1".."4" |
 | Pet — rows | **Row food strip** | rect | Pet Feeder — targets "1".."4" (divided by the row's stack count) |
-| Tuner | **Spring point** | point | Tuner — only read in `spring_mode: hid` |
+
+**Spring point is not in this table.** It is set inside the **Tuner OCR 3-box + Spring point** session
+(§6.5) together with the three OCR boxes, so one tuner capture covers the whole tuner read. The core
+still serves the old `spring_point` kind for compatibility; the v3.0.8 UI does not ask for it twice.
 
 **Named instances.** A kind that marks a repeated thing takes a **target** — the player-facing instance
 name, not an array index: `pet_page_tab` takes `ITEM1`…`ITEM3`; the three pet-row kinds take row `"1"`…
@@ -645,14 +647,21 @@ never be saved against the wrong instance by accident.
 One answer is not "which is better": it is "what is in the box at the moment you captured". You can
 re-save the same kind later with the box empty to add the crop.
 
-### 6.4 What still needs another kind of session
+### 6.4 Sessions and the remaining non-mark work
 
-These are **not missing marks you can hand-wave**: each needs a different kind of session. Tuner OCR
-and the tooltip panel have their sessions in §6.5–§6.6; these are the remaining ones.
+Only two calibrations need a session, because one mark cannot express them; both are listed inside
+their tool's group in **Targets** and open the **Sessions** panel:
 
-- **The pet's reference crops and row entries** — the **Pet crops / rows** session captures one row's
-  five rects and four shared points plus the reference crops (see CALIBRATION-GUIDE §8.3); adding
-  more rows and adding queue pets by icon capture still happens on the **Pet** tab.
+- **Tuner OCR 3-box + Spring point** — one capture, three OCR boxes and the optional spring point
+  (§6.5).
+- **Pet tooltip offset + shape** — the hover panel the Pet Feeder reads (§6.6).
+
+The nine Pet marks (menu/feed/close/page points, bag grid/slot, row rects) are normal marks in the
+mark editor above — there is deliberately **no separate Pet crops/rows session**: it duplicated those
+marks. Rows, queue pets and food cells are still edited on the **Pet** tab.
+
+Remaining non-mark work:
+
 - **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
   the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
   cells, but has no kind of its own.
@@ -661,27 +670,27 @@ and the tooltip panel have their sessions in §6.5–§6.6; these are the remain
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
   not applied (the game UI does not scale linearly).
 
-### 6.5 Tuner OCR three-box session
+### 6.5 Tuner OCR 3-box + Spring point session
 
-1. In **Calibrate → Session-shaped calibrations**, find **Tuner OCR 3-box**. Use **Sessions** in the
-   page header or select the **Tuner OCR 3-box** row under **SESSIONS** in Targets to jump to it. Set
-   the game to the tuner's status window and press **Capture screen** (or **Recapture screen**) at the
-   top of the card; the capture and the **Target to drag** chips are deliberately visible together. The
-   captured picture then stays on the left while the box cards scroll on the right, so you can drag and
-   edit the matching fields without scrolling between them.
+1. In **Calibrate**, open **Sessions** (or select the **Tuner OCR 3-box + Spring point** row in the
+   **Tuner** group of Targets). Set the game to the tuner's status window and press **Capture screen**
+   (or **Recapture screen**) at the top of the card. **This one capture covers the three OCR boxes and
+   the Spring point** — that is v2's one-capture flow. The captured picture then stays on the left
+   while the box cards scroll on the right, so you can drag and edit the matching fields without
+   scrolling between them.
 2. Pick a **Target to drag** chip — **Grade letter** (green), **Attribute rows** (blue), **Remaining
    count** (amber) or **Spring point** — then drag directly on the picture on the left. Drags fill the
    selected box and advance grade → attributes → remaining; click a card title or chip to go back. The
-   typed `x / y / w / h` fields are an alternative and stay authoritative.
-3. Optional: click the **Spring point** target and click its point on the picture; set **row height**
-   if you want to pin the pitch instead of letting the check measure it.
+   typed `x / y / w / h` fields are an alternative and stay authoritative. The Spring point is a
+   single click and is optional (only read in `spring_mode: hid`).
+3. Set **row height** only if you want to pin the pitch instead of letting the check measure it.
 4. Press **Check boxes**. The result card reports the derived region, row pitch, grade, remaining
    count, filter verdict and how many attribute rows matched. Fix the boxes and check again if it
    is not what the game shows.
 5. Press **Save tuner**. It writes `tuner.ocr` + `tuner.spring_point` and the annotated
    `calib_tuner.png`; the status line shows the core's revision.
 
-### 6.6 Tooltip offset + shape session
+### 6.6 Pet tooltip offset + shape session
 
 1. Put the game in front with the item or pet whose hover panel you want to measure. In the
    **Tooltip offset + shape** card set the **hover x / y** point and delay, then press **Capture
@@ -823,7 +832,7 @@ marks are physical client-relative offsets; they do not travel.
 | "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell (it needs the calibrated **Bag grid**, §5.4), then press **Start** on the Sell card; with no slots marked the card shows this line. The selection is not saved. |
 | "{n} slots selected but the per-run cap is {cap}…" | The selection is larger than **Max slots per run (sell cap)**. Raise the cap on purpose or narrow the selection; the core refuses the start before any click and prints the full line, including the count and the cap. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
-| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open (adding rows needs the pet capture session, section 11). |
+| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds in the Calibrate mark editor; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open. |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
 | "The window blinks when I press Capture" | Expected: the shell hides itself for one frame so the capture is of the game, then reopens. v2 blinked ~0.3 s; v3 blinks for a frame plus the round-trip. |
 | Need the last run's detail | Read `<root>/logs/<tool>.log` (status strip prints the root); `error.log` and `ocr_errors.jsonl` are beside it. |
@@ -837,15 +846,8 @@ repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "p
 unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
-- **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
-  geometry is hand-edited from config until the session exists.
-- **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
-- **The pet session surface (increment 4+).** The Pet tab edits the setup the machine already carries —
-  rows enabled/stacks, queue add/edit by icon capture, bag food cells, per-page bag scans and the
-  explicit food-scan apply, return slot, load mode and timings — but adding rows, re-capturing the row
-  reference crops/rects, the panel test read and the feedable sweep/queue rebuild still need a live pet
-  capture session (a scan-derived queue rebuild comes later); migrated v2 configs carry the current
-  data.
+- **A separate Pet crops/rows calibration session.** The nine Pet marks are calibrated individually in
+  the mark editor; the Pet tab edits rows/queue/food cells. There is no second Pet session.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
   copies of Seal Tools at once.

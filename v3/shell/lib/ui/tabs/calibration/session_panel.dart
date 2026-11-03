@@ -1,7 +1,7 @@
 /// The Calibrate workspace's session-shaped calibrations panel.
 ///
-/// All three sessions are wired to their core commands and all three draw the CAPTURED FRAME with the
-/// shared gesture overlay ([CalibrationFramePicture]):
+/// Two sessions remain, each owned by the tool that consumes it, and each draws the CAPTURED FRAME
+/// with the shared gesture overlay ([CalibrationFramePicture]):
 ///
 /// - **G01 Tooltip offset + shape** — `calibration.tooltip.hover_capture` → drag a box around the
 ///   panel on the captured picture → `.save` → `.test`. The offset is the box minus the point the
@@ -10,9 +10,6 @@
 /// - **G02 Tuner three-box** — capture the screen, then drag the grade / attribute / remaining boxes
 ///   IN ORDER on the picture (the target chips pick one explicitly too; a drag under 4 px is a click,
 ///   not a box). `Check boxes` measures the row pitch, `Save tuner` writes `tuner.ocr`.
-/// - **G03 Pet crops / rows** — capture the screen, drag the row/bag boxes and click the shared points
-///   on the picture. Preview derives the derived regions, Save writes the calibration half + crops,
-///   Test read reports every slot count.
 ///
 /// The typed x/y/w/h (and point) fields stay AUTHORITATIVE: a gesture writes them, Save reads them, so
 /// nothing lives only in picture state.
@@ -39,7 +36,6 @@ class SessionCalibrationsPanel extends StatefulWidget {
     required this.host,
     this.tooltipKey,
     this.tunerKey,
-    this.petKey,
   });
 
   final ShellModel model;
@@ -48,7 +44,6 @@ class SessionCalibrationsPanel extends StatefulWidget {
   /// Section anchors the Calibrate page uses for its Sessions shortcut / target-tree selection.
   final Key? tooltipKey;
   final Key? tunerKey;
-  final Key? petKey;
 
   @override
   State<SessionCalibrationsPanel> createState() =>
@@ -105,48 +100,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   /// optional spring POINT.
   String _tunerTarget = 'grade';
 
-  // G03 pet session: one row + the shared points, enough to drive preview/save/test_read.
-  final Map<String, TextEditingController> _petFields = {
-    for (final key in [
-      'toggle.x',
-      'toggle.y',
-      'toggle.w',
-      'toggle.h',
-      'boarding.x',
-      'boarding.y',
-      'boarding.w',
-      'boarding.h',
-      'strip.x',
-      'strip.y',
-      'strip.w',
-      'strip.h',
-      'grid.x',
-      'grid.y',
-      'grid.w',
-      'grid.h',
-      'slot.x',
-      'slot.y',
-      'slot.w',
-      'slot.h',
-      'menu.x',
-      'menu.y',
-      'feed.x',
-      'feed.y',
-      'close.x',
-      'close.y',
-      'tab.x',
-      'tab.y',
-    ])
-      key: TextEditingController(text: '0'),
-  };
-  final _petStacks = TextEditingController(text: '2');
-  CaptureResult? _petCapture;
-  JsonMap? _petPreview;
-
-  /// The pet surface the next gesture writes. The five RECT surfaces take a drag; the four POINT
-  /// surfaces take a click (CALIBRATION §5: one row's rects + the shared menu/feed/close/page points).
-  String _petTarget = 'toggle';
-
   @override
   void dispose() {
     for (final controller in [
@@ -163,10 +116,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     for (final controller in _boxFields.values) {
       controller.dispose();
     }
-    for (final controller in _petFields.values) {
-      controller.dispose();
-    }
-    _petStacks.dispose();
     _rowHeight.dispose();
     _springX.dispose();
     _springY.dispose();
@@ -341,21 +290,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   };
   static const Color _cursorColor = Color(0xFFF472B6);
 
-  static const _petRectNames = {
-    'toggle': 'Toggle row',
-    'boarding': 'Boarding pet slot',
-    'strip': 'Feeder strip',
-    'grid': 'Bag grid',
-    'slot': 'Bag slot',
-  };
-
-  static const _petPointNames = {
-    'menu': 'Menu point',
-    'feed': 'Feed point',
-    'close': 'Boarding X point',
-    'tab': 'ITEM tab point',
-  };
-
   /// One of the tuner's three boxes, from its typed (or dragged) fields.
   CalibrationMark? _tunerBoxMark(String name) {
     final x = _number(_boxFields['$name.x']!);
@@ -454,64 +388,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       _springX.text = '${mark.x}';
       _springY.text = '${mark.y}';
       _status = 'spring point ${mark.x}, ${mark.y}';
-      _failed = false;
-    });
-  }
-
-  bool get _petRectTarget => _petRectNames.containsKey(_petTarget);
-
-  CalibrationMark? _petMark() {
-    if (_petRectTarget) {
-      final rect = _rect(_petTarget);
-      if (rect['w']! < 1 || rect['h']! < 1) {
-        return null;
-      }
-      return CalibrationMark.rect(
-        rect['x']!.round(),
-        rect['y']!.round(),
-        rect['w']!.round(),
-        rect['h']!.round(),
-      );
-    }
-    final x = _petNumber('$_petTarget.x');
-    final y = _petNumber('$_petTarget.y');
-    return x == null || y == null ? null : CalibrationMark.point(x, y);
-  }
-
-  String _petLabel() {
-    final name =
-        _petRectNames[_petTarget] ?? _petPointNames[_petTarget] ?? _petTarget;
-    final mark = _petMark();
-    if (mark == null) {
-      return '$name — ${_petRectTarget ? 'drag it' : 'click it'} on the picture';
-    }
-    return mark.isRect
-        ? '$name · x ${mark.x} · y ${mark.y} · ${mark.w}×${mark.h}'
-        : '$name · x ${mark.x} · y ${mark.y}';
-  }
-
-  void _applyPetRect(CalibrationMark mark) {
-    setState(() {
-      if (!_petRectTarget) {
-        return;
-      }
-      _petFields['$_petTarget.x']!.text = '${mark.x}';
-      _petFields['$_petTarget.y']!.text = '${mark.y}';
-      _petFields['$_petTarget.w']!.text = '${mark.w}';
-      _petFields['$_petTarget.h']!.text = '${mark.h}';
-      _status = '${_petRectNames[_petTarget]} dragged';
-      _failed = false;
-    });
-  }
-
-  void _applyPetPoint(CalibrationMark mark) {
-    setState(() {
-      if (_petRectTarget) {
-        return;
-      }
-      _petFields['$_petTarget.x']!.text = '${mark.x}';
-      _petFields['$_petTarget.y']!.text = '${mark.y}';
-      _status = '${_petPointNames[_petTarget]} clicked';
       _failed = false;
     });
   }
@@ -1083,7 +959,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           runSpacing: ShellSpace.xs,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text('Tuner OCR 3-box', style: theme.textTheme.labelLarge),
+            Text(
+              'Tuner OCR 3-box + Spring point',
+              style: theme.textTheme.labelLarge,
+            ),
             StatusChip(
               kind: captured ? StatusKind.success : StatusKind.muted,
               label: captured ? 'captured' : 'needs capture',
@@ -1096,10 +975,11 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'The tuner three-box session reads exactly three places on screen. Capture the game, '
-          'then drag the grade letter, the three attribute rows and the remaining count — in '
-          'that order (a drag under 4 px is ignored). Check derives the region, bands and row '
-          'pitch; Save writes tuner.ocr and the spring point.',
+          'The one tuner capture: the three-box session reads the grade letter, the three '
+          'attribute rows and the remaining count, and the optional Spring point saves in the '
+          'same pass. Capture the game, drag the three boxes in that order (a drag under 4 px is '
+          'ignored), then click Spring point if you use it. Check derives the region, bands and '
+          'row pitch; Save writes tuner.ocr and tuner.spring_point.',
           key: const ValueKey('calibrate-tuner-note'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,
@@ -1109,11 +989,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         _sessionSteps(
           theme,
           colors,
-          const [
-            'Capture the game',
-            'Draw the three boxes',
-            'Check, then save',
-          ],
+          const ['Capture the game', 'Draw boxes + spring', 'Check, then save'],
           keyPrefix: 'session-tuner',
           done: [captured, allDrawn, _tunerCheck != null],
         ),
@@ -1506,294 +1382,15 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     ),
   );
 
-  int? _petNumber(String key) => _number(_petFields[key]!);
-
-  Map<String, num> _rect(String prefix) => {
-    'x': _petNumber('$prefix.x') ?? 0,
-    'y': _petNumber('$prefix.y') ?? 0,
-    'w': _petNumber('$prefix.w') ?? 0,
-    'h': _petNumber('$prefix.h') ?? 0,
-  };
-
-  List<JsonMap> _petRows() => [
-    {
-      'toggle_label': _rect('toggle'),
-      'boarding_pet_slot': _rect('boarding'),
-      'feeder_strip': _rect('strip'),
-      'stacks': _number(_petStacks) ?? 2,
-    },
-  ];
-
-  JsonMap _petPoints() => {
-    'menu': _petPoint('menu'),
-    'feed': _petPoint('feed'),
-    'close': _petPoint('close'),
-    'page_tabs': [
-      [_petNumber('tab.x') ?? 0, _petNumber('tab.y') ?? 0],
-    ],
-  };
-
-  /// The save's `points.menu/feed/close` are rects (v2 boxes them with a 10 px box around the
-  /// marked point); the panel offers only the point.
-  JsonMap _petPoint(String prefix) => {
-    'x': _petNumber('$prefix.x') ?? 0,
-    'y': _petNumber('$prefix.y') ?? 0,
-    'w': 10,
-    'h': 10,
-  };
-
-  JsonMap _petBag() => {
-    'grid': [
-      _petNumber('grid.x') ?? 0,
-      _petNumber('grid.y') ?? 0,
-      _petNumber('grid.w') ?? 0,
-      _petNumber('grid.h') ?? 0,
-    ],
-    'slot': [
-      _petNumber('slot.x') ?? 0,
-      _petNumber('slot.y') ?? 0,
-      _petNumber('slot.w') ?? 0,
-      _petNumber('slot.h') ?? 0,
-    ],
-  };
-
-  Future<void> _capturePet() async {
-    setState(() {
-      _busy = true;
-      _failed = false;
-      _status = null;
-    });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await widget.model.captureFrame();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      _petCapture = result.value!;
-      _status =
-          'captured ${result.value!.frame.frameId} — drag the rows/bag boxes and click the '
-          'points on the picture';
-    });
-  }
-
-  Future<void> _previewPet() async {
-    final result = await widget.model.petPreview(
-      draft: {
-        'rows': _petRows(),
-        'bag_grid': _petBag()['grid'],
-        'feeder_count_left_fraction': 0.4,
-        'feeder_count_min_score': 0.75,
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      _petPreview = result.value;
-      final rows = result.value!['rows'];
-      final problem = result.value!['problem'];
-      _status =
-          'preview: ${rows is List ? rows.length : 0} row(s)'
-          '${problem is String ? ' — $problem' : ''}';
-    });
-  }
-
-  Future<void> _savePet() async {
-    final capture = _petCapture;
-    if (capture == null) {
-      setState(() {
-        _failed = true;
-        _status = 'Capture the screen first.';
-      });
-      return;
-    }
-    final result = await widget.model.petSave(
-      frameId: capture.frame.frameId,
-      rows: _petRows(),
-      points: _petPoints(),
-      bag: _petBag(),
-      display: capture.display,
-    );
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      _status = result.ok
-          ? 'pet saved (rev ${result.value!['rev'] ?? '?'})'
-          : result.errorLine;
-    });
-  }
-
-  Future<void> _testPet() async {
-    final result = await widget.model.petTestRead(rows: _petRows());
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      final rows = result.value!['rows'];
-      final firstSlot = rows is List && rows.isNotEmpty && rows.first is Map
-          ? (rows.first as Map)['slots']
-          : null;
-      _status =
-          'test read: ${firstSlot is List ? firstSlot.length : 0} slot(s) read';
-    });
-  }
-
-  Widget _petSection(ThemeData theme, ColorScheme colors) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text('Pet crops / rows', style: theme.textTheme.labelLarge),
-            StatusChip(
-              kind: _petCapture == null ? StatusKind.muted : StatusKind.success,
-              label: _petCapture == null ? 'needs capture' : 'captured',
-            ),
-          ],
-        ),
-        const SizedBox(height: ShellSpace.xs),
-        Text(
-          'One row drives the pet session: drag the row rects (toggle, boarding pet slot, feeder '
-          'strip, bag grid, bag slot) and click the shared points (menu, feed, boarding X, ITEM '
-          'tab) on the captured picture. Preview derives the count/ETA regions, Save writes the '
-          'calibration half + crops, Test read reports every slot count.',
-          key: const ValueKey('calibrate-pet-note'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: ShellSpace.sm),
-        Wrap(
-          spacing: ShellSpace.xs,
-          runSpacing: ShellSpace.xs,
-          children: [
-            for (final name in _petRectNames.keys)
-              ChoiceChip(
-                key: ValueKey('session-pet-target-$name'),
-                label: Text(_petRectNames[name]!),
-                selected: _petTarget == name,
-                onSelected: (_) => setState(() => _petTarget = name),
-              ),
-            for (final name in _petPointNames.keys)
-              ChoiceChip(
-                key: ValueKey('session-pet-target-$name'),
-                label: Text(_petPointNames[name]!),
-                selected: _petTarget == name,
-                onSelected: (_) => setState(() => _petTarget = name),
-              ),
-          ],
-        ),
-        const SizedBox(height: ShellSpace.xs),
-        if (_petCapture != null) ...[
-          _sessionFrame(
-            key: const ValueKey('session-pet-frame'),
-            frame: _petCapture!.frame,
-            display: _petCapture!.display,
-            mark: _petMark(),
-            markLabel: _petLabel(),
-            onPointMark: _petRectTarget ? null : _applyPetPoint,
-            onRectMark: _petRectTarget ? _applyPetRect : null,
-          ),
-          const SizedBox(height: ShellSpace.sm),
-        ],
-        for (final prefix in _petRectNames.keys)
-          Padding(
-            padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-            child: Wrap(
-              spacing: ShellSpace.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 70,
-                  child: Text(prefix, style: theme.textTheme.bodySmall),
-                ),
-                for (final axis in ['x', 'y', 'w', 'h'])
-                  _boxField('pet.$prefix.$axis', _petFields['$prefix.$axis']!),
-              ],
-            ),
-          ),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            _fieldBox('stacks', _petStacks, 'session-pet-stacks'),
-            _fieldBox('menu x', _petFields['menu.x']!, 'session-pet-menu-x'),
-            _fieldBox('menu y', _petFields['menu.y']!, 'session-pet-menu-y'),
-            _fieldBox('feed x', _petFields['feed.x']!, 'session-pet-feed-x'),
-            _fieldBox('feed y', _petFields['feed.y']!, 'session-pet-feed-y'),
-            _fieldBox('close x', _petFields['close.x']!, 'session-pet-close-x'),
-            _fieldBox('close y', _petFields['close.y']!, 'session-pet-close-y'),
-            _fieldBox('tab x', _petFields['tab.x']!, 'session-pet-tab-x'),
-            _fieldBox('tab y', _petFields['tab.y']!, 'session-pet-tab-y'),
-          ],
-        ),
-        const SizedBox(height: ShellSpace.sm),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            OutlinedButton(
-              key: const ValueKey('session-pet-capture'),
-              onPressed: _busy ? null : _capturePet,
-              child: const Text('Capture screen'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-preview'),
-              onPressed: _busy ? null : _previewPet,
-              child: const Text('Preview'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-save'),
-              onPressed: _busy ? null : _savePet,
-              child: const Text('Save pet'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-test'),
-              onPressed: _busy ? null : _testPet,
-              child: const Text('Test read'),
-            ),
-          ],
-        ),
-        if (_petPreview != null) ...[
-          const SizedBox(height: ShellSpace.sm),
-          Text(
-            'preview rows: ${(_petPreview!['rows'] as List?)?.length ?? 0}',
-            key: const ValueKey('session-pet-preview-rows'),
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return SurfacePanel(
-      title: 'Session-shaped calibrations',
+      title: 'Sessions',
       description:
-          'All three sessions are wired to the core and draw their captured frame: drag the boxes '
-          'and click the points on the picture (the typed fields follow the gesture and stay '
-          'authoritative).',
+          'Only calibrations that need more than one mark: Tuner OCR + Spring point (one capture) '
+          'and the Pet tooltip panel. The nine Pet marks are in the mark editor above.',
       padding: const EdgeInsets.all(ShellSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1807,8 +1404,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
             key: widget.tunerKey,
             child: _tunerSection(theme, colors),
           ),
-          const SizedBox(height: ShellSpace.md),
-          KeyedSubtree(key: widget.petKey, child: _petSection(theme, colors)),
         ],
       ),
     );

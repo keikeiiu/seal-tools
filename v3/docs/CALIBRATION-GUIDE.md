@@ -2,7 +2,7 @@
 
 This is the click-by-click companion to **USER_GUIDE §6**. It assumes the v3.0.8 **Calibrate** tab and
 covers the part that is easiest to get wrong: **capturing, then clicking the capture and drawing on
-it**. The reference for what a mark means is `spec/CALIBRATION.md`; the list of all 18 marks is
+it**. The reference for what a mark means is `spec/CALIBRATION.md`; the list of all 17 marks is
 USER_GUIDE §6.2.
 
 ---
@@ -24,10 +24,10 @@ USER_GUIDE §6.2.
 | Area | What it is for |
 |---|---|
 | **Captures** (left, top) | The frames this Calibrate screen took. Capture, select a frame, see the `n / 4` cache count. |
-| **Targets** (left, below Captures) | The 18 marks, grouped by tool. A named-instance mark expands to its targets. The **SESSIONS** rows at the bottom point at the multi-mark panels below. |
+| **Targets** (left, below Captures) | The 17 marks, grouped by tool. A named-instance mark expands to its targets. A tool's sessions are listed inside that tool's group with a `session` label. |
 | **Picture/canvas** (middle) | The captured game frame. **This is where you click or drag to make a mark.** Fit / 1:1 / zoom / pan controls sit above it. |
 | **Mark editor** (below the canvas) | **Surface**, **Target instance**, the typed `x / y / w / h` fields, the gem empty question, **Save mark**. |
-| **Session-shaped calibrations** (bottom) | The three multi-mark sessions: Tooltip, Tuner OCR 3-box, Pet crops/rows. These take their own captures and do not use the Captures shelf. |
+| **Sessions** (bottom) | The two multi-mark calibrations: Tuner OCR 3-box + Spring point, and the Pet tooltip offset. They take their own captures and do not use the Captures shelf. |
 
 ## 3. Capture, then click the capture — the step people miss
 
@@ -69,7 +69,7 @@ answer, not a silent failure.
 
 The shape is listed next to the surface; the picture only responds in that shape.
 
-**Point surfaces** (e.g. Focus/scroll point, MAX button, grade point, Spring point):
+**Point surfaces** (e.g. Focus/scroll point, MAX button, grade point, pet menu/feed points):
 
 1. Click **once** on the exact spot in the picture.
 2. The mark appears and the `x / y` fields fill in. Type different numbers if you want exact values.
@@ -112,40 +112,42 @@ Rules that apply to both shapes:
 2. **Gem:** Result gem area (answer the empty question) → grade point for each grade you use →
    resource slot points for the slots you use.
 3. **Pet:** menu point, feed point, Boarding X point, bag page tab points, then boarding bag grid +
-   slot, then the row rects for each row you use. The Pet rows session can do one row's five rects
-   and four shared points in one pass (see §8.3).
-4. **Tuner:** Spring point (if using `spring_mode: hid`) and the Tuner OCR 3-box session (§8.1).
-5. **Tooltip:** the hover offset + shape session (§8.2).
+   slot, then the row rects for each row you use. Use the mark editor for each one — there is no
+   separate Pet rows/crops session any more (it duplicated these marks).
+4. **Tuner:** the **Tuner OCR 3-box + Spring point** session (§8.1) — one capture for all four
+   tuner targets.
+5. **Pet tooltip:** the hover offset + shape session (§8.2).
 
 Calibrate the marks a tool actually reads before starting that tool; a missing mark is reported by the
 tool, not guessed.
 
-## 8. The three session-shaped calibrations
+## 8. The two session-shaped calibrations
 
-These panels sit under **Session-shaped calibrations** at the bottom of Calibrate. They each take
-their **own** capture (the Captures shelf is for the normal marks above) and save several related
-values in one go. They also draw their frame; the typed fields stay authoritative.
+These panels sit under **Sessions** at the bottom of Calibrate. They each take their **own** capture
+(the Captures shelf is for the normal marks above) and save several related values in one go. They
+also draw their frame; the typed fields stay authoritative.
 
-### 8.1 Tuner OCR 3-box
+### 8.1 Tuner OCR 3-box + Spring point
 
-Purpose: the tuner's three-place read (grade letter, three attribute rows, remaining count) plus an
-optional Spring point.
+Purpose: the tuner's three-place read (grade letter, three attribute rows, remaining count) plus the
+optional Spring point — **all from one tuner capture**, like v2.
 
-1. Open the tuner's status window in the game, then in the **Tuner OCR 3-box** card press **Capture
-   screen**.
+1. Open the tuner's status window in the game, then in the **Tuner OCR 3-box + Spring point** card
+   press **Capture screen**. This one capture is used for the three OCR boxes **and** the Spring
+   point; you do not take a second capture for the spring mark.
 2. Drag the three boxes **in order**:
    **Grade letter** (green) → **Attribute rows** (blue) → **Remaining count** (amber).
    A drag fills the selected card and advances to the next. Click a card/chip to go back. Each card
    shows its own `x / y / w / h` and pixel size; a drag under 4 px is ignored.
-3. Optional: select **Spring point** and click it on the picture; set **row height** only if you want
-   to pin the attribute pitch instead of letting the check measure it.
+3. Optional: select **Spring point** and click it on the same picture; set **row height** only if you
+   want to pin the attribute pitch instead of letting the check measure it.
 4. Press **Check boxes**. The result card shows the derived region, row pitch, grade, remaining
    count, filter verdict and how many attribute rows matched. Compare it with the game; fix boxes and
    check again if needed.
 5. Press **Save tuner**. This writes `tuner.ocr` + `tuner.spring_point` and the annotated
    `calib_tuner.png`; the status line shows the core's revision.
 
-### 8.2 Tooltip offset + shape
+### 8.2 Pet tooltip offset + shape
 
 Purpose: where the hover panel appears relative to the cursor, and how large it is.
 
@@ -160,24 +162,9 @@ Purpose: where the hover panel appears relative to the cursor, and how large it 
 4. Press **Test read** to hover again at the same point using the saved values. The **Read result**
    card lists the OCR lines; the debug crop is under `logs/reads/`.
 
-### 8.3 Pet crops / rows
-
-Purpose: one pet row's five rectangles plus the four shared points, and the reference crops that go
-with them.
-
-1. Open the pet menu/boarding screen with a row visible, then press **Capture screen** in the
-   **Pet crops / rows** card.
-2. Pick a target chip, then make its mark on the picture:
-   - **Rectangles (drag):** Toggle row, Boarding pet slot, Feeder strip, Bag grid, Bag slot.
-   - **Points (single click):** Menu point, Feed point, Boarding X point, ITEM tab point.
-   Each gesture fills that target's fields and advances the chip; the fields can also be typed.
-   Set **stacks** if the row's food strip is divided by its stack count.
-3. Press **Preview**. The preview reports the derived row count/ETA regions; compare its row count
-   with the game.
-4. Press **Save pet** to write the calibration half plus the reference crops.
-5. Press **Test read** to run the slot-count read on the saved values; it reports every slot count.
-
-Rows are added/tuned on the **Pet** tab; the session calibrates the row geometry the feeder reads.
+The nine Pet marks (menu/feed/close/page points, bag grid/slot, row rects) are normal marks in the
+mark editor above — there is no separate Pet rows/crops session. Rows and queue pets are edited on the
+**Pet** tab.
 
 ## 9. Troubleshooting
 
@@ -200,5 +187,5 @@ Rows are added/tuned on the **Pet** tab; the session calibrates the row geometry
 3. Choose **Surface** (+ **Target instance** if needed).
 4. **Point = click; rectangle = drag** on the large picture, or type `x / y / w / h`.
 5. Answer the gem empty question if asked → **Save mark**.
-6. For multi-mark work, use the **Session-shaped calibrations** card: Tuner OCR 3-box, Tooltip
-   offset + shape, Pet crops/rows — each with its own Capture button.
+6. For multi-mark work use the **Sessions** card: Tuner OCR 3-box + Spring point (one capture), or the
+   Pet tooltip offset — each with its own Capture button. Everything else is a normal mark above.

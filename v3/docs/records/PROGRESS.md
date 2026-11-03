@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (35) — one capture per tuner; calibration units grouped by tool
+
+Three UX corrections after the session design:
+
+- **Tuner is one capture again.** v2 captured the status screen once and drew the three OCR boxes and
+  the spring point. v3 had split the spring point into a normal mark, so the player needed one Captures
+  capture for it and a second session capture for the OCR boxes. Spring point is no longer a
+  presentation mark; it is set inside the Tuner session, which already carries it to
+  `tuner.spring_point`. The core still serves the 18-kind table; the shell presents 17 marks.
+- **The target tree groups by consuming tool.** Each tool's marks and its sessions now sit under the
+  same group header; the separate global SESSIONS section is gone, and Pet's tooltip session lives
+  under Pet, Tuner's session under Tuner.
+- **The Pet crops/rows session was removed.** It duplicated the nine Pet marks already in the upper
+  editor. The mark editor is now the single place for Pet geometry; rows/queue/food cells stay on the
+  Pet tab. This also removes one capture and two duplicate Save paths from the screen.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `flutter test --no-pub` 351/351, format
+clean; Windows debug/release builds green.
+
 ## 2026-11-04 (34) — the Tuner 3-box and Tooltip sessions get a real UI design
 
 The two session-shaped calibrations were already wired to the core, but their panel read as three

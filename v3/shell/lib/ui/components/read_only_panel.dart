@@ -27,7 +27,7 @@ class ReadOnlyPanel extends StatefulWidget {
   final String? subtitle;
   final bool initiallyOpen;
 
-  /// The trailing label over the chevron while collapsed (e.g. "35 marks · 10 saved").
+  /// The trailing label over the chevron while collapsed (e.g. "34 marks · 10 saved").
   final String? openHint;
 
   @override

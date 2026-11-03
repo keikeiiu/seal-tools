@@ -229,31 +229,6 @@ Future<void> _dragOnSessionFrame(
   await _flush(tester);
 }
 
-Future<void> _clickOnSessionFrame(
-  WidgetTester tester,
-  String frameKey,
-  Offset offsetFromCentre,
-) async {
-  final gestures = find.descendant(
-    of: find.byKey(ValueKey(frameKey)),
-    matching: find.byKey(const ValueKey('calibrate-picture-gestures')),
-  );
-  await tester.ensureVisible(gestures);
-  await tester.pump();
-  final area = tester.getRect(gestures);
-  await tester.tapAt(area.center + offsetFromCentre);
-  await _flush(tester);
-}
-
-/// Scrolls a control into view, then taps it (the session panels run past one screen).
-Future<void> _tapVisible(WidgetTester tester, String key) async {
-  final finder = find.byKey(ValueKey(key));
-  await tester.ensureVisible(finder);
-  await tester.pump();
-  await tester.tap(finder);
-  await _flush(tester);
-}
-
 /// Opens the kind picker and taps an item by its stable key.
 Future<void> _selectKind(WidgetTester tester, String kind) async {
   await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
@@ -810,7 +785,6 @@ void main() {
         'Pet — points': ['pet_menu', 'pet_feed', 'pet_close', 'pet_page_tab'],
         'Pet — bag': ['pet_bag_grid', 'pet_bag_slot'],
         'Pet — rows': ['pet_toggle', 'pet_boarding_slot', 'pet_feeder_strip'],
-        'Tuner': ['spring_point'],
       };
       var count = 0;
       for (final entry in groups.entries) {
@@ -827,8 +801,8 @@ void main() {
       }
       expect(
         count,
-        18,
-        reason: 'seven repaired kinds + eleven named-instance kinds',
+        17,
+        reason: 'spring point moved into the Tuner session, so 17 marks remain',
       );
       expect(
         find.byKey(const ValueKey('calibrate-kind-item-focus_point')),
@@ -1057,7 +1031,7 @@ void main() {
         }
         final kind =
             (request['args'] as Map<String, dynamic>)['kind'] as String;
-        if (kind == 'spring_point') {
+        if (kind == 'max_button') {
           return {
             'result': {
               'kind': 'pet_menu',
@@ -1071,7 +1045,7 @@ void main() {
       },
     );
 
-    await _selectKind(tester, 'spring_point');
+    await _selectKind(tester, 'max_button');
     final text = tester
         .widget<Text>(find.byKey(const ValueKey('calibrate-stored')))
         .data;
@@ -2104,112 +2078,6 @@ void main() {
     expect(find.textContaining('tuner saved'), findsOneWidget);
   });
 
-  testWidgets('the pet session previews, saves and test-reads one row', (
-    tester,
-  ) async {
-    final harness = await _pumpCalibrate(
-      tester,
-      answer: (request) => switch (request['cmd']) {
-        'capture' => {'result': _captureAnswer(frameId: 'f7')},
-        'calibration.fetch' => {
-          'result': _fetchAnswer(
-            (request['args'] as Map<String, dynamic>)['kind'] as String,
-          ),
-        },
-        'calibration.check' => {
-          'result': {
-            'live': null,
-            'stored': null,
-            'differences': <String>[],
-            'matches': null,
-            'note': 'game window not open',
-          },
-        },
-        'calibration.pet.preview' => {
-          'result': {
-            'rows': [
-              {
-                'slot_boxes': <Map<String, dynamic>>[],
-                'count_regions': <Map<String, dynamic>>[],
-                'problems': <String>[],
-              },
-            ],
-            'bag_centres': <List<int>>[],
-            'problem': null,
-          },
-        },
-        'calibration.pet.save' => {
-          'result': {
-            'rev': 11,
-            'block': {
-              'pet': {'slots': <Map<String, dynamic>>[]},
-            },
-            'artifacts': [
-              {'file': 'calib_pet.png', 'path': 'config/calib_pet.png'},
-            ],
-            'derived': <String, dynamic>{},
-            'warnings': <String>[],
-          },
-        },
-        'calibration.pet.test_read' => {
-          'result': {
-            'rows': [
-              {
-                'row': 1,
-                'slots': [
-                  {'index': 1, 'reads': <Map<String, dynamic>>[], 'count': 123},
-                ],
-              },
-            ],
-            'hidden_ms': 700,
-          },
-        },
-        _ => {'result': <String, dynamic>{}},
-      },
-    );
-    await _flush(tester);
-
-    final capture = find.byKey(const ValueKey('session-pet-capture'));
-    await tester.ensureVisible(capture);
-    await tester.tap(capture);
-    await _flush(tester);
-
-    final preview = find.byKey(const ValueKey('session-pet-preview'));
-    await tester.ensureVisible(preview);
-    await tester.tap(preview);
-    await _flush(tester);
-    final previewArgs =
-        harness.sentMessages.lastWhere(
-              (message) => message['cmd'] == 'calibration.pet.preview',
-            )['args']
-            as Map<String, dynamic>;
-    final draft = previewArgs['draft'] as Map<String, dynamic>;
-    expect((draft['rows'] as List).length, 1);
-    expect(
-      ((draft['rows'] as List).first as Map<String, dynamic>)['stacks'],
-      2,
-    );
-
-    final save = find.byKey(const ValueKey('session-pet-save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
-    await _flush(tester);
-    final saveArgs =
-        harness.sentMessages.lastWhere(
-              (message) => message['cmd'] == 'calibration.pet.save',
-            )['args']
-            as Map<String, dynamic>;
-    expect(saveArgs['frame_id'], 'f7');
-    expect(saveArgs['points'], isNotNull);
-    expect(saveArgs['display']['dpi_scale'], 1.5);
-
-    final test = find.byKey(const ValueKey('session-pet-test'));
-    await tester.ensureVisible(test);
-    await tester.tap(test);
-    await _flush(tester);
-    expect(find.textContaining('1 slot(s) read'), findsOneWidget);
-  });
-
   testWidgets('the gallery shows the session saves as present, not v2 only', (
     tester,
   ) async {
@@ -2345,101 +2213,6 @@ void main() {
         (boxes['attr'] as Map<String, dynamic>)['w'],
         int.parse(fieldText('session-tuner-attr.w')),
       );
-    },
-  );
-
-  testWidgets(
-    'the pet session renders its frame; a drag fills the chosen rect and a click fills a point',
-    (tester) async {
-      final harness = await _pumpCalibrate(
-        tester,
-        answer: (request) => switch (request['cmd']) {
-          'capture' => {
-            'result': _captureAnswer(frameId: 'f7', width: 100, height: 75),
-          },
-          'calibration.fetch' => {
-            'result': _fetchAnswer(
-              (request['args'] as Map<String, dynamic>)['kind'] as String,
-            ),
-          },
-          _ => {'result': <String, dynamic>{}},
-        },
-      );
-      await _flush(tester);
-
-      expect(find.byKey(const ValueKey('session-pet-frame')), findsNothing);
-      final capture = find.byKey(const ValueKey('session-pet-capture'));
-      await tester.ensureVisible(capture);
-      await tester.tap(capture);
-      await _flush(tester);
-      expect(
-        find.byKey(const ValueKey('session-pet-frame')),
-        findsOneWidget,
-        reason: 'the captured frame is rendered so the rows can be dragged',
-      );
-
-      String fieldText(String key) =>
-          tester.widget<TextField>(_field(key)).controller!.text;
-
-      // The default target is the toggle row: a drag fills its rect and leaves the others alone.
-      await _dragOnSessionFrame(
-        tester,
-        'session-pet-frame',
-        const Offset(80, 60),
-      );
-      expect(
-        int.parse(fieldText('session-tuner-pet.toggle.x')),
-        greaterThan(0),
-      );
-      expect(
-        int.parse(fieldText('session-tuner-pet.toggle.w')),
-        greaterThan(0),
-      );
-      expect(fieldText('session-tuner-pet.boarding.x'), '0');
-      expect(fieldText('session-tuner-pet.boarding.w'), '0');
-
-      // Pick the bag grid explicitly, then drag: the values land in the bag-grid fields.
-      await _tapVisible(tester, 'session-pet-target-grid');
-      await _dragOnSessionFrame(
-        tester,
-        'session-pet-frame',
-        const Offset(80, 60),
-      );
-      expect(int.parse(fieldText('session-tuner-pet.grid.x')), greaterThan(0));
-      expect(int.parse(fieldText('session-tuner-pet.grid.w')), greaterThan(0));
-
-      // A POINT target takes a click instead of a drag.
-      await _tapVisible(tester, 'session-pet-target-menu');
-      await _clickOnSessionFrame(
-        tester,
-        'session-pet-frame',
-        const Offset(30, 10),
-      );
-      expect(int.parse(fieldText('session-pet-menu-x')), greaterThan(0));
-      expect(int.parse(fieldText('session-pet-menu-y')), greaterThan(0));
-
-      // Save sends the fields the gestures wrote.
-      final save = find.byKey(const ValueKey('session-pet-save'));
-      await tester.ensureVisible(save);
-      await tester.tap(save);
-      await _flush(tester);
-      final saveArgs =
-          harness.sentMessages.lastWhere(
-                (message) => message['cmd'] == 'calibration.pet.save',
-              )['args']
-              as Map<String, dynamic>;
-      final rows = (saveArgs['rows'] as List).cast<Map<String, dynamic>>();
-      final toggle = rows.first['toggle_label'] as Map<String, dynamic>;
-      expect(toggle['x'], int.parse(fieldText('session-tuner-pet.toggle.x')));
-      expect(toggle['w'], int.parse(fieldText('session-tuner-pet.toggle.w')));
-      final bag = saveArgs['bag'] as Map<String, dynamic>;
-      final grid = (bag['grid'] as List).cast<int>();
-      expect(grid[0], int.parse(fieldText('session-tuner-pet.grid.x')));
-      expect(grid[2], int.parse(fieldText('session-tuner-pet.grid.w')));
-      final points = saveArgs['points'] as Map<String, dynamic>;
-      final menu = points['menu'] as Map<String, dynamic>;
-      expect(menu['x'], int.parse(fieldText('session-pet-menu-x')));
-      expect(menu['y'], int.parse(fieldText('session-pet-menu-y')));
     },
   );
 

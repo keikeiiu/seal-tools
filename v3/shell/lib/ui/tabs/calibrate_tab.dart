@@ -1,6 +1,7 @@
-/// The Calibrate workspace: capture shelf (the core's four-frame FIFO), target tree for every served
-/// mark, canvas with fit/1:1/pan, mark editor with the target/verdict/artifact rules, stored-coordinate
-/// table, reference-image gallery and the session-shaped calibrations that still need protocol work.
+/// The Calibrate workspace: capture shelf (the core's four-frame FIFO), target tree for the 17
+/// presentation marks, canvas with fit/1:1/pan, mark editor with the target/verdict/artifact rules,
+/// stored-coordinate table, reference-image gallery and the two multi-mark Sessions (Tuner OCR+spring,
+/// Pet tooltip). The Pet crops/rows session is deliberately absent: it duplicated the nine Pet marks.
 ///
 /// The shell owns presentation only. It sends `capture` and `calibration.save`/`calibration.fetch`
 /// with the mark in CLIENT-RELATIVE PHYSICAL pixels and the capture's own `DisplayInfo`; the core owns
@@ -98,7 +99,6 @@ class _CalibrateTabState extends State<CalibrateTab>
   final GlobalKey _sessionsKey = GlobalKey();
   final GlobalKey _tooltipSessionKey = GlobalKey();
   final GlobalKey _tunerSessionKey = GlobalKey();
-  final GlobalKey _petSessionKey = GlobalKey();
   String? _selectedSession;
   String? _selectedFrameId;
   int _captureSequence = 0;
@@ -117,7 +117,7 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   CoreActionResult<CalibrationSaveResult>? _save;
 
-  /// Stored marks by [calibrationStoredKey] (fetched for all 18 kinds / 35 marks).
+  /// Stored marks by [calibrationStoredKey] (fetched for the 17 presentation marks / 34 instances).
   final Map<String, CalibrationFetchResult> _stored = {};
   final Map<String, String> _storedErrors = {};
 
@@ -721,7 +721,6 @@ class _CalibrateTabState extends State<CalibrateTab>
                   key: _sessionsKey,
                   tooltipKey: _tooltipSessionKey,
                   tunerKey: _tunerSessionKey,
-                  petKey: _petSessionKey,
                   model: widget.model,
                   host: widget.host,
                 ),
@@ -741,7 +740,6 @@ class _CalibrateTabState extends State<CalibrateTab>
     final key = switch (_selectedSession) {
       'tooltip' => _tooltipSessionKey,
       'tuner' => _tunerSessionKey,
-      'pet' => _petSessionKey,
       _ => _sessionsKey,
     };
     _scrollTo(key);
@@ -755,7 +753,6 @@ class _CalibrateTabState extends State<CalibrateTab>
       final key = switch (session) {
         'tooltip' => _tooltipSessionKey,
         'tuner' => _tunerSessionKey,
-        'pet' => _petSessionKey,
         _ => _sessionsKey,
       };
       _scrollTo(key);

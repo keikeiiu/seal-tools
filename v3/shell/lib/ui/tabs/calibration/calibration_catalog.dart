@@ -1,10 +1,15 @@
 /// The served calibration kind table and the derived views the Calibrate workspace needs.
 ///
 /// Presentation only, and the copy is deliberate: the CORE owns the kind table, target validity and
-/// every refusal line (`PROTOCOL §12.7`/`§12.8`); this file only knows the 18 kinds = 35 marks well
-/// enough to draw the target tree, the stored-coordinate table and the reference gallery. The
-/// targets are the presentation-side allowed values (1-based/player-facing); the picker offers them
-/// and the core validates them.
+/// every refusal line (`PROTOCOL §12.7`/`§12.8`); this file only knows the 17 presentation marks =
+/// 34 marks plus the two multi-mark SESSIONS (Tuner OCR+spring, Pet tooltip) well enough to draw the
+/// target tree, the stored-coordinate table and the reference gallery. The targets are the
+/// presentation-side allowed values (1-based/player-facing); the picker offers them and the core
+/// validates them.
+///
+/// Spring point is deliberately NOT a normal mark here: it is set inside the Tuner OCR session, so
+/// one tuner capture covers the three OCR boxes and the spring point (v2's flow). The core still
+/// serves `spring_point` for compatibility; the UI no longer asks the player to calibrate it twice.
 ///
 /// [CALIBRATION.md]: ../../../docs/spec/CALIBRATION.md
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
@@ -181,13 +186,44 @@ const List<CalibrationKind> calibrationKinds = [
     isRect: true,
     targets: petRowTargets,
   ),
-  // Tuner
-  CalibrationKind(
-    'spring_point',
-    'Tuner',
-    'Tuner',
-    'Spring point',
-    isRect: false,
+  // Tuner has no single mark: its OCR boxes and Spring point are saved together by the
+  // Tuner OCR 3-box session, so one tuner capture covers all of them.
+];
+
+/// A multi-mark calibration that is NOT a target mark: it has its own capture + save panel under
+/// the tool that consumes it. Listing these under their tool's group (instead of a separate
+/// SESSIONS section) keeps one tool's calibration units together.
+class CalibrationSession {
+  const CalibrationSession({
+    required this.id,
+    required this.tool,
+    required this.label,
+    required this.reason,
+  });
+
+  /// The session id the panel/target tree uses (`tuner`, `tooltip`).
+  final String id;
+  final String tool;
+  final String label;
+
+  /// Why this is a session rather than a mark, shown on its row.
+  final String reason;
+}
+
+/// The sessions, in tool-group order. A tool with no marks still gets its group from the mark table
+/// when its session is the only calibration it needs (Tuner).
+const List<CalibrationSession> calibrationSessions = [
+  CalibrationSession(
+    id: 'tooltip',
+    tool: 'Pet',
+    label: 'Tooltip offset + shape',
+    reason: 'One hover capture: the panel offset/size the Pet Feeder reads. Not a mark.',
+  ),
+  CalibrationSession(
+    id: 'tuner',
+    tool: 'Tuner',
+    label: 'Tuner OCR 3-box + Spring point',
+    reason: 'One tuner capture for the grade/attribute/remaining boxes and the spring point.',
   ),
 ];
 
@@ -203,7 +239,8 @@ class CalibrationToolGroup {
   int get markCount => kinds.fold(0, (total, kind) => total + kind.markCount);
 }
 
-/// The target tree: all 18 kinds grouped by consuming tool (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1).
+/// The target tree: the 17 presentation marks grouped by consuming tool (Shop 5/5, Gem 3/9,
+/// Pet 9/20, Tuner 0/0) plus each tool's sessions. Tuner's group is session-only.
 final List<CalibrationToolGroup> calibrationToolGroups = [
   for (final tool in calibrationTools)
     CalibrationToolGroup(tool, [
@@ -235,7 +272,7 @@ class CalibrationMarkSlot {
 String calibrationStoredKey(String kind, String? target) =>
     target == null ? kind : '$kind@$target';
 
-/// The kinds' marks in table order: 12 untargeted kinds + 23 instance marks = 35.
+/// The marks' stored values in table order: 11 untargeted kinds + 23 instance marks = 34.
 List<CalibrationMarkSlot> calibrationMarkSlots() => [
   for (final kind in calibrationKinds)
     if (kind.isTargeted)
