@@ -666,11 +666,13 @@ and the tooltip panel have their sessions in §6.5–§6.6; these are the remain
 1. In **Calibrate → Session-shaped calibrations**, find **Tuner OCR 3-box**. Use **Sessions** in the
    page header or select the **Tuner OCR 3-box** row under **SESSIONS** in Targets to jump to it. Set
    the game to the tuner's status window and press **Capture screen** (or **Recapture screen**) at the
-   top of the card; the capture and the **Target to drag** chips are deliberately visible together.
+   top of the card; the capture and the **Target to drag** chips are deliberately visible together. The
+   captured picture then stays on the left while the box cards scroll on the right, so you can drag and
+   edit the matching fields without scrolling between them.
 2. Pick a **Target to drag** chip — **Grade letter** (green), **Attribute rows** (blue), **Remaining
-   count** (amber) or **Spring point** — then drag directly on the picture. Drags fill the selected
-   box and advance grade → attributes → remaining; click a card title or chip to go back. The typed
-   `x / y / w / h` fields are an alternative and stay authoritative.
+   count** (amber) or **Spring point** — then drag directly on the picture on the left. Drags fill the
+   selected box and advance grade → attributes → remaining; click a card title or chip to go back. The
+   typed `x / y / w / h` fields are an alternative and stay authoritative.
 3. Optional: click the **Spring point** target and click its point on the picture; set **row height**
    if you want to pin the pitch instead of letting the check measure it.
 4. Press **Check boxes**. The result card reports the derived region, row pitch, grade, remaining
@@ -684,7 +686,7 @@ and the tooltip panel have their sessions in §6.5–§6.6; these are the remain
 1. Put the game in front with the item or pet whose hover panel you want to measure. In the
    **Tooltip offset + shape** card set the **hover x / y** point and delay, then press **Capture
    hover**. The shell hides itself, the core places the cursor on that point and captures the panel;
-   the picture returns with the cursor shown as a pink crosshair.
+   the picture returns on the left while the hover/offset controls stay on the right.
 2. Drag a box around the panel on the picture (the core requires at least 20×20 px), or type the
    **offset x / y** and **width / height**. The formula line shows `cursor + offset = panel top-left`;
    the panel box is drawn over the cursor.

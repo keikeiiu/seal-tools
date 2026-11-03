@@ -550,10 +550,11 @@ calibrations** 包含 Tuner OCR 三框、Tooltip 位移與寵物列等分步會�
 
 1. 在 **Calibrate → Session-shaped calibrations** 找到 **Tuner OCR 3-box**。用頁首的 **Sessions**，或在
    Targets 的 **SESSIONS** 選 **Tuner OCR 3-box**，就會跳到它。讓遊戲裡的改造師狀態視窗可見，按卡片最上方的
-   **Capture screen**（或 **Recapture screen**）；拍攝按鈕與 **Target to drag** chip 刻意放在一起。
+   **Capture screen**（或 **Recapture screen**）；拍攝按鈕與 **Target to drag** chip 刻意放在一起。拍完後
+   畫面固定在左側，框的卡片在右側獨立捲動，所以拖曳與欄位編輯不需要上下捲動切換。
 2. 選一個 **Target to drag** chip —— **Grade letter**（綠）、**Attribute rows**（藍）、**Remaining count**
-   （琥珀）或 **Spring point** —— 然後直接在畫面上拖曳。拖曳會填入目前的框並自動跳到下一個；要回頭可點卡片
-   標題或 chip。`x / y / w / h` 欄位是替代方式，仍是權威。
+   （琥珀）或 **Spring point** —— 然後在**左側的畫面**上直接拖曳。拖曳會填入目前的框並自動跳到下一個；
+   要回頭可點卡片標題或 chip。`x / y / w / h` 欄位是替代方式，仍是權威。
 3. 選用：點 **Spring point** 目標後在畫面上點它的位置；若不想讓 Check 量測列高，可在 **row height** 指定。
 4. 按 **Check boxes**。結果卡片會列出推導出的 region、列高、grade、remaining、filter 判定與符合的屬性列數；
    與遊戲畫面不符就修正框再 Check。
@@ -563,8 +564,8 @@ calibrations** 包含 Tuner OCR 三框、Tooltip 位移與寵物列等分步會�
 ### 6.6 Tooltip 位移與面板形狀會談
 
 1. 把遊戲放到最前面，讓要量測的提示面板（物品或寵物）可見。在 **Tooltip offset + shape** 卡片設定
-   **hover x / y** 與延遲，按 **Capture hover**。殼層會隱藏、核心把游標放到該點並擷取面板；畫面回來時
-   游標位置會以粉紅色十字顯示。
+   **hover x / y** 與延遲，按 **Capture hover**。殼層會隱藏、核心把游標放到該點並擷取面板；畫面回來後
+   固定顯示在左側，hover/offset 控制項留在右側，游標位置以粉紅色十字顯示。
 2. 在畫面上框住面板（核心要求至少 20×20 px），或直接輸入 **offset x / y** 與 **width / height**。公式行會顯示
    `cursor + offset = panel top-left`，面板框會疊在游標上。
 3. 按 **Save tooltip**：寫入這台機器的 `tooltip` 區塊（位移、大小、延遲）。

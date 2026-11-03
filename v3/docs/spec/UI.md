@@ -313,7 +313,10 @@ widths and stacks them under the prose when the window is narrow.
   alone does not; no auto-anchor, no proportional transform).
 - **Session-shaped calibrations:** the panel below the stored table is a designed three-session
   surface, not three rows of raw fields. Every session starts with a numbered step strip
-  (Capture → measure → save), states what it needs, and keeps the typed fields authoritative.
+  (Capture → measure → save), states what it needs, and keeps the typed fields authoritative. At wide
+  widths each session is a **split workspace**: the captured picture stays fixed on the left (fit to
+  380 px) while a 470 px right pane scrolls its target cards/fields independently, so a drag and the
+  box being edited are visible together; narrow widths stack the two columns.
   - **Tuner OCR 3-box** — the top of the card pairs **Capture screen / Recapture screen** with the
     required capture state and the **Target to drag** chips (grade, attributes, remaining, spring).
     After capture, the picture shows every drawn box in its own colour (grade green, attributes blue,
@@ -322,11 +325,11 @@ widths and stacks them under the prose when the window is narrow.
     order). **Check boxes** adds a result card with the derived region, row pitch, grade, remaining
     count and filter verdict plus the matched-row count; **Save tuner** writes
     `tuner.ocr`/`spring_point`.
-  - **Tooltip offset + shape** — two step cards: **1 · Hover point** (x/y/delay + *Capture hover*;
-    the core places the cursor and captures the panel) and **2 · Panel box & offset** (offset and
-    panel size; a mono formula line shows `cursor + offset = panel top-left`). The picture overlays
-    the placed cursor as a pink crosshair under the selected panel box; a **Read result** card shows
-    the Test read lines in a bordered surface instead of loose prose.
+  - **Tooltip offset + shape** — the picture sits left, the two step cards right: **1 · Hover point**
+    (x/y/delay + *Capture hover*; the core places the cursor and captures the panel) and **2 · Panel
+    box & offset** (offset and panel size; a mono formula line shows `cursor + offset = panel
+    top-left`). The picture overlays the placed cursor as a pink crosshair under the selected panel
+    box; a **Read result** card shows the Test read lines in a bordered surface instead of loose prose.
   - **Pet rows/crops** keeps its preview/Preview rows/Save/Test steps with the same step strip and
     card treatment.
 

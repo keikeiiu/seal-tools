@@ -42,6 +42,12 @@ increment keeps the payloads and tests and rebuilds the presentation:
   shortcut, and the tuner's **Capture/Recapture screen** button moved to the top of its card beside the
   **Target to drag** chips. The selected tuner box also stays drawn after a drag (the first pass hid
   it), and the card carries an explicit drag-on-picture hint.
+- **Follow-up — screen beside the controls:** each session is a split workspace at wide widths: the
+  captured frame stays fixed on the left (380 px fit) and the target cards/fields scroll in a 470 px
+  pane on the right, so a drawing drag and the box it edits are visible together instead of requiring
+  a page scroll between the picture and the fields. Narrow layouts stack them. The tuner's
+  Capture/Recapture button and target chips sit above the split; the tooltip's placeholder explains
+  where the captured panel will appear before the first hover.
 - Tests pin the new box cards, step chips, all-box/cursor overlays, the 19 px pitch + 300×200 region
   summary, the Read-result card and the session target selection/scroll; the full shell gate is
   **353/353**, analyze `--fatal-infos` clean, format clean and the Windows debug build OK.
