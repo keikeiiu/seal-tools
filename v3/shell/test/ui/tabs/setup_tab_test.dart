@@ -28,6 +28,9 @@ Map<String, dynamic> _setupConfig() => {
     'baud': 115200,
     'port': '',
   },
+  'settings': {
+    'ui': {'collapse_on_run_start': true, 'return_after_run': false},
+  },
 };
 
 Map<String, dynamic> _displayJson() => {
@@ -334,5 +337,44 @@ void main() {
                 as Map<String, dynamic>)['quick_dock']
             as Map<String, dynamic>;
     expect(dock['behavior'], 'always_open');
+  });
+
+  testWidgets('Run window switches save the portable preference', (
+    tester,
+  ) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final collapse = find.byKey(const ValueKey('setup-collapse-on-run-start'));
+    await tester.ensureVisible(collapse);
+    await tester.pump();
+    await tester.tap(collapse);
+    await _flush(tester);
+
+    expect(harness.model.collapseOnRunStart, isFalse);
+    final collapseApply = harness.lastSentWithCmd('config.apply');
+    expect(collapseApply, isNotNull);
+    final collapseUi =
+        (((collapseApply!['args'] as Map<String, dynamic>)['sections']
+                    as Map<String, dynamic>)['settings']
+                as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(collapseUi['collapse_on_run_start'], isFalse);
+
+    final afterRun = find.byKey(const ValueKey('setup-return-after-run'));
+    await tester.ensureVisible(afterRun);
+    await tester.pump();
+    await tester.tap(afterRun);
+    await _flush(tester);
+
+    expect(harness.model.returnAfterRun, isTrue);
+    final afterApply = harness.lastSentWithCmd('config.apply');
+    expect(afterApply, isNotNull);
+    final afterUi =
+        (((afterApply!['args'] as Map<String, dynamic>)['sections']
+                    as Map<String, dynamic>)['settings']
+                as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(afterUi['return_after_run'], isTrue);
   });
 }

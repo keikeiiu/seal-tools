@@ -181,6 +181,10 @@ class ShellModel extends ChangeNotifier {
   bool _miniSuppressed = false;
   bool _miniSyncing = false;
   ToolId? _miniTool;
+
+  /// True when the run was started from the quick dock, so an optional after-run return can go back
+  /// to the dock instead of the full window. Session state, not config.
+  bool _miniReturnToDock = false;
   WindowRect? _miniRestoreRect;
   WindowRect? _miniRect;
 
@@ -1305,6 +1309,19 @@ class ShellModel extends ChangeNotifier {
     }
     final active = _foregroundTool();
     if (active == null) {
+      // Optional after-run return: restore the window the player was in before Start. The default
+      // keeps the bar until its Full window action; the switch is a persisted Setup preference.
+      if (_miniActive && returnAfterRun && !_miniSuppressed) {
+        final toDock = _miniReturnToDock;
+        _miniReturnToDock = false;
+        _miniSyncing = true;
+        unawaited(
+          (toDock ? openDockFromMini() : exitMiniMode()).whenComplete(
+            () => _miniSyncing = false,
+          ),
+        );
+        return;
+      }
       // A new run may collapse again; if the bar is showing a finished run, it stays until expanded.
       if (!_miniActive) {
         _miniSuppressed = false;
@@ -1321,6 +1338,11 @@ class ShellModel extends ChangeNotifier {
     if (_miniSuppressed) {
       return;
     }
+    // The persistent Setup switch can keep the full window. The dock is already the compact window,
+    // so it still hands over to the run bar (never two windows / two Stops).
+    if (!_dockActive && !collapseOnRunStart) {
+      return;
+    }
     // The dock is the idle launcher: when something starts, the same compact window becomes the
     // run bar (it must never show two windows, or a duplicate Stop).
     if (_dockActive) {
@@ -1331,6 +1353,42 @@ class ShellModel extends ChangeNotifier {
     _miniSyncing = true;
     unawaited(enterMiniMode(active).whenComplete(() => _miniSyncing = false));
   }
+
+  /// The persisted Setup preference for automatic collapse on a run start
+  /// (`settings.ui.collapse_on_run_start`, default true). Off keeps the full window until the
+  /// player presses the app-bar Mini action; the dock still turns into the run bar because the dock
+  /// itself is the compact window.
+  bool get collapseOnRunStart => _uiBool('collapse_on_run_start', true);
+
+  /// The persisted after-run preference (`settings.ui.return_after_run`, default false): when on,
+  /// a finished/stopped run restores the window the player was in before Start (the quick dock if it
+  /// started there, otherwise the full window). Off keeps the documented "bar stays until Full
+  /// window" behaviour.
+  bool get returnAfterRun => _uiBool('return_after_run', false);
+
+  bool _uiBool(String key, bool fallback) {
+    final settings = asJsonMap(config.config['settings']);
+    final portable = asBool(asJsonMap(settings['ui'])[key]);
+    if (portable != null) {
+      return portable;
+    }
+    return asBool(asJsonMap(config.config['ui'])[key]) ?? fallback;
+  }
+
+  /// Persists a Setup window-behaviour switch through the normal validate → apply path.
+  Future<ConfigSaveOutcome> setCollapseOnRunStart(bool enabled) =>
+      _saveUiBool('collapse_on_run_start', enabled);
+
+  /// Persists the after-run switch (see [returnAfterRun]).
+  Future<ConfigSaveOutcome> setReturnAfterRun(bool enabled) =>
+      _saveUiBool('return_after_run', enabled);
+
+  Future<ConfigSaveOutcome> _saveUiBool(String key, bool enabled) =>
+      saveConfig({
+        'settings': {
+          'ui': {key: enabled},
+        },
+      });
 
   /// The full window's "Mini" action: collapse onto the current foreground run, if there is one.
   Future<void> collapseToMini() async {
@@ -1349,6 +1407,7 @@ class ShellModel extends ChangeNotifier {
     }
     _miniActive = true;
     _miniTool = tool;
+    _miniReturnToDock = false;
     notifyListeners();
     try {
       _miniRestoreRect = await host.windowRect();
@@ -1386,6 +1445,7 @@ class ShellModel extends ChangeNotifier {
     }
     _miniActive = false;
     _miniTool = null;
+    _miniReturnToDock = false;
     notifyListeners();
     final restore = _miniRestoreRect;
     _miniRestoreRect = null;
@@ -1828,6 +1888,7 @@ class ShellModel extends ChangeNotifier {
     _miniRestoreRect = null;
     _miniActive = false;
     _miniTool = null;
+    _miniReturnToDock = false;
     _dockActive = true;
     _dockWorkArea ??= _miniWorkArea;
     notifyListeners();
@@ -1858,6 +1919,7 @@ class ShellModel extends ChangeNotifier {
     _dockActive = false;
     _miniActive = true;
     _miniTool = tool;
+    _miniReturnToDock = true;
     _miniWorkArea ??= _dockWorkArea;
     notifyListeners();
     try {

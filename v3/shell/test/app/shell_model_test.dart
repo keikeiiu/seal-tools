@@ -990,6 +990,62 @@ void main() {
       expect(harness.model.miniMode, isTrue);
       expect(harness.model.miniTool, ToolId.holdspace);
     });
+
+    test('collapse_on_run_start off keeps the full window for a run', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect(
+        config: {
+          'settings': {
+            'ui': {'collapse_on_run_start': false},
+          },
+        },
+      );
+
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(host.miniChromeCalls, isEmpty);
+      expect(harness.model.miniCandidate, ToolId.tuner);
+
+      // The manual app-bar action still works.
+      await harness.model.collapseToMini();
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(host.miniChromeCalls, [true]);
+    });
+
+    test(
+      'return_after_run restores the full window when the run ends',
+      () async {
+        final host = FakeHost();
+        final harness = AppHarness(host: host);
+        addTearDown(harness.dispose);
+        await harness.connect(
+          config: {
+            'settings': {
+              'ui': {'return_after_run': true},
+            },
+          },
+        );
+        harness.emitState(tool: ToolId.tuner, message: 'running');
+        await settle();
+        expect(harness.model.miniMode, isTrue);
+
+        harness.emitState(
+          tool: ToolId.tuner,
+          phase: ToolPhase.idle,
+          message: 'DONE',
+        );
+        harness.emitToolFinished(tool: ToolId.tuner);
+        await settle();
+        expect(harness.model.miniMode, isFalse);
+        expect(host.miniChromeCalls, [true, false]);
+        expect(host.minSizeCalls.last, (1120, 680));
+        expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
+      },
+    );
   });
 
   group('quick dock', () {
