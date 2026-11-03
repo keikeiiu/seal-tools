@@ -368,14 +368,12 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     return _tunerBoxMark(_tunerTarget);
   }
 
-  /// The two non-selected boxes drawn in their own colours under the selected/editable mark. The
-  /// selected box is still editable through the picture, so it is not duplicated here.
+  /// All drawn tuner boxes, including the selected one, so a drag's result stays visible on the
+  /// picture even though the selected target is also the editable mark. The selected target is called
+  /// out by its highlighted card/chip below the canvas.
   List<CalibrationOverlayMark> _tunerBoxOverlays() {
     final overlays = <CalibrationOverlayMark>[];
     for (final name in ['grade', 'attr', 'remaining']) {
-      if (name == _tunerTarget) {
-        continue;
-      }
       final mark = _tunerBoxMark(name);
       if (mark == null) {
         continue;
@@ -926,6 +924,16 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           done: [captured, allDrawn, _tunerCheck != null],
         ),
         const SizedBox(height: ShellSpace.sm),
+        Text(
+          'Drag directly on the captured picture to draw the selected box — the x/y/w/h fields '
+          'below are an alternative, not a replacement. The drag advances to the next box.',
+          key: const ValueKey('session-tuner-drag-hint'),
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 10,
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xs),
         if (_tunerCapture != null) ...[
           _sessionFrame(
             key: const ValueKey('session-tuner-frame'),

@@ -1998,6 +1998,11 @@ void main() {
       find.byKey(const ValueKey('calibrate-overlay-tuner-remaining')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-grade')),
+      findsOneWidget,
+      reason: 'the selected box stays drawn, so a drag result cannot disappear',
+    );
 
     final check = find.byKey(const ValueKey('session-tuner-check'));
     await tester.ensureVisible(check);
