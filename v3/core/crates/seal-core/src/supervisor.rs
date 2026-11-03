@@ -29,9 +29,12 @@
 //! use of `should_stand_down` is the recorded increment-2 follow-up, not implemented here).
 //!
 //! The deferred-start timeout is also wired: a `Start::Deferred` schedules one `PendingTimeout`
-//! command 45 s out, and the arbiter's `pending_timeout` line is published as a `log` event. The
-//! caller has already been answered `Deferred`, so the timeout cannot turn into a response on this
-//! protocol; that is reported rather than papered over.
+//! command 45 s out, tagged with the generation of the deferred start it belongs to, and the
+//! arbiter's `pending_timeout` line is published as a `log` event. A timer whose generation is no
+//! longer the current one belongs to a start that already began or was replaced and is ignored, so
+//! it cannot cancel a later deferred start early. The caller has already been answered `Deferred`,
+//! so the timeout cannot turn into a response on this protocol; that is reported rather than
+//! papered over.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -40,7 +43,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use seal_domain::decision::{Decision, StopReason};
+use seal_domain::decision::{Decision, StopKind, StopReason};
 use seal_tools::arbiter::{Arbiter, GameRelease, GameUse, Refusal, RunHandle, Start, Stop};
 use seal_tools::clock::RealClock;
 use seal_tools::game::GamePort;
@@ -115,8 +118,11 @@ enum Command {
     InputLease {
         reply: Sender<Option<String>>,
     },
-    /// The deferred foreground start's bounded wait ran out (v2's 45 s).
-    PendingTimeout,
+    /// The deferred foreground start's bounded wait ran out (v2's 45 s). The generation is the
+    /// deferred start this timer was scheduled for; a timer from an earlier one is ignored.
+    PendingTimeout {
+        generation: u64,
+    },
 }
 
 enum WorkerEvent {
@@ -299,6 +305,9 @@ fn supervise(
     let mut workers: BTreeMap<ToolId, JoinHandle<()>> = BTreeMap::new();
     let mut pending_reply: Option<PendingReply> = None;
     let deferred_args: RefCell<Option<(ToolId, Value)>> = RefCell::new(None);
+    // Bumped for every deferred start. A `PendingTimeout` only acts for the start it was scheduled
+    // for, so a timer left over from an earlier one cannot cancel the start waiting now.
+    let mut pending_generation: u64 = 0;
 
     while let Ok(message) = receiver.recv() {
         match message {
@@ -328,7 +337,8 @@ fn supervise(
                             // There is no run to attach a `state` to yet, so the waiting line is a
                             // `log` event; the start itself happens when the game is handed over.
                             bus.emit(events::log_event("info", line.clone()));
-                            schedule_pending_timeout(worker_sender.clone());
+                            pending_generation += 1;
+                            schedule_pending_timeout(worker_sender.clone(), pending_generation);
                             *deferred_args.borrow_mut() = Some((tool, args.clone()));
                             StartReply::Deferred { line }
                         }
@@ -343,6 +353,9 @@ fn supervise(
                         if let Some(snapshot) = handle.state.read() {
                             bus.emit(events::state_event(&snapshot));
                         }
+                        // The stop cleared the arbiter's waiter, so a stashed game request for this
+                        // tool can never be granted: answer it now or the worker waits forever.
+                        answer_stopped_request(&mut pending_reply, tool);
                         StopReply::Stopping { tool }
                     }
                     Stop::NotRunning => StopReply::NotRunning,
@@ -353,15 +366,20 @@ fn supervise(
                 // Nothing pending is allowed to start on the way out. A worker blocked in `request`
                 // must be unblocked with a line, not left waiting on a channel that is going away.
                 let _ = arbiter.cancel_pending();
-                if let Some((_tool, reply)) = pending_reply.take() {
-                    let _ = reply.send(Err("the core is shutting down.".to_owned()));
-                }
                 for stop in arbiter.stop_all() {
-                    if let Stop::Cancelling { handle, .. } = stop
-                        && let Some(snapshot) = handle.state.read()
-                    {
-                        bus.emit(events::state_event(&snapshot));
+                    if let Stop::Cancelling { tool, handle } = stop {
+                        if let Some(snapshot) = handle.state.read() {
+                            bus.emit(events::state_event(&snapshot));
+                        }
+                        // A stopped tool's stashed request can never be granted; answer it before
+                        // the drain loop below waits for that worker to leave.
+                        answer_stopped_request(&mut pending_reply, tool);
                     }
+                }
+                // Defensive: a reply whose tool was not among the runs still cannot be granted on
+                // the way out, so it must not be left stashed past the supervisor thread.
+                if let Some((_tool, reply)) = pending_reply.take() {
+                    let _ = reply.send(Err(STOPPED_MESSAGE.to_owned()));
                 }
                 while !workers.is_empty() {
                     match receiver.recv() {
@@ -438,13 +456,14 @@ fn supervise(
             Incoming::Command(Command::InputLease { reply }) => {
                 let _ = reply.send(input_lease_line(&arbiter));
             }
-            Incoming::Command(Command::PendingTimeout) => {
-                if let Some(refusal) = arbiter.pending_timeout() {
-                    // The caller was already answered `Deferred`; this protocol has no channel back
-                    // to it, so the timeout is the log line rather than a response (reported).
-                    deferred_args.take();
-                    bus.emit(events::log_event("warn", refusal.line));
-                }
+            Incoming::Command(Command::PendingTimeout { generation }) => {
+                handle_pending_timeout(
+                    generation,
+                    pending_generation,
+                    &deferred_args,
+                    &mut arbiter,
+                    &bus,
+                );
             }
             Incoming::Worker(event) => handle_worker(
                 event,
@@ -518,13 +537,54 @@ fn handle_request_game(
                 "info",
                 format!("\"{holder}\" stepped aside for \"{tool}\"."),
             ));
-            if let Stop::Cancelling { handle, .. } = arbiter.stop(Some(holder))
-                && let Some(snapshot) = handle.state.read()
+            if let Stop::Cancelling {
+                tool: stopped,
+                handle,
+            } = arbiter.stop(Some(holder))
             {
-                bus.emit(events::state_event(&snapshot));
+                if let Some(snapshot) = handle.state.read() {
+                    bus.emit(events::state_event(&snapshot));
+                }
+                // The early return above means nothing is stashed here today; the call keeps the
+                // "every stop answers a stashed request" rule true even if that guard changes.
+                answer_stopped_request(pending, stopped);
             }
             *pending = Some((tool, reply));
         }
+    }
+}
+
+/// Answer a stashed game request whose tool has just been stopped. The stop clears the arbiter's
+/// waiter, so nothing will ever grant it; leaving it stashed would strand the worker in `request`
+/// (and keep the slot `stopping`) forever. The player asked for this stop, so the tool gets
+/// [`STOPPED_MESSAGE`], the line its cancelled run carries.
+fn answer_stopped_request(pending: &mut Option<PendingReply>, tool: ToolId) {
+    if pending.as_ref().is_some_and(|(waiter, _)| *waiter == tool)
+        && let Some((_waiter, reply)) = pending.take()
+    {
+        let _ = reply.send(Err(STOPPED_MESSAGE.to_owned()));
+    }
+}
+
+/// One deferred-start timeout: apply it only if it belongs to the deferred start waiting now. A
+/// timer left over from an earlier deferred start (already started, replaced or cancelled) must not
+/// cancel a later one early, which is the CORE-F6 defect: the untagged command took whatever start
+/// was pending when the old timer fired.
+fn handle_pending_timeout(
+    generation: u64,
+    pending_generation: u64,
+    deferred: &RefCell<Option<(ToolId, Value)>>,
+    arbiter: &mut Arbiter,
+    bus: &EventBus,
+) {
+    if generation != pending_generation {
+        return;
+    }
+    if let Some(refusal) = arbiter.pending_timeout() {
+        // The caller was already answered `Deferred`; this protocol has no channel back to it, so
+        // the timeout is the log line rather than a response (reported).
+        deferred.take();
+        bus.emit(events::log_event("warn", refusal.line));
     }
 }
 
@@ -564,10 +624,12 @@ fn handle_game_release(
     }
 }
 /// The deferred start's bounded wait: v2's 45 s, after which `pending_timeout` names both sides.
-fn schedule_pending_timeout(sender: Sender<Incoming>) {
+/// The timer carries the generation it was scheduled for, so the supervisor can tell a current
+/// timer from one left over from an earlier deferred start.
+fn schedule_pending_timeout(sender: Sender<Incoming>, generation: u64) {
     thread::spawn(move || {
         thread::sleep(PENDING_TIMEOUT);
-        let _ = sender.send(Incoming::Command(Command::PendingTimeout));
+        let _ = sender.send(Incoming::Command(Command::PendingTimeout { generation }));
     });
 }
 
@@ -605,6 +667,17 @@ fn handle_worker(
         } => {
             // THE EXIT PATH: the final snapshot, tool.finished, the slot and the game all settle
             // here, in one place, from the worker's own last message.
+            // A worker unblocked by the player's own stop answers its game request with
+            // STOPPED_MESSAGE, and the tool turns that failed request into an error because it
+            // cannot know WHY it failed. The run the player stopped is cancelled, not failed.
+            let reason = if reason.kind == StopKind::Error
+                && reason.message == STOPPED_MESSAGE
+                && arbiter.is_stopping(tool)
+            {
+                StopReason::cancelled(STOPPED_MESSAGE)
+            } else {
+                reason
+            };
             let finish = arbiter.finished(tool, reason.clone());
             if let Some(join) = workers.remove(&tool) {
                 let _ = join.join();
@@ -744,5 +817,73 @@ impl Tool for LoggedTool {
 
     fn summary(&self, reason: &StopReason) -> Option<Value> {
         self.inner.summary(reason)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CORE-F6: a timer left over from an earlier deferred start must not cancel a later one. The
+    /// review's scenario: Quest defers behind the feeder and starts; the feeder takes the game again
+    /// and Buy defers; Quest's old 45 s timer fires 5 s into Buy's wait and must be ignored.
+    #[test]
+    fn a_stale_deferred_timeout_does_not_cancel_a_later_deferred_start() {
+        let mut arbiter = Arbiter::new();
+        // The resident feeder holds the game, so foreground starts are deferred.
+        assert!(matches!(arbiter.start(ToolId::Pet), Start::Started(_)));
+        assert_eq!(arbiter.request_game(ToolId::Pet), GameUse::Granted);
+        // Quest defers (generation 1), then starts when the feeder hands the game over.
+        assert!(matches!(
+            arbiter.start(ToolId::Quest),
+            Start::Deferred { .. }
+        ));
+        assert!(matches!(
+            arbiter.release_game(ToolId::Pet),
+            GameRelease::StartPending(_)
+        ));
+        let _ = arbiter.finished(ToolId::Quest, StopReason::done("one loop"));
+        assert_eq!(arbiter.game_owner(), None, "quest released the game");
+        // The feeder takes the game for its next reload and Buy defers behind it (generation 2).
+        assert_eq!(arbiter.request_game(ToolId::Pet), GameUse::Granted);
+        assert!(matches!(arbiter.start(ToolId::Buy), Start::Deferred { .. }));
+        assert_eq!(arbiter.pending(), Some(ToolId::Buy));
+
+        let (bus, events) = crate::events::event_channel();
+        let deferred: RefCell<Option<(ToolId, Value)>> =
+            RefCell::new(Some((ToolId::Buy, Value::Null)));
+
+        // Quest's timer (generation 1) fires while Buy's start (generation 2) is waiting: ignored.
+        handle_pending_timeout(1, 2, &deferred, &mut arbiter, &bus);
+        assert_eq!(
+            arbiter.pending(),
+            Some(ToolId::Buy),
+            "a stale timer must not cancel the later deferred start"
+        );
+        assert!(
+            deferred.borrow().is_some(),
+            "the later start keeps its run arguments"
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "a stale timer publishes nothing"
+        );
+
+        // Buy's own timer does end its wait, with the refusal line as a warn log event.
+        handle_pending_timeout(2, 2, &deferred, &mut arbiter, &bus);
+        assert_eq!(arbiter.pending(), None);
+        assert!(
+            deferred.borrow().is_none(),
+            "the timed-out start drops its run arguments"
+        );
+        let event = events.try_recv().expect("the timeout logs one line");
+        assert_eq!(event.event, "log");
+        assert_eq!(event.data["level"], "warn");
+        assert!(
+            event.data["line"]
+                .as_str()
+                .is_some_and(|line| line.contains("still using the game")),
+            "{event:?}"
+        );
     }
 }

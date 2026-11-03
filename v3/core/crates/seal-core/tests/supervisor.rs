@@ -801,7 +801,16 @@ fn a_blocked_resident_request_produces_zero_decisions() {
         state_for(event, "pet") == Some("running")
     });
 
-    thread::sleep(Duration::from_millis(150));
+    // Deterministic: wait for the waiting line, which is published exactly when the request reply
+    // is stashed, so the shutdown below lands on a genuinely blocked worker.
+    wait_for(&events, "the resident request is stashed", |event| {
+        event.event == "log"
+            && event
+                .data
+                .get("line")
+                .and_then(Value::as_str)
+                .is_some_and(|line| line.contains("is waiting for the game"))
+    });
     assert!(
         registry.decisions().is_empty(),
         "no input may be produced while the request is blocked: {:?}",
@@ -809,7 +818,99 @@ fn a_blocked_resident_request_produces_zero_decisions() {
     );
 
     // Shutdown while the request is still stashed: the worker is unblocked with a line rather than
-    // left waiting on a dead channel.
+    // left waiting on a dead channel. This exercises the stop_all path: the stopped tool's stashed
+    // request is answered there, and the event proves the worker left instead of being stranded.
+    supervisor.shutdown("test");
+    let mut seen = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        seen.push(event);
+    }
+    assert!(
+        seen.iter().any(|event| {
+            event.event == "tool.finished"
+                && event.data["tool"].as_str() == Some("pet")
+                && event.data["reason"] == "cancelled"
+        }),
+        "the stop_all flush answers the blocked resident's request: {seen:?}"
+    );
+}
+
+#[test]
+fn a_stopped_resident_waiting_for_the_game_finishes_cancelled_and_frees_the_slot() {
+    // CORE-F1: stopping the tool whose game request is STASHED must answer that request. The
+    // arbiter clears the waiter when its wait is stopped, so nothing would ever grant the stashed
+    // reply: the worker would stay blocked in `request`, the slot would read `stopping` forever and
+    // every later start of that tool would be refused as still stopping.
+    let registry = FakeRegistry::new()
+        .with_script(ToolId::Tuner, vec![Decision::wait(30.0)])
+        .with_port_tool(ToolId::Pet, vec![Decision::wait(30.0)]);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    wait_for(&events, "the foreground run starts", |event| {
+        state_for(event, "tuner") == Some("running")
+    });
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
+    wait_for(&events, "the resident starts", |event| {
+        state_for(event, "pet") == Some("running")
+    });
+    // Deterministic: the waiting line is published exactly when the request reply is stashed, so
+    // the stop below lands on a genuinely blocked worker (not one that has not asked yet).
+    wait_for(&events, "the resident request is stashed", |event| {
+        event.event == "log"
+            && event
+                .data
+                .get("line")
+                .and_then(Value::as_str)
+                .is_some_and(|line| line.contains("is waiting for the game"))
+    });
+    assert!(
+        registry.decisions().is_empty(),
+        "a blocked request produces no decision: {:?}",
+        registry.decisions()
+    );
+
+    // Stop the BLOCKED resident: within a second its worker must leave, cancelled.
+    assert_eq!(
+        supervisor.stop_tool(Some(ToolId::Pet)),
+        StopReply::Stopping { tool: ToolId::Pet }
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    let mut finished = None;
+    while std::time::Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let Ok(event) = events.recv_timeout(remaining) else {
+            break;
+        };
+        if event.event == "tool.finished" && event.data["tool"].as_str() == Some("pet") {
+            finished = Some(event);
+            break;
+        }
+    }
+    let finished = finished.expect("the stopped resident must finish within 1 s");
+    assert_eq!(finished.data["reason"], "cancelled", "{finished:?}");
+    assert_eq!(finished.data["message"], "Stopped.", "{finished:?}");
+
+    // The slot is gone with the worker: the next pet start is accepted, not "still stopping".
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started,
+        "the stopped tool's slot must be reusable"
+    );
+
+    // The foregound run is still going; stop everything and let shutdown drain it.
+    let _ = supervisor.stop_tool(Some(ToolId::Tuner));
     supervisor.shutdown("test");
 }
 
