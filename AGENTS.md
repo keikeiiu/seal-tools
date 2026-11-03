@@ -4,8 +4,9 @@ Windows-only game-automation suite for Seal Online: **C# / .NET 8 WPF**
 (`net8.0-windows`), driving an Arduino Pro Micro over a COM port, with OCR. Ships as one
 self-contained `.exe`.
 
-`v2/` is the current build. `v1/` is the original Python build — untouched, still working,
-and **not where new work goes** unless I say so.
+`v3/` is the current shipped build: a Rust core (`v3/core`) and a Flutter Windows shell
+(`v3/shell`). `v2/` is the previous C#/.NET build, kept as history/fallback. `v1/` is the original
+Python build — untouched, still working, and **not where new work goes** unless I say so.
 
 ## Commands
 
@@ -20,11 +21,34 @@ From the repository root, the same three commands CI runs:
 unreachable branch fails the build**. That is intentional: fix the cause, never silence it
 with `#pragma` or by adding to `NoWarn`.
 
+### v3 (Rust core + Flutter shell)
+
+CI runs `.github/workflows/v3.yml` for every change under `v3/`:
+
+    cd v3/core
+    .\cargo.cmd fmt --all -- --check
+    .\cargo.cmd clippy --workspace --all-targets --offline -- -D warnings
+    .\cargo.cmd test --workspace --offline
+    $env:RUSTDOCFLAGS = '-D warnings'; .\cargo.cmd doc --workspace --no-deps --offline
+
+    cd v3/shell
+    pwsh -File tool/check.ps1
+
+The Rust workspace opts every crate into `clippy::pedantic`; warnings are errors, and production
+code has no `unwrap`/`expect`/`panic!`. The shell gate runs `dart format`, `flutter analyze
+--fatal-infos`, `flutter test --no-pub` and a debug Windows build. Release packaging is
+`v3/publish.ps1 -Release -AcceptDirectMLRedistribution` (see `v3/core/README.md`).
+
 ## Layout
 
 | Path | Holds |
 |---|---|
-| `v2/SealTools.sln` | The solution — 9 projects |
+| `v3/core` | Rust workspace: protocol, config, domain, tools, board, Win32, OCR, core binary |
+| `v3/shell` | Flutter Windows shell (cards, tabs, mini bar, calibration workspace) |
+| `v3/docs` | v3 specs, plans, records, backlog, shipped guides |
+| `v3/protocol` | Golden protocol fixtures shared with the shell tests |
+| `v3/publish.ps1` | v3 release packaging and audits |
+| `v2/SealTools.sln` | The previous solution — 9 projects |
 | `v2/SealTools.Core` | Shared: capture, OCR, config, input arbitration |
 | `v2/SealTools.Launcher` | The WPF launcher window (card UI) |
 | `v2/SealTools.{Tuner,GemComposer,Spammer,Shop,Pet,Quest}` | One project per tool |
