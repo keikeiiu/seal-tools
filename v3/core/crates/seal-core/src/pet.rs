@@ -499,15 +499,22 @@ pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
 }
 
 /// The card as a `ToolStatus`: the schedule line as the message (the caller supplies the formatted
-/// `HH:mm` because the decision half has no clock) plus the standing rows.
+/// `HH:mm` because the decision half has no clock), the soonest row's remaining time as the summary
+/// countdown, and the standing rows.
 #[must_use]
 pub fn status(card: &PetCard, next_label: &str) -> seal_tools::runner::ToolStatus {
     seal_tools::runner::ToolStatus {
         message: card.schedule_line(next_label),
-        countdown_s: None,
+        countdown_s: summary_countdown(card),
         rows: tool_rows(card),
         detail: Vec::new(),
     }
+}
+
+/// v2 showed the soonest row's `NextActionAt` as the card's summary countdown; the rows carry each
+/// row's own, so this is the one a glance should read.
+fn summary_countdown(card: &PetCard) -> Option<f64> {
+    card.next_minutes.map(|minutes| (minutes * 60.0).max(0.0))
 }
 
 /// The visit's opening line, for the loop and the tests: one row names itself, a batch says how many.
@@ -1259,7 +1266,6 @@ pub struct PetTool<S: PetSource> {
     /// reopening immediately. PET-F6.
     acted_this_pass: bool,
     message: String,
-    countdown_s: Option<f64>,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
     state_sink: Option<Arc<dyn PetStateSink>>,
 }
@@ -1293,7 +1299,6 @@ impl<S: PetSource> PetTool<S> {
             start_override_pending,
             acted_this_pass: false,
             message,
-            countdown_s: None,
             state_sink: None,
         }
     }
@@ -2016,7 +2021,6 @@ impl<S: PetSource> PetTool<S> {
             }
             match self.phase {
                 Phase::Open => {
-                    self.countdown_s = None;
                     if let Err(reason) = self.ensure_game() {
                         return Decision::Stop(reason);
                     }
@@ -2071,7 +2075,6 @@ impl<S: PetSource> PetTool<S> {
                     } else {
                         let seconds = minutes * 60.0;
                         let label = Self::next_label(minutes);
-                        self.countdown_s = Some(seconds);
                         self.message = self.card().schedule_line(&label);
                         self.phase = Phase::Open;
                         return Decision::Wait(seconds);
@@ -2098,7 +2101,9 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
         let card = self.card();
         ToolStatus {
             message: self.message.clone(),
-            countdown_s: self.countdown_s,
+            // v2's summary `NextActionAt`: the soonest row's remaining time, kept live while the run
+            // works (the per-row countdowns stay in `rows`, unchanged).
+            countdown_s: summary_countdown(&card),
             rows: tool_rows(&card),
             detail: Vec::new(),
         }
@@ -2472,6 +2477,13 @@ mod tests {
         assert_eq!(status.rows.len(), 2);
         assert_eq!(status.rows[0].status, "boarding");
         assert_eq!(status.rows[0].next_action_in_seconds, Some(300.0));
+        assert!(
+            status
+                .countdown_s
+                .is_some_and(|seconds| (seconds - 300.0).abs() < 1e-9),
+            "v2's summary countdown is the soonest row's remaining time: {:?}",
+            status.countdown_s
+        );
         assert_eq!(
             status.rows[0].detail.as_deref(),
             Some("a pet  ·  3/min (game line)")
@@ -3209,6 +3221,33 @@ mod loop_tests {
             status.message.contains("boarding Row 1"),
             "{}",
             status.message
+        );
+    }
+
+    #[test]
+    fn the_summary_countdown_is_the_soonest_rows_remaining_time() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty(), empty(), populated(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let (decisions, _messages) = run_to_wait(&mut tool);
+
+        let scheduled = decisions
+            .iter()
+            .rev()
+            .find_map(|decision| match decision {
+                Decision::Wait(seconds) => Some(*seconds),
+                _ => None,
+            })
+            .expect("the run reached its scheduled wait");
+        let countdown = tool
+            .status()
+            .countdown_s
+            .expect("v2's summary countdown is published");
+        assert!(
+            (countdown - scheduled).abs() < 1e-6,
+            "the summary countdown ({countdown}) is the soonest row's wait ({scheduled})"
         );
     }
 

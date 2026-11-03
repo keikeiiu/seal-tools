@@ -24,7 +24,7 @@ use seal_domain::config::BuyPreset;
 use seal_domain::decision::{Decision, StopReason};
 use seal_domain::tools::shop::{ClickButton, ShopPlan, ShopSettings, ShopStep};
 use seal_tools::runner::{Tool, ToolStatus};
-use seal_tools::tool::ToolId;
+use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
 
 /// The merged config's `buy_sell` block as the DOMAIN decision half wants it. Deliberately does
@@ -147,16 +147,33 @@ pub struct ShopTool {
     plan: ShopPlan,
     index: usize,
     message: String,
+    /// The step indices that START a transaction (its right click), in plan order. v2 set `Cycle` to
+    /// the transaction's number (`ShopTool.cs:168,212`) and `Current` to its item/slot line; the plan
+    /// steps are the only per-transaction marks this tool receives, so they are derived here.
+    transactions: Vec<usize>,
+    /// The buy preset's name for the `Current` line, from the plan's own done line. `None` for a sell
+    /// plan (and for an unparseable buy line), which then names the position only.
+    item: Option<String>,
 }
 
 impl ShopTool {
     #[must_use]
     pub fn new(id: ToolId, plan: ShopPlan) -> Self {
+        let transactions = plan
+            .steps
+            .iter()
+            .enumerate()
+            .filter(|(_, step)| matches!(step, ShopStep::Click(ClickButton::Right)))
+            .map(|(index, _)| index)
+            .collect();
+        let item = buy_item(&plan.done_message);
         Self {
             id,
             plan,
             index: 0,
             message: String::new(),
+            transactions,
+            item,
         }
     }
 
@@ -171,6 +188,49 @@ impl ShopTool {
         };
         format!("step {index}/{total}: {what}")
     }
+
+    /// v2's `Cycle` + `Current` (`ShopTool.cs:168-169,212-213`).
+    ///
+    /// `Cycle` is the transaction being worked (1-based; empty before the first right click). `Current`
+    /// is v2's sentence where the plan can still supply it: a BUY plan's done line names its preset, so
+    /// the line reads `"{preset} {n}/{total}"`; a SELL plan carries neither the selection nor the bag
+    /// indices (`ShopPlan` is steps + a done line), so its line names the position only — completing it
+    /// needs the domain plan to carry the selection, which is outside this increment's write scope.
+    fn card_detail(&self) -> Vec<ToolDetail> {
+        let total = self.transactions.len();
+        let cycle = self
+            .transactions
+            .iter()
+            .filter(|start| **start < self.index)
+            .count();
+        if cycle == 0 || total == 0 {
+            return Vec::new();
+        }
+        let current = if self.id == ToolId::Buy {
+            self.item.as_ref().map_or_else(
+                || format!("{cycle}/{total}"),
+                |item| format!("{item} {cycle}/{total}"),
+            )
+        } else {
+            format!("slot ({cycle}/{total})")
+        };
+        vec![
+            ToolDetail::labeled("Cycle", cycle.to_string()),
+            ToolDetail::labeled("Current", current),
+        ]
+    }
+}
+
+/// The buy preset's name out of the plan's own done line (`Bought {count}x '{preset}'.`).
+///
+/// `ShopPlan` has no preset field, and the domain plan and the registry are outside this increment's
+/// write scope, so the word the run already reports is the carrier. A line this does not recognise
+/// yields `None`, and the card falls back to the position only — never a wrong name.
+fn buy_item(done_message: &str) -> Option<String> {
+    let rest = done_message.strip_prefix("Bought ")?;
+    let (_, named) = rest.split_once("x '")?;
+    let (name, _) = named.split_once("'.")?;
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 impl Tool for ShopTool {
@@ -183,7 +243,7 @@ impl Tool for ShopTool {
             message: self.message.clone(),
             countdown_s: None,
             rows: Vec::new(),
-            detail: Vec::new(),
+            detail: self.card_detail(),
         }
     }
 
@@ -443,5 +503,62 @@ mod tests {
 
         tool.decide();
         assert_eq!(tool.status().message, "step 1/1: pressing Enter");
+    }
+
+    /// Walk the plan until the next transaction's right click has been performed — the step v2
+    /// counted as the transaction's start.
+    fn walk_to_right_click(tool: &mut ShopTool) {
+        for _ in 0..200 {
+            if tool.decide() == Decision::RightClickHere {
+                return;
+            }
+        }
+        panic!("the plan never reached a transaction's right click");
+    }
+
+    #[test]
+    fn a_buy_card_carries_the_transaction_cycle_and_the_preset_progress() {
+        let plan = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
+        let mut tool = ShopTool::new(ToolId::Buy, plan);
+
+        assert!(
+            tool.status().detail.is_empty(),
+            "before the first transaction there is no cycle to report"
+        );
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "1"),
+                ToolDetail::labeled("Current", "potion 1/3"),
+            ],
+            "v2's Current is the preset's progress through this run"
+        );
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "2"),
+                ToolDetail::labeled("Current", "potion 2/3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sell_card_carries_the_transaction_cycle_and_the_position() {
+        let plan = sell_plan_with_slots(&config(), Some(&[3, 1])).expect("two slots");
+        let mut tool = ShopTool::new(ToolId::Sell, plan);
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "1"),
+                ToolDetail::labeled("Current", "slot (1/2)"),
+            ],
+            "the bag slot number is not carried by ShopPlan, so the position is named"
+        );
     }
 }

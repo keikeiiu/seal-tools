@@ -17,8 +17,8 @@ use seal_domain::decision::{Decision, StopReason};
 use seal_domain::tools::spammer::{
     SpammerPlan, SpammerRotation, SpammerRun, plan_or_stop, unsupported_key_message,
 };
-use seal_tools::runner::Tool;
-use seal_tools::tool::ToolId;
+use seal_tools::runner::{Tool, ToolStatus};
+use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
 
 /// v2's `SkillSpammer.Run` tick (`SleepCheck(0.02)`).
@@ -135,6 +135,11 @@ pub struct SpammerTool {
     run: SpammerRun,
     now: Box<dyn Now + Send>,
     queue: VecDeque<Decision>,
+    /// The card's `Current`: the last key the loop pressed (v2 `state.Current`).
+    last_key: Option<String>,
+    /// The card's `Cycle`: presses the ticks produced, v2's accepted-press count. The runner performs
+    /// every queued press and a refused effect ends the run, so a tick's presses are the sent ones.
+    presses: i32,
 }
 
 impl SpammerTool {
@@ -145,7 +150,23 @@ impl SpammerTool {
             run: SpammerRun::start(plan, started),
             now,
             queue: VecDeque::new(),
+            last_key: None,
+            presses: 0,
         }
+    }
+
+    /// The card's `detail`: v2's `Cycle` + `Current` (`SkillSpammer.cs:308-339`), in `FormatStatus`'s
+    /// order. Before the first press nothing has happened yet, so the list is empty; the lead-in shows
+    /// through [`Self::status`]'s message and countdown instead.
+    fn card_detail(&self) -> Vec<ToolDetail> {
+        let mut detail = Vec::new();
+        if self.presses > 0 {
+            detail.push(ToolDetail::labeled("Cycle", self.presses.to_string()));
+        }
+        if let Some(key) = &self.last_key {
+            detail.push(ToolDetail::labeled("Current", key.clone()));
+        }
+        detail
     }
 }
 
@@ -154,12 +175,39 @@ impl Tool for SpammerTool {
         ToolId::Spammer
     }
 
+    fn status(&self) -> ToolStatus {
+        // v2 reported the lead-in through its schedule line + `NextActionAt`; v3's equivalents are the
+        // message and `countdown_s` (the card counts it down). Wording from `SkillSpammer.cs:121`.
+        if let Some(remaining) = self.run.lead_in_remaining(self.now.seconds()) {
+            return ToolStatus {
+                message: "lead-in — starting shortly".to_owned(),
+                // WHOLE seconds: the loop ticks every 20 ms, and a continuously changing countdown
+                // would republish `state` on every tick. The card counts the second down itself.
+                countdown_s: Some(remaining.ceil().max(0.0)),
+                rows: Vec::new(),
+                detail: Vec::new(),
+            };
+        }
+        ToolStatus {
+            message: String::new(),
+            countdown_s: None,
+            rows: Vec::new(),
+            detail: self.card_detail(),
+        }
+    }
+
     fn decide(&mut self) -> Decision {
         if let Some(decision) = self.queue.pop_front() {
             return decision;
         }
 
         let tick = self.run.tick(self.now.seconds());
+        if let Some(press) = tick.presses.last() {
+            self.last_key = Some(press.key.clone());
+        }
+        self.presses = self
+            .presses
+            .saturating_add(i32::try_from(tick.presses.len()).unwrap_or(i32::MAX));
         for press in &tick.presses {
             let Some(board_press) = press.board_press() else {
                 // Unreachable when the start validated the rotation; kept as a terminal answer
@@ -186,6 +234,7 @@ impl Tool for SpammerTool {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::sync::{Arc, Mutex};
 
     use seal_domain::decision::Key;
 
@@ -203,6 +252,15 @@ mod tests {
     impl Now for StepNow {
         fn seconds(&self) -> f64 {
             self.0.get()
+        }
+    }
+
+    /// A clock the test and the tool share, so the card can be read before and after the lead-in.
+    struct SharedNow(Arc<Mutex<f64>>);
+
+    impl Now for SharedNow {
+        fn seconds(&self) -> f64 {
+            *self.0.lock().expect("not poisoned")
         }
     }
 
@@ -272,6 +330,47 @@ mod tests {
         );
         assert!(lines.iter().any(|line| line.contains("'ab'")), "{lines:?}");
         assert!(lines.iter().any(|line| line.contains("'F13'")), "{lines:?}");
+    }
+
+    #[test]
+    fn the_card_detail_reports_the_lead_in_then_the_current_key_and_cycle() {
+        let config = serde_json::json!({
+            "spammer": {
+                "active": "buff",
+                "presets": {"buff": {"1": 5.0, "2": 5.0}},
+                "startup": {"buff": {"lead_in": 2.0, "step": 0.0}},
+            }
+        });
+        let plan = plan(&config).expect("a plan");
+        let clock = Arc::new(Mutex::new(0.0));
+        let mut tool = SpammerTool::new(&plan, Box::new(SharedNow(Arc::clone(&clock))));
+
+        // During the lead-in v2 showed its schedule line + countdown, and no facts yet.
+        let lead_in = tool.status();
+        assert_eq!(lead_in.message, "lead-in — starting shortly");
+        assert!(
+            lead_in
+                .countdown_s
+                .is_some_and(|seconds| (seconds - 2.0).abs() < 1e-9),
+            "{:?}",
+            lead_in.countdown_s
+        );
+        assert!(lead_in.detail.is_empty(), "{:?}", lead_in.detail);
+
+        // Past the lead-in the opening presses go out: v2's Cycle (accepted presses) and Current
+        // (the last key) reach the card.
+        *clock.lock().expect("not poisoned") = 2.5;
+        let _first_press = tool.decide();
+        let running = tool.status();
+        assert!(running.countdown_s.is_none());
+        assert_eq!(
+            running.detail,
+            vec![
+                ToolDetail::labeled("Cycle", "2"),
+                ToolDetail::labeled("Current", "2"),
+            ],
+            "both due keys were pressed, the last one named"
+        );
     }
 
     #[test]

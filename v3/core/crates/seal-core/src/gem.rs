@@ -46,7 +46,7 @@ use seal_domain::tools::gem::{
     result_box_is_empty,
 };
 use seal_tools::runner::{Tool, ToolStatus};
-use seal_tools::tool::{ToolId, ToolRow};
+use seal_tools::tool::{ToolDetail, ToolId, ToolRow};
 use serde_json::Value;
 
 use crate::logs::Logs;
@@ -574,11 +574,19 @@ impl<S: GemSource + Send> Tool for GemTool<S> {
             .into_iter()
             .map(|row| ToolRow::new(row.name, row.status))
             .collect();
+        // v2's gem facts (`GemComposer.cs`, printed by `FormatStatus`): the grade being worked, and
+        // the cycle count only once a combine has been counted (`Cycle > 0`, the same rule Attempt
+        // uses). The message says the same two things today; both stay because the issue requires the
+        // existing lines to be preserved (B5 increment 3 is additive only).
+        let mut detail = vec![ToolDetail::labeled("Grade", self.run.grade())];
+        if self.run.cycle() > 0 {
+            detail.push(ToolDetail::labeled("Cycle", self.run.cycle().to_string()));
+        }
         ToolStatus {
             message: self.message(),
             countdown_s: None,
             rows,
-            detail: Vec::new(),
+            detail,
         }
     }
 
@@ -752,6 +760,45 @@ mod tests {
         assert_eq!(plan.result_area, Some(Rect::new(610, 800, 220, 60)));
         assert_eq!(plan.colored_gap_min, 40);
         assert!(!plan.save_empty_captures);
+    }
+
+    #[test]
+    fn the_card_detail_carries_the_grade_and_the_cycle_count() {
+        let mut tool = tool_with(&tuned_config(), Vec::new());
+
+        assert_eq!(
+            tool.status().detail,
+            vec![ToolDetail::labeled("Grade", "N")],
+            "the grade is known before the first combine, and a zero cycle is not printed (v2)"
+        );
+
+        // Walk until the first combine has been counted. `combine_turn` counts the cycle BEFORE its
+        // steps are queued, so the fact is on the card as soon as the combine starts.
+        for _ in 0..40 {
+            if tool
+                .status()
+                .detail
+                .contains(&ToolDetail::labeled("Cycle", "1"))
+            {
+                break;
+            }
+            let _ = tool.decide();
+        }
+
+        assert!(
+            tool.status()
+                .detail
+                .contains(&ToolDetail::labeled("Cycle", "1")),
+            "the combine's cycle reaches the card: {:?}",
+            tool.status().detail
+        );
+        assert!(
+            tool.status()
+                .detail
+                .contains(&ToolDetail::labeled("Grade", "N")),
+            "{:?}",
+            tool.status().detail
+        );
     }
 
     #[test]

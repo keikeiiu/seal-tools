@@ -27,7 +27,7 @@ use seal_domain::tools::quest::{
     stopped_in_sequence, stopped_on_loop,
 };
 use seal_tools::runner::{EffectError, Effects, Tool, ToolStatus};
-use seal_tools::tool::ToolId;
+use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
 
 /// The seconds of one positioning countdown tick (v2's `SleepCheck(1)` per printed count).
@@ -230,11 +230,20 @@ impl<S: QuestSource + Send> Tool for QuestTool<S> {
     }
 
     fn status(&self) -> ToolStatus {
+        let loops = self.plan.loops.max(1);
+        // v2 set `Cycle` at the top of each master loop (`QuestTool.cs:105`); the loop NUMBER is the
+        // fact, so the first loop is 1 of N even while the positioning wait is still running.
+        let current = (self.loop_index + 1).clamp(1, loops);
         ToolStatus {
             message: self.message.clone(),
             countdown_s: None,
             rows: Vec::new(),
-            detail: Vec::new(),
+            // v2's `Schedule` line (ported word for word into `QuestPlan::schedule`) plus the master
+            // loop's position — the two facts the quest card showed while it ran.
+            detail: vec![
+                ToolDetail::labeled("Plan", self.plan.schedule.clone()),
+                ToolDetail::labeled("Loop", format!("{current} of {loops}")),
+            ],
         }
     }
 
@@ -422,6 +431,31 @@ mod tests {
         assert_eq!(plan.positioning_seconds, 1.0);
         assert_eq!(plan.positioning_counts(), vec![1]);
         assert_eq!(plan.passes[0].steps.len(), 4);
+    }
+
+    #[test]
+    fn the_card_detail_carries_the_plan_line_and_the_master_loop() {
+        let mut tool = run(
+            &config(&simple_steps(), 2),
+            ScriptedCursor::always(Some(Point::new(5, 5))),
+        );
+
+        let detail = tool.status().detail;
+        assert_eq!(detail.len(), 2, "{detail:?}");
+        assert_eq!(detail[0].label.as_deref(), Some("Plan"));
+        assert!(
+            detail[0].value.contains("flow \"run1\""),
+            "v2's schedule line is the Plan value: {}",
+            detail[0].value
+        );
+        assert_eq!(detail[1], ToolDetail::labeled("Loop", "1 of 2"));
+
+        // The loop fact follows the run: the second master loop's number reaches the card.
+        tool.loop_index = 1;
+        assert_eq!(
+            tool.status().detail[1],
+            ToolDetail::labeled("Loop", "2 of 2")
+        );
     }
 
     #[test]
