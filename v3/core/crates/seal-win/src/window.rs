@@ -26,6 +26,7 @@ use windows_sys::Win32::UI::HiDpi::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN,
+    SetForegroundWindow,
 };
 
 use crate::error::WinError;
@@ -174,6 +175,27 @@ pub fn is_foreground(hwnd: Hwnd) -> bool {
     // compared by value and never dereferenced, so a null or stale result is safe here.
     let foreground = unsafe { GetForegroundWindow() };
     foreground == hwnd.ptr()
+}
+
+/// Try to put a window in the foreground, and report whether Windows accepted the request.
+///
+/// This is the core's small answer to the app-own-window case: after the player starts a tool, or
+/// the shell collapses to its run bar or re-shows itself, the shell can be the foreground window and
+/// the first gated capture refuses. Windows lets the process the shell started hand the foreground
+/// back to the game — "The calling process was started by the foreground process" is one of the
+/// documented conditions in `SetForegroundWindow`'s Remarks — so the core can nudge the game back in
+/// front itself, without a shell-side window call.
+///
+/// Best effort by contract: for a foreground window owned by another application Windows may refuse
+/// and only flash the game's taskbar button, so a `true` means "the request was accepted", not "the
+/// game is now in front". Callers must still gate every capture on [`is_foreground`]; this never
+/// replaces the pixel-integrity check, it only gives the game a chance to satisfy it.
+#[must_use]
+pub fn activate(hwnd: Hwnd) -> bool {
+    // SAFETY: `SetForegroundWindow` takes the window handle by value (an opaque value, not a
+    // pointer), writes nothing through caller memory and keeps no reference; a stale or invalid
+    // handle simply makes it return 0.
+    unsafe { SetForegroundWindow(hwnd.ptr()) != 0 }
 }
 
 /// Measure the window in both DPI spaces: the physical reads run under a THREAD-scoped aware context

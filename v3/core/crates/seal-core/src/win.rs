@@ -5,11 +5,25 @@
 //! because the protocol retains the last four frames by `frame_id` (§8) so `calibration.save` can
 //! reference the frame the calibrator just took instead of re-sending megabytes.
 
+use std::time::{Duration, Instant};
+
 use base64::Engine as _;
 use seal_domain::geometry::Rect;
 use seal_win::WinError;
-use seal_win::window::{self, Hwnd};
+use seal_win::window::{self, Captured, Hwnd};
 use serde_json::{Value, json};
+
+/// How long one capture waits for the game window to come to the front before it reports the
+/// existing `game_not_foreground` refusal (`PROTOCOL.md` §6).
+///
+/// The shell's collapse on Start (or its re-show after an earlier capture) can leave the shell
+/// foreground for a moment, so a single refusal is not yet evidence that the game is covered for
+/// good. The wait spends that moment instead of consuming the read; a game that is already in front
+/// never pays it.
+const FOREGROUND_WAIT: Duration = Duration::from_millis(1_000);
+
+/// How often the foreground wait retries while the game is not in front.
+const FOREGROUND_POLL: Duration = Duration::from_millis(50);
 
 /// Why a window/capture command could not produce its result, in the terms the dispatcher maps to
 /// protocol error codes. The player-facing sentence is the dispatcher's (`PROTOCOL.md` §6).
@@ -115,13 +129,39 @@ pub fn measure(title: &str) -> Result<Value, CommandError> {
 
 /// `capture`'s result: the frame (without its id — the cache assigns it) and the fresh `DisplayInfo`.
 ///
+/// The capture stays foreground-gated exactly as `seal_win::window::capture_client_region` defines
+/// it: a covered game is never photographed. When that gate first refuses, the core allows itself at
+/// most [`FOREGROUND_WAIT`] to get the game back in front — one `SetForegroundWindow` nudge (the
+/// shell's own Start/collapse/re-show can be the foreground thief) and then the same gated capture on
+/// a short poll — before it reports the existing refusal. So a momentary foreground loss does not
+/// consume the player's read, while a genuinely covered game still fails with the unchanged
+/// `game_not_foreground` line and the tool stops as before.
+///
+/// The wait itself is silent and adds no protocol message: a successful wait returns the ordinary
+/// frame, and on a timeout the player gets exactly the clear, existing refusal the shell already
+/// renders (its text is pinned by `protocol/fixtures/response.error.game_not_foreground.json`). A
+/// live "waiting for the game window" line would need a shell/tool surface, which this change does
+/// not touch.
+///
 /// # Errors
 ///
-/// Returns the command error when the window cannot be found, measured or captured.
+/// Returns the command error when the window cannot be found, measured or captured. A capture that
+/// never sees the game in front returns [`CommandError::NotForeground`] once the deadline expires.
 pub fn capture(title: &str, region: Option<Rect>) -> Result<(Value, Value), CommandError> {
     let hwnd = locate(title)?;
     let display = window::measure(hwnd).map_err(CommandError::from)?;
-    let captured = window::capture_client_region(hwnd, region).map_err(CommandError::from)?;
+    let started = Instant::now();
+    let captured = capture_waiting(
+        FOREGROUND_WAIT,
+        || window::capture_client_region(hwnd, region),
+        || {
+            // Best effort: the answer says only whether Windows accepted the request, and a refusal
+            // is exactly what the deadline below handles, so it is deliberately discarded.
+            let _ = window::activate(hwnd);
+        },
+        || started.elapsed(),
+        std::thread::sleep,
+    )?;
     let data = base64::engine::general_purpose::STANDARD.encode(&captured.png);
     let frame = json!({
         "format": "png",
@@ -131,6 +171,51 @@ pub fn capture(title: &str, region: Option<Rect>) -> Result<(Value, Value), Comm
         "data": data,
     });
     Ok((frame, serialised(&display)?))
+}
+
+/// The bounded foreground wait around one foreground-gated capture attempt.
+///
+/// `attempt` is a full `capture_client_region` call, so the pixel-integrity check runs on every try
+/// and a refusal never reads pixels. On the first [`WinError::NotForeground`] the helper calls
+/// `nudge` once — the core's `SetForegroundWindow` attempt — and retries immediately, which is the
+/// app-own-window path where the shell holds the foreground; after that it retries after each
+/// `sleep(FOREGROUND_POLL)` until `elapsed()` reaches `wait`. Any other failure is returned unchanged
+/// and an exhausted deadline returns [`CommandError::NotForeground`], so the player-facing line and
+/// the tool's stop behaviour are exactly the ones the protocol already defines.
+///
+/// `elapsed` and `sleep` are injected so the tests drive a fake clock instead of waiting; the
+/// production caller passes the real clock and `thread::sleep`.
+fn capture_waiting<A, N, E, S>(
+    wait: Duration,
+    mut attempt: A,
+    mut nudge: N,
+    mut elapsed: E,
+    mut sleep: S,
+) -> Result<Captured, CommandError>
+where
+    A: FnMut() -> Result<Captured, WinError>,
+    N: FnMut(),
+    E: FnMut() -> Duration,
+    S: FnMut(Duration),
+{
+    let mut nudged = false;
+    loop {
+        match attempt() {
+            Ok(captured) => return Ok(captured),
+            Err(WinError::NotForeground) => {
+                if !nudged {
+                    nudged = true;
+                    nudge();
+                    continue;
+                }
+                if elapsed() >= wait {
+                    return Err(CommandError::NotForeground);
+                }
+                sleep(FOREGROUND_POLL);
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 fn locate(title: &str) -> Result<Hwnd, CommandError> {
@@ -260,5 +345,194 @@ mod tests {
         assert!(cache.get("f2").is_none(), "the oldest was evicted");
         let newest = cache.get("f6").expect("the newest is kept");
         assert_eq!(newest["frame_id"], "f6");
+    }
+
+    // ── the bounded foreground wait ─────────────────────────────────────────────────────────
+    //
+    // The seam is driven with fake window state: `attempt` is the gated capture (refused while the
+    // fake foreground flag is false), `nudge` is the activation call, and the clock is advanced by
+    // the fake sleep instead of a real one. None of these tests touches Win32 or waits.
+
+    use std::cell::Cell;
+
+    fn captured_stub() -> Captured {
+        Captured {
+            width: 2,
+            height: 2,
+            origin: seal_domain::geometry::Point::new(0, 0),
+            png: vec![0x89, b'P', b'N', b'G'],
+        }
+    }
+
+    #[test]
+    fn a_momentary_refusal_is_retried_after_the_activation_nudge() {
+        // The app-own-window path: the shell is foreground, the first gated capture refuses, the
+        // nudge hands the foreground back, and the very next attempt captures.
+        let foreground = Cell::new(false);
+        let attempts = Cell::new(0usize);
+        let successful_reads = Cell::new(0usize);
+        let nudges = Cell::new(0usize);
+        let clock = Cell::new(Duration::ZERO);
+
+        let result = capture_waiting(
+            FOREGROUND_WAIT,
+            || {
+                attempts.set(attempts.get() + 1);
+                if foreground.get() {
+                    successful_reads.set(successful_reads.get() + 1);
+                    Ok(captured_stub())
+                } else {
+                    Err(WinError::NotForeground)
+                }
+            },
+            || {
+                nudges.set(nudges.get() + 1);
+                foreground.set(true);
+            },
+            || clock.get(),
+            |wait| clock.set(clock.get() + wait),
+        );
+
+        assert_eq!(result, Ok(captured_stub()));
+        assert_eq!(
+            nudges.get(),
+            1,
+            "one activation attempt for the first refusal"
+        );
+        assert_eq!(attempts.get(), 2, "one refused attempt, then the capture");
+        assert_eq!(
+            successful_reads.get(),
+            1,
+            "the read is consumed exactly once"
+        );
+        assert!(
+            clock.get() < FOREGROUND_WAIT,
+            "the nudge path must not wait for the whole deadline"
+        );
+    }
+
+    #[test]
+    fn a_foreground_window_that_arrives_later_is_still_captured_within_the_deadline() {
+        // The nudge is denied (another app is in front), but the game comes forward while the wait
+        // polls — e.g. the player clicks back in — and the read is still accepted.
+        let foreground = Cell::new(false);
+        let attempts = Cell::new(0usize);
+        let clock = Cell::new(Duration::ZERO);
+        let deadline = Duration::from_millis(500);
+
+        let result = capture_waiting(
+            deadline,
+            || {
+                attempts.set(attempts.get() + 1);
+                if foreground.get() {
+                    Ok(captured_stub())
+                } else {
+                    Err(WinError::NotForeground)
+                }
+            },
+            || {},
+            || clock.get(),
+            |wait| {
+                clock.set(clock.get() + wait);
+                if clock.get() >= Duration::from_millis(100) {
+                    foreground.set(true);
+                }
+            },
+        );
+
+        assert_eq!(result, Ok(captured_stub()));
+        assert!(
+            clock.get() < deadline,
+            "the capture must happen within the bounded wait"
+        );
+        assert!(
+            attempts.get() >= 3,
+            "the polls between the refusal and the foreground change are retries"
+        );
+    }
+
+    #[test]
+    fn a_window_that_never_comes_forward_refuses_after_the_deadline() {
+        // Pixel integrity: no attempt ever succeeds while the game is covered, and the deadline
+        // returns the existing refusal rather than a new error shape.
+        let attempts = Cell::new(0usize);
+        let successful_reads = Cell::new(0usize);
+        let clock = Cell::new(Duration::ZERO);
+        let deadline = Duration::from_millis(200);
+
+        let result = capture_waiting(
+            deadline,
+            || {
+                attempts.set(attempts.get() + 1);
+                Err(WinError::NotForeground)
+            },
+            || {},
+            || clock.get(),
+            |wait| clock.set(clock.get() + wait),
+        );
+
+        assert_eq!(result, Err(CommandError::NotForeground));
+        assert_eq!(successful_reads.get(), 0, "a covered game is never read");
+        assert!(
+            clock.get() >= deadline,
+            "the wait is bounded by the deadline, not unbounded"
+        );
+        let polls = deadline.as_millis() as usize / FOREGROUND_POLL.as_millis() as usize;
+        assert!(
+            attempts.get() <= polls + 2,
+            "the retries are bounded: {} attempts",
+            attempts.get()
+        );
+    }
+
+    #[test]
+    fn a_successful_first_attempt_consumes_exactly_one_capture() {
+        // No retry is invented for a read that was never refused: one attempt, one read, no nudge
+        // and no sleep, so a normal capture cannot be counted twice.
+        let attempts = Cell::new(0usize);
+        let nudges = Cell::new(0usize);
+        let sleeps = Cell::new(0usize);
+
+        let result = capture_waiting(
+            FOREGROUND_WAIT,
+            || {
+                attempts.set(attempts.get() + 1);
+                Ok(captured_stub())
+            },
+            || nudges.set(nudges.get() + 1),
+            || Duration::ZERO,
+            |_| sleeps.set(sleeps.get() + 1),
+        );
+
+        assert_eq!(result, Ok(captured_stub()));
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(nudges.get(), 0);
+        assert_eq!(sleeps.get(), 0);
+    }
+
+    #[test]
+    fn a_failure_other_than_the_foreground_gate_is_not_retried() {
+        // Only `NotForeground` is the recoverable refusal; a missing window or a GDI failure keeps
+        // its old immediate answer.
+        let attempts = Cell::new(0usize);
+
+        let result = capture_waiting(
+            FOREGROUND_WAIT,
+            || {
+                attempts.set(attempts.get() + 1);
+                Err(WinError::WindowNotFound)
+            },
+            || {},
+            || Duration::ZERO,
+            |_| {},
+        );
+
+        assert_eq!(
+            result,
+            Err(CommandError::NotFound {
+                title: String::new()
+            })
+        );
+        assert_eq!(attempts.get(), 1);
     }
 }
