@@ -182,6 +182,30 @@ class ShellModel extends ChangeNotifier {
   bool _miniSyncing = false;
   ToolId? _miniTool;
 
+  /// The per-run file log the Logs drawer should point at: the most recently finished tool's
+  /// `<tool>.log`, or null before any run has finished. The file lives in the install's `logs/`.
+  String? get lastRunLogFile {
+    // Prefer the run that is happening right now (its log is growing); otherwise the most recent
+    // finished run, so the label still points at the file the player just asked about.
+    for (final entry in tools.snapshots.entries) {
+      if (entry.value.running) {
+        return '${entry.key.wire}.log';
+      }
+    }
+    final finished = tools.lastFinished;
+    return finished == null ? null : '${finished.tool.wire}.log';
+  }
+
+  /// Open the install's `logs/` folder (selecting the last run's log when known). A host failure is
+  /// only a log note: the action is a convenience, never shell state.
+  Future<void> openLogsFolder() async {
+    try {
+      await host.openLogsFolder(highlight: lastRunLogFile);
+    } catch (error) {
+      logs.addShellNote('cannot open the logs folder: $error');
+    }
+  }
+
   /// True when the run was started from the quick dock, so an optional after-run return can go back
   /// to the dock instead of the full window. Session state, not config.
   bool _miniReturnToDock = false;

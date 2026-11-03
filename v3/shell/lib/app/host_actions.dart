@@ -166,6 +166,11 @@ abstract class HostActions {
   /// remembered.
   Future<bool> isWindowVisible();
 
+  /// Open the install's `logs/` folder in the OS file manager, optionally selecting [highlight]
+  /// (a bare per-run log file name such as `pet.log`). The runner resolves the install directory
+  /// from its own executable; the shell never invents a path. Hosts without the action are inert.
+  Future<void> openLogsFolder({String? highlight}) async {}
+
   /// Rect changes the runner reports, in logical coordinates: one per settled user move/resize (the
   /// runner sends on `WM_EXITSIZEMOVE`), plus maximize/restore. Silent while the window is hidden.
   Stream<WindowRect> get windowMoves;
@@ -270,4 +275,10 @@ class MethodChannelHostActions implements HostActions {
   @override
   Future<bool> isWindowVisible() async =>
       await _channel.invokeMethod<bool>('isWindowVisible') ?? true;
+
+  @override
+  Future<void> openLogsFolder({String? highlight}) =>
+      _channel.invokeMethod<void>('openLogsFolder', {
+        if (highlight != null && highlight.isNotEmpty) 'file': highlight,
+      });
 }

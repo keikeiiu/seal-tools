@@ -78,6 +78,9 @@ class _FakeHost implements HostActions {
   Future<void> setWindowMinSize(int width, int height) async {}
 
   @override
+  Future<void> openLogsFolder({String? highlight}) async {}
+
+  @override
   Future<void> setMiniChrome(bool mini) async {
     // The Calibrate surface never collapses the shell; the model's own fake host covers mini mode.
   }

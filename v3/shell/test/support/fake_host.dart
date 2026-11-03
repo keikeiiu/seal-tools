@@ -177,4 +177,12 @@ class FakeHost implements HostActions {
 
   @override
   Future<bool> isWindowVisible() async => visible;
+
+  /// Every `openLogsFolder` call's highlight argument (`null` = folder only).
+  final List<String?> openedLogsFolders = <String?>[];
+
+  @override
+  Future<void> openLogsFolder({String? highlight}) async {
+    openedLogsFolders.add(highlight);
+  }
 }

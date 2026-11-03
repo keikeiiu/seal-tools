@@ -54,6 +54,14 @@ pub trait Tool {
     fn summary(&self, _reason: &StopReason) -> Option<serde_json::Value> {
         None
     }
+
+    /// Extra lines for the tool's per-run FILE log (`logs/<tool>.log`), drained by the supervisor's
+    /// `LoggedTool` after each decision. Kept separate from [`Self::status`]: a log can carry the
+    /// reasons and the per-row next actions that would bury a card, and a tool whose diagnostics
+    /// change more often than its card is not forced to publish duplicate events. Default empty.
+    fn drain_log_notes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// What a tool wants its card to say between decisions. Compared by value by the runner, so a tool

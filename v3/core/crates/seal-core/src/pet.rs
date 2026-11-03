@@ -1268,6 +1268,9 @@ pub struct PetTool<S: PetSource> {
     message: String,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
     state_sink: Option<Arc<dyn PetStateSink>>,
+    /// Rich file-only diagnostics drained by the supervisor's `LoggedTool` into `logs/pet.log`.
+    /// Deliberately separate from `message`/`status`: cards keep their short strings.
+    log_notes: Vec<String>,
 }
 
 impl<S: PetSource> PetTool<S> {
@@ -1300,6 +1303,7 @@ impl<S: PetSource> PetTool<S> {
             acted_this_pass: false,
             message,
             state_sink: None,
+            log_notes: Vec::new(),
         }
     }
 
@@ -1314,6 +1318,46 @@ impl<S: PetSource> PetTool<S> {
     fn persist_state(&self, patch: &seal_config::PetRunStatePatch) {
         if let Some(sink) = &self.state_sink {
             sink.persist(patch);
+        }
+    }
+
+    fn note(&mut self, line: impl Into<String>) {
+        self.log_notes.push(line.into());
+    }
+
+    /// The current food-cell and queue readings for a diagnostic line. The visit owns the live
+    /// readings; outside a visit the last configured values are named as such, never invented.
+    fn read_facts(&self) -> String {
+        let used = self.food_used;
+        let taken = match &self.visit {
+            Some(visit) => format!("queue candidates {}", visit.candidates.len()),
+            None => {
+                if self.plan.queue.is_empty() {
+                    "queue empty".to_owned()
+                } else {
+                    format!(
+                        "queue icons {} (not yet matched this pass)",
+                        self.plan.queue_icons.iter().flatten().count()
+                    )
+                }
+            }
+        };
+        let food = if self.plan.food_slots.is_empty() {
+            "food unknown (no cells marked)".to_owned()
+        } else {
+            format!("food used {used}/{}", self.plan.food_slots.len())
+        };
+        format!("{food}; {taken}")
+    }
+
+    fn row_action(&self, index: usize) -> String {
+        let state = &self.state[index];
+        if state.next_minutes.is_none() {
+            "check (no next reload)".to_owned()
+        } else if state.boarding {
+            format!("reload in {:.0} min", state.next_minutes.unwrap_or(0.0))
+        } else {
+            format!("feed in {:.0} min", state.next_minutes.unwrap_or(0.0))
         }
     }
 
@@ -1390,6 +1434,10 @@ impl<S: PetSource> PetTool<S> {
     /// The opening look: read every active row through the window that was just opened. The reading
     /// and the schedule are the same pass (v2 `ReadRows`), and a due row is reloaded in this window
     /// (v2's look hand-off), so a cold start does not close and re-open.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the pass reads every row, applies the schedule and now emits the file-log diagnostics; splitting it would scatter that ordering"
+    )]
     fn look(&mut self) {
         let mut retry = false;
         let mut due: Vec<usize> = Vec::new();
@@ -1466,6 +1514,9 @@ impl<S: PetSource> PetTool<S> {
                     self.state[index].next_minutes = Some(RETRY_MINUTES);
                 }
             }
+            self.note(format!(
+                "defer: every ticked row failed its read — retry in {RETRY_MINUTES:.0} min"
+            ));
             self.close_window();
             self.phase = Phase::Wait;
             return;
@@ -1486,6 +1537,14 @@ impl<S: PetSource> PetTool<S> {
                     .map(|index| self.plan.rows[*index].name.clone())
                     .collect::<Vec<_>>(),
             );
+            for index in &due {
+                let name = self.plan.rows[*index].name.clone();
+                let action = self.row_action(*index);
+                let facts = self.read_facts();
+                self.note(format!(
+                    "visit: {name} is due — reload/board now ({action}); {facts}"
+                ));
+            }
             self.phase = Phase::Visit;
             self.visit = Some(Visit::new(due));
         }
@@ -1507,6 +1566,10 @@ impl<S: PetSource> PetTool<S> {
             &self.schedule_settings(),
         );
         self.state[index].next_minutes = Some(fallback.next_minutes);
+        self.note(format!(
+            "row {}: slot unread — carrying the configured cycle (next in {:.0} min)",
+            self.plan.rows[index].name, fallback.next_minutes
+        ));
     }
 
     /// Read a boarding row: the game's own time line and rate, then the feeder counts; the three feed
@@ -1596,6 +1659,18 @@ impl<S: PetSource> PetTool<S> {
             ..seal_config::PetRunStatePatch::default()
         });
         self.message = folded.message;
+        let why = match outcome {
+            RowOutcome::Reloaded { .. } => "reloaded and boarded".to_owned(),
+            RowOutcome::Deferred => "deferred: boarding window did not open".to_owned(),
+            RowOutcome::NothingToBoard => "deferred: no feedable pet in the bag".to_owned(),
+            RowOutcome::Failed { error } => format!("failed: {error}"),
+        };
+        let facts = self.read_facts();
+        let next = self.row_action(index);
+        self.note(format!(
+            "row {}: {why}; {next}; {facts}",
+            self.plan.rows[index].name
+        ));
     }
 
     #[allow(
@@ -2072,11 +2147,23 @@ impl<S: PetSource> PetTool<S> {
                         self.phase = Phase::Open;
                         self.message =
                             visit_opening_message(&[self.plan.rows[soonest].name.clone()]);
+                        let next = self.row_action(soonest);
+                        let facts = self.read_facts();
+                        self.note(format!(
+                            "wake: {} — due now; {next}; {facts}",
+                            self.plan.rows[soonest].name
+                        ));
                     } else {
                         let seconds = minutes * 60.0;
                         let label = Self::next_label(minutes);
                         self.message = self.card().schedule_line(&label);
                         self.phase = Phase::Open;
+                        for index in self.active_rows() {
+                            let name = self.plan.rows[index].name.clone();
+                            let action = self.row_action(index);
+                            let facts = self.read_facts();
+                            self.note(format!("wait: {name}; {action}; {facts}"));
+                        }
                         return Decision::Wait(seconds);
                     }
                 }
@@ -2095,6 +2182,10 @@ impl<S: PetSource> PetTool<S> {
 impl<S: PetSource + Send> Tool for PetTool<S> {
     fn id(&self) -> ToolId {
         ToolId::Pet
+    }
+
+    fn drain_log_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.log_notes)
     }
 
     fn status(&self) -> ToolStatus {
@@ -2904,6 +2995,32 @@ mod loop_tests {
 
     fn a_toggle_click() -> Decision {
         Decision::Click(Point::new(25, 15))
+    }
+
+    #[test]
+    fn a_wait_leaves_per_row_next_actions_and_reads_in_the_log_notes() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+        let notes = tool.drain_log_notes();
+
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.starts_with("wait:") && note.contains("food used")),
+            "a wait names the row's next action and the food read: {notes:?}"
+        );
+        assert!(
+            notes.iter().any(|note| note.contains("queue")),
+            "a wait names the queue read or its absence: {notes:?}"
+        );
+        assert!(
+            notes.iter().any(|note| note.contains("row")),
+            "the row that is waiting is named: {notes:?}"
+        );
     }
 
     #[test]

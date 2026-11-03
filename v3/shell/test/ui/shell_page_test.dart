@@ -391,4 +391,26 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  testWidgets(
+    'the logs drawer opens the install logs folder and names the last run log',
+    (tester) async {
+      final host = FakeHost();
+      final harness = await _pumpShell(tester, host: host);
+      harness.emitToolFinished(tool: ToolId.pet);
+      await _flush(tester);
+
+      await tester.tap(find.byKey(const ValueKey('logs-toggle')));
+      await tester.pump();
+
+      final action = find.byKey(const ValueKey('open-logs-folder'));
+      expect(action, findsOneWidget);
+      expect(find.textContaining('pet.log'), findsOneWidget);
+
+      await tester.tap(action);
+      await tester.pump();
+
+      expect(host.openedLogsFolders, ['pet.log']);
+    },
+  );
 }

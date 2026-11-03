@@ -267,6 +267,9 @@ class _ShellPageState extends State<ShellPage> {
                             LogDrawer(
                               entries: model.logs.entries,
                               onClose: _toggleLogs,
+                              onOpenLogsFolder: () =>
+                                  unawaited(model.openLogsFolder()),
+                              lastRunLogName: model.lastRunLogFile,
                             ),
                         ],
                       ),

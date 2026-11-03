@@ -797,13 +797,27 @@ impl LoggedTool {
     }
 }
 
+impl LoggedTool {
+    /// Write the tool's rich diagnostic notes through the one `Logs` instance. Notes are a file-only
+    /// surface: they never become protocol events and never change a card string.
+    fn flush_log_notes(&mut self) {
+        for note in self.inner.drain_log_notes() {
+            if !note.trim().is_empty() {
+                self.logs.tool_line(self.inner.id(), &note);
+            }
+        }
+    }
+}
+
 impl Tool for LoggedTool {
     fn id(&self) -> ToolId {
         self.inner.id()
     }
 
     fn decide(&mut self) -> Decision {
-        self.inner.decide()
+        let decision = self.inner.decide();
+        self.flush_log_notes();
+        decision
     }
 
     fn status(&self) -> ToolStatus {
@@ -885,5 +899,42 @@ mod tests {
                 .is_some_and(|line| line.contains("still using the game")),
             "{event:?}"
         );
+    }
+
+    /// A tool that publishes no status but asks for one rich log note; `LoggedTool` must write it
+    /// through the one file logger after the decision, without any protocol event.
+    struct NoteTool;
+
+    impl Tool for NoteTool {
+        fn id(&self) -> ToolId {
+            ToolId::Pet
+        }
+
+        fn decide(&mut self) -> Decision {
+            Decision::Stop(StopReason::done("done"))
+        }
+
+        fn drain_log_notes(&mut self) -> Vec<String> {
+            vec!["wait: row 1; reload in 205 min; food used 0/4; queue empty".to_owned()]
+        }
+    }
+
+    #[test]
+    fn logged_tool_writes_drained_notes_to_the_per_run_file() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("seal5-note-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let logs = Arc::new(Logs::new(&root));
+        let mut logged = LoggedTool::new(Box::new(NoteTool), Arc::clone(&logs));
+        let decision = logged.decide();
+        assert_eq!(decision, Decision::Stop(StopReason::done("done")));
+        let text = std::fs::read_to_string(root.join("logs/pet.log")).unwrap();
+        assert!(
+            text.contains("wait: row 1; reload in 205 min"),
+            "the note reached logs/pet.log: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
