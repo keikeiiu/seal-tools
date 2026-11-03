@@ -563,24 +563,36 @@ A calibration mark is stored in **physical pixels relative to the game window's 
 scaled by the Windows display scale. The contract and the why are in the repository's
 `v3/docs/spec/CALIBRATION.md`; this section is the operator's view.
 
+> **New to this screen?** [CALIBRATION-GUIDE.md](CALIBRATION-GUIDE.md) is the click-by-click
+> walkthrough: how to capture, **click the capture tile you want to edit**, draw points vs
+> rectangles, and run the three session calibrations.
+
 ### 6.1 Saving a mark
 
 1. Put the game window in front (the game must be the foreground window; the shell hides itself for the
    grab, so the capture is of the game, not of Seal Tools).
-2. **Capture** — the window blinks while Seal Tools hides itself for one frame, captures the full
-   client, and reopens. The frame and the measured display summary appear.
-3. Choose a **Kind** from the grouped list. For a *named-instance* kind choose a **Target instance**
-   too (the list stays empty until you do; Save is disabled until a target is chosen).
-4. Draw on the picture (a click sets a point; a drag sets a rectangle) or type the **x / y / (w / h)**
-   fields — the fields are authoritative and the picture mirrors them.
-5. For **Result gem area** answer the **empty-result question** first: is the result box empty right
+2. In **Calibrate → Captures**, press **Capture the window** — the window blinks while Seal Tools
+   hides itself for one frame, captures the full client, and reopens. A **Frame** tile appears under
+   Captures and the picture appears in the middle. The header's `1 / 4` is the four-frame cache count,
+   not "four captures required"; one live capture is enough.
+3. **Click the capture tile** you want to edit. The newest is selected automatically; clicking an older
+   tile selects that frame, and Save uses the selected frame's id. A tile marked **next capture evicts
+   this one** is the oldest of four — save before capturing again. Clicking the tile only selects the
+   frame; it does not place a mark.
+4. Choose a **Surface** from the grouped list (or click a kind in the Targets tree). For a
+   *named-instance* surface choose a **Target instance** too (the list stays empty until you do; Save
+   is disabled until a target is chosen).
+5. On the large **picture**, a click sets a point and a drag sets a rectangle; or type the
+   **x / y / (w / h)** fields — the fields are authoritative and the picture mirrors them. A drag under
+   4 px is ignored; a click in the letterbox is ignored. See the guide's §5 for zoom/pan details.
+6. For **Result gem area** answer the **empty-result question** first: is the result box empty right
    now? **Save is disabled until you answer.** `empty: true` saves the crop *and* samples the colour
    signature; `empty: false` samples the signature only (a crop of a busy box would poison the strong
    empty test).
-6. **Save mark**. The result line shows the kind, the revision, and the mark; a `bag_grid` also shows
-   its derived pitch, and the result-gem crop appears under **Artifact**. **Refresh stored** re-reads
-   the stored marks.
-7. The **Stored mark** section shows the mark for the selected kind/target (and the target the core
+7. **Save mark**. The result line shows the surface, the revision, and the mark; a `bag_grid` also
+   shows its derived pitch, and the result-gem crop appears under **Artifact**. **Refresh stored**
+   re-reads the stored marks.
+8. The **Stored mark** section shows the mark for the selected surface/target (and the target the core
    echoed), or "Not calibrated yet".
 
 A refusal is the core's sentence, not a silent failure: the bag slot must agree with the bag grid's
@@ -636,9 +648,9 @@ re-save the same kind later with the box empty to add the crop.
 These are **not missing marks you can hand-wave**: each needs a different kind of session. Tuner OCR
 and the tooltip panel have their sessions in §6.5–§6.6; these are the remaining ones.
 
-- **The pet's reference crops and row entries** — live-screen session features (the close-X crop is
-  even learned by the run), not frame marks. The Pet tab adds queue pets by icon capture, but adding
-  rows and re-capturing the row reference crops needs the pet capture session (section 11).
+- **The pet's reference crops and row entries** — the **Pet crops / rows** session captures one row's
+  five rects and four shared points plus the reference crops (see CALIBRATION-GUIDE §8.3); adding
+  more rows and adding queue pets by icon capture still happens on the **Pet** tab.
 - **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
   the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
   cells, but has no kind of its own.
