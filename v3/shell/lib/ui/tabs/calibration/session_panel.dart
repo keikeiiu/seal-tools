@@ -1,19 +1,26 @@
 /// The Calibrate workspace's session-shaped calibrations panel.
 ///
-/// G01 is wired: **Tooltip offset + shape** drives the three shipped commands
-/// (`calibration.tooltip.hover_capture` → `.save` → `.test`). The operator enters the hover point,
-/// captures the live panel (shell hidden), reads the box from the picture, enters offset/size and
-/// saves; Test read hovers again and shows the OCR lines.
+/// All three sessions are wired to their core commands and all three draw the CAPTURED FRAME with the
+/// shared gesture overlay ([CalibrationFramePicture]):
 ///
-/// The tuner three-box and pet-crop sessions are still listed with a disabled action and the reason:
-/// their canvas increments are later frontend work, not a protocol gap.
+/// - **G01 Tooltip offset + shape** — `calibration.tooltip.hover_capture` → drag a box around the
+///   panel on the captured picture → `.save` → `.test`. The offset is the box minus the point the
+///   TOOL placed the cursor on (the shell does not read it back), and v2's 20×20 px minimum is the
+///   core's own save rule.
+/// - **G02 Tuner three-box** — capture the screen, then drag the grade / attribute / remaining boxes
+///   IN ORDER on the picture (the target chips pick one explicitly too; a drag under 4 px is a click,
+///   not a box). `Check boxes` measures the row pitch, `Save tuner` writes `tuner.ocr`.
+/// - **G03 Pet crops / rows** — capture the screen, drag the row/bag boxes and click the shared points
+///   on the picture. Preview derives the derived regions, Save writes the calibration half + crops,
+///   Test read reports every slot count.
+///
+/// The typed x/y/w/h (and point) fields stay AUTHORITATIVE: a gesture writes them, Save reads them, so
+/// nothing lives only in picture state.
 library;
-
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../../app/calibration_result.dart';
 import '../../../app/core_actions.dart';
 import '../../../app/host_actions.dart';
 import '../../../app/shell_model.dart';
@@ -22,6 +29,7 @@ import '../../../protocol/types.dart';
 import '../../components/status_chip.dart';
 import '../../components/surface_panel.dart';
 import '../../theme.dart';
+import '../calibration_widgets.dart';
 
 class SessionCalibrationsPanel extends StatefulWidget {
   const SessionCalibrationsPanel({
@@ -50,8 +58,13 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   bool _busy = false;
   String? _status;
   bool _failed = false;
-  Uint8List? _preview;
   List<String> _lines = const [];
+
+  // G01 tooltip session: the hovered frame and the point the CORE placed the cursor on; the drag is
+  // measured from that point (CALIBRATION §1/PLAN §3.5).
+  Frame? _tooltipFrame;
+  DisplayInfo? _tooltipDisplay;
+  Offset? _tooltipPlaced;
 
   // G02 tuner session: three boxes on a captured frame.
   final Map<String, TextEditingController> _boxFields = {
@@ -78,6 +91,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   final _springY = TextEditingController(text: '0');
   CaptureResult? _tunerCapture;
   JsonMap? _tunerCheck;
+
+  /// The tuner surface the next gesture writes: grade → attr → remaining (v2's order), plus the
+  /// optional spring POINT.
+  String _tunerTarget = 'grade';
 
   // G03 pet session: one row + the shared points, enough to drive preview/save/test_read.
   final Map<String, TextEditingController> _petFields = {
@@ -116,6 +133,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   final _petStacks = TextEditingController(text: '2');
   CaptureResult? _petCapture;
   JsonMap? _petPreview;
+
+  /// The pet surface the next gesture writes. The five RECT surfaces take a drag; the four POINT
+  /// surfaces take a click (CALIBRATION §5: one row's rects + the shared menu/feed/close/page points).
+  String _petTarget = 'toggle';
 
   @override
   void dispose() {
@@ -170,16 +191,33 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       final answer = result.value!;
       final frame = answer['frame'];
       if (frame is Map && frame['data'] is String) {
+        Frame? decoded;
+        DisplayInfo? display;
         try {
-          _preview = base64Decode(frame['data'] as String);
+          decoded = Frame.fromJson(frame, 'frame');
+          display = answer['display'] is Map
+              ? DisplayInfo.fromJson(answer['display'], 'display')
+              : null;
         } catch (_) {
-          _preview = null;
+          decoded = null;
         }
-        final placed = answer['placed'];
-        _status =
-            'hover captured at '
-            '${placed is Map ? '${placed['x']}, ${placed['y']}' : 'the point'}'
-            ' — enter the box offset/size from the picture';
+        if (decoded != null) {
+          _tooltipFrame = decoded;
+          _tooltipDisplay = display;
+          final placed = answer['placed'];
+          _tooltipPlaced = placed is Map
+              ? Offset(
+                  (placed['x'] as num).toDouble(),
+                  (placed['y'] as num).toDouble(),
+                )
+              : null;
+          final line = answer['line'];
+          _status = line is String && line.isNotEmpty
+              ? line
+              : 'hover captured — drag a box around the panel on the picture';
+          return;
+        }
+        _status = 'The captured picture could not be decoded.';
         return;
       }
       final rawLines = answer['lines'];
@@ -236,6 +274,223 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     return boxes;
   }
 
+  // ── session canvas: frames + the gesture→field wiring ──────────────────────────────────────
+
+  /// The client origin of a capture: every mark is CLIENT-RELATIVE physical px, so the picture's
+  /// mapping subtracts the client's screen origin (CALIBRATION §4).
+  Offset _clientOrigin(DisplayInfo? display) => display == null
+      ? Offset.zero
+      : Offset(
+          display.physicalClient.x.toDouble(),
+          display.physicalClient.y.toDouble(),
+        );
+
+  /// One session frame with the shared overlay. The callbacks are the only gesture surface this
+  /// panel needs: a click writes a point, a drag writes a rect (the 4 px minimum and the letterbox
+  /// rejection live in the shared widget, not here).
+  Widget _sessionFrame({
+    required Key key,
+    required Frame frame,
+    required DisplayInfo? display,
+    required CalibrationMark? mark,
+    String? markLabel,
+    ValueChanged<CalibrationMark>? onPointMark,
+    ValueChanged<CalibrationMark>? onRectMark,
+  }) => CalibrationFramePicture(
+    key: key,
+    frame: frame,
+    maxHeight: 260,
+    clientOrigin: _clientOrigin(display),
+    mark: mark,
+    markLabel: markLabel,
+    onPointMark: onPointMark,
+    onRectMark: onRectMark,
+  );
+
+  static const _tunerTargetNames = {
+    'grade': 'Grade letter',
+    'attr': 'Attribute rows',
+    'remaining': 'Remaining count',
+    'spring': 'Spring point',
+  };
+
+  static const _petRectNames = {
+    'toggle': 'Toggle row',
+    'boarding': 'Boarding pet slot',
+    'strip': 'Feeder strip',
+    'grid': 'Bag grid',
+    'slot': 'Bag slot',
+  };
+
+  static const _petPointNames = {
+    'menu': 'Menu point',
+    'feed': 'Feed point',
+    'close': 'Boarding X point',
+    'tab': 'ITEM tab point',
+  };
+
+  CalibrationMark? _tunerMark() {
+    if (_tunerTarget == 'spring') {
+      final x = _number(_springX);
+      final y = _number(_springY);
+      return x == null || y == null ? null : CalibrationMark.point(x, y);
+    }
+    final x = _number(_boxFields['$_tunerTarget.x']!);
+    final y = _number(_boxFields['$_tunerTarget.y']!);
+    final w = _number(_boxFields['$_tunerTarget.w']!);
+    final h = _number(_boxFields['$_tunerTarget.h']!);
+    if (x == null || y == null || w == null || h == null || w < 1 || h < 1) {
+      return null;
+    }
+    return CalibrationMark.rect(x, y, w, h);
+  }
+
+  String _tunerLabel() {
+    final name = _tunerTargetNames[_tunerTarget] ?? _tunerTarget;
+    final mark = _tunerMark();
+    if (mark == null) {
+      return '$name — drag it on the picture';
+    }
+    return mark.isRect
+        ? '$name · x ${mark.x} · y ${mark.y} · ${mark.w}×${mark.h}'
+        : '$name · x ${mark.x} · y ${mark.y}';
+  }
+
+  /// A drag on the tuner frame writes the selected box, then advances grade → attr → remaining so the
+  /// three boxes can be drawn IN ORDER, exactly like v2.
+  void _applyTunerRect(CalibrationMark mark) {
+    setState(() {
+      final target = _tunerTarget;
+      if (target == 'spring') {
+        return;
+      }
+      _boxFields['$target.x']!.text = '${mark.x}';
+      _boxFields['$target.y']!.text = '${mark.y}';
+      _boxFields['$target.w']!.text = '${mark.w}';
+      _boxFields['$target.h']!.text = '${mark.h}';
+      _tunerTarget = switch (target) {
+        'grade' => 'attr',
+        'attr' => 'remaining',
+        _ => 'remaining',
+      };
+      _status =
+          '${_tunerTargetNames[target]} dragged — '
+          '${_tunerTargetNames[_tunerTarget]} is next';
+      _failed = false;
+    });
+  }
+
+  void _applyTunerPoint(CalibrationMark mark) {
+    setState(() {
+      _springX.text = '${mark.x}';
+      _springY.text = '${mark.y}';
+      _status = 'spring point ${mark.x}, ${mark.y}';
+      _failed = false;
+    });
+  }
+
+  bool get _petRectTarget => _petRectNames.containsKey(_petTarget);
+
+  CalibrationMark? _petMark() {
+    if (_petRectTarget) {
+      final rect = _rect(_petTarget);
+      if (rect['w']! < 1 || rect['h']! < 1) {
+        return null;
+      }
+      return CalibrationMark.rect(
+        rect['x']!.round(),
+        rect['y']!.round(),
+        rect['w']!.round(),
+        rect['h']!.round(),
+      );
+    }
+    final x = _petNumber('$_petTarget.x');
+    final y = _petNumber('$_petTarget.y');
+    return x == null || y == null ? null : CalibrationMark.point(x, y);
+  }
+
+  String _petLabel() {
+    final name =
+        _petRectNames[_petTarget] ?? _petPointNames[_petTarget] ?? _petTarget;
+    final mark = _petMark();
+    if (mark == null) {
+      return '$name — ${_petRectTarget ? 'drag it' : 'click it'} on the picture';
+    }
+    return mark.isRect
+        ? '$name · x ${mark.x} · y ${mark.y} · ${mark.w}×${mark.h}'
+        : '$name · x ${mark.x} · y ${mark.y}';
+  }
+
+  void _applyPetRect(CalibrationMark mark) {
+    setState(() {
+      if (!_petRectTarget) {
+        return;
+      }
+      _petFields['$_petTarget.x']!.text = '${mark.x}';
+      _petFields['$_petTarget.y']!.text = '${mark.y}';
+      _petFields['$_petTarget.w']!.text = '${mark.w}';
+      _petFields['$_petTarget.h']!.text = '${mark.h}';
+      _status = '${_petRectNames[_petTarget]} dragged';
+      _failed = false;
+    });
+  }
+
+  void _applyPetPoint(CalibrationMark mark) {
+    setState(() {
+      if (_petRectTarget) {
+        return;
+      }
+      _petFields['$_petTarget.x']!.text = '${mark.x}';
+      _petFields['$_petTarget.y']!.text = '${mark.y}';
+      _status = '${_petPointNames[_petTarget]} clicked';
+      _failed = false;
+    });
+  }
+
+  /// The tooltip box currently in the fields: the placed hover point + the offset/size (CALIBRATION
+  /// §1: the panel is anchored to the pointer, so the offset is box minus point).
+  CalibrationMark? _tooltipMark() {
+    final placed = _tooltipPlaced;
+    final offsetX = _number(_offsetX);
+    final offsetY = _number(_offsetY);
+    final width = _number(_width);
+    final height = _number(_height);
+    if (placed == null ||
+        offsetX == null ||
+        offsetY == null ||
+        width == null ||
+        height == null ||
+        width < 1 ||
+        height < 1) {
+      return null;
+    }
+    return CalibrationMark.rect(
+      placed.dx.round() + offsetX,
+      placed.dy.round() + offsetY,
+      width,
+      height,
+    );
+  }
+
+  /// v2's tooltip rule: offset = box top-left − the point the TOOL placed the cursor on; size = the
+  /// box. The minimum panel size is the core's save rule, not duplicated here.
+  void _applyTooltipRect(CalibrationMark mark) {
+    final placed = _tooltipPlaced;
+    if (placed == null) {
+      return;
+    }
+    setState(() {
+      _offsetX.text = '${mark.x - placed.dx.round()}';
+      _offsetY.text = '${mark.y - placed.dy.round()}';
+      _width.text = '${mark.w}';
+      _height.text = '${mark.h}';
+      _status =
+          'panel box ${mark.w}×${mark.h} — offset '
+          '${mark.x - placed.dx.round()}, ${mark.y - placed.dy.round()}';
+      _failed = false;
+    });
+  }
+
   Future<void> _captureTuner() async {
     setState(() {
       _busy = true;
@@ -259,7 +514,8 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       }
       _tunerCapture = result.value!;
       _status =
-          'captured ${result.value!.frame.frameId} — drag the three boxes';
+          'captured ${result.value!.frame.frameId} — drag the three boxes on the picture '
+          '(${_tunerTargetNames[_tunerTarget]} first)';
     });
   }
 
@@ -340,14 +596,41 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'The tuner three-box session: capture the screen, enter grade/attribute/remaining boxes '
-          'and Check before Save. The region, bands and row pitch are derived by the core.',
+          'The tuner three-box session: capture the screen, then drag the grade, attribute and '
+          'remaining boxes on the picture (v2 order — a drag under 4 px is ignored). Check before '
+          'Save: the core derives the region, bands and row pitch from the three boxes.',
           key: const ValueKey('calibrate-tuner-note'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: ShellSpace.sm),
+        Wrap(
+          spacing: ShellSpace.xs,
+          runSpacing: ShellSpace.xs,
+          children: [
+            for (final name in _tunerTargetNames.keys)
+              ChoiceChip(
+                key: ValueKey('session-tuner-target-$name'),
+                label: Text(_tunerTargetNames[name]!),
+                selected: _tunerTarget == name,
+                onSelected: (_) => setState(() => _tunerTarget = name),
+              ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        if (_tunerCapture != null) ...[
+          _sessionFrame(
+            key: const ValueKey('session-tuner-frame'),
+            frame: _tunerCapture!.frame,
+            display: _tunerCapture!.display,
+            mark: _tunerMark(),
+            markLabel: _tunerLabel(),
+            onPointMark: _tunerTarget == 'spring' ? _applyTunerPoint : null,
+            onRectMark: _tunerTarget == 'spring' ? null : _applyTunerRect,
+          ),
+          const SizedBox(height: ShellSpace.sm),
+        ],
         for (final name in ['grade', 'attr', 'remaining'])
           Padding(
             padding: const EdgeInsets.only(bottom: ShellSpace.xs),
@@ -491,7 +774,9 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         return;
       }
       _petCapture = result.value!;
-      _status = 'captured ${result.value!.frame.frameId} — fill the row marks';
+      _status =
+          'captured ${result.value!.frame.frameId} — drag the rows/bag boxes and click the '
+          'points on the picture';
     });
   }
 
@@ -581,15 +866,50 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'One row drives the pet session: row rects, the shared points and the bag. Preview '
-          'derives the count/ETA regions, Save writes the calibration half + crops, Test read '
-          'reports every slot count.',
+          'One row drives the pet session: drag the row rects (toggle, boarding pet slot, feeder '
+          'strip, bag grid, bag slot) and click the shared points (menu, feed, boarding X, ITEM '
+          'tab) on the captured picture. Preview derives the count/ETA regions, Save writes the '
+          'calibration half + crops, Test read reports every slot count.',
+          key: const ValueKey('calibrate-pet-note'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: ShellSpace.sm),
-        for (final prefix in ['toggle', 'boarding', 'strip', 'grid', 'slot'])
+        Wrap(
+          spacing: ShellSpace.xs,
+          runSpacing: ShellSpace.xs,
+          children: [
+            for (final name in _petRectNames.keys)
+              ChoiceChip(
+                key: ValueKey('session-pet-target-$name'),
+                label: Text(_petRectNames[name]!),
+                selected: _petTarget == name,
+                onSelected: (_) => setState(() => _petTarget = name),
+              ),
+            for (final name in _petPointNames.keys)
+              ChoiceChip(
+                key: ValueKey('session-pet-target-$name'),
+                label: Text(_petPointNames[name]!),
+                selected: _petTarget == name,
+                onSelected: (_) => setState(() => _petTarget = name),
+              ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        if (_petCapture != null) ...[
+          _sessionFrame(
+            key: const ValueKey('session-pet-frame'),
+            frame: _petCapture!.frame,
+            display: _petCapture!.display,
+            mark: _petMark(),
+            markLabel: _petLabel(),
+            onPointMark: _petRectTarget ? null : _applyPetPoint,
+            onRectMark: _petRectTarget ? _applyPetRect : null,
+          ),
+          const SizedBox(height: ShellSpace.sm),
+        ],
+        for (final prefix in _petRectNames.keys)
           Padding(
             padding: const EdgeInsets.only(bottom: ShellSpace.xs),
             child: Wrap(
@@ -666,8 +986,9 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     return SurfacePanel(
       title: 'Session-shaped calibrations',
       description:
-          'The tooltip session is wired to the core (§12.9). The tuner three-box and pet-crop '
-          'sessions remain later frontend increments.',
+          'All three sessions are wired to the core and draw their captured frame: drag the boxes '
+          'and click the points on the picture (the typed fields follow the gesture and stay '
+          'authoritative).',
       padding: const EdgeInsets.all(ShellSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -688,8 +1009,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
             child: Text(
-              'Capture hover (shell hides), read the panel box from the picture, enter '
-              'offset/size, Save, then Test read.',
+              'Capture hover (shell hides), then drag a box around the panel on the captured '
+              'picture — the offset is the box minus the point the tool placed the cursor on '
+              '(at least 20×20 px). Save, then Test read.',
+              key: const ValueKey('calibrate-tooltip-note'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -741,15 +1064,15 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
               ),
             ),
           ],
-          if (_preview != null) ...[
+          if (_tooltipFrame != null) ...[
             const SizedBox(height: ShellSpace.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 160),
-              child: Image.memory(
-                _preview!,
-                key: const ValueKey('session-tooltip-preview'),
-                fit: BoxFit.contain,
-              ),
+            _sessionFrame(
+              key: const ValueKey('session-tooltip-preview'),
+              frame: _tooltipFrame!,
+              display: _tooltipDisplay,
+              mark: _tooltipMark(),
+              markLabel: 'Panel · offset/Save from the drag',
+              onRectMark: _applyTooltipRect,
             ),
           ],
           for (final line in _lines)

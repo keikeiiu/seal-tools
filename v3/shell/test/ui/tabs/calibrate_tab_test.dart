@@ -5,6 +5,7 @@ library;
 
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -196,6 +197,59 @@ String _resultText(WidgetTester tester, String key) => tester
     .data!;
 
 Finder _field(String key) => find.byKey(ValueKey(key));
+
+/// Drags on the interactive picture INSIDE one session frame (the shared overlay's gesture surface),
+/// measured from the picture's centre so the converted mark is a real rect.
+Future<void> _dragOnSessionFrame(
+  WidgetTester tester,
+  String frameKey,
+  Offset delta,
+) async {
+  final gestures = find.descendant(
+    of: find.byKey(ValueKey(frameKey)),
+    matching: find.byKey(const ValueKey('calibrate-picture-gestures')),
+  );
+  await tester.ensureVisible(gestures);
+  await tester.pump();
+  final area = tester.getRect(gestures);
+  final gesture = await tester.startGesture(
+    area.center,
+    kind: PointerDeviceKind.mouse,
+    buttons: kPrimaryMouseButton,
+  );
+  await tester.pump();
+  for (var i = 0; i < 4; i++) {
+    await gesture.moveBy(Offset(delta.dx / 4, delta.dy / 4));
+    await tester.pump();
+  }
+  await gesture.up();
+  await _flush(tester);
+}
+
+Future<void> _clickOnSessionFrame(
+  WidgetTester tester,
+  String frameKey,
+  Offset offsetFromCentre,
+) async {
+  final gestures = find.descendant(
+    of: find.byKey(ValueKey(frameKey)),
+    matching: find.byKey(const ValueKey('calibrate-picture-gestures')),
+  );
+  await tester.ensureVisible(gestures);
+  await tester.pump();
+  final area = tester.getRect(gestures);
+  await tester.tapAt(area.center + offsetFromCentre);
+  await _flush(tester);
+}
+
+/// Scrolls a control into view, then taps it (the session panels run past one screen).
+Future<void> _tapVisible(WidgetTester tester, String key) async {
+  final finder = find.byKey(ValueKey(key));
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
+  await _flush(tester);
+}
 
 /// Opens the kind picker and taps an item by its stable key.
 Future<void> _selectKind(WidgetTester tester, String kind) async {
@@ -2093,4 +2147,271 @@ void main() {
     expect(find.byKey(const ValueKey('calibrate-gallery-gem')), findsOneWidget);
     expect(find.byKey(const ValueKey('calibrate-gallery-pet')), findsOneWidget);
   });
+
+  testWidgets(
+    'the tuner session renders its frame and drags fill the three boxes in order',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+
+      expect(
+        find.byKey(const ValueKey('session-tuner-frame')),
+        findsNothing,
+        reason: 'the frame exists only once the session is captured',
+      );
+
+      final capture = find.byKey(const ValueKey('session-tuner-capture'));
+      await tester.ensureVisible(capture);
+      await tester.tap(capture);
+      await _flush(tester);
+
+      expect(
+        find.byKey(const ValueKey('session-tuner-frame')),
+        findsOneWidget,
+        reason: 'the captured frame is rendered so the operator can box it',
+      );
+
+      String fieldText(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+
+      // The first drag writes GRADE and advances the target to attr (v2's order).
+      await _dragOnSessionFrame(
+        tester,
+        'session-tuner-frame',
+        const Offset(80, 60),
+      );
+      expect(int.parse(fieldText('session-tuner-grade.x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tuner-grade.w')), greaterThan(0));
+      expect(fieldText('session-tuner-attr.x'), '0');
+      expect(fieldText('session-tuner-attr.w'), '100');
+      final attrChip = tester.widget<ChoiceChip>(
+        find.byKey(const ValueKey('session-tuner-target-attr')),
+      );
+      expect(attrChip.selected, isTrue);
+
+      // The second drag writes ATTR, not grade again.
+      await _dragOnSessionFrame(
+        tester,
+        'session-tuner-frame',
+        const Offset(80, 60),
+      );
+      expect(int.parse(fieldText('session-tuner-attr.x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tuner-attr.w')), greaterThan(0));
+      expect(fieldText('session-tuner-remaining.x'), '0');
+
+      // The typed fields stay authoritative: Save sends what the drags wrote.
+      final save = find.byKey(const ValueKey('session-tuner-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await _flush(tester);
+      final saveArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tuner.save',
+              )['args']
+              as Map<String, dynamic>;
+      final boxes = saveArgs['boxes'] as Map<String, dynamic>;
+      final grade = boxes['grade'] as Map<String, dynamic>;
+      expect(grade['x'], int.parse(fieldText('session-tuner-grade.x')));
+      expect(grade['w'], int.parse(fieldText('session-tuner-grade.w')));
+      expect(
+        (boxes['attr'] as Map<String, dynamic>)['w'],
+        int.parse(fieldText('session-tuner-attr.w')),
+      );
+    },
+  );
+
+  testWidgets(
+    'the pet session renders its frame; a drag fills the chosen rect and a click fills a point',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {
+            'result': _captureAnswer(frameId: 'f7', width: 100, height: 75),
+          },
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+
+      expect(find.byKey(const ValueKey('session-pet-frame')), findsNothing);
+      final capture = find.byKey(const ValueKey('session-pet-capture'));
+      await tester.ensureVisible(capture);
+      await tester.tap(capture);
+      await _flush(tester);
+      expect(
+        find.byKey(const ValueKey('session-pet-frame')),
+        findsOneWidget,
+        reason: 'the captured frame is rendered so the rows can be dragged',
+      );
+
+      String fieldText(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+
+      // The default target is the toggle row: a drag fills its rect and leaves the others alone.
+      await _dragOnSessionFrame(
+        tester,
+        'session-pet-frame',
+        const Offset(80, 60),
+      );
+      expect(
+        int.parse(fieldText('session-tuner-pet.toggle.x')),
+        greaterThan(0),
+      );
+      expect(
+        int.parse(fieldText('session-tuner-pet.toggle.w')),
+        greaterThan(0),
+      );
+      expect(fieldText('session-tuner-pet.boarding.x'), '0');
+      expect(fieldText('session-tuner-pet.boarding.w'), '0');
+
+      // Pick the bag grid explicitly, then drag: the values land in the bag-grid fields.
+      await _tapVisible(tester, 'session-pet-target-grid');
+      await _dragOnSessionFrame(
+        tester,
+        'session-pet-frame',
+        const Offset(80, 60),
+      );
+      expect(int.parse(fieldText('session-tuner-pet.grid.x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tuner-pet.grid.w')), greaterThan(0));
+
+      // A POINT target takes a click instead of a drag.
+      await _tapVisible(tester, 'session-pet-target-menu');
+      await _clickOnSessionFrame(
+        tester,
+        'session-pet-frame',
+        const Offset(30, 10),
+      );
+      expect(int.parse(fieldText('session-pet-menu-x')), greaterThan(0));
+      expect(int.parse(fieldText('session-pet-menu-y')), greaterThan(0));
+
+      // Save sends the fields the gestures wrote.
+      final save = find.byKey(const ValueKey('session-pet-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await _flush(tester);
+      final saveArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.pet.save',
+              )['args']
+              as Map<String, dynamic>;
+      final rows = (saveArgs['rows'] as List).cast<Map<String, dynamic>>();
+      final toggle = rows.first['toggle_label'] as Map<String, dynamic>;
+      expect(toggle['x'], int.parse(fieldText('session-tuner-pet.toggle.x')));
+      expect(toggle['w'], int.parse(fieldText('session-tuner-pet.toggle.w')));
+      final bag = saveArgs['bag'] as Map<String, dynamic>;
+      final grid = (bag['grid'] as List).cast<int>();
+      expect(grid[0], int.parse(fieldText('session-tuner-pet.grid.x')));
+      expect(grid[2], int.parse(fieldText('session-tuner-pet.grid.w')));
+      final points = saveArgs['points'] as Map<String, dynamic>;
+      final menu = points['menu'] as Map<String, dynamic>;
+      expect(menu['x'], int.parse(fieldText('session-pet-menu-x')));
+      expect(menu['y'], int.parse(fieldText('session-pet-menu-y')));
+    },
+  );
+
+  testWidgets(
+    'a drag on the hovered tooltip picture fills the offset and size fields',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch_all' => {
+            'result': {
+              'rev': 9,
+              'marks': <Map<String, dynamic>>[],
+              'calibration': null,
+              'withdrawn': <Map<String, dynamic>>[],
+            },
+          },
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'calibration.tooltip.hover_capture' => {
+            'result': {
+              'frame': {
+                'format': 'png',
+                'width': 100,
+                'height': 75,
+                'origin': {'x': 10, 'y': 20},
+                'data': _tinyPng,
+                'frame_id': 'f2',
+              },
+              'display': _displayJson(),
+              'placed': {'x': 0, 'y': 0},
+              'line': 'hover captured — drag a box around the panel',
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+
+      final hover = find.byKey(const ValueKey('session-tooltip-hover'));
+      await tester.ensureVisible(hover);
+      await tester.tap(hover);
+      await _flush(tester);
+      expect(
+        find.byKey(const ValueKey('session-tooltip-preview')),
+        findsOneWidget,
+      );
+
+      await _dragOnSessionFrame(
+        tester,
+        'session-tooltip-preview',
+        const Offset(100, 80),
+      );
+
+      String fieldText(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+      // The offset is the box minus the point the tool placed the cursor on (0,0 here), so a
+      // left/top drag gives non-negative offsets and a real size.
+      expect(int.parse(fieldText('session-tooltip-offset-x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tooltip-width')), greaterThan(0));
+      expect(int.parse(fieldText('session-tooltip-height')), greaterThan(0));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('session-tooltip-status')))
+            .data,
+        contains('panel box'),
+      );
+
+      final save = find.byKey(const ValueKey('session-tooltip-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await _flush(tester);
+      final saveArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tooltip.save',
+              )['args']
+              as Map<String, dynamic>;
+      expect(
+        saveArgs['offset_x'],
+        int.parse(fieldText('session-tooltip-offset-x')),
+      );
+      expect(saveArgs['width'], int.parse(fieldText('session-tooltip-width')));
+      expect(
+        saveArgs['height'],
+        int.parse(fieldText('session-tooltip-height')),
+      );
+    },
+  );
 }

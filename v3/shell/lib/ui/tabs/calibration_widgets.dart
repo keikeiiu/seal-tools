@@ -1,8 +1,8 @@
 /// Separable calibration view pieces: the captured frame picture and the mark/crop readers.
 ///
-/// They are deliberately standalone so the wave-2 Calibrate surface and the read-only Pet/Setup
-/// geometry panels can share them later (the plan's "one CalibrationCanvas" rule) without pulling the
-/// tab's state along.
+/// They are deliberately standalone so the Calibrate surfaces (the mark editor AND the tooltip /
+/// tuner / pet session panels) and the read-only Pet/Setup geometry panels can share them without
+/// pulling a tab's state along.
 library;
 
 import 'dart:convert';
