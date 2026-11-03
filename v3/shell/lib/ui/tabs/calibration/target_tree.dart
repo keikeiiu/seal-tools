@@ -2,6 +2,11 @@
 /// marks (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1 = 35 marks), each row carrying a semantic status dot
 /// and a count, and a targeted kind expanding to its named instances (PROTOCOL §12.8).
 ///
+/// The two multi-mark calibrations (the Tuner OCR three-box set and the Tooltip hover box) are NOT
+/// target rows: they have their own session command + panel below the tree. They used to be appended
+/// under the Tuner group with a stale "not in the protocol yet" reason, which read as two broken
+/// Tuner targets; they now sit in their own SESSIONS section as pointers to those panels.
+///
 /// Selecting a kind or instance calls the tab's selection callbacks, which drive the canvas and the
 /// mark editor. The tree decides nothing: the core owns which targets exist and every validity rule;
 /// the tab owns what a selection means.
@@ -101,21 +106,38 @@ class TargetTreePanel extends StatelessWidget {
                     onTap: () => onSelectTarget(kind, target),
                   ),
             ],
-            if (group.tool == 'Tuner') ...[
-              const _SessionOnlyRow(
-                key: ValueKey('calibrate-tree-session-tuner'),
-                label: 'Tuner OCR 3-box',
-                reason:
-                    'Needs a multi-mark session (grade area + attribute band + remaining '
-                    'band) — not in the protocol yet.',
-              ),
-              const _SessionOnlyRow(
-                key: ValueKey('calibrate-tree-session-tooltip'),
-                label: 'Tooltip offset',
-                reason: 'Needs a two-capture hover session — not in the protocol yet.',
-              ),
-            ],
           ],
+          const SizedBox(height: ShellSpace.sm),
+          Padding(
+            key: const ValueKey('calibrate-tree-sessions'),
+            padding: const EdgeInsets.fromLTRB(
+              ShellSpace.xs,
+              ShellSpace.xs,
+              ShellSpace.xs,
+              ShellSpace.xxs,
+            ),
+            child: Text(
+              'SESSIONS — multi-mark calibrations',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+                letterSpacing: 0.7,
+              ),
+            ),
+          ),
+          const _SessionOnlyRow(
+            key: ValueKey('calibrate-tree-session-tuner'),
+            label: 'Tuner OCR 3-box',
+            reason:
+                'Opened by the Tuner OCR session below — grade area, attribute band and '
+                'remaining band save together, so it is not a single target mark.',
+          ),
+          const _SessionOnlyRow(
+            key: ValueKey('calibrate-tree-session-tooltip'),
+            label: 'Tooltip offset',
+            reason:
+                'Opened by the Tooltip session below — a hover capture plus a box, not a '
+                'target mark.',
+          ),
         ],
       ),
     );
