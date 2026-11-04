@@ -125,9 +125,10 @@ impl<T: Transport> Effects for SpaceHoldEffects<T> {
     }
 
     fn hold_space(&mut self) -> Result<(), EffectError> {
-        self.write(HoldSpaceAction::Hold)?;
+        // Record the intent BEFORE the write: a timeout after the byte reached the board still
+        // leaves `Drop` responsible for the release (TOOL-F13).
         self.held = true;
-        Ok(())
+        self.write(HoldSpaceAction::Hold)
     }
 
     fn release_space(&mut self) -> Result<(), EffectError> {

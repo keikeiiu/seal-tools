@@ -183,9 +183,10 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     }
 
     fn hold_left(&mut self) -> Result<(), EffectError> {
-        self.write(BoardCommand::HoldLeft)?;
+        // Record the intent BEFORE the write so a timeout after the board received `L` is still
+        // released by `Drop` (TOOL-F13).
         self.held_left = true;
-        Ok(())
+        self.write(BoardCommand::HoldLeft)
     }
 
     fn release_left(&mut self) -> Result<(), EffectError> {
@@ -316,6 +317,34 @@ mod tests {
         fn write_line(&mut self, wire: &str) -> Result<(), seal_board::transport::TransportError> {
             self.writes.borrow_mut().push(wire.to_owned());
             Ok(())
+        }
+
+        fn read_line(
+            &mut self,
+            _deadline: seal_board::transport::Deadline,
+        ) -> seal_board::transport::LineRead {
+            seal_board::transport::LineRead::Silent
+        }
+    }
+
+    /// Records the attempted write and fails the first one, then succeeds — the timeout-after-byte
+    /// shape TOOL-F13 is about.
+    struct FailFirstTransport {
+        writes: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        failed: bool,
+    }
+
+    impl Transport for FailFirstTransport {
+        fn write_line(&mut self, wire: &str) -> Result<(), seal_board::transport::TransportError> {
+            self.writes.borrow_mut().push(wire.to_owned());
+            if self.failed {
+                Ok(())
+            } else {
+                self.failed = true;
+                Err(seal_board::transport::TransportError::new(
+                    "the board did not acknowledge the hold",
+                ))
+            }
         }
 
         fn read_line(
@@ -558,6 +587,31 @@ mod tests {
         let mut recorder = RecordingEffects::default();
         recorder.record_hold_and_release();
         assert_eq!(recorder.writes(), vec!["L\n", "l\n"]);
+    }
+
+    #[test]
+    fn a_failed_hold_is_still_released_on_drop() {
+        let writes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut fx = effects(
+            FailFirstTransport {
+                writes: writes.clone(),
+                failed: false,
+            },
+            ScriptedCursor::new(vec![Some((100, 50))]),
+            StepClock::default(),
+        );
+
+        assert!(
+            fx.hold_left().is_err(),
+            "the transport timeout is reported to the runner"
+        );
+        drop(fx);
+
+        assert_eq!(
+            *writes.borrow(),
+            vec!["L\n", "l\n"],
+            "the release is still attempted after a failed press (TOOL-F13)"
+        );
     }
 
     #[test]
