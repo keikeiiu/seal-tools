@@ -415,13 +415,17 @@ the same blocks, and `hello` answers one merged config.
   blocks: `config.apply {rev, sections}`. Never a whole file, never a whole block it does not own.
 - The core re-runs the authoritative rules (`seal-domain`), merges **field-wise** into the
   current block — so a session half it wrote a second ago survives the tab's static half — bumps
-  `rev`, and returns the merged sections.
+  `rev`, and returns the merged sections. The exception is the player-owned **record maps**
+  (`presets`, `sequences`): when a section carries one, the map is replaced WHOLE, so an omitted
+  entry is a deletion rather than a key that comes back on reload.
 - **Writes are routed in the portable layout.** Each changed FIELD goes to the file that owns it:
   `settings:` sections to the matching `setup/` file, machine blocks to `machine/`, and split blocks
   field-wise (`buy_sell.presets` setup vs `buy_sell.bag_grid` machine). One file is one atomic
   temp+fsync+rename; the Setup and Pet card saves span two files and commit through the write-ahead
-  transaction, so a crash rolls both back. An unowned path is refused before anything is written.
-  `user.yaml` and `meta.yaml` are never written by `config.apply`.
+  transaction. A successful commit renames the journal to its `journal.done` marker before cleanup,
+  and recovery treats that marker as committed (never rolling back a save the player saw succeed);
+  a crash before the marker rolls both files back. An unowned path is refused before anything is
+  written. `user.yaml` and `meta.yaml` are never written by `config.apply`.
 - `config.apply` may carry `"settings"` — the portable half (§4). In the legacy mode it overlays
   the file's `settings:` block; in the portable mode it routes to `setup/`. The result echoes the
   effective sections for the requested names, not the whole file (§12.2).

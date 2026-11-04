@@ -19,6 +19,42 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (41) — the remaining Claude-review Phase 0 fixes
+
+The player asked to work the still-open review items one by one. All ten Phase-0 findings left after
+the earlier batch (and TOOL-F7's tuner half, already done in the SEAL-1 work) landed, each with a
+regression test and its own commit:
+
+- **PET-F2** (`68f64a5`): the scheduled wait is now subtracted from every row's relative schedule, so
+  a timer-due row is acted on even when its slot/feeders stay unreadable; it no longer reschedules the
+  configured cycle forever.
+- **PET-F4** (`2db798e`): every input step re-checks the game foreground; Open defers, a lost
+  foreground drops queued input, failed VerifyEmpty/ScanPage reads abandon the visit, and no Close
+  click is sent when the game is gone.
+- **TOOL-F3** (`fdb427b`): `BoardEffects` takes a `DisplayProvider`; production tool sessions re-find
+  and re-measure the configured window per placement, so a moved/minimised game is the domain's
+  `window_missing` line rather than a blind click at stale coordinates.
+- **CORE-F3** (`6e365df`): a `DoneGuard` catches worker panics and always sends the exit (slot freed,
+  shutdown returns); a panic hook writes the panic + backtrace to `error.log`; the dispatcher is
+  wrapped in catch-unwind; a dead supervisor is `Internal`, not `not_running`.
+- **CORE-F4** (`fc8b75b`): the dispatcher refreshes `state.config` from the shared mirror when a
+  worker bumped the revision and only republishes when the command itself wrote; `bump_revision` uses
+  the shared counter.
+- **HW-F1** (`f9cb667`): one `merge_with_policy` now routes all three config merges; `presets` and
+  `sequences` are replaced whole, so a deleted flow/sequence stays deleted.
+- **HW-F2** (`b52c7f1`): backups are fsynced; the transaction marks a successful commit with
+  `journal.done` (checked) and recovery never rolls a committed save back; a missing backup refuses a
+  partial restore.
+- **CORE-F2** (`134e4d3`): `StateCell` publishes through an observer; the worker emits a live `state`
+  event for every status change while running (never after Stopping), so cards update mid-run.
+- **CORE-F5** (`65795db`): the grade colour crop uses the image dimensions, not the area's, so a
+  non-zero-origin grade box no longer silently disables the fallback.
+- **PET-F7** (`302ec17`): fold outcomes (strike count included), dropped-row reasons and veto notes
+  reach `pet.log`; every-row-failed is an error stop.
+
+Verification: workspace clippy/fmt/rustdoc clean; `cargo test --workspace --offline` **94 suites,
+1,254 passed, 0 failed, 6 ignored**. Shell source was not touched by this series.
+
 ## 2026-11-04 (40) — Calibrate above the fold, readable light labels, and a quick appearance menu
 
 First UI pass after the capture-once work, driven by the review rather than the backend:
