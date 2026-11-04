@@ -33,7 +33,7 @@ namespace SealTools.Tests;
 // The rule is still the author's to keep; this only makes the mechanical half impossible to forget.
 public class FirmwareSketchTests
 {
-    private const int PinnedLevel = 2;
+    private const int PinnedLevel = 3;
 
     /// <summary>Every command the sketch dispatches, ordered — 20 of them at level 2.</summary>
     private const string PinnedCommands = "CDEFHKLPQRSTUVWXZfkl";
